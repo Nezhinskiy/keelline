@@ -169,10 +169,28 @@ class _UnrecognisedDecision(Exception):
         self.decision = decision
 
 
+class _UnrecognisedContext(Exception):
+    """A `context` `dispatch` cannot join into the emitted payload.
+
+    `HookResult.context` is typed `str | None`, but nothing stops a dynamically built result
+    from carrying something else, and the join that builds the payload happens once, after
+    every handler has run — outside every per-handler `try`. Raised here, at the same point
+    `_UnrecognisedDecision` is raised for `decision`, so a malformed `context` is that handler
+    failing rather than a `TypeError` that takes down the whole dispatch: an OPEN handler's
+    policy swallows it and a CLOSED handler's policy refuses, exactly like a malformed decision.
+    """
+
+    def __init__(self, context: object) -> None:
+        super().__init__(f"unrecognised context {context!r}")
+        self.context = context
+
+
 def _failure(exc: BaseException) -> tuple[str, dict[str, object]]:
     """The stderr reason and the sink record one handler's failure earns."""
     if isinstance(exc, _UnrecognisedDecision):
         return str(exc), {"error": "unrecognised-decision", "decision": str(exc.decision)}
+    if isinstance(exc, _UnrecognisedContext):
+        return str(exc), {"error": "unrecognised-context", "context": str(exc.context)}
     return f"{type(exc).__name__}: {exc}", {"error": type(exc).__name__}
 
 
@@ -220,6 +238,12 @@ def dispatch(
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
             if handler.once_key is not None:
                 sink.mark(handler.once_key)
+            # `context` is validated here too, and not only at the join below: the join runs
+            # once after every handler, outside every per-handler `try`, so a non-string context
+            # caught there would take the whole dispatch down instead of being judged by this
+            # handler's own policy.
+            if result.context is not None and not isinstance(result.context, str):
+                raise _UnrecognisedContext(result.context)
             if result.context:
                 contexts.append(result.context)
             if result.decision == Decision.DENY:

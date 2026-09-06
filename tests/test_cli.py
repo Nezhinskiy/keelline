@@ -152,6 +152,33 @@ def test_a_broken_area_on_a_non_hook_command_still_exits_two(
     assert "keelline: internal error: RuntimeError" in capsys.readouterr().err
 
 
+def _broken_by_keyboard_interrupt() -> list[Registrar]:
+    raise KeyboardInterrupt()
+
+
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [(["hook", "SessionStart"], 0), (["hook", "PreToolUse"], 2), (["release", "check"], 2)],
+)
+def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    code: int,
+) -> None:
+    # `main`'s own guard around discovery and the parser build stayed `except Exception` after
+    # A1 widened `dispatch`, `run_hook` and `cli.run` to `BaseException`, so an area importing
+    # something that raises KeyboardInterrupt or asyncio.CancelledError at import time bypassed
+    # `_discovery_failed` (and its §5.3 judging) entirely instead of degrading open on
+    # SessionStart and refusing on PreToolUse and on a non-hook command, exactly like a
+    # RuntimeError already does.
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken_by_keyboard_interrupt)
+    assert main(argv) == code
+    err = capsys.readouterr().err
+    assert "keelline: internal error: KeyboardInterrupt" in err
+    assert ("continuing open" in err) == (code == 0)
+
+
 def _register_explodes(groups: SubParsers) -> None:
     raise RuntimeError("register exploded")
 

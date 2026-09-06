@@ -141,6 +141,49 @@ def test_an_unrecognised_decision_under_a_closed_policy_refuses(decision: object
     assert recorder.records[0]["error"] == "unrecognised-decision"
 
 
+def test_an_open_handlers_non_string_context_is_swallowed_and_a_later_one_lands() -> None:
+    # `result.context` used to be joined into the payload outside every per-handler `try`, so
+    # one OPEN handler's malformed context took the whole dispatch down with a TypeError instead
+    # of being judged by that handler's own policy the way a malformed decision already is.
+    recorder = Recorder()
+    broken = handler("a-broken", Policy.OPEN, HookResult(context=cast(str, 42)))
+    ok = handler("b-ok", Policy.OPEN, HookResult(context="B"))
+    outcome = dispatch(event(), [broken, ok], None, sink=recorder)
+    assert outcome.exit_code == 0
+    assert "unrecognised context" in outcome.stderr
+    assert recorder.records[0]["error"] == "unrecognised-context"
+    assert recorder.records[0]["context"] == "42"
+    assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "B"
+
+
+def test_a_closed_handlers_non_string_context_refuses() -> None:
+    recorder = Recorder()
+    result = HookResult(context=cast(str, 42))
+    outcome = dispatch(event(), [handler("g", Policy.CLOSED, result)], None, sink=recorder)
+    assert outcome.exit_code == 2
+    assert "unrecognised context" in outcome.stderr
+    assert recorder.records[0]["error"] == "unrecognised-context"
+
+
+def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
+    # Not PreToolUse: there `run_hook`'s blanket catch maps any internal error to 2 anyway, so
+    # the lost deny is invisible. Everywhere else an escaped TypeError left the process at 0.
+    recorder = Recorder()
+    deny = handler(
+        "a-deny",
+        Policy.CLOSED,
+        HookResult(decision=Decision.DENY, reason="no"),
+        event_name="PostToolUse",
+    )
+    broken = handler(
+        "b-broken", Policy.OPEN, HookResult(context=cast(str, 42)), event_name="PostToolUse"
+    )
+    outcome = dispatch(event("PostToolUse"), [deny, broken], None, sink=recorder)
+    assert outcome.exit_code == 2
+    assert outcome.decision == "deny"
+    assert "a-deny: no" in outcome.stderr
+
+
 @pytest.mark.parametrize("policy", [Policy.CLOSED, Policy.OPEN])
 @pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
 def test_a_base_exception_from_a_handler_is_judged_by_that_handlers_policy(

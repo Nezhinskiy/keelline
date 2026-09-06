@@ -99,12 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         registrars = discover_registrars()
         parser = build_parser(registrars)
-    except Exception as exc:  # a broken area must never read as findings
+    except BaseException as exc:  # a broken area must never read as findings, nor escape judging
         return _discovery_failed(raw, exc)
     return run(raw, parser=parser)
 
 
-def _discovery_failed(raw: list[str], exc: Exception) -> int:
+def _discovery_failed(raw: list[str], exc: BaseException) -> int:
     """Discovery and the parser build both abort before argparse, so `hook`'s own policy is
     applied here (§5.3).
 
