@@ -1,12 +1,21 @@
+"""One version string everywhere, and one honest answer about what is still pending."""
+
 from __future__ import annotations
 
 import json
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
+from keelline.errors import Failure
+
+PYPROJECT = "pyproject.toml"
+LOCKFILE = "uv.lock"
+PACKAGE = "keelline"
 SOURCES = (
-    "pyproject.toml",
+    PYPROJECT,
+    LOCKFILE,
     "src/keelline/__init__.py",
     ".claude-plugin/plugin.json",
     ".codex-plugin/plugin.json",
@@ -18,14 +27,22 @@ _INIT = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 _HEADING = re.compile(r"^## (\S+)", re.MULTILINE)
 
 
-def _read(root: Path, name: str) -> str | None:
-    path = root / name
-    if not path.is_file():
-        return None
-    text = path.read_text(encoding="utf-8")
-    if name == "pyproject.toml":
+class MalformedSource(Failure):
+    """A version source that exists but cannot be parsed; the message names which one."""
+
+
+def _parse(name: str, text: str) -> str | None:
+    if name == PYPROJECT:
         version = tomllib.loads(text).get("project", {}).get("version")
         return str(version) if version is not None else None
+    if name == LOCKFILE:
+        # `uv sync --locked` fails the install step on a stale lockfile with a
+        # dependency-shaped message, before this gate — built to catch exactly this — can speak.
+        for entry in tomllib.loads(text).get("package", []):
+            if entry.get("name") == PACKAGE:
+                version = entry.get("version")
+                return str(version) if version is not None else None
+        return None
     if name.endswith("__init__.py"):
         match = _INIT.search(text)
         return match.group(1) if match else None
@@ -37,26 +54,90 @@ def _read(root: Path, name: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _read(root: Path, name: str) -> str | None:
+    path = root / name
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
+    try:
+        return _parse(name, text)
+    except tomllib.TOMLDecodeError as exc:
+        raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
+    except json.JSONDecodeError as exc:
+        raise MalformedSource(f"{name} is not valid JSON: {exc}") from None
+
+
 def collect(root: Path) -> dict[str, str | None]:
     return {name: _read(root, name) for name in SOURCES}
 
 
+def fragment_types(root: Path) -> frozenset[str]:
+    """The types `[[tool.towncrier.type]]` declares, read rather than hardcoded here.
+
+    A predicate that spelled the types out would drift from the configuration towncrier
+    itself reads, and the drift would show up as a release gate that is wrong in silence.
+    """
+    tool = _pyproject(root).get("tool", {})
+    towncrier = tool.get("towncrier", {}) if isinstance(tool, dict) else {}
+    declared = towncrier.get("type", []) if isinstance(towncrier, dict) else []
+    return frozenset(
+        str(entry["directory"])
+        for entry in declared
+        if isinstance(entry, dict) and "directory" in entry
+    )
+
+
+def _pyproject(root: Path) -> dict[str, Any]:
+    path = root / PYPROJECT
+    if not path.is_file():
+        return {}
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise MalformedSource(f"{PYPROJECT} is not valid TOML: {exc}") from None
+
+
+def _is_fragment(name: str, types: frozenset[str]) -> bool:
+    """towncrier's own shape: `<something>.<type>.md`."""
+    stem, _, extension = name.rpartition(".")
+    if extension != "md" or not stem:
+        return False
+    prefix, _, kind = stem.rpartition(".")
+    return bool(prefix) and kind in types
+
+
 def pending_fragments(root: Path) -> bool:
+    """Whether `changelog.d` holds a real towncrier fragment, letting CHANGELOG.md lag.
+
+    Asking instead "any entry not literally named .gitkeep" meant a stray `.DS_Store` — which
+    Finder writes merely by opening the directory — silenced a genuine version drift and turned
+    a red release gate green.
+    """
     directory = root / "changelog.d"
-    return directory.is_dir() and any(p.name != ".gitkeep" for p in directory.iterdir())
+    if not directory.is_dir():
+        return False
+    types = fragment_types(root)
+    return any(_is_fragment(entry.name, types) for entry in directory.iterdir())
 
 
 def check(root: Path) -> list[str]:
+    # Three different conditions used to share one wrong message, so a user who typoed --root,
+    # or ran the command in their own project (--root defaults to "."), was told their
+    # pyproject.toml lacked a version key.
+    if not root.is_dir():
+        return [f"{root} does not exist; --root must name a repository root"]
+    if not (root / PYPROJECT).is_file():
+        return [f"{root} has no {PYPROJECT}; --root must name a repository root"]
     found = collect(root)
-    canonical = found["pyproject.toml"]
+    canonical = found[PYPROJECT]
     if canonical is None:
-        return ["pyproject.toml has no [project].version"]
+        return [f"{PYPROJECT} has no [project].version"]
     problems: list[str] = []
     for name, value in found.items():
         if name == "CHANGELOG.md" and pending_fragments(root):
             continue
         if value != canonical:
-            problems.append(f"{name} says {value!r}; pyproject.toml says {canonical!r}")
+            problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
     marketplace = root / MARKETPLACE
     if marketplace.is_file():
         entries = json.loads(marketplace.read_text(encoding="utf-8")).get("plugins", [])

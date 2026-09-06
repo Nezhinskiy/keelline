@@ -7,10 +7,25 @@ import pytest
 
 from keelline.cli import build_parser, run
 from keelline.release.commands import register
-from keelline.release.versions import check, collect
+from keelline.release.versions import MalformedSource, check, collect, pending_fragments
 
-PYPROJECT = '[project]\nname = "keelline"\nversion = "{v}"\n'
+# The fragment predicate reads the types towncrier itself is configured with, so a fixture
+# repository has to declare them exactly as the real one does.
+PYPROJECT = """[project]
+name = "keelline"
+version = "{v}"
+
+[[tool.towncrier.type]]
+directory = "feature"
+
+[[tool.towncrier.type]]
+directory = "fix"
+
+[[tool.towncrier.type]]
+directory = "change"
+"""
 INIT = '__version__ = "{v}"\n'
+LOCK = '[[package]]\nname = "keelline"\nversion = "{v}"\nsource = {{ editable = "." }}\n'
 MARKETPLACE = {"name": "keelline-marketplace", "plugins": [{"name": "keelline", "source": "./"}]}
 
 
@@ -22,6 +37,7 @@ def repo(
     claude: str,
     codex: str,
     changelog: str,
+    lock: str | None = None,
     fragments: int = 0,
     marketplace: dict[str, object] | None = None,
 ) -> Path:
@@ -30,6 +46,7 @@ def repo(
     (tmp_path / ".codex-plugin").mkdir()
     (tmp_path / "changelog.d").mkdir()
     (tmp_path / "pyproject.toml").write_text(PYPROJECT.format(v=pyproject))
+    (tmp_path / "uv.lock").write_text(LOCK.format(v=pyproject if lock is None else lock))
     (tmp_path / "src" / "keelline" / "__init__.py").write_text(INIT.format(v=init))
     (tmp_path / ".claude-plugin" / "plugin.json").write_text(
         json.dumps({"name": "keelline", "version": claude})
@@ -105,10 +122,17 @@ def test_a_versioned_marketplace_entry_is_refused(tmp_path: Path) -> None:
 
 def test_collect_reads_every_source_value(tmp_path: Path) -> None:
     root = repo(
-        tmp_path, pyproject="1.0.0", init="1.0.1", claude="1.0.2", codex="1.0.3", changelog="1.0.4"
+        tmp_path,
+        pyproject="1.0.0",
+        init="1.0.1",
+        claude="1.0.2",
+        codex="1.0.3",
+        changelog="1.0.4",
+        lock="1.0.5",
     )
     assert collect(root) == {
         "pyproject.toml": "1.0.0",
+        "uv.lock": "1.0.5",
         "src/keelline/__init__.py": "1.0.1",
         ".claude-plugin/plugin.json": "1.0.2",
         ".codex-plugin/plugin.json": "1.0.3",
@@ -145,3 +169,130 @@ def test_the_cli_command_reports_the_agreed_version_on_success(
     argv = ["release", "check", "--root", str(root), "--json"]
     assert run(argv, parser=build_parser([register])) == 0
     assert json.loads(capsys.readouterr().out)["versions"]["pyproject.toml"] == "0.1.0"
+
+
+def _repo(
+    tmp_path: Path,
+    *,
+    pyproject: str = "0.1.0",
+    init: str = "0.1.0",
+    claude: str = "0.1.0",
+    codex: str = "0.1.0",
+    changelog: str = "0.1.0",
+    lock: str | None = None,
+) -> Path:
+    """`repo` with every version agreeing unless a test disagrees with one on purpose."""
+    return repo(
+        tmp_path,
+        pyproject=pyproject,
+        init=init,
+        claude=claude,
+        codex=codex,
+        changelog=changelog,
+        lock=lock,
+    )
+
+
+@pytest.mark.parametrize(
+    ("entry", "pending"),
+    [
+        ("x.feature.md", True),
+        ("0.fix.md", True),
+        ("a.b.change.md", True),
+        (".gitkeep", False),
+        (".DS_Store", False),
+        ("notes.md", False),
+        ("x.bogus.md", False),
+        ("feature.md", False),
+        ("x.feature.rst", False),
+    ],
+)
+def test_only_a_towncrier_fragment_lets_the_changelog_lag(
+    tmp_path: Path, entry: str, pending: bool
+) -> None:
+    # A stray .DS_Store — which Finder writes just by opening changelog.d — used to count as a
+    # pending fragment and turn a genuine drift from exit 1 into exit 0.
+    root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
+    (root / "changelog.d" / entry).write_text("x\n")
+    assert pending_fragments(root) is pending
+    assert (check(root) == []) is pending
+
+
+def test_a_stray_file_beside_a_real_fragment_does_not_hide_it(tmp_path: Path) -> None:
+    root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
+    (root / "changelog.d" / ".DS_Store").write_text("x\n")
+    (root / "changelog.d" / "foundation.feature.md").write_text("x\n")
+    assert pending_fragments(root) is True
+
+
+def test_the_fragment_types_come_from_the_configuration_not_from_code(tmp_path: Path) -> None:
+    # Hardcoding "feature", "fix", "change" here would drift from the [[tool.towncrier.type]]
+    # blocks towncrier itself reads.
+    root = _repo(tmp_path, pyproject="0.2.0", init="0.2.0", claude="0.2.0", codex="0.2.0")
+    (root / "changelog.d" / "x.removal.md").write_text("x\n")
+    assert pending_fragments(root) is False
+    pyproject = root / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text() + '\n[[tool.towncrier.type]]\ndirectory = "removal"\n'
+    )
+    assert pending_fragments(root) is True
+
+
+def test_a_disagreeing_lockfile_is_reported_by_name(tmp_path: Path) -> None:
+    # `uv sync --locked` reds the install step on a stale lockfile with a dependency-shaped
+    # message, ahead of the gate built to catch exactly this.
+    root = _repo(tmp_path, lock="0.0.9")
+    problems = check(root)
+    assert len(problems) == 1
+    assert "uv.lock says '0.0.9'" in problems[0]
+
+
+def test_a_missing_lockfile_reads_as_none_and_is_reported_as_drift(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    (root / "uv.lock").unlink()
+    assert collect(root)["uv.lock"] is None
+    assert any("uv.lock says None" in problem for problem in check(root))
+
+
+def test_a_lockfile_that_names_no_keelline_package_reads_as_none(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    (root / "uv.lock").write_text('[[package]]\nname = "pytest"\nversion = "8.0.0"\n')
+    assert collect(root)["uv.lock"] is None
+
+
+def test_the_three_root_conditions_get_three_different_messages(tmp_path: Path) -> None:
+    # One shared message told a user who typoed --root, or ran the command in their own
+    # project (--root defaults to "."), that their pyproject.toml lacked a version key.
+    missing = tmp_path / "nope"
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    no_version = tmp_path / "no-version"
+    no_version.mkdir()
+    (no_version / "pyproject.toml").write_text('[project]\nname = "keelline"\n')
+
+    absent, unrelated, versionless = check(missing), check(empty), check(no_version)
+    assert absent == [f"{missing} does not exist; --root must name a repository root"]
+    assert unrelated == [f"{empty} has no pyproject.toml; --root must name a repository root"]
+    assert versionless == ["pyproject.toml has no [project].version"]
+    assert len({tuple(absent), tuple(unrelated), tuple(versionless)}) == 3
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "kind"),
+    [
+        ("pyproject.toml", "not = = toml", "TOML"),
+        ("uv.lock", "not = = toml", "TOML"),
+        (".claude-plugin/plugin.json", "{not json", "JSON"),
+        (".codex-plugin/plugin.json", "{not json", "JSON"),
+    ],
+)
+def test_a_malformed_source_is_reported_with_its_filename(
+    tmp_path: Path, name: str, body: str, kind: str
+) -> None:
+    # `_read` knows the filename and used to let the decoder's own error escape without it.
+    root = _repo(tmp_path)
+    (root / name).write_text(body)
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert name in str(raised.value)
+    assert kind in str(raised.value)

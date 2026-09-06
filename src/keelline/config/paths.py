@@ -1,4 +1,14 @@
-"""Root containment for every path a repository-controlled file can name (§7.4)."""
+"""Root containment for the `[paths]` fields, and for nothing else yet (§7.4).
+
+`validate_paths` iterates `config.paths.as_dict()`, so the guard covers exactly the fields of
+`schema.Paths` and no others. Four path-shaped, repository-writable fields never reach
+`contained()`: `ledger.code_roots`, `artifacts.local`, `memory.groups` and
+`memory.index_extra`. A `keelline.toml` setting
+`ledger.code_roots = ["../../../../etc", "/etc/passwd"]` loads without a murmur, while the same
+strings under `[paths]` are refused. Until that changes, the ledger and memory lanes must call
+`contained()` themselves on the fields they consume; widening the guard here would change
+`Config`'s shape, so it belongs with the lane that first reads those fields.
+"""
 
 from __future__ import annotations
 
