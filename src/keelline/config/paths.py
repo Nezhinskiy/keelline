@@ -13,9 +13,9 @@ class PathEscape(Refusal):
 
 
 def contained(root: Path, relative: str, *, allow_final_symlink: bool = False) -> Path:
-    if not relative or relative == ".":
-        raise PathEscape("a path must name something inside the project root, not the root")
     candidate = Path(relative)
+    if not candidate.parts:
+        raise PathEscape("a path must name something inside the project root, not the root")
     if candidate.is_absolute():
         raise PathEscape(f"{relative!r} is absolute; paths must stay inside the project root")
     if any(part == ".." for part in candidate.parts):
