@@ -29,13 +29,18 @@ def imported_roots(path: Path) -> set[str]:
 
 
 def test_runtime_modules_import_only_the_standard_library() -> None:
+    # One parse per file: the walrus keeps CI from reading and parsing the package twice on
+    # each of three interpreters.
     offenders = {
-        str(path.relative_to(SRC)): sorted(imported_roots(path) - ALLOWED)
+        str(path.relative_to(SRC)): sorted(offending)
         for path in SRC.rglob("*.py")
-        if imported_roots(path) - ALLOWED
+        if (offending := imported_roots(path) - ALLOWED)
     }
     assert offenders == {}
 
 
 def test_the_boundary_walk_sees_the_cli_module() -> None:
+    # No mutation of its own: this assertion is the mutation guard for the test above, which
+    # passes vacuously if the walk ever stops finding files, and it fails exactly under the
+    # condition — an empty walk — that it exists to make loud.
     assert (SRC / "cli.py") in set(SRC.rglob("*.py"))

@@ -80,6 +80,16 @@ def test_allow_final_symlink_does_not_relax_an_intermediate_symlink(tmp_path: Pa
         contained(tmp_path, "docs/memory", allow_final_symlink=True)
 
 
+def test_a_supplied_resolved_root_is_the_one_compared(tmp_path: Path) -> None:
+    # `validate_paths` resolves the root once and passes it down. Nothing else reaches the
+    # containment comparison — the guards above it refuse every escape a path string can
+    # express — so the parameter that feeds it is pinned here rather than through a config.
+    (tmp_path / "docs").mkdir()
+    assert contained(tmp_path, "docs", resolved_root=tmp_path.resolve()) == tmp_path / "docs"
+    with pytest.raises(PathEscape, match="resolves outside the project root"):
+        contained(tmp_path, "docs", resolved_root=tmp_path / "elsewhere")
+
+
 def test_validate_paths_allows_a_final_symlink_only_for_the_memory_path(tmp_path: Path) -> None:
     (tmp_path / CONFIG_FILE).write_text(
         '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',

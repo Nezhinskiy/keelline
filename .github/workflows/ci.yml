@@ -12,6 +12,8 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # A public repository: anyone can open a pull request, so no job runs unbounded.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -36,9 +38,23 @@ jobs:
         run: uv run keelline release check
       - name: Build
         run: uv build
+      - name: The preset ships inside the wheel
+        # CI installs from source, so a packaging regression that dropped the preset would
+        # break every `uv tool install` while this workflow stayed green.
+        run: |
+          uv run python - <<'PY'
+          import glob
+          import zipfile
+
+          wheel = sorted(glob.glob("dist/*.whl"))[-1]
+          names = zipfile.ZipFile(wheel).namelist()
+          assert "keelline/presets/recommended.toml" in names, sorted(names)
+          print(f"{wheel} carries keelline/presets/recommended.toml")
+          PY
 
   plugin:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6

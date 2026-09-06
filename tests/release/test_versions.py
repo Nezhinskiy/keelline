@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from keelline.cli import run
+from keelline.release.commands import register
 from keelline.release.versions import check, collect
 
 PYPROJECT = '[project]\nname = "keelline"\nversion = "{v}"\n'
@@ -118,3 +122,25 @@ def test_a_missing_version_key_reads_as_none(tmp_path: Path) -> None:
     )
     (root / ".codex-plugin" / "plugin.json").write_text(json.dumps({"name": "keelline"}))
     assert collect(root)[".codex-plugin/plugin.json"] is None
+
+
+def test_the_cli_command_exits_one_on_version_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # CI runs the success path on every build, so exit 1 — C6's only user-facing surface —
+    # is reached by nothing else.
+    root = repo(
+        tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
+    )
+    assert run(["release", "check", "--root", str(root)], registrars=[register]) == 1
+    assert "version drift" in capsys.readouterr().err
+
+
+def test_the_cli_command_reports_the_agreed_version_on_success(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = repo(
+        tmp_path, pyproject="0.1.0", init="0.1.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
+    )
+    assert run(["release", "check", "--root", str(root), "--json"], registrars=[register]) == 0
+    assert json.loads(capsys.readouterr().out)["versions"]["pyproject.toml"] == "0.1.0"

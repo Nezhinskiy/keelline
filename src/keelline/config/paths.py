@@ -12,7 +12,13 @@ class PathEscape(Refusal):
     """A configured path that leaves the project root or passes through a symlink."""
 
 
-def contained(root: Path, relative: str, *, allow_final_symlink: bool = False) -> Path:
+def contained(
+    root: Path,
+    relative: str,
+    *,
+    allow_final_symlink: bool = False,
+    resolved_root: Path | None = None,
+) -> Path:
     candidate = Path(relative)
     if not candidate.parts:
         raise PathEscape("a path must name something inside the project root, not the root")
@@ -26,10 +32,13 @@ def contained(root: Path, relative: str, *, allow_final_symlink: bool = False) -
             break
         if ancestor.is_symlink() and not (allow_final_symlink and ancestor == target):
             raise PathEscape(f"{relative!r} passes through a symlink at {ancestor}")
-    # Defence in depth: the two checks above already refuse every escape a path string can
-    # express, so no mutation reddens a test through this line alone; it stays for the path
-    # form nobody has thought of yet.
-    resolved_root = root.resolve()
+    # Defence in depth. The guards above refuse every escape a path string can express — the
+    # empty path, an absolute path, any `..` component, and a symlink at any level between the
+    # root and the target — so the comparison below is the net under them rather than the
+    # guard itself. It is here for the path form nobody has anticipated; a caller validating
+    # many paths against one root passes `resolved_root` so this resolve happens once.
+    if resolved_root is None:
+        resolved_root = root.resolve()
     resolved = target.parent.resolve() / target.name if allow_final_symlink else target.resolve()
     if resolved != resolved_root and resolved_root not in resolved.parents:
         raise PathEscape(f"{relative!r} resolves outside the project root")
@@ -37,7 +46,13 @@ def contained(root: Path, relative: str, *, allow_final_symlink: bool = False) -
 
 
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
+    resolved_root = root.resolve()
     return {
-        name: contained(root, relative, allow_final_symlink=(name == "memory"))
+        name: contained(
+            root,
+            relative,
+            allow_final_symlink=(name == "memory"),
+            resolved_root=resolved_root,
+        )
         for name, relative in config.paths.as_dict().items()
     }
