@@ -105,7 +105,6 @@ def test_value_types_and_ranges_are_validated(tmp_path: Path, text: str) -> None
         load(tmp_path, machine=tmp_path / "no-machine.toml")
 
 
-@pytest.mark.xfail(strict=True, reason="validate_paths lands in Task 5")
 def test_a_path_that_escapes_the_root_is_refused_by_load(tmp_path: Path) -> None:
     write(tmp_path, MINIMAL + '\n[paths]\nspecs = "../elsewhere"\n')
     with pytest.raises(Exception, match="project root"):
