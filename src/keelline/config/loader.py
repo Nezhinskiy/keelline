@@ -1,11 +1,15 @@
-"""Read keelline.toml, merge it under the machine config and the preset, validate it."""
+"""Read keelline.toml, merge it under the preset, validate it.
+
+The machine config (§5.4) is merged too, but it contributes `[personal]` and nothing else.
+"""
 
 from __future__ import annotations
 
 import tomllib
 from dataclasses import fields
+from functools import cache
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import validate_paths
@@ -62,8 +66,22 @@ def _merged(raw: dict[str, Any], defaults: dict[str, Any], name: str) -> dict[st
     return {**defaults.get(name, {}), **_table(raw, name)}
 
 
+@cache
+def _schema_types(cls: type[Any]) -> dict[str, Any]:
+    """Real type objects for a schema class, resolved once per process.
+
+    `get_type_hints` is what makes them real: under `from __future__ import annotations`
+    `field.type` is only the source string, and dispatching on that string made every type the
+    branches did not spell — `float`, `int | None`, an alias — silently "must be a string", so
+    a valid config was refused with a wrong reason. Resolving costs an `eval` per annotation,
+    which is why a load does not pay it nine times.
+    """
+    hints = get_type_hints(cls)
+    return {f.name: hints[f.name] for f in fields(cls)}
+
+
 def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
-    known = {f.name: f.type for f in fields(cast(Any, cls))}
+    known = _schema_types(cast(Any, cls))
     unknown = sorted(set(values) - set(known))
     if unknown:
         raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")
@@ -72,23 +90,29 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
         raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
     coerced: dict[str, Any] = {}
     for key, value in values.items():
-        annotation = str(known[key])
-        if annotation.startswith("tuple"):
+        annotation = known[key]
+        if get_origin(annotation) is tuple:
             if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
                 raise ConfigError(f"{name}.{key} must be a list of strings")
             coerced[key] = tuple(value)
-        elif annotation == "bool":
+        elif annotation is bool:
             if not isinstance(value, bool):
                 raise ConfigError(f"{name}.{key} must be true or false")
             coerced[key] = value
-        elif annotation == "int":
+        elif annotation is int:
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ConfigError(f"{name}.{key} must be a positive integer")
             coerced[key] = value
-        else:
+        elif annotation is str:
             if not isinstance(value, str):
                 raise ConfigError(f"{name}.{key} must be a string")
             coerced[key] = value
+        else:
+            label = getattr(annotation, "__name__", None) or str(annotation)
+            raise ConfigError(
+                f"{name}.{key} has an unsupported schema type: {label}; "
+                "the loader coerces tuple[str, ...], bool, int and str"
+            )
     return cls(**coerced)
 
 

@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, parse_event
 
@@ -208,6 +210,46 @@ def test_project_root_prefers_the_claude_variable_over_git(tmp_path: Path) -> No
     ev = parse_event({"hook_event_name": "SessionStart", "cwd": str(tmp_path)}, env=CLAUDE_ENV)
     assert ev.project_root == Path("/p")
     assert ev.harness == "claude"
+
+
+def _forbidden(cwd: Path) -> Path | None:
+    raise AssertionError(f"git was forked for {cwd}")
+
+
+def test_the_walk_finds_the_root_through_a_git_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a" / "b")}, env={})
+    assert ev.project_root == tmp_path
+
+
+def test_the_walk_finds_the_root_through_a_git_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A worktree and a submodule carry `.git` as a file, so `is_dir()` would miss both.
+    (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/w\n", encoding="utf-8")
+    (tmp_path / "a").mkdir()
+    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, env={})
+    assert ev.project_root == tmp_path
+
+
+def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[Path] = []
+
+    def fake(cwd: Path) -> Path | None:
+        asked.append(cwd)
+        return Path("/from-git")
+
+    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", fake)
+    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path)}, env={})
+    assert ev.project_root == Path("/from-git")
+    assert asked == [tmp_path]
 
 
 def test_codex_is_detected_by_its_own_variable_even_beside_the_claude_ones() -> None:

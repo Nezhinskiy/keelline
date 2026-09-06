@@ -71,10 +71,33 @@ def _git_toplevel(cwd: Path) -> Path | None:
     return Path(top) if completed.returncode == 0 and top else None
 
 
+def _walk_to_git_root(cwd: Path) -> Path | None:
+    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count."""
+    if not cwd.is_absolute():
+        return None
+    for directory in [cwd, *cwd.parents]:
+        if (directory / ".git").exists():
+            return directory
+    return None
+
+
+def project_root(cwd: Path, env: Mapping[str, str]) -> Path | None:
+    """`CLAUDE_PROJECT_DIR`, else a walk for `.git`, else git itself.
+
+    `keelline hook` runs as a subprocess on every tool call, and Codex sets `PLUGIN_ROOT`,
+    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (S1), so the fallback
+    is the Codex hot path. `git rev-parse --show-toplevel` costs about 8 ms of a 33 ms
+    invocation and the walk about 0.004 ms; git stays behind it for what a walk cannot see,
+    such as `GIT_DIR` and a bare repository.
+    """
+    root_var = env.get("CLAUDE_PROJECT_DIR")
+    if root_var:
+        return Path(root_var)
+    return _walk_to_git_root(cwd) or _git_toplevel(cwd)
+
+
 def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     cwd = Path(str(payload.get("cwd") or "."))
-    root_var = env.get("CLAUDE_PROJECT_DIR")
-    project_root = Path(root_var) if root_var else _git_toplevel(cwd)
     tool_input = payload.get("tool_input") or {}
     session_id = payload.get("session_id")
     agent_id = payload.get("agent_id")
@@ -86,7 +109,7 @@ def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
         tool_name=tool_name if isinstance(tool_name, str) else None,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         cwd=cwd,
-        project_root=project_root,
+        project_root=project_root(cwd, env),
         harness=detect_harness(env, payload),
         raw=dict(payload),
     )

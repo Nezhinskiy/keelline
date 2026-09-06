@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, ConfigError, load
+from keelline.config.loader import CONFIG_FILE, ConfigError, _build, load
+from keelline.config.paths import PathEscape
 
 HEAD = '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -106,6 +108,20 @@ def test_value_types_and_ranges_are_validated(tmp_path: Path, text: str) -> None
 
 
 def test_a_path_that_escapes_the_root_is_refused_by_load(tmp_path: Path) -> None:
+    # PathEscape is a Refusal (exit 2), not a ConfigError (exit 1): naming the class here is
+    # what catches a regression that downgrades the refusal to a finding.
     write(tmp_path, MINIMAL + '\n[paths]\nspecs = "../elsewhere"\n')
-    with pytest.raises(Exception, match="project root"):
+    with pytest.raises(PathEscape, match="project root"):
         load(tmp_path, machine=tmp_path / "no-machine.toml")
+
+
+def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> None:
+    # `_build` reads real types now, so a section a later lane adds with a `float`, an
+    # `int | None` or an alias fails loudly here rather than being refused as "must be a
+    # string" — a wrong reason nothing in the tests or the type checker would point at.
+    @dataclass(frozen=True)
+    class Sample:
+        ratio: float
+
+    with pytest.raises(ConfigError, match="sample.ratio has an unsupported schema type: float"):
+        _build(Sample, "sample", {"ratio": 1.5})
