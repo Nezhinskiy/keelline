@@ -9,12 +9,23 @@ import sys
 
 from keelline.cli import SubParsers
 from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.schema import Config
 from keelline.hooks.dispatch import dispatch, parse_event
 from keelline.hooks.registry import discover
+from keelline.presets import load_preset
 
-# The only event on which the platform blocks on exit 2 (§5.3); an internal error there
-# refuses, everywhere else it degrades open and says so on stderr.
+# Keelline's own policy, not the platform's: the platform also acts on exit 2 for
+# UserPromptSubmit, Stop and SubagentStop, but only PreToolUse refuses on an INTERNAL
+# error, because a broken Keelline must not wedge the user everywhere else. A handler's
+# deny is a decision, not a breakage, and refuses on every event.
 BLOCKING_EVENTS = frozenset({"PreToolUse"})
+
+
+def _output_cap(config: Config | None) -> int:
+    """The platform cap is a shipped constant; a repository without a config still gets it."""
+    if config is not None:
+        return config.native_caps.hook_output_chars
+    return int(load_preset("recommended")["native_caps"]["hook_output_chars"])
 
 
 def run_hook(args: argparse.Namespace) -> int:
@@ -23,13 +34,14 @@ def run_hook(args: argparse.Namespace) -> int:
         payload = json.loads(sys.stdin.read() or "{}")
         if not isinstance(payload, dict):
             raise ValueError("hook payload is not a JSON object")
-        payload.setdefault("hook_event_name", event_name)
+        # argv is authoritative: the wrapper controls it, while stdin is the untrusted side.
+        payload["hook_event_name"] = event_name
         event = parse_event(payload, env=os.environ)
         config = None
         root = event.project_root
         if root is not None and (root / CONFIG_FILE).is_file():
             config = load(root)
-        cap = config.native_caps.hook_output_chars if config is not None else None
+        cap = _output_cap(config)
         outcome = dispatch(event, discover(), config, cap=cap)
     except Exception as exc:  # an internal error must never read as permission
         reason = f"keelline: internal error: {type(exc).__name__}: {exc}"

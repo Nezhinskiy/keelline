@@ -7,9 +7,12 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from keelline.hooks.api import Handler, HookEvent, NullSink, Policy, Sink
+from keelline.hooks.api import Decision, Handler, HookEvent, NullSink, Policy, Sink
+
+if TYPE_CHECKING:
+    from keelline.config.schema import Config
 
 TRUNCATION_MARK = "\n[keelline: context truncated to the platform cap]"
 
@@ -72,11 +75,14 @@ def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
     root_var = env.get("CLAUDE_PROJECT_DIR")
     project_root = Path(root_var) if root_var else _git_toplevel(cwd)
     tool_input = payload.get("tool_input") or {}
+    session_id = payload.get("session_id")
+    agent_id = payload.get("agent_id")
+    tool_name = payload.get("tool_name")
     return HookEvent(
         name=str(payload.get("hook_event_name") or "unknown"),
-        session_id=payload.get("session_id"),
-        agent_id=payload.get("agent_id"),
-        tool_name=payload.get("tool_name"),
+        session_id=session_id if isinstance(session_id, str) else None,
+        agent_id=agent_id if isinstance(agent_id, str) else None,
+        tool_name=tool_name if isinstance(tool_name, str) else None,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         cwd=cwd,
         project_root=project_root,
@@ -88,7 +94,7 @@ def parse_event(payload: dict[str, Any], env: Mapping[str, str]) -> HookEvent:
 def dispatch(
     event: HookEvent,
     handlers: list[Handler],
-    config: Any,
+    config: Config | None,
     *,
     sink: Sink | None = None,
     cap: int | None = None,
@@ -102,18 +108,27 @@ def dispatch(
             continue
         try:
             result = handler.run(event, config)
-        except Exception as exc:  # a handler's failure is judged by its own policy
+        except (Exception, SystemExit) as exc:  # judged by the handler's own policy
             reasons.append(f"{handler.name}: {type(exc).__name__}: {exc}")
             sink.diagnostic(
                 {"event": event.name, "handler": handler.name, "error": type(exc).__name__}
             )
-            refuse = refuse or handler.policy is Policy.CLOSED
+            refuse = refuse or handler.policy == Policy.CLOSED
             continue
         if result.context:
             contexts.append(result.context)
-        if result.decision == "deny":
+        if result.decision == Decision.DENY:
             reasons.append(f"{handler.name}: {result.reason or 'denied'}")
             refuse = True
+        elif result.decision is not None:
+            sink.diagnostic(
+                {
+                    "event": event.name,
+                    "handler": handler.name,
+                    "error": "unrecognised-decision",
+                    "decision": str(result.decision),
+                }
+            )
     if refuse:
         return Outcome(2, "", "keelline: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("keelline: " + "; ".join(reasons) + "\n") if reasons else ""

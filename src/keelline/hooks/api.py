@@ -4,12 +4,19 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from keelline.config.schema import Config
 
 
 class Policy(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
+
+
+class Decision(StrEnum):
+    DENY = "deny"
 
 
 @dataclass(frozen=True)
@@ -28,11 +35,11 @@ class HookEvent:
 @dataclass
 class HookResult:
     context: str | None = None
-    decision: str | None = None
+    decision: Decision | None = None
     reason: str | None = None
 
 
-HandlerFn = Callable[[HookEvent, Any], HookResult]
+HandlerFn = Callable[[HookEvent, "Config | None"], HookResult]
 
 
 @dataclass(frozen=True)
