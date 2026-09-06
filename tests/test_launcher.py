@@ -14,8 +14,17 @@ LAUNCHER = ROOT / "scripts" / "keelline"
 
 
 def test_the_launcher_runs_from_the_plugin_root() -> None:
+    # -S suppresses site, so the venv's keelline.pth (an ambient editable install of the
+    # package under test) never runs. Without -S, the interpreter would already have
+    # `keelline` importable before the launcher does anything, and this test would pass
+    # even if the launcher's own sys.path insertion were deleted. With -S there is no
+    # site-packages at all, so the only way the import can succeed is the launcher's own
+    # insertion — which is also the stdlib-only constraint in action.
     completed = subprocess.run(
-        [sys.executable, str(LAUNCHER), "--version"], capture_output=True, text=True, check=False
+        [sys.executable, "-S", str(LAUNCHER), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert completed.returncode == 0
     assert __version__ in completed.stdout
