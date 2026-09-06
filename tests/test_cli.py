@@ -82,3 +82,16 @@ def test_failures_emit_json_when_asked(capsys: pytest.CaptureFixture[str]) -> No
 def test_areas_are_discovered_from_the_package() -> None:
     names = {registrar.__module__ for registrar in discover_registrars()}
     assert "keelline.release.commands" in names
+
+
+def test_a_broken_area_module_maps_to_exit_two(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _broken() -> list[Registrar]:
+        raise RuntimeError("area exploded at import time")
+
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
+    assert main([]) == 2
+    assert "keelline: internal error: RuntimeError: area exploded at import time" in (
+        capsys.readouterr().err
+    )

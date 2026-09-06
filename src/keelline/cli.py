@@ -84,4 +84,9 @@ def run(argv: list[str] | None, *, registrars: Iterable[Registrar]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run(argv, registrars=discover_registrars())
+    try:
+        registrars = discover_registrars()
+    except Exception as exc:  # a broken area must never read as findings
+        print(f"keelline: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+    return run(argv, registrars=registrars)
