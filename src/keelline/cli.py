@@ -10,6 +10,7 @@ from collections.abc import Iterable
 import keelline
 from keelline.areas import Registrar, SubParsers, area_modules
 from keelline.errors import Failure, Refusal
+from keelline.hooks.policy import hook_event_name, refuses_on_internal_error
 from keelline.result import Result
 
 # The aliases live in the leaf module every area imports; they are re-exported here because
@@ -67,6 +68,8 @@ def run(argv: list[str] | None, *, registrars: Iterable[Registrar]) -> int:
         return _report("refused", str(exc), 2, as_json)
     except Failure as exc:
         return _report("failed", str(exc), 1, as_json)
+    except Exception as exc:  # exit 1 is reserved for findings; a bug in a command is not one
+        return _report("internal error", f"{type(exc).__name__}: {exc}", 2, as_json)
     if not isinstance(outcome, Result):
         return int(outcome)
     if as_json:
@@ -77,9 +80,25 @@ def run(argv: list[str] | None, *, registrars: Iterable[Registrar]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
     try:
         registrars = discover_registrars()
     except Exception as exc:  # a broken area must never read as findings
-        print(f"keelline: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 2
-    return run(argv, registrars=registrars)
+        return _discovery_failed(raw, exc)
+    return run(raw, registrars=registrars)
+
+
+def _discovery_failed(raw: list[str], exc: Exception) -> int:
+    """Discovery aborts before argparse, so `hook`'s own policy is applied here (§5.3).
+
+    Exit 2 on `UserPromptSubmit` erases what the user typed, so one later area's import-time
+    bug in its `commands.py` must not cost the user their prompt: on a hook invocation the
+    failure degrades open everywhere exit 2 does not block, and refuses only where it does.
+    """
+    reason = f"keelline: internal error: {type(exc).__name__}: {exc}"
+    event = hook_event_name(raw)
+    if event is not None and not refuses_on_internal_error(event):
+        print(f"{reason}; continuing open", file=sys.stderr)
+        return 0
+    print(reason, file=sys.stderr)
+    return 2

@@ -83,14 +83,67 @@ def test_areas_are_discovered_from_the_package() -> None:
     assert "keelline.release.commands" in names
 
 
+def _exploding(args: argparse.Namespace) -> Result:
+    raise KeyError("no such key")
+
+
+def test_an_internal_error_in_a_command_exits_two_not_one(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Exit 1 is reserved for findings, so a command's own bug must not read as three findings.
+    assert run(["probe", "go"], registrars=[_area("probe", _exploding)]) == 2
+    assert "keelline: internal error: KeyError: 'no such key'" in capsys.readouterr().err
+
+
+def test_an_internal_error_still_renders_json(capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(["probe", "go", "--json"], registrars=[_area("probe", _exploding)]) == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "internal error"
+
+
+def _broken() -> list[Registrar]:
+    raise RuntimeError("area exploded at import time")
+
+
 def test_a_broken_area_module_maps_to_exit_two(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _broken() -> list[Registrar]:
-        raise RuntimeError("area exploded at import time")
-
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
     assert main([]) == 2
     assert "keelline: internal error: RuntimeError: area exploded at import time" in (
         capsys.readouterr().err
     )
+
+
+@pytest.mark.parametrize("event", ["UserPromptSubmit", "SessionStart", "UserPromptExpansion"])
+def test_a_broken_area_never_erases_the_prompt_on_a_non_blocking_event(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
+) -> None:
+    # One later area's import-time bug in its commands.py must not cost the user what they
+    # typed: exit 2 on UserPromptSubmit erases the prompt (design §5.3).
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
+    assert main(["hook", event]) == 0
+    err = capsys.readouterr().err
+    assert "area exploded at import time" in err
+    assert "continuing open" in err
+
+
+def test_the_json_flag_does_not_hide_the_hook_event_from_the_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
+    assert main(["--json", "hook", "UserPromptSubmit"]) == 0
+
+
+def test_a_broken_area_still_refuses_where_exit_two_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
+    assert main(["hook", "PreToolUse"]) == 2
+
+
+def test_a_broken_area_on_a_non_hook_command_still_exits_two(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
+    assert main(["release", "check"]) == 2
+    assert "keelline: internal error: RuntimeError" in capsys.readouterr().err

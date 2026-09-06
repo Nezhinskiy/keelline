@@ -11,14 +11,9 @@ from keelline.areas import SubParsers
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.hooks.dispatch import dispatch, parse_event
+from keelline.hooks.policy import refuses_on_internal_error
 from keelline.hooks.registry import discover
 from keelline.presets import load_preset
-
-# Keelline's own policy, not the platform's: the platform also acts on exit 2 for
-# UserPromptSubmit, Stop and SubagentStop, but only PreToolUse refuses on an INTERNAL
-# error, because a broken Keelline must not wedge the user everywhere else. A handler's
-# deny is a decision, not a breakage, and refuses on every event.
-BLOCKING_EVENTS = frozenset({"PreToolUse"})
 
 
 def _output_cap(config: Config | None) -> int:
@@ -45,7 +40,7 @@ def run_hook(args: argparse.Namespace) -> int:
         outcome = dispatch(event, discover(), config, cap=cap)
     except Exception as exc:  # an internal error must never read as permission
         reason = f"keelline: internal error: {type(exc).__name__}: {exc}"
-        if event_name in BLOCKING_EVENTS:
+        if refuses_on_internal_error(event_name):
             sys.stderr.write(f"{reason}; refused\n")
             return 2
         sys.stderr.write(f"{reason}; continuing open\n")
