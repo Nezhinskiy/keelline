@@ -3,38 +3,31 @@
 from __future__ import annotations
 
 import argparse
-import importlib
-import importlib.util
 import json
-import pkgutil
 import sys
-from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING
+from collections.abc import Iterable
 
 import keelline
+from keelline.areas import Registrar, SubParsers, area_modules
 from keelline.errors import Failure, Refusal
 from keelline.result import Result
 
-if TYPE_CHECKING:
-    SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]
-else:
-    # Generic only in typeshed: subscripting the class at runtime raises TypeError.
-    SubParsers = argparse._SubParsersAction
-
-Registrar = Callable[[SubParsers], None]
+# The aliases live in the leaf module every area imports; they are re-exported here because
+# `from keelline.cli import SubParsers` is the import an area command module already writes.
+__all__ = [
+    "Registrar",
+    "SubParsers",
+    "build_parser",
+    "discover_registrars",
+    "main",
+    "run",
+    "split_json_flag",
+]
 
 
 def discover_registrars() -> list[Registrar]:
     """Every `keelline.<area>.commands.register`, in name order, with no shared registry."""
-    registrars: list[Registrar] = []
-    for module in sorted(pkgutil.iter_modules(keelline.__path__), key=lambda m: m.name):
-        if not module.ispkg:
-            continue
-        spec = importlib.util.find_spec(f"keelline.{module.name}.commands")
-        if spec is None:
-            continue
-        registrars.append(importlib.import_module(spec.name).register)
-    return registrars
+    return [module.register for module in area_modules("commands")]
 
 
 def build_parser(registrars: Iterable[Registrar] = ()) -> argparse.ArgumentParser:

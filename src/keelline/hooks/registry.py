@@ -1,22 +1,17 @@
-"""Every `keelline.<area>.hooks.register()` result, by name, with no shared list to edit."""
+"""Every `keelline.<area>.hooks.register()` result, in area-name order, with no shared list.
+
+Nothing keys or de-duplicates handlers by their own name: two areas may register the same
+handler name and both run.
+"""
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
-import pkgutil
-
-import keelline
+from keelline.areas import area_modules
 from keelline.hooks.api import Handler
 
 
 def discover() -> list[Handler]:
     handlers: list[Handler] = []
-    for module in sorted(pkgutil.iter_modules(keelline.__path__), key=lambda m: m.name):
-        if not module.ispkg:
-            continue
-        spec = importlib.util.find_spec(f"keelline.{module.name}.hooks")
-        if spec is None:
-            continue
-        handlers.extend(importlib.import_module(spec.name).register())
+    for module in area_modules("hooks"):
+        handlers.extend(module.register())
     return handlers

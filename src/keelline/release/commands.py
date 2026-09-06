@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from keelline.cli import SubParsers
+from keelline.areas import SubParsers
 from keelline.errors import Failure
 from keelline.release.versions import check, collect
 from keelline.result import Result

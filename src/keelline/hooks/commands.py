@@ -7,7 +7,7 @@ import json
 import os
 import sys
 
-from keelline.cli import SubParsers
+from keelline.areas import SubParsers
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.hooks.dispatch import dispatch, parse_event

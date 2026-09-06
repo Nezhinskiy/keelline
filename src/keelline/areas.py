@@ -1,0 +1,52 @@
+"""Areas discovered by name: the half `keelline.cli` and `keelline.hooks.registry` share.
+
+A leaf module on purpose. `cli.py` imports every area through this discovery, so an area that
+imported back into `cli.py` would constrain what the frame may ever import; the aliases and
+the loop live here instead, and `cli` re-exports the aliases.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import pkgutil
+from collections.abc import Callable
+from pathlib import Path
+from types import ModuleType
+from typing import TYPE_CHECKING
+
+import keelline
+
+if TYPE_CHECKING:
+    SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]
+else:
+    # Generic only in typeshed: subscripting the class at runtime raises TypeError.
+    SubParsers = argparse._SubParsersAction
+
+Registrar = Callable[[SubParsers], None]
+
+
+def _has_submodule(area: str, submodule: str) -> bool:
+    """A filesystem probe, because `importlib.util.find_spec` must import the area to look.
+
+    `keelline hook` runs as a subprocess on every tool call, so discovery may not import
+    `keelline.config`, `keelline.presets` and `keelline.release` merely to learn that none of
+    them registers a hook.
+    """
+    for root in keelline.__path__:
+        directory = Path(root) / area
+        if (directory / f"{submodule}.py").is_file():
+            return True
+        if (directory / submodule / "__init__.py").is_file():
+            return True
+    return False
+
+
+def area_modules(submodule: str) -> list[ModuleType]:
+    """Every `keelline.<area>.<submodule>` that exists, in area-name order, no shared registry."""
+    modules: list[ModuleType] = []
+    for entry in sorted(pkgutil.iter_modules(keelline.__path__), key=lambda m: m.name):
+        if not entry.ispkg or not _has_submodule(entry.name, submodule):
+            continue
+        modules.append(importlib.import_module(f"keelline.{entry.name}.{submodule}"))
+    return modules
