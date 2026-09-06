@@ -1,0 +1,15 @@
+{
+  "name": "keelline",
+  "version": "0.1.0",
+  "description": "A methodology harness for coding agents: bug ledger, curated working memory, guards, and an adoption state machine.",
+  "author": { "name": "Nezhinskiy" },
+  "repository": "https://github.com/Nezhinskiy/keelline",
+  "license": "MIT",
+  "skills": "../skills/",
+  "interface": {
+    "displayName": "Keelline",
+    "shortDescription": "Bug ledger, working memory, guards, and earned enforcement for coding agents",
+    "developerName": "Nezhinskiy",
+    "category": "Developer Tools"
+  }
+}

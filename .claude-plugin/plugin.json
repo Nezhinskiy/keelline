@@ -1,0 +1,29 @@
+{
+  "name": "keelline",
+  "version": "0.1.0",
+  "description": "A methodology harness for coding agents: bug ledger, curated working memory, guards, and an adoption state machine.",
+  "author": { "name": "Nezhinskiy" },
+  "repository": "https://github.com/Nezhinskiy/keelline",
+  "license": "MIT",
+  "keywords": ["methodology", "bug-ledger", "memory", "hooks", "guards", "codex"],
+  "userConfig": {
+    "reply_language": {
+      "type": "string",
+      "title": "Reply language",
+      "description": "Language for chat replies; durable artifacts stay in the artifact language.",
+      "default": ""
+    },
+    "artifact_language": {
+      "type": "string",
+      "title": "Artifact language",
+      "description": "Language for documents, comments, commits and pull requests.",
+      "default": "en"
+    },
+    "preset": {
+      "type": "string",
+      "title": "Preset",
+      "description": "Preset applied by setup and init.",
+      "default": "recommended"
+    }
+  }
+}

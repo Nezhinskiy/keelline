@@ -1,0 +1,12 @@
+{
+  "name": "keelline-marketplace",
+  "description": "Keelline, a methodology harness for coding agents, published from its own repository.",
+  "owner": { "name": "Nezhinskiy" },
+  "plugins": [
+    {
+      "name": "keelline",
+      "source": "./",
+      "description": "A methodology harness for coding agents: bug ledger, curated working memory, guards, and an adoption state machine."
+    }
+  ]
+}
