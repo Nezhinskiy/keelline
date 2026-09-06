@@ -6,17 +6,17 @@
 
 **Architecture:** Every spike runs against a scratch plugin installed into a throwaway `CLAUDE_CONFIG_DIR` (and, for Codex, a throwaway `CODEX_HOME`), never against the owner's real configuration. Shell state does not survive between steps, so every step re-derives its state from one fixed scratch root on disk and starts with the same preamble. Wherever Claude Code leaves a record on disk — the session transcript's per-hook records, the persisted-output files, the plugin cache — the spike reads the record instead of asking the model. Answers are written into the **Findings** section at the end of this file, which is the spike record §15.4 of the spec refers to; it is copied to the Keelline repository by the foundation package. S8, S9 and S10 produce fixture designs that later lanes turn into permanent tests; the rest produce answers only.
 
-**Tech Stack:** bash and zsh, python3 (3.13.0 at `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3` and `/usr/local/bin/python3`, 3.9.6 at `/usr/bin/python3` — the difference is itself under test), `claude` 2.1.259, `codex` CLI (npm `@openai/codex` 0.153.4, not yet installed on this machine), `gh` 2.93.0, `uv` 0.11.19.
+**Tech Stack:** bash and zsh, python3 (3.13.0 at `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3` and `/usr/local/bin/python3`, 3.9.6 at `/usr/bin/python3` — the difference is itself under test), `claude` 2.1.259, `codex` CLI (npm `@openai/codex` 0.153.4, not yet installed on this machine), `gh` 2.93.0, `uv` 0.11.19. The `claude` pin is the version this plan was written against and the one the 2026-09-05 `strings` measurement below names; the recorded runs used 2.1.261 on 2026-09-05 and 2.1.263 on 2026-09-06, each stated where it applies.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` — §14 lists the spikes; §5.3 and §9.5 consume S1, S7 and S8; §5.8 consumes S4; §6.1 consumes S6; §6.4 consumes S5; §7.4 consumes S9; §13 consumes S10; §2 D5 consumes S3.
+**Spec:** `docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` — §14 lists the spikes; §5.1 and §2 D11 consume S2; §5.3, §9.5 and §10 consume S1, S2, S7 and S8; §5.8 consumes S4; §6.1 consumes S6; §6.4 consumes S3 and S5; §7.4 consumes S9; §13 consumes S10; §2 D5 consumes S3.
 
-**Scope:** package `spikes` (§15.2); consumes no contract; produces the recorded answers that `foundation` (S1, S4, S7), `hooks-core` (S1, S7, S8), `scaffold` (S9), `attach` (S6, S10), `setup` (S5, S6) and `workflows` (S10) cite. A change belongs to this plan iff it is a scratch experiment answering one of S1–S10 or an edit to the Findings section of this file; no Keelline source, no ai-daybook source, and nothing committed outside this plan file.
+**Scope:** package `spikes` (§15.2); consumes no contract; produces the recorded answers that `foundation` (S1, S2, S4, S7), `hooks-core` (S1, S2, S7, S8), `scaffold` (S9), `overlay` (S6), `attach` (S6, S10), `setup` (S5, S6), `memory-engine` (S3) and `workflows` (S10) cite. A change belongs to this plan iff it is a scratch experiment answering one of S1–S10 or an edit to the Findings section of this file; no Keelline source, no ai-daybook source, and nothing committed outside this plan file.
 
 ## Global Constraints
 
 - Nothing is installed into, or written under, the owner's real `~/.claude` or `~/.codex`. The scratch root is `$HOME/.cache/keelline-spikes`; every configuration directory lives under it, and every helper refuses a path that does not.
 - Shell state does not survive between steps (each step is one tool call), so **every step starts with the preamble** `set -eu; SPIKE="$HOME/.cache/keelline-spikes"; . "$SPIKE/lib.sh"` and re-derives paths from fixed names under `$SPIKE`, never from variables an earlier step exported.
-- Model turns are the last resort: a spike reads the session transcript, the persisted-output directory or the plugin cache whenever the answer is on disk. Where a turn is unavoidable it is `claude -p --model haiku` with a one-line prompt, at most three per spike, and its JSON result is kept and checked for `"is_error": false` before anything else is read. Flags that take a list use the `=` form (`--allowedTools=Bash,Read`): the space form is variadic and swallows the prompt.
+- Model turns are the last resort: a spike reads the session transcript, the persisted-output directory or the plugin cache whenever the answer is on disk. Where a turn is unavoidable it is `claude -p --model haiku` with a one-line prompt, and its JSON result is kept and checked for `"is_error": false` before anything else is read. The default budget is three turns per spike; a spike whose design needs more declares the number in its own brief before it runs and records what it spent (S7 declared nine and spent eight; S8 declared sixteen and spent fifteen), because a paid run is scoped before it runs, not after. Flags that take a list use the `=` form (`--allowedTools=Bash,Read`): the space form is variadic and swallows the prompt.
 - Consent precedes every side effect outside the scratch root, each asked in chat and each named: installing the Codex CLI from npm into the scratch prefix; `codex login` against the owner's OpenAI account; granting the `delete_repo` scope to the owner's `gh` token (`gh auth refresh -h github.com -s delete_repo`), without which the throwaway repositories cannot be deleted by the plan and must be deleted by the owner; creating each throwaway **private** repository under the owner's account. `--dangerously-bypass-hook-trust` is used only inside the scratch `CODEX_HOME` and is named as a deliberate bypass where it appears.
 - Findings record environment variable **names**, never values, and paths relative to `$SPIKE`, never the owner's home directory or GitHub login; Task 11 scrubs both before the record leaves this repository.
 - Findings are written in the past tense with the exact command and the observed output, per the plan lint in this repository (`scripts/check_plan.py`): a spike reports what it observed, never what it expects, and no step pre-loads the expected answer.
@@ -803,11 +803,18 @@ Under Findings → S10: a fixture repository with in-repo memory mode, a note ca
 - [ ] **Step 2: Scrub the record**
 
 ```bash
-grep -nE "$HOME|$(cat "$HOME/.cache/keelline-spikes/owner" 2>/dev/null || echo NO_OWNER_RECORDED)" \
-  docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md || echo "record carries no home path and no login"
+if grep -nE "$HOME|$(cat "$HOME/.cache/keelline-spikes/owner" 2>/dev/null || echo NO_OWNER_RECORDED)" \
+     docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md; then
+  echo "LEAK: rewrite the lines above before committing" >&2; exit 1
+fi
+echo "record carries no home path and no login"
 ```
 
-Any hit is rewritten relative to `$SPIKE` or without the login before the commit.
+Any hit is rewritten relative to `$SPIKE` or without the login before the commit. The `if`
+carries the verdict because the earlier `grep … || echo` form exited 0 either way — `grep`
+exits 0 when it *matches* — so an executor reading exit codes saw a pass over a leak. The
+pattern also covers only the shapes it names: opaque identifiers such as session UUIDs are
+not among them, which is how two survived into the Findings below.
 
 - [ ] **Step 3: Delete the scratch root, including the Codex login and the npm prefix**
 
@@ -828,7 +835,17 @@ git commit -m "docs(plans): record the Keelline P0 spike answers"
 
 Filled in during execution; every entry names the command that produced it and quotes what it printed. Written in the past tense. Paths are relative to the scratch root; environment variables are named, never valued.
 
-**No cited artifact under `$SPIKE` survives**: the scratch root was deleted after each review round, and the `.superpowers/sdd/2026-09-05-agent-harness-p0-spikes/` scripts and logs this record also cites are gitignored, so nothing quoted below can be re-read from disk by anyone who did not run it — every quote here is testimony, not a reference. Each entry discloses per quote which artifact it came from, so a reader can tell what kind of evidence backs any one line even though the file itself is gone. The one exception is finding A2(b)'s own log (`a2b-exec-bit-measurement.log`, alongside the script that wrote it): it does still exist on disk, under the same gitignored `.superpowers/sdd/` path as everything else here, so it is not committed either and is exactly as re-readable as this paragraph says nothing else is — by whoever has this worktree, not by anyone reading only this file.
+**Artifact survival, by era.** The 2026-09-05 arms' artifacts under `$SPIKE` do not survive: the scratch root was deleted after each of that day's review rounds, so nothing those entries quote can be re-read from disk by anyone who did not run it — every such quote is testimony, not a reference. The 2026-09-06 continuation rebuilt the root, and the artifacts its own entries cite — the scratch `CODEX_HOME` with its plugin caches, S1's and S2's rebuilt fixtures and probe logs, and S3's seeded memory store — did still exist under it when this record was written; the 2026-09-05 Task 11 that deleted the first root had already run by then, and the deletion still pending — the 2026-09-06 continuation's own Task 8 Step 4, deferred while S3 is open — takes all of them. Of the `.superpowers/sdd/2026-09-05-agent-harness-p0-spikes/` scripts and logs this record cites, **two survive**: finding A2(b)'s log `a2b-exec-bit-measurement.log` and the script that wrote it, `a2b_exec_bit_probe.py`. They are gitignored rather than committed, so they are re-readable only from the `harness/agent-harness-p0-spikes` worktree that produced them — not from this branch's worktree, and not by anyone reading only this file. Every other `taskN_*.py` and `*.log` artifact this record names is gone; those quotes are testimony on the same footing as the deleted `$SPIKE` ones, and whether they ever existed is not recoverable from here either. Each entry discloses per quote which artifact it came from, so a reader can tell what kind of evidence backs any one line.
+
+**The Task 11 scrub, and what it covers.** Step 2 ran and printed no home path and no login;
+the same pattern was re-run by the 2026-09-06 continuation's Task 8 over this record and its
+own, again with no hit. Two limits are worth stating rather than leaving to a clean run's
+silence. The continuation's form derived the login from `git config user.email | cut -d@ -f1`,
+which is `m.nezhinsky` here and not the GitHub login `Nezhinskiy`, so its login half
+discriminated nothing — corrected in that plan, and the login occurs in these documents only
+as the public repository's own name. And neither form looked for opaque identifiers: a later
+review found two Codex session UUIDs in the S2 entry above, now elided. The scrub is a
+pattern over known shapes, not a proof that no identifier remains.
 
 ### Environment
 
@@ -892,6 +909,32 @@ Filled in during execution; every entry names the command that produced it and q
   S8 read hook records heavily) may have seen an incomplete set, and a "no such record"
   conclusion drawn through it should be read as "no record of the three checked types," not as
   "no record of any kind."
+- **2026-09-06 continuation.** This entry records the environment for the follow-up run that
+  reused this plan's `$SPIKE` scratch root ahead of the Codex-arm spike re-runs this plan
+  deferred in September for lack of quota. Step 1 read the rebuilt state back rather than
+  rebuilding it: `"$SPIKE/npm/node_modules/.bin/codex" --version` printed `codex-cli
+  0.153.4`, and `CODEX_HOME="$SPIKE/codex-home" "$SPIKE/npm/node_modules/.bin/codex" login
+  status` printed `Logged in using ChatGPT`, confirming the controller's earlier install and
+  login were both still intact. Step 2's smoke sequence (`mkcfg s0`, `mkplugin "$SPIKE/p0"
+  p0`, `install_plugin "$SPIKE/p0" p0 "$CFG"`) printed `Adding marketplace…✔ Successfully
+  added marketplace: p0-marketplace (declared in user settings)` followed by `Installing
+  plugin "p0@p0-marketplace"...✔ Successfully installed plugin: p0@p0-marketplace (scope:
+  user)` — the same success lines the 2026-09-05 entry recorded. `CLAUDE_CONFIG_DIR="$CFG"
+  claude plugin list | grep -c p0` printed `1`, and `installed_root p0 "$CFG"` printed
+  `cfg-s0/plugins/cache/p0-marketplace/p0/0.0.1` (relative to `$SPIKE`) — the same
+  installed-copy path the 2026-09-05 entry recorded. `claude --version` printed `2.1.263
+  (Claude Code)` and `python3 --version` printed `Python 3.13.0`. A fresh scratch
+  `CLAUDE_CONFIG_DIR` (`cfg-envcheck` relative to `$SPIKE`, created by `mkcfg envcheck`)
+  held no credentials of its own: `claude auth status` against it printed `"loggedIn":
+  false, "authMethod": "none"`, the same fatal baseline this subsection recorded above
+  for a scratch config dir. Against that same config dir, `scripts/with_named_secret.py
+  --key CLAUDE_CODE_OAUTH_TOKEN` (run from the primary checkout, `AIDB=$(dirname "$(git
+  rev-parse --git-common-dir)")`, with a local `DATABASE_URL` value that satisfied that
+  launcher's own local-database check) supplied the token to `claude -p --model haiku
+  --output-format json "Reply with the single word ready."`, which exited `0`; a
+  `python3 -c` read-back of the JSON result it wrote printed `is_error: False` and
+  `result: ready` — the token-authenticated route that succeeded where the 2026-09-05
+  run's `claude auth login` route could not be taken.
 
 ### S1 — Codex plugin hooks
 
@@ -1020,6 +1063,26 @@ this probe alone — see the Environment entry above for the two file-copy route
 controller tried in place of an interactive login and the resulting consequence for
 Keelline's test-harness design.
 
+A third attempt (Task 2 of the 2026-09-06 follow-up plan) obtained the Claude column by
+authenticating around the isolation instead of inside it. `mkplugin "$SPIKE/s1" s1` rebuilt the
+plugin exactly as Task 1 Step 2 built it, `probe.py` and `$SPIKE/s1/hooks/hooks.json` (with
+`additionalContextLimit: 0` and `additionalContextChars: 0` on both entries) were rewritten
+byte-for-byte from the brief, and `$SPIKE/s1/proj` was reinitialized with `git init -q` and a
+fresh `README.md`. `CFG=$(mkcfg s1); install_plugin "$SPIKE/s1" s1 "$CFG"` printed the same two
+success lines both earlier attempts printed. With `CLAUDE_CONFIG_DIR` and `S1_LOG` exported in
+the same shell — not prefixed onto the inner `claude` call, because `with_named_secret.py` execs
+its child with the caller's environment plus the one named key, so a prefix on the outer command
+line would not reach `claude` — and with `DATABASE_URL` set to a local placeholder DSN that
+nothing listens on, because `with_named_secret.py` refuses to run unless the caller's own
+`DATABASE_URL` is obviously local, `"$AIDB"/.venv/bin/python
+"$AIDB"/scripts/with_named_secret.py --key CLAUDE_CODE_OAUTH_TOKEN claude -p --model haiku
+--output-format json --allowedTools=Bash,Read,Write "Run the shell command: echo hello. Then
+read README.md. Then create probe.txt containing hi."` printed `is_error False` on one line,
+then the `result` text on the next: ``Done! I ran `echo hello` (output: hello), read README.md
+(contains "S1 readme"), and created probe.txt with the content "hi".`` — the first Claude-arm
+turn in this spike's history to complete rather than error. `probe.txt` existed in
+`$SPIKE/s1/proj` afterward and held `hi`.
+
 The four S1 answers, computed from `log-claude.jsonl` and `log-codex.jsonl` with the ambient
 21 names above subtracted:
 
@@ -1048,47 +1111,228 @@ The four S1 answers, computed from `log-claude.jsonl` and `log-codex.jsonl` with
    wrote a log line, which a missing or empty substitution would have prevented. On stdin,
    Codex sent two keys Claude's `SessionStart` payload did not: `model` and
    `permission_mode`.
-2. **`tool_name` for shell/read/file-creation.** Still not obtained for either harness after a
-   second attempt confined to the Claude arm. Codex: this task did not attempt a Codex
-   re-run — the account behind `$SPIKE/codex-home` had exhausted its usage quota until
-   2026-09-22 (reset date from the first report's `codex exec` output above) and the owner
-   declined to raise it; obtaining a real answer needs `CODEX_HOME="$SPIKE/codex-home"
-   S1_LOG="$SPIKE/s1/log-codex-rerun.jsonl" "$SPIKE/npm/node_modules/.bin/codex" plugin
-   marketplace add "$SPIKE/s1" && "$SPIKE/npm/node_modules/.bin/codex" plugin add
-   s1@s1-marketplace && (cd "$SPIKE/s1/proj" && "$SPIKE/npm/node_modules/.bin/codex" exec
-   --dangerously-bypass-hook-trust "Run the shell command: echo hello. Then read README.md.
-   Then create probe.txt containing hi.")` once that quota resets. Claude: the default config
-   dir's OAuth-session expiry was fixed and reconfirmed, but the Claude-arm re-run in a fresh
-   scratch config dir still printed `turn errored: {... "result": "Not logged in · Please run
-   /login" ...}`, this time diagnosed precisely as `CLAUDE_CONFIG_DIR`-scoped credential
-   isolation rather than the first report's OAuth-expiry cause (detailed above) — every scratch
-   config dir this spike series had created showed `"loggedIn": false` via `claude auth
-   status`, independent of the default config dir's fixed session. Obtaining a real Claude-side
-   answer needs an owner-authorized, interactively-completed `claude auth login` under a
-   scratch `CLAUDE_CONFIG_DIR`, then the unchanged Step 3 `run_claude` command above — an OAuth
-   grant this non-interactive task had no standing to start on its own. Both arms' logs still
-   hold exactly one record each, both `SessionStart`, both `tool_name: null`; neither contains
-   a `PreToolUse` record.
 
-   **Restarting this measurement from nothing.** Task 11 deletes the entire scratch root, so
-   the Codex re-run command quoted above will find neither `$SPIKE/npm/node_modules/.bin/codex`
-   nor a logged-in `$SPIKE/codex-home`, and the Claude re-run will find neither `$SPIKE/lib.sh`
-   nor `$SPIKE/s1`. Before either re-run, a later session must, in order: rebuild the helper
-   library from Task 0 Step 1; reinstall `@openai/codex@0.153.4` into a fresh scratch npm
-   prefix and complete `codex login` again inside a fresh scratch `CODEX_HOME`, per Task 1
-   Step 1; and rebuild this task's probe plugin and project from Task 1 Step 2. The Claude-side
-   re-run additionally needs its own interactively-completed `claude auth login` under a fresh
-   scratch `CLAUDE_CONFIG_DIR`, as already noted above and as the `### Environment` subsection
-   records for every scratch config dir this spike series created.
+   **Attribution against the harness that does not own each name (Task 3, 2026-09-06
+   follow-up plan).** The measurement the paragraph above called for was run. With
+   `CLAUDE_CONFIG_DIR`, `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_PROJECT_DIR` and
+   `CLAUDE_ENV_FILE` unset, the resulting launching environment was captured to
+   `$SPIKE/s1/launching-env-codex.txt` (relative to `$SPIKE`), then a `codex exec
+   --dangerously-bypass-hook-trust` turn (a deliberate bypass, confined to the scratch
+   `CODEX_HOME`) whose prompt — "Reply with the single word ready." — needed no tool call
+   logged exactly one `SessionStart` line. `$SPIKE/attrib.py` (relative to `$SPIKE`), run
+   against that line and the launching-environment file, printed `set by the harness's own
+   hook launch: ['CLAUDE_PLUGIN_DATA', 'CLAUDE_PLUGIN_ROOT', 'CODEX_MANAGED_BY_NPM',
+   'CODEX_MANAGED_PACKAGE_ROOT', 'PLUGIN_DATA', 'PLUGIN_ROOT']` and `inherited from the
+   launching shell:` 21 ambient names — `CLAUDECODE`, `CLAUDE_AGENT_SDK_VERSION`, sixteen
+   `CLAUDE_CODE_*` names, `CLAUDE_EFFORT`, `CLAUDE_PID` and
+   `CLAUDE_PREVIEW_CLASSIFIER_FLOOR` — plus `CODEX_HOME`. `CLAUDE_CONFIG_DIR` appeared in
+   neither list: absent from Codex's own `SessionStart` hook environment when it was
+   genuinely absent upstream too (unset, not merely un-prefixed) — a clean negative control
+   showing Codex's hook launch does not itself carry `CLAUDE_CONFIG_DIR`. `CODEX_HOME` landed
+   in the *inherited* list, exactly as the constraint above predicts: the launching shell
+   could not omit it — every command in this plan needs `CODEX_HOME` pointed at the scratch
+   tree to stay off the owner's real `~/.codex` — so its presence in the hook's environment
+   stays indistinguishable from a plain passthrough. The mirror check, read from the log
+   Task 2 already wrote (`$SPIKE/s1/log-claude.jsonl`, relative to `$SPIKE`) rather than
+   re-measured — that shell exported `CLAUDE_CONFIG_DIR` and never exported `CODEX_HOME` at
+   all — printed `CODEX_HOME in the Claude hook process: False` and `CLAUDE_CONFIG_DIR in the
+   Claude hook process: True`. The `False` result is the discriminating half: `CODEX_HOME`
+   was absent from that shell's entire lineage, not merely unset for this measurement, so its
+   absence from Claude's own hook environment is the same kind of clean negative control,
+   showing Claude's hook launch does not carry `CODEX_HOME` either. The `True` result is the
+   same passthrough the paragraph above already named, now confirmed from the other log
+   rather than asserted from the command line alone. Net result: cross-harness contamination
+   is ruled out for both names, but neither name's status under its *own* owning harness
+   moved from **unattributable** — `CLAUDE_CONFIG_DIR` under Claude and `CODEX_HOME` under
+   Codex remain undecided in this plan, for one identical structural reason: each is the
+   scratch-safety variable for its own harness, so no launch here can ever omit it from that
+   harness's own launching shell, and a name a launch inherits is indistinguishable from a
+   name the launch sets.
+2. **`tool_name` for shell/read/file-creation.** Obtained for both harnesses: Claude on the
+   third attempt (Task 2 of the 2026-09-06 follow-up plan); Codex on Task 3 of the same
+   follow-up plan, below. Claude: `log-claude.jsonl`
+   held four lines this time instead of one — `SessionStart` with `tool_name: null`, then three
+   `PreToolUse` records in the order the prompt's three actions ran: `tool_name: "Bash"` for
+   `echo hello`, `tool_name: "Read"` for reading `README.md`, `tool_name: "Write"` for creating
+   `probe.txt`. Each `PreToolUse` record's `stdin_keys` gained `permission_mode`, `prompt_id`,
+   `tool_input`, `tool_name` and `tool_use_id` relative to the `SessionStart` set, and dropped
+   `source`. `hook_records "$SPIKE/cfg-s1"`
+   corroborated the same three actions from the transcript side independently of the probe's own
+   log: three `hook_success` lines for `cmd='python3 "${CLAUDE_PLUGIN_ROOT}/scripts/probe.py"
+   pre' rc=0`, each immediately followed by a `hook_additional_context` line named
+   `PreToolUse:Bash`, `PreToolUse:Read` and `PreToolUse:Write` in that order — Claude Code's own
+   transcript names the tool in the hook-event identifier, not only in the probe's stdin. What
+   changed since the second attempt's diagnosis was the authentication route, not the
+   `CLAUDE_CONFIG_DIR`-scoped isolation itself: this attempt authenticated through
+   `scripts/with_named_secret.py --key CLAUDE_CODE_OAUTH_TOKEN` (run from the primary checkout,
+   `AIDB=$(dirname "$(git rev-parse --git-common-dir)")`), which execs `claude` with the
+   caller's environment plus that one key, rather than through the interactively-completed
+   `claude auth login` the second attempt's diagnosis called for — no interactive login ran in
+   this attempt. Codex: obtained by Task 3 of the 2026-09-06 follow-up plan. Unlike the
+   original Step 4 attempt, this `codex exec` run printed no usage-limit line and exited 0;
+   `$SPIKE/s1/log-codex.jsonl` (relative to `$SPIKE`) held four lines — `SessionStart` with
+   `tool_name: null`, then three `PreToolUse` records, every one reporting `tool_name:
+   "Bash"`: for `echo hello`, for reading `README.md` (via a shell `cat`, not a distinct read
+   tool), and for the attempt to create `probe.txt` (also via a shell redirect, which the
+   session's `read-only` sandbox then refused with `operation not permitted` — a
+   sandbox-policy outcome after the hook had already fired and completed, not a hook
+   failure). Each `PreToolUse` record's `stdin_keys` gained `tool_input`, `tool_name`,
+   `tool_use_id` and `turn_id` relative to the `SessionStart` set, and dropped `source` —
+   `model` and `permission_mode`, the two keys Codex's `SessionStart` payload carries that
+   Claude's does not (answer 1 above), were present on both Codex events already, so neither
+   was gained at `PreToolUse` time; where Claude's own `PreToolUse` gains `prompt_id`,
+   Codex's gains the differently named `turn_id`. Ordering matched the prompt's three actions
+   one-for-one, corroborated independently by the session's own rollout transcript under
+   `$SPIKE/codex-home/sessions/` (relative to `$SPIKE`): the model issued a single top-level
+   tool call named `exec` (its `CommandExecution` items each named their own source
+   `unified_exec_startup`) scripting three sequential `tools.exec_command()` sub-calls (`echo
+   hello`, `cat README.md`, `printf 'hi' > probe.txt`), whose one reply carried three result
+   chunks — `exit_code` 0, 0, then 1 with output `zsh:1: operation not permitted: probe.txt`
+   for the third — and three separate `S1_CANARY_PreToolUse` developer-role messages appeared
+   in that same transcript, one immediately before each `exec_command`, confirming the hook
+   itself ran and returned successfully all three times, including ahead of the
+   sandbox-denied third command. `$SPIKE/s1/proj/probe.txt` (relative to `$SPIKE`) was
+   unchanged on disk afterward — still the 2-byte `hi` file Task 2's Claude-side run had
+   created, not overwritten — corroborating that the write was refused rather than silently
+   skipped. No `PreToolUse` firing in this run ever reported `Read`, `Write`, `Edit`, or
+   `apply_patch`: this Codex version routed the shell command, the file read, and the
+   file-creation attempt alike through its own `exec` tool, and the hook reported that tool
+   as `Bash` uniformly, regardless of which of the three shell commands it gated.
+   `apply_patch`'s own hook-reported name — the other half of what this answer set out to
+   obtain — was obtained by a later fix-round measurement (Task 3's own fix round 1, 2026-09-06
+   follow-up plan), which exercised the write path this run's read-only sandbox had refused.
+   Re-running `codex exec --dangerously-bypass-hook-trust -s workspace-write` (the bounded
+   choice, not `--dangerously-bypass-approvals-and-sandbox`; `--dangerously-bypass-hook-trust`
+   stayed a deliberate bypass, confined to the scratch `CODEX_HOME`, for the same reason this
+   run already carried it) against the prompt "Edit README.md: change its first line to read
+   'S1 readme edited'. Use a patch, not a shell redirect." printed a header line reading
+   `sandbox: workspace-write [workdir, /tmp, $TMPDIR]` in place of this run's `sandbox:
+   read-only`, exited 0, and produced four lines in `$SPIKE/s1/log-codex-applypatch.jsonl`
+   (relative to `$SPIKE`): `SessionStart` with `tool_name: null`, two `PreToolUse` firings with
+   `tool_name: "Bash"` (a `rg --files` project scan and a `head -n 30 README.md` shell read),
+   then a third `PreToolUse` firing with `tool_name: "apply_patch"` — a value distinct from
+   `Bash`, `Write`, and `Edit` alike. `README.md` (under `$SPIKE/s1/proj`) held `S1 readme
+   edited` afterward, confirming the edit landed rather than being refused the way the
+   shell-redirect attempt above had been. The session's own rollout transcript (a
+   `rollout-<timestamp>-<session-id>.jsonl` file under `$SPIKE/codex-home/sessions`, relative to
+   `$SPIKE`) showed the third action was still, at the top level, a single `custom_tool_call`
+   named `exec` — the same unified-tool name the shell sub-calls used — but this time its
+   `input` field scripted a call to `tools.apply_patch(...)` rather than
+   `tools.exec_command(...)`, and its companion `item_completed` event carried `"type":
+   "FileChange"` where the shell calls' had carried `"type": "CommandExecution"`; the
+   `S1_CANARY_PreToolUse` developer-role canary again preceded this sub-call, confirming the
+   hook fired for the patch operation specifically rather than only for the outer `exec`
+   wrapper. The value Codex gave the `PreToolUse` hook for this action was the literal string
+   `apply_patch`, not `Write` and not `Edit`, contradicting what §10 then carried from Codex's
+   vendor documentation — that a patch-based edit reaches a hook under the aliases `Write` and
+   `Edit`. A run that still had not exercised this path would need the same combination this
+   run used — a sandbox permitting workspace writes together with a prompt steering the model
+   toward a patch-based edit of an existing file — because a read-only sandbox left only the
+   shell-redirect attempt that never reached `apply_patch` at all.
+
+   **What the stdin name did not settle, and the matcher measurement that did (fix wave,
+   2026-09-06).** The fix round above concluded from that one value that a plugin whose matcher
+   is `Edit|Write` would not have fired on this action, and §10 and this record's Summary
+   repeated the conclusion. The fixture could not support it: the probe's own `PreToolUse`
+   matcher was `Bash|Read|Grep|Glob|Edit|Write|apply_patch`, which names `apply_patch` and
+   `Edit` and `Write` alike, so its firing was equally consistent with the matcher having
+   matched `apply_patch` and with Codex testing the vendor-documented aliases while reporting
+   the canonical name on stdin. A second probe plugin separated the two. `mkplugin "$SPIKE/s1b"
+   s1b` built a plugin whose only hook entry was `PreToolUse` with the matcher `"Edit|Write"` —
+   no `apply_patch`, no `Bash` — running a copy of `s1`'s own probe script under the distinct
+   argument `prealias` and with its additional-context canary rewritten to `S1B_CANARY_`, so
+   the two plugins' records could be told apart in one shared log; `s1` was deliberately left
+   installed and enabled in the same scratch `CODEX_HOME`, as a positive control that the
+   action fired hooks at all. `"$CODEX" plugin marketplace add "$SPIKE/s1b"` printed
+   `` `Added marketplace `s1b-marketplace` from $SPIKE/s1b.` `` and `"$CODEX" plugin add
+   s1b@s1b-marketplace` printed
+   `` `Added plugin `s1b` from marketplace `s1b-marketplace`.` `` (both relative to `$SPIKE`);
+   `diff` between the source hooks file and the installed copy under
+   `codex-home/plugins/cache/s1b-marketplace/s1b/0.0.1` exited 0 with no output, so the matcher
+   that ran was the matcher written.
+
+   `codex exec --dangerously-bypass-hook-trust -s workspace-write` — again a deliberate bypass,
+   confined to the scratch `CODEX_HOME` — against the prompt "Edit README.md: change its first
+   line to read 'alias probe edited'. Use a patch, not a shell redirect." printed `sandbox:
+   workspace-write [workdir, /tmp, $TMPDIR]`, ended with `` Updated `README.md` using a patch.
+   Its first line now reads `alias probe edited`. `` above a unified diff of the one-line
+   change, and `$SPIKE/s1b/proj/README.md` (relative to `$SPIKE`) held `alias probe edited`
+   afterward: the edit was real, and it was a patch. The shared log
+   `$SPIKE/s1b/log-alias.jsonl` (relative to `$SPIKE`) held six lines — `['session']
+   SessionStart None`, `['pre'] PreToolUse 'Bash'`, `['pre'] PreToolUse 'Bash'`, `['pre']
+   PreToolUse 'apply_patch'`, **`['prealias'] PreToolUse 'apply_patch'`**, `['pre'] PreToolUse
+   'Bash'`. The `Edit|Write` matcher fired: once, on the action whose stdin `tool_name` was
+   `apply_patch`, and on none of the three `Bash` actions beside it. That negative is what
+   makes the positive readable — Codex did not simply ignore the matcher and run every
+   registered `PreToolUse` entry, because then `prealias` would have appeared four times.
+
+   The session's own rollout transcript corroborated it independently of the probe's log. The
+   newest file under `codex-home/sessions/2026/09/06` (relative to `$SPIKE`, taken by mtime
+   because that directory now holds dozens of files, most of them written by S3's `/import`
+   below) held `S1_CANARY_PreToolUse` four times and `S1B_CANARY_PreToolUse` exactly once, the
+   two adjacent at the ordinal immediately after the `custom_tool_call` whose `input` scripted
+   `tools.apply_patch(...)` and immediately before that call's `"type": "FileChange"`
+   completion; the file carried one `FileChange` item and three `CommandExecution` items in
+   all. So Codex 0.153.4 evaluates a `PreToolUse` matcher against `apply_patch`'s
+   vendor-documented `Write`/`Edit` aliases while handing the hook the canonical name on
+   stdin: the aliases are live for matching and absent from the payload. A matcher meaning to
+   catch a Codex-side file edit may name `Edit`/`Write`; a handler that branches on the stdin
+   `tool_name` must expect `apply_patch`.
+
+   **Restarting the Codex half of this measurement: what it costs (Task 3, 2026-09-06 follow-up
+   plan; corrected in the fix wave).** The scenario this paragraph anticipated did happen. Task
+   11 deleted the entire scratch root on 2026-09-05, and the 2026-09-06 continuation's own Task
+   1 paid the full rebuild before any measurement ran: the disk timestamps show `lib.sh`
+   written at 16:17:32, `npm/node_modules/.bin/codex` at 16:17:37, and the scratch
+   `CODEX_HOME`'s own `log/codex-login.log` and auth file at 16:20:00 and 16:20:01 (all
+   relative to `$SPIKE`) — the helper-library rebuild, the npm reinstall of
+   `@openai/codex@0.153.4`, and the owner's interactive `codex login`, in that order, about an
+   hour before Task 3's Codex run wrote its own artifacts at 17:18. A restart from nothing
+   therefore costs all three, and the login is the owner's to perform. The earlier text here
+   read a freshly logged-in scratch home — `"$CODEX" --version` printing `codex-cli 0.153.4`
+   and `"$CODEX" login status` printing `Logged in using ChatGPT` — as evidence that the root
+   had survived, when what it actually evidenced was that Task 1 had just rebuilt it. What
+   Task 3 itself needed on top of that rebuild was `$SPIKE/codex-home`'s own plugin
+   registration, and nothing else: its tree held an auth file, a
+   remote-plugin-catalog cache, a login log and a tmp directory, but no `s1-marketplace`
+   cache — the marketplace and plugin the original Step 4 had installed were no longer
+   present in this config dir. Task 3's own Step 1 re-added them with the same two commands
+   Step 4 used (`"$CODEX" plugin marketplace add "$SPIKE/s1"`, `"$CODEX" plugin add
+   s1@s1-marketplace`), which was sufficient — no rebuild of `$SPIKE/s1` itself was needed
+   either, since Task 2 had already left it intact. The Claude half no longer needs a
+   restart-from-nothing procedure of its own: Task 2 obtained it above, and the second
+   attempt's expectation that a
+   future Claude re-run would need its own interactively-completed `claude auth login` under a
+   fresh scratch `CLAUDE_CONFIG_DIR` did not hold — the `with_named_secret.py` route above
+   authenticated a freshly built scratch config dir with no browser grant of its own.
 3. **Tolerance of `additionalContextLimit`/`additionalContextChars`.** On `SessionStart`, both
    harnesses tolerated both keys at runtime: Claude's `hook_records` showed `hook_success ...
    rc=0` for the probe command carrying both keys, and Codex's `codex exec` output showed
    `hook: SessionStart` immediately followed by `hook: SessionStart Completed` for the same
-   command. On `PreToolUse`, tolerance was confirmed only at install time for both harnesses —
+   command. On `PreToolUse`, tolerance was confirmed at install time for both harnesses —
    `claude plugin install` and `codex plugin add` both completed successfully with the two
    extra keys present on the `PreToolUse` entry, and each installed copy retained both keys
-   byte-for-byte — but neither harness ever fired that hook in this run (answer 2 above), so
-   runtime tolerance of the keys specifically on `PreToolUse` was not verified.
+   byte-for-byte — and Task 2 (2026-09-06) then confirmed runtime tolerance for Claude
+   specifically: the installed copy at `cfg-s1/plugins/cache/s1-marketplace/s1/0.0.1`
+   (relative to `$SPIKE`) still had `hooks.json` byte-for-byte identical to the source, both
+   extra keys still present on the `PreToolUse` entry, and the
+   three `PreToolUse` firings that entry produced (answer 2 above) each returned `hook_success
+   ... rc=0` — Claude Code accepted and ran a `PreToolUse` hook carrying both unrecognized keys,
+   three times, without error. Task 3 (2026-09-06 follow-up plan) then confirmed runtime
+   tolerance on `PreToolUse` for Codex specifically, from the same three firings answer 2
+   now records above: `codex exec`'s own output showed `hook: PreToolUse` immediately
+   followed by `hook: PreToolUse Completed` three times, with no failure or error text
+   between them, and the probe's own `hookSpecificOutput.additionalContext` canary,
+   `S1_CANARY_PreToolUse`, reached the model in full and unabbreviated (20 characters) all
+   three times. What that settles is that `additionalContext` **is honoured** on Codex's
+   `PreToolUse`; **no cap verdict is obtainable from this run.** A 20-character payload
+   arriving intact rules out only "0 is a literal zero-character cap", and every other
+   reading — the key ignored, the key honoured with 0 meaning unlimited, the key honoured on
+   other events only — predicts the same observation. `0` means *no limit* in this design's
+   own vocabulary (§9.5 sets `additionalContextLimit: 0` to suppress spilling), so a
+   full-length canary is what a **honoured** key predicts. And both keys sit on the same
+   entry, so nothing here is attributable to either one: `additionalContextLimit`, the key
+   §9.5 depends on, gets no cap verdict at all and stays an open question.
 4. **Marketplace file Codex read.** `codex plugin marketplace add "$SPIKE/s1"` succeeded on
    the first try, no refusal, and `codex plugin list` printed the marketplace's file path
    directly: `$SPIKE/s1/.claude-plugin/marketplace.json` — the same file `mkplugin` writes and
@@ -1102,8 +1346,9 @@ The four S1 answers, computed from `log-claude.jsonl` and `log-codex.jsonl` with
 installed into and ran against `$SPIKE/cfg-shared` — the one scratch config dir on this
 machine the owner logged into by hand — instead of the brief's `mkcfg s2` / `$SPIKE/cfg-s2`,
 because a `mkcfg`-created config dir carries no credentials (Findings → S1 and → Environment
-record this `CLAUDE_CONFIG_DIR`-scoped isolation in detail). Step 4 was not run; see its own
-entry below. Because this worktree's Bash guard refused the brief's heredoc-and-`git`-init
+record this `CLAUDE_CONFIG_DIR`-scoped isolation in detail). Step 4, by contrast, ran directly
+against the scratch `CODEX_HOME` rather than any `CLAUDE_CONFIG_DIR`-scoped config dir; see its
+own entry below. Because this worktree's Bash guard refused the brief's heredoc-and-`git`-init
 shape in Step 1 as compound shell it could not prove stayed inside the worktree (the same
 class of refusal Findings → S4 and → S6 record), every step below ran as a `python3` script
 under `.superpowers/sdd/2026-09-05-agent-harness-p0-spikes/` (`task2_step1.py` through
@@ -1157,11 +1402,20 @@ not "Permission denied" against a real, `$SPIKE`-rooted path. The `python3`-wrap
 corroborated this
 independently: its `stdout` was `S2_SCRIPT_RAN`, meaning `python3` opened and ran a real file,
 which is only explained by the same substitution already having happened before the shell
-executed either command. **This transcript recorded both hook entries as substituted before
+executed either command. **This transcript recorded both hook entries as resolved before
 execution; only
-the transcript's own `command` field held the pre-substitution template text, not the
+the transcript's own `command` field held the unresolved template text, not the
 as-executed command.** Reading the `command` field alone, without also reading its
 `stderr`/`stdout`, gave the wrong answer here.
+
+**Which layer resolved it, this measurement does not distinguish** — the same limit design
+§10 states for the Codex side of this question. The hook command runs through `/bin/sh`, and
+S1 measured `CLAUDE_PLUGIN_ROOT` present in the hook process's own environment, so
+`"${CLAUDE_PLUGIN_ROOT}/scripts/noexec.py"` expands to the same absolute path whether the
+harness substituted it before handing the string to the shell or the shell expanded it
+afterwards. What is settled is that the path resolves, which is what a hook entry needs. The
+skill-content half below is not subject to this: skill content is not passed through a
+shell, so a resolved path there is the harness's own substitution and nothing else's.
 
 The executable-bit outcome, as originally measured: `stat -f '%Sp %N'` against
 `$SPIKE/s2/scripts/noexec.py` (the file Step 1 wrote and `chmod -x`'d) printed `-rw-r--r--`,
@@ -1274,81 +1528,262 @@ model ever produced a reply.** `installed_root` (the `plugins/cache` copy) was
 oracle against the value the brief anticipated can see why it differs from the value
 substitution actually produced (Step 2's discovery, above).
 
-**Step 4 — not run.** The Codex account's usage quota was exhausted until 2026-09-22 (Findings
-→ S1 quotes the exact message: "ERROR: You've hit your usage limit. Upgrade to Plus to
-continue using Codex …, or try again at Sep 22nd, 2026 4:44 AM.") and the owner decided not to
-raise it, so no `codex` command was run for this task. This is an unrun measurement, not a
-null result. The brief's exact command block, preserved so a later session can run it once the
-quota resets:
+**Step 4 — run under Codex once the account's quota was raised to a paid tier.** The scratch
+root had since been rebuilt by earlier tasks of the follow-up plan that scheduled this run:
+`$SPIKE/lib.sh`, `$SPIKE/npm/node_modules/.bin/codex` (`codex-cli 0.153.4`), and a logged-in
+`$SPIKE/codex-home` (holding S1's own installed plugin, undisturbed) all already existed. This
+task rebuilt only `$SPIKE/s2` (this section's Step 1 above, reproducing the brief's fixture
+exactly: `noexec.py` non-executable, `hooks.json` unchanged, `SKILL.md`'s body carrying the
+literal `${CLAUDE_PLUGIN_ROOT}`) and ran the brief's Step 4 block verbatim.
 
-```bash
-set -eu; SPIKE="$HOME/.cache/keelline-spikes"; . "$SPIKE/lib.sh"
-CODEX="$SPIKE/npm/node_modules/.bin/codex"; export CODEX_HOME="$SPIKE/codex-home"
-"$CODEX" plugin marketplace add "$SPIKE/s2" && "$CODEX" plugin add s2@s2-marketplace
-(cd "$SPIKE/s2/proj" && "$CODEX" exec --dangerously-bypass-hook-trust "Use the s2-probe skill.") \
-  > "$SPIKE/s2/codex-result.txt" 2>&1; tail -3 "$SPIKE/s2/codex-result.txt"
-```
+`"$CODEX" plugin marketplace add "$SPIKE/s2" && "$CODEX" plugin add s2@s2-marketplace` printed
+`` `Added marketplace `s2-marketplace` from <SPIKE>/s2.` ``, `Installed marketplace root:
+<SPIKE>/s2`, `` `Added plugin `s2` from marketplace `s2-marketplace`.` ``, and `Installed plugin
+root: <SPIKE>/codex-home/plugins/cache/s2-marketplace/s2/0.0.1` (all relative to `$SPIKE`), the
+`&&` chain completing, so both exited 0.
 
-**Warning:** Task 11 deletes the entire scratch root, including `$SPIKE/lib.sh` (which the
-block above sources), `$SPIKE/npm/node_modules/.bin/codex` and its logged-in `$SPIKE/codex-home`,
-`$SPIKE/s2`, and `$SPIKE/cfg-shared`. Before running the Step 4 block above, a later session
-must, in order: rebuild the helper library from Task 0 Step 1; reinstall
-`@openai/codex@0.153.4` into a fresh scratch npm prefix and complete `codex login` again
-inside a fresh scratch `CODEX_HOME`, per Task 1 Step 1; and re-run this task's Step 1
-(rebuilding `$SPIKE/s2`, including the non-executable `noexec.py` and the `s2-probe` skill).
-None of the helper library, the Codex login, the plugin, nor its authenticated config dir will
-still exist by then.
+`(cd "$SPIKE/s2/proj" && "$CODEX" exec --dangerously-bypass-hook-trust "Use the s2-probe
+skill.") > "$SPIKE/s2/codex-result.txt" 2>&1` exited 0 (`--dangerously-bypass-hook-trust` was
+again a deliberate bypass, confined to the scratch `CODEX_HOME`, for the same reason S1's own
+Step 4 named it). `tail -20 "$SPIKE/s2/codex-result.txt"`
+printed, past the hook lines (out of this task's scope — Findings → S1 already records Codex's
+own hook-substitution behavior), an `exec` record reading `/bin/zsh -lc 'cat
+<SPIKE>/codex-home/plugins/cache/s2-marketplace/s2/0.0.1/skills/probe/SKILL.md' in
+<SPIKE>/s2/proj`, then on the next line `succeeded in 0ms:`, followed by the file's own body
+verbatim — "---\nname: s2-probe\ndescription: Use when asked for the S2 probe path. Prints
+where the plugin lives.\n---\nWhen invoked, reply with exactly one line, the following text
+with nothing added:\nROOT=${CLAUDE_PLUGIN_ROOT}\n" — then the model's own final answer,
+`ROOT=${CLAUDE_PLUGIN_ROOT}`, and the CLI's own trailing repeat of that same line. `grep -n
+'CLAUDE_PLUGIN_ROOT\|ROOT=' "$SPIKE/s2/codex-result.txt"` printed three matches, every one
+`ROOT=${CLAUDE_PLUGIN_ROOT}` — the skill body inside the `cat` output, the model's reply, and
+the CLI's trailing repeat — never a resolved path.
+
+**Step 3's disk oracle agreed.** `find "$SPIKE/codex-home" -path '*s2*' -name 'SKILL.md' -exec
+grep -Hn 'ROOT=' {} \;` found one installed copy and printed
+`$SPIKE/codex-home/plugins/cache/s2-marketplace/s2/0.0.1/skills/probe/SKILL.md:6:ROOT=${CLAUDE_PLUGIN_ROOT}`
+— the literal placeholder, unresolved, in the very copy the `exec` record above had just read
+from. `ls "$SPIKE/codex-home/sessions" | tail -3` printed `2026`, and `grep -rl
+'CLAUDE_PLUGIN_ROOT' "$SPIKE/codex-home/sessions"` matched two rollout transcripts, both under
+`$SPIKE/codex-home/sessions/2026/09/06/`:
+`rollout-2026-09-06T17-53-00-01a0776c-…jsonl` and
+`rollout-2026-09-06T18-07-30-01a07779-…jsonl` (session ids elided past their first segment;
+the two differ there, which is all the argument below uses them for). `head -c 400
+"$SPIKE/s2/codex-result.txt"` printed this run's own header, ending in a `session id:` whose
+first segment was `01a07779` — the 18:07 file's own session id, not the 17:53 file's,
+so the transcript this run created was the 18:07 file. The 17:53 file's own timestamp preceded
+it by fourteen minutes; it was left by an interrupted earlier attempt at this same Step 4 that
+this task did not run — the same attempt whose incomplete, uncommitted rewrite of this
+subsection this task's own report recorded finding already in the working tree before any
+command in this task ran. A `python3` comparison that parsed both files' JSON lines by each
+line's own `ordinal` field and diffed the two at the four ordinals the next paragraph cites
+found the substantive text identical at every one of them — ordinal 2's skill-listing entry
+(`s2:s2-probe: Use when asked for the S2 probe path. Prints where the plugin lives. (file:
+r8/s2/0.0.1/skills/probe/SKILL.md)`), ordinal 13's issued `cat` command, ordinal 16's returned
+file body (ending `ROOT=${CLAUDE_PLUGIN_ROOT}`), and ordinal 19's final reply
+(`ROOT=${CLAUDE_PLUGIN_ROOT}`) all matched character for character between the two files — and
+the two files differed only in session/message/turn/call identifiers, wall-clock timestamps,
+and per-run wall-time figures. On that basis the 17:53 file corroborates rather than
+contradicts the 18:07 file at every ordinal this record relies on; the paragraph below reads
+the 18:07 file, the one this run actually created.
+
+**Reading that transcript directly — a stronger oracle than the reply, per this task's
+instructions.** Its `custom_tool_call` record (ordinal 13) showed the model itself issuing the
+read, `cat` against the installed-copy path quoted above: an absolute, already-resolved path,
+but one the harness had handed the model as file *location* metadata, not as skill *content*.
+An earlier developer-role record in the same transcript (ordinal 2, a `<skills_instructions>`
+block) listed available skills by name, description, and a short locator resolved through a
+"skill roots table" (one root, given the short name `r8`, resolved to the plugins-cache
+marketplace directory quoted above), with the probe skill's own entry reading (quoted exactly):
+"s2:s2-probe: Use when asked for the S2 probe path. Prints where the plugin lives. (file:
+r8/s2/0.0.1/skills/probe/SKILL.md)" — name and description only, no skill body, and no
+`${CLAUDE_PLUGIN_ROOT}` token anywhere in that listing, because the listing never carries the
+body. The body only reached the model when the model chose to read the file itself: the
+transcript's `item_completed`/`CommandExecution` record (ordinal 15) and its paired
+`custom_tool_call_output` (ordinal 16) both carried the `cat` output verbatim — every one of
+`stdout`, `aggregated_output`, and `formatted_output` ending "...When invoked, reply with
+exactly one line, the following text with nothing added:\nROOT=${CLAUDE_PLUGIN_ROOT}\n" — the
+literal, unsubstituted placeholder, character for character, in the harness's own record of
+what it handed the model as tool output. The model's final reply (ordinal 19),
+`ROOT=${CLAUDE_PLUGIN_ROOT}`, merely echoed that.
+
+**Conclusion.** Codex version 0.153.4 did not substitute `${CLAUDE_PLUGIN_ROOT}` in skill
+content: the literal placeholder survived unchanged from the source file, through the
+installed `plugins/cache` copy, through the tool-call output the transcript recorded as handed
+to the model, into the model's own reply — the strongest oracle available (the transcript's own
+tool-output record) agreed with the weakest (the reply), so this is not the inconclusive case.
+The mechanism differed structurally from the Claude arm recorded above, where the skill's own
+rendered tool input already carried the resolved path with no placeholder: Claude's transcript
+showed the skill's body rendered into context with substitution already applied. This run's
+Codex transcript never showed the skill's body rendered into context at all — the only context
+injection this transcript held for the skill was name, description, and a resolved file
+locator, and the body reached the model solely because the model chose to read it with an
+ordinary shell tool call, which returned the file's on-disk bytes unprocessed. Because nothing
+in this transcript templated the body, `${CLAUDE_PLUGIN_ROOT}` inside it was never substituted.
+**This confirms §10's assertion — no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content in
+Codex — for this Codex version, on this fixture.**
 
 ### S3 — Codex `/import` scope
 
-**Step 1 — completed.** Before this closing task started, the controller ran a Python script
-mirroring Task 3 Step 1 (`s3_setup.py`, a gitignored scratch file kept alongside this plan's
-task briefs, not part of this commit — the same workaround Findings → S4 records for this
-worktree's Bash guard). It created `$SPIKE/cfg-s3`, initialized a git repository at
-`$SPIKE/s3/proj`, and ran `claude -p --model haiku --output-format json "Reply with the
-single word ready."` there with `CLAUDE_CONFIG_DIR="$SPIKE/cfg-s3"`. That turn itself
-errored — this ran during the same window Findings → S1 records this machine's `claude` CLI
-being unable to complete any headless turn — but `$SPIKE/cfg-s3/projects/<slug>/` was created
-anyway: a failed `claude -p` invocation still creates the project slug directory, so Step 1's
-seeding did not depend on a working turn. The slug was read from what Claude Code created,
-not derived, matching the brief's stated reason (the real slug maps every non-alphanumeric
-character and resolves `/tmp` to `/private/tmp` first).
+**Step 1 — completed.** A session dispatched to complete this record re-ran the Task 3 brief's
+Step 1 verbatim, superseding a 2026-09-05 attempt whose seeding turn itself failed and whose
+Step 2/3 went unrun because the 2026-09-05 quota was exhausted and the scratch root was due to
+vanish. It created `$SPIKE/cfg-s3` via `mkcfg s3`,
+initialized a git repository at `$SPIKE/s3/proj`, and ran `claude -p --model haiku
+--output-format json "Reply with the single word ready."` there with
+`CLAUDE_CONFIG_DIR="$SPIKE/cfg-s3"`. Unlike the 2026-09-05 attempt, this turn itself succeeded
+(`is_error":false` and `"result":"ready"` in the saved JSON), but either outcome satisfies
+Step 1: a failed `claude -p` invocation still creates the project slug directory, so the
+seeding never depended on a working turn. The slug was read from what Claude Code created, not
+derived, matching the brief's stated reason (the real slug maps every non-alphanumeric
+character and resolves `/tmp` to `/private/tmp` first). Before seeding, `grep -rl 'S3_CANARY'
+"$SPIKE/codex-home"` found no matches anywhere under the scratch Codex home — genuinely clean
+at that moment, though it used the whole-home form of the search that Step 3 below shows can
+return a false positive from session-transcript contamination, so this run by itself does not
+establish a baseline the post-import search can trust.
 
 With the slug directory in hand, the controller seeded `$SPIKE/cfg-s3/projects/<slug>/memory/`
 with two files: `MEMORY.md`, holding one index line pointing at `s3-probe.md`, and
 `s3-probe.md`, a note whose frontmatter `description` carries `S3_CANARY_NOTE` and whose body
-is `S3_CANARY_BODY`.
+is `S3_CANARY_BODY`. This baseline does not need redoing if the scratch root survives.
 
-**Step 2 and Step 3 — not run.** Reason: the Codex account's usage quota was exhausted until
-2026-09-22 (Findings → S1 quotes the exact message: "ERROR: You've hit your usage limit.
-Upgrade to Plus to continue using Codex …, or try again at Sep 22nd, 2026 4:44 AM.") and the
-owner decided not to raise it. Step 2 additionally requires the owner to type `/import`
-interactively in the Codex TUI, which nothing non-interactive can do on the owner's behalf.
-Both steps remain undone — not a null result, an unrun measurement.
+**Step 2 — ran, on 2026-09-06 at 19:39, and read a different configuration directory than the
+one this fixture seeded.** An earlier revision of this entry recorded Steps 2 and 3 as an unrun
+measurement. That was wrong: the owner performed the interactive `/import` after that revision
+was written, and the fix wave of the 2026-09-06 continuation verified it from disk. The
+evidence, each item read back with its own command:
 
-**To complete later**, once the quota resets: re-seed Step 1 from the Task 3 brief (see the
-warning below), then start the TUI in the seeded project — `cd "$SPIKE/s3/proj" &&
-CLAUDE_CONFIG_DIR="$SPIKE/cfg-s3" CODEX_HOME="$SPIKE/codex-home"
-"$SPIKE/npm/node_modules/.bin/codex"` — then, with the owner present, type `/import`, choose
-Claude Code, and exit. Then search both sides for the canary: `grep -rl 'S3_CANARY'
-"$SPIKE/codex-home"` and the same `grep -rl 'S3_CANARY'` over `$SPIKE/s3/proj`.
+- `$SPIKE/codex-home/external_agent_session_imports.json` (relative to `$SPIKE`) exists, with
+  50 entries under its `records` key and none under `detected_connector_records`. Every one of
+  the 50 carries the same `imported_at` epoch second, which converts to 2026-09-06 19:39:09.
+  Every one's `source_path` ends in `.jsonl` and names a Claude Code session transcript under
+  the **owner's default Claude Code configuration directory**, spread over eight project
+  slugs — this repository, six of its worktrees, and the directory containing it. None names
+  the seeded scratch directory: a check for
+  the substring `cfg-s3` printed `False`, as did a check for `keelline-spikes`, and no record's
+  path contained a `/memory/` segment at all.
+- `$SPIKE/codex-home/AGENTS.md` (relative to `$SPIKE`) was written at 19:39:08, one second
+  before the ledger. Its 513 bytes are the owner's **global Claude Code instructions file**,
+  reproduced with the configuration-directory segment of every path inside it rewritten from
+  Claude Code's to Codex's.
+- `codex-home/sessions/2026/09/06` (relative to `$SPIKE`) held 50 rollout files stamped
+  19:39, alongside the handful the spike series' own `codex exec` runs had written at other
+  minutes — one imported rollout per ledger record.
+- The scratch Codex home's marketplace and plugin configuration was rewritten in the same
+  minute. Before the fix wave ran any Codex command of its own, `ls -la` on
+  `codex-home/.tmp/marketplaces` (relative to `$SPIKE`) printed two directories,
+  `anthropic-agent-skills` and `claude-plugins-official`, stamped 19:39 at the time; a later
+  Codex run in this series has since re-materialised them, re-stamping them 19:55, so that
+  timestamp is no longer evidence of when they were created. What ties them to the import
+  rather than to any task in this spike series is that the scratch Codex home's own
+  `config.toml` carried git-sourced marketplace entries for both plus sixteen enabled
+  `plugins."<name>@claude-plugins-official"` entries and one `mcp_servers` entry — none of
+  which any task in this spike series ever added. The import carried the owner's plugin,
+  marketplace and MCP configuration across as well as their transcripts.
 
-**Warning:** Task 11 deletes the entire scratch root, including `$SPIKE/lib.sh` (which the
-Task 3 brief's own Step 1 sources), `$SPIKE/npm/node_modules/.bin/codex` and its logged-in
-`$SPIKE/codex-home`, `$SPIKE/cfg-s3`, and its seeded memory store. Before re-running Step 2
-and Step 3, a later session must, in order: rebuild the helper library from Task 0 Step 1;
-reinstall `@openai/codex@0.153.4` into a fresh scratch npm prefix and complete `codex login`
-again inside a fresh scratch `CODEX_HOME`, per Task 1 Step 1; and re-run Step 1's seeding from
-the Task 3 brief. None of the helper library, the Codex CLI and its login, the config dir, nor
-its canary notes will still exist by then. Step 1's own `claude -p` seeding turn tolerates
-failure — a failed turn still creates the project slug directory, as this task's own attempt
-above showed — so re-seeding does not itself require a freshly authenticated scratch
-`CLAUDE_CONFIG_DIR`; only a Claude-side turn elsewhere in this plan needs the interactive
-`claude auth login` the `### Environment` subsection records.
+**Step 3 — what the canary searches show, and why the published oracle was wrong.** The oracle
+this record previously published — `grep -rl 'S3_CANARY' "$SPIKE/codex-home"` — now **hits**,
+and the hit is a **false positive**. It matches exactly one file (30 matching lines in it), an
+*imported Claude Code session transcript* under `codex-home/sessions/2026/09/06`, and the
+occurrences are inside assistant and agent messages of an earlier session about this very
+plan, quoting the seeding heredoc of Task 3 Step 1 verbatim — `description: S3_CANARY_NOTE …`
+and `S3_CANARY_BODY` inside a fenced block. It is contamination by self-reference: the canary
+travelled as the *text of a conversation about the canary*, not as an imported memory note.
+Any oracle that searches the whole Codex home is unusable for this question the moment a
+transcript discussing the fixture is importable, which for a fixture built inside this
+repository is always.
 
-**Design consequence:** open, not answered. §2 D5 and §6.4 keep the question of whether
-Codex's `/import` carries Claude memory notes at all; neither section gains an answer from
-this run.
+The replacement oracle excludes the transcript store and searches what the question is
+actually about — whether the note reached Codex's own memory and instruction state:
+
+```bash
+grep -rl 'S3_CANARY' "$SPIKE/codex-home" --exclude-dir=sessions
+strings "$SPIKE/codex-home/memories_1.sqlite" | grep -c 'S3_CANARY'
+```
+
+Run in the fix wave, the first printed nothing and exited 1. The second printed `0`, as did
+the same count over `goals_1.sqlite`, `state_5.sqlite`, `thread_history_1.sqlite`,
+`queue_1.sqlite` and `logs_2.sqlite`, and over each of their `-wal` companions: no canary
+string anywhere in Codex's own databases. That is a statement about the canary and not about
+memory as such: the oracle searches for `S3_CANARY` alone, and a note the import did carry
+would have come from the default configuration directory and would not contain that string, so
+these counts cannot separate "no memory was imported" from "memory was imported that the
+canary search could never see". A re-run of `grep -rl 'S3_CANARY' "$SPIKE/cfg-s3"`
+still found the seeded note, so the canary had not been moved or consumed. Whichever form the
+question is asked in next, the baseline must be re-established immediately before the
+interactive step and with the sessions directory excluded, because the pre-import baseline
+this record established used the whole-home form and would not have caught the contamination
+either.
+
+**What this settles, and what it does not.** The measurement supports exactly one sentence: no
+seeded canary was found in the memory and instruction state this run searched, after an import
+that read a different Claude Code configuration directory than the one the fixture seeded.
+It does **not** support "Codex's `/import` does not carry Claude memory notes". The seeded canary was never in the import's scope, so the import
+had no opportunity to carry it, and its absence is uninformative about the design question.
+What the run does establish positively is the import's *shape* on this version: session
+transcripts, the global instructions file, and marketplace/plugin/MCP configuration all
+travelled. Whether a memory note travelled beside them is not established either way: the only
+search this run made was for the canary, which the import never had in scope, so its absence
+here is as uninformative as it is for the design question above. Answering it needs an oracle
+aimed at content the import could actually have carried — a before-and-after comparison of
+Codex's own memory state across an import — not a search for a string only the unseen
+configuration directory held.
+
+Two explanations of the scope fit the evidence equally and this run cannot separate them: the
+importer ignores `CLAUDE_CONFIG_DIR` and always reads the default directory, or the owner ran
+the handed command without that prefix. Either way the fixture as designed cannot answer S3
+until the first is settled, because the fixture's whole method is seeding a canary into a
+non-default configuration directory. A clean run needs, in order: a way to point the importer
+at a non-default Claude Code configuration directory — if `CLAUDE_CONFIG_DIR` turns out not to
+be honoured, the fixture needs redesigning around whatever is, or around seeding the default
+directory, which is the owner's real one and therefore a separate consent question; the
+sessions-excluded baseline above taken immediately before the TUI step; and the same two
+searches afterward.
+
+The command to hand the owner, unchanged:
+
+```bash
+cd "$SPIKE/s3/proj" && \
+  CLAUDE_CONFIG_DIR="$SPIKE/cfg-s3" \
+  CODEX_HOME="$SPIKE/codex-home" \
+  "$SPIKE/npm/node_modules/.bin/codex"
+```
+
+Then, inside the TUI: start it, type `/import`, choose Claude Code as the source, and exit.
+
+**Privacy consequence of the run.** The scratch Codex home now holds 50 of the owner's real
+Claude Code session transcripts, their global instructions file, and their plugin, marketplace
+and MCP configuration — imported into a throwaway directory built to be deleted. This raises
+rather than lowers the value of performing the deferred scratch-root deletion recorded in the
+2026-09-06 continuation's own Findings → Task 8 as soon as S3 is closed or abandoned. It also
+had a second-order effect inside the fix wave: the imported plugin configuration caused the
+fix wave's own `codex exec` run to materialize the owner's plugin set into
+`codex-home/plugins/cache` (relative to `$SPIKE`) and to attempt the configured MCP
+connections, two of which printed authentication failures in that run's output.
+
+**Known hazard, now bounded.** The shipped Codex binary carries a refusal message — "Import
+from other apps is unavailable while Codex is connected to the local app-server daemon. Stop
+the daemon, restart Codex, and run /import." — for when `/import` runs while connected to a
+local app-server daemon. The 2026-09-06 re-seeding session found such a daemon running on this
+machine, belonging to the ChatGPT desktop application and using an Electron `--user-data-dir`
+under the owner's own application-support directory, not a `CODEX_HOME`. Whether the refusal
+check is scoped to the active `CODEX_HOME` or global stayed undetermined then; the import has
+since completed against the scratch `CODEX_HOME` regardless, so the hazard did not block this
+run and is no longer the first thing to check.
+
+**Rebuild required if the scratch root is gone.** The 2026-09-05 Task 11 already deleted one
+scratch root, which the 2026-09-06 continuation then rebuilt; the deletion still pending is
+that continuation's own Task 8 Step 4, deliberately deferred while S3 is open. Whenever it
+runs it takes `$SPIKE/lib.sh`, `$SPIKE/npm/node_modules/.bin/codex` and its logged-in
+`$SPIKE/codex-home`, and `$SPIKE/cfg-s3` with its seeded memory store. If S3 is attempted
+after that, a later session must first, in order: rebuild the helper library from Task 0
+Step 1; reinstall `@openai/codex@0.153.4` into a fresh scratch npm prefix and complete `codex
+login` again inside a fresh scratch `CODEX_HOME`, per the continuation's Task 1 Step 1; and
+re-run Step 1's seeding from the Task 3 brief (`mkcfg`, the project `git init`, the seeding
+turn, and the two memory files above) before Step 2 can be attempted again.
+
+**Design consequence:** still open. §2 D5 and §6.4 keep the question of whether Codex's
+`/import` carries Claude memory notes; a bounded import that never read the seeded store
+answers it neither way, so neither section gains a sentence from this run.
 
 ### S4 — `validate --strict` per manifest path
 
@@ -1428,9 +1863,11 @@ marketplace manifest; "codex plugin.json" is each tree's own .codex-plugin plugi
   both flag settings and printed only `Validating marketplace manifest:
   $SPIKE/s4-broken/.claude-plugin/marketplace.json` followed by `✔ Validation passed`.
   Neither invocation's output mentioned the plugin manifest, the skill, the agent, or the
-  Codex manifest at all, so four of the sixteen invocations against the broken tree — both
+  Codex manifest at all, so four of the **eight** invocations against the broken tree — both
   flag settings of the directory target and both flag settings of the marketplace target —
-  reported none of the three planted defects, `--strict` included.
+  reported none of the three planted defects, `--strict` included. (Sixteen is the total
+  across both trees; half of the broken tree's invocations discriminate nothing, which is
+  the fraction `foundation`'s CI invocation choice is argued from.)
 
 **Every warning `$SPIKE/s4` (the valid tree) produced under `--strict`.** Three of the four
 `--strict` invocations against the valid tree — directory, plugin.json, and
@@ -1883,8 +2320,8 @@ All eight arms printed `VERIFY installed hooks.json == source just written: True
 first attempt; none needed the forced-retry branch. This freshness check was corroborated
 empirically by every arm's own turn: every persisted file and every `hook_success`/
 `hook_additional_context` record recovered below, across all eight arms, carried only that
-arm's own canary tag and never a previous arm's, including for the three arms (control,
-two-entries and one-big — the "Step 1 & 2" discrimination arms below) run first to validate
+arm's own canary tag and never a previous arm's, including for the three arms (control, and
+the two-entries and one-big discrimination arms of "Step 1 & 2" below) run first to validate
 this mechanism before the remaining five margin arms consumed any turn budget.
 
 **Step 1 & 2 — the discrimination arms.** Per arm: the `stderr` size line `big.py` printed,
@@ -1923,10 +2360,13 @@ arm's canary prefix and no other arm's text.
 10000 characters in one entry did not spill and 10001 characters in one entry did; the
 boundary this task measured sits exactly at 10,000, exclusive.
 
-**Turns spent.** Eight `claude -p --model haiku` turns, one per arm (control, one-big and
-two-entries, run in that order to validate the install-freshness mechanism on the two arms
-expected to disagree before spending budget on the rest; then the five margin arms), against
-a budget of up to nine. The ninth, spare turn was not used, and no arm needed a second turn.
+**Turns spent.** Eight `claude -p --model haiku` turns, one per arm (control first, then the
+two-entries and one-big arms, run before the rest to validate the install-freshness mechanism
+on the two arms expected to disagree; then the five margin arms), against a declared budget of
+up to nine. The ninth, spare turn was not used, and no arm needed a second turn. Two earlier
+sentences in this entry gave the relative order of `two-entries` and `one-big` differently;
+the artifacts that would settle it were deleted with the scratch root, and no result here
+depends on it — the freshness check ran and passed on every arm independently.
 
 **Verdict.** The two-entries arm added no persisted file and the one-big arm added one — the
 brief's own discriminator between the two branches. Had the cap been evaluated over the whole
@@ -2263,13 +2703,13 @@ fail independently for the scenario to mean anything:
 
 | Spike | Answer | Feeds | Design consequence |
 |---|---|---|---|
-| S1 | Codex's own hook launch set harness-specific env names (`CODEX_MANAGED_BY_NPM`, `CODEX_MANAGED_PACKAGE_ROOT`, `PLUGIN_ROOT`, `PLUGIN_DATA` on the Codex side; `CLAUDE_ENV_FILE`, `CLAUDE_PROJECT_DIR` on the Claude side) — but Codex's own hook launch also set `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` alongside its bare `PLUGIN_ROOT`/`PLUGIN_DATA`, so a `detect_harness()` keyed on `CLAUDE_PLUGIN_ROOT` alone would misidentify Codex as Claude Code — and Codex read the same .claude-plugin/marketplace.json file Claude read. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` are unattributable in this run: both were set as command-line prefixes to the harness invocation itself, which the parent-shell ambient baseline this run subtracted can never contain, so this measurement cannot tell "harness-set" apart from "survived from the launching command line" for either one — a `detect_harness()` candidate needs a separating re-measurement first. Both harnesses tolerated the two unrecognized hook keys at install time and on `SessionStart`. On stdin, Codex's `SessionStart` payload carried `model` and `permission_mode` and Claude's did not — this run's actual answer to §14's "stdin field that identifies Codex." Neither harness's `PreToolUse` hook ever fired in this run — Claude's turns failed on `CLAUDE_CONFIG_DIR`-scoped credential isolation and Codex's turn failed on an exhausted account quota — so the `tool_name` comparison and PreToolUse-time key tolerance were never obtained. | §10, §5.1 | Confirms §10 rather than correcting §5.3: §10 already lists `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}` as shared across harnesses, and §5.1 already gives the same .claude-plugin/marketplace.json file to both — this run's own measurement backs both directly (no second marketplace file needed). `detect_harness()` is this plan's own provisional term, not spec vocabulary, and §5.3 names no harness-detection mechanism to correct; whatever adopts `detect_harness()` must not key on `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA` alone, since Codex sets those too, and must not key on `CODEX_HOME` or `CLAUDE_CONFIG_DIR` either without the separating re-measurement above — the stdin `model`/`permission_mode` pair is the discriminator this run actually established. The `tool_name` mapping and PreToolUse key tolerance stayed open — not obtained, for either harness, in this run. |
-| S2 | `${CLAUDE_PLUGIN_ROOT}` substitution happened in both the hook command and the skill content, but the transcript's own `command` field retained the unsubstituted template text — only the substituted commands' stderr/stdout and the skill's rendered tool input proved substitution occurred. Substitution resolved to the marketplace's source directory, not the installed `plugins/cache` copy `installed_root` names. The only mode this task originally put through an install was 644 → 644, which could not distinguish "install preserves modes" from "install normalises everything to 644" — spec §14's actual question; a follow-up measurement (finding A2(b), a fresh 755-and-644 pair through a fresh install, logged under `.superpowers/sdd/`) closed it: the installed `plugins/cache` copy preserved 755 and 644 respectively, matching the source, for this directory-sourced marketplace. Independently of either mode question, a hook script lacking the executable bit failed direct invocation (exit 126, permission denied) but ran cleanly when invoked through `python3`. The Codex arm (Step 4) was not run — the account's quota was exhausted and the owner declined to raise it. | §5.1, §2 D11 | Amend §2 D11 / §5.1: `${CLAUDE_PLUGIN_ROOT}` resolved to the marketplace's source directory rather than the installed cache copy on this (directory-sourced) configuration, so the design must not assume the installed cache path is what hooks and skills see at runtime, and a transcript's own `command` field is not sufficient proof of substitution without also reading stderr/stdout. A directory-sourced marketplace install preserves the executable bit into the `plugins/cache` copy rather than normalising it (A2(b)); git-URL-sourced marketplace mode-preservation and Codex's own substitution behavior both stayed untested. |
-| S3 | Not run beyond Step 1 (seeding a Claude memory canary) — the Codex account's quota was exhausted and the owner declined to raise it; the interactive `/import` step and the canary comparison never happened. | §2 D5, §6.4 | Open — §2 D5 and §6.4 kept the question of whether Codex's `/import` carries Claude memory notes at all; this run gave neither section an answer. |
+| S1 | Codex's own hook launch set `CODEX_MANAGED_BY_NPM`, `CODEX_MANAGED_PACKAGE_ROOT`, `PLUGIN_ROOT` and `PLUGIN_DATA`; Claude's set `CLAUDE_ENV_FILE` and `CLAUDE_PROJECT_DIR`. Codex's launch also set `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` alongside its own bare pair, so a `detect_harness()` keyed on `CLAUDE_PLUGIN_ROOT` alone would misidentify Codex as Claude Code — and Codex read the same .claude-plugin/marketplace.json file Claude read. A dedicated attribution measurement — the Claude-named variables genuinely unset upstream and Codex's hook environment diffed against the launching one rather than against the parent shell, with the mirror direction read from the Claude arm's own log, whose shell had never exported `CODEX_HOME` at all — replaced the earlier non-answer for the two remaining names: `CLAUDE_CONFIG_DIR` never reached Codex's hook process and `CODEX_HOME` never reached Claude's, ruling out cross-harness contamination for both. Each nevertheless stayed undecided under its **own** harness, for one structural reason: each is that harness's scratch-safety variable, so no launch here can omit it from that harness's own launching shell, and a name a launch inherits is indistinguishable from one it sets. On stdin, Codex's `SessionStart` payload carried `model` and `permission_mode` and Claude's did not — this run's answer to §14's "stdin field that identifies Codex." `tool_name` was obtained on both sides: Claude reported `Bash`, `Read` and `Write` for the three prompted actions, naming the tool in its own hook-event identifier as well as on stdin, while Codex routed the shell command, the file read and the file-creation attempt alike through its single `exec` tool and reported all three as `Bash`; a follow-up round under `-s workspace-write` with a patch-steering prompt produced a fourth value, the literal `apply_patch` — not `Write`, not `Edit` — and a further round, with a second plugin whose matcher was exactly `Edit|Write`, showed that matcher firing on that same action and on none of the three `Bash` actions beside it, so the vendor-documented aliases govern matching while the payload carries only the canonical name. Both harnesses tolerated the two unrecognized hook keys at install time, on `SessionStart` and on `PreToolUse`, and Codex's 20-character additional-context canary reached the model unabbreviated on all three `PreToolUse` firings — which confirms `additionalContext` is honoured on Codex's `PreToolUse` and yields **no cap verdict** for either key: a 20-character payload cannot discriminate an ignored key from one honoured with `0` meaning unlimited, and both keys sat on the same entry. | §10, §5.1 | Confirms §10 and §5.1 on the shared names: §10 already lists `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}` as shared across harnesses and §5.1 already gives the same .claude-plugin/marketplace.json file to both, and this run's own measurement backs both directly (no second marketplace file needed). `detect_harness()` is this plan's own provisional term, not spec vocabulary, and §5.3 names no harness-detection mechanism to correct; whatever adopts it must not key on `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, since Codex sets both, and must not key on `CODEX_HOME` or `CLAUDE_CONFIG_DIR` either — contamination is ruled out for those two, but neither can be shown to be harness-set under its own harness, and that gap is structural rather than a re-measurement anyone can go and take. The stdin `model`/`permission_mode` pair is the discriminator this run established. **Correct §10 on `apply_patch`, twice over:** §10 originally claimed, from vendor documentation, that the action carries the aliases `Write` and `Edit`, and Codex 0.153.4 instead handed the `PreToolUse` hook the literal string `apply_patch`; the first correction then over-read that one value as meaning an `Edit|Write` matcher does not fire, which the fixture (matcher `Bash|Read|Grep|Glob|Edit|Write|apply_patch`) could not discriminate. A second plugin matching exactly `Edit|Write` fired on the patch edit and on none of the three `Bash` actions beside it, so the aliases are live for matching and absent from the payload: `hooks-core` may write `Edit|Write` for a Codex file edit, but a handler branching on the stdin `tool_name` must expect `apply_patch`, plus the `Bash` Codex reports uniformly for shell reads and writes. The two extra hook keys are safe to declare on both events for both harnesses, but neither key has a measured cap behaviour: the canary was 20 characters, which cannot separate an ignored key from one honoured with `0` meaning unlimited, so nothing may rely on either to bound what reaches the model, and §9.5's dependence on `additionalContextLimit: 0` stays unmeasured. |
+| S2 | On the Claude arm, `${CLAUDE_PLUGIN_ROOT}` substitution happened in both the hook command and the skill content, but the transcript's own `command` field retained the unsubstituted template text — only the substituted commands' stderr/stdout and the skill's rendered tool input proved substitution occurred. Substitution resolved to the marketplace's source directory, not the installed `plugins/cache` copy `installed_root` names. The only mode this task originally put through an install was 644 → 644, which could not distinguish "install preserves modes" from "install normalises everything to 644" — spec §14's actual question; a follow-up measurement (finding A2(b), a fresh 755-and-644 pair through a fresh install, logged under `.superpowers/sdd/`) closed it: the installed `plugins/cache` copy preserved 755 and 644 respectively, matching the source, for this directory-sourced marketplace. Independently of either mode question, a hook script lacking the executable bit failed direct invocation (exit 126, permission denied) but ran cleanly when invoked through `python3`. The Codex arm (Step 4) then ran on a paid tier: marketplace add and plugin add both exited 0, and Codex 0.153.4 did **not** substitute `${CLAUDE_PLUGIN_ROOT}` in skill content — the literal placeholder survived from the source file, through the installed `plugins/cache` copy, through the tool output the rollout transcript recorded as handed to the model, into the model's own reply. The mechanism differed structurally from Claude's: Codex never rendered the skill body into context at all, injecting only the skill's name, description and a resolved file locator, so the body reached the model solely as the unprocessed bytes of a shell `cat` the model itself chose to issue. Codex's hook *commands* did resolve the placeholder, though: Findings → S1 records Codex's own hook launch setting `CLAUDE_PLUGIN_ROOT`, which is why the probe command ran at all. | §5.1, §2 D11 | Amend §2 D11 / §5.1: `${CLAUDE_PLUGIN_ROOT}` resolved to the marketplace's source directory rather than the installed cache copy on this (directory-sourced) configuration, so the design must not assume the installed cache path is what hooks and skills see at runtime, and a transcript's own `command` field is not sufficient proof of substitution without also reading stderr/stdout. A directory-sourced marketplace install preserves the executable bit into the `plugins/cache` copy rather than normalising it (A2(b)). Confirms §10 on skill content, and sharpens what that costs: a shared skill body must not carry `${CLAUDE_PLUGIN_ROOT}` and expect the harness to resolve it, because Codex ships the placeholder through untouched and — unlike Claude, which renders the body into context already substituted — never templates the body at all, so a Codex skill needing its own root has to obtain it another way. git-URL-sourced marketplace mode-preservation and `${CLAUDE_PLUGIN_ROOT}` resolution both stayed untested. |
+| S3 | Step 1 ran: a fresh scratch `CLAUDE_CONFIG_DIR`, a git-initialized project, and a Claude memory store seeded under the slug Claude Code itself created, holding an index line and a note whose description and body carry the `S3_CANARY` markers. Step 2 then ran too — the owner completed the interactive `/import` on 2026-09-06 at 19:39, and the fix wave verified it from disk against an earlier revision of this record that had called it unrun. The import wrote a 50-record ledger, 50 imported session rollouts, the owner's global Claude Code instructions file (paths rewritten to Codex's configuration directory), and the owner's marketplace, plugin and MCP configuration into the scratch Codex home. Every one of the 50 records names a transcript under the **owner's default Claude Code configuration directory**; none names the seeded scratch one, so the canary was never in the import's scope. Codex's own memory, goals, state, thread-history, queue and log databases held zero canary strings. The oracle this record previously published — `grep` over the whole Codex home — now returns a **false positive**: its one hit is an imported transcript quoting this plan's own seeding heredoc. | §2 D5, §6.4 | Open — the supported sentence is only "no seeded canary was found in the memory and instruction state searched, after an import that read a different configuration directory than the one seeded" — the canary search cannot see memory the import carried from the directory it actually read, which is weaker than an answer to §2 D5 and §6.4, so both stay open and neither gains a sentence. The fixture needs redesigning before it can be re-run: the run cannot separate "the importer ignores `CLAUDE_CONFIG_DIR`" from "the handed command was run without it", and the whole method depends on seeding a non-default configuration directory. Replace the oracle with one that excludes the transcript store (`--exclude-dir=sessions`, plus a `strings` count over Codex's own databases) and re-establish the baseline immediately before the interactive step, since the pre-import baseline used the contaminated whole-home form. Recorded alongside: the scratch Codex home now holds 50 of the owner's real session transcripts and their global instructions file, which raises the value of the deferred scratch-root deletion once S3 closes. |
 | S4 | `claude plugin validate` cascaded into skill, agent, and Codex-manifest checks only when pointed directly at the plugin's own .claude-plugin/plugin.json; validating the bare directory or the marketplace.json target reported none of the three planted defects, in either `--strict` setting. `--strict` escalated warnings to failures but did not by itself widen what got checked. Separately, the valid tree's own .codex-plugin/plugin.json failed validation unconditionally, in both `--strict` settings, because its `"skills": "./skills/"` path resolved one directory level below the actual skills/ tree the brief built. | §5.8 | Amend §5.8: CI/doctor validation must target each plugin's .claude-plugin/plugin.json path explicitly rather than the bare directory or marketplace.json, to catch skill/agent/Codex-manifest defects, and the Codex manifest layout's `skills` path convention needs correcting so a valid tree does not fail validation on its own. |
 | S5 | In all three arms (SSH, HTTPS, HTTPS with `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1`), a session-start turn never advanced `known_marketplaces.json`'s `lastUpdated` or the installed plugin's reported version, but each arm's session-start turn ran under ten seconds after `plugin marketplace add` (9.701s SSH, 8.373s HTTPS, 8.836s HTTPS-keep), so this does not separate "does not refresh at session start" from "was not yet considered stale" — only that no refresh fired inside that short a window. Only the foreground `claude plugin marketplace update` advanced `lastUpdated`, and even that update never moved the installed plugin's own reported version in any arm. HTTPS authenticated transparently through the machine's `osxkeychain` credential helper with no failure in either HTTPS arm, so the keep-on-failure variable was never exercised against an actual failure. | §6.4 | Amend §6.4: session start did not refresh a private marketplace within roughly ten seconds of the marketplace being added in this measurement — a design relying on session-start to pick up a new marketplace commit needs an explicit `plugin marketplace update` step regardless, and moving the installed pointer needs a separate, untested `plugin update`. Whether session start refreshes past a longer staleness threshold, and the keep-on-failure variable's effect on a genuine failure, both stayed unmeasured. |
 | S6 | The `gh repo create --template --clone` race did not reproduce in this one trial — the combined call took 8.83s and returned already populated — and the owner-suffixed rename of both `plugin.json`'s and `marketplace.json`'s `name` fields installed and ran cleanly via `claude plugin marketplace add`/`install` against the private SSH remote. | §6.1 | As designed — §6.1's per-owner renaming worked against a private SSH remote in this trial; the defensive retry-after-wait rule for the create/clone race stayed in the design as an unexercised contingency, since one non-racing trial could not rule out the race on a slower generation. |
-| S7 | The 10,000-character spill cap applied per hook entry, not per event: two 8,000-character entries in one `SessionStart` group stayed unspilled (a combined 16,000 characters) while a single 16,000-character entry spilled, and the boundary sat at exactly 10,000 characters — 10,000 stayed unspilled, 10,001 spilled. | §9.5 | As designed — §9.5's one-entry-per-bundle remedy held on this measurement; the value measured for the `hook_output_chars` preset was 10,000. |
+| S7 | **Claude Code only** (Codex spills on a different key, `additionalContextLimit`, whose token-based default was never measured — S1 obtained no cap verdict for it). The 10,000-character spill cap applied per hook entry, not per event: two 8,000-character entries in one `SessionStart` group stayed unspilled (a combined 16,000 characters) while a single 16,000-character entry spilled, and the boundary sat at exactly 10,000 characters — 10,000 stayed unspilled, 10,001 spilled. | §9.5 | As designed — §9.5's one-entry-per-bundle remedy held on this measurement; the value measured for the `hook_output_chars` preset was 10,000. |
 | S8 | The wrapper failed closed correctly on five of six fault rows (no qualifying Python interpreter, only Python 3.9 available, `CLAUDE_PLUGIN_ROOT` unset, guard script deleted, guard `ImportError`), blocking both the DENY and ALLOW payload with its own token every time. The sixth row — the hook wrapper's own executable bit cleared — blocked neither payload: Claude Code logged the resulting exit-126 launch failure as a non-blocking hook error and let the tool call through regardless of the configured policy. | §5.3, §2 D11, §13 | Amend §5.3: the installer and `doctor` need a check that `stat`s the plugin's `known_marketplaces.json` `installLocation` copy of the hook wrapper (and other hook entry points') for its executable bit at install time — not the `plugins/cache` copy, which S2 and S7 showed is not what `${CLAUDE_PLUGIN_ROOT}` resolves to — plus a `doctor` check that flags its loss afterward, since `run-hook.sh` has no code path that runs once the OS itself refuses to launch it. Qualify §2 D11: its exit-code-remapping guarantee holds for the child process the wrapper's own `case` statement catches (the other five rows), and does not and cannot hold for the wrapper's own launch failure, the case D11's "lost executable bit 126" example actually describes. An untested, cheaper candidate — declaring the hook as `sh ".../run-hook.sh" PreToolUse closed` so the executable bit stops mattering at all — is recorded for `hooks-core` to price against the two checks above. |
 | S9 | Recorded as a fixture design, not a measurement — no engine exists yet to run it against: a three-assertion containment fixture (loader rejection of a multi-segment project name, `plan()` emitting no actions for the path-escaping fields, `apply()` refusing to write once the plans directory had been swapped for a symlink). | §7.4 | As designed — the fixture stood as recorded for `scaffold` to implement `plan()`/`apply()` against; nothing in this record contradicted §7.4. |
 | S10 | Recorded as a scenario design, not a measurement — no workflow exists yet to run it against: three separately-asserted failure paths for a hostile clone (untrusted in-repo memory withheld from `SessionStart` until trust was recorded, a memory search excluding a mismatched project's store, and attach refusing to symlink across a remote mismatch). | §13 | As designed — the scenario stood as recorded for the `workflows` lane's smoke workflow; nothing in this record contradicted §13. |

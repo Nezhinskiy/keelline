@@ -1,12 +1,25 @@
 # Keelline Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Delivered — do not re-execute.** This plan ran, and the Keelline repository's own history
+> is authoritative for what was built. The steps keep their `- [ ]` checkboxes as the record
+> of what was planned; nothing here is a work item. Two kinds of block are governed
+> differently, and the difference matters to a later lane reading this file:
+>
+> - **`**Interfaces:**` blocks are current.** They state the contracts (C1, C4, C5, C6) other
+>   lanes build against, and they are kept in step with the shipped code, not with the code
+>   blocks below them.
+> - **Code blocks are as-planned, not as-shipped.** Several were hardened during execution
+>   (the Premise lists them) and some diverge in ways the Premise did not list. Read them as
+>   the design that was written, and read `~/Dev/keelline` for the code that runs.
+>
+> A lane that needs the built behaviour opens the repository. A lane that needs the contract
+> reads the Interfaces block.
 
 **Goal:** Create the Keelline repository as an installable Claude Code and Codex plugin and a stdlib-only Python package, with the four contracts every other lane builds on — configuration (C1), the hook dispatcher interface (C4), the CLI frame (C5) and version discipline (C6) — each proven by a test.
 
 **Architecture:** One repository, `~/Dev/keelline`, is at once a plugin (manifests under `.claude-plugin/` and `.codex-plugin/`, a launcher under `scripts/`) and a package (`src/keelline/`, built by `uv_build`). Areas are subpackages that the CLI frame and the hook registry discover by name, so later lanes add `keelline/<area>/commands.py` and `keelline/<area>/hooks.py` without editing a shared registry. The runtime imports only the standard library, enforced by a test on every supported interpreter; Python 3.11 is the floor because the config loader uses `tomllib`, and the launcher refuses anything older with a reason.
 
-**Order:** the P0 spikes plan has recorded its Findings (merged as PR #349 into this branch). This plan takes from them: **S1** — Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` (Codex-only names) *and also* `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the `CLAUDE_*` names alone identify nothing, and Codex's `SessionStart` stdin carries `model` and `permission_mode` while Claude Code's does not; **S2** — `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` (the source directory for a directory-sourced marketplace), not to the `plugins/cache` copy, and a directory-sourced install preserves file modes; **S4** — only the `.claude-plugin/plugin.json` path validates skills and agents (the directory and marketplace targets report none of the planted defects), the Codex manifest is validated only by its own path, and its `skills` value resolves relative to `.codex-plugin/`; **S7** — the cap is exactly 10,000 characters per hook entry; **S8** — a hook file whose executable bit is lost degrades open on the platform side, which the installer and `doctor` must check at `installLocation` (a `hooks-core` concern, recorded in the Premise). Codex-side verification (S1's tool names, S2's Codex arm, S3) did not run — the owner deferred Codex to the end of the programme on 2026-09-05 — so this plan ships and validates the Codex manifest and blocks on no Codex measurement.
+**Order:** the P0 spikes plan has recorded its Findings (merged as PR #349 into this branch). This plan takes from them: **S1** — Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` (Codex-only names) *and also* `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the `CLAUDE_*` names alone identify nothing, and Codex's `SessionStart` stdin carries `model` and `permission_mode` while Claude Code's does not; **S2** — `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` (the source directory for a directory-sourced marketplace), not to the `plugins/cache` copy, and a directory-sourced install preserves file modes; **S4** — only the `.claude-plugin/plugin.json` path validates skills and agents (the directory and marketplace targets report none of the planted defects), the Codex manifest is validated only by its own path, and its `skills` value resolves relative to `.codex-plugin/`; **S7** — the cap is exactly 10,000 characters per hook entry; **S8** — a hook file whose executable bit is lost degrades open on the platform side, which the installer and `doctor` must check at `installLocation` (a `hooks-core` concern, recorded in the Premise). Codex-side verification (S1's tool names, S2's Codex arm, S3) was deferred by the owner to the end of the programme on 2026-09-05; a follow-up spike round has since measured two of those three. **S1**: Codex's `PreToolUse` reports `Bash` uniformly for a shell command, a shell-routed file read and a shell-routed write attempt, and reports the literal string `apply_patch` — not `Write`, not `Edit` — for a patch-based edit; a separate probe then showed that a matcher of exactly `Edit|Write` still fires on that edit, so the aliases govern matching while the payload carries only the canonical name. The same round also measured `additionalContext` on Codex's `PreToolUse` specifically: the probe's canary reached the model in full and unabbreviated on all three firings. **S2**: no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content under Codex. Those results — the Codex tool names, the `PreToolUse` `additionalContext` canary, and S2's Codex arm — are now recorded in §10. **S3** (whether Codex's `/import` carries Claude memory notes) is still open: the interactive `/import` has since been run, but it read the owner's default Claude Code configuration directory rather than the seeded scratch one, so the fixture's canary was never in scope and the question needs a redesigned fixture rather than another keystroke. The eight Codex clauses §10 marks unmeasured — the hook-trust hash, `prompt`/`agent` handlers, `additionalContext` on the four events other than `PreToolUse`, async hooks unable to block, an exit 2 with empty stderr, `userConfig`, the ask-user fallback, `UserPromptExpansion` — stay unmeasured; §10's other Codex rows (the plugin-root variables reaching hooks, the absent `CLAUDE_PROJECT_DIR`, and the read/search routing) are Confirmed and must not be re-measured. So this plan still ships and validates the Codex manifest without depending on a Codex measurement of its own dispatcher.
 
 **Tech Stack:** Python ≥ 3.11 (stdlib only at runtime), `uv` 0.11 with the `uv_build` backend, pytest, ruff, mypy, towncrier 26.9 (dev-time only), `claude` CLI for `plugin validate`, GitHub Actions.
 
@@ -38,9 +51,30 @@
   return the project root, the CLI frame maps a broken area module to exit 2 instead of a
   traceback, and the hook dispatcher closed three fail-open paths on the decision that blocks a
   tool call — argv rather than stdin naming the event, `==` rather than `is` against the policy
-  enum, and a typed `Decision` for the field that refuses. Each change ships with the mutation
-  that reddens it. The Keelline repository's history is authoritative for what was built; the
-  blocks below record what was planned.
+  enum, and a typed `Decision` for the field that refuses. Each of those changes shipped with
+  the mutation that reddens it, **in the Keelline repository's own history** — no Step 5
+  matrix below covers them, because every matrix here was written against the code beside it.
+  The Keelline repository's history is authoritative for what was built; the blocks below
+  record what was planned.
+- That list is **not exhaustive**, and a review found four more divergences worth naming so a
+  reader does not take a code block for a specification. `Handler` gained `once_key` and
+  `dispatch` lost its `sink` default, both of which the Task 7 **Interfaces** line records
+  and its code block predates. `src/keelline/config/paths.py`'s module docstring, which here claims to
+  cover "every path a repository-controlled file can name (§7.4)", ships saying the opposite
+  and naming the four fields the guard does **not** reach (`ledger.code_roots`,
+  `artifacts.local`, `memory.groups`, `memory.index_extra`) — design §7.4 has since been
+  widened to those fields, and closing the gap belongs to the lanes that first read them.
+  And two tests differ: the import-boundary walk parses each file once through a walrus
+  rather than twice, and the hook command's broken-config fixture is valid everywhere the
+  loader checks before `[ci]`, because the shape written here is rejected earlier and never
+  reaches the branch under test.
+- **Open against C5, for the first lane that returns findings.** `Result.exit_code` exists
+  and `cli._emit` returns it, but no command sets it — every failure raises `Failure` or
+  `Refusal`, which is what puts `"error"` into the `--json` object. A `Result` carrying
+  `exit_code=1` therefore prints a success-shaped object on a failing exit code, which
+  breaks the C5 contract for the first lane (`ledger`, `docs-tooling`, `assess`) that
+  reports findings without raising. That lane either derives `"error": "findings"` from a
+  non-zero `exit_code` or drops the field; it must not inherit the current shape silently.
 
 ## Global Constraints
 
@@ -1459,12 +1493,13 @@ git commit -q -m "feat(cli): discover areas by name, accept --json anywhere, map
 - Test: `tests/hooks/test_dispatch.py`
 - Test: `tests/hooks/test_hook_command.py`
 
-**Interfaces:**
+**Interfaces:** *(current — this block describes the C4 API as shipped; the Task 7 code
+blocks below predate the hardening that produced it, per the Premise.)*
 - Produces (fixed for every lane): `Policy` (`OPEN`, `CLOSED`); `HookEvent(name, session_id, agent_id, tool_name, tool_input, cwd, project_root, harness, raw)`; `HookResult(context=None, decision=None, reason=None)` (`decision` is a `Decision` member; an unrecognised one is that handler failing and is judged by its policy); `Handler(name, event, policy, run, once_key=None)` where `run: Callable[[HookEvent, Config | None], HookResult]`; `Sink` protocol with `diagnostic(record: dict[str, object]) -> None`, `seen(key: str) -> bool`, `mark(key: str) -> None`, and `NullSink`; `registry.discover() -> list[Handler]` collecting every `keelline.<area>.hooks.register() -> list[Handler]`; `dispatch.dispatch(event, handlers, config, *, sink, cap=None) -> Outcome(exit_code, stdout, stderr, decision)` — `sink` is required and has no default, so a caller cannot inherit an inert one by omission; until `hooks-core` supplies a durable session-keyed sink, `run_hook` passes `NullSink()` and `Handler.once_key` therefore degrades to every invocation rather than once; `dispatch.parse_event(payload, env) -> HookEvent`; `dispatch.detect_harness(env) -> str`; `keelline hook <event>` reads the event JSON from stdin. The `hooks-core` lane supplies the real sink (diagnostics log, once-per-context markers), the wrapper and the per-harness emitter without changing these names.
 
 - [ ] **Step 1: Write the failing dispatcher tests**
 
-The harness discriminator comes from the S1 record: Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` alongside the `CLAUDE_*` names, and Codex's `SessionStart` stdin carries `model` and `permission_mode`. `detect_harness` keys on `PLUGIN_ROOT` first and on those two stdin fields second, never on `CLAUDE_PLUGIN_ROOT` alone; `CODEX_HOME` and `CLAUDE_CONFIG_DIR` are not used because S1 could not attribute them to the harness. Codex's `PreToolUse` tool names were not measured (deferred), so nothing here depends on them.
+The harness discriminator comes from the S1 record: Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` alongside the `CLAUDE_*` names, and Codex's `SessionStart` stdin carries `model` and `permission_mode`. `detect_harness` keys on `PLUGIN_ROOT` first and on those two stdin fields second, never on `CLAUDE_PLUGIN_ROOT` alone; `CODEX_HOME` and `CLAUDE_CONFIG_DIR` are not used because S1 could not attribute them to the harness. Codex's `PreToolUse` tool names have since been measured (S1: `Bash` for every shell-routed action, the literal `apply_patch` for a patch-based edit; §10 of the design), and nothing here depends on them either way — `detect_harness` reads the environment and the stdin payload, never `tool_name`.
 
 ```python
 # tests/hooks/test_dispatch.py
@@ -2591,12 +2626,14 @@ ai-daybook repository until the methodology docs move here). A plan's `Scope:` l
 the package it belongs to and the contracts it consumes and produces. The two P0 documents
 were copied from ai-daybook, which keeps its own copies as history.
 EOF
-grep -nE '/[U]sers/[a-z]|/[h]ome/[a-z]|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' docs/plans/*.md \
-  | grep -vE 'git@github\.com' \
-  || echo "the copied documents carry no home path and no personal address"
+if grep -nE '/[U]sers/[a-z]|/[h]ome/[a-z]|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' docs/plans/*.md \
+     | grep -vE 'git@github\.com'; then
+  echo "LEAK: the lines above must be rewritten before this is published" >&2; exit 1
+fi
+echo "the copied documents carry no home path and no personal address"
 ```
 
-The branch name is read at run time because the ai-daybook branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it. It is anchored on the *shape* of a leak — a home directory with a user under it, or an address — rather than on the owner's login, because the login appears legitimately in a repository URL, in the licence and in both manifests: an earlier form matched six such lines and zero leaks, which left its "clean" branch unreachable and the check unable to say anything. `[U]sers` and `[h]ome` are bracketed so the pattern does not match its own text, and `git@github.com` is filtered because an SSH remote is not an address.
+The branch name is read at run time because the ai-daybook branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it. It is anchored on the *shape* of a leak — a home directory with a user under it, or an address — rather than on the owner's login, because the login appears legitimately in a repository URL, in the licence and in both manifests: an earlier form matched six such lines and zero leaks, which left its "clean" branch unreachable and the check unable to say anything. `[U]sers` and `[h]ome` are bracketed so the pattern does not match its own text, and `git@github.com` is filtered because an SSH remote is not an address. The `if` carries the verdict: in the pipeline form this step first used, the exit status was the trailing `grep -v`'s, which is **0 when it printed leak lines** and 0 again through the `echo` when it printed none — measured with a planted `/Users/someone/Dev/…` line, the leak was printed and the pipeline exited 0. Step 4's consent question calls these documents "scrubbed … in Step 1", so an executor reading exit codes would have pushed the leak to a public repository. (Every raw match in today's text is a `git@github.com` line.)
 
 - [ ] **Step 2: Install the plugin from the checkout into a temporary configuration**
 
@@ -2606,7 +2643,7 @@ CLAUDE_CONFIG_DIR="$CFG" claude plugin marketplace add ~/Dev/keelline
 CLAUDE_CONFIG_DIR="$CFG" claude plugin install keelline@keelline-marketplace
 CLAUDE_CONFIG_DIR="$CFG" claude plugin list | grep -A3 keelline
 grep -o '"installLocation": "[^"]*"' "$CFG/plugins/known_marketplaces.json"
-/usr/local/bin/python3 ~/Dev/keelline/scripts/keelline --version
+~/Dev/keelline/scripts/keelline --version   # the launcher probes the interpreter; §5.3
 rm -rf "$CFG"
 ```
 
