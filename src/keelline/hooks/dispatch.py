@@ -72,12 +72,18 @@ def _git_toplevel(cwd: Path) -> Path | None:
 
 
 def _walk_to_git_root(cwd: Path) -> Path | None:
-    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count."""
+    """`.git` is a directory in a clone and a file in a worktree or a submodule; both count.
+
+    `git rev-parse --show-toplevel` resolves symlinks in `cwd` before it reports the toplevel,
+    so the walk must too: otherwise the same repository reached through its real path and
+    through a symlink to it would report two different `project_root` values where git
+    collapses them into one.
+    """
     if not cwd.is_absolute():
         return None
     for directory in [cwd, *cwd.parents]:
         if (directory / ".git").exists():
-            return directory
+            return directory.resolve()
     return None
 
 
@@ -169,12 +175,18 @@ def dispatch(
         try:
             # Purity is contractual and unenforceable, and handlers run in name order, so an
             # earlier one could blank `tool_input["command"]` under a later one's guard. Each
-            # handler gets its own deep copy of the mutable views instead.
-            view = replace(
-                event,
-                tool_input=copy.deepcopy(event.tool_input),
-                raw=copy.deepcopy(event.raw),
+            # handler gets its own deep copy of the mutable views instead. `raw` is copied once
+            # and `tool_input` is taken from that same copy, so the view keeps the aliasing
+            # `parse_event` produces (`ev.tool_input is ev.raw["tool_input"]`) rather than
+            # diverging under two independent deep copies.
+            raw_view = copy.deepcopy(event.raw)
+            raw_tool_input = raw_view.get("tool_input")
+            tool_input_view = (
+                raw_tool_input
+                if isinstance(raw_tool_input, dict)
+                else copy.deepcopy(event.tool_input)
             )
+            view = replace(event, tool_input=tool_input_view, raw=raw_view)
             result = handler.run(view, config)
         except (Exception, SystemExit) as exc:  # judged by the handler's own policy
             reasons.append(f"{handler.name}: {type(exc).__name__}: {exc}")

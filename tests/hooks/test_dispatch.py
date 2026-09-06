@@ -190,6 +190,30 @@ def test_one_handler_cannot_blank_what_the_next_one_reads() -> None:
     assert seen == ["rm -rf /", "Bash"]
 
 
+def test_a_handlers_view_keeps_tool_input_aliased_to_raw_like_parse_event_does() -> None:
+    # `parse_event` makes `ev.tool_input is ev.raw["tool_input"]` true; the per-handler view
+    # must preserve that aliasing, not just isolate handlers from each other, so a handler that
+    # writes through `tool_input` and reads back through `raw` sees its own write.
+    seen: dict[str, object] = {}
+
+    def write_through_tool_input_read_through_raw(ev: HookEvent, config: object) -> HookResult:
+        seen["aliased"] = ev.tool_input is ev.raw["tool_input"]
+        ev.tool_input["command"] = "mutated"
+        seen["raw_command_after"] = ev.raw["tool_input"]["command"]
+        return HookResult()
+
+    handlers = [
+        Handler(
+            name="a",
+            event="PreToolUse",
+            policy=Policy.OPEN,
+            run=write_through_tool_input_read_through_raw,
+        )
+    ]
+    dispatch(event(tool_input={"command": "ls"}), handlers, None)
+    assert seen == {"aliased": True, "raw_command_after": "mutated"}
+
+
 def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() -> None:
     ev = parse_event(
         {
@@ -235,6 +259,22 @@ def test_the_walk_finds_the_root_through_a_git_file(
     monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
     ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(tmp_path / "a")}, env={})
     assert ev.project_root == tmp_path
+
+
+def test_the_walk_resolves_a_symlinked_root_the_way_git_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git resolves a symlink in `cwd` before reporting the toplevel; a walk that returns the
+    # unresolved directory it stopped at would report a different `project_root` for the same
+    # repository depending on whether it was reached through the real path or a symlink to it.
+    real_repo = tmp_path / "realrepo"
+    (real_repo / ".git").mkdir(parents=True)
+    (real_repo / "sub").mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real_repo)
+    monkeypatch.setattr("keelline.hooks.dispatch._git_toplevel", _forbidden)
+    ev = parse_event({"hook_event_name": "PreToolUse", "cwd": str(link / "sub")}, env={})
+    assert ev.project_root == real_repo.resolve()
 
 
 def test_git_is_still_asked_when_the_walk_finds_no_dot_git(
