@@ -78,7 +78,6 @@ def test_failures_emit_json_when_asked(capsys: pytest.CaptureFixture[str]) -> No
     assert json.loads(capsys.readouterr().out)["error"] == "failed"
 
 
-@pytest.mark.xfail(strict=True, reason="the release area lands in Task 8")
 def test_areas_are_discovered_from_the_package() -> None:
     names = {registrar.__module__ for registrar in discover_registrars()}
     assert "keelline.release.commands" in names
