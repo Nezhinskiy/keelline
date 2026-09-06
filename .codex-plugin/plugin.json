@@ -5,7 +5,6 @@
   "author": { "name": "Nezhinskiy" },
   "repository": "https://github.com/Nezhinskiy/keelline",
   "license": "MIT",
-  "skills": "../skills/",
   "interface": {
     "displayName": "Keelline",
     "shortDescription": "Bug ledger, working memory, guards, and earned enforcement for coding agents",

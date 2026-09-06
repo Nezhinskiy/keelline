@@ -28,11 +28,17 @@ def test_marketplace_has_a_description_and_an_unversioned_entry() -> None:
     assert "version" not in entry
 
 
-def test_codex_manifest_carries_no_hooks_key() -> None:
+def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert "hooks" not in manifest
-    assert manifest["skills"] == "../skills/"
+    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and
+    # reports "./skills/" as not found, because the value resolves relative to
+    # .codex-plugin/ itself: no string reaches the root-level skills/ directory from
+    # there. Foundation ships no skills, so it omits the key rather than asserting an
+    # unreachable path; the Codex skills-path convention is left to the skills lanes,
+    # once Codex's own manifest reading has actually been measured.
+    assert "skills" not in manifest
 
 
 def test_the_repository_itself_passes_release_check() -> None:
