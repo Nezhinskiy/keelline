@@ -1,0 +1,64 @@
+[project]
+name = "keelline"
+version = "0.1.0"
+description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and an adoption state machine, packaged as one plugin for Claude Code and Codex."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Nezhinskiy" }]
+dependencies = []
+
+[project.scripts]
+keelline = "keelline.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.12", "mypy>=1.16", "towncrier>=26.9"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-include = ["scripts/keelline"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error"]
+
+[tool.towncrier]
+package = "keelline"
+package_dir = "src"
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->\n"
+underlines = ["", "", ""]
+title_format = "## {version} ({project_date})"
+issue_format = "{issue}"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fix"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "change"
+name = "Changed"
+showcontent = true
