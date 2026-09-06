@@ -38,7 +38,14 @@ def _parse(name: str, text: str) -> str | None:
     if name == LOCKFILE:
         # `uv sync --locked` fails the install step on a stale lockfile with a
         # dependency-shaped message, before this gate — built to catch exactly this — can speak.
-        for entry in tomllib.loads(text).get("package", []):
+        packages = tomllib.loads(text).get("package", [])
+        # Valid TOML of the wrong shape decodes cleanly, so `_read`'s decoder catches never see
+        # it: iterating a string yields characters and `entry.get` raises AttributeError, which
+        # reaches the caller as an unlabelled internal error naming no file. The lockfile owes
+        # the same named failure every other malformed source already gets.
+        if not isinstance(packages, list) or not all(isinstance(e, dict) for e in packages):
+            raise MalformedSource(f"{name} is valid TOML but its package is not a list of tables")
+        for entry in packages:
             if entry.get("name") == PACKAGE:
                 version = entry.get("version")
                 return str(version) if version is not None else None
@@ -121,11 +128,16 @@ def pending_fragments(root: Path) -> bool:
 
 
 def check(root: Path) -> list[str]:
-    # Three different conditions used to share one wrong message, so a user who typoed --root,
+    # Four different conditions used to share one wrong message, so a user who typoed --root,
     # or ran the command in their own project (--root defaults to "."), was told their
-    # pyproject.toml lacked a version key.
-    if not root.is_dir():
+    # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
+    # own line rather than the missing-path one: `--root ./pyproject.toml` was told the file
+    # does not exist, and a gate that exists to stop asserting untrue things about the user's
+    # tree must not assert one itself.
+    if not root.exists():
         return [f"{root} does not exist; --root must name a repository root"]
+    if not root.is_dir():
+        return [f"{root} is not a directory; --root must name a repository root"]
     if not (root / PYPROJECT).is_file():
         return [f"{root} has no {PYPROJECT}; --root must name a repository root"]
     found = collect(root)

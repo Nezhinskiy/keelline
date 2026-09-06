@@ -260,21 +260,30 @@ def test_a_lockfile_that_names_no_keelline_package_reads_as_none(tmp_path: Path)
     assert collect(root)["uv.lock"] is None
 
 
-def test_the_three_root_conditions_get_three_different_messages(tmp_path: Path) -> None:
+def test_the_four_root_conditions_get_four_different_messages(tmp_path: Path) -> None:
     # One shared message told a user who typoed --root, or ran the command in their own
-    # project (--root defaults to "."), that their pyproject.toml lacked a version key.
+    # project (--root defaults to "."), that their pyproject.toml lacked a version key. The
+    # file case then inherited the missing-path message, so `--root ./pyproject.toml` was told
+    # a file it had just been handed does not exist — the gate asserting something untrue
+    # about the user's tree, which is the very thing these messages exist to stop.
     missing = tmp_path / "nope"
+    not_a_directory = tmp_path / "pyproject.toml"
+    not_a_directory.write_text('[project]\nname = "keelline"\nversion = "0.1.0"\n')
     empty = tmp_path / "empty"
     empty.mkdir()
     no_version = tmp_path / "no-version"
     no_version.mkdir()
     (no_version / "pyproject.toml").write_text('[project]\nname = "keelline"\n')
 
-    absent, unrelated, versionless = check(missing), check(empty), check(no_version)
+    absent = check(missing)
+    a_file = check(not_a_directory)
+    unrelated = check(empty)
+    versionless = check(no_version)
     assert absent == [f"{missing} does not exist; --root must name a repository root"]
+    assert a_file == [f"{not_a_directory} is not a directory; --root must name a repository root"]
     assert unrelated == [f"{empty} has no pyproject.toml; --root must name a repository root"]
     assert versionless == ["pyproject.toml has no [project].version"]
-    assert len({tuple(absent), tuple(unrelated), tuple(versionless)}) == 3
+    assert len({tuple(absent), tuple(a_file), tuple(unrelated), tuple(versionless)}) == 4
 
 
 @pytest.mark.parametrize(
@@ -296,3 +305,32 @@ def test_a_malformed_source_is_reported_with_its_filename(
         check(root)
     assert name in str(raised.value)
     assert kind in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['package = "not-a-list"\n', "package = [1, 2]\n"],
+    ids=["not-a-list", "entries-not-tables"],
+)
+def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str) -> None:
+    # Valid TOML of the wrong shape decodes cleanly, so `_read`'s two decoder catches never see
+    # it: iterating a string yields characters and `entry.get` raised AttributeError straight
+    # past them, reaching the caller as an unlabelled internal error naming no file.
+    root = _repo(tmp_path)
+    (root / "uv.lock").write_text(body)
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert "uv.lock" in str(raised.value)
+
+
+def test_the_cli_command_exits_one_on_a_malformed_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `MalformedSource` derives from `Failure` on purpose: a source the gate cannot parse is a
+    # finding, not a refusal. Nothing observed that through `run` — the unit tests catch the
+    # class, which is base-class agnostic — so reverting it to `Refusal`, and exit 2 with it,
+    # left every test green.
+    root = _repo(tmp_path)
+    (root / "uv.lock").write_text("not = = toml")
+    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert "uv.lock is not valid TOML" in capsys.readouterr().err
