@@ -31,9 +31,13 @@ def test_the_cli_registry_reads_the_same_discovery_as_the_helper() -> None:
     ]
 
 
-def test_an_area_with_no_such_submodule_is_never_imported() -> None:
-    # `keelline hook` is a subprocess per tool call, so discovery importing an area only to
-    # learn it registers nothing is paid on the hot path.
+def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None:
+    # Deliberately isolates `discover()` from the CLI frame: the subprocess never calls
+    # `discover_registrars()`, so nothing has imported the area packages beforehand. Production
+    # is not this shape — `main()` runs `discover_registrars()` first, which already imports
+    # every area's `commands` submodule before `hook` ever reaches this probe — but the helper's
+    # own behaviour still holds here: given a clean interpreter, `area_modules` imports only the
+    # areas that actually carry the requested submodule.
     completed = subprocess.run(
         [sys.executable, "-c", LIST_IMPORTS],
         capture_output=True,

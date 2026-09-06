@@ -27,11 +27,15 @@ Registrar = Callable[[SubParsers], None]
 
 
 def _has_submodule(area: str, submodule: str) -> bool:
-    """A filesystem probe, because `importlib.util.find_spec` must import the area to look.
+    """A filesystem probe: it imports only the `<area>.<submodule>` modules that exist, instead
+    of importing every area package merely to test whether one of them does.
 
-    `keelline hook` runs as a subprocess on every tool call, so discovery may not import
-    `keelline.config`, `keelline.presets` and `keelline.release` merely to learn that none of
-    them registers a hook.
+    That saving is latent rather than realised on today's frame: `main()` runs
+    `discover_registrars()` to build the full argparse parser before argparse can dispatch to
+    `hook`, and building that parser already imports `keelline.config`, `keelline.config.schema`,
+    `keelline.presets`, `keelline.release` and `keelline.release.versions` — so by the time this
+    probe runs for `hooks`, those packages are already loaded. The probe would only pay off if
+    discovery ever registered just the area named on the command line instead of the full set.
     """
     for root in keelline.__path__:
         directory = Path(root) / area

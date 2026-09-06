@@ -112,7 +112,7 @@ def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)
-    assert len(outcome.stdout) <= 20
+    assert outcome.stdout == ""
     assert recorder.records[0]["error"] == "context-truncated"
 
 
@@ -120,10 +120,11 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
     handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
     outcome = dispatch(event(), handlers, None, cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert len(outcome.stdout) <= 200
-    assert len(outcome.stdout) > 200 - len(TRUNCATION_MARK)  # the budget is spent, not abandoned
-    assert context.startswith("y" * 8)
-    assert context.endswith(TRUNCATION_MARK)
+    # Every kept character here is plain ASCII, so nothing widens under JSON escaping and the
+    # search always lands exactly on the cap: 69 kept characters plus the mark is the true
+    # optimum for this event name and context, not merely a value close enough to it.
+    assert len(outcome.stdout) == 200
+    assert context == "y" * 69 + TRUNCATION_MARK
 
 
 def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
@@ -137,9 +138,12 @@ def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
 def test_json_escaping_is_charged_to_the_same_budget() -> None:
     handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
     outcome = dispatch(event(), handlers, None, cap=200)
-    assert len(outcome.stdout) <= 200
+    # Each kept `\n` costs two rendered characters once JSON-escaped, so an odd cap budget
+    # cannot be spent to the last character: the true optimum here lands one short of the cap,
+    # not merely under it, so that is the value to pin instead of an inequality.
+    assert len(outcome.stdout) == 199
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert context.endswith(TRUNCATION_MARK)
+    assert context == "\n" * 34 + TRUNCATION_MARK
 
 
 def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:
