@@ -29,13 +29,14 @@ def handler(
     policy: Policy,
     result: HookResult | BaseException,
     once_key: str | None = None,
+    event_name: str = "PreToolUse",
 ) -> Handler:
     def run(ev: HookEvent, config: object) -> HookResult:
         if isinstance(result, BaseException):
             raise result
         return result
 
-    return Handler(name=name, event="PreToolUse", policy=policy, run=run, once_key=once_key)
+    return Handler(name=name, event=event_name, policy=policy, run=run, once_key=once_key)
 
 
 def test_contexts_are_joined_into_the_claude_shape() -> None:
@@ -48,6 +49,31 @@ def test_contexts_are_joined_into_the_claude_shape() -> None:
     assert json.loads(outcome.stdout) == {
         "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "A\n\nB"}
     }
+
+
+@pytest.mark.parametrize(
+    ("registered", "other"), [("PostToolUse", "PreToolUse"), ("PreToolUse", "PostToolUse")]
+)
+def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, other: str) -> None:
+    # `discover()` hands the dispatcher every area's handlers at once, so the event filter is
+    # the only thing keeping a PostToolUse guard from refusing a PreToolUse call.
+    guard = handler(
+        "g", Policy.CLOSED, HookResult(decision=Decision.DENY, reason="no"), event_name=registered
+    )
+    assert dispatch(event(registered), [guard], None, sink=Recorder()).exit_code == 2
+    silent = dispatch(event(other), [guard], None, sink=Recorder())
+    assert silent.exit_code == 0
+    assert silent.stderr == ""
+
+
+def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
+    # A lane building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
+    # a StrEnum, so the comparison must be by value: under identity this deny would be an
+    # unrecognised verdict instead, which an OPEN handler's policy swallows.
+    result = HookResult(decision=cast(Decision, "deny"))
+    outcome = dispatch(event(), [handler("a", Policy.OPEN, result)], None, sink=Recorder())
+    assert outcome.exit_code == 2
+    assert outcome.decision == "deny"
 
 
 def test_a_deny_from_a_handler_exits_two_with_its_reason() -> None:

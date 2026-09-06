@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape, contained, validate_paths
+from keelline.config.schema import Config, Paths
+
+PATH_NAMES = tuple(f.name for f in fields(Paths))
 
 
 def test_a_plain_relative_path_resolves_under_the_root(tmp_path: Path) -> None:
@@ -111,3 +115,53 @@ def test_validate_paths_allows_a_final_symlink_only_for_the_memory_path(tmp_path
     (refused_root / "docs" / "specs").symlink_to(outside, target_is_directory=True)
     with pytest.raises(PathEscape, match="symlink"):
         validate_paths(config, refused_root)
+
+
+def _sample_config(tmp_path: Path) -> Config:
+    (tmp_path / CONFIG_FILE).write_text(
+        '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n\n[project]\nname = "sample"\n',
+        encoding="utf-8",
+    )
+    return load(tmp_path, machine=tmp_path / "no-machine.toml")
+
+
+_NOT_EXEMPT = {
+    "agents_md",
+    "architecture",
+    "runbooks",
+    "adr",
+    "specs",
+    "plans",
+    "bugs",
+    "bug_index",
+    "roadmap",
+    "roadmap_history",
+}
+
+
+def test_every_configured_path_is_parametrised_here() -> None:
+    # The exemption below is checked per field, so a twelfth path added to `Paths` without a
+    # row here would inherit whatever `validate_paths` decides for it, untested.
+    assert set(PATH_NAMES) == _NOT_EXEMPT | {"memory"}
+
+
+@pytest.mark.parametrize("name", PATH_NAMES)
+def test_the_final_symlink_exemption_holds_for_memory_and_for_no_other_path(
+    tmp_path: Path, name: str
+) -> None:
+    # One negative example cannot tell "only memory" from "anything but that one example":
+    # widening the exemption to the other ten paths must fail here, on each of them.
+    config = _sample_config(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    root = tmp_path / f"root-{name}"
+    relative = Path(config.paths.as_dict()[name])
+    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(outside, root / relative, target_is_directory=True)
+
+    if name == "memory":
+        assert validate_paths(config, root)[name] == root / relative
+        return
+    with pytest.raises(PathEscape, match="symlink"):
+        validate_paths(config, root)
