@@ -1460,7 +1460,7 @@ git commit -q -m "feat(cli): discover areas by name, accept --json anywhere, map
 - Test: `tests/hooks/test_hook_command.py`
 
 **Interfaces:**
-- Produces (fixed for every lane): `Policy` (`OPEN`, `CLOSED`); `HookEvent(name, session_id, agent_id, tool_name, tool_input, cwd, project_root, harness, raw)`; `HookResult(context=None, decision=None, reason=None)`; `Handler(name, event, policy, run)` where `run: Callable[[HookEvent, Config | None], HookResult]`; `Sink` protocol with `diagnostic(record: dict[str, object]) -> None`, `seen(key: str) -> bool`, `mark(key: str) -> None`, and `NullSink`; `registry.discover() -> list[Handler]` collecting every `keelline.<area>.hooks.register() -> list[Handler]`; `dispatch.dispatch(event, handlers, config, *, sink=NullSink(), cap=None) -> Outcome(exit_code, stdout, stderr, decision)`; `dispatch.parse_event(payload, env) -> HookEvent`; `dispatch.detect_harness(env) -> str`; `keelline hook <event>` reads the event JSON from stdin. The `hooks-core` lane supplies the real sink (diagnostics log, once-per-context markers), the wrapper and the per-harness emitter without changing these names.
+- Produces (fixed for every lane): `Policy` (`OPEN`, `CLOSED`); `HookEvent(name, session_id, agent_id, tool_name, tool_input, cwd, project_root, harness, raw)`; `HookResult(context=None, decision=None, reason=None)` (`decision` is a `Decision` member; an unrecognised one is that handler failing and is judged by its policy); `Handler(name, event, policy, run, once_key=None)` where `run: Callable[[HookEvent, Config | None], HookResult]`; `Sink` protocol with `diagnostic(record: dict[str, object]) -> None`, `seen(key: str) -> bool`, `mark(key: str) -> None`, and `NullSink`; `registry.discover() -> list[Handler]` collecting every `keelline.<area>.hooks.register() -> list[Handler]`; `dispatch.dispatch(event, handlers, config, *, sink, cap=None) -> Outcome(exit_code, stdout, stderr, decision)` — `sink` is required and has no default, so a caller cannot inherit an inert one by omission; until `hooks-core` supplies a durable session-keyed sink, `run_hook` passes `NullSink()` and `Handler.once_key` therefore degrades to every invocation rather than once; `dispatch.parse_event(payload, env) -> HookEvent`; `dispatch.detect_harness(env) -> str`; `keelline hook <event>` reads the event JSON from stdin. The `hooks-core` lane supplies the real sink (diagnostics log, once-per-context markers), the wrapper and the per-harness emitter without changing these names.
 
 - [ ] **Step 1: Write the failing dispatcher tests**
 
@@ -2591,12 +2591,12 @@ ai-daybook repository until the methodology docs move here). A plan's `Scope:` l
 the package it belongs to and the contracts it consumes and produces. The two P0 documents
 were copied from ai-daybook, which keeps its own copies as history.
 EOF
-grep -nE '/Users/|/home/|Nezhinskiy' docs/plans/*.md \
-  | grep -vE 'github.com/Nezhinskiy|"Nezhinskiy"|Copyright \(c\)' \
-  || echo "the copied documents carry no home path and no stray login"
+grep -nE '/[U]sers/[a-z]|/[h]ome/[a-z]|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' docs/plans/*.md \
+  | grep -vE 'git@github\.com' \
+  || echo "the copied documents carry no home path and no personal address"
 ```
 
-The branch name is read at run time because the ai-daybook branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it.
+The branch name is read at run time because the ai-daybook branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it. It is anchored on the *shape* of a leak — a home directory with a user under it, or an address — rather than on the owner's login, because the login appears legitimately in a repository URL, in the licence and in both manifests: an earlier form matched six such lines and zero leaks, which left its "clean" branch unreachable and the check unable to say anything. `[U]sers` and `[h]ome` are bracketed so the pattern does not match its own text, and `git@github.com` is filtered because an SSH remote is not an address.
 
 - [ ] **Step 2: Install the plugin from the checkout into a temporary configuration**
 
