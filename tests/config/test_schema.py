@@ -23,5 +23,7 @@ def test_effective_budget_is_the_minimum_of_preset_and_override() -> None:
 
 
 def test_unknown_budget_name_is_a_key_error() -> None:
+    # The preset carries the name so that only the `NAMES` check can raise: with `preset={}`
+    # the empty dict's own lookup raises the identical KeyError and the check is unfalsifiable.
     with pytest.raises(KeyError):
-        Budgets(preset={}, configured={}).effective("no_such_budget")
+        Budgets(preset={"no_such_budget": 999}, configured={}).effective("no_such_budget")
