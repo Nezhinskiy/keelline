@@ -165,6 +165,32 @@ def test_a_closed_handlers_non_string_context_refuses() -> None:
     assert recorder.records[0]["error"] == "unrecognised-context"
 
 
+@pytest.mark.parametrize("policy", [Policy.OPEN, Policy.CLOSED])
+@pytest.mark.parametrize("decision", [Decision.DENY, "deny"], ids=["enum", "string"])
+def test_a_deny_carrying_a_malformed_context_still_refuses_and_records_the_failure(
+    policy: Policy, decision: object
+) -> None:
+    # One result carries both the deny and the malformed context, so the order the two are read
+    # in decides the exit code. Validating `context` above the decision branch failed the handler
+    # before its deny was ever recorded, and an OPEN handler's policy then swallowed the whole
+    # result — a live deny converted into an allow by an ordinary neighbouring bug. The decision
+    # is read first now, and the context failure is still judged, on top of the refusal.
+    recorder = Recorder()
+    result = HookResult(
+        decision=cast(Decision, decision),
+        reason="rm -rf / is refused",
+        context=cast(str, {"n": 1}),
+    )
+    outcome = dispatch(event(), [handler("g", policy, result)], None, sink=recorder)
+    assert outcome.exit_code == 2
+    assert outcome.decision == "deny"
+    assert "g: rm -rf / is refused" in outcome.stderr
+    # Production reads stderr and never reads the sink, so the failure must reach both.
+    assert "unrecognised context {'n': 1}" in outcome.stderr
+    assert recorder.records[0]["error"] == "unrecognised-context"
+    assert recorder.records[0]["context"] == "{'n': 1}"
+
+
 def test_an_earlier_deny_survives_a_later_handlers_malformed_context() -> None:
     # Not PreToolUse: there `run_hook`'s blanket catch maps any internal error to 2 anyway, so
     # the lost deny is invisible. Everywhere else an escaped TypeError left the process at 0.

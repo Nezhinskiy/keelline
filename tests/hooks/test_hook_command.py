@@ -8,9 +8,11 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from keelline.hooks.commands import _output_cap, run_hook
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -101,3 +103,25 @@ def test_a_base_exception_inside_the_wrapper_keeps_the_event_aware_verdict(
     monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
     assert run_hook(argparse.Namespace(event=event)) == code
     assert type(raised).__name__ in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse"])
+def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
+) -> None:
+    # The production path, not `dispatch` alone: an OPEN handler that denies while carrying a
+    # non-string context exited 0 and the tool call proceeded. PostToolUse is the discriminating
+    # half — nothing there maps a stray internal error to 2, so only a genuinely recorded deny
+    # can produce it.
+    def deny(ev: HookEvent, config: object) -> HookResult:
+        return HookResult(
+            decision=Decision.DENY,
+            reason="rm -rf / is refused",
+            context=cast(str, {"n": 1}),
+        )
+
+    probe = Handler(name="probe", event=event, policy=Policy.OPEN, run=deny)
+    monkeypatch.setattr("keelline.hooks.commands.discover", lambda: [probe])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": event})))
+    assert run_hook(argparse.Namespace(event=event)) == 2
+    assert "refused: probe: rm -rf / is refused" in capsys.readouterr().err

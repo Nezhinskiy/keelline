@@ -174,10 +174,12 @@ class _UnrecognisedContext(Exception):
 
     `HookResult.context` is typed `str | None`, but nothing stops a dynamically built result
     from carrying something else, and the join that builds the payload happens once, after
-    every handler has run — outside every per-handler `try`. Raised here, at the same point
-    `_UnrecognisedDecision` is raised for `decision`, so a malformed `context` is that handler
-    failing rather than a `TypeError` that takes down the whole dispatch: an OPEN handler's
-    policy swallows it and a CLOSED handler's policy refuses, exactly like a malformed decision.
+    every handler has run — outside every per-handler `try`. Raised inside the per-handler
+    `try` instead, so a malformed `context` is that handler failing rather than a `TypeError`
+    that takes down the whole dispatch: an OPEN handler's policy swallows it and a CLOSED
+    handler's policy refuses, exactly like a malformed decision. Raised *after* the decision
+    branch, never before it: a deny already read off the same result is banked first, so a
+    handler that denies and carries a malformed context keeps its refusal.
     """
 
     def __init__(self, context: object) -> None:
@@ -238,6 +240,18 @@ def dispatch(
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
             if handler.once_key is not None:
                 sink.mark(handler.once_key)
+            # The decision is read before anything else that can fail this handler. A deny is
+            # the one thing a neighbouring bug must never cost, and it travels on one channel;
+            # banking it here means a malformed `context` on the same result costs that handler
+            # its context and a recorded failure, not its refusal. Validating `context` above
+            # this branch turned a live deny into an allow, which is the very defect the
+            # per-handler judging exists to prevent. The asymmetry with a malformed *decision*
+            # is deliberate: there is no well-formed deny to lose there.
+            if result.decision == Decision.DENY:
+                reasons.append(f"{handler.name}: {result.reason or 'denied'}")
+                refuse = True
+            elif result.decision is not None:
+                raise _UnrecognisedDecision(result.decision)
             # `context` is validated here too, and not only at the join below: the join runs
             # once after every handler, outside every per-handler `try`, so a non-string context
             # caught there would take the whole dispatch down instead of being judged by this
@@ -246,11 +260,6 @@ def dispatch(
                 raise _UnrecognisedContext(result.context)
             if result.context:
                 contexts.append(result.context)
-            if result.decision == Decision.DENY:
-                reasons.append(f"{handler.name}: {result.reason or 'denied'}")
-                refuse = True
-            elif result.decision is not None:
-                raise _UnrecognisedDecision(result.decision)
         except BaseException as exc:  # judged by the handler's own policy
             reason, record = _failure(exc)
             reasons.append(f"{handler.name}: {reason}")
