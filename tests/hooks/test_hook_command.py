@@ -1,0 +1,50 @@
+# tests/hooks/test_hook_command.py
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "keelline", "hook", event],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "PYTHONPATH": str(ROOT / "src"),
+            "CLAUDE_PROJECT_DIR": str(cwd),
+            "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
+        },
+    )
+
+
+def test_no_handlers_means_a_clean_empty_outcome(tmp_path: Path) -> None:
+    completed = hook("SessionStart", json.dumps({"hook_event_name": "SessionStart"}), tmp_path)
+    assert completed.returncode == 0
+    assert json.loads(completed.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+
+def test_malformed_stdin_on_pre_tool_use_refuses(tmp_path: Path) -> None:
+    completed = hook("PreToolUse", "{not json", tmp_path)
+    assert completed.returncode == 2
+    assert "refused" in completed.stderr
+
+
+def test_malformed_stdin_on_session_start_degrades_open(tmp_path: Path) -> None:
+    completed = hook("SessionStart", "{not json", tmp_path)
+    assert completed.returncode == 0
+    assert "keelline" in completed.stderr
+
+
+def test_a_broken_repository_config_on_pre_tool_use_refuses(tmp_path: Path) -> None:
+    (tmp_path / "keelline.toml").write_text('ci = "not-a-table"\n', encoding="utf-8")
+    completed = hook("PreToolUse", json.dumps({"hook_event_name": "PreToolUse"}), tmp_path)
+    assert completed.returncode == 2
