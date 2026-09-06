@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
+from typing import cast
 
 import pytest
 
 from keelline import __version__
-from keelline.cli import Registrar, SubParsers, discover_registrars, main, run
+from keelline.cli import Registrar, SubParsers, build_parser, discover_registrars, main, run
 from keelline.errors import Failure, Refusal
 from keelline.result import Result
 
@@ -55,26 +58,26 @@ def _refusing(args: argparse.Namespace) -> Result:
 
 
 def test_a_result_prints_its_summary_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(["probe", "go"], registrars=[_area("probe", _ok)]) == 0
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _ok)])) == 0
     assert capsys.readouterr().out.strip() == "probe ran"
 
 
 def test_json_flag_works_anywhere_on_the_line(capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(["probe", "go", "--json"], registrars=[_area("probe", _ok)]) == 0
+    assert run(["probe", "go", "--json"], parser=build_parser([_area("probe", _ok)])) == 0
     assert json.loads(capsys.readouterr().out) == {"summary": "probe ran", "n": 1}
-    assert run(["--json", "probe", "go"], registrars=[_area("probe", _ok)]) == 0
+    assert run(["--json", "probe", "go"], parser=build_parser([_area("probe", _ok)])) == 0
     assert json.loads(capsys.readouterr().out) == {"summary": "probe ran", "n": 1}
 
 
 def test_failure_exits_one_and_refusal_exits_two(capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(["probe", "go"], registrars=[_area("probe", _failing)]) == 1
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _failing)])) == 1
     assert "three findings" in capsys.readouterr().err
-    assert run(["probe", "go"], registrars=[_area("probe", _refusing)]) == 2
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _refusing)])) == 2
     assert "refused: an absent guard" in capsys.readouterr().err
 
 
 def test_failures_emit_json_when_asked(capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(["probe", "go", "--json"], registrars=[_area("probe", _failing)]) == 1
+    assert run(["probe", "go", "--json"], parser=build_parser([_area("probe", _failing)])) == 1
     assert json.loads(capsys.readouterr().out)["error"] == "failed"
 
 
@@ -91,12 +94,12 @@ def test_an_internal_error_in_a_command_exits_two_not_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Exit 1 is reserved for findings, so a command's own bug must not read as three findings.
-    assert run(["probe", "go"], registrars=[_area("probe", _exploding)]) == 2
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _exploding)])) == 2
     assert "keelline: internal error: KeyError: 'no such key'" in capsys.readouterr().err
 
 
 def test_an_internal_error_still_renders_json(capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(["probe", "go", "--json"], registrars=[_area("probe", _exploding)]) == 2
+    assert run(["probe", "go", "--json"], parser=build_parser([_area("probe", _exploding)])) == 2
     assert json.loads(capsys.readouterr().out)["error"] == "internal error"
 
 
@@ -147,3 +150,83 @@ def test_a_broken_area_on_a_non_hook_command_still_exits_two(
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
     assert main(["release", "check"]) == 2
     assert "keelline: internal error: RuntimeError" in capsys.readouterr().err
+
+
+def _register_explodes(groups: SubParsers) -> None:
+    raise RuntimeError("register exploded")
+
+
+def _claims_release(groups: SubParsers) -> None:
+    groups.add_parser("release")
+
+
+BROKEN_BUILDS: dict[str, list[Registrar]] = {
+    "register-raises": [_register_explodes],
+    "two-areas-claim-one-group": [_claims_release, _claims_release],
+}
+
+
+@pytest.mark.parametrize("registrars", list(BROKEN_BUILDS.values()), ids=list(BROKEN_BUILDS))
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [(["hook", "PreToolUse"], 2), (["hook", "UserPromptSubmit"], 0), (["release", "check"], 2)],
+)
+def test_a_broken_parser_build_is_judged_like_a_broken_import(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    registrars: list[Registrar],
+    argv: list[str],
+    code: int,
+) -> None:
+    # An area's `register()` runs during the parser build, one line outside the try that judged
+    # its import. The bypass went both ways: PreToolUse returned 1 where §5.3 requires 2, and
+    # UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
+    # is the same failure, and a plausible merge accident in an architecture that adds areas.
+    monkeypatch.setattr("keelline.cli.discover_registrars", lambda: list(registrars))
+    assert main(argv) == code
+    err = capsys.readouterr().err
+    assert "keelline: internal error" in err
+    assert ("continuing open" in err) == (code == 0)
+
+
+def _unserialisable(args: argparse.Namespace) -> Result:
+    return Result("ok", {"where": Path("/tmp")})
+
+
+def test_a_result_json_cannot_render_refuses_instead_of_reading_as_findings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Only the machine-readable path breaks on a Path in `Result.data` — the path CI consumes —
+    # so serialising must sit inside the try that reserves exit 1 for findings.
+    parser = build_parser([_area("probe", _unserialisable)])
+    assert run(["probe", "go", "--json"], parser=parser) == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "internal error"
+
+
+def test_the_plain_text_path_still_prints_a_summary_it_cannot_serialise(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    parser = build_parser([_area("probe", _unserialisable)])
+    assert run(["probe", "go"], parser=parser) == 0
+    assert capsys.readouterr().out.strip() == "ok"
+
+
+@pytest.mark.parametrize("returned", [None, "x"])
+def test_a_command_that_returns_neither_a_result_nor_an_exit_code_refuses(
+    capsys: pytest.CaptureFixture[str], returned: object
+) -> None:
+    parser = build_parser([_area("probe", lambda args: cast(Result, returned))])
+    assert run(["probe", "go"], parser=parser) == 2
+    assert "keelline: internal error" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
+def test_a_base_exception_in_a_command_is_an_internal_error_not_the_interpreters_code(
+    capsys: pytest.CaptureFixture[str], raised: BaseException
+) -> None:
+    def interrupted(args: argparse.Namespace) -> Result:
+        raise raised
+
+    parser = build_parser([_area("probe", interrupted)])
+    assert run(["probe", "go"], parser=parser) == 2
+    assert f"internal error: {type(raised).__name__}" in capsys.readouterr().err

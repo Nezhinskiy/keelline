@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.cli import run
+from keelline.cli import build_parser, run
 from keelline.release.commands import register
 from keelline.release.versions import check, collect
 
@@ -132,7 +132,7 @@ def test_the_cli_command_exits_one_on_version_drift(
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
-    assert run(["release", "check", "--root", str(root)], registrars=[register]) == 1
+    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
     assert "version drift" in capsys.readouterr().err
 
 
@@ -142,5 +142,6 @@ def test_the_cli_command_reports_the_agreed_version_on_success(
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.1.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
-    assert run(["release", "check", "--root", str(root), "--json"], registrars=[register]) == 0
+    argv = ["release", "check", "--root", str(root), "--json"]
+    assert run(argv, parser=build_parser([register])) == 0
     assert json.loads(capsys.readouterr().out)["versions"]["pyproject.toml"] == "0.1.0"

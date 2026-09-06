@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Iterable
+from typing import Any
 
 import keelline
 from keelline.areas import Registrar, SubParsers, area_modules
@@ -53,23 +54,14 @@ def _report(kind: str, message: str, code: int, as_json: bool) -> int:
     return code
 
 
-def run(argv: list[str] | None, *, registrars: Iterable[Registrar]) -> int:
-    raw = list(sys.argv[1:] if argv is None else argv)
-    args_in, as_json = split_json_flag(raw)
-    parser = build_parser(registrars)
-    args = parser.parse_args(args_in)
-    func = getattr(args, "func", None)
-    if func is None:
-        parser.print_help()
-        return 2
-    try:
-        outcome = func(args)
-    except Refusal as exc:
-        return _report("refused", str(exc), 2, as_json)
-    except Failure as exc:
-        return _report("failed", str(exc), 1, as_json)
-    except Exception as exc:  # exit 1 is reserved for findings; a bug in a command is not one
-        return _report("internal error", f"{type(exc).__name__}: {exc}", 2, as_json)
+def _emit(outcome: Any, as_json: bool) -> int:
+    """Turn what a command returned into output and an exit code.
+
+    Called from inside `run`'s `try`. A `Path`, `datetime`, `set` or `Decimal` in `Result.data`
+    is an easy thing for a later area to write, and the plain-text path prints only `summary`
+    and never notices — so the machine-readable path, the one CI consumes, is the only one that
+    breaks, and it must refuse rather than report an internal error as findings.
+    """
     if not isinstance(outcome, Result):
         return int(outcome)
     if as_json:
@@ -79,21 +71,48 @@ def run(argv: list[str] | None, *, registrars: Iterable[Registrar]) -> int:
     return outcome.exit_code
 
 
+def run(argv: list[str] | None, *, parser: argparse.ArgumentParser) -> int:
+    """Execute an already-built parser. Building it is `main`'s, so one judge owns that failure.
+
+    An area's `register()` is called while the parser is built, and a broken one is the same
+    class of failure as an area that raises at import — `_discovery_failed` judges both.
+    """
+    raw = list(sys.argv[1:] if argv is None else argv)
+    args_in, as_json = split_json_flag(raw)
+    args = parser.parse_args(args_in)
+    func = getattr(args, "func", None)
+    if func is None:
+        parser.print_help()
+        return 2
+    try:
+        return _emit(func(args), as_json)
+    except Refusal as exc:
+        return _report("refused", str(exc), 2, as_json)
+    except Failure as exc:
+        return _report("failed", str(exc), 1, as_json)
+    except BaseException as exc:  # exit 1 is for findings; a bug or a Ctrl-C is not one
+        return _report("internal error", f"{type(exc).__name__}: {exc}", 2, as_json)
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     try:
         registrars = discover_registrars()
+        parser = build_parser(registrars)
     except Exception as exc:  # a broken area must never read as findings
         return _discovery_failed(raw, exc)
-    return run(raw, registrars=registrars)
+    return run(raw, parser=parser)
 
 
 def _discovery_failed(raw: list[str], exc: Exception) -> int:
-    """Discovery aborts before argparse, so `hook`'s own policy is applied here (§5.3).
+    """Discovery and the parser build both abort before argparse, so `hook`'s own policy is
+    applied here (§5.3).
 
-    Exit 2 on `UserPromptSubmit` erases what the user typed, so one later area's import-time
-    bug in its `commands.py` must not cost the user their prompt: on a hook invocation the
-    failure degrades open everywhere exit 2 does not block, and refuses only where it does.
+    Exit 2 on `UserPromptSubmit` erases what the user typed, so one later area's bug in its
+    `commands.py` — raised at import, or from the `register()` the parser build calls, or as
+    two areas claiming one group name — must not cost the user their prompt: on a hook
+    invocation the failure degrades open everywhere exit 2 does not block, and refuses only
+    where it does.
     """
     reason = f"keelline: internal error: {type(exc).__name__}: {exc}"
     event = hook_event_name(raw)

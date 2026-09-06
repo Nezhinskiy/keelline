@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from keelline.hooks.api import Decision, Handler, HookEvent, NullSink, Policy, Sink
+from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -155,15 +155,40 @@ def _clamp(event_name: str, context: str, cap: int) -> str:
     return bare if len(bare) <= cap else ""
 
 
+class _UnrecognisedDecision(Exception):
+    """A verdict `dispatch` cannot read.
+
+    Raised rather than ignored so it travels the path a handler's exception already travels:
+    the handler's own policy judges it, a CLOSED guard that misnames its deny refuses instead
+    of permitting, and the reason reaches stderr — which production reads — and not only the
+    sink, which today forgets (see `NullSink`).
+    """
+
+    def __init__(self, decision: object) -> None:
+        super().__init__(f"unrecognised decision {decision!r}")
+        self.decision = decision
+
+
+def _failure(exc: BaseException) -> tuple[str, dict[str, object]]:
+    """The stderr reason and the sink record one handler's failure earns."""
+    if isinstance(exc, _UnrecognisedDecision):
+        return str(exc), {"error": "unrecognised-decision", "decision": str(exc.decision)}
+    return f"{type(exc).__name__}: {exc}", {"error": type(exc).__name__}
+
+
 def dispatch(
     event: HookEvent,
     handlers: list[Handler],
     config: Config | None,
     *,
-    sink: Sink | None = None,
+    sink: Sink,
     cap: int | None = None,
 ) -> Outcome:
-    sink = sink or NullSink()
+    """One deny travels on one channel — the exit code — so every failure here is judged.
+
+    `sink` carries no default on purpose: a caller that has no durable sink must say so with
+    `NullSink()` and inherit its forgetfulness (§5.3), rather than acquire it by omission.
+    """
     contexts: list[str] = []
     reasons: list[str] = []
     refuse = False
@@ -188,29 +213,26 @@ def dispatch(
             )
             view = replace(event, tool_input=tool_input_view, raw=raw_view)
             result = handler.run(view, config)
-        except (Exception, SystemExit) as exc:  # judged by the handler's own policy
-            reasons.append(f"{handler.name}: {type(exc).__name__}: {exc}")
-            sink.diagnostic(
-                {"event": event.name, "handler": handler.name, "error": type(exc).__name__}
-            )
+            # Consuming the result belongs inside this `try`: reading `.context` off whatever a
+            # handler actually returned used to raise out of `dispatch` entirely, so one later
+            # handler's malformed return destroyed an earlier handler's deny.
+            if not isinstance(result, HookResult):
+                raise TypeError(f"returned {type(result).__name__}, not HookResult")
+            if handler.once_key is not None:
+                sink.mark(handler.once_key)
+            if result.context:
+                contexts.append(result.context)
+            if result.decision == Decision.DENY:
+                reasons.append(f"{handler.name}: {result.reason or 'denied'}")
+                refuse = True
+            elif result.decision is not None:
+                raise _UnrecognisedDecision(result.decision)
+        except BaseException as exc:  # judged by the handler's own policy
+            reason, record = _failure(exc)
+            reasons.append(f"{handler.name}: {reason}")
+            sink.diagnostic({"event": event.name, "handler": handler.name, **record})
             refuse = refuse or handler.policy == Policy.CLOSED
             continue
-        if handler.once_key is not None:
-            sink.mark(handler.once_key)
-        if result.context:
-            contexts.append(result.context)
-        if result.decision == Decision.DENY:
-            reasons.append(f"{handler.name}: {result.reason or 'denied'}")
-            refuse = True
-        elif result.decision is not None:
-            sink.diagnostic(
-                {
-                    "event": event.name,
-                    "handler": handler.name,
-                    "error": "unrecognised-decision",
-                    "decision": str(result.decision),
-                }
-            )
     if refuse:
         return Outcome(2, "", "keelline: refused: " + "; ".join(reasons) + "\n", "deny")
     stderr = ("keelline: " + "; ".join(reasons) + "\n") if reasons else ""

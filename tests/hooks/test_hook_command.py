@@ -1,12 +1,17 @@
 # tests/hooks/test_hook_command.py
 from __future__ import annotations
 
+import argparse
+import asyncio
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from keelline.hooks.commands import _output_cap
+import pytest
+
+from keelline.hooks.commands import _output_cap, run_hook
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -75,3 +80,24 @@ def test_an_unknown_event_on_the_command_line_dispatches_to_nothing(tmp_path: Pa
 
 def test_a_repository_without_a_config_still_gets_the_shipped_cap() -> None:
     assert _output_cap(None) == 10000
+
+
+@pytest.mark.parametrize(("event", "code"), [("PreToolUse", 2), ("SessionStart", 0)])
+@pytest.mark.parametrize("raised", [asyncio.CancelledError(), KeyboardInterrupt()], ids=type)
+def test_a_base_exception_inside_the_wrapper_keeps_the_event_aware_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    raised: BaseException,
+    event: str,
+    code: int,
+) -> None:
+    # A Ctrl-C mid-hook raises KeyboardInterrupt, which does not inherit Exception: escaping
+    # here would exit the process on the interpreter's own code, and PreToolUse reads anything
+    # that is not 2 as permission.
+    def interrupted() -> list[object]:
+        raise raised
+
+    monkeypatch.setattr("keelline.hooks.commands.discover", interrupted)
+    monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+    assert run_hook(argparse.Namespace(event=event)) == code
+    assert type(raised).__name__ in capsys.readouterr().err

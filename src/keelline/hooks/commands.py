@@ -10,6 +10,7 @@ import sys
 from keelline.areas import SubParsers
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
+from keelline.hooks.api import NullSink
 from keelline.hooks.dispatch import dispatch, parse_event
 from keelline.hooks.policy import refuses_on_internal_error
 from keelline.hooks.registry import discover
@@ -37,8 +38,11 @@ def run_hook(args: argparse.Namespace) -> int:
         if root is not None and (root / CONFIG_FILE).is_file():
             config = load(root)
         cap = _output_cap(config)
-        outcome = dispatch(event, discover(), config, cap=cap)
-    except Exception as exc:  # an internal error must never read as permission
+        # The durable, session-keyed sink belongs to the `hooks-core` lane. Until it exists
+        # this process keeps nothing between invocations: diagnostics are discarded and
+        # `once_key` degrades from "once per context" to "every invocation" (see `NullSink`).
+        outcome = dispatch(event, discover(), config, sink=NullSink(), cap=cap)
+    except BaseException as exc:  # an internal error must never read as permission
         reason = f"keelline: internal error: {type(exc).__name__}: {exc}"
         if refuses_on_internal_error(event_name):
             sys.stderr.write(f"{reason}; refused\n")
