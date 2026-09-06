@@ -1,0 +1,68 @@
+# Owned by the foundation lane: [budgets], [native_caps], [defaults.*]. The setup lane adds
+# every other section.
+
+[budgets]
+agents_md_lines = 300
+agents_md_words = 3000
+status_lines = 50
+roadmap_prose_lines = 350
+roadmap_prose_words = 3500
+memory_index_words = 1200
+startup_rules_words = 1600
+volatile_notes_words = 2500
+volatile_ttl_days = 30
+
+[native_caps]
+# Platform limits in their own units, read by the consumers they bound (§9.5).
+memory_index_lines = 200
+memory_index_bytes = 25600
+hook_output_chars = 10000
+
+[defaults.keelline]
+state = "initialised"
+profile = ""
+agents = ["claude", "codex"]
+
+[defaults.project]
+base_branch = "main"
+release_branch = "main"
+
+[defaults.paths]
+agents_md = "AGENTS.md"
+architecture = "docs/architecture"
+runbooks = "docs/runbooks"
+adr = "docs/adr"
+specs = "docs/specs"
+plans = "docs/plans"
+bugs = "docs/bugs"
+bug_index = "docs/bug-reports.md"
+roadmap = "docs/roadmap.md"
+roadmap_history = "docs/roadmap-history.md"
+memory = "docs/memory"
+
+[defaults.memory]
+mode = "local-only"
+groups = ["developer", "project-stable", "project-volatile", "specs"]
+index_extra = []
+
+[defaults.ledger]
+id_prefix = "BR"
+code_roots = ["src", "tests", "scripts"]
+evidence_boundary_required_for = ["high"]
+
+[defaults.artifacts]
+local = []
+
+[defaults.ci]
+mode = "reusable"
+ref = ""
+gate_branch = "main"
+
+[defaults.commit_messages]
+attribution_check = true
+types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
+
+[defaults.personal]
+reply_language = ""
+artifact_language = "en"
+preset = "recommended"
