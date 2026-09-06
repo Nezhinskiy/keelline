@@ -63,5 +63,15 @@ def test_argv_names_the_event_even_when_stdin_spells_it_differently(tmp_path: Pa
     assert json.loads(completed.stdout)["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
 
 
+def test_an_unknown_event_on_the_command_line_dispatches_to_nothing(tmp_path: Path) -> None:
+    # The harness owns the event vocabulary on argv; only a *registered* handler's event is
+    # validated, so a platform that adds an event must not make the wrapper refuse.
+    completed = hook("SomethingNewEntirely", "{}", tmp_path)
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)["hookSpecificOutput"]
+    assert output["hookEventName"] == "SomethingNewEntirely"
+    assert "additionalContext" not in output
+
+
 def test_a_repository_without_a_config_still_gets_the_shipped_cap() -> None:
     assert _output_cap(None) == 10000

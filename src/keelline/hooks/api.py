@@ -10,6 +10,18 @@ if TYPE_CHECKING:
     from keelline.config.schema import Config
 
 
+# The five events §5.3's table carries. A lane that needs a sixth adds it here deliberately;
+# `registry.discover` refuses anything else, so a handler registered for "PreToolUSe" is a
+# loud failure at discovery rather than a guard that never fires and tests that never notice.
+EVENTS = (
+    "SessionStart",
+    "UserPromptSubmit",
+    "UserPromptExpansion",
+    "PreToolUse",
+    "PostToolUse",
+)
+
+
 class Policy(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
@@ -48,6 +60,9 @@ class Handler:
     event: str
     policy: Policy
     run: HandlerFn
+    # Handlers stay pure `(event, config) -> result` (§5.3), so a handler that must run once
+    # per context declares the marker key and the dispatcher owns the bookkeeping.
+    once_key: str | None = None
 
 
 class Sink(Protocol):

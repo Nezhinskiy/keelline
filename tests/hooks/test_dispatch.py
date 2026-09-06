@@ -22,13 +22,18 @@ def event(name: str = "PreToolUse", **raw: object) -> HookEvent:
     return parse_event(payload, env=CLAUDE_ENV)
 
 
-def handler(name: str, policy: Policy, result: HookResult | BaseException) -> Handler:
+def handler(
+    name: str,
+    policy: Policy,
+    result: HookResult | BaseException,
+    once_key: str | None = None,
+) -> Handler:
     def run(ev: HookEvent, config: object) -> HookResult:
         if isinstance(result, BaseException):
             raise result
         return result
 
-    return Handler(name=name, event="PreToolUse", policy=policy, run=run)
+    return Handler(name=name, event="PreToolUse", policy=policy, run=run, once_key=once_key)
 
 
 def test_contexts_are_joined_into_the_claude_shape() -> None:
@@ -99,12 +104,13 @@ def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> 
     assert dispatch(event(), handlers, None).exit_code == 0
 
 
-def test_context_above_the_cap_is_truncated_and_recorded() -> None:
+def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
+    # No JSON envelope fits in 20 characters, so the honest output is none at all: anything
+    # longer than the cap is replaced by the platform with a preview and a file path (§9.5).
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)
-    context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert len(context) <= 20
+    assert len(outcome.stdout) <= 20
     assert recorder.records[0]["error"] == "context-truncated"
 
 
@@ -112,9 +118,74 @@ def test_context_at_a_realistic_cap_keeps_its_leading_content_and_the_mark() -> 
     handlers = [handler("a", Policy.OPEN, HookResult(context="y" * 500))]
     outcome = dispatch(event(), handlers, None, cap=200)
     context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert len(context) <= 200
-    assert context.startswith("y" * (200 - len(TRUNCATION_MARK)))
+    assert len(outcome.stdout) <= 200
+    assert len(outcome.stdout) > 200 - len(TRUNCATION_MARK)  # the budget is spent, not abandoned
+    assert context.startswith("y" * 8)
     assert context.endswith(TRUNCATION_MARK)
+
+
+def test_the_cap_bounds_the_emitted_string_not_the_field_inside_it() -> None:
+    handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 20000))]
+    outcome = dispatch(event(), handlers, None, cap=10000)
+    assert len(outcome.stdout) <= 10000
+    context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context.endswith(TRUNCATION_MARK)
+
+
+def test_json_escaping_is_charged_to_the_same_budget() -> None:
+    handlers = [handler("a", Policy.OPEN, HookResult(context="\n" * 500))]
+    outcome = dispatch(event(), handlers, None, cap=200)
+    assert len(outcome.stdout) <= 200
+    context = json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context.endswith(TRUNCATION_MARK)
+
+
+def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> None:
+    recorder = Recorder()
+    once = handler("a", Policy.OPEN, HookResult(context="A"), once_key="ledger-notes")
+    first = json.loads(dispatch(event(), [once], None, sink=recorder).stdout)
+    second = json.loads(dispatch(event(), [once], None, sink=recorder).stdout)
+    assert first["hookSpecificOutput"]["additionalContext"] == "A"
+    assert "additionalContext" not in second["hookSpecificOutput"]
+    assert recorder.marks == {"ledger-notes"}
+
+
+def test_a_handler_without_a_once_key_runs_every_time() -> None:
+    recorder = Recorder()
+    every = handler("a", Policy.OPEN, HookResult(context="A"))
+    for _ in range(2):
+        outcome = dispatch(event(), [every], None, sink=recorder)
+        assert json.loads(outcome.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
+    assert recorder.marks == set()
+
+
+def test_a_once_per_context_handler_that_raises_is_not_marked() -> None:
+    recorder = Recorder()
+    once = handler("a", Policy.OPEN, RuntimeError("boom"), once_key="ledger-notes")
+    assert "boom" in dispatch(event(), [once], None, sink=recorder).stderr
+    assert recorder.marks == set()
+    assert "boom" in dispatch(event(), [once], None, sink=recorder).stderr
+
+
+def test_one_handler_cannot_blank_what_the_next_one_reads() -> None:
+    seen: list[object] = []
+
+    def blank(ev: HookEvent, config: object) -> HookResult:
+        ev.tool_input["command"] = ""
+        ev.raw["tool_name"] = "Write"
+        return HookResult()
+
+    def read(ev: HookEvent, config: object) -> HookResult:
+        seen.append(ev.tool_input.get("command"))
+        seen.append(ev.raw.get("tool_name"))
+        return HookResult()
+
+    handlers = [
+        Handler(name="a-blank", event="PreToolUse", policy=Policy.OPEN, run=blank),
+        Handler(name="b-read", event="PreToolUse", policy=Policy.OPEN, run=read),
+    ]
+    dispatch(event(tool_input={"command": "rm -rf /"}), handlers, None)
+    assert seen == ["rm -rf /", "Bash"]
 
 
 def test_non_string_contract_fields_become_none_instead_of_reaching_a_guard() -> None:
