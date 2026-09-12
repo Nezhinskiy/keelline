@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.schema import Config
+from keelline.memory.index import (
+    INDEX_NAME,
+    check_index,
+    entries_in,
+    is_volatile,
+    reconcile,
+    render_index,
+    section_title,
+    write_index,
+)
+from keelline.memory.notes import Provenance, read_note
+from keelline.memory.store import Store
+
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+
+[memory]
+mode = "in-repo"
+groups = ["developer", "project-stable", "project-volatile"]
+index_extra = ["docs/runbooks/ledger.md"]
+"""
+
+GROUPS = ("developer", "project-stable", "project-volatile")
+
+
+def note(name: str, *, index: str = "", startup: str = "", group: str = "", order: str = "") -> str:
+    head = [f"name: {name}", f'description: "{name} description"']
+    if index:
+        head.append(f'index: "{index}"')
+    if group:
+        head.append(f"group: {group}")
+    if order:
+        head.append(f"group_order: {order}")
+    meta = ["metadata:", "  type: project"]
+    if startup:
+        meta.append(f"  startup: {startup}")
+    return "---\n" + "\n".join([*head, *meta]) + "\n---\n\nBody.\n"
+
+
+def a_store(tmp_path: Path) -> tuple[Store, Config]:
+    root = tmp_path / "project"
+    base = root / "docs" / "memory"
+    for group in GROUPS:
+        (base / group).mkdir(parents=True)
+    (base / "developer" / "b.md").write_text(note("b", index="B trigger → B"), encoding="utf-8")
+    (base / "developer" / "a.md").write_text(
+        note("a", index="A trigger → A", startup="2"), encoding="utf-8"
+    )
+    (base / "project-stable" / "c.md").write_text(
+        note("c", index="C trigger → C", group="Tests", order="1"), encoding="utf-8"
+    )
+    (base / "project-stable" / "d.md").write_text(
+        note("d", index="D trigger → D"), encoding="utf-8"
+    )
+    (base / "project-volatile" / "e.md").write_text(
+        note("e", index="E trigger → E"), encoding="utf-8"
+    )
+    (root / CONFIG_FILE).write_text(CONFIG, encoding="utf-8")
+    config = load(root, machine=tmp_path / "absent.toml")
+    store = Store(base, "in-repo", root, {g: base / g for g in GROUPS})
+    return store, config
+
+
+def rendered(tmp_path: Path) -> str:
+    store, config = a_store(tmp_path)
+    return render_index(reconcile(store, config.memory.groups, write=False), config, store)
+
+
+def test_entries_in_reads_title_and_target_in_order() -> None:
+    text = "- [A](developer/a.md)\n- [B](project-stable/b.md)\n"
+    assert entries_in(text) == [("A", "developer/a.md"), ("B", "project-stable/b.md")]
+
+
+def test_section_title_derives_a_heading_from_a_folder_name() -> None:
+    assert section_title("developer") == "Developer"
+    assert section_title("project-stable") == "Project — stable"
+    assert section_title("specs") == "Specs"
+
+
+def test_the_volatile_group_is_recognised_by_its_name_not_a_hardcoded_string() -> None:
+    assert is_volatile("project-volatile") is True
+    assert is_volatile("notes-volatile") is True
+    assert is_volatile("project-stable") is False
+
+
+def test_the_header_contract_is_present(tmp_path: Path) -> None:
+    text = rendered(tmp_path)
+    assert text.startswith("# Memory Index\n")
+    assert "never the answer" in text
+
+
+def test_sections_follow_the_declared_order(tmp_path: Path) -> None:
+    headings = [line for line in rendered(tmp_path).splitlines() if line.startswith("## ")]
+    assert headings[:3] == ["## Developer", "## Project — stable", "## Project — volatile"]
+
+
+def test_a_startup_ranked_note_sorts_before_an_unranked_one(tmp_path: Path) -> None:
+    text = rendered(tmp_path)
+    assert text.index("A trigger") < text.index("B trigger")
+
+
+def test_a_group_becomes_a_sub_heading_after_the_ungrouped_notes(tmp_path: Path) -> None:
+    text = rendered(tmp_path)
+    assert "### Tests" in text
+    assert text.index("D trigger") < text.index("### Tests")
+
+
+def test_each_entry_points_at_the_note_relative_to_the_store(tmp_path: Path) -> None:
+    assert "](developer/a.md)" in rendered(tmp_path)
+
+
+def test_the_volatile_section_carries_its_lead(tmp_path: Path) -> None:
+    assert "Injected in full at session start" in rendered(tmp_path)
+
+
+def test_index_extra_entries_are_rendered(tmp_path: Path) -> None:
+    assert "docs/runbooks/ledger.md" in rendered(tmp_path)
+
+
+def test_an_empty_group_gets_no_heading(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    for path in store.groups["project-volatile"].glob("*.md"):
+        path.unlink()
+    text = render_index(reconcile(store, config.memory.groups, write=False), config, store)
+    assert "## Project — volatile" not in text
+
+
+# --- reconciliation ---------------------------------------------------------------------
+
+
+def test_a_curated_line_is_left_alone(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    result = reconcile(store, config.memory.groups, write=True)
+    assert read_note(store.groups["developer"] / "a.md").index == "A trigger → A"
+    assert result.harvested == []
+
+
+def test_a_native_line_is_harvested_into_the_note(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["developer"] / "n.md").write_text(note("n"), encoding="utf-8")
+    (store.path / INDEX_NAME).write_text(
+        "- [Harvested trigger → harvested answer](developer/n.md)\n", encoding="utf-8"
+    )
+    result = reconcile(store, config.memory.groups, write=True)
+    harvested = read_note(store.groups["developer"] / "n.md")
+    assert harvested.index == "Harvested trigger → harvested answer"
+    assert harvested.index_provenance is Provenance.NATIVE
+    assert result.harvested == ["n"]
+
+
+def test_a_note_with_neither_gets_a_provisional_line(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
+    result = reconcile(store, config.memory.groups, write=True)
+    written = read_note(store.groups["developer"] / "bare.md")
+    assert written.index == "bare description"
+    assert written.index_provenance is Provenance.PROVISIONAL
+    assert result.provisional == ["bare"]
+
+
+def test_write_false_changes_nothing_on_disk(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
+    before = (store.groups["developer"] / "bare.md").read_text(encoding="utf-8")
+    result = reconcile(store, config.memory.groups, write=False)
+    assert (store.groups["developer"] / "bare.md").read_text(encoding="utf-8") == before
+    assert [n.index for n in result.notes if n.name == "bare"] == ["bare description"]
+
+
+def test_reconcile_is_idempotent(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["developer"] / "bare.md").write_text(note("bare"), encoding="utf-8")
+    reconcile(store, config.memory.groups, write=True)
+    first = (store.groups["developer"] / "bare.md").read_text(encoding="utf-8")
+    second = reconcile(store, config.memory.groups, write=True)
+    assert (store.groups["developer"] / "bare.md").read_text(encoding="utf-8") == first
+    assert second.provisional == []
+
+
+def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["project-stable"] / "superseded.md").write_text("no frontmatter\n", "utf-8")
+    result = reconcile(store, config.memory.groups, write=False)
+    assert [p.name for p, _ in result.unreadable] == ["superseded.md"]
+    assert len(result.notes) == 5
+
+
+# --- the check ----------------------------------------------------------------------------
+
+
+def test_check_reports_drift_against_the_file_on_disk(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config.memory.groups, write=False)
+    assert check_index(store, config, reconciled).drifted is True
+    write_index(store, render_index(reconciled, config, store))
+    assert check_index(store, config, reconciled).drifted is False
+
+
+def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    result = check_index(store, config, reconcile(store, config.memory.groups, write=False))
+    assert result.over_budget is False
+    assert result.over_caps == []
+    assert result.words > 0
+
+
+def test_write_index_writes_where_the_store_says(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config.memory.groups, write=False)
+    path = write_index(store, render_index(reconciled, config, store))
+    assert path == store.path / INDEX_NAME
+    assert path.read_text(encoding="utf-8").startswith("# Memory Index")
