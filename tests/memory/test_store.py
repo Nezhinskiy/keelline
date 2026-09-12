@@ -174,11 +174,42 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
     assert "outside this project's share" in store.unavailable["project-stable"]
 
 
+def test_overlay_mode_refuses_a_symlinked_paths_memory_into_another_project(
+    tmp_path: Path,
+) -> None:
+    # §9.1 check 1: in overlay mode `paths.memory` must itself be a real directory holding one
+    # link per group. A group reached *through* a symlinked `paths.memory` is not itself a
+    # symlink, so the per-group check (§9.1 check 3, `permitted_roots`) never sees it — the
+    # shape check is what has to catch this, and it must fire regardless of mode.
+    root = tmp_path / "project"
+    a_repo(root)
+    overlay = an_overlay(tmp_path, projects=("widget", "secret-client"))
+    (overlay / "projects" / "secret-client" / "memory" / "project-stable" / "nda.md").write_text(
+        "confidential\n", encoding="utf-8"
+    )
+    (root / "docs").mkdir()
+    (root / "docs" / "memory").symlink_to(
+        overlay / "projects" / "secret-client" / "memory", target_is_directory=True
+    )
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    store = resolve(root, config, machine=machine)
+    # A refused store carries no `groups` at all, which is the proof the victim's `nda.md` was
+    # never reachable through it.
+    assert store is None
+    assert refusal_reason(root, config, machine=machine) is not None
+
+
 def test_a_group_name_that_escapes_the_store_is_refused(tmp_path: Path) -> None:
     root = tmp_path / "project"
     a_repo(root)
-    (tmp_path / "secret").mkdir()
-    (tmp_path / "secret" / "leaked.md").write_text("outside the store\n", encoding="utf-8")
+    # `"../../secret"` from the store (`root/docs/memory`) resolves to `root/secret`, two
+    # levels up — not to `tmp_path/secret`, which is a level further still. The leak has to
+    # exist at the location the group name actually resolves to, or a mutation that drops the
+    # containment guard would be masked by the ordinary "not in the store" / `exists()` check
+    # instead of exposing the escape.
+    (root / "secret").mkdir()
+    (root / "secret" / "leaked.md").write_text("outside the store\n", encoding="utf-8")
     (root / "docs" / "memory" / "developer").mkdir(parents=True)
     config = a_config(root, "in-repo", groups='["developer", "../../secret"]')
     store = resolve(root, config)

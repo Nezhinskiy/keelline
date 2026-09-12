@@ -42,6 +42,13 @@ LOCAL_STORE = Path(".keelline") / "local" / "memory"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
 _GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
+# Wall-clock bound on one `_git` call (D7: a cap, not read from config.budgets or
+# config.native_caps — no shipped file needs to change with it). Every call this module makes
+# is a local, argument-free, read-only query (`rev-parse`, `remote get-url`) against a
+# scrubbed environment, so it never touches the network; this only guards against a `git`
+# binary that hangs outright, and is generous for that without leaving store resolution
+# blocked for long.
+_GIT_TIMEOUT_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -60,7 +67,12 @@ def _git(root: Path, *args: str) -> str | None:
     env = {key: os.environ[key] for key in _GIT_ENV_KEEP if key in os.environ}
     try:
         done = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, text=True, timeout=5, env=env
+            ["git", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -162,13 +174,23 @@ def _resolve_at(
         base = Path(override).expanduser()
     elif mode == "local-only":
         base = root / LOCAL_STORE
+        if base.is_symlink():
+            return None, f"{LOCAL_STORE} is a symlink; local-only memory must be a real directory"
     else:
         declared = _declared(root, config)
         if declared is None:
             return None, f"paths.memory ({config.paths.memory!r}) does not stay inside the project"
         base = declared
-        if mode == "in-repo" and declared.is_symlink():
-            return None, f"{config.paths.memory} is a symlink; in-repo memory is a real directory"
+        # §9.1 check 1: in every mode but `local-only` and an explicit `override`, `paths.memory`
+        # itself must be a real directory — one link per group, not one link for the whole
+        # store. This has to hold in overlay mode too, not just `in-repo`: a group directory
+        # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
+        # check below (`permitted_roots`) never runs, and the whole store silently becomes
+        # whatever `paths.memory` was pointed at — including another project's share.
+        if declared.is_symlink():
+            return None, (
+                f"{config.paths.memory} is a symlink; {mode} memory must be a real directory"
+            )
     if mode == "overlay":
         if overlay is None:
             return (
