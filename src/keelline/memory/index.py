@@ -118,13 +118,18 @@ def _section(group: str, notes: list[Note], store: Store) -> list[str]:
     lines += [_entry(note, store) for note in ungrouped]
     if ungrouped:
         lines.append("")
-    seen: list[str] = []
-    for note in sorted((n for n in notes if n.group), key=_order):
-        if note.group not in seen:
-            seen.append(note.group or "")
-            lines += [f"### {note.group}", ""]
-        lines.append(_entry(note, store))
-    if seen:
+    # Grouped notes are collected by their `group` sub-heading first, then each heading is
+    # emitted once. Interleaving `_order` across two sub-headings (Alpha, Beta, Alpha, ...)
+    # must not split one heading's members apart or reopen it — every member of a heading has
+    # to be gathered before that heading is ever written out.
+    by_heading: dict[str, list[Note]] = {}
+    for note in notes:
+        if note.group:
+            by_heading.setdefault(note.group, []).append(note)
+    for heading in sorted(by_heading, key=lambda h: min(_order(n) for n in by_heading[h])):
+        lines += [f"### {heading}", ""]
+        lines += [_entry(note, store) for note in sorted(by_heading[heading], key=_order)]
+    if by_heading:
         lines.append("")
     return lines
 

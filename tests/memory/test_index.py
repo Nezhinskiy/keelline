@@ -32,7 +32,7 @@ release_branch = "main"
 
 [memory]
 mode = "in-repo"
-groups = ["developer", "project-stable", "project-volatile"]
+groups = ["project-volatile", "project-stable", "developer"]
 index_extra = ["docs/runbooks/ledger.md"]
 """
 
@@ -58,10 +58,10 @@ def a_store(tmp_path: Path) -> tuple[Store, Config]:
     base = root / "docs" / "memory"
     for group in GROUPS:
         (base / group).mkdir(parents=True)
-    (base / "developer" / "b.md").write_text(note("b", index="B trigger → B"), encoding="utf-8")
-    (base / "developer" / "a.md").write_text(
-        note("a", index="A trigger → A", startup="2"), encoding="utf-8"
+    (base / "developer" / "b.md").write_text(
+        note("b", index="B trigger → B", startup="2"), encoding="utf-8"
     )
+    (base / "developer" / "a.md").write_text(note("a", index="A trigger → A"), encoding="utf-8")
     (base / "project-stable" / "c.md").write_text(
         note("c", index="C trigger → C", group="Tests", order="1"), encoding="utf-8"
     )
@@ -107,18 +107,44 @@ def test_the_header_contract_is_present(tmp_path: Path) -> None:
 
 def test_sections_follow_the_declared_order(tmp_path: Path) -> None:
     headings = [line for line in rendered(tmp_path).splitlines() if line.startswith("## ")]
-    assert headings[:3] == ["## Developer", "## Project — stable", "## Project — volatile"]
+    assert headings[:3] == ["## Project — volatile", "## Project — stable", "## Developer"]
 
 
 def test_a_startup_ranked_note_sorts_before_an_unranked_one(tmp_path: Path) -> None:
     text = rendered(tmp_path)
-    assert text.index("A trigger") < text.index("B trigger")
+    assert text.index("B trigger") < text.index("A trigger")
 
 
 def test_a_group_becomes_a_sub_heading_after_the_ungrouped_notes(tmp_path: Path) -> None:
     text = rendered(tmp_path)
     assert "### Tests" in text
     assert text.index("D trigger") < text.index("### Tests")
+
+
+def test_interleaved_group_members_stay_under_their_own_heading(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    (store.groups["developer"] / "w.md").write_text(
+        note("w", index="W trigger → W", group="Alpha", order="1", startup="1"),
+        encoding="utf-8",
+    )
+    (store.groups["developer"] / "x.md").write_text(
+        note("x", index="X trigger → X", group="Beta", order="1", startup="2"),
+        encoding="utf-8",
+    )
+    (store.groups["developer"] / "y.md").write_text(
+        note("y", index="Y trigger → Y", group="Alpha", order="2", startup="3"),
+        encoding="utf-8",
+    )
+    (store.groups["developer"] / "z.md").write_text(
+        note("z", index="Z trigger → Z", group="Beta", order="2", startup="4"),
+        encoding="utf-8",
+    )
+    text = render_index(reconcile(store, config.memory.groups, write=False), config, store)
+    alpha = text.split("### Alpha", 1)[1].split("### Beta", 1)[0]
+    beta = text.split("### Beta", 1)[1]
+    assert "W trigger" in alpha and "Y trigger" in alpha
+    assert "X trigger" not in alpha and "Z trigger" not in alpha
+    assert "X trigger" in beta and "Z trigger" in beta
 
 
 def test_each_entry_points_at_the_note_relative_to_the_store(tmp_path: Path) -> None:
