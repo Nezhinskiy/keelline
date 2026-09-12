@@ -44,13 +44,26 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
-def a_checkout(
-    tmp_path: Path, *, groups: tuple[str, ...] = ("developer", "project-stable")
-) -> tuple[Path, Store, Config]:
+def _a_repo(tmp_path: Path) -> Path:
     root = tmp_path / "project"
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
     git(root, "remote", "add", "origin", "git@example.com:acme/widget.git")
+    return root
+
+
+def _commit_checkout(root: Path) -> None:
+    (root / "README.md").write_text("x", encoding="utf-8")
+    # The store is git-ignored, which is the whole reason a worktree has none of it.
+    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+
+
+def a_checkout(
+    tmp_path: Path, *, groups: tuple[str, ...] = ("developer", "project-stable")
+) -> tuple[Path, Store, Config]:
+    root = _a_repo(tmp_path)
     base = root / "docs" / "memory"
     for group in groups:
         (base / group).mkdir(parents=True)
@@ -60,11 +73,7 @@ def a_checkout(
     config = load(root, machine=tmp_path / "absent.toml")
     store = resolve(root, config)
     assert store is not None
-    (root / "README.md").write_text("x", encoding="utf-8")
-    # The store is git-ignored, which is the whole reason a worktree has none of it.
-    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
-    git(root, "add", "-A")
-    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+    _commit_checkout(root)
     return root, store, config
 
 
@@ -193,10 +202,7 @@ def test_no_new_top_level_entry_appears_anywhere_but_the_home_directory(tmp_path
 
 
 def an_overlay_checkout(tmp_path: Path) -> tuple[Path, Store, Config]:
-    root = tmp_path / "project"
-    root.mkdir(parents=True)
-    git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", "git@example.com:acme/widget.git")
+    root = _a_repo(tmp_path)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
     (overlay / "projects" / "widget" / "project.toml").parent.mkdir(parents=True)
@@ -222,10 +228,7 @@ def an_overlay_checkout(tmp_path: Path) -> tuple[Path, Store, Config]:
     config = load(root, machine=machine)
     store = resolve(root, config, machine=machine)
     assert store is not None
-    (root / "README.md").write_text("x", encoding="utf-8")
-    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
-    git(root, "add", "-A")
-    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+    _commit_checkout(root)
     return root, store, config
 
 
@@ -260,3 +263,128 @@ def test_an_overlay_groups_worktree_link_skips_the_main_checkouts_own_hop(
     assert store.groups["developer"].is_symlink()  # the hop this link must skip
     assert target != store.groups["developer"]
     assert target == store.groups["developer"].resolve()
+
+
+# --- the index gets no less scrutiny than a group ---------------------------------------------
+#
+# Every configured *group* reaches `link()` only after `store.py`'s own `_group_targets` has
+# applied §9.1's per-link target rule (in overlay mode: honoured only inside this project's
+# share, `permitted_roots`). `MEMORY.md` does not go through that gate at all — `store.py`
+# tracks it as nothing (it is not a `memory.groups` entry), so `link()` has always read it
+# straight off `store.path / INDEX_NAME` with no check on where it points. §6.3 does make a
+# symlinked `MEMORY.md` legitimate in overlay mode, so the fix cannot be "refuse a symlinked
+# index" — it has to be the same target rule a group gets, applied here too.
+
+
+def an_overlay_checkout_with_a_leaked_index(tmp_path: Path) -> tuple[Path, Store, Config, Path]:
+    """An overlay checkout whose own `MEMORY.md` is a symlink into a *different* project's
+    share of the overlay — the boundary §9.1 draws for a group, drawn here for the index."""
+    root = _a_repo(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    (overlay / "projects" / "widget" / "project.toml").parent.mkdir(parents=True)
+    (overlay / "projects" / "widget" / "project.toml").write_text(
+        'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
+    )
+    other_index = overlay / "projects" / "other" / "memory" / "MEMORY.md"
+    other_index.parent.mkdir(parents=True)
+    other_index.write_text("# confidential index\n", encoding="utf-8")
+    memory = root / "docs" / "memory"
+    memory.mkdir(parents=True)
+    (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
+    (memory / "MEMORY.md").symlink_to(other_index)
+    (root / CONFIG_FILE).write_text(
+        CONFIG.format(mode="overlay", groups='["developer"]'), encoding="utf-8"
+    )
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    _commit_checkout(root)
+    return root, store, config, machine
+
+
+def test_an_index_the_overlay_boundary_refuses_is_never_linked_into_a_worktree(
+    tmp_path: Path,
+) -> None:
+    root, store, config, machine = an_overlay_checkout_with_a_leaked_index(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    assert "MEMORY.md" not in {p.name for p in created}
+    assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
+
+
+def an_overlay_checkout_with_a_linked_index(tmp_path: Path) -> tuple[Path, Store, Config, Path]:
+    """§6.3's legitimate case: `MEMORY.md` symlinked into *this* project's own share of the
+    overlay. The boundary check must let this through — it is not "refuse every symlinked
+    index", it is "refuse one outside this project's share"."""
+    root = _a_repo(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    project_share = overlay / "projects" / "widget" / "memory"
+    project_share.mkdir(parents=True)
+    (project_share / "MEMORY.md").write_text("# Memory Index\n", encoding="utf-8")
+    (overlay / "projects" / "widget" / "project.toml").write_text(
+        'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
+    )
+    memory = root / "docs" / "memory"
+    memory.mkdir(parents=True)
+    (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
+    (memory / "MEMORY.md").symlink_to(project_share / "MEMORY.md")
+    (root / CONFIG_FILE).write_text(
+        CONFIG.format(mode="overlay", groups='["developer"]'), encoding="utf-8"
+    )
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    _commit_checkout(root)
+    return root, store, config, machine
+
+
+def test_an_index_inside_the_overlay_boundary_is_still_linked(tmp_path: Path) -> None:
+    # The index is a *file* nested inside the permitted share directory, never equal to the
+    # share directory itself — so a boundary check written as bare equality (`resolved == root`)
+    # would refuse every legitimate overlay-mode index outright. Only a proper containment
+    # check (`is_relative_to`) can tell "inside this project's share" from "is this project's
+    # share".
+    root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    assert "MEMORY.md" in {p.name for p in created}
+    linked = (tree / "docs" / "memory" / "MEMORY.md").resolve()
+    expected = tmp_path / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
+    assert linked == expected.resolve()
+
+
+def test_a_symlinked_index_is_refused_outside_overlay_mode_even_with_an_overlay_configured(
+    tmp_path: Path,
+) -> None:
+    # Mirrors `_group_targets`: a symlinked group in in-repo mode is refused unconditionally,
+    # never opportunistically checked against a machine-level overlay that happens to be
+    # configured (possibly for other projects entirely) — `mode` governs strictly. The index
+    # must be held to the identical rule, or it would trust an overlay this project's own
+    # configuration never opted into.
+    root = _a_repo(tmp_path)
+    overlay = tmp_path / "overlay"
+    project_share = overlay / "projects" / "widget" / "memory"
+    project_share.mkdir(parents=True)
+    (project_share / "MEMORY.md").write_text("# Memory Index\n", encoding="utf-8")
+    memory = root / "docs" / "memory"
+    (memory / "developer").mkdir(parents=True)
+    (memory / "MEMORY.md").symlink_to(project_share / "MEMORY.md")
+    (root / CONFIG_FILE).write_text(
+        CONFIG.format(mode="in-repo", groups='["developer"]'), encoding="utf-8"
+    )
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    _commit_checkout(root)
+    tree = a_worktree(root, tmp_path / "wt")
+    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    assert "MEMORY.md" not in {p.name for p in created}
+    assert not (tree / "docs" / "memory" / "MEMORY.md").exists()

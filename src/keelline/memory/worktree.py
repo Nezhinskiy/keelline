@@ -21,6 +21,14 @@ mode that link is itself a symlink, and a chain breaks the moment `detach` remov
 hop. It also matters for a group the store's own §9.1 checks refused: such a group never makes
 it into `store.groups`, so sourcing from that dict (and never from `store.path / name`) is what
 keeps a boundary the store already enforced from being bypassed a second time here.
+
+The index gets no exemption from that boundary. `store.py` does not track `MEMORY.md` as a
+group — it is not a `memory.groups` entry — so nothing upstream ever applies §9.1's per-link
+target rule to it the way `_group_targets` applies it to every configured group. §6.3 makes a
+symlinked index a legitimate member of the tree `attach` creates, so the fix cannot be "refuse a
+symlinked index"; it has to be the identical rule a group gets: in overlay mode, honoured only
+inside this project's own share of the recorded overlay (`permitted_roots`), and outside overlay
+mode refused outright, exactly as an ungoverned group symlink would be.
 """
 
 from __future__ import annotations
@@ -29,7 +37,7 @@ from pathlib import Path
 
 from keelline.config.schema import Config
 from keelline.memory.index import INDEX_NAME
-from keelline.memory.store import Store, main_checkout
+from keelline.memory.store import Store, main_checkout, overlay_root, permitted_roots
 
 
 def linked_names(config: Config) -> tuple[str, ...]:
@@ -63,11 +71,47 @@ def _link(source: Path, target: Path) -> bool:
     return True
 
 
-def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> list[Path]:
+def _index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
+    """The index's own §9.1 target rule — the same one `store.py`'s `_group_targets` applies
+    to every configured group, applied here because nothing upstream applies it to `MEMORY.md`.
+
+    A missing or dangling index sources nothing, same as before. A real file sources itself,
+    unconditionally, same as before. A symlink is new: outside overlay mode it is refused
+    outright (there is no overlay to validate it against, exactly like an ungoverned group
+    symlink); in overlay mode it is honoured only when it resolves inside this project's own
+    share of the recorded overlay (`permitted_roots`) — never a different project's.
+    """
+    target = store.path / INDEX_NAME
+    if not target.exists():
+        return None
+    if not target.is_symlink():
+        return target.resolve()
+    if store.mode != "overlay":
+        return None
+    overlay = overlay_root(machine)
+    if overlay is None:
+        return None
+    allowed = permitted_roots(overlay, config.project.name)
+    resolved = target.resolve()
+    if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
+        return None
+    return resolved
+
+
+def link(
+    worktree: Path,
+    store: Store,
+    config: Config,
+    *,
+    home: Path | None = None,
+    machine: Path | None = None,
+) -> list[Path]:
     """Create what is missing and return it; already-correct links are not re-made.
 
     A no-op for the main checkout itself: it already holds the real store, not a link to it,
-    so there is nothing for this function to do there.
+    so there is nothing for this function to do there. `machine` is threaded through only to
+    validate a symlinked index in overlay mode (`_index_source`); pass the same value used to
+    resolve `store` in the first place, or the two can disagree about where the overlay is.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return []
@@ -75,9 +119,9 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     base = worktree / config.paths.memory
     base.mkdir(parents=True, exist_ok=True)
     sources: dict[str, Path] = dict(store.groups)
-    index_path = store.path / INDEX_NAME
-    if index_path.exists():
-        sources[INDEX_NAME] = index_path.resolve()
+    index_source = _index_source(store, config, machine)
+    if index_source is not None:
+        sources[INDEX_NAME] = index_source
     for name in linked_names(config):
         source = sources.get(name)
         if source is None:
