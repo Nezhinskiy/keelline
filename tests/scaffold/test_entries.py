@@ -123,6 +123,19 @@ def test_owned_covers_only_the_marked_entries() -> None:
     assert "keelline:bg" in owned(with_ours)
 
 
+def test_owned_is_insensitive_to_the_key_order_inside_an_entry() -> None:
+    # The load-bearing half of the stamp. Reordering the keys of an entry changes no value, so
+    # the stamp must not move: if it does, the artifact reads as hand-edited for good, and the
+    # next `--force` writes the same bytes back and still disagrees with the record.
+    installed = apply_entries("", wanted("PreToolUse", "bg-cleanup", "new.sh"))
+    raw = json.loads(installed)
+    entry = raw["hooks"]["PreToolUse"][0]["hooks"][0]
+    reordered = dict(reversed(list(entry.items())))
+    assert list(reordered) != list(entry)
+    raw["hooks"]["PreToolUse"][0]["hooks"][0] = reordered
+    assert owned(json.dumps(raw)) == owned(installed)
+
+
 def test_owned_ids_reports_event_by_id() -> None:
     before = document(("PreToolUse", mark("a.sh", "bg-cleanup")))
     assert owned_ids(before) == {"bg-cleanup": "PreToolUse"}

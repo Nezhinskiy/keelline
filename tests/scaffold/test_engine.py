@@ -326,6 +326,61 @@ def test_an_unreadable_file_refuses_only_its_own_artifact(tmp_path: Path) -> Non
     assert [r.artifact_id for r in result.refusals] == ["agents-md"]
 
 
+def test_a_doubled_region_marker_refuses_only_its_own_artifact(tmp_path: Path) -> None:
+    # A bad merge, not an internal bug. §7.2 answers it with a refusal for this one artifact,
+    # and `render_report`'s REFUSED section exists to name exactly these — which it can only do
+    # if a plan is returned at all.
+    (tmp_path / "AGENTS.md").write_text(
+        "PROSE\n"
+        "<!-- keelline:harness:begin -->\nfirst\n<!-- keelline:harness:end -->\n"
+        "<!-- keelline:harness:begin -->\nsecond\n<!-- keelline:harness:end -->\n",
+        encoding="utf-8",
+    )
+    result = plan(
+        tmp_path,
+        a_config(tmp_path),
+        [
+            a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1"),
+            a_template(id="good", target="GOOD.md"),
+        ],
+    )
+    assert [(r.artifact_id, "twice" in r.reason) for r in result.refusals] == [("agents-md", True)]
+    assert [(a.artifact_id, a.verb) for a in result.actions] == [("good", Verb.CREATE)]
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        ("{not json", "not valid JSON"),
+        ('{"hooks": "not an object"}', "'hooks' is not an object"),
+    ],
+)
+def test_a_settings_document_the_engine_cannot_parse_refuses_only_its_own_artifact(
+    tmp_path: Path, document: str, expected: str
+) -> None:
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(document, encoding="utf-8")
+    result = plan(
+        tmp_path,
+        a_config(tmp_path),
+        [a_settings_template(OURS), a_template(id="good", target="GOOD.md")],
+    )
+    assert [(r.artifact_id, expected in r.reason) for r in result.refusals] == [
+        ("claude-hooks", True)
+    ]
+    assert [(a.artifact_id, a.verb) for a in result.actions] == [("good", Verb.CREATE)]
+
+
+def test_a_template_naming_no_region_raises_rather_than_becoming_a_refusal(tmp_path: Path) -> None:
+    # The boundary of what `plan` converts into a per-artifact refusal. A `MANAGED_REGION`
+    # template carrying no region name is a malformed `Template`, so it is a bug in the lane
+    # that built it; recording it beside the user's own bad merges would hide it.
+    template = a_template(kind=Kind.MANAGED_REGION, region=None, render=lambda: "R1")
+    (tmp_path / "AGENTS.md").write_text("PROSE\n", encoding="utf-8")
+    with pytest.raises(Refusal, match="names no region"):
+        plan(tmp_path, a_config(tmp_path), [template])
+
+
 @pytest.mark.parametrize("profile", ["../../etc/passwd", "/etc", "..", "Python", "no such"])
 def test_a_malformed_profile_is_refused(tmp_path: Path, profile: str) -> None:
     text = CONFIG.replace('profile = ""', f'profile = "{profile}"')
@@ -396,15 +451,15 @@ def test_apply_refuses_a_dotdot_target_no_symlink_walk_would_catch(tmp_path: Pat
 def test_the_write_refuses_a_symlinked_parent_containment_never_saw(tmp_path: Path) -> None:
     # The writer is called directly, with no `contained()` ahead of it, because that is the
     # shape of the race this layer exists to close: the check has already passed by the time a
-    # component becomes a symlink. The empty `deep/` directory the refused write leaves outside
-    # the root is a known defect of the foundation writer, raised separately; what this test
-    # pins is that no content follows the link.
+    # component becomes a symlink. Nothing at all follows the link — not the content, and not
+    # the parent directories, because `_mkdirs_within` creates those through the same
+    # O_NOFOLLOW walk instead of handing the string to `Path.mkdir`.
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     outside.mkdir()
     (tmp_path / "docs").symlink_to(outside, target_is_directory=True)
     with pytest.raises(Refusal):
         engine._write(tmp_path, "docs/deep/AGENTS.md", "BODY\n")
-    assert [path for path in outside.rglob("*") if path.is_file()] == []
+    assert list(outside.iterdir()) == []
 
 
 def test_a_removal_deletes_the_file_and_the_record(tmp_path: Path) -> None:
@@ -450,3 +505,99 @@ def test_a_created_file_is_readable_by_more_than_its_owner(tmp_path: Path) -> No
     config = a_config(tmp_path)
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
     assert stat.S_IMODE((tmp_path / "AGENTS.md").stat().st_mode) == 0o644
+
+
+def test_a_committed_symlink_at_dot_keelline_refuses_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # git stores symlinks, so a clone materialises this one, and no race is needed: without a
+    # containment check the manifest — records and all — is written wherever the link points.
+    root = tmp_path / "project"
+    root.mkdir()
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (root / ".keelline").symlink_to(victim, target_is_directory=True)
+    config = a_config(root)
+    with pytest.raises(PathEscape, match="symlink"):
+        plan(root, config, [a_template()])
+    assert list(victim.iterdir()) == []
+    assert not (root / "AGENTS.md").exists()
+
+
+def test_dot_keelline_symlinked_after_the_plan_makes_apply_refuse(tmp_path: Path) -> None:
+    # The same escape in the race shape the dry run cannot see: the plan was clean when the
+    # user read it. `apply` must refuse with nothing written, inside the root or outside it.
+    root = tmp_path / "project"
+    root.mkdir()
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    config = a_config(root)
+    planned = plan(root, config, [a_template()])
+    (root / ".keelline").symlink_to(victim, target_is_directory=True)
+    with pytest.raises(PathEscape, match="symlink"):
+        apply(root, planned)
+    assert list(victim.iterdir()) == []
+    assert not (root / "AGENTS.md").exists()
+
+
+def test_a_file_where_a_directory_belongs_refuses_rather_than_raising_oserror(
+    tmp_path: Path,
+) -> None:
+    # No race and no symlink: the user saves a file at `docs` while reading the dry-run report,
+    # then confirms. A bare `OSError` here reaches the CLI as a traceback instead of C5's
+    # exit 2, which is what a refusal is for.
+    config = a_config(tmp_path)
+    planned = plan(tmp_path, config, [a_template(id="doc", target="docs/README.md")])
+    (tmp_path / "docs").write_text("a file the user just saved\n", encoding="utf-8")
+    with pytest.raises(Refusal):
+        apply(tmp_path, planned)
+    assert (tmp_path / "docs").read_text(encoding="utf-8") == "a file the user just saved\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the directory mode under test")
+def test_a_directory_that_cannot_be_created_refuses_rather_than_raising_oserror(
+    tmp_path: Path,
+) -> None:
+    # The other half of "no bare OSError": a parent directory Keelline may read but not write
+    # to. `open_within` opens it happily — r-x is enough — so this arrives as EACCES from
+    # `os.mkdir` rather than as an `UnsafePath`, and only the broad clause turns it into exit 2.
+    (tmp_path / "docs").mkdir()
+    os.chmod(tmp_path / "docs", stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        with pytest.raises(Refusal, match="cannot be written"):
+            engine._write(tmp_path, "docs/specs/README.md", "S\n")
+    finally:
+        os.chmod(tmp_path / "docs", 0o755)
+    assert not (tmp_path / "docs" / "specs").exists()
+
+
+def test_crlf_endings_outside_a_managed_region_survive_plan_and_apply(tmp_path: Path) -> None:
+    # `regions.py` promises to return every byte outside its own markers unchanged, and
+    # `test_regions.py` proves it by calling `upsert` directly. This measures the same property
+    # where a user meets it: a universal-newline read rewrites every ending in the file before
+    # `upsert` is ever reached, so the promise is kept or broken here, not there.
+    before = b"# Title\r\n\r\nProse the tool must never touch.\r\n"
+    (tmp_path / "AGENTS.md").write_bytes(before)
+    template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1")
+    apply(tmp_path, plan(tmp_path, a_config(tmp_path), [template]))
+    assert (tmp_path / "AGENTS.md").read_bytes() == before + (
+        b"<!-- keelline:harness:begin -->\r\nR1\r\n<!-- keelline:harness:end -->\r\n"
+    )
+
+
+def test_reordering_the_keys_inside_a_marked_entry_is_not_a_hand_edit(tmp_path: Path) -> None:
+    # `owned()`'s canonical rendering is the only thing making this true. Without it, a user who
+    # writes "command" before "type" inside Keelline's own hook entry has changed no value and
+    # still flips the artifact to `skip_modified` for good.
+    template = a_settings_template(OURS)
+    apply(tmp_path, plan(tmp_path, a_config(tmp_path), [template]))
+    settings = tmp_path / ".claude" / "settings.json"
+    raw = json.loads(settings.read_text(encoding="utf-8"))
+    entry = raw["hooks"]["PreToolUse"][0]["hooks"][0]
+    reordered = dict(reversed(list(entry.items())))
+    assert list(reordered) != list(entry)
+    raw["hooks"]["PreToolUse"][0]["hooks"][0] = reordered
+    settings.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    again = plan(tmp_path, a_config(tmp_path), [template])
+    assert [(a.verb, a.reason) for a in again.actions] == []
+    assert again.unchanged == ["claude-hooks"]

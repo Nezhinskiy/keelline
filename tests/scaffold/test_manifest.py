@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from keelline.config.paths import PathEscape
 from keelline.scaffold.manifest import (
     FORMAT,
     MANIFEST_PATH,
@@ -125,6 +126,32 @@ def test_the_manifest_is_written_atomically_and_readably(tmp_path: Path) -> None
     directory = tmp_path / ".keelline"
     assert sorted(p.name for p in directory.iterdir()) == ["manifest.json"]
     assert stat.S_IMODE((tmp_path / MANIFEST_PATH).stat().st_mode) == 0o644
+
+
+def test_a_symlinked_keelline_directory_refuses_the_write(tmp_path: Path) -> None:
+    # `write_atomically` takes a path, so it makes the parent with `Path.mkdir` and replaces
+    # through `os.replace`: both follow a symlink at `.keelline` and neither is a containment
+    # check. The ledger is the one file this module knows the location of, so the check is here.
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (tmp_path / ".keelline").symlink_to(victim, target_is_directory=True)
+    with pytest.raises(PathEscape, match="symlink"):
+        Manifest({}).with_record(a_record()).write(tmp_path)
+    assert list(victim.iterdir()) == []
+
+
+def test_a_symlinked_keelline_directory_refuses_the_read_rather_than_trusting_it(
+    tmp_path: Path,
+) -> None:
+    # Reading through the link is not merely a read outside the root: the records decide which
+    # files `upgrade` rewrites and `uninstall` deletes, so a planted ledger is a planted
+    # instruction list.
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    Manifest({}).with_record(a_record(target="somebody-elses.md")).write(victim)
+    (tmp_path / ".keelline").symlink_to(victim, target_is_directory=True)
+    with pytest.raises(PathEscape, match="symlink"):
+        Manifest.read(tmp_path)
 
 
 def test_digest_is_sha256_of_the_utf8_bytes() -> None:

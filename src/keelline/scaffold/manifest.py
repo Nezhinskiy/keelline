@@ -6,6 +6,11 @@ no way to tell a file the tool wrote from a file a person wrote, and every refre
 either a clobber or a no-op. It carries a `format` so a later migration can key on it (§7.3),
 and it is written atomically, because it is the one file whose corruption bricks both
 `upgrade` and `uninstall`.
+
+Its own path is repository-controlled too. `.keelline` is an ordinary directory entry that a
+repository may commit as a symlink, and a clone materialises one, so both ends of the ledger
+go through `contained()` first: otherwise `write` hands the records — content and all — to
+whatever the link points at, and `read` takes its idea of what Keelline owns from there.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from keelline.config.paths import contained
 from keelline.errors import Refusal
 from keelline.fsops import write_atomically
 
@@ -80,6 +86,17 @@ def _record_from(raw: object, key: str) -> Record:
         raise ManifestError(f"artifact {key!r} is missing {exc.args[0]!r}") from exc
 
 
+def _contained_path(root: Path) -> Path:
+    """`root/.keelline/manifest.json`, refused when anything redirects it out of the root.
+
+    The guard lives here rather than at each call site because this module owns
+    `MANIFEST_PATH`: nothing else knows where the ledger lives, so nothing else can be asked
+    to remember to check it. `write_atomically` takes a path and not a descriptor, so
+    containment has to be settled before it is called.
+    """
+    return contained(root, str(MANIFEST_PATH))
+
+
 @dataclass(frozen=True)
 class Manifest:
     records: dict[str, Record]
@@ -87,7 +104,7 @@ class Manifest:
 
     @classmethod
     def read(cls, root: Path) -> Manifest:
-        path = root / MANIFEST_PATH
+        path = _contained_path(root)
         if not path.is_file():
             return cls({})
         try:
@@ -108,7 +125,7 @@ class Manifest:
         return cls({key: _record_from(value, key) for key, value in artifacts.items()}, version)
 
     def write(self, root: Path) -> Path:
-        path = root / MANIFEST_PATH
+        path = _contained_path(root)
         body = {
             "_generated": GENERATED,
             "format": FORMAT,
