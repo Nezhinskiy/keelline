@@ -7,7 +7,9 @@ import pytest
 
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
+from keelline.memory import bundles as bundles_module
 from keelline.memory.bundles import CAP_MARGIN, SLOTS, Bundle, blocks, fit, render, split
+from keelline.memory.index import INDEX_NAME
 from keelline.memory.store import Store
 from keelline.memory.trust import DELIMITER, record
 
@@ -115,6 +117,9 @@ def test_volatile_notes_flag_a_missing_and_a_stale_as_of(tmp_path: Path) -> None
     assert "as_of MISSING" in text
     assert "days old" in text
     assert text.index("undated") < text.index("fresh")
+    # Undated-first only pins one boundary; recency within the dated group is a separate
+    # claim. Reversing the dated-group sort would leave the line above untouched.
+    assert text.index("fresh") < text.index("stale")
 
 
 def test_volatile_notes_degrade_to_one_line_each_over_budget(tmp_path: Path) -> None:
@@ -122,6 +127,19 @@ def test_volatile_notes_degrade_to_one_line_each_over_budget(tmp_path: Path) -> 
     text = "\n".join(blocks(Bundle.VOLATILE_NOTES, store, config))
     assert "description" in text
     assert "Body." not in text
+
+
+def test_the_index_bundle_returns_the_rendered_index_file(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
+    (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
+    assert blocks(Bundle.INDEX, store, config) == [content]
+
+
+def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> None:
+    store, config = a_store(tmp_path)
+    assert not (store.path / INDEX_NAME).exists()
+    assert blocks(Bundle.INDEX, store, config) == []
 
 
 def test_preset_rules_emit_nothing_while_the_preset_has_none(tmp_path: Path) -> None:
@@ -139,11 +157,22 @@ def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path:
     assert all(block.startswith(DELIMITER) for block in produced)
 
 
-def test_the_owners_own_preset_rules_need_no_trust(tmp_path: Path) -> None:
+def test_the_owners_own_preset_rules_need_no_trust(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A preset ships with the plugin; it is never repository content, so gating it on a
-    # repository's trust record would make the owner's own rules hostage to a clone.
+    # repository's trust record would make the owner's own rules hostage to a clone. The
+    # shipped preset has no `[rules]` table yet, which would make this vacuous either way
+    # (gated or not, the answer is empty) -- so a preset that actually carries rules is
+    # substituted here. That is supplying a fixture for the `load_preset` collaborator the
+    # `setup` lane owns, not mocking the unit under test.
+    monkeypatch.setattr(
+        bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
+    )
     store, config = a_store(tmp_path, mode="local-only")
-    assert blocks(Bundle.PRESET_RULES, store, config, machine=a_machine(tmp_path)) == []
+    machine = a_machine(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config, machine=machine) != []
+    assert blocks(Bundle.STANDING_RULES, store, config, machine=machine) == []
 
 
 def test_an_overlay_store_is_not_wrapped_as_repository_data(tmp_path: Path) -> None:
@@ -180,6 +209,26 @@ def test_every_part_fits_the_platform_cap_as_it_will_be_emitted(tmp_path: Path) 
             continue
         # What the command prints is the text plus a newline; no JSON envelope widens it.
         assert len(text) + 1 <= config.native_caps.hook_output_chars
+
+
+def test_a_note_sized_to_the_margins_edge_is_flagged_oversized(tmp_path: Path) -> None:
+    # Sized from `hook_output_chars` and `CAP_MARGIN`, never a literal, so this does not rot
+    # when `STANDING_LEAD`'s wording changes. If `_cap` ever stopped subtracting the margin,
+    # this block would sit safely under the (wider) cap and go undetected -- that is exactly
+    # the regression this pins.
+    store, config = a_store(tmp_path)
+    for path in store.groups["developer"].glob("*.md"):
+        path.unlink()
+    name = "solo"
+    heading = f"### {name}\n\n"
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    body = "x" * (cap + 1 - len(heading))
+    (store.groups["developer"] / f"{name}.md").write_text(
+        note(name, startup="1", body=body), encoding="utf-8"
+    )
+    report = fit(Bundle.STANDING_RULES, store, config)
+    assert report.oversized == 1
+    assert report.fits is False
 
 
 def test_fit_reports_overflow_and_an_oversized_part_separately(tmp_path: Path) -> None:

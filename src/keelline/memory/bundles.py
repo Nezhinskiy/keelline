@@ -47,10 +47,11 @@ SLOTS: dict[Bundle, int] = {
     Bundle.INDEX: 2,
 }
 
-# The emitted string is the bundle text plus a trailing newline. The margin covers exactly
-# that: not a JSON envelope, since this text is printed raw. Fixed by design, like
+# The emitted string is the bundle text plus a trailing newline: one extra character, not a
+# JSON envelope. The rest of this margin is headroom beyond that one character, kept because
+# this text is printed raw rather than wrapped. Fixed by design, like
 # `store._GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` — no shipped config file has any
-# business overriding how much room a trailing newline needs.
+# business overriding it.
 CAP_MARGIN = 16
 
 STANDING_LEAD = (
