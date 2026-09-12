@@ -136,6 +136,20 @@ def test_local_only_mode_uses_dot_keelline(tmp_path: Path) -> None:
     assert inside_project(store) is True
 
 
+def test_local_only_mode_refuses_a_symlinked_store(tmp_path: Path) -> None:
+    # A clone can ship `.keelline/local/memory` as a symlink exactly as easily as it can ship
+    # `paths.memory` as one — the same real-directory guarantee `in-repo` and `overlay` get.
+    root = tmp_path / "project"
+    a_repo(root)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "developer").mkdir(parents=True)
+    (root / ".keelline" / "local").mkdir(parents=True)
+    (root / ".keelline" / "local" / "memory").symlink_to(elsewhere, target_is_directory=True)
+    config = a_config(root, "local-only")
+    assert resolve(root, config) is None
+    assert "symlink" in (refusal_reason(root, config) or "")
+
+
 def test_overlay_mode_honours_the_tree_attach_creates(tmp_path: Path) -> None:
     root = tmp_path / "project"
     a_repo(root)
