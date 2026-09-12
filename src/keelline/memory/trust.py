@@ -23,7 +23,7 @@ from pathlib import Path
 
 from keelline.config.machine import machine_config_path
 from keelline.config.schema import Config
-from keelline.errors import Failure
+from keelline.errors import Refusal
 from keelline.fsops import write_atomically
 from keelline.memory.store import Store, inside_project
 
@@ -35,12 +35,24 @@ _LEAD = (
 )
 
 
-class UnsafeNote(Failure):
-    """A note whose body forges the marker that is supposed to contain it."""
+class UnsafeNote(Refusal):
+    """A note whose body forges the marker that is supposed to contain it.
+
+    Repository-controlled content trying to escape a containment boundary is a refusal, not a
+    routine finding (C5) — the same line `config/paths.py`'s `PathEscape` draws. A caller that
+    tolerates exit 1 as "proceed anyway" must never read an attempted marker forgery that way.
+    """
+
+
+# Byte length of the per-invocation nonce (`secrets.token_hex`): 8 bytes is 64 bits of entropy,
+# enough that no note can predict or reuse it. Fixed by design, not a budget or cap — no shipped
+# config file has any business overriding it (consistent with `_GIT_TIMEOUT_SECONDS` in
+# store.py and `UNRANKED` in notes.py, which name a constant for the same reason).
+_NONCE_BYTES = 8
 
 
 def new_nonce() -> str:
-    return secrets.token_hex(8)
+    return secrets.token_hex(_NONCE_BYTES)
 
 
 def markers(nonce: str) -> tuple[str, str]:
