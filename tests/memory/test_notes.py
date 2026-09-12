@@ -107,6 +107,20 @@ def test_a_malformed_group_order_is_kept_in_the_file(tmp_path: Path) -> None:
     assert "group_order: 2b" in render_note(note)
 
 
+def test_an_absent_declared_key_is_never_invented_on_render(tmp_path: Path) -> None:
+    # `read_note` defaults `description` to "" and `name` to the file stem so the fields are
+    # always usable — but a read-time default is not a value this run decided to write. A
+    # note without one of these keys must not gain a line it never had, in either direction.
+    no_description = (
+        "---\nname: reminder\ngroup: Tasks\nmetadata:\n  type: user\n---\n\nSome text.\n"
+    )
+    no_name = (
+        "---\ndescription: a reminder\ngroup: Tasks\nmetadata:\n  type: user\n---\n\nSome text.\n"
+    )
+    assert render_note(read_note(write(tmp_path, no_description, "a.md"))) == no_description
+    assert render_note(read_note(write(tmp_path, no_name, "b.md"))) == no_name
+
+
 def test_the_native_writers_own_keys_survive_a_round_trip(tmp_path: Path) -> None:
     rendered = render_note(read_note(write(tmp_path, AWKWARD)))
     assert "modified: '2026-09-01T10:00:00Z'" in rendered
@@ -185,6 +199,20 @@ def test_a_duplicated_key_refuses(tmp_path: Path) -> None:
     text = "---\nname: a\nname: b\ndescription: c\n---\n\nBody.\n"
     with pytest.raises(NoteError, match="duplicate"):
         read_note(write(tmp_path, text))
+
+
+def test_a_doubly_signed_group_order_is_kept_but_never_raises(tmp_path: Path) -> None:
+    # "--5".lstrip("-").isdigit() is True but int("--5") still raises: the guard that used to
+    # gate this value let the ValueError through past read_note, and walk (which only catches
+    # NoteError) crashed on it instead of quarantining the file — exactly the failure walk's
+    # own docstring says a store cannot afford.
+    text = AWKWARD.replace("group_order: -1", "group_order: --5")
+    note = read_note(write(tmp_path, text, "developer/awkward.md"))
+    assert note.group_order is None
+    assert "group_order: --5" in render_note(note)
+    found = walk(tmp_path, ["developer"])
+    assert [n.name for n in found.notes] == ["awkward"]
+    assert found.unreadable == []
 
 
 def test_walk_reads_markdown_and_skips_the_rest(tmp_path: Path) -> None:

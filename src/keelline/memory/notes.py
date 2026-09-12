@@ -30,6 +30,9 @@ from pathlib import Path
 from keelline.errors import Failure
 from keelline.fsops import write_atomically
 
+# Sort sentinel for a note whose `startup` metadata could not be parsed as an int (D7: this
+# is not a budget or cap read from config, and no shipped file needs to change if it does —
+# it only needs to sort after every real startup rank the corpus can hold).
 UNRANKED = 10_000
 FENCE = "---"
 _KEY = re.compile(r"^(?P<indent> *)(?P<key>[A-Za-z_][A-Za-z0-9_]*):(?P<rest>.*)$")
@@ -67,6 +70,20 @@ def _quote(value: str) -> str:
         return value
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _parse_int(value: str | None) -> int | None:
+    """`group_order` parsed the way `startup`/`as_of` already are: a value that is not an
+    int is `None`, never a crash. `"--5".lstrip("-").isdigit()` is `True` while `int("--5")`
+    still raises, and `walk` only catches `NoteError` — a bare `ValueError` here would cost
+    the whole store walk, which is exactly what this module exists to not do.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -179,7 +196,6 @@ def read_note(path: Path) -> Note:
         provenance = Provenance(top.get("index_provenance", Provenance.CURATED))
     except ValueError as exc:
         raise NoteError(f"{path}: {exc}") from exc
-    order = top.get("group_order", "")
     return Note(
         path=path,
         name=top.get("name", path.stem),
@@ -188,7 +204,7 @@ def read_note(path: Path) -> Note:
         index=top.get("index"),
         index_provenance=provenance,
         group=top.get("group"),
-        group_order=int(order) if order.lstrip("-").isdigit() else None,
+        group_order=_parse_int(top.get("group_order")),
         metadata=meta,
         raw=tuple(lines),
         original=dict(top),
@@ -209,6 +225,21 @@ def _wanted(note: Note) -> dict[str, str | None]:
     }
 
 
+def _still_the_read_time_default(key: str, value: str | None, note: Note) -> bool:
+    """True when a declared key absent from the file carries only the harmless default
+    `read_note` fills in for convenience (`""` for `description`, the file stem for `name`)
+    rather than a value this run actually decided to write. Writing it in would invent a
+    line the file never had — the exact defect a real note without `description:` exposed.
+    """
+    if key in note.original:
+        return False
+    if key == "description":
+        return value == ""
+    if key == "name":
+        return value == note.path.stem
+    return False
+
+
 def render_note(note: Note) -> str:
     wanted = _wanted(note)
     # A key this module could not parse — `group_order: 2b` — has a wanted value of `None`
@@ -218,7 +249,9 @@ def render_note(note: Note) -> str:
     changed = {
         key: value
         for key, value in wanted.items()
-        if value != note.original.get(key) and not (value is None and key in note.original)
+        if value != note.original.get(key)
+        and not (value is None and key in note.original)
+        and not _still_the_read_time_default(key, value, note)
     }
     lines: list[str] = [FENCE]
     seen: set[str] = set()
