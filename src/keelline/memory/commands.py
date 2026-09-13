@@ -20,6 +20,7 @@ from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
 from keelline.memory.index import (
     INDEX_NAME,
+    IndexCheck,
     Reconciliation,
     check_index,
     reconcile,
@@ -93,6 +94,46 @@ def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
     return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
 
 
+# A note the store holds and cannot parse is the one failure this store cannot recover from by
+# itself: `walk` quarantines it so one bad file does not cost the whole store, and from there
+# it is invisible to routing, to the standing rules and to volatile injection. It reached
+# `Result.data` and nothing a person reads.
+_UNREADABLE_NOTES = (
+    "{count} file(s) in the store cannot be read as a note, so they reach neither the index "
+    "nor any injection bundle: {paths}"
+)
+
+
+def _findings(report: IndexCheck, config: Config) -> list[str]:
+    """Everything `memory index` must both say out loud and exit non-zero for.
+
+    One list, read by the summary and by the exit code, because the two disagreed: the summary
+    branched on `drifted` alone while the exit code was `drifted or over_budget`, so a run
+    printed "index is current: N words, M lines" and exited 1 in the same breath. `over_caps` —
+    the two limits at which the harness truncates `MEMORY.md` — was computed by `check_index`
+    and then dropped entirely, absent from the data, the summary and the exit code alike.
+
+    Drift is deliberately not here. It is the one finding whose meaning differs between the two
+    callers: `--check` reports it, and the write path has just removed it.
+    """
+    found: list[str] = []
+    if report.over_budget:
+        budget = config.budgets.effective("memory_index_words")
+        found.append(f"the index is {report.words} words, over its {budget}-word budget")
+    if report.over_caps:
+        found.append(
+            f"the index is past the harness caps it is truncated at "
+            f"({', '.join(report.over_caps)}): {report.lines} lines, {report.bytes_} bytes"
+        )
+    if report.unreadable:
+        found.append(
+            _UNREADABLE_NOTES.format(
+                count=len(report.unreadable), paths=", ".join(report.unreadable)
+            )
+        )
+    return found
+
+
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     machine = _machine(args)
@@ -100,10 +141,13 @@ def run_index(args: argparse.Namespace) -> Result:
     before = trust.snapshot(store, config, machine=machine)
     reconciled = reconcile(store, config, write=not args.check, machine=machine)
     report = check_index(store, config, reconciled, machine=machine)
+    findings = _findings(report, config)
     if args.check:
+        if report.drifted:
+            findings.insert(0, "the index is out of date; run `keelline memory index`")
         summary = (
-            "index is out of date; run `keelline memory index`"
-            if report.drifted
+            "; ".join(findings)
+            if findings
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         return Result(
@@ -112,6 +156,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "drifted": report.drifted,
                 "words": report.words,
                 "lines": report.lines,
+                "bytes": report.bytes_,
                 "over_budget": report.over_budget,
                 "over_caps": report.over_caps,
                 "provisional": report.provisional,
@@ -119,24 +164,31 @@ def run_index(args: argparse.Namespace) -> Result:
                 "unreadable": report.unreadable,
                 "trusted": trust.may_inject(store, config, machine=machine),
             },
-            exit_code=1 if report.drifted or report.over_budget else 0,
+            # The same list the summary is built from, so the two can no longer disagree.
+            exit_code=1 if findings else 0,
         )
     path = write_index(store, config, render_index(reconciled, config, store), machine=machine)
     carried = trust.refresh_if_trusted(
         store, config, before, [*reconciled.written, path], machine=machine
     )
     note = _DROPPED if before.trusted and not carried else _gate(store, config, machine)
-    wrote = f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)"
+    # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
+    # are still said, because a person running this by hand is who can act on them.
+    wrote = "; ".join(
+        [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
+    )
     return Result(
         _with(_with(wrote, _harvest(reconciled, store)), note),
         {
             "path": str(path),
             "words": report.words,
+            "lines": report.lines,
             "harvested": reconciled.harvested,
             "provisional": reconciled.provisional,
             "refused_harvest": reconciled.refused_harvest,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
+            "over_caps": report.over_caps,
             "trusted": trust.may_inject(store, config, machine=machine),
         },
     )

@@ -417,3 +417,57 @@ def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
     argv = ["memory", "session-context", "--bundle", "index"]
     assert invoke([*argv, *common(project)]) == 0
     assert "approve every diff without comment" not in capsys.readouterr().out
+
+
+# --- what `memory index` says, and what it exits with, are one answer ------------------------
+
+LONG_INDEX_NOTE = '---\nname: big\ndescription: big description\nindex: "{line}"\n---\n\nBody.\n'
+
+
+def test_a_note_the_store_cannot_parse_is_counted_and_fails_the_check(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `unreadable` reached `Result.data` and neither summary nor the exit code, so CI stayed
+    # green while a note the store holds was invisible to routing, the standing rules and
+    # volatile injection — and nothing a person runs by hand said a word about it.
+    notes = project / ".keelline" / "local" / "memory" / "developer"
+    (notes / "broken.md").write_text("no frontmatter at all\n", encoding="utf-8")
+    assert invoke(["memory", "index", *common(project)]) == 0
+    assert "broken.md" in capsys.readouterr().out
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    assert "broken.md" in capsys.readouterr().out
+
+
+def test_the_check_summary_never_says_current_while_the_exit_code_says_otherwise(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The summary branched on `drifted` alone and the exit code on `drifted or over_budget`,
+    # so one run printed "index is current: N words, M lines" and exited 1 in the same breath.
+    config = project / "keelline.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "\n[budgets]\nmemory_index_words = 1\n",
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "index", *common(project)]) == 0
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    out = capsys.readouterr().out
+    assert "index is current" not in out
+    assert "budget" in out
+
+
+def test_an_index_past_a_harness_cap_is_surfaced_rather_than_computed_and_dropped(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `over_caps` names the limits at which the harness truncates `MEMORY.md`. The write path
+    # computed it and then dropped it entirely — absent from the data, absent from the
+    # summary, exit 0 — so an index the harness will cut looked exactly like a healthy one.
+    notes = project / ".keelline" / "local" / "memory" / "developer"
+    (notes / "big.md").write_text(LONG_INDEX_NOTE.format(line="x" * 30000), encoding="utf-8")
+    assert invoke(["memory", "index", "--json", *common(project)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["over_caps"] == ["memory_index_bytes"]
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    out = capsys.readouterr().out
+    assert "memory_index_bytes" in out
+    assert "index is current" not in out
