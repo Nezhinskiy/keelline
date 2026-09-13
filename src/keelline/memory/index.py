@@ -14,20 +14,26 @@ reading that keeps both sentences true.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
 from keelline.fsops import write_atomically
 from keelline.memory.notes import UNRANKED, Note, Provenance, walk, with_index, write_note
-from keelline.memory.store import Store
+from keelline.memory.store import Store, overlay_root, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
 VOLATILE_SUFFIX = "volatile"
-_ENTRY = re.compile(r"^- \[([^\]]+)\]\(([^)]+)\)", re.MULTILINE)
+# Neither class may match a newline. `MEMORY.md`'s premise is that a *second, non-Keelline*
+# writer appends entries here, so an unclosed `[` is an ordinary accident rather than an
+# attack — and a title harvested across the line break is written straight into a note's
+# one-line `index:` frontmatter, where the remainder spills out of the fence and the note
+# stops parsing: silently quarantined out of the index, the standing rules and volatile
+# injection, and in overlay mode synced to every machine.
+_ENTRY = re.compile(r"^- \[([^\]\n]+)\]\(([^)\n]+)\)", re.MULTILINE)
 
 HEADER = (
     "# Memory Index\n\n"
@@ -59,9 +65,49 @@ class Reconciliation:
     unreadable: list[tuple[Path, str]]
 
 
-def _appended(store: Store) -> dict[str, str]:
-    path = store.path / INDEX_NAME
-    if not path.is_file():
+def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
+    """The index's own §9.1 target rule — the one `store._group_targets` applies to every
+    configured group, applied here because nothing upstream applies it to `MEMORY.md`.
+
+    `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
+    per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
+    this same answer — `worktree.link`, which materialises it into a worktree, and
+    `bundles._index`, which injects it into the model — so it lives here, beside `INDEX_NAME`,
+    and is called rather than reimplemented.
+
+    A missing or dangling index sources nothing. A real file sources itself, unconditionally.
+    A symlink is the governed case: outside overlay mode it is refused outright (there is no
+    overlay to validate it against, exactly like an ungoverned group symlink); in overlay mode
+    it is honoured only when it resolves inside this project's own share of the recorded
+    overlay (`permitted_roots`) — never a different project's.
+    """
+    target = store.path / INDEX_NAME
+    if not target.exists():
+        return None
+    if not target.is_symlink():
+        return target.resolve()
+    if store.mode != "overlay":
+        return None
+    overlay = overlay_root(machine)
+    if overlay is None:
+        return None
+    allowed = permitted_roots(overlay, config.project.name)
+    resolved = target.resolve()
+    if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
+        return None
+    return resolved
+
+
+def _appended(store: Store, config: Config, machine: Path | None) -> dict[str, str]:
+    """What the second writer appended, from the file `index_source` says the index is.
+
+    Harvesting goes through the same target rule as injection, and for the same reason turned
+    around: `reconcile` writes what it finds here into each note's `index:` frontmatter, so an
+    index symlinked at another project's share would persist that project's text into this
+    one's notes — and in overlay mode from there onto every machine.
+    """
+    path = index_source(store, config, machine)
+    if path is None or not path.is_file():
         return {}
     try:
         text = path.read_text(encoding="utf-8")
@@ -74,8 +120,18 @@ def _relative(note: Note, store: Store) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
-def reconcile(store: Store, groups: Sequence[str], *, write: bool) -> Reconciliation:
-    appended = _appended(store)
+def reconcile(
+    store: Store, config: Config, *, write: bool, machine: Path | None = None
+) -> Reconciliation:
+    """Give every note an `index:` line, harvesting the second writer's before inventing one.
+
+    `config` rather than a bare group list: the groups came from it at every call site anyway,
+    and the index's target rule needs `project.name` and — with `machine` — the recorded
+    overlay, which a `Sequence[str]` cannot carry. Pass the same `machine` used to resolve
+    `store`, exactly as `worktree.link` and `bundles.blocks` ask.
+    """
+    appended = _appended(store, config, machine)
+    groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
     notes: list[Note] = []
     harvested: list[str] = []
@@ -134,6 +190,32 @@ def _section(group: str, notes: list[Note], store: Store) -> list[str]:
     return lines
 
 
+def _extra(config: Config, store: Store) -> list[str]:
+    """`memory.index_extra` entries that actually stay inside the project root.
+
+    `config/paths.py` names this field, alongside `memory.groups`, as one its own guard does
+    not cover, and assigns the check to "the lane that consumes them" in as many words. The
+    strings are repository-controlled and land verbatim in `MEMORY.md`, which the `index`
+    bundle injects — the same channel a symlinked index reaches. `contained` is called without
+    `allow_final_symlink`, unlike `_group_targets`: a group legitimately *is* a symlink in
+    overlay mode, while these are pointers to documents in the repository and a link at the
+    last component escaping the root is the same escape as one halfway up.
+
+    An entry that escapes is dropped, the way `_group_targets` drops a group whose target it
+    refuses. Dropped silently, because `render_index` returns a string and has no report
+    channel; `store.unavailable` is the shape that would carry one, and giving the index its
+    own would change `Reconciliation` for every caller.
+    """
+    kept: list[str] = []
+    for target in config.memory.index_extra:
+        try:
+            contained(store.root, target)
+        except PathEscape:
+            continue
+        kept.append(target)
+    return kept
+
+
 def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
     lines = [HEADER.rstrip("\n"), ""]
     by_group: dict[str, list[Note]] = {}
@@ -142,9 +224,10 @@ def render_index(reconciled: Reconciliation, config: Config, store: Store) -> st
     for group in config.memory.groups:
         if by_group.get(group):
             lines += _section(group, by_group[group], store)
-    if config.memory.index_extra:
+    extra = _extra(config, store)
+    if extra:
         lines += [f"## {EXTRA_TITLE}", ""]
-        lines += [f"- [{target}]({target})" for target in config.memory.index_extra]
+        lines += [f"- [{target}]({target})" for target in extra]
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 

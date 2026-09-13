@@ -25,6 +25,7 @@ from keelline.config.machine import machine_config_path
 from keelline.config.schema import Config
 from keelline.errors import Refusal
 from keelline.fsops import write_atomically
+from keelline.memory.index import INDEX_NAME
 from keelline.memory.store import Store, inside_project
 
 DELIMITER = "<<<keelline:repository-data"
@@ -83,20 +84,51 @@ def changed(state: TrustState) -> bool:
     return state.recorded is not None and state.recorded != state.current
 
 
-def store_digest(store: Store) -> str:
-    """Content and location of every note the store actually resolves to.
+# What an entry contributes when its bytes cannot be read. A guarded read must not become a
+# skipped file: a file absent from the digest is a file an attacker can add, or swap for a
+# dangling link, without ever re-prompting. A readable file whose whole content is exactly
+# these bytes collides with an unreadable one — it buys nothing, since both states are chosen
+# by whoever can already write the file, and the marker's own content is inert.
+_UNREADABLE = b"\0keelline:unreadable\0"
 
-    Both halves matter: a renamed note is a different routing entry even when its bytes are
-    unchanged, and the group a note sits under decides how it is injected.
+
+def _entry(key: str, path: Path) -> bytes:
+    """One digest entry: its routing key, then its bytes — or the marker when it has none.
+
+    `notes.walk` deliberately quarantines this class of file rather than letting one of them
+    cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
+    unguarded `read_bytes` here takes `store_digest`, `may_inject` and `record` down together,
+    so one committed dangling `gone.md` symlink turns every trust-dependent command into exit
+    2 — `memory trust`, the command that would recover the state, included.
+    """
+    try:
+        content = path.read_bytes()
+    except OSError:
+        content = _UNREADABLE
+    return key.encode() + b"\0" + content + b"\0"
+
+
+def store_digest(store: Store) -> str:
+    """Content and location of every file the store actually yields to a session.
+
+    Both halves of an entry matter: a renamed note is a different routing entry even when its
+    bytes are unchanged, and the group a note sits under decides how it is injected.
+
+    `MEMORY.md` is covered too, though it is neither a note nor a `memory.groups` entry. It is
+    the file the `index` bundle injects, and a digest built from the group directories alone
+    would let a store be trusted once and its index afterwards rewritten — or swapped for a
+    symlink to anything — without ever losing that trust. It is folded in here rather than
+    covered "another way" because trust is one hash over everything a session reads, and a
+    second, separate record would be a second thing to keep in step.
     """
     engine = hashlib.sha256()
     for group in sorted(store.groups):
         directory = store.groups[group]
         for path in sorted(directory.glob("*.md")):
-            engine.update(f"{group}/{path.name}".encode())
-            engine.update(b"\0")
-            engine.update(path.read_bytes())
-            engine.update(b"\0")
+            engine.update(_entry(f"{group}/{path.name}", path))
+    index = store.path / INDEX_NAME
+    if index.exists() or index.is_symlink():  # `is_symlink` so a dangling index still counts
+        engine.update(_entry(INDEX_NAME, index))
     return engine.hexdigest()
 
 
@@ -129,8 +161,19 @@ def record(store: Store, config: Config, *, machine: Path | None = None) -> Trus
     return state(store, config, machine=machine)
 
 
-def may_inject(store: Store, config: Config, *, machine: Path | None = None) -> bool:
-    if not inside_project(store):
+def may_inject(
+    store: Store, config: Config, *, machine: Path | None = None, repository_data: bool = False
+) -> bool:
+    """Whether this store's content may reach the model at all.
+
+    `repository_data` is how a caller reports a file `inside_project` cannot see. The index
+    lives at `store.path` and belongs to no group, so in overlay mode — where `store.path` is a
+    real directory *in the repository* and every group resolves out of it — `inside_project` is
+    False and this gate would otherwise open with no trust record at all. Passing it True for
+    that case gates the index on the same hash as any in-repo store, without pretending the
+    overlay's own notes became repository content.
+    """
+    if not (repository_data or inside_project(store)):
         return True
     return state(store, config, machine=machine).trusted
 

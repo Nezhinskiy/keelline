@@ -41,7 +41,7 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
 
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    reconciled = reconcile(store, config.memory.groups, write=not args.check)
+    reconciled = reconcile(store, config, write=not args.check, machine=_machine(args))
     report = check_index(store, config, reconciled)
     if args.check:
         summary = (
@@ -99,7 +99,7 @@ def run_trust(args: argparse.Namespace) -> Result:
 
 def run_inventory(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    reconciled = reconcile(store, config.memory.groups, write=False)
+    reconciled = reconcile(store, config, write=False, machine=_machine(args))
     entries = inventory(reconciled, config)
     counts = totals(entries, config)
     return Result(
@@ -155,9 +155,11 @@ def register(groups: SubParsers) -> None:
         # point. This is an explicit-confirmation gesture, not a switch between two behaviours:
         # its presence is what stops `memory trust` from being a bare, trivially scripted
         # command. It is not a safety check either, so there is nothing here to branch on: trust
-        # is only ever *consulted* for a store whose notes live in the repository
-        # (`inside_project(store)`); `trust.may_inject` short-circuits to `True` for every other
-        # store, so recording a hash for an overlay or local-only store is inert, not dangerous.
+        # is only ever *consulted* for content that lives in the repository — the notes, when
+        # `inside_project(store)`, and `MEMORY.md` whenever it resolves inside the repository,
+        # which it does in overlay mode too, since `store.path` is a real directory there. For
+        # a store holding neither, `trust.may_inject` short-circuits to `True`, so recording a
+        # hash for it is inert rather than dangerous.
         help="the only kind of store trust applies to",
     )
     trusted.set_defaults(func=run_trust)

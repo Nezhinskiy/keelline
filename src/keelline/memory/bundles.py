@@ -24,9 +24,9 @@ from pathlib import Path
 
 from keelline.config.schema import Config
 from keelline.memory import trust
-from keelline.memory.index import INDEX_NAME, is_volatile
+from keelline.memory.index import index_source, is_volatile
 from keelline.memory.notes import Note, walk
-from keelline.memory.store import Store
+from keelline.memory.store import Store, in_repository
 from keelline.presets import load_preset
 
 
@@ -157,12 +157,18 @@ def _preset_rules(config: Config) -> list[str]:
     return [f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)]
 
 
-def _index(store: Store) -> list[str]:
-    path = store.path / INDEX_NAME
-    if not path.is_file():
+def _index(source: Path | None) -> list[str]:
+    """The index, once `index.index_source` has said which file the index actually is.
+
+    Reading `store.path / INDEX_NAME` directly was the defect: `is_file()` follows symlinks and
+    nothing asked where the link went, while `worktree.link` already applied §9.1's per-link
+    target rule to the very same file. This is the path that reaches the model, so it gets the
+    rule first, not last.
+    """
+    if source is None or not source.is_file():
         return []
     try:
-        return [path.read_text(encoding="utf-8")]
+        return [source.read_text(encoding="utf-8")]
     except OSError:
         return []
 
@@ -173,14 +179,24 @@ def blocks(
     if bundle is Bundle.PRESET_RULES:
         # The owner's own rules, from the plugin. Never repository content, so no trust gate.
         return _preset_rules(config)
-    if not trust.may_inject(store, config, machine=machine):
+    # The index is asked about by file, not by store. `trust.inside_project` inspects
+    # `store.groups`, and in overlay mode every group resolves into the overlay while
+    # `store.path` is a real directory *in the repository* — so a committed `MEMORY.md` sitting
+    # there used to reach the model with `may_inject` returning True on no trust record and
+    # `is_repository_data` returning False, unwrapped. Where the file itself sits is the
+    # question, and `in_repository` is the one that asks it.
+    source = index_source(store, config, machine) if bundle is Bundle.INDEX else None
+    from_repository = trust.is_repository_data(store) or (
+        source is not None and in_repository(store, source)
+    )
+    if not trust.may_inject(store, config, machine=machine, repository_data=from_repository):
         return []
     produced = {
         Bundle.STANDING_RULES: lambda: _standing(store, config),
         Bundle.VOLATILE_NOTES: lambda: _volatile(store, config),
-        Bundle.INDEX: lambda: _index(store),
+        Bundle.INDEX: lambda: _index(source),
     }[bundle]()
-    if not produced or not trust.is_repository_data(store):
+    if not produced or not from_repository:
         return produced
     nonce = trust.new_nonce()
     return [trust.wrap(block, nonce) for block in produced]

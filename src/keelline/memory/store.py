@@ -259,5 +259,23 @@ def inside_project(store: Store) -> bool:
     machine owner's or the repository's is where the note itself sits: `local-only` puts it
     under `.keelline/local/`, which a `.gitignore` keeps out of a clone the owner made and
     does not keep out of a clone the attacker authored.
+
+    This asks the question of the *notes*, and deliberately keeps asking only that. Folding
+    `store.path` in would make every overlay store repository data — the store directory is a
+    real directory in the repository in exactly that mode — and so would gate the machine
+    owner's own overlay notes behind a trust prompt and wrap them as data, defeating every
+    standing rule in the mode this project actually ships. A file that is not a note and
+    belongs to no group is asked about one at a time, with `in_repository` below.
     """
     return any(_inside(target, store.root) for target in store.groups.values())
+
+
+def in_repository(store: Store, path: Path) -> bool:
+    """Whether one particular file this store yields sits in the repository itself.
+
+    `inside_project` cannot answer this for `MEMORY.md`: the index is not a note, belongs to no
+    `memory.groups` entry and lives at `store.path`, which in overlay mode is inside the
+    repository while every group resolves far outside it. A caller that is about to inject a
+    specific file asks about that file.
+    """
+    return _inside(path, store.root)

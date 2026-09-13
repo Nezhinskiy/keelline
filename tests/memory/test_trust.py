@@ -135,3 +135,39 @@ def test_a_body_that_forges_the_marker_is_refused() -> None:
 
 def test_two_invocations_do_not_share_a_nonce() -> None:
     assert new_nonce() != new_nonce()
+
+
+def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Path) -> None:
+    # `notes.walk` deliberately quarantines this class of file rather than letting one of them
+    # cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
+    # unguarded `read_bytes` here takes `store_digest`, `may_inject` and `record` down together
+    # — so `memory session-context` and `memory fit` go dark and `memory trust`, the one
+    # command that would recover the state, fails identically. A committed dangling symlink is
+    # all it takes.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    (store.groups["developer"] / "gone.md").symlink_to(tmp_path / "nowhere.md")
+    assert may_inject(store, config, machine=machine) is False
+    record(store, config, machine=machine)
+    assert may_inject(store, config, machine=machine) is True
+
+
+def test_an_unreadable_note_still_moves_the_digest(tmp_path: Path) -> None:
+    # Guarding the read must not become skipping the file: a note absent from the digest is a
+    # note an attacker can add, or swap for a dangling link, without ever re-prompting.
+    store, _, _ = a_store(tmp_path, "in-repo")
+    before = store_digest(store)
+    (store.groups["developer"] / "gone.md").symlink_to(tmp_path / "nowhere.md")
+    assert store_digest(store) != before
+
+
+def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) -> None:
+    # `MEMORY.md` is not a note and belongs to no `memory.groups` entry, so a digest built only
+    # from the group directories never sees it — trust a store once and the index can afterwards
+    # be rewritten, or swapped for a symlink to anything, without losing that trust. It is the
+    # file the `index` bundle injects.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    assert may_inject(store, config, machine=machine) is True
+    index = store.path / "MEMORY.md"
+    index.write_text("# Memory Index\n\n- [x](developer/a.md)\n", encoding="utf-8")
+    assert may_inject(store, config, machine=machine) is False

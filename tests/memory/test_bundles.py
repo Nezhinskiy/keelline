@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -10,7 +13,7 @@ from keelline.config.schema import Config
 from keelline.memory import bundles as bundles_module
 from keelline.memory.bundles import CAP_MARGIN, SLOTS, Bundle, blocks, fit, render, split
 from keelline.memory.index import INDEX_NAME
-from keelline.memory.store import Store
+from keelline.memory.store import Store, resolve
 from keelline.memory.trust import DELIMITER, record
 
 CONFIG = """
@@ -260,3 +263,125 @@ def test_every_bundle_has_a_declared_slot_count(bundle: Bundle) -> None:
 
 def test_the_margin_is_additive_because_the_text_is_emitted_raw() -> None:
     assert 0 < CAP_MARGIN < 100
+
+
+# --- an overlay store built the way overlay mode really builds one ----------------------------
+#
+# `a_store` above hand-builds a `Store` whose `base` sits *outside* the project root. That is
+# the one shape in which the index cannot leak, which is why no test here could ever have
+# exercised the shape in which it does: in overlay mode `paths.memory` is a real directory of
+# links **inside the repository**, every group resolves out into the overlay, and so
+# `inside_project` is False — `may_inject` returns True with no trust record and
+# `is_repository_data` returns False, while `store.path / MEMORY.md` is a repository file all
+# along. This fixture goes through `resolve()` so the shape is the real one.
+
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+OVERLAY_CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+
+[memory]
+mode = "overlay"
+groups = ["developer"]
+index_extra = []
+"""
+
+
+def git(root: Path, *args: str) -> None:
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
+
+
+def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]:
+    root = tmp_path / "project"
+    root.mkdir(parents=True)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "remote", "add", "origin", "git@example.com:acme/widget.git")
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    (overlay / "common" / "memory" / "keep.md").write_text(
+        note("keep", startup="1"), encoding="utf-8"
+    )
+    (overlay / "projects" / "widget").mkdir(parents=True)
+    (overlay / "projects" / "widget" / "project.toml").write_text(
+        'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
+    )
+    memory = root / "docs" / "memory"
+    memory.mkdir(parents=True)
+    (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
+    (root / CONFIG_FILE).write_text(OVERLAY_CONFIG, encoding="utf-8")
+    machine = tmp_path / "overlay-machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    assert store.path == memory  # the store really is a directory in the repository
+    return store, config, machine, overlay
+
+
+@needs_git
+def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_path: Path) -> None:
+    # `_index` reads `store.path / MEMORY.md` through `is_file()`, which follows symlinks, and
+    # nothing asks where the link goes — while `worktree._index_source` already applies §9.1's
+    # per-link target rule to the very same file for the *link* path. This is the path that
+    # reaches the model.
+    store, config, machine, overlay = a_resolved_overlay_store(tmp_path)
+    other = overlay / "projects" / "other-client" / "memory"
+    other.mkdir(parents=True)
+    (other / INDEX_NAME).write_text("# another client's index\n", encoding="utf-8")
+    (store.path / INDEX_NAME).symlink_to(other / INDEX_NAME)
+    assert blocks(Bundle.INDEX, store, config, machine=machine) == []
+
+
+@needs_git
+def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_path: Path) -> None:
+    # §6.3 makes a symlinked index a legitimate member of the tree `attach` creates, so the
+    # rule is "inside this project's share", never "refuse every symlinked index".
+    store, config, machine, overlay = a_resolved_overlay_store(tmp_path)
+    share = overlay / "projects" / "widget" / "memory"
+    share.mkdir(parents=True)
+    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
+    (share / INDEX_NAME).write_text(content, encoding="utf-8")
+    (store.path / INDEX_NAME).symlink_to(share / INDEX_NAME)
+    assert blocks(Bundle.INDEX, store, config, machine=machine) == [content]
+
+
+@needs_git
+def test_an_index_committed_to_the_repository_is_gated_and_wrapped(tmp_path: Path) -> None:
+    # A real `MEMORY.md` at `store.path` in overlay mode is a file the clone ships: repository
+    # content, however far outside the repository every group resolves.
+    store, config, machine, _ = a_resolved_overlay_store(tmp_path)
+    content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
+    (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
+    assert blocks(Bundle.INDEX, store, config, machine=machine) == []
+    record(store, config, machine=machine)
+    produced = blocks(Bundle.INDEX, store, config, machine=machine)
+    assert produced != []
+    assert all(block.startswith(DELIMITER) for block in produced)
+    assert content in "\n".join(produced)
+
+
+@needs_git
+def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: Path) -> None:
+    # Widening the gate for the index must not widen it for the notes: the machine owner's
+    # overlay notes are not repository content, and wrapping them as data would defeat every
+    # standing rule in the mode this project actually ships.
+    store, config, machine, _ = a_resolved_overlay_store(tmp_path)
+    produced = blocks(Bundle.STANDING_RULES, store, config, machine=machine)
+    assert produced != []
+    assert not any(DELIMITER in block for block in produced)
