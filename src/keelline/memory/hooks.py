@@ -11,6 +11,16 @@ There is no `SessionStart` context handler here, and that absence is the design:
 injection bundles are invoked as their own `hooks.json` entries so each gets its own platform
 cap (see `bundles`). What remains is the one thing that must happen before any of them can
 work — linking the store into a worktree.
+
+Nothing a repository controls is ever put into `HookResult.context`. That field becomes
+`additionalContext` in the `SessionStart` payload — model input with no delimiter, no nonce, no
+trust record and no `may_inject` gate, which is precisely the channel `trust.wrap` exists to
+close. `store.refusal_reason` builds its message out of raw `memory.groups` entries, and
+`memory.groups` is an ordinary `keelline.toml` list with no schema constraint (a TOML
+multi-line string carries literal newlines), so a clone reaches that text with no overlay and
+no confirmation. A session-start diagnostic does not need to reach the model at all: the
+message below is fixed and repository-independent, and the detail stays where a person reads
+it, in the `memory` commands.
 """
 
 from __future__ import annotations
@@ -22,6 +32,10 @@ from keelline.hooks.api import Handler, HookEvent, HookResult, Policy
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
+# Fixed, and carrying nothing the repository chose. A plain string is not an import, so
+# this costs `discover()` nothing.
+NO_STORE = "keelline: no memory store for this project"
+
 
 def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
@@ -32,10 +46,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
 
         store = resolve(event.project_root, config)
         if store is None:
-            from keelline.memory.store import refusal_reason
-
-            reason = refusal_reason(event.project_root, config)
-            return HookResult(context=f"keelline: no memory store — {reason}" if reason else None)
+            return HookResult(context=NO_STORE)
         created = link(event.project_root, store, config)
         if not created:
             return HookResult()
