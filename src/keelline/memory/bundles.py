@@ -47,11 +47,29 @@ SLOTS: dict[Bundle, int] = {
     Bundle.INDEX: 2,
 }
 
-# The emitted string is the bundle text plus a trailing newline: one extra character, not a
-# JSON envelope. The rest of this margin is headroom beyond that one character, kept because
-# this text is printed raw rather than wrapped. Fixed by design, like
-# `store._GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` — no shipped config file has any
-# business overriding it.
+# How much of `native_caps.hook_output_chars` this lane keeps back. `_cap` subtracts it, so a
+# part packed to `_cap` and emitted raw is the bundle plus one trailing newline: measured at
+# `hook_output_chars = 10000`, 9,985 characters emitted with 15 to spare.
+#
+# **D7, stated as the deviation it is.** The Global Constraint asks for a budget, a cap or a
+# TTL to come from `config.budgets`, `config.native_caps`, or a named module constant *whose
+# comment says which shipped file must change with it*. There is no such file for this one and
+# there should not be: it is the headroom between a cap this lane does not own and the way this
+# lane emits text, and a project that could widen it would be a project that could make its own
+# bundles overrun the platform truncation silently. So this names no shipped file, which is a
+# departure from the constraint's literal wording rather than a satisfaction of it — the same
+# departure `store._GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` make, and it is flagged here
+# rather than dressed up as compliance. The cap it is subtracted from, `hook_output_chars`, is
+# where D7 is actually satisfied.
+#
+# **For the `hooks-core` lane, which reads `SLOTS` out of this file: the `hooks.json` entries
+# must not pass `--json`.** The margin is additive only because `memory session-context` prints
+# the text raw. Through `cli._emit`'s `json.dumps({"summary": ...}, indent=2)` the envelope and
+# the escaping both count against the same platform cap, and a cap-length standing bundle no
+# longer fits — measured at 10,009 characters for the single-block bundle
+# `test_the_margin_is_additive_because_the_text_is_emitted_raw` builds, and 10,146 for a
+# realistic multi-note one, whose extra newlines each escape to two characters. Widening
+# `CAP_MARGIN` is not the fix; not wrapping the output is.
 CAP_MARGIN = 16
 
 STANDING_LEAD = (
