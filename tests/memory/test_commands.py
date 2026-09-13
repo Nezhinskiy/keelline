@@ -45,14 +45,17 @@ def project(tmp_path: Path) -> Path:
     base = root / ".keelline" / "local" / "memory"
     for group in ("developer", "project-volatile"):
         (base / group).mkdir(parents=True)
-    # "a" and "v" carry deliberately different body lengths (5 words vs. 1) so that a sort
-    # that stopped honouring word count — e.g. reversing it, or dropping it for name-only —
-    # actually changes the observed order instead of coincidentally reproducing it.
+    # The *short* note is the one whose name sorts first. Different body lengths alone were not
+    # enough and the comment that used to sit here said otherwise: with "a" long and "v" short,
+    # `-words` order and `name` order are the same order, so name-only, no-sort and
+    # drop-the-tiebreak every one of them reproduced it and none of them could be caught. Now
+    # the two disagree, and `test_the_inventory_sorts_by_word_count_then_by_name` adds the
+    # equal-length pair that is the only thing the tiebreak decides.
     (base / "developer" / "a.md").write_text(
         NOTE.format(
             name="a",
             meta="metadata:\n  type: project\n  startup: 1\n",
-            body="Body. Body. Body. Body. Body.",
+            body="Body.",
         ),
         encoding="utf-8",
     )
@@ -60,7 +63,7 @@ def project(tmp_path: Path) -> Path:
         NOTE.format(
             name="v",
             meta="metadata:\n  type: project\n  as_of: 2026-09-01\n",
-            body="Body.",
+            body="Body. Body. Body. Body. Body.",
         ),
         encoding="utf-8",
     )
@@ -143,7 +146,28 @@ def test_inventory_reports_what_a_sweep_acts_on(
     payload = json.loads(capsys.readouterr().out)
     assert payload["notes"] == 2
     assert payload["standing"] == 1
-    assert [entry["name"] for entry in payload["entries"]] == ["a", "v"]
+    # "v" carries five words to "a"'s one, so word count decides this and the alphabet does not.
+    assert [entry["name"] for entry in payload["entries"]] == ["v", "a"]
+
+
+def test_the_inventory_sorts_by_word_count_then_by_name(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `-words` first and `name` only to break a tie, which takes four notes to state: two of
+    # different lengths whose lengths and names disagree, and two of the *same* length reached
+    # in an order the alphabet does not give. `walk` reads groups in configured order and each
+    # group's files in name order, so "z" (developer) arrives before "b" (project-volatile) —
+    # a stable sort that dropped the tiebreak would leave them that way round.
+    base = project / ".keelline" / "local" / "memory"
+    (base / "developer" / "z.md").write_text(
+        NOTE.format(name="z", meta="", body="Body. Body. Body."), encoding="utf-8"
+    )
+    (base / "project-volatile" / "b.md").write_text(
+        NOTE.format(name="b", meta="", body="Body. Body. Body."), encoding="utf-8"
+    )
+    assert invoke(["memory", "inventory", "--json", *common(project)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [entry["name"] for entry in payload["entries"]] == ["v", "b", "z", "a"]
 
 
 def test_fit_reports_every_bundle_against_its_slots(

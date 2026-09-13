@@ -226,7 +226,13 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
     store = resolve(root, config, machine=a_machine_file(tmp_path, overlay))
     assert store is not None  # `developer` is legitimate and still resolves
     assert "project-stable" not in store.groups
-    assert "sideways" not in str(store.unavailable)
+    # The word "sideways" appears only in `store.py`'s module docstring and can never reach a
+    # runtime message, so asserting its absence asserted nothing. What the refusal must not
+    # carry is the *other client's* name: the message is built from this project's permitted
+    # roots, never from where the link actually went, and a message that echoed the target
+    # would put a second client's identity into `refusal_reason`, `memory index`'s output and
+    # any log that keeps it.
+    assert "secret-client" not in str(store.unavailable)
     assert "outside this project's share" in store.unavailable["project-stable"]
 
 
@@ -305,18 +311,23 @@ def test_an_environment_variable_never_selects_a_store(tmp_path: Path) -> None:
     assert store.path == root / ".keelline" / "local" / "memory"
 
 
-def test_an_inherited_git_dir_cannot_redirect_the_worktree_fallback(
+def test_an_inherited_git_dir_never_reaches_the_git_helper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # One of two locks, pinned on its own. Asked through `resolve`, this property is guarded
+    # twice over — `_registered_worktree` refuses a root that is nobody's registered worktree
+    # whatever git answered — so a single test there dies only when *both* locks are broken and
+    # pins neither. `main_checkout` is the same scrubbed `_git` with nothing behind it, and it
+    # is also the answer `worktree.link` decides its main-checkout no-op on, so an inherited
+    # `GIT_DIR` reaching it would make a worktree look like the checkout that owns the store.
     victim = tmp_path / "victim"
     a_repo(victim)
     (victim / "docs" / "memory" / "developer").mkdir(parents=True)
     hostile = tmp_path / "hostile"
     a_repo(hostile)
     monkeypatch.setenv("GIT_DIR", str(victim / ".git"))
-    config = a_config(hostile, "in-repo")
-    # Whatever git answers, the fallback only runs for a real ancestor of this root.
-    assert resolve(hostile, config) is None
+    monkeypatch.setenv("GIT_WORK_TREE", str(victim))
+    assert main_checkout(hostile).resolve() == hostile.resolve()
 
 
 def test_a_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
@@ -391,6 +402,24 @@ def test_a_directory_that_only_claims_to_be_a_worktree_resolves_no_store(tmp_pat
     (hostile / ".git").write_text(
         f"gitdir: {victim / '.git' / 'worktrees' / 'side'}\n", encoding="utf-8"
     )
+    config = a_config(hostile, "in-repo")
+    assert resolve(hostile, config) is None
+    assert refusal_reason(hostile, config) is not None
+
+
+def test_a_directory_that_merely_sits_under_a_checkout_is_not_a_worktree_of_it(
+    tmp_path: Path,
+) -> None:
+    # The other lock, pinned on its own. The fallback used to ask whether the main checkout
+    # *contained* this root, and everything under a checkout answers that yes: an ordinary
+    # vendored sub-directory carrying its own `keelline.toml` was handed the outer
+    # repository's store, with no worktree anywhere in the picture. Registration is the
+    # question containment was standing in for, and nothing here is registered against
+    # anything. No `GIT_DIR` is set, so this dies only if that guard goes.
+    victim = tmp_path / "victim"
+    a_committed_repo(victim)
+    hostile = victim / "vendor" / "widget"
+    hostile.mkdir(parents=True)
     config = a_config(hostile, "in-repo")
     assert resolve(hostile, config) is None
     assert refusal_reason(hostile, config) is not None

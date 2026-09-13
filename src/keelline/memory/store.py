@@ -132,10 +132,13 @@ def _registered_worktree(root: Path) -> Path | None:
     path named `.git` — but the fallback reads a store out of another repository, so it does
     not rest on that.)
 
-    Both queries go through `_git`, which scrubs the environment. An inherited `GIT_DIR`
-    answers for whatever repository it names, and there it is also its own common dir, so a
-    redirected fallback fails this test twice over;
-    `test_an_inherited_git_dir_cannot_redirect_the_worktree_fallback` is what keeps saying so.
+    Both queries go through `_git`, which scrubs the environment. That is a second lock on the
+    same door rather than this one's support: an inherited `GIT_DIR` answers for whatever
+    repository it names, and there it is also its own common dir, so a redirected fallback
+    fails the registration test above anyway. Because they are redundant, each is pinned by its
+    own test rather than by one that dies only when both are gone —
+    `test_an_inherited_git_dir_never_reaches_the_git_helper` for the scrubbing and
+    `test_a_directory_that_merely_sits_under_a_checkout_is_not_a_worktree_of_it` for this.
     """
     common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     private = _git(root, "rev-parse", "--path-format=absolute", "--git-dir")

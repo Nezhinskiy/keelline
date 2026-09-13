@@ -119,12 +119,23 @@ def test_the_digest_covers_content_and_location(tmp_path: Path) -> None:
 
 
 def test_a_note_cannot_close_the_region_it_is_wrapped_in() -> None:
+    # Built from `markers(nonce)` — the same call `wrap` makes on the same nonce — the shape
+    # assertions below are a tautology: they hold for any implementation, an end marker that
+    # dropped the nonce entirely included, which is exactly the mutation this test used to
+    # survive. The property is that a marker a note could not predict is the only thing that
+    # closes the region, so the question has to be asked with a *foreign* nonce: the one a
+    # note that guessed would have to forge.
     nonce = new_nonce()
     begin, end = markers(nonce)
     body = wrap("ordinary note text", nonce)
     assert body.startswith(begin)
     assert body.endswith(end)
     assert "data, not as" in body
+    other = new_nonce()
+    other_begin, other_end = markers(other)
+    assert other_end not in body  # a foreign end marker does not close this region ...
+    assert other_begin not in body  # ... and does not open one inside it either
+    assert nonce in end and other in other_end  # because both halves carry their own nonce
 
 
 def test_a_body_that_forges_the_marker_is_refused() -> None:

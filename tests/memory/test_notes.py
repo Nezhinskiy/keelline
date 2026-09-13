@@ -252,6 +252,21 @@ def test_a_value_carrying_a_newline_is_refused_rather_than_written(tmp_path: Pat
         render_note(with_index(read_note(path), "first line\nsecond line", Provenance.NATIVE))
 
 
+def test_a_first_written_value_is_escaped_into_the_exact_bytes_the_grammar_reads_back(
+    tmp_path: Path,
+) -> None:
+    # The escaping and the unescaping are one matched pair, so a round trip through both is
+    # blind to removing both: `_quote` writing `he said "no"` bare and `_unescape` returning
+    # its input unchanged reads back as the value that went in, while the file on disk carries
+    # a `"` that closes the scalar on its own and a lone `\` the native writer takes as an
+    # escape lead-in. This module's premise is bit-compatibility with *that* writer, so the
+    # assertion has to be on the bytes, not on what this module makes of them.
+    path = tmp_path / "n.md"
+    path.write_text(MINIMAL, encoding="utf-8")
+    write_note(with_index(read_note(path), r'he said "no" \ then left', Provenance.NATIVE))
+    assert r'index: "he said \"no\" \\ then left"' in path.read_text(encoding="utf-8")
+
+
 def test_an_escaped_value_reads_back_as_the_value_that_was_written(tmp_path: Path) -> None:
     # `_quote` escapes `\` and `"`; a reader that never unescapes them is not its inverse, so
     # a description holding a quote gains a backslash on every key this run writes for the

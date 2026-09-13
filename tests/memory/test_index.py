@@ -9,6 +9,7 @@ from keelline.memory.index import (
     INDEX_NAME,
     check_index,
     entries_in,
+    index_source,
     is_volatile,
     reconcile,
     render_index,
@@ -322,6 +323,29 @@ def test_a_symlinked_index_is_not_harvested_outside_overlay_mode(tmp_path: Path)
     result = reconcile(store, config, write=True)
     assert result.harvested == []
     assert read_note(store.groups["developer"] / "n.md").index == "n description"
+
+
+def test_a_symlinked_index_sources_nothing_when_the_caller_names_no_overlay(
+    tmp_path: Path,
+) -> None:
+    # The caller/`machine` disagreement `worktree.link`'s docstring warns about, and the one
+    # shape no other test reaches: overlay mode, a symlinked index, and a caller that did not
+    # thread the machine file the store was resolved with. `overlay_root` then answers None,
+    # so there is no `permitted_roots` left to hold the link's target to — and the only safe
+    # answer is the one an ungoverned group symlink already gets. Returning the target instead
+    # honours a link nothing ever validated: `worktree.link` materialises it into the worktree
+    # and `bundles._index` reads what it points at straight into the model.
+    store, config = a_store(tmp_path)
+    overlay_mode = Store(store.path, "overlay", store.root, dict(store.groups))
+    elsewhere = tmp_path / "other-client" / INDEX_NAME
+    elsewhere.parent.mkdir()
+    elsewhere.write_text(
+        "- [another client's trigger → its answer](developer/a.md)\n", encoding="utf-8"
+    )
+    (store.path / INDEX_NAME).symlink_to(elsewhere)
+    blank = tmp_path / "machine.toml"
+    blank.write_text("", encoding="utf-8")
+    assert index_source(overlay_mode, config, blank) is None
 
 
 def test_a_multi_line_index_extra_entry_never_reaches_the_index(tmp_path: Path) -> None:

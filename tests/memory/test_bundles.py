@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -11,7 +12,16 @@ import pytest
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.memory import bundles as bundles_module
-from keelline.memory.bundles import CAP_MARGIN, SLOTS, Bundle, blocks, fit, render, split
+from keelline.memory.bundles import (
+    CAP_MARGIN,
+    SLOTS,
+    STANDING_LEAD,
+    Bundle,
+    blocks,
+    fit,
+    render,
+    split,
+)
 from keelline.memory.index import INDEX_NAME
 from keelline.memory.store import Store, resolve
 from keelline.memory.trust import DELIMITER, record
@@ -256,13 +266,53 @@ def test_many_standing_rules_overflow_the_declared_slots(tmp_path: Path) -> None
     assert report.overflow > 0
 
 
-@pytest.mark.parametrize("bundle", list(Bundle))
-def test_every_bundle_has_a_declared_slot_count(bundle: Bundle) -> None:
-    assert SLOTS[bundle] >= 1
+def test_the_declared_slot_counts_are_the_ones_hooks_json_has_to_ship() -> None:
+    # `SLOTS[bundle] >= 1` left three of these four free: only `standing-rules == 3` was
+    # asserted anywhere, so `preset-rules`, `volatile-notes` and `index` could each be changed
+    # without a test noticing, while every one of them is a count of numbered `hooks.json`
+    # entries a session actually gets. The mapping is the contract, so the mapping is pinned —
+    # a bundle added or dropped fails this too.
+    #
+    # The other side of that contract, `hooks/hooks.json` itself, belongs to the `hooks-core`
+    # lane and does not exist in this tree: cross-checking these counts against the entries
+    # that file declares is that lane's test to write, not one this one can fake.
+    assert SLOTS == {
+        Bundle.PRESET_RULES: 1,
+        Bundle.STANDING_RULES: 3,
+        Bundle.VOLATILE_NOTES: 3,
+        Bundle.INDEX: 2,
+    }
 
 
-def test_the_margin_is_additive_because_the_text_is_emitted_raw() -> None:
-    assert 0 < CAP_MARGIN < 100
+def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) -> None:
+    # The name is a claim about how the text is emitted, and `0 < CAP_MARGIN < 100` — a range
+    # check on a constant — demonstrated neither half of it. What makes a margin this small
+    # sufficient is that `memory session-context` prints the bundle and one newline: a part
+    # packed right up to `_cap` still lands inside `hook_output_chars`, with the rest of the
+    # margin as headroom. Through `--json` it does not, and that is the point of the name —
+    # `cli._emit` wraps the same string in `json.dumps({"summary": ...}, indent=2)`, whose
+    # envelope and escaping alone carry a cap-length bundle past the platform cap.
+    # **So the `hooks.json` entries must not pass `--json`** — recorded here because this is
+    # the file the `hooks-core` lane reads `SLOTS` out of.
+    # (`test_a_note_sized_to_the_margins_edge_is_flagged_oversized` pins the subtraction
+    # itself; this pins what the remainder of the margin is for.)
+    store, config = a_store(tmp_path)
+    for path in store.groups["developer"].glob("*.md"):
+        path.unlink()
+    heading = "### solo\n\n"
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    filler = cap - len(STANDING_LEAD) - len("\n\n") - len(heading)
+    (store.groups["developer"] / "solo.md").write_text(
+        note("solo", startup="1", body="x" * filler), encoding="utf-8"
+    )
+    text = render(Bundle.STANDING_RULES, store, config, part=1)
+    assert text is not None and len(text) == cap
+    # Raw: the bundle plus one newline, and the margin is what is left over.
+    assert len(text) + 1 <= config.native_caps.hook_output_chars
+    assert len(text) + 1 < config.native_caps.hook_output_chars  # headroom, not a dead heat
+    # Through the JSON envelope the same text no longer fits, margin and all.
+    envelope = json.dumps({"summary": text}, indent=2, sort_keys=True)
+    assert len(envelope) > config.native_caps.hook_output_chars
 
 
 # --- an overlay store built the way overlay mode really builds one ----------------------------
