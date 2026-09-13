@@ -18,7 +18,14 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
-from keelline.memory.index import check_index, reconcile, render_index, write_index
+from keelline.memory.index import (
+    INDEX_NAME,
+    Reconciliation,
+    check_index,
+    reconcile,
+    render_index,
+    write_index,
+)
 from keelline.memory.inventory import inventory, totals
 from keelline.memory.store import Store, refusal_reason, resolve
 from keelline.result import Result
@@ -54,6 +61,13 @@ _DROPPED = (
     "the store changed while this command ran, so its trust record was not carried over — "
     "review the change and re-run `keelline memory trust --in-repo-memory`"
 )
+# `index._harvestable` refused to persist repository-authored titles into notes that are not
+# themselves repository data. Said out loud because the alternative is a silent drop: the notes
+# keep their own descriptions and nothing else in the output would differ.
+_NOT_HARVESTED = (
+    "{names} took no index line from {index}: it is committed to this repository and they are "
+    "not, so its text was not written into memory the machine owns"
+)
 
 
 def _gate(store: Store, config: Config, machine: Path | None) -> str | None:
@@ -71,6 +85,14 @@ def _with(summary: str, note: str | None) -> str:
     return summary if note is None else f"{summary}; {note}"
 
 
+def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
+    """What `index._harvestable` declined to persist, named where a person will read it."""
+    if not reconciled.refused_harvest:
+        return None
+    names = ", ".join(reconciled.refused_harvest)
+    return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
+
+
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     machine = _machine(args)
@@ -85,7 +107,7 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         return Result(
-            _with(summary, _gate(store, config, machine)),
+            _with(_with(summary, _harvest(reconciled, store)), _gate(store, config, machine)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -93,6 +115,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "over_budget": report.over_budget,
                 "over_caps": report.over_caps,
                 "provisional": report.provisional,
+                "refused_harvest": reconciled.refused_harvest,
                 "unreadable": report.unreadable,
                 "trusted": trust.may_inject(store, config, machine=machine),
             },
@@ -103,13 +126,15 @@ def run_index(args: argparse.Namespace) -> Result:
         store, config, before, [*reconciled.written, path], machine=machine
     )
     note = _DROPPED if before.trusted and not carried else _gate(store, config, machine)
+    wrote = f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)"
     return Result(
-        _with(f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", note),
+        _with(_with(wrote, _harvest(reconciled, store)), note),
         {
             "path": str(path),
             "words": report.words,
             "harvested": reconciled.harvested,
             "provisional": reconciled.provisional,
+            "refused_harvest": reconciled.refused_harvest,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "trusted": trust.may_inject(store, config, machine=machine),

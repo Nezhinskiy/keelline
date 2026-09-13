@@ -22,7 +22,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.fsops import write_atomically
 from keelline.memory.notes import UNRANKED, Note, Provenance, walk, with_index, write_note
-from keelline.memory.store import Store, overlay_root, permitted_roots
+from keelline.memory.store import Store, in_repository, overlay_root, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
@@ -67,6 +67,12 @@ class Reconciliation:
     # needs to know which files Keelline itself authored, so that carrying trust across
     # `memory index` cannot also carry it across whatever else landed on disk (§9.4).
     written: list[Path] = field(default_factory=list)
+    # Notes that had a line waiting for them in the index and were not allowed to take it,
+    # because the index is repository data and the note is not (`_harvestable`). They get a
+    # provisional line from their own description instead, so they appear in `provisional` too;
+    # this names the ones where that was a refusal rather than an absence, because a drop the
+    # command cannot mention is a drop nobody reviews.
+    refused_harvest: list[str] = field(default_factory=list)
 
 
 def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
@@ -102,15 +108,14 @@ def index_source(store: Store, config: Config, machine: Path | None) -> Path | N
     return resolved
 
 
-def _appended(store: Store, config: Config, machine: Path | None) -> dict[str, str]:
-    """What the second writer appended, from the file `index_source` says the index is.
+def _appended(path: Path | None) -> dict[str, str]:
+    """What the second writer appended, from the file `index_source` said the index is.
 
     Harvesting goes through the same target rule as injection, and for the same reason turned
     around: `reconcile` writes what it finds here into each note's `index:` frontmatter, so an
     index symlinked at another project's share would persist that project's text into this
     one's notes — and in overlay mode from there onto every machine.
     """
-    path = index_source(store, config, machine)
     if path is None or not path.is_file():
         return {}
     try:
@@ -118,6 +123,36 @@ def _appended(store: Store, config: Config, machine: Path | None) -> dict[str, s
     except OSError:
         return {}
     return {target: title for title, target in entries_in(text)}
+
+
+def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
+    """Whether this note may take its `index:` line from the file `source` names.
+
+    The target rule `_appended` applies guards one direction — an index symlinked into
+    *another* project's overlay share. The inverse is the natural shape and was ungoverned: in
+    overlay mode the index is legitimately a real file the clone shipped at `paths.memory`
+    (`index_source`: "a real file sources itself, unconditionally") while the notes resolve out
+    into the machine's own overlay. `reconcile(write=True)` then persisted repository-authored
+    titles into `common/memory` — shared with *every project on the machine* and, per §6.2,
+    synced across machines — from where another project whose index is the §6.3 symlink injects
+    them raw, unwrapped, with no trust record anywhere in the chain.
+
+    So the rule is one trust domain per harvest: **repository bytes do not become machine
+    state.** A note that is itself repository data may take a repository index's line — nothing
+    crosses — and a machine-owned index may supply anything, because those bytes are already
+    the owner's.
+
+    Deliberately not `trust.may_inject(..., repository_data=True)`, the review's other
+    suggestion. A trust record says "this repository's memory may reach the model, as data". It
+    does not say "this repository's memory may become my machine-level memory, unwrapped, in
+    every other project". Those are different grants and only the first is the one the owner
+    makes, so the gate here is the domain, not the record — which also means the ordinary
+    same-domain cases keep working with no record at all, as they must: requiring one would
+    stop `memory index` dead on a fresh in-repo store.
+    """
+    if source is None or not in_repository(store, source):
+        return True
+    return in_repository(store, note.path)
 
 
 def _relative(note: Note, store: Store) -> str:
@@ -134,18 +169,23 @@ def reconcile(
     overlay, which a `Sequence[str]` cannot carry. Pass the same `machine` used to resolve
     `store`, exactly as `worktree.link` and `bundles.blocks` ask.
     """
-    appended = _appended(store, config, machine)
+    source = index_source(store, config, machine)
+    appended = _appended(source)
     groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
     notes: list[Note] = []
     harvested: list[str] = []
     provisional: list[str] = []
     written: list[Path] = []
+    refused: list[str] = []
     for note in found.notes:
         if note.index:
             notes.append(note)
             continue
         line = appended.get(_relative(note, store))
+        if line and not _harvestable(store, source, note):
+            refused.append(note.name)
+            line = None
         if line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
@@ -156,7 +196,7 @@ def reconcile(
             write_note(note)
             written.append(note.path)
         notes.append(note)
-    return Reconciliation(notes, harvested, provisional, found.unreadable, written)
+    return Reconciliation(notes, harvested, provisional, found.unreadable, written, refused)
 
 
 def _order(note: Note) -> tuple[int, int, str]:

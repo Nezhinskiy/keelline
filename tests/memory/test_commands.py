@@ -349,7 +349,7 @@ def test_index_check_answers_about_the_file_the_index_actually_is(
 
 @needs_git
 def test_an_index_the_repository_ships_is_not_harvested_into_the_machines_notes(
-    overlay_project: Path,
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # In overlay mode a real `MEMORY.md` at `paths.memory` is a file the clone shipped, and
     # `index_source` says a real file sources itself unconditionally — while the notes it is
@@ -369,3 +369,26 @@ def test_an_index_the_repository_ships_is_not_harvested_into_the_machines_notes(
     assert payload not in written, "repository text was persisted into the machine's own notes"
     assert "index: n description" in written
     assert "index_provenance: provisional" in written
+    # And said out loud: a drop nothing mentions is a drop nobody reviews.
+    assert "took no index line" in capsys.readouterr().out
+
+
+@needs_git
+def test_the_machines_own_index_is_still_harvested_into_the_machines_notes(
+    overlay_project: Path,
+) -> None:
+    # The rule is one trust domain, not "never harvest in overlay mode". §6.3 makes a symlinked
+    # index into this project's own overlay share a legitimate member of the tree `attach`
+    # creates, and the curation a session wrote there is exactly what the harvest exists to
+    # keep. A fix that refused this would delete the feature instead of gating it.
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory"
+    curated = "n trigger \u2192 the answer, written by a session on this machine"
+    (share / "MEMORY.md").write_text(f"- [{curated}](developer/n.md)\n", encoding="utf-8")
+    (overlay_project / "docs" / "memory" / "MEMORY.md").symlink_to(share / "MEMORY.md")
+    note = overlay_project.parent / "overlay" / "common" / "memory" / "n.md"
+
+    assert invoke(["memory", "index", *common(overlay_project)]) == 0
+
+    written = note.read_text(encoding="utf-8")
+    assert curated in written
+    assert "index_provenance: native" in written
