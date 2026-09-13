@@ -11,6 +11,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
 from keelline.memory.store import LOCAL_STORE, Store, resolve
+from keelline.memory.trust import record
 from keelline.memory.worktree import harness_memory_path, link, linked_names
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -33,6 +34,13 @@ mode = "{mode}"
 groups = {groups}
 index_extra = []
 """
+
+
+def a_machine_file(tmp_path: Path) -> Path:
+    """A machine file of this test's own, so `trust` never reads or writes the real home."""
+    path = tmp_path / "machine.toml"
+    path.write_text("", encoding="utf-8")
+    return path
 
 
 def git(root: Path, *args: str) -> str:
@@ -165,7 +173,11 @@ def test_the_harness_memory_directory_is_keyed_by_the_worktree_path(tmp_path: Pa
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
-    link(tree, store, config, home=home)
+    # `a_checkout` is `in-repo`, so the notes are repository data and the harness link is
+    # gated on the trust record below (see the section at the end of this file).
+    machine = a_machine_file(tmp_path)
+    record(store, config, machine=machine)
+    link(tree, store, config, home=home, machine=machine)
     assert harness_memory_path(tree, home).is_symlink()
     slug = str(tree.resolve()).replace("/", "-").replace(".", "-")
     assert (home / ".claude" / "projects" / slug / "memory").is_symlink()
@@ -517,3 +529,49 @@ def test_a_group_target_that_escapes_the_worktree_tree_is_refused_rather_than_sk
     with pytest.raises(PathEscape):
         link(tree, store, config, home=tmp_path / "home")
     assert list(outside.iterdir()) == []
+
+
+# --- the harness's own project-memory directory is the one hop outside keelline's gate -------
+#
+# Every link above lands inside the worktree, where nothing reads it but Keelline's own
+# bundles — which route through `trust.may_inject` and `trust.wrap`. The harness link does not:
+# `~/.claude/projects/<slug>/memory` is read by the harness's *native* memory reader, so
+# whatever sits behind it reaches the model with no gate, no nonce region and no trust record.
+# In `local-only` and `in-repo`, the store is content the clone shipped.
+
+
+def test_a_repository_data_store_gets_no_harness_link_before_trust(tmp_path: Path) -> None:
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = tmp_path / "home"
+    machine = a_machine_file(tmp_path)
+    created = link(tree, store, config, home=home, machine=machine)
+    assert harness_memory_path(tree, home) not in created
+    assert not harness_memory_path(tree, home).exists()
+    # Everything inside the worktree is still linked: the gate is on the hop that hands
+    # content to a reader of the harness's own, not on linking.
+    assert (tree / "docs" / "memory" / "developer").is_symlink()
+    assert (tree / "docs" / "memory" / "MEMORY.md").is_symlink()
+
+
+def test_the_harness_link_appears_once_the_owner_has_trusted_the_store(tmp_path: Path) -> None:
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = tmp_path / "home"
+    machine = a_machine_file(tmp_path)
+    assert not harness_memory_path(tree, home).exists()
+    record(store, config, machine=machine)
+    created = link(tree, store, config, home=home, machine=machine)
+    assert harness_memory_path(tree, home) in created
+    assert harness_memory_path(tree, home).resolve() == store.path.resolve()
+
+
+def test_an_overlay_store_needs_no_trust_record_for_its_harness_link(tmp_path: Path) -> None:
+    # The machine owner's own notes are not repository data, so gating them would break the
+    # mode this project ships rather than close a hole. `may_inject` already draws that line;
+    # this is the check that the gate uses it rather than "always ask".
+    root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = tmp_path / "home"
+    created = link(tree, store, config, home=home, machine=machine)
+    assert harness_memory_path(tree, home) in created

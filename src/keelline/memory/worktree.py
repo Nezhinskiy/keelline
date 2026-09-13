@@ -33,6 +33,11 @@ mode refused outright, exactly as an ungoverned group symlink would be.
 That rule lives in `index.index_source`, not here, because linking is not its only reader:
 `bundles._index` reads the same file and injects it into the model, which is the channel that
 matters more. Two copies of one boundary rule is one copy too many.
+
+One of the two gaps is not like the other. The links inside the worktree are read by this
+lane's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
+project-memory link is read by the harness's own memory reader, outside both. `link` therefore
+asks the gate before it makes that one — see the note on `link` itself.
 """
 
 from __future__ import annotations
@@ -41,6 +46,7 @@ from pathlib import Path
 
 from keelline.config.paths import contained
 from keelline.config.schema import Config
+from keelline.memory import trust
 from keelline.memory.index import INDEX_NAME, index_source
 from keelline.memory.store import Store, main_checkout
 
@@ -124,6 +130,24 @@ def link(
     against the *main checkout's* tree — a worktree is a separate checkout of a separate
     branch, so its own copy of that subtree can hold a symlink the main one does not. Skipping
     one escaping name would leave the next name in the list free to try the same thing.
+
+    **The harness link is the one hop that leaves keelline's gate, so it is the one that asks
+    about trust.** Every link above lands inside the worktree, where the only reader is this
+    lane's own `bundles.blocks` — which calls `trust.may_inject` and wraps what it emits in
+    `trust.wrap`'s nonce region. `~/.claude/projects/<slug>/memory` is read by the *harness's*
+    native memory reader instead: whatever sits behind it reaches the model with no gate, no
+    delimiter and no trust record. In `local-only` — the preset default — and in `in-repo` the
+    store is content the clone shipped, so creating that link before the owner has said
+    `keelline memory trust --in-repo-memory` hands repository-authored text to the model
+    through a channel this lane does not control.
+
+    The condition is `trust.may_inject(store, config, machine=machine)` and nothing narrower.
+    It is already the predicate that means "these bytes may reach the model at all": it
+    short-circuits to True when `inside_project(store)` is False, so the machine owner's own
+    overlay notes keep their link with no record at all, and otherwise it demands a digest that
+    matches what the owner approved. Gating on `inside_project` alone would ask the wrong
+    question (it would refuse a trusted store for ever); gating on the mode would ask the
+    clone.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return []
@@ -144,6 +168,8 @@ def link(
             target = contained(base, name, allow_final_symlink=True)
             if _link(source.resolve(), target):
                 created.append(target)
+    if not trust.may_inject(store, config, machine=machine):
+        return created
     harness = harness_memory_path(worktree, home)
     if _link(store.path.resolve(), harness):
         created.append(harness)
