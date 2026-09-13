@@ -87,6 +87,26 @@ def _unquote(value: str) -> str:
     return value
 
 
+def is_one_line(value: str) -> bool:
+    """Whether a value occupies exactly one line and carries no line break of its own.
+
+    `str.splitlines()` is the oracle, not a scan for `"\\n"`, because `_split` below finds the
+    frontmatter fence with `splitlines()` — so the characters that decide where a note's
+    frontmatter ends are exactly the ones it breaks on: `\\n`, `\\r`, `\\x0b`, `\\x0c`, `\\x1c`,
+    `\\x1d`, `\\x1e`, `\\x85`, U+2028 and U+2029. A guard that named its own two (`"\\n"` and
+    `"\\r"`, the two `read_text`'s universal newlines and `_ENTRY` had already made
+    unreachable) both over- and under-shot; asking the same function the parser asks is what
+    keeps them from drifting apart again. `index._extra` asks this too, for the same value
+    rendered into the same one-line frontmatter by another route.
+
+    `value.splitlines() == [value]` rather than `len(value.splitlines()) > 1`: a value that
+    merely *ends* in a break — `"one line\\n"` — still splits into one element while plainly
+    carrying one. The empty string is one line, because a note without `description:` is
+    ordinary and `read_note` fills in `""` for it.
+    """
+    return not value or value.splitlines() == [value]
+
+
 def _quote(value: str, path: Path) -> str:
     """Only ever applied to a value this run is writing for the first time.
 
@@ -95,14 +115,15 @@ def _quote(value: str, path: Path) -> str:
     `he said "no"` into a stored `he said \\"no\\"` that then rendered into `MEMORY.md` with the
     backslashes visible.
 
-    A newline is refused rather than represented. This grammar is flat `key: value` lines and
-    there is no line-based frontmatter form of one — written bare (which is what a multi-line
-    value gets, holding none of `: # " '` and neither leading nor trailing whitespace) the
-    remainder spills past the key's line and the note stops parsing on the next read. Refusing
-    is the honest answer, and `NoteError` is a `Failure`: exit 1, with the path in the message.
+    A line break is refused rather than represented. This grammar is flat `key: value` lines
+    and there is no line-based frontmatter form of one — written bare (which is what such a
+    value gets, holding none of `: # " '` and neither leading nor trailing whitespace, since
+    `str.strip()` leaves an interior U+2028 alone) the remainder spills past the key's line and
+    the note stops parsing on the next read. Refusing is the honest answer, and `NoteError` is
+    a `Failure`: exit 1, with the path in the message.
     """
-    if "\n" in value or "\r" in value:
-        raise NoteError(f"{path}: a frontmatter value cannot carry a newline: {value!r}")
+    if not is_one_line(value):
+        raise NoteError(f"{path}: a frontmatter value must be one line: {value!r}")
     if value and not any(ch in value for ch in ":#\"'") and value.strip() == value:
         return value
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')

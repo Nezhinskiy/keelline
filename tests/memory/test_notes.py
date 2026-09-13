@@ -262,3 +262,40 @@ def test_an_escaped_value_reads_back_as_the_value_that_was_written(tmp_path: Pat
     assert original.description == 'he said "no"'
     write_note(with_index(original, original.description, Provenance.PROVISIONAL))
     assert read_note(path).index == 'he said "no"'
+
+
+# Every character `str.splitlines()` breaks on beyond the two the old guard named. `_split`
+# finds the frontmatter fence with `splitlines()`, so this is the set that decides where a
+# note's frontmatter ends — while `read_text`'s universal newlines and `_ENTRY` had already
+# made `\n` and `\r` the two that cannot arrive.
+OTHER_LINE_BREAKS = ("\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+
+
+@pytest.mark.parametrize("char", OTHER_LINE_BREAKS)
+def test_a_value_carrying_any_break_splitlines_knows_is_refused(tmp_path: Path, char: str) -> None:
+    # A title copied out of a PDF carries U+2028. Written bare — it holds none of `: # " '`
+    # and `str.strip()` does not remove an interior one — the remainder lands on a line of its
+    # own, and the next read quarantines the note out of the index, the standing rules and
+    # volatile injection with both runs exiting 0.
+    path = tmp_path / "n.md"
+    path.write_text(MINIMAL, encoding="utf-8")
+    with pytest.raises(NoteError):
+        render_note(with_index(read_note(path), f"first{char}second", Provenance.NATIVE))
+
+
+def test_a_value_that_merely_ends_in_a_line_break_is_refused_too(tmp_path: Path) -> None:
+    # `len(value.splitlines()) > 1` is False for `"one line\n"` — `splitlines` yields one
+    # element — while the value plainly carries a break, and the quoted form written for it
+    # closes the key's line early. The guard asks whether the value *is* its own single line.
+    path = tmp_path / "n.md"
+    path.write_text(MINIMAL, encoding="utf-8")
+    with pytest.raises(NoteError):
+        render_note(with_index(read_note(path), "one line\n", Provenance.NATIVE))
+
+
+def test_an_empty_value_is_one_line_and_is_still_written(tmp_path: Path) -> None:
+    # A note without `description:` is ordinary, and `read_note` fills in `""` for it. The
+    # one-line guard must not refuse that, or the empty string becomes unwritable.
+    path = tmp_path / "n.md"
+    path.write_text(MINIMAL, encoding="utf-8")
+    assert 'index: ""' in render_note(with_index(read_note(path), "", Provenance.NATIVE))

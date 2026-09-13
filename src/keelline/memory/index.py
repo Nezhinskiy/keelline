@@ -21,19 +21,31 @@ from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.fsops import write_atomically
-from keelline.memory.notes import UNRANKED, Note, Provenance, walk, with_index, write_note
+from keelline.memory.notes import (
+    UNRANKED,
+    Note,
+    Provenance,
+    is_one_line,
+    walk,
+    with_index,
+    write_note,
+)
 from keelline.memory.store import Store, in_repository, overlay_root, permitted_roots
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
 VOLATILE_SUFFIX = "volatile"
-# Neither class may match a newline. `MEMORY.md`'s premise is that a *second, non-Keelline*
-# writer appends entries here, so an unclosed `[` is an ordinary accident rather than an
-# attack — and a title harvested across the line break is written straight into a note's
-# one-line `index:` frontmatter, where the remainder spills out of the fence and the note
-# stops parsing: silently quarantined out of the index, the standing rules and volatile
-# injection, and in overlay mode synced to every machine.
-_ENTRY = re.compile(r"^- \[([^\]\n]+)\]\(([^)\n]+)\)", re.MULTILINE)
+# Every character `str.splitlines()` breaks on, which is the set that matters here: a
+# harvested title is written straight into a note's one-line `index:` frontmatter, and
+# `notes._split` finds that note's fence with `splitlines()`. Excluding `\n` alone was
+# excluding the one character that cannot arrive — `read_text` uses universal newlines — while
+# U+2028 (an ordinary artefact of a copy-paste out of a PDF) passed straight through, spilled
+# the remainder out of the fence, and quarantined the note out of the index, the standing rules
+# and volatile injection, with every run exiting 0 and in overlay mode syncing to every machine.
+_BREAKS = r"\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+# `MEMORY.md`'s premise is that a *second, non-Keelline* writer appends entries here, so an
+# unclosed `[` is an ordinary accident rather than an attack; neither class spans a line.
+_ENTRY = re.compile(rf"^- \[([^\]{_BREAKS}]+)\]\(([^){_BREAKS}]+)\)", re.MULTILINE)
 
 HEADER = (
     "# Memory Index\n\n"
@@ -261,15 +273,17 @@ def _extra(config: Config, store: Store) -> list[str]:
     absoluteness, `..` and symlinks and says nothing about a value being one line, so a TOML
     multi-line string passed and was written verbatim into `MEMORY.md` — twice, as a link's
     title and as its target — carrying repository-authored prose through every index
-    regeneration. Two guards close that. The value must be a single line, by `str.splitlines`
-    rather than a scan for `\\n`, because `_split` in `notes.py` breaks on `\\x0b`, `\\x0c`,
-    `\\x85`, U+2028 and U+2029 as well. And it may not hold `]`, `(` or `)`, the three
-    characters that close a markdown link early and put the remainder where `entries_in` reads
-    a *target* — the same channel the harvest writes back into a note's one-line `index:`.
+    regeneration. Two guards close that. The value must be a single line, and the question is
+    put to `notes.is_one_line` rather than answered a second time here: this string is rendered
+    into the same `- [title](target)` shape the harvest reads back out into a note's one-line
+    `index:`, so the two ends of that round trip must not disagree about what one line is —
+    `len(value.splitlines()) > 1`, which this was, answers False for a value that merely *ends*
+    in a break. And it may not hold `]`, `(` or `)`, the three characters that close a markdown
+    link early and put the remainder where `entries_in` reads a *target*.
     """
     kept: list[str] = []
     for target in config.memory.index_extra:
-        if len(target.splitlines()) > 1 or any(char in target for char in _LINK_SYNTAX):
+        if not is_one_line(target) or any(char in target for char in _LINK_SYNTAX):
             continue
         try:
             resolved = contained(store.root, target)
