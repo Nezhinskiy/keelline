@@ -1,1 +1,1 @@
-"""The memory store (contract C3): notes, resolution, index, bundles, links."""
+"""The memory store (contract C3). The importable surface is `keelline.memory.api`."""
