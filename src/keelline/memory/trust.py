@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,6 +200,74 @@ def record(store: Store, config: Config, *, machine: Path | None = None) -> Trus
     raw[_key(store)] = store_digest(store)
     write_atomically(_trust_file(machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
     return state(store, config, machine=machine)
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """What the store held, and whether the owner had approved it, before a Keelline write.
+
+    Taken at the top of a command, *before* it writes anything. `entries` is the per-file half
+    of `store_digest` kept apart instead of folded together, so `refresh_if_trusted` can carry
+    an untouched file's approved digest forward without re-reading the file — which is what
+    keeps a change Keelline did not author out of the record it re-writes.
+    """
+
+    trusted: bool
+    entries: dict[str, str]
+
+
+def snapshot(store: Store, config: Config, *, machine: Path | None = None) -> Snapshot:
+    del config
+    read = _read(store)
+    recorded = _recorded(machine).get(_key(store))
+    return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
+
+
+def refresh_if_trusted(
+    store: Store,
+    config: Config,
+    before: Snapshot,
+    written: Iterable[Path],
+    *,
+    machine: Path | None = None,
+) -> bool:
+    """Carry trust across a write Keelline itself authored, and across nothing else.
+
+    `store_digest` covers every note *and* `MEMORY.md`, and that is right — but it makes
+    **Keelline the usual rewriter of the store it gates**. `memory index` gives each note an
+    `index:` line and re-renders the index, so the routine command revoked the record the owner
+    had just created and every bundle went quietly empty. Re-recording at the end of the
+    command is the fix; the care is in re-recording *only what this command wrote*.
+
+    So the digest written here is not a fresh read of the disk. It is built entry by entry:
+    a file this command wrote contributes the bytes now on disk, and every other file
+    contributes the digest `before` captured — the bytes the owner approved. Anything that
+    arrived on disk between the owner's `memory trust` and this command therefore does **not**
+    ride along: either `before.trusted` is already False and nothing is recorded at all, or the
+    recorded digest simply will not match the next `state()` read and the owner is re-prompted.
+    Fail-closed in both directions, and a file that appeared or vanished without Keelline
+    touching it stops the refresh outright.
+
+    Returns whether a record was written.
+    """
+    del config
+    if not before.trusted:
+        return False
+    touched = {path.resolve() for path in written}
+    expected: list[tuple[str, str]] = []
+    for key, path in _files(store):
+        if path.resolve() in touched:
+            expected.append((key, _content_digest(path)))
+        elif key in before.entries:
+            expected.append((key, before.entries[key]))
+        else:
+            return False  # it appeared while the command ran, and Keelline did not write it
+    if not set(before.entries) <= {key for key, _ in expected}:
+        return False  # an approved file is gone, and Keelline does not delete notes
+    raw = _recorded(machine)
+    raw[_key(store)] = _digest_of(expected)
+    write_atomically(_trust_file(machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    return True
 
 
 def may_inject(

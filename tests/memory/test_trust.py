@@ -20,6 +20,8 @@ from keelline.memory.trust import (
     may_inject,
     new_nonce,
     record,
+    refresh_if_trusted,
+    snapshot,
     state,
     store_digest,
     wrap,
@@ -217,3 +219,44 @@ def test_one_note_cannot_be_restructured_into_two_without_changing_the_digest(
     (developer / "a.md").write_bytes(innocuous)
     (developer / "b.md").write_bytes(payload)
     assert store_digest(store) != single
+
+
+def test_a_refresh_carries_only_the_file_keelline_wrote(tmp_path: Path) -> None:
+    # `memory index` rewrites every note and `MEMORY.md`, so trust has to survive a write
+    # Keelline authored. It must survive *only that*: the store has a second writer (the
+    # harness's native memory writer) and a `git pull` can land at any moment, so a refresh
+    # that re-read the whole store would hand a record to bytes the owner has never seen.
+    # Keelline's own file is carried forward; the one that appeared beside it is not.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    before = snapshot(store, config, machine=machine)
+    assert before.trusted is True
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    theirs = store.groups["developer"] / "pulled.md"
+    theirs.write_text(NOTE.replace("startup: -100", "startup: 1"), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine], machine=machine) is False
+    assert may_inject(store, config, machine=machine) is False
+
+
+def test_a_refresh_keeps_a_store_keelline_rewrote_trusted(tmp_path: Path) -> None:
+    # The other half: nothing but Keelline's own write happened, so the owner is not re-asked.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    before = snapshot(store, config, machine=machine)
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    index = store.path / "MEMORY.md"
+    index.write_text("# Memory Index\n\n- [t](developer/a.md)\n", encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine, index], machine=machine) is True
+    assert may_inject(store, config, machine=machine) is True
+
+
+def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Path) -> None:
+    store, config, machine = a_store(tmp_path, "in-repo")
+    before = snapshot(store, config, machine=machine)
+    assert before.trusted is False
+    mine = store.groups["developer"] / "a.md"
+    mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
+    assert refresh_if_trusted(store, config, before, [mine], machine=machine) is False
+    assert may_inject(store, config, machine=machine) is False

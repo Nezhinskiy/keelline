@@ -14,7 +14,7 @@ reading that keeps both sentences true.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
@@ -63,6 +63,10 @@ class Reconciliation:
     harvested: list[str]
     provisional: list[str]
     unreadable: list[tuple[Path, str]]
+    # The notes this run actually rewrote, empty when `write=False`. `trust.refresh_if_trusted`
+    # needs to know which files Keelline itself authored, so that carrying trust across
+    # `memory index` cannot also carry it across whatever else landed on disk (§9.4).
+    written: list[Path] = field(default_factory=list)
 
 
 def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
@@ -136,6 +140,7 @@ def reconcile(
     notes: list[Note] = []
     harvested: list[str] = []
     provisional: list[str] = []
+    written: list[Path] = []
     for note in found.notes:
         if note.index:
             notes.append(note)
@@ -149,8 +154,9 @@ def reconcile(
             provisional.append(note.name)
         if write:
             write_note(note)
+            written.append(note.path)
         notes.append(note)
-    return Reconciliation(notes, harvested, provisional, found.unreadable)
+    return Reconciliation(notes, harvested, provisional, found.unreadable, written)
 
 
 def _order(note: Note) -> tuple[int, int, str]:

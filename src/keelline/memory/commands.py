@@ -39,9 +39,44 @@ def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     return store, config
 
 
+# What `bundles.blocks` returns `[]` for, said where a person will read it. The failure this
+# closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`, so
+# it used to revoke the very record it depends on, and nothing in any summary said why the
+# model had stopped receiving standing rules.
+_UNTRUSTED = (
+    "this store's notes are repository data with no trust record, so the standing-rules, "
+    "volatile-notes and index bundles are empty — run `keelline memory trust --in-repo-memory`"
+)
+# The narrow case where a Keelline-authored write cannot carry trust forward: the store changed
+# under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
+# refuses rather than guess, which is right, and the human has to be told which it was.
+_DROPPED = (
+    "the store changed while this command ran, so its trust record was not carried over — "
+    "review the change and re-run `keelline memory trust --in-repo-memory`"
+)
+
+
+def _gate(store: Store, config: Config, machine: Path | None) -> str | None:
+    """Whether the trust gate is what a person should be told about, after a command ran.
+
+    Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
+    text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
+    rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
+    commands a person runs by hand are where this belongs.
+    """
+    return None if trust.may_inject(store, config, machine=machine) else _UNTRUSTED
+
+
+def _with(summary: str, note: str | None) -> str:
+    return summary if note is None else f"{summary}; {note}"
+
+
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    reconciled = reconcile(store, config, write=not args.check, machine=_machine(args))
+    machine = _machine(args)
+    # Taken before anything is written, so it records the bytes the owner actually approved.
+    before = trust.snapshot(store, config, machine=machine)
+    reconciled = reconcile(store, config, write=not args.check, machine=machine)
     report = check_index(store, config, reconciled)
     if args.check:
         summary = (
@@ -50,7 +85,7 @@ def run_index(args: argparse.Namespace) -> Result:
             else f"index is current: {report.words} words, {report.lines} lines"
         )
         return Result(
-            summary,
+            _with(summary, _gate(store, config, machine)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -59,12 +94,17 @@ def run_index(args: argparse.Namespace) -> Result:
                 "over_caps": report.over_caps,
                 "provisional": report.provisional,
                 "unreadable": report.unreadable,
+                "trusted": trust.may_inject(store, config, machine=machine),
             },
             exit_code=1 if report.drifted or report.over_budget else 0,
         )
     path = write_index(store, render_index(reconciled, config, store))
+    carried = trust.refresh_if_trusted(
+        store, config, before, [*reconciled.written, path], machine=machine
+    )
+    note = _DROPPED if before.trusted and not carried else _gate(store, config, machine)
     return Result(
-        f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)",
+        _with(f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", note),
         {
             "path": str(path),
             "words": report.words,
@@ -72,6 +112,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "provisional": reconciled.provisional,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
+            "trusted": trust.may_inject(store, config, machine=machine),
         },
     )
 
@@ -123,7 +164,14 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     }
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
-    return Result(summary, {"bundles": report}, exit_code=1 if bad else 0)
+    machine = _machine(args)
+    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = trust.may_inject(store, config, machine=machine)
+    return Result(
+        _with(summary, _gate(store, config, machine)),
+        {"bundles": report, "trusted": trusted},
+        exit_code=1 if bad else 0,
+    )
 
 
 def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
