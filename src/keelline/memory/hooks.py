@@ -18,9 +18,14 @@ trust record and no `may_inject` gate, which is precisely the channel `trust.wra
 close. `store.refusal_reason` builds its message out of raw `memory.groups` entries, and
 `memory.groups` is an ordinary `keelline.toml` list with no schema constraint (a TOML
 multi-line string carries literal newlines), so a clone reaches that text with no overlay and
-no confirmation. A session-start diagnostic does not need to reach the model at all: the
-message below is fixed and repository-independent, and the detail stays where a person reads
-it, in the `memory` commands.
+no confirmation. A session-start diagnostic does not need to carry that text at all: every
+message below is fixed and repository-independent, and where a `memory` command can say more
+(`refusal_reason`'s detail, for instance) that is where the detail stays.
+
+What the messages do carry is *that* something did not happen — no store, half a tree, a
+refused path. A handler degrading open silently is how a half-built link tree became invisible
+twice over; the fixed lines are what keep "nothing to do" and "something went wrong" apart
+without putting a repository's words in front of the model.
 """
 
 from __future__ import annotations
