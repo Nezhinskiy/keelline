@@ -471,3 +471,26 @@ def test_an_index_past_a_harness_cap_is_surfaced_rather_than_computed_and_droppe
     out = capsys.readouterr().out
     assert "memory_index_bytes" in out
     assert "index is current" not in out
+
+
+def test_the_standing_total_counts_what_the_standing_bundle_actually_injects(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `bundles._standing` excludes a volatile-group note even when it carries `startup` — a
+    # perishable fact is not a standing rule — while `totals` counted every note with one. The
+    # sweep skill's headline number therefore disagreed with what reaches the model, and a
+    # number that means something other than its name is worse than no number at all.
+    volatile = project / ".keelline" / "local" / "memory" / "project-volatile"
+    (volatile / "loud.md").write_text(
+        NOTE.format(name="loud", meta="metadata:\n  type: project\n  startup: 1\n", body="Loud."),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
+    capsys.readouterr()
+    assert invoke(["memory", "inventory", "--json", *common(project)]) == 0
+    counted = json.loads(capsys.readouterr().out)["standing"]
+    assert (
+        invoke(["memory", "session-context", "--bundle", "standing-rules", *common(project)]) == 0
+    )
+    injected = capsys.readouterr().out.count("### ")
+    assert counted == injected == 1

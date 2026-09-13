@@ -61,5 +61,10 @@ def totals(entries: list[Entry], config: Config) -> dict[str, int]:
         "provisional": sum(1 for e in entries if e.provenance == Provenance.PROVISIONAL.value),
         "stale": sum(1 for entry in entries if entry.stale),
         "undated": sum(1 for e in entries if is_volatile(e.group) and e.as_of is None),
-        "standing": sum(1 for entry in entries if entry.startup is not None),
+        # The same two conditions `bundles._standing` selects on, and for the same reason: a
+        # volatile note is a dated, perishable fact, so it is injected by the volatile bundle
+        # whatever `startup` it carries. Counting every flagged note made this headline number
+        # disagree with what actually reaches the model — and this number is what the
+        # `memory-sweep` skill reads and quotes.
+        "standing": sum(1 for e in entries if e.startup is not None and not is_volatile(e.group)),
     }
