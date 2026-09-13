@@ -57,15 +57,52 @@ class Provenance(StrEnum):
     PROVISIONAL = "provisional"
 
 
+def _unescape(value: str) -> str:
+    """Undo exactly the two sequences `_quote` writes, and nothing else.
+
+    Deliberately not a general YAML unescaper: `\\n` inside a double-quoted scalar the *native*
+    writer produced is left as the two characters it already read as, because turning it into a
+    newline would hand this module a value it has no line-based way to write back.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] == "\\" and index + 1 < len(value) and value[index + 1] in '\\"':
+            out.append(value[index + 1])
+            index += 2
+            continue
+        out.append(value[index])
+        index += 1
+    return "".join(out)
+
+
 def _unquote(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
+        inner = value[1:-1]
+        # Only the double-quoted form is unescaped, because only that form is one `_quote`
+        # could have written. A single-quoted scalar escapes a quote by doubling it, never
+        # with a backslash, so unescaping one would corrupt the native writer's own output.
+        return _unescape(inner) if value[0] == '"' else inner
     return value
 
 
-def _quote(value: str) -> str:
-    """Only ever applied to a value this run is writing for the first time."""
+def _quote(value: str, path: Path) -> str:
+    """Only ever applied to a value this run is writing for the first time.
+
+    The inverse of `_unquote`, and that has to be literally true: the escaping here and the
+    unescaping there are one pair, and a reader that escaped without unescaping turned
+    `he said "no"` into a stored `he said \\"no\\"` that then rendered into `MEMORY.md` with the
+    backslashes visible.
+
+    A newline is refused rather than represented. This grammar is flat `key: value` lines and
+    there is no line-based frontmatter form of one — written bare (which is what a multi-line
+    value gets, holding none of `: # " '` and neither leading nor trailing whitespace) the
+    remainder spills past the key's line and the note stops parsing on the next read. Refusing
+    is the honest answer, and `NoteError` is a `Failure`: exit 1, with the path in the message.
+    """
+    if "\n" in value or "\r" in value:
+        raise NoteError(f"{path}: a frontmatter value cannot carry a newline: {value!r}")
     if value and not any(ch in value for ch in ":#\"'") and value.strip() == value:
         return value
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -264,7 +301,7 @@ def render_note(note: Note) -> str:
         seen.add(key)
         value = changed[key]
         if value is not None:
-            lines.append(f"{key}: {_quote(value)}")
+            lines.append(f"{key}: {_quote(value, note.path)}")
     # A key this run introduced goes in declared order, before `metadata:`.
     fresh = [k for k in DECLARED if k in changed and k not in seen and changed[k] is not None]
     if fresh:
@@ -272,7 +309,7 @@ def render_note(note: Note) -> str:
             (i for i, line in enumerate(lines) if line.strip() == "metadata:"),
             len(lines),
         )
-        insert = [f"{key}: {_quote(str(changed[key]))}" for key in fresh]
+        insert = [f"{key}: {_quote(str(changed[key]), note.path)}" for key in fresh]
         lines = lines[:cut] + insert + lines[cut:]
     lines.append(FENCE)
     return "\n".join(lines) + "\n\n" + note.body + "\n"

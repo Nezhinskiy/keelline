@@ -239,3 +239,26 @@ def test_walk_quarantines_a_file_that_will_not_parse(tmp_path: Path) -> None:
 
 def test_walk_ignores_a_group_directory_that_does_not_exist(tmp_path: Path) -> None:
     assert walk(tmp_path, ["developer", "specs"]).notes == []
+
+
+def test_a_value_carrying_a_newline_is_refused_rather_than_written(tmp_path: Path) -> None:
+    # There is no line-based frontmatter representation of a newline, and this reader's whole
+    # premise is that it does not invent one. Written bare — which is what a multi-line value
+    # gets, since it holds none of `: # " '` and neither leads nor trails whitespace — the
+    # remainder spills past the `index:` line and the note stops parsing on the next read.
+    path = tmp_path / "n.md"
+    path.write_text(MINIMAL, encoding="utf-8")
+    with pytest.raises(NoteError):
+        render_note(with_index(read_note(path), "first line\nsecond line", Provenance.NATIVE))
+
+
+def test_an_escaped_value_reads_back_as_the_value_that_was_written(tmp_path: Path) -> None:
+    # `_quote` escapes `\` and `"`; a reader that never unescapes them is not its inverse, so
+    # a description holding a quote gains a backslash on every key this run writes for the
+    # first time — and renders into `MEMORY.md` with the backslash visible.
+    path = tmp_path / "n.md"
+    path.write_text('---\nname: n\ndescription: he said "no"\n---\n\nBody.\n', encoding="utf-8")
+    original = read_note(path)
+    assert original.description == 'he said "no"'
+    write_note(with_index(original, original.description, Provenance.PROVISIONAL))
+    assert read_note(path).index == 'he said "no"'
