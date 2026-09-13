@@ -41,6 +41,10 @@ HEADER = (
     "> open the note.\n"
 )
 VOLATILE_LEAD = "Injected in full at session start; these links are for citation and pruning."
+# The characters that end a markdown link early. A value carrying one of these is rendered
+# into `- [title](target)` on both sides, so it does not merely look wrong: it puts whatever
+# follows where `entries_in` reads the next field.
+_LINK_SYNTAX = "])("
 
 
 def entries_in(text: str) -> list[tuple[str, str]]:
@@ -251,14 +255,27 @@ def _extra(config: Config, store: Store) -> list[str]:
     refuses. Dropped silently, because `render_index` returns a string and has no report
     channel; `store.unavailable` is the shape that would carry one, and giving the index its
     own would change `Reconciliation` for every caller.
+
+    **What is kept is the path `contained` returned, not the string that was checked.** The
+    value was validated as a path and then consumed as text: `contained` answers about
+    absoluteness, `..` and symlinks and says nothing about a value being one line, so a TOML
+    multi-line string passed and was written verbatim into `MEMORY.md` — twice, as a link's
+    title and as its target — carrying repository-authored prose through every index
+    regeneration. Two guards close that. The value must be a single line, by `str.splitlines`
+    rather than a scan for `\\n`, because `_split` in `notes.py` breaks on `\\x0b`, `\\x0c`,
+    `\\x85`, U+2028 and U+2029 as well. And it may not hold `]`, `(` or `)`, the three
+    characters that close a markdown link early and put the remainder where `entries_in` reads
+    a *target* — the same channel the harvest writes back into a note's one-line `index:`.
     """
     kept: list[str] = []
     for target in config.memory.index_extra:
+        if len(target.splitlines()) > 1 or any(char in target for char in _LINK_SYNTAX):
+            continue
         try:
-            contained(store.root, target)
+            resolved = contained(store.root, target)
         except PathEscape:
             continue
-        kept.append(target)
+        kept.append(str(resolved.relative_to(store.root)))
     return kept
 
 
