@@ -28,13 +28,40 @@ that "binds and links". `link` raises it when a write fails part-way, carrying t
 make; a consumer can catch it as the `OSError` it is without this export, but reading
 `.created` — the whole reason it exists rather than a bare `OSError` — would otherwise mean
 importing `keelline.memory.worktree`, which this docstring forbids.
+
+**A name this list points at must be on it.** Three were not, and each is a place an exported
+docstring sends the reader by name — which is the same failure the `wrap`/`new_nonce` addition
+above closed, one function over:
+
+- `in_repository`, because `inside_project` hands the reader to it in as many words. The two
+  answer different questions (a store's notes, versus one particular file the store yields),
+  and a consumer that injects a specific file — `MEMORY.md`, anything that belongs to no group
+  — needs the second one.
+- `index_source` and `INDEX_NAME`, because `worktree.py` and `bundles.py` both present
+  `index_source` as *the* place §9.1's per-link target rule reaches the index, and neither a
+  reader nor `attach` — the lane that creates the symlinked index in the first place — could
+  call it.
+- `snapshot`, `refresh_if_trusted` and `Snapshot`, because `write_note` is exported and
+  `store_digest` covers every note. A lane that rewrites a note in a trusted store therefore
+  revokes the record it depends on, silently, exactly as `memory index` used to: the store
+  stays put, every bundle goes empty and nothing says why. The dance that fixes it — snapshot
+  before the write, `refresh_if_trusted` after with the paths this run authored — is not
+  reconstructible from the rest of this surface, so it is part of it.
+
+**What the surface still owes, and to whom.** `docs-tooling` is a consumer of C3 and its row is
+not satisfied: `docs check --memory-graph` needs `refs.check` and `refs.audience_violations`,
+which Task 12 was to add and which are out of this lane's scope. They are absent from the list
+below on purpose and not because the requirement lapsed — this module is the contract document,
+and a requirement with no record here is one the next lane will not know to meet.
 """
 
 from keelline.memory.bundles import SLOTS, Bundle, Fit, blocks, fit, render, split
 from keelline.memory.index import (
+    INDEX_NAME,
     IndexCheck,
     Reconciliation,
     check_index,
+    index_source,
     reconcile,
     render_index,
     write_index,
@@ -54,6 +81,7 @@ from keelline.memory.notes import (
 )
 from keelline.memory.store import (
     Store,
+    in_repository,
     inside_project,
     main_checkout,
     overlay_root,
@@ -63,10 +91,13 @@ from keelline.memory.store import (
 )
 from keelline.memory.trust import (
     DELIMITER,
+    Snapshot,
     UnsafeNote,
     markers,
     may_inject,
     new_nonce,
+    refresh_if_trusted,
+    snapshot,
     wrap,
 )
 from keelline.memory.worktree import PartialLink, link, linked_names
@@ -76,6 +107,7 @@ __all__ = [
     "DELIMITER",
     "Entry",
     "Fit",
+    "INDEX_NAME",
     "IndexCheck",
     "Note",
     "NoteError",
@@ -84,12 +116,15 @@ __all__ = [
     "Provenance",
     "Reconciliation",
     "SLOTS",
+    "Snapshot",
     "Store",
     "UnsafeNote",
     "Walk",
     "blocks",
     "check_index",
     "fit",
+    "in_repository",
+    "index_source",
     "inside_project",
     "inventory",
     "link",
@@ -102,11 +137,13 @@ __all__ = [
     "permitted_roots",
     "read_note",
     "reconcile",
+    "refresh_if_trusted",
     "refusal_reason",
     "render",
     "render_index",
     "render_note",
     "resolve",
+    "snapshot",
     "split",
     "totals",
     "walk",
