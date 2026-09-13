@@ -13,16 +13,33 @@ and links, `notes` rewrites notes, `mcp` needs the same binding predicate the re
 `overlay-hook` needs the refusal line, `skills-port` needs the inventory, and `hooks-core` needs
 the bundle slots. A lane that needs something absent from this list grows it deliberately, in a
 commit that says which lane and why.
+
+Two groups were absent and are now here, because the list has to be usable, not merely
+plausible. `wrap` was exported without `new_nonce`, `markers`, `DELIMITER` or `UnsafeNote`,
+which are exactly what a caller needs to produce a nonce, recognise the region it created and
+catch the refusal a forged marker raises — so the one lane that would need `wrap` (one wrapping
+its own repository content) could not use it without importing the private module this
+docstring forbids. And `Reconciliation`, `IndexCheck`, `Fit` and `Walk` are the return types of
+the exported `reconcile`, `check_index`, `fit` and `walk`: without them a typed consumer cannot
+annotate what it is handed.
 """
 
-from keelline.memory.bundles import SLOTS, Bundle, blocks, fit, render, split
-from keelline.memory.index import check_index, reconcile, render_index, write_index
+from keelline.memory.bundles import SLOTS, Bundle, Fit, blocks, fit, render, split
+from keelline.memory.index import (
+    IndexCheck,
+    Reconciliation,
+    check_index,
+    reconcile,
+    render_index,
+    write_index,
+)
 from keelline.memory.inventory import Entry, inventory, totals
 from keelline.memory.notes import (
     Note,
     NoteError,
     NoteType,
     Provenance,
+    Walk,
     read_note,
     render_note,
     walk,
@@ -38,18 +55,31 @@ from keelline.memory.store import (
     refusal_reason,
     resolve,
 )
-from keelline.memory.trust import may_inject, wrap
+from keelline.memory.trust import (
+    DELIMITER,
+    UnsafeNote,
+    markers,
+    may_inject,
+    new_nonce,
+    wrap,
+)
 from keelline.memory.worktree import link, linked_names
 
 __all__ = [
-    "SLOTS",
     "Bundle",
+    "DELIMITER",
     "Entry",
+    "Fit",
+    "IndexCheck",
     "Note",
     "NoteError",
     "NoteType",
     "Provenance",
+    "Reconciliation",
+    "SLOTS",
     "Store",
+    "UnsafeNote",
+    "Walk",
     "blocks",
     "check_index",
     "fit",
@@ -58,7 +88,9 @@ __all__ = [
     "link",
     "linked_names",
     "main_checkout",
+    "markers",
     "may_inject",
+    "new_nonce",
     "overlay_root",
     "permitted_roots",
     "read_note",
