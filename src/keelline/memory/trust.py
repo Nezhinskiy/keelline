@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,8 +93,8 @@ def changed(state: TrustState) -> bool:
 _UNREADABLE = b"\0keelline:unreadable\0"
 
 
-def _entry(key: str, path: Path) -> bytes:
-    """One digest entry: its routing key, then its bytes — or the marker when it has none.
+def _content_digest(path: Path) -> str:
+    """One file's bytes as a fixed-width hex digest — or the marker's, when it has none.
 
     `notes.walk` deliberately quarantines this class of file rather than letting one of them
     cost the whole store, and `bundles._index` guards `OSError` for the same reason. An
@@ -105,14 +106,34 @@ def _entry(key: str, path: Path) -> bytes:
         content = path.read_bytes()
     except OSError:
         content = _UNREADABLE
-    return key.encode() + b"\0" + content + b"\0"
+    return hashlib.sha256(content).hexdigest()
 
 
-def store_digest(store: Store) -> str:
-    """Content and location of every file the store actually yields to a session.
+def _entry(key: str, content: str) -> bytes:
+    """One digest entry, framed so that no two different stores share a byte stream.
 
-    Both halves of an entry matter: a renamed note is a different routing entry even when its
-    bytes are unchanged, and the group a note sits under decides how it is injected.
+    The previous framing spliced the two halves in raw — the key, a NUL, the bytes, a NUL —
+    and concatenated those with no length prefix and no escaping. Both halves are
+    repository-controlled and NUL is valid UTF-8, so `read_note` happily parses a note whose
+    body carries a splice: one note holding `A <NUL> p/b.md <NUL> B` produced exactly the byte
+    stream two notes `A` and `B` produce, and §9.4's "a changed hash re-prompts" did not hold
+    across the restructuring.
+
+    Hashing each half instead makes every entry **two fixed-width sha256 hex digests, 128
+    ASCII bytes**. Every entry boundary in the stream therefore falls at a multiple of 128 and
+    every key/content boundary at 64 — a parse no content can shift, with no escaping to get
+    wrong and no assumption about which characters a routing key may hold. A length-prefixed
+    framing or a canonical JSON manifest would serve as well; this one is the smallest and
+    needs the least said about it.
+    """
+    return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")
+
+
+def _files(store: Store) -> list[tuple[str, Path]]:
+    """Every file the store actually yields to a session, as (routing key, path).
+
+    The order is the digest's order, and it is canonical: groups sorted, then each group's
+    notes sorted, then the index last.
 
     `MEMORY.md` is covered too, though it is neither a note nor a `memory.groups` entry. It is
     the file the `index` bundle injects, and a digest built from the group directories alone
@@ -121,15 +142,35 @@ def store_digest(store: Store) -> str:
     covered "another way" because trust is one hash over everything a session reads, and a
     second, separate record would be a second thing to keep in step.
     """
-    engine = hashlib.sha256()
-    for group in sorted(store.groups):
-        directory = store.groups[group]
-        for path in sorted(directory.glob("*.md")):
-            engine.update(_entry(f"{group}/{path.name}", path))
+    found = [
+        (f"{group}/{path.name}", path)
+        for group in sorted(store.groups)
+        for path in sorted(store.groups[group].glob("*.md"))
+    ]
     index = store.path / INDEX_NAME
     if index.exists() or index.is_symlink():  # `is_symlink` so a dangling index still counts
-        engine.update(_entry(INDEX_NAME, index))
+        found.append((INDEX_NAME, index))
+    return found
+
+
+def _read(store: Store) -> list[tuple[str, str]]:
+    return [(key, _content_digest(path)) for key, path in _files(store)]
+
+
+def _digest_of(entries: Sequence[tuple[str, str]]) -> str:
+    engine = hashlib.sha256()
+    for key, content in entries:
+        engine.update(_entry(key, content))
     return engine.hexdigest()
+
+
+def store_digest(store: Store) -> str:
+    """Content and location of every file the store actually yields to a session.
+
+    Both halves of an entry matter: a renamed note is a different routing entry even when its
+    bytes are unchanged, and the group a note sits under decides how it is injected.
+    """
+    return _digest_of(_read(store))
 
 
 def _key(store: Store) -> str:
