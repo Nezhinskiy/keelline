@@ -129,6 +129,35 @@ def _entry(key: str, content: str) -> bytes:
     return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")
 
 
+# The one entry in the digest that is not a file. A routing key is `<group>/<name>.md` or
+# `MEMORY.md`, and neither can hold a NUL, so nothing under the store can collide with this.
+_CONFIG_KEY = "\0keelline:memory-config\0"
+
+
+def _config_digest(config: Config) -> str:
+    """The repository-controlled configuration this lane renders into a file the gate covers.
+
+    `memory.index_extra` lives in `keelline.toml`, which no store file covers, and `_extra`
+    renders it straight into `MEMORY.md` — the file the `index` bundle injects. An attacker who
+    changed nothing else therefore left the digest untouched, and the next `memory index`
+    carried their pointers in under a still-valid record, blessed on the way past by
+    `refresh_if_trusted` because Keelline itself authored that write. §9.4's "a changed hash
+    re-prompts" has to mean the hash covers what actually reaches the file.
+
+    Only this field, not the whole file. Folding `keelline.toml` in wholesale would revoke
+    memory trust on every unrelated edit — a budget, a branch name — and a prompt that fires
+    for everything trains the owner to answer it without looking, which is worse than the hole
+    it closes. Every other repository-controlled input to what the store yields already lands
+    in the digest by another route: `memory.groups` and `paths.memory` decide which files
+    `_files` walks and what `_key` names.
+
+    JSON for the framing, so the list `["a/b", "c"]` cannot collide with `["a/b\0c"]`, and a
+    fixed-width hex digest out, so `_entry`'s 128-byte-per-entry parse still holds.
+    """
+    material = json.dumps(list(config.memory.index_extra), ensure_ascii=False)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def _files(store: Store) -> list[tuple[str, Path]]:
     """Every file the store actually yields to a session, as (routing key, path).
 
@@ -153,8 +182,12 @@ def _files(store: Store) -> list[tuple[str, Path]]:
     return found
 
 
-def _read(store: Store) -> list[tuple[str, str]]:
-    return [(key, _content_digest(path)) for key, path in _files(store)]
+def _read(store: Store, config: Config) -> list[tuple[str, str]]:
+    """The canonical entry order: the configuration first, then the files `_files` lists."""
+    return [
+        (_CONFIG_KEY, _config_digest(config)),
+        *((key, _content_digest(path)) for key, path in _files(store)),
+    ]
 
 
 def _digest_of(entries: Sequence[tuple[str, str]]) -> str:
@@ -164,13 +197,13 @@ def _digest_of(entries: Sequence[tuple[str, str]]) -> str:
     return engine.hexdigest()
 
 
-def store_digest(store: Store) -> str:
-    """Content and location of every file the store actually yields to a session.
+def store_digest(store: Store, config: Config) -> str:
+    """Content and location of every file the store yields to a session, and `_config_digest`.
 
     Both halves of an entry matter: a renamed note is a different routing entry even when its
     bytes are unchanged, and the group a note sits under decides how it is injected.
     """
-    return _digest_of(_read(store))
+    return _digest_of(_read(store, config))
 
 
 def _key(store: Store) -> str:
@@ -189,15 +222,14 @@ def _recorded(machine: Path | None) -> dict[str, str]:
 
 
 def state(store: Store, config: Config, *, machine: Path | None = None) -> TrustState:
-    del config
-    current = store_digest(store)
+    current = store_digest(store, config)
     recorded = _recorded(machine).get(_key(store))
     return TrustState(trusted=recorded == current, recorded=recorded, current=current)
 
 
 def record(store: Store, config: Config, *, machine: Path | None = None) -> TrustState:
     raw = _recorded(machine)
-    raw[_key(store)] = store_digest(store)
+    raw[_key(store)] = store_digest(store, config)
     write_atomically(_trust_file(machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
     return state(store, config, machine=machine)
 
@@ -217,8 +249,7 @@ class Snapshot:
 
 
 def snapshot(store: Store, config: Config, *, machine: Path | None = None) -> Snapshot:
-    del config
-    read = _read(store)
+    read = _read(store, config)
     recorded = _recorded(machine).get(_key(store))
     return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
 
@@ -250,11 +281,14 @@ def refresh_if_trusted(
 
     Returns whether a record was written.
     """
-    del config
     if not before.trusted:
         return False
     touched = {path.resolve() for path in written}
-    expected: list[tuple[str, str]] = []
+    # The configuration entry is read live rather than carried from `before`, and that is not a
+    # way for a `keelline.toml` edit to ride along: `before.trusted` is exactly the claim that
+    # the recorded digest already matched a read of this same configuration, so the two values
+    # are equal wherever this line is reached at all.
+    expected: list[tuple[str, str]] = [(_CONFIG_KEY, _config_digest(config))]
     for key, path in _files(store):
         if path.resolve() in touched:
             expected.append((key, _content_digest(path)))
