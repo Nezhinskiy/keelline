@@ -151,6 +151,13 @@ def register(groups: SubParsers) -> None:
         "--in-repo-memory",
         action="store_true",
         required=True,
+        # Required and never read by `run_trust` — that is not a missing guard, it is the whole
+        # point. This is an explicit-confirmation gesture, not a switch between two behaviours:
+        # its presence is what stops `memory trust` from being a bare, trivially scripted
+        # command. It is not a safety check either, so there is nothing here to branch on: trust
+        # is only ever *consulted* for a store whose notes live in the repository
+        # (`inside_project(store)`); `trust.may_inject` short-circuits to `True` for every other
+        # store, so recording a hash for an overlay or local-only store is inert, not dangerous.
         help="the only kind of store trust applies to",
     )
     trusted.set_defaults(func=run_trust)

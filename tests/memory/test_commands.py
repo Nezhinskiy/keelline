@@ -118,6 +118,21 @@ def test_trust_writes_to_the_machine_file_it_was_given_not_to_the_home_directory
     assert (machine.parent / "trust.json").is_file()
 
 
+def test_trust_without_the_flag_is_refused_not_silently_granted(
+    project: Path,
+) -> None:
+    # `--in-repo-memory` is required and its value is never inspected by `run_trust` — the
+    # presence of the flag is the whole point (see the comment at its declaration). Omitting it
+    # must therefore still refuse the command outright rather than quietly recording trust: a
+    # future refactor that drops `required=True` would otherwise pass every other test in this
+    # module untouched.
+    machine = project.parent / "machine.toml"
+    with pytest.raises(SystemExit) as excinfo:
+        invoke(["memory", "trust", *common(project)])
+    assert excinfo.value.code == 2
+    assert not (machine.parent / "trust.json").is_file()
+
+
 def test_inventory_reports_what_a_sweep_acts_on(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
