@@ -71,10 +71,18 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
 
 
 def _mode_of(dir_fd: int, name: str) -> int:
+    """The mode to carry over, and `NEW_FILE_MODE` for anything that is not a plain file.
+
+    `lstat` on a symlink reports `0o777`, and carrying that onto the replacement would make it
+    world-writable. `contained()` refuses a symlink at the final component before any caller
+    here runs, so this is a floor under a guard that lives in another module — one caller
+    away, and not one this module can see.
+    """
     try:
-        return stat.S_IMODE(os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode)
+        info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
     except FileNotFoundError:
         return NEW_FILE_MODE
+    return stat.S_IMODE(info.st_mode) if stat.S_ISREG(info.st_mode) else NEW_FILE_MODE
 
 
 def write_atomically_at(dir_fd: int, name: str, text: str, *, encoding: str = "utf-8") -> None:
@@ -85,7 +93,14 @@ def write_atomically_at(dir_fd: int, name: str, text: str, *, encoding: str = "u
     try:
         with os.fdopen(handle, "w", encoding=encoding) as stream:
             stream.write(text)
-        os.chmod(temporary, mode, dir_fd=dir_fd, follow_symlinks=False)
+            stream.flush()
+            # `os.fchmod` on the descriptor rather than
+            # `os.chmod(..., follow_symlinks=False)`. The temporary was just created
+            # O_CREAT|O_EXCL, so it cannot be a symlink and the flag bought nothing; and that
+            # form is accepted only where `os.chmod in os.supports_follow_symlinks`, which is
+            # a runtime property of the platform rather than a guarantee. Setting the mode on
+            # the open descriptor needs no such support and closes the create-to-chmod window.
+            os.fchmod(stream.fileno(), mode)
         os.replace(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
     except BaseException:
         _unlink_quietly(dir_fd, temporary)
@@ -105,7 +120,8 @@ def write_atomically(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        mode = stat.S_IMODE(path.stat().st_mode)
+        info = path.lstat()
+        mode = stat.S_IMODE(info.st_mode) if stat.S_ISREG(info.st_mode) else NEW_FILE_MODE
     except FileNotFoundError:
         mode = NEW_FILE_MODE
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".keelline-", suffix=".tmp")
