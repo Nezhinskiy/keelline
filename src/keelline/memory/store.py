@@ -173,9 +173,17 @@ def _resolve_at(
     if override is not None:
         base = Path(override).expanduser()
     elif mode == "local-only":
-        base = root / LOCAL_STORE
-        if base.is_symlink():
-            return None, f"{LOCAL_STORE} is a symlink; local-only memory must be a real directory"
+        try:
+            # `contained` with no `allow_final_symlink` refuses a symlink at *any* level
+            # between the root and the target, which testing `base.is_symlink()` did not:
+            # `.keelline` and `.keelline/local` were never looked at, and a group directory
+            # reached *through* one of those is not itself a symlink, so the per-group check
+            # below never ran either. That is the same hazard the comment below documents for
+            # `paths.memory`, left open one directory higher — and in the mode the preset
+            # ships by default, where the whole store is otherwise ungoverned by `contained`.
+            base = contained(root, str(LOCAL_STORE))
+        except PathEscape as exc:
+            return None, f"{exc}; local-only memory must be a real directory"
     else:
         declared = _declared(root, config)
         if declared is None:
@@ -266,8 +274,19 @@ def inside_project(store: Store) -> bool:
     owner's own overlay notes behind a trust prompt and wrap them as data, defeating every
     standing rule in the mode this project actually ships. A file that is not a note and
     belongs to no group is asked about one at a time, with `in_repository` below.
+
+    **Where it cannot answer, it answers closed.** In `local-only` and `in-repo` the notes are
+    in the repository by construction — `.keelline/local/memory` and `paths.memory` are both
+    resolved under `root` through `contained`, which refuses a symlink at every level — so a
+    group landing outside `store.root` in those modes is a resolution that went wrong, not a
+    store belonging to the machine owner. Answering False there is what let a clone that
+    escaped the resolver reach the model with no trust record and no `trust.wrap`: a gate
+    whose default for the unclassifiable is "ungated" is the wrong way round. `overlay` keeps
+    its answer, because outside `store.root` is precisely where §6.2 puts those notes.
     """
-    return any(_inside(target, store.root) for target in store.groups.values())
+    if any(_inside(target, store.root) for target in store.groups.values()):
+        return True
+    return store.mode != "overlay"
 
 
 def in_repository(store: Store, path: Path) -> bool:

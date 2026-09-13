@@ -15,6 +15,7 @@ from keelline.memory.trust import (
     DELIMITER,
     UnsafeNote,
     changed,
+    is_repository_data,
     markers,
     may_inject,
     new_nonce,
@@ -171,3 +172,24 @@ def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) ->
     index = store.path / "MEMORY.md"
     index.write_text("# Memory Index\n\n- [x](developer/a.md)\n", encoding="utf-8")
     assert may_inject(store, config, machine=machine) is False
+
+
+def test_a_local_only_store_whose_notes_escaped_the_repository_is_gated_not_ungated(
+    tmp_path: Path,
+) -> None:
+    # The shape a symlinked `.keelline` ancestor produced: `mode` is `local-only`, the notes are
+    # repository-authored, and every group resolves *outside* `store.root`. `inside_project`
+    # answered False for it, so this gate short-circuited to True with no trust record and
+    # `is_repository_data` said the text was not repository data — the notes arrived as
+    # top-ranked standing rules, unwrapped, with no `keelline memory trust` gesture ever made.
+    # The resolver now refuses to build this store; the gate must not open for it either.
+    store, config, machine = a_store(tmp_path, "local-only")
+    outside = tmp_path / "elsewhere" / "developer"
+    outside.mkdir(parents=True)
+    (outside / "r.md").write_text(NOTE, encoding="utf-8")
+    escaped = Store(store.path, store.mode, store.root, {"developer": outside})
+    assert may_inject(escaped, config, machine=machine) is False
+    assert is_repository_data(escaped) is True
+    # And it is recoverable the ordinary way: a deliberate `memory trust` still opens it.
+    record(escaped, config, machine=machine)
+    assert may_inject(escaped, config, machine=machine) is True
