@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from keelline.config.paths import contained
 from keelline.config.schema import Config
 from keelline.memory.index import INDEX_NAME, index_source
 from keelline.memory.store import Store, main_checkout
@@ -75,6 +76,32 @@ def _link(source: Path, target: Path) -> bool:
     return True
 
 
+def _tree_base(worktree: Path, store: Store) -> Path | None:
+    """Where the worktree's copy of the link tree belongs: the store's own place in the checkout.
+
+    Derived from `store`, never from `config.paths.memory`. Both halves of that matter. The
+    value is repository-controlled and reaches no guard that resolves it — `validate_paths`
+    passes `allow_final_symlink=True` for `memory` and `contained()` does not resolve a final
+    component — so a committed symlink there loads without complaint, and `mkdir(parents=True)`
+    followed it out of the checkout onto any directory the author chose. And it is not even the
+    right answer: `local-only`, the preset default, resolves the store at `.keelline/local/`
+    and never consults `paths.memory`, so a tree built there landed where no reader looks and
+    outside the `.gitignore` entry that mode relies on. The store already knows where it is.
+
+    `None` means there is nothing to mirror: `--store` may point the store anywhere, and a
+    store outside its own root has no counterpart position inside a worktree to build. That is
+    a skip rather than a refusal — nothing escaped, there is simply no such directory — while a
+    `relative` that leaves the worktree *is* a refusal, raised by `contained`.
+    """
+    try:
+        relative = store.path.relative_to(store.root)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+    return contained(worktree, str(relative))
+
+
 def link(
     worktree: Path,
     store: Store,
@@ -90,23 +117,33 @@ def link(
     validate a symlinked index in overlay mode (`index.index_source`); pass the same value
     used to resolve `store` in the first place, or the two can disagree about where the
     overlay is.
+
+    Raises `PathEscape` rather than skipping when a name leaves the tree. Every `name` here is
+    repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and §7.4 says
+    in as many words that it reaches no guard of its own), and `store.groups` was validated
+    against the *main checkout's* tree — a worktree is a separate checkout of a separate
+    branch, so its own copy of that subtree can hold a symlink the main one does not. Skipping
+    one escaping name would leave the next name in the list free to try the same thing.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return []
     created: list[Path] = []
-    base = worktree / config.paths.memory
-    base.mkdir(parents=True, exist_ok=True)
-    sources: dict[str, Path] = dict(store.groups)
-    found = index_source(store, config, machine)
-    if found is not None:
-        sources[INDEX_NAME] = found
-    for name in linked_names(config):
-        source = sources.get(name)
-        if source is None:
-            continue
-        target = base / name
-        if _link(source.resolve(), target):
-            created.append(target)
+    base = _tree_base(worktree, store)
+    if base is not None:
+        base.mkdir(parents=True, exist_ok=True)
+        sources: dict[str, Path] = dict(store.groups)
+        found = index_source(store, config, machine)
+        if found is not None:
+            sources[INDEX_NAME] = found
+        for name in linked_names(config):
+            source = sources.get(name)
+            if source is None:
+                continue
+            # `allow_final_symlink`, because replacing a wrong or dangling symlink already
+            # sitting at the target is this function's job; every level above it is not.
+            target = contained(base, name, allow_final_symlink=True)
+            if _link(source.resolve(), target):
+                created.append(target)
     harness = harness_memory_path(worktree, home)
     if _link(store.path.resolve(), harness):
         created.append(harness)

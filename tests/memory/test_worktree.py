@@ -8,8 +8,9 @@ from pathlib import Path
 import pytest
 
 from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
-from keelline.memory.store import Store, resolve
+from keelline.memory.store import LOCAL_STORE, Store, resolve
 from keelline.memory.worktree import harness_memory_path, link, linked_names
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -34,14 +35,17 @@ index_extra = []
 """
 
 
-def git(root: Path, *args: str) -> None:
+def git(root: Path, *args: str) -> str:
     env = {
         **os.environ,
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,
         "GIT_TERMINAL_PROMPT": "0",
     }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
+    done = subprocess.run(
+        ["git", *args], cwd=root, check=True, capture_output=True, text=True, env=env
+    )
+    return done.stdout
 
 
 def _a_repo(tmp_path: Path) -> Path:
@@ -52,10 +56,12 @@ def _a_repo(tmp_path: Path) -> Path:
     return root
 
 
-def _commit_checkout(root: Path) -> None:
+def _commit_checkout(root: Path, *, ignore: str = "docs/memory/") -> None:
     (root / "README.md").write_text("x", encoding="utf-8")
-    # The store is git-ignored, which is the whole reason a worktree has none of it.
-    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
+    # The store is git-ignored, which is the whole reason a worktree has none of it. Which
+    # directory that is depends on the mode: `local-only` keeps it at `.keelline/local/`, and
+    # the ignore entry a mode ships is the one that covers the tree `link()` builds.
+    (root / ".gitignore").write_text(f"{ignore}\n", encoding="utf-8")
     git(root, "add", "-A")
     git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
 
@@ -388,3 +394,126 @@ def test_a_symlinked_index_is_refused_outside_overlay_mode_even_with_an_overlay_
     created = link(tree, store, config, home=tmp_path / "home", machine=machine)
     assert "MEMORY.md" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
+
+
+# --- `local-only`, the preset default, which no test above reaches --------------------------
+#
+# Every fixture above declares `in-repo` or `overlay`, where `paths.memory` *is* the store —
+# so `worktree / config.paths.memory` and the store's own place in the checkout are the same
+# directory and no test could tell them apart. `local-only` separates them: the resolver uses
+# `.keelline/local/memory` and never consults `paths.memory`, while `link()` used to build the
+# tree at `paths.memory` unconditionally. That is one bug wearing two faces — the links landing
+# where the resolver never looks and outside the `.gitignore` entry the mode relies on, and a
+# repository-controlled `paths.memory` choosing a directory anywhere on the filesystem.
+
+LOCAL_ONLY_CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+
+[paths]
+memory = "{paths_memory}"
+
+[memory]
+mode = "local-only"
+groups = ["developer"]
+index_extra = []
+"""
+
+NOTE = '---\nname: a\ndescription: d\nindex: "t → a"\n---\n\nBody.\n'
+
+
+def a_local_only_checkout(
+    tmp_path: Path, *, paths_memory: str = "docs/memory", leaks_to: Path | None = None
+) -> tuple[Path, Store, Config]:
+    """A `local-only` checkout, optionally with `paths.memory` committed as a symlink out of it.
+
+    `config/paths.py` passes `allow_final_symlink=True` for `memory` and `contained()` does not
+    resolve the final component, so that symlink loads without complaint — which is the whole
+    reason `link()` must not derive anything from the value.
+    """
+    root = _a_repo(tmp_path)
+    base = root / LOCAL_STORE
+    (base / "developer").mkdir(parents=True)
+    (base / "developer" / "a.md").write_text(NOTE, encoding="utf-8")
+    (base / "MEMORY.md").write_text("# Memory Index\n", encoding="utf-8")
+    if leaks_to is not None:
+        # Relative, so it resolves to the same place from the checkout and from any worktree
+        # beside it — which is what makes this reachable from a session in `../side`.
+        sideways = os.path.relpath(leaks_to, root)
+        (root / paths_memory).symlink_to(sideways, target_is_directory=True)
+    (root / CONFIG_FILE).write_text(
+        LOCAL_ONLY_CONFIG.format(paths_memory=paths_memory), encoding="utf-8"
+    )
+    config = load(root, machine=tmp_path / "absent.toml")
+    store = resolve(root, config)
+    assert store is not None
+    _commit_checkout(root, ignore=".keelline/local/")
+    return root, store, config
+
+
+def test_a_local_only_worktree_is_linked_where_local_only_keeps_the_store(
+    tmp_path: Path,
+) -> None:
+    # The functional half of the same defect: in `local-only` the resolver reads
+    # `.keelline/local/memory` and `paths.memory` is never consulted, so a tree built at
+    # `paths.memory` put every link where nothing would ever read it — and, because the mode's
+    # `.gitignore` entry covers `.keelline/local/` and not `docs/`, left the worktree dirty.
+    root, store, config = a_local_only_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    created = link(tree, store, config, home=tmp_path / "home")
+    linked = tree / LOCAL_STORE / "developer"
+    assert linked in created
+    assert linked.resolve() == store.groups["developer"].resolve()
+    assert not (tree / config.paths.memory).exists()
+    assert git(tree, "status", "--porcelain") == ""
+
+
+def test_a_symlinked_paths_memory_is_never_where_the_worktree_tree_is_built(
+    tmp_path: Path,
+) -> None:
+    # The hostile counterpart of the two isolation tests above, which hold only because their
+    # `paths.memory` is benign. `paths.memory` is repository-controlled, a committed symlink
+    # there loads without complaint, and `base.mkdir(parents=True, exist_ok=True)` followed it
+    # — so a `SessionStart` in a worktree planted symlinks to repository-authored notes in the
+    # victim's `~/.claude`, where names like `CLAUDE.md` or `commands/` are normally absent.
+    victim = tmp_path / "fakehome" / ".claude"
+    victim.mkdir(parents=True)
+    root, store, config = a_local_only_checkout(tmp_path, paths_memory="mem", leaks_to=victim)
+    tree = a_worktree(root, tmp_path / "wt")
+    # The traversal really is reachable from the worktree: this is the path `link()` was given.
+    assert (tree / "mem").resolve() == victim.resolve()
+    home = tmp_path / "home"
+    before = set(tmp_path.iterdir())
+    link(tree, store, config, home=home)
+    assert list(victim.iterdir()) == []
+    assert set(tmp_path.iterdir()) - before <= {home}
+    assert (tree / LOCAL_STORE / "developer").is_symlink()
+
+
+def test_a_group_target_that_escapes_the_worktree_tree_is_refused_rather_than_skipped(
+    tmp_path: Path,
+) -> None:
+    # `store.groups` was validated against the *main checkout's* tree. A worktree is a separate
+    # checkout of a separate branch, so its own copy of that subtree can hold a symlink the main
+    # one does not, and `_link`'s `mkdir(parents=True)` follows it. Every target is therefore
+    # re-derived against the tree it is about to be created in — and an escape is a refusal,
+    # because skipping one name leaves the next name in the list to try the same thing.
+    root, store, config = a_checkout(tmp_path, groups=("sub/developer",))
+    tree = a_worktree(root, tmp_path / "wt")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    base = tree / "docs" / "memory"
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "sub").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(PathEscape):
+        link(tree, store, config, home=tmp_path / "home")
+    assert list(outside.iterdir()) == []
