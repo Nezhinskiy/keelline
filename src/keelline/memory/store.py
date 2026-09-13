@@ -20,9 +20,30 @@ checked, and each closes a hole the other three leave open:
    repository's own `origin`. `git` runs with a scrubbed environment, because an inherited
    `GIT_DIR` would otherwise answer for a different repository altogether.
 
-The environment selects nothing. A committed `.claude/settings.json` may carry an `env` block
-that applies with no trust prompt in a non-interactive session, so neither the store nor the
-machine file is ever named by a variable this process reads.
+**What the environment can and cannot choose.** The store's *location* is never named by a
+variable this process reads: `resolve` takes an `env` mapping and ignores it by contract, and
+`_git` runs with a scrubbed environment, so neither a `KEELLINE_STORE`-shaped variable nor an
+inherited `GIT_DIR` can point this module at another project's notes. Both halves are pinned
+by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block
+that applies with no trust prompt in a non-interactive session.
+
+The *machine file* is a weaker claim than this docstring used to make. `machine_config_path`
+gates `KEELLINE_CONFIG` behind `interactive` for exactly that reason — but it reads
+`XDG_CONFIG_HOME` **ungated** (`config/machine.py`), and this lane routes §9.1's overlay
+anchor (`overlay_root(None)`) and §9.4's trust record (`trust._trust_file(None)`) through it.
+Wherever `machine` is `None` — the `SessionStart` handler's path; every `memory` command
+threads `--machine` — an `env` block therefore chooses which overlay root `permitted_roots` is
+computed from, and which `trust.json` `may_inject` consults.
+
+Stated exactly, because the residual exposure is not the same size as the invariant it breaks:
+pointing the variable somewhere of the author's choosing **suppresses** memory — no overlay
+root and no recorded digest means overlay stores refuse to resolve and the gate fails closed —
+while making it *grant* anything additionally requires a pre-recorded hash matching a digest of
+the store at the clone's absolute path, which is the key `trust` records under. No injection
+was built from this alone. It is still a hole in an invariant two other properties lean on, and
+the fix is not this lane's to make: `config/machine.py` belongs to the foundation, and the
+question for it is whether `XDG_CONFIG_HOME` should be gated behind `interactive` the way
+`KEELLINE_CONFIG` already is.
 """
 
 from __future__ import annotations

@@ -69,6 +69,15 @@ def wrap(text: str, nonce: str) -> str:
 
 
 def _trust_file(machine: Path | None) -> Path:
+    """The record `may_inject` consults, beside the machine configuration file.
+
+    `machine=None` resolves it through `machine_config_path`, which gates `KEELLINE_CONFIG`
+    behind `interactive` and reads `XDG_CONFIG_HOME` ungated — so a committed
+    `.claude/settings.json` `env` block chooses which `trust.json` this reads, wherever no
+    `--machine` was threaded. `store.py`'s module docstring states that exposure and its
+    limits in full; the fix, if there is one, belongs to `config/machine.py`, which is the
+    foundation's file and not this lane's.
+    """
     base = machine_config_path(interactive=False) if machine is None else machine
     return base.parent / "trust.json"
 
