@@ -112,3 +112,29 @@ def test_a_marker_for_another_name_is_not_a_terminator() -> None:
         BEFORE + "<!-- keelline:a:begin -->\nA\n<!-- keelline:b:end -->\n<!-- keelline:a:end -->\n"
     )
     assert extract(text, "a", Style.MARKDOWN) == "A\n<!-- keelline:b:end -->"
+
+
+def test_an_end_marker_with_no_beginning_refuses() -> None:
+    # The mirror of the unterminated case above, and the one that used to read as "region
+    # absent": a begin line somebody deleted, or a merge that kept one side's end marker.
+    orphaned = BEFORE + "<!-- keelline:harness:end -->\n"
+    with pytest.raises(RegionError, match="no beginning"):
+        extract(orphaned, "harness", Style.MARKDOWN)
+
+
+def test_an_end_marker_with_no_beginning_refuses_instead_of_doubling_itself() -> None:
+    # Why it has to refuse rather than return None. Treated as absent, `upsert` appended a fresh
+    # block and left one begin against two ends — a file only `_bounds` could have written and
+    # only a person can now repair, with `drop` refusing it too so `uninstall` could not finish.
+    orphaned = BEFORE + "<!-- keelline:harness:end -->\n"
+    with pytest.raises(RegionError, match="no beginning"):
+        upsert(orphaned, "harness", "one", Style.MARKDOWN)
+    with pytest.raises(RegionError, match="no beginning"):
+        drop(orphaned, "harness", Style.MARKDOWN)
+
+
+def test_an_end_marker_for_another_name_is_not_an_orphan() -> None:
+    # The anti-overreach guard: the refusal is keyed on this region's own marker, so a file
+    # carrying somebody else's closed region still reads as "absent" for this name.
+    text = BEFORE + "<!-- keelline:other:end -->\n"
+    assert extract(text, "harness", Style.MARKDOWN) is None

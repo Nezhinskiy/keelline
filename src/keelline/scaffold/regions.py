@@ -49,6 +49,13 @@ def _bounds(lines: list[str], name: str, style: Style, label: str) -> tuple[int,
     starts = [i for i, line in enumerate(lines) if line.strip() == begin]
     ends = [i for i, line in enumerate(lines) if line.strip() == end]
     if not starts:
+        if ends:
+            # Not "the region is absent": a begin marker somebody deleted, or a merge that kept
+            # one side's end line. Reading it as absent makes `upsert` append a second end
+            # marker, and every run after that refuses a file the tool broke itself.
+            raise RegionError(
+                f"region {label!r} has an end marker with no beginning; resolve it by hand"
+            )
         return None
     if len(starts) > 1 or len(ends) > 1:
         raise RegionError(f"region {label!r} is opened or closed twice; resolve it by hand")

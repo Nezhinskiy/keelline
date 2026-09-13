@@ -149,3 +149,111 @@ def test_a_malformed_document_refuses() -> None:
 def test_an_empty_document_gains_the_wanted_entries() -> None:
     after = apply_entries("", wanted("PreToolUse", "bg-cleanup", "new.sh"))
     assert commands_of(after, "PreToolUse") == [mark("new.sh", "bg-cleanup")]
+
+
+def test_a_group_that_is_not_an_object_refuses_rather_than_vanishing() -> None:
+    # `apply_entries` writes the structure it built back over the user's file, so a shape it
+    # filtered out is a shape it deleted. A non-list at `hooks.<event>` already refused; a group
+    # inside that list got no such treatment.
+    raw = {"hooks": {"PreToolUse": ["not a group"]}}
+    with pytest.raises(EntriesError, match="not an object"):
+        apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+
+
+def test_a_group_whose_hooks_value_is_not_a_list_refuses_rather_than_vanishing() -> None:
+    # The shape a hand-written settings file most plausibly carries: the single entry written as
+    # an object where the file format wants a list of them. Filtered away, the command inside it
+    # was silently deleted and the promise that a foreign entry survives untouched was false.
+    raw = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Write", "hooks": {"type": "command", "command": "theirs.sh"}}
+            ]
+        }
+    }
+    with pytest.raises(EntriesError, match="not a list"):
+        apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+
+
+def test_owned_ids_refuses_the_shapes_apply_entries_refuses() -> None:
+    # The provenance list reads the same structure. Under-reporting it silently would have
+    # `doctor` claim Keelline owns nothing in a file it does own.
+    raw = {"hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": 7}]}}
+    with pytest.raises(EntriesError, match="not a list"):
+        owned_ids(json.dumps(raw))
+
+
+def test_an_entry_that_is_not_an_object_refuses_rather_than_vanishing() -> None:
+    # The third shape, and the one that hides best: a command written as a bare string beside a
+    # proper entry, inside a group whose own shape is fine. Filtered out, it was deleted without
+    # a trace and the group it sat in was written back looking untouched.
+    raw = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Write",
+                    "hooks": ["theirs.sh", {"type": "command", "command": "ok.sh"}],
+                }
+            ]
+        }
+    }
+    with pytest.raises(EntriesError, match="holds an entry that is not an object"):
+        apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+
+
+def test_several_well_formed_entries_in_one_group_are_not_swept_up() -> None:
+    # The anti-overreach guard for the refusal above: the same group with its bare string written
+    # as a proper entry must pass and must return both of them. The refusal has to key on a shape
+    # that is actually malformed, never on a group holding more than one entry.
+    raw = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Write",
+                    "hooks": [
+                        {"type": "command", "command": "theirs.sh"},
+                        {"type": "command", "command": "ok.sh"},
+                    ],
+                }
+            ]
+        }
+    }
+    after = apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+    assert commands_of(after, "PreToolUse") == [
+        "theirs.sh",
+        "ok.sh",
+        mark("new.sh", "bg-cleanup"),
+    ]
+
+
+def test_a_well_formed_foreign_group_is_still_left_alone() -> None:
+    # The anti-overreach guard for the two refusals above: only a shape that is actually
+    # malformed refuses, and a foreign group the engine can read keeps its matcher and its place.
+    raw = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Write", "hooks": [{"type": "command", "command": "theirs.sh"}]}
+            ]
+        }
+    }
+    after = apply_entries(json.dumps(raw), wanted("PreToolUse", "bg-cleanup", "new.sh"))
+    groups = json.loads(after)["hooks"]["PreToolUse"]
+    assert groups[0] == raw["hooks"]["PreToolUse"][0]
+
+
+def test_event_keys_apply_entries_adds_land_in_sorted_order() -> None:
+    # `apply_entries` dumps without `sort_keys`, so the `sorted()` it iterates is the only thing
+    # fixing where a new event key lands. Without it the order is the set's, which is not stable
+    # between runs, so two machines installing the same artifacts produce two different files and
+    # the diff a reviewer reads is noise. An event already in the document keeps its position,
+    # and the order is not the order `wanted` happens to be written in either.
+    before = document(("Zed", "theirs.sh"))
+    after = apply_entries(
+        before,
+        {
+            **wanted("Beta", "b", "b.sh"),
+            **wanted("Alpha", "a", "a.sh"),
+            **wanted("Mid", "m", "m.sh"),
+        },
+    )
+    assert list(json.loads(after)["hooks"]) == ["Zed", "Alpha", "Beta", "Mid"]

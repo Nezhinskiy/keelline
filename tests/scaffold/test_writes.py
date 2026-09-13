@@ -159,9 +159,13 @@ def test_apply_touches_exactly_the_paths_the_plan_named(tmp_path: Path) -> None:
     apply(root, planned)
     after = snapshot(tmp_path)
 
+    # The three targets `templates()` names, spelled out. Deriving them from `planned.writes`
+    # made this assertion agree with a planner that produced no actions at all: `apply` would
+    # write only the manifest, and `changed` and `expected` would both be that one path.
+    targets = {"AGENTS.md", ".gitignore", "docs/specs/README.md"}
+    assert set(planned.writes) == targets
     changed = {path for path in set(before) | set(after) if before.get(path) != after.get(path)}
-    expected = {f"project/{target}" for target in planned.writes}
-    expected.add(f"project/{MANIFEST_PATH}")
+    expected = {f"project/{target}" for target in targets} | {f"project/{MANIFEST_PATH}"}
     assert changed == expected
 
 

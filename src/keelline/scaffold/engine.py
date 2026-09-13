@@ -14,15 +14,17 @@ the region body and the marked entries, never the file around them.
 
 *A refusal is an artifact's, not the plan's.* A file that cannot be read, a region whose markers
 no longer say where it ends, a settings document that is not JSON: each is recorded in
-`Plan.refusals` and the remaining templates are still decided. `plan` raises only for input the
-whole plan rests on — the configured profile, and the manifest itself.
+`Plan.refusals` and the remaining templates are still decided. `plan` raises only for input no
+per-artifact report could rescue — the configured profile, the manifest itself, and a malformed
+`Template`, which is a bug in the lane that built it rather than a file a user can put right.
 
 *Containment is not a string check.* `contained()` decides whether a path may be written;
 `fsops.open_within` decides what is actually written to, by walking the path with `O_NOFOLLOW`
-and handing back a descriptor. Between the two there is no window in which a component can
-become a symlink, because the string is never resolved a second time — not for the write, and
-not for the parent directories, which `_mkdirs_within` creates one component at a time through
-the same walk rather than with `Path.mkdir`.
+and handing back a descriptor. A component can still become a symlink after `contained()` has
+passed — that is the race this layer exists to survive — but it cannot redirect the write: the
+walk fails the open rather than following the link, and the string is never resolved a second
+time, not for the write and not for the parent directories, which `_mkdirs_within` creates one
+component at a time through the same walk rather than with `Path.mkdir`.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Tem
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
 LOCAL_ROOT = ".keelline/local"
-SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # The two refusals that belong to one artifact's own file: a region whose markers no longer say
 # where it ends, and a settings document that cannot be parsed. Both are ordinary user state — a
@@ -185,7 +187,13 @@ def plan(
 
         record = manifest.get(template.id)
         if record is not None and record.target != target:
-            moved = _relocation(root, resolved_root, template, record)
+            # The relocation reads and rewrites the artifact's own old file, so a refusal from
+            # it is this artifact's refusal — the same rule the block below runs under.
+            try:
+                moved = _relocation(root, resolved_root, template, record)
+            except _OWN_FILE_REFUSALS as exc:
+                refusals.append(Refused(template.id, record.target, str(exc)))
+                continue
             if moved is not None:
                 actions.append(moved)
             record = None
@@ -201,7 +209,7 @@ def plan(
         # name exactly these.
         try:
             if template.retired:
-                _plan_retired(template, record, current, actions, unchanged)
+                _plan_retired(template, record, current, target, location, actions, unchanged)
                 continue
             if template.kind is Kind.ONCE and current is not None:
                 unchanged.append(template.id)
@@ -225,10 +233,13 @@ def plan(
             if present is not None and digest(present) == digest(stamp):
                 unchanged.append(template.id)
                 continue
-            if record is None and template.kind not in _IN_FILE:
+            if record is None and location is Location.REPO and template.kind not in _IN_FILE:
                 # A whole file Keelline never wrote is somebody's; a region or a hook entry
                 # inside a file Keelline never wrote is the ordinary first install (§7.2, rows
-                # 2 and 3).
+                # 2 and 3). `.keelline/local/` is excluded because it is Keelline's own
+                # directory: a local artifact is deliberately never recorded, so `record is
+                # None` there says nothing about who wrote the file, and treating it as
+                # somebody's would make every local artifact create-once and force-proof.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -259,11 +270,18 @@ def plan(
 def _relocation(
     root: Path, resolved_root: Path, template: Template, record: Record
 ) -> Action | None:
-    """A recorded artifact whose effective target moved — `[artifacts] local` gained its id.
+    """A recorded artifact whose effective target moved — `[artifacts] local` gained or lost its id.
 
-    The recorded target is repository-controlled through the committed manifest, so it is
-    contained before it is read, exactly like a configured one.
+    The recorded target is repository-controlled through the committed manifest, so "does this
+    record describe the file I am about to delete" cannot rest on the record alone: a committed
+    manifest naming any in-root file, stamped with the bytes that file is committed with, would
+    otherwise make `plan` emit a `REMOVE` for it. So the recorded target must be one of the two
+    paths this template can produce — its configured target, or that target under `LOCAL_ROOT`
+    — before anything else is asked. It is then contained before it is read, exactly like a
+    configured one.
     """
+    if record.target not in (template.target, f"{LOCAL_ROOT}/{template.target}"):
+        return None
     try:
         old_path = contained(root, record.target, resolved_root=resolved_root)
     except PathEscape:
@@ -271,17 +289,41 @@ def _relocation(
     old, reason = _read(old_path)
     if reason is not None or old is None or digest(old) != record.sha256:
         return None
-    return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)
+    # The same payload `_plan_retired` computes, and for the same reason: for a managed region
+    # or a set of keyed entries the file at the old path belongs to somebody else, so what
+    # leaves is Keelline's own part of it and not the file.
+    payload = _removal_payload(template, old)
+    return Action(Verb.REMOVE, template.id, record.target, payload, "relocated", record)
 
 
 def _plan_retired(
     template: Template,
     record: Record | None,
     current: str | None,
+    target: str,
+    location: Location,
     actions: list[Action],
     unchanged: list[str],
 ) -> None:
-    if record is None or current is None:
+    if current is None:
+        unchanged.append(template.id)
+        return
+    if location is Location.LOCAL:
+        # No record exists for a local artifact and none is wanted: the hand-edit oracle a
+        # record carries exists to protect content somebody else may have written, and
+        # `.keelline/local/` holds nothing of the sort. A retired one simply goes.
+        actions.append(
+            Action(
+                Verb.REMOVE,
+                template.id,
+                target,
+                _removal_payload(template, current),
+                "retired",
+                None,
+            )
+        )
+        return
+    if record is None:
         unchanged.append(template.id)
         return
     present = _present_stamp(template, current)
@@ -321,29 +363,36 @@ def apply(root: Path, planned: Plan) -> Applied:
     removed: list[str] = []
     skipped: list[str] = []
 
-    for action in planned.actions:
-        if action.verb is Verb.SKIP_MODIFIED:
-            skipped.append(action.target)
-            continue
-        # Re-validate the string against the live tree, then stop using the string: the write
-        # happens through a descriptor `open_within` walked with O_NOFOLLOW.
-        contained(root, action.target, resolved_root=resolved_root)
-        if action.verb is Verb.REMOVE:
-            _remove(root, action.target, action.payload)
-            removed.append(action.target)
-            manifest = manifest.without(frozenset({action.artifact_id}))
-            continue
-        if action.verb in WRITING:
-            if action.payload is None:
-                raise Refusal(f"{action.artifact_id}: {action.verb} with no payload")
-            _write(root, action.target, action.payload)
-            written.append(action.target)
-            if action.record is not None and action.record.location is Location.REPO:
-                manifest = manifest.with_record(action.record)
-            else:
+    # The ledger records what is on disk, so it is persisted for the actions that ran even when
+    # a later one refuses. Discarding it would leave a file Keelline wrote carrying no record,
+    # which every later run reads as somebody else's: `skip_modified` under a false reason,
+    # proof against `--force`, and invisible to `uninstall`. The refusal still propagates; only
+    # the loop is wrapped, because the refusal above it has written nothing to record.
+    try:
+        for action in planned.actions:
+            if action.verb is Verb.SKIP_MODIFIED:
+                skipped.append(action.target)
+                continue
+            # Re-validate the string against the live tree, then stop using the string: the
+            # write happens through a descriptor `open_within` walked with O_NOFOLLOW.
+            contained(root, action.target, resolved_root=resolved_root)
+            if action.verb is Verb.REMOVE:
+                _remove(root, action.target, action.payload)
+                removed.append(action.target)
                 manifest = manifest.without(frozenset({action.artifact_id}))
+                continue
+            if action.verb in WRITING:
+                if action.payload is None:
+                    raise Refusal(f"{action.artifact_id}: {action.verb} with no payload")
+                _write(root, action.target, action.payload)
+                written.append(action.target)
+                if action.record is not None and action.record.location is Location.REPO:
+                    manifest = manifest.with_record(action.record)
+                else:
+                    manifest = manifest.without(frozenset({action.artifact_id}))
+    finally:
+        manifest.write(root)
 
-    manifest.write(root)
     return Applied(written=written, removed=removed, skipped=skipped)
 
 
@@ -381,6 +430,13 @@ def _write(root: Path, target: str, payload: str) -> None:
 
 
 def _remove(root: Path, target: str, payload: str | None) -> None:
+    """Unlink the file, or rewrite it without Keelline's part — never raise a bare `OSError`.
+
+    The same second clause `_write` carries, for the same reason: a directory Keelline may read
+    but not write to arrives here as EACCES from `os.unlink` rather than as an `UnsafePath`, and
+    only a refusal keeps C5's exit 2 reachable. `contextlib.suppress` is entered after
+    `open_within` has yielded, so it covers the unlink and not the walk.
+    """
     if payload is not None:
         _write(root, target, payload)
         return
@@ -389,3 +445,5 @@ def _remove(root: Path, target: str, payload: str | None) -> None:
             os.unlink(name, dir_fd=dir_fd)
     except UnsafePath as exc:
         raise Refusal(str(exc)) from exc
+    except OSError as exc:
+        raise Refusal(f"{target} cannot be removed: {exc}") from exc

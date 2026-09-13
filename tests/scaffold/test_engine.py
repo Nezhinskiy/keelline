@@ -16,7 +16,14 @@ from keelline.errors import Refusal
 from keelline.scaffold import engine
 from keelline.scaffold.engine import apply, plan
 from keelline.scaffold.entries import mark
-from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
+from keelline.scaffold.manifest import (
+    MANIFEST_PATH,
+    Kind,
+    Location,
+    Manifest,
+    Record,
+    digest,
+)
 from keelline.scaffold.model import Action, Plan, Template, Verb
 from keelline.scaffold.regions import Style, upsert
 
@@ -186,6 +193,89 @@ def test_a_manifest_naming_a_target_outside_the_root_plans_nothing_for_it(tmp_pa
     result = plan(root, config, [a_template()])
     assert [a.verb for a in result.actions] == [Verb.CREATE]
     assert (tmp_path / "outside.md").exists()
+
+
+def test_a_recorded_target_this_template_could_never_produce_is_not_a_relocation(
+    tmp_path: Path,
+) -> None:
+    # Both halves of "is this file ours" come out of the committed manifest: the recorded target
+    # and the recorded hash. So without a guard, naming any file in the root and stamping it with
+    # the bytes it is committed with is enough to make `plan` emit a REMOVE for it — and a
+    # mismatch between the recorded target and the effective one is all it takes, with no
+    # `[artifacts] local` entry and so no relocation anywhere in sight.
+    victim = tmp_path / ".claude"
+    victim.mkdir()
+    settings = victim / "settings.json"
+    before = '{"permissions": {"deny": ["Read(./.env)"]}}\n'
+    settings.write_text(before, encoding="utf-8")
+    record = a_record(target=".claude/settings.json", sha256=digest(before))
+    Manifest({}).with_record(record).write(tmp_path)
+    planned = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert [(a.verb, a.target) for a in planned.actions] == [(Verb.CREATE, "AGENTS.md")]
+    apply(tmp_path, planned)
+    assert settings.read_text(encoding="utf-8") == before
+
+
+def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) -> None:
+    # A relocation's REMOVE goes through the same writer as a retirement's, so it needs the same
+    # payload. For a region the file at the old path is the user's own; unlinking it takes their
+    # prose with it, while `_plan_retired` in the same module strips just the marked block.
+    host = tmp_path / "AGENTS.md"
+    body = upsert("User prose.\n", "harness", "R1\n", Style.MARKDOWN)
+    host.write_text(body, encoding="utf-8")
+    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest(body))).write(
+        tmp_path
+    )
+    config = a_config(tmp_path, local=("agents-md",))
+    template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1\n")
+    planned = plan(tmp_path, config, [template])
+    assert [(a.verb, a.target) for a in planned.actions] == [
+        (Verb.REMOVE, "AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+    ]
+    apply(tmp_path, planned)
+    assert host.read_text(encoding="utf-8") == "User prose.\n"
+
+
+def test_a_local_artifact_is_refreshed_rather_than_read_as_somebody_elses(tmp_path: Path) -> None:
+    # A local artifact is deliberately never recorded, so `record is None` holds for it on every
+    # run after the first. `.keelline/local/` is Keelline's own directory, so that says nothing
+    # about who wrote the file — and reading it as "somebody's" made every local artifact
+    # create-once, under a reason that is false and ahead of the point where `force` is consulted.
+    config = a_config(tmp_path, local=("agents-md",))
+    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    assert local.read_text(encoding="utf-8") == "BODY\n"
+    planned = plan(tmp_path, config, [a_template(render=lambda: "NEWER\n")])
+    assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.UPDATE, "refreshed")]
+    apply(tmp_path, planned)
+    assert local.read_text(encoding="utf-8") == "NEWER\n"
+    assert Manifest.read(tmp_path).records == {}
+
+
+def test_a_local_artifact_whose_content_already_matches_is_unchanged(tmp_path: Path) -> None:
+    # The other half: refreshing unconditionally would rewrite a file nothing changed in on
+    # every run, which is the report saying work happened when none did.
+    config = a_config(tmp_path, local=("agents-md",))
+    apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    again = plan(tmp_path, config, [a_template()])
+    assert again.actions == []
+    assert again.unchanged == ["agents-md"]
+
+
+def test_a_retired_local_artifact_is_removed(tmp_path: Path) -> None:
+    # `uninstall` has to be able to finish. A retirement is decided against the record for a
+    # repository file, and a local artifact has none by design — so for this one directory the
+    # question is answered without one rather than answered "leave it".
+    config = a_config(tmp_path, local=("agents-md",))
+    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    planned = plan(tmp_path, config, [a_template(retired=True)])
+    assert [(a.verb, a.target) for a in planned.actions] == [
+        (Verb.REMOVE, ".keelline/local/AGENTS.md")
+    ]
+    apply(tmp_path, planned)
+    assert not local.exists()
 
 
 # --- regions and keyed entries, which live inside somebody else's file ---------------------
@@ -403,6 +493,37 @@ def test_an_empty_profile_means_none_and_is_allowed(tmp_path: Path) -> None:
     assert plan(tmp_path, a_config(tmp_path), [a_template()]).actions != []
 
 
+def test_a_file_carrying_only_a_region_end_marker_is_refused_and_left_alone(
+    tmp_path: Path,
+) -> None:
+    # A begin line somebody deleted, or a merge that kept one side's end marker. Read as "region
+    # absent", the first run appended a fresh block and wrote a second end marker itself, and
+    # every run after that refused a file Keelline had broken — `uninstall` included.
+    before = "Prose.\n<!-- keelline:harness:end -->\n"
+    (tmp_path / "AGENTS.md").write_text(before, encoding="utf-8")
+    template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1")
+    first = plan(tmp_path, a_config(tmp_path), [template])
+    assert first.actions == []
+    assert [(r.artifact_id, "no beginning" in r.reason) for r in first.refusals] == [
+        ("agents-md", True)
+    ]
+    with pytest.raises(Refusal):
+        apply(tmp_path, first)
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == before
+
+
+def test_a_profile_name_with_a_trailing_newline_is_refused(tmp_path: Path) -> None:
+    # `$` matches before a final newline as well as at the end of the string, so the one-segment
+    # check accepted a name carrying a line break. `shipped_profiles()` returns None while no
+    # listing exists, which makes this regex the only guard on the field.
+    text = CONFIG.replace('profile = ""', 'profile = "python\\n"')
+    (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
+    config = load(tmp_path, machine=tmp_path / "absent.toml")
+    assert config.keelline.profile == "python\n"
+    with pytest.raises(PathEscape, match="profile"):
+        plan(tmp_path, config, [a_template()])
+
+
 # --- apply ----------------------------------------------------------------------------------
 
 
@@ -601,3 +722,82 @@ def test_reordering_the_keys_inside_a_marked_entry_is_not_a_hand_edit(tmp_path: 
     again = plan(tmp_path, a_config(tmp_path), [template])
     assert [(a.verb, a.reason) for a in again.actions] == []
     assert again.unchanged == ["claude-hooks"]
+
+
+def test_apply_records_the_files_it_wrote_before_a_later_action_refused(tmp_path: Path) -> None:
+    # The ledger describes the disk, so it cannot be discarded for actions that already ran. A
+    # file Keelline wrote and did not record reads as somebody else's on every later run:
+    # `skip_modified` under a reason that is false, proof against `--force` because the absent
+    # record is consulted first, and invisible to `uninstall`.
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    config = a_config(tmp_path)
+    (tmp_path / "docs").mkdir()
+    planned = plan(
+        tmp_path,
+        config,
+        [
+            a_template(id="first", target="A.md", render=lambda: "A\n"),
+            a_template(id="second", target="docs/B.md", render=lambda: "B\n"),
+        ],
+    )
+    (tmp_path / "docs").rmdir()
+    (tmp_path / "docs").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(Refusal):
+        apply(tmp_path, planned)
+    assert (tmp_path / "A.md").read_text(encoding="utf-8") == "A\n"
+    recorded = Manifest.read(tmp_path)
+    assert recorded.get("first") is not None
+    assert recorded.get("second") is None
+
+
+def test_a_plan_carrying_a_refusal_creates_no_manifest_at_all(tmp_path: Path) -> None:
+    # The boundary of persisting progress. `apply` refuses a plan carrying a refusal before it
+    # reaches the first action, so there is nothing on disk to record and no ledger to create.
+    config = a_config(tmp_path)
+    planned = plan(tmp_path, config, [a_template(target="../outside.md")])
+    with pytest.raises(Refusal, match="refused"):
+        apply(tmp_path, planned)
+    assert not (tmp_path / MANIFEST_PATH).exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the directory mode under test")
+def test_a_file_that_cannot_be_unlinked_refuses_rather_than_raising_oserror(
+    tmp_path: Path,
+) -> None:
+    # The removal half of "no bare OSError". `open_within` opens an r-x directory happily, so
+    # EACCES arrives from `os.unlink` rather than as an `UnsafePath`, and the `suppress` around
+    # the unlink is entered after the walk has yielded, so it covers neither.
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "OLD.md").write_text("BODY\n", encoding="utf-8")
+    os.chmod(docs, stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        with pytest.raises(Refusal, match="cannot be removed"):
+            engine._remove(tmp_path, "docs/OLD.md", None)
+    finally:
+        os.chmod(docs, 0o755)
+    assert (docs / "OLD.md").exists()
+
+
+# --- the two rules the module docstring is read for ------------------------------------------
+
+
+def test_the_module_docstring_names_every_input_plan_raises_for() -> None:
+    # A consumer reads this docstring to decide what to catch. It named two inputs while the
+    # module raises for three: a `MANAGED_REGION` template carrying no region name is a malformed
+    # `Template`, and the test above pins that `plan` deliberately does not soften it into a
+    # per-artifact refusal.
+    prose = " ".join((engine.__doc__ or "").split())
+    assert "and a malformed `Template`" in prose
+    assert "the configured profile, and the manifest itself" not in prose
+
+
+def test_the_containment_docstring_claims_the_property_the_walk_actually_holds() -> None:
+    # A component certainly can become a symlink after `contained()` has passed — two tests
+    # above plant one for exactly that reason — so "there is no window" described a guarantee
+    # nothing provides. What the O_NOFOLLOW walk holds is narrower and is the thing that
+    # matters: the link cannot redirect the write.
+    prose = " ".join((engine.__doc__ or "").split())
+    assert "it cannot redirect the write" in prose
+    assert "there is no window in which a component can become a symlink" not in prose

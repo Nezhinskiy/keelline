@@ -58,17 +58,29 @@ def _hooks_table(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _groups(raw: dict[str, Any], event: str) -> list[dict[str, Any]]:
+    """The groups under one event, or a refusal — a shape this module cannot read is never
+    filtered away. `apply_entries` writes the structure it built back over the user's file, so
+    dropping a group it did not recognise deletes somebody else's hook and says nothing."""
     groups = _hooks_table(raw).get(event, [])
     if not isinstance(groups, list):
         raise EntriesError(f"'hooks.{event}' is not a list")
-    return [group for group in groups if isinstance(group, dict)]
+    for group in groups:
+        if not isinstance(group, dict):
+            raise EntriesError(f"'hooks.{event}' holds an entry group that is not an object")
+    return groups
 
 
 def _entries_of(group: dict[str, Any]) -> list[dict[str, Any]]:
+    """One group's entries, or a refusal, for the reason `_groups` gives. Both the list and the
+    entries inside it are checked: an entry filtered out of an otherwise well-formed group is
+    deleted just as silently as a whole group is, and hides better."""
     entries = group.get("hooks", [])
-    return (
-        [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-    )
+    if not isinstance(entries, list):
+        raise EntriesError("an entry group's 'hooks' is not a list")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise EntriesError("an entry group holds an entry that is not an object")
+    return entries
 
 
 def _claimed(entry: dict[str, Any]) -> str | None:
