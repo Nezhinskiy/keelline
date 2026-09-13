@@ -22,6 +22,12 @@ its own repository content) could not use it without importing the private modul
 docstring forbids. And `Reconciliation`, `IndexCheck`, `Fit` and `Walk` are the return types of
 the exported `reconcile`, `check_index`, `fit` and `walk`: without them a typed consumer cannot
 annotate what it is handed.
+
+`PartialLink` is here for the same reason, and for `attach`, the lane named above as the one
+that "binds and links". `link` raises it when a write fails part-way, carrying the links it did
+make; a consumer can catch it as the `OSError` it is without this export, but reading
+`.created` — the whole reason it exists rather than a bare `OSError` — would otherwise mean
+importing `keelline.memory.worktree`, which this docstring forbids.
 """
 
 from keelline.memory.bundles import SLOTS, Bundle, Fit, blocks, fit, render, split
@@ -63,7 +69,7 @@ from keelline.memory.trust import (
     new_nonce,
     wrap,
 )
-from keelline.memory.worktree import link, linked_names
+from keelline.memory.worktree import PartialLink, link, linked_names
 
 __all__ = [
     "Bundle",
@@ -74,6 +80,7 @@ __all__ = [
     "Note",
     "NoteError",
     "NoteType",
+    "PartialLink",
     "Provenance",
     "Reconciliation",
     "SLOTS",

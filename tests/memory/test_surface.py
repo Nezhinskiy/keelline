@@ -15,6 +15,8 @@ def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None
         "Note",
         "NoteError",
         "NoteType",
+        # `link` raises this and it carries `.created`; `attach` binds and links.
+        "PartialLink",
         "Provenance",
         "Reconciliation",
         "SLOTS",
