@@ -89,6 +89,50 @@ def main_checkout(root: Path) -> Path:
     return Path(common).parent if common else root
 
 
+WORKTREES = "worktrees"
+_BACK_POINTER = "gitdir"
+
+
+def registered_worktree(root: Path) -> Path | None:
+    """The checkout `root` is genuinely a registered worktree of, or `None` when it is not one.
+
+    The fallback used to require the worktree to live *under* the main checkout, and that
+    killed the feature in git's own documented layout: `git worktree add ../side` puts the
+    tree beside the checkout, containment was False, and `resolve` answered that there was no
+    store at all — so nothing was ever linked in the one place this module exists for.
+
+    **Registration is the question containment was standing in for.** A linked worktree's
+    private git directory is `<common-dir>/worktrees/<name>`, and that directory holds a
+    `gitdir` file naming the `.git` file the worktree was created for. Both halves are
+    checked, because only the first is written by whoever owns `root`: a `.git` may be a plain
+    text pointer, so any directory can *claim* to be a worktree of a repository it was never
+    added to, and `git rev-parse` will answer for that repository. The back-pointer is the
+    half the claimed repository wrote. (A clone cannot ship either — git refuses to track a
+    path named `.git` — but the fallback reads a store out of another repository, so it does
+    not rest on that.)
+
+    Both queries go through `_git`, which scrubs the environment. An inherited `GIT_DIR`
+    answers for whatever repository it names, and there it is also its own common dir, so a
+    redirected fallback fails this test twice over;
+    `test_an_inherited_git_dir_cannot_redirect_the_worktree_fallback` is what keeps saying so.
+    """
+    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    private = _git(root, "rev-parse", "--path-format=absolute", "--git-dir")
+    if common is None or private is None:
+        return None
+    common_dir, private_dir = Path(common).resolve(), Path(private).resolve()
+    if private_dir.parent != common_dir / WORKTREES:
+        return None
+    try:
+        recorded = (private_dir / _BACK_POINTER).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not recorded or Path(recorded).parent.resolve() != root.resolve():
+        return None
+    owner = common_dir.parent
+    return None if owner == root.resolve() else owner
+
+
 def overlay_root(machine: Path | None) -> Path | None:
     path = machine_config_path(interactive=False) if machine is None else machine
     if not path.is_file():
@@ -233,10 +277,10 @@ def resolve(
     store, _ = _resolve_at(root, config, override, machine)
     if store is not None:
         return store
-    parent = main_checkout(root)
-    if parent.resolve() == root.resolve() or not _inside(root, parent):
-        # A worktree resolves through the checkout that contains it, never through whatever a
-        # redirected `GIT_DIR` named: the fallback only runs when the answer really is a parent.
+    # A worktree resolves through the checkout it is *registered against*, never through
+    # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
+    parent = registered_worktree(root)
+    if parent is None:
         return None
     store, _ = _resolve_at(parent, config, override, machine)
     return store
@@ -252,8 +296,8 @@ def refusal_reason(
     store, reason = _resolve_at(root, config, override, machine)
     if store is not None:
         return None
-    parent = main_checkout(root)
-    if parent.resolve() != root.resolve() and _inside(root, parent):
+    parent = registered_worktree(root)
+    if parent is not None:
         upstream, upstream_reason = _resolve_at(parent, config, override, machine)
         return None if upstream is not None else upstream_reason
     return reason

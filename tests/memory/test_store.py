@@ -341,3 +341,56 @@ def test_overlay_root_reads_the_machine_file(tmp_path: Path) -> None:
     assert overlay_root(a_machine_file(tmp_path, overlay)) == overlay
     assert overlay_root(a_machine_file(tmp_path, None)) is None
     assert overlay_root(tmp_path / "absent.toml") is None
+
+
+# --- the layout git's own documentation uses: a worktree beside the checkout, not under it ---
+
+
+def a_committed_repo(root: Path) -> None:
+    """A repository with one commit, so `git worktree add` has something to check out."""
+    a_repo(root)
+    for group in ("developer", "project-stable"):
+        (root / "docs" / "memory" / group).mkdir(parents=True)
+    (root / "README.md").write_text("x", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+
+
+def test_a_sibling_worktree_resolves_through_the_main_checkout(tmp_path: Path) -> None:
+    # `git worktree add ../side` is git's own documented layout, and the fallback additionally
+    # required the worktree to live *under* the main checkout — so the entire linking feature
+    # was dead exactly where it is normally used: `resolve` returned None and the handler
+    # reported no store. Whether the tree is registered against that common directory is the
+    # question containment was standing in for, and it is the one now asked.
+    root = tmp_path / "project"
+    a_committed_repo(root)
+    tree = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(tree), "-b", "side")
+    assert root.resolve() not in tree.resolve().parents  # beside the checkout, not under it
+    config = a_config(tree, "in-repo")
+    store = resolve(tree, config)
+    assert store is not None
+    assert store.path.resolve() == (root / "docs" / "memory").resolve()
+    # `refusal_reason` runs the same fallback and has to agree, or a command that resolves a
+    # store fine would still print a reason it was refused.
+    assert refusal_reason(tree, config) is None
+
+
+def test_a_directory_that_only_claims_to_be_a_worktree_resolves_no_store(tmp_path: Path) -> None:
+    # A `.git` may be a plain text pointer, so any directory can name another repository's
+    # `worktrees/<name>` and be answered by `git rev-parse` as that worktree. Registration is
+    # bidirectional: the `gitdir` back-pointer names the checkout the worktree was created
+    # for, and it is the half the owner of this root did not write. Nothing can ship this in a
+    # clone — git refuses to track a path named `.git` — but the fallback reads a store out of
+    # another repository, so it does not rest on that.
+    victim = tmp_path / "victim"
+    a_committed_repo(victim)
+    git(victim, "worktree", "add", "-q", str(tmp_path / "side"), "-b", "side")
+    hostile = tmp_path / "hostile"
+    hostile.mkdir()
+    (hostile / ".git").write_text(
+        f"gitdir: {victim / '.git' / 'worktrees' / 'side'}\n", encoding="utf-8"
+    )
+    config = a_config(hostile, "in-repo")
+    assert resolve(hostile, config) is None
+    assert refusal_reason(hostile, config) is not None
