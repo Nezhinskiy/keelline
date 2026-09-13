@@ -110,11 +110,11 @@ def main_checkout(root: Path) -> Path:
     return Path(common).parent if common else root
 
 
-WORKTREES = "worktrees"
+_WORKTREES = "worktrees"
 _BACK_POINTER = "gitdir"
 
 
-def registered_worktree(root: Path) -> Path | None:
+def _registered_worktree(root: Path) -> Path | None:
     """The checkout `root` is genuinely a registered worktree of, or `None` when it is not one.
 
     The fallback used to require the worktree to live *under* the main checkout, and that
@@ -142,7 +142,7 @@ def registered_worktree(root: Path) -> Path | None:
     if common is None or private is None:
         return None
     common_dir, private_dir = Path(common).resolve(), Path(private).resolve()
-    if private_dir.parent != common_dir / WORKTREES:
+    if private_dir.parent != common_dir / _WORKTREES:
         return None
     try:
         recorded = (private_dir / _BACK_POINTER).read_text(encoding="utf-8").strip()
@@ -300,7 +300,7 @@ def resolve(
         return store
     # A worktree resolves through the checkout it is *registered against*, never through
     # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
-    parent = registered_worktree(root)
+    parent = _registered_worktree(root)
     if parent is None:
         return None
     store, _ = _resolve_at(parent, config, override, machine)
@@ -317,7 +317,7 @@ def refusal_reason(
     store, reason = _resolve_at(root, config, override, machine)
     if store is not None:
         return None
-    parent = registered_worktree(root)
+    parent = _registered_worktree(root)
     if parent is not None:
         upstream, upstream_reason = _resolve_at(parent, config, override, machine)
         return None if upstream is not None else upstream_reason
