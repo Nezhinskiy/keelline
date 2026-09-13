@@ -77,7 +77,7 @@ def run_index(args: argparse.Namespace) -> Result:
     # Taken before anything is written, so it records the bytes the owner actually approved.
     before = trust.snapshot(store, config, machine=machine)
     reconciled = reconcile(store, config, write=not args.check, machine=machine)
-    report = check_index(store, config, reconciled)
+    report = check_index(store, config, reconciled, machine=machine)
     if args.check:
         summary = (
             "index is out of date; run `keelline memory index`"
@@ -98,7 +98,7 @@ def run_index(args: argparse.Namespace) -> Result:
             },
             exit_code=1 if report.drifted or report.over_budget else 0,
         )
-    path = write_index(store, render_index(reconciled, config, store))
+    path = write_index(store, config, render_index(reconciled, config, store), machine=machine)
     carried = trust.refresh_if_trusted(
         store, config, before, [*reconciled.written, path], machine=machine
     )

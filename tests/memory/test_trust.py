@@ -260,3 +260,25 @@ def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Pat
     mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
     assert refresh_if_trusted(store, config, before, [mine], machine=machine) is False
     assert may_inject(store, config, machine=machine) is False
+
+
+def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:
+    # `memory.index_extra` is repository-controlled, lives in `keelline.toml` — which no store
+    # file covers — and is rendered straight into `MEMORY.md`, the file the `index` bundle
+    # injects. An attacker who changes nothing but that list left the digest untouched, and the
+    # next `memory index` carried their pointers in under a still-valid trust record, blessed
+    # on the way past by `refresh_if_trusted` because Keelline itself authored the write.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    assert may_inject(store, config, machine=machine) is True
+
+    text = (store.root / CONFIG_FILE).read_text(encoding="utf-8")
+    (store.root / CONFIG_FILE).write_text(
+        text.replace("index_extra = []", 'index_extra = ["docs/read-this-first.md"]'),
+        encoding="utf-8",
+    )
+    edited = load(store.root, machine=tmp_path / "absent.toml")
+    assert edited.memory.index_extra == ("docs/read-this-first.md",)
+
+    assert state(store, edited, machine=machine).trusted is False
+    assert may_inject(store, edited, machine=machine) is False

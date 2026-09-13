@@ -19,7 +19,7 @@ from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
-from keelline.errors import Failure
+from keelline.errors import Failure, Refusal
 from keelline.fsops import write_atomically
 from keelline.memory.notes import UNRANKED, Note, Provenance, walk, with_index, write_note
 from keelline.memory.store import Store, overlay_root, permitted_roots
@@ -250,9 +250,50 @@ class IndexCheck:
     unreadable: list[str]
 
 
-def check_index(store: Store, config: Config, reconciled: Reconciliation) -> IndexCheck:
+def _destination(store: Store, config: Config, machine: Path | None) -> Path:
+    """The one file the writer writes and the check compares against: what the readers source.
+
+    `index_source` is the rule every *reader* applies — `bundles._index`, `_appended`,
+    `worktree.link`. The writer did not apply it and neither did the check, and each half of
+    that was its own defect. `write_atomically` ends in `os.replace`, which replaces the
+    **link** rather than its target: one run stranded the overlay's shared copy on every other
+    machine, turned the index into a real file inside the repository, and so flipped
+    `in_repository` to True and closed the gate on the index bundle for good. `check_index`
+    meanwhile read `store.path / INDEX_NAME` through `is_file()`, which follows the link, so
+    `--check` answered about a file nothing injects: exit 0 and "index is current" while the
+    index bundle produced `[]`.
+
+    Both are the same question, so both ask it here, once.
+
+    `None` from `index_source` has two causes and they are not the same answer. An index that
+    is simply absent is the ordinary first run: the destination is the real path, and the check
+    reports drift against nothing. An index that **is** a symlink and still sourced nothing was
+    *refused* — outside overlay mode, or outside this project's share of the overlay — and
+    writing there would clobber exactly the link §9.1 declined to honour. That is a `Refusal`
+    (C5, exit 2) rather than a `Failure`: repository-controlled content reaching past a
+    containment boundary is never a finding a caller may read as permission to continue.
+    """
+    source = index_source(store, config, machine)
+    if source is not None:
+        return source
+    target = store.path / INDEX_NAME
+    if target.is_symlink():
+        raise Refusal(
+            f"{target} is a symlink this store may not source ({INDEX_NAME} may link only "
+            f"into this project's share of the recorded overlay, in overlay mode); refusing "
+            f"to read or replace it"
+        )
+    return target
+
+
+def check_index(
+    store: Store, config: Config, reconciled: Reconciliation, *, machine: Path | None = None
+) -> IndexCheck:
+    """`machine` for the same reason `reconcile` takes one: without it this cannot call
+    `index_source`, and a check that answers about a different file than the one harvested and
+    injected is a green CI run over an empty bundle. Pass the value used to resolve `store`."""
     text = render_index(reconciled, config, store)
-    path = store.path / INDEX_NAME
+    path = _destination(store, config, machine)
     current = path.read_text(encoding="utf-8") if path.is_file() else None
     caps = []
     if len(text.splitlines()) > config.native_caps.memory_index_lines:
@@ -271,9 +312,17 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
     )
 
 
-def write_index(store: Store, text: str) -> Path:
-    path = store.path / INDEX_NAME
-    if not path.parent.is_dir():
-        raise Failure(f"{path.parent} does not exist; the store was not created")
+def write_index(store: Store, config: Config, text: str, *, machine: Path | None = None) -> Path:
+    """Write the index to the file the readers source, and return that file.
+
+    Takes `config` and `machine` — a C3 contract change — because `_destination` cannot answer
+    without them, and answering without them was the defect. The returned path is the file
+    actually written, which in overlay mode is the shared copy in the overlay rather than the
+    link inside the checkout; `trust.refresh_if_trusted` resolves both to the same file, so the
+    record still covers the index it just wrote.
+    """
+    if not store.path.is_dir():
+        raise Failure(f"{store.path} does not exist; the store was not created")
+    path = _destination(store, config, machine)
     write_atomically(path, text)
     return path
