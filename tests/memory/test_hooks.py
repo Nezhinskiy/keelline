@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.paths import PathEscape
 from keelline.hooks.api import EVENTS, Decision, HookEvent, Policy
 from keelline.memory import worktree as worktree_module
-from keelline.memory.hooks import register
+from keelline.memory.hooks import NOT_LINKED, PARTIAL, register
+from keelline.memory.worktree import PartialLink
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -181,3 +183,46 @@ def test_a_repository_controlled_group_name_never_reaches_the_handlers_context(
         for fragment in HOSTILE_GROUP.splitlines():
             if fragment.strip():
                 assert fragment not in context
+
+
+def _partial(*_args: object, **_kwargs: object) -> list[Path]:
+    raise PartialLink([Path("one"), Path("two")], OSError("read-only file system"))
+
+
+def _refuse(*_args: object, **_kwargs: object) -> list[Path]:
+    raise PathEscape(HOSTILE_GROUP)
+
+
+def test_a_half_built_tree_still_reports_what_was_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The blanket `except Exception` threw `created` away with the exception, so an `OSError`
+    # part-way left some groups linked, the rest absent, and the hook silent about either —
+    # measured as a tree holding 2 of 4 names and a context of `None`. Degrading open is right;
+    # degrading open *without saying so* is what made the half-built tree invisible.
+    monkeypatch.setattr(worktree_module, "link", _partial)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), config)
+        assert result.decision is None
+        assert result.context == PARTIAL.format(count=2)
+
+
+def test_a_containment_refusal_is_a_different_event_from_a_disk_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `link` raises `PathEscape` when a repository-controlled `memory.groups` name tries to
+    # leave the worktree tree. A blanket catch made that indistinguishable from "nothing to
+    # do". It must still not cost the session — and the refusal's own message is built out of
+    # that name, so a fixed line goes to the model and the name does not.
+    monkeypatch.setattr(worktree_module, "link", _refuse)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), config)
+        assert result.decision is None
+        assert result.context == NOT_LINKED
+        for fragment in HOSTILE_GROUP.splitlines():
+            if fragment.strip():
+                assert fragment not in NOT_LINKED

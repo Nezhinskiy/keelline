@@ -42,6 +42,7 @@ asks the gate before it makes that one — see the note on `link` itself.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from keelline.config.paths import contained
@@ -49,6 +50,26 @@ from keelline.config.schema import Config
 from keelline.memory import trust
 from keelline.memory.index import INDEX_NAME, index_source
 from keelline.memory.store import Store, main_checkout
+
+
+class PartialLink(OSError):
+    """An `OSError` part-way through `link`, carrying the links that were already made.
+
+    Links are created one at a time, so a failure half way through leaves the tree holding
+    some names and not the rest — and per this module's docstring above, a group missing from
+    the tree is also missing from the floor the reference guard derives from it: invisible
+    twice. The `SessionStart` handler degrades open, which is right (a memory handler never
+    costs a session), but degrading open on a bare `OSError` threw `created` away with the
+    exception, so nothing anywhere could say that half a tree existed.
+
+    An `OSError` and not a `Refusal`: nothing crossed a boundary here, a write failed. A
+    `PathEscape` from `contained` still leaves this function as itself, and the caller decides
+    separately what a containment refusal means — see `keelline.memory.hooks`.
+    """
+
+    def __init__(self, created: Sequence[Path], cause: OSError) -> None:
+        super().__init__(str(cause))
+        self.created = list(created)
 
 
 def linked_names(config: Config) -> tuple[str, ...]:
@@ -148,29 +169,35 @@ def link(
     matches what the owner approved. Gating on `inside_project` alone would ask the wrong
     question (it would refuse a trusted store for ever); gating on the mode would ask the
     clone.
+
+    Raises `PartialLink` — an `OSError` carrying the links already made — when a write fails
+    part-way, rather than letting `created` die with the exception. The caller degrades open;
+    it needs to be able to say which half of the tree exists while it does.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return []
     created: list[Path] = []
-    base = _tree_base(worktree, store)
-    if base is not None:
-        base.mkdir(parents=True, exist_ok=True)
-        sources: dict[str, Path] = dict(store.groups)
-        found = index_source(store, config, machine)
-        if found is not None:
-            sources[INDEX_NAME] = found
-        for name in linked_names(config):
-            source = sources.get(name)
-            if source is None:
-                continue
-            # `allow_final_symlink`, because replacing a wrong or dangling symlink already
-            # sitting at the target is this function's job; every level above it is not.
-            target = contained(base, name, allow_final_symlink=True)
-            if _link(source.resolve(), target):
-                created.append(target)
-    if not trust.may_inject(store, config, machine=machine):
-        return created
-    harness = harness_memory_path(worktree, home)
-    if _link(store.path.resolve(), harness):
-        created.append(harness)
+    try:
+        base = _tree_base(worktree, store)
+        if base is not None:
+            base.mkdir(parents=True, exist_ok=True)
+            sources: dict[str, Path] = dict(store.groups)
+            found = index_source(store, config, machine)
+            if found is not None:
+                sources[INDEX_NAME] = found
+            for name in linked_names(config):
+                source = sources.get(name)
+                if source is None:
+                    continue
+                # `allow_final_symlink`, because replacing a wrong or dangling symlink already
+                # sitting at the target is this function's job; every level above it is not.
+                target = contained(base, name, allow_final_symlink=True)
+                if _link(source.resolve(), target):
+                    created.append(target)
+        if trust.may_inject(store, config, machine=machine):
+            harness = harness_memory_path(worktree, home)
+            if _link(store.path.resolve(), harness):
+                created.append(harness)
+    except OSError as exc:
+        raise PartialLink(created, exc) from exc
     return created

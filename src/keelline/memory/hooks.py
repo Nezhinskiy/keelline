@@ -33,27 +33,52 @@ if TYPE_CHECKING:
     from keelline.config.schema import Config
 
 # Fixed, and carrying nothing the repository chose. A plain string is not an import, so
-# this costs `discover()` nothing.
+# these cost `discover()` nothing. `count` is the length of a list this module built, never a
+# value the repository supplied, so interpolating it changes nothing about that.
 NO_STORE = "keelline: no memory store for this project"
+LINKED = "keelline: linked {count} memory path(s) into this worktree"
+PARTIAL = LINKED + "; the rest could not be created"
+NOT_LINKED = "keelline: a memory path was refused for this worktree and was not linked"
 
 
 def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
+        from keelline.errors import Refusal
         from keelline.memory.store import resolve
-        from keelline.memory.worktree import link
+        from keelline.memory.worktree import PartialLink, link
 
         store = resolve(event.project_root, config)
         if store is None:
             return HookResult(context=NO_STORE)
-        created = link(event.project_root, store, config)
+        try:
+            created = link(event.project_root, store, config)
+        except PartialLink as partial:
+            # A write failed part-way. `link` makes one symlink at a time, so the tree now
+            # holds some names and not the rest — and `worktree`'s own docstring says a group
+            # missing from the tree is missing from the floor the reference guard derives
+            # from it, "invisible twice". Keep degrading open, and say how many were made
+            # instead of letting the list die with the exception.
+            return HookResult(context=PARTIAL.format(count=len(partial.created)))
+        except Refusal:
+            # Not the same event as a disk error, and deliberately not reported as one.
+            # `link` raises `PathEscape` when a repository-controlled `memory.groups` name
+            # tries to leave the worktree tree; swallowing that in a blanket catch made an
+            # attempted escape indistinguishable from "nothing to do". It still must not cost
+            # the session, and the refusal's message is built out of the offending name — so
+            # the fixed line goes to the model and the name stays out of it, exactly as
+            # `refusal_reason`'s text does.
+            return HookResult(context=NOT_LINKED)
         if not created:
             return HookResult()
-        return HookResult(
-            context=f"keelline: linked {len(created)} memory path(s) into this worktree"
-        )
-    except Exception:  # a memory handler never costs a session (§5.3)
+        return HookResult(context=LINKED.format(count=len(created)))
+    # The backstop stays broad on purpose: §5.3 says a memory handler never costs a session,
+    # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
+    # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
+    # clauses above buy is that the two failures this function can actually produce are no
+    # longer silent, and are no longer the same event.
+    except Exception:
         return HookResult()
 
 

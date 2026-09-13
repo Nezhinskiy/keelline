@@ -12,7 +12,7 @@ from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
 from keelline.memory.store import LOCAL_STORE, Store, resolve
 from keelline.memory.trust import record
-from keelline.memory.worktree import harness_memory_path, link, linked_names
+from keelline.memory.worktree import PartialLink, harness_memory_path, link, linked_names
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -575,3 +575,23 @@ def test_an_overlay_store_needs_no_trust_record_for_its_harness_link(tmp_path: P
     home = tmp_path / "home"
     created = link(tree, store, config, home=home, machine=machine)
     assert harness_memory_path(tree, home) in created
+
+
+def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path: Path) -> None:
+    # `link` creates one symlink at a time, so a failure half way leaves the tree holding some
+    # names and not the rest — and per this module's own docstring a group missing from the
+    # tree is missing from the floor the reference guard derives from it, "invisible twice".
+    # The caller degrades open, and on a bare `OSError` the `created` list died with the
+    # exception, so nothing could say that half a tree existed.
+    root, store, config = a_checkout(tmp_path, groups=("developer", "sub/nested"))
+    tree = a_worktree(root, tmp_path / "wt")
+    base = tree / "docs" / "memory"
+    base.mkdir(parents=True, exist_ok=True)
+    # A plain file where `sub/nested`'s parent directory has to go: `mkdir(parents=True)`
+    # raises `FileExistsError` there, and only after the two names before it are linked.
+    (base / "sub").write_text("not a directory\n", encoding="utf-8")
+    with pytest.raises(PartialLink) as excinfo:
+        link(tree, store, config, home=tmp_path / "home", machine=a_machine_file(tmp_path))
+    assert [p.name for p in excinfo.value.created] == ["MEMORY.md", "developer"]
+    assert (base / "developer").is_symlink()
+    assert not (base / "sub" / "nested").exists()
