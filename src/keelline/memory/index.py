@@ -91,27 +91,26 @@ class Reconciliation:
     refused_harvest: list[str] = field(default_factory=list)
 
 
-def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
-    """The index's own §9.1 target rule — the one `store._group_targets` applies to every
-    configured group, applied here because nothing upstream applies it to `MEMORY.md`.
+def _resolved_if_permitted(
+    store: Store, config: Config, machine: Path | None, target: Path
+) -> Path | None:
+    """Where a symlinked index would resolve, if that location is one this store may use at
+    all — independent of whether anything exists there yet.
 
-    `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
-    per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
-    this same answer — `worktree.link`, which materialises it into a worktree, and
-    `bundles._index`, which injects it into the model — so it lives here, beside `INDEX_NAME`,
-    and is called rather than reimplemented.
+    `Path.resolve()` is non-strict: it does not require the final component to exist, so a
+    *dangling* symlink resolves to an absolute path exactly as a live one does, and can be
+    tested against `permitted_roots` all the same. Outside overlay mode there is no overlay to
+    validate against, so every symlinked index is refused, exactly like an ungoverned group
+    symlink; in overlay mode only a resolution inside *this project's own* share
+    (`permitted_roots`) is permitted — never a different project's, and never nothing (no
+    overlay recorded at all).
 
-    A missing or dangling index sources nothing. A real file sources itself, unconditionally.
-    A symlink is the governed case: outside overlay mode it is refused outright (there is no
-    overlay to validate it against, exactly like an ungoverned group symlink); in overlay mode
-    it is honoured only when it resolves inside this project's own share of the recorded
-    overlay (`permitted_roots`) — never a different project's.
+    One rule, two questions. `index_source` additionally asks whether the resolved path
+    *exists*, because there is nothing to read from a permitted link with nothing behind it
+    yet. `_destination` does not ask that: a permitted-but-dangling link is precisely the file
+    `memory index` must be able to create, and answering the permission question without
+    existence is what lets it.
     """
-    target = store.path / INDEX_NAME
-    if not target.exists():
-        return None
-    if not target.is_symlink():
-        return target.resolve()
     if store.mode != "overlay":
         return None
     overlay = overlay_root(machine)
@@ -122,6 +121,35 @@ def index_source(store: Store, config: Config, machine: Path | None) -> Path | N
     if not any(resolved.is_relative_to(root.resolve()) for root in allowed):
         return None
     return resolved
+
+
+def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
+    """The index's own §9.1 target rule — the one `store._group_targets` applies to every
+    configured group, applied here because nothing upstream applies it to `MEMORY.md`.
+
+    `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
+    per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
+    this same answer — `worktree.link`, which materialises it into a worktree, and
+    `bundles._index`, which injects it into the model — so it lives here, beside `INDEX_NAME`,
+    and is called rather than reimplemented.
+
+    `None` has three causes, and this function's callers only ever need to ask the read
+    question: is there something here to source. An absent target and a *refused* symlink
+    (outside overlay mode, or resolving outside this project's share) both answer None, and so
+    does a symlink that resolves to a *permitted* location with nothing written there yet —
+    reading nothing from a link §6.3 created before `memory index` ever ran is correct, not a
+    refusal. `_destination` is the one place that must tell the second and third causes apart,
+    which is why it does not reuse this return value for the "nothing yet" case; see its own
+    docstring.
+
+    A real file sources itself, unconditionally. A permitted symlink that already has a file
+    behind it sources that file, resolved.
+    """
+    target = store.path / INDEX_NAME
+    if not target.is_symlink():
+        return target.resolve() if target.exists() else None
+    resolved = _resolved_if_permitted(store, config, machine, target)
+    return resolved if resolved is not None and resolved.exists() else None
 
 
 def _appended(path: Path | None) -> dict[str, str]:
@@ -336,25 +364,40 @@ def _destination(store: Store, config: Config, machine: Path | None) -> Path:
 
     Both are the same question, so both ask it here, once.
 
-    `None` from `index_source` has two causes and they are not the same answer. An index that
-    is simply absent is the ordinary first run: the destination is the real path, and the check
-    reports drift against nothing. An index that **is** a symlink and still sourced nothing was
-    *refused* — outside overlay mode, or outside this project's share of the overlay — and
-    writing there would clobber exactly the link §9.1 declined to honour. That is a `Refusal`
-    (C5, exit 2) rather than a `Failure`: repository-controlled content reaching past a
-    containment boundary is never a finding a caller may read as permission to continue.
+    `None` from `index_source` has **three** causes, not two, and only one of them is a
+    `Refusal`. An index that is simply absent (no file, no symlink) is the ordinary first run:
+    the destination is the real path, and the check reports drift against nothing. An index
+    that **is** a symlink comes apart into the other two: *refused* — outside overlay mode, or
+    resolving outside this project's share of the overlay — where writing would clobber exactly
+    the link §9.1 declined to honour, and *permitted but not yet created* — §6.3 has `attach`
+    create the symlink before `memory index` ever renders a file behind it, so the very first
+    run in an overlay project always finds this shape. `index_source` answers None for the
+    second and third causes alike, because both are "nothing to read" — but they are not the
+    same answer *here*: refused is a boundary this store may never write across, and
+    permitted-but-dangling is precisely the file this command exists to create. Collapsing them
+    made overlay mode unable to bootstrap at all.
+
+    So this does not read `index_source`'s None as one thing. When it is None because the
+    target is not a symlink at all, the ordinary-first-run answer applies unconditionally. When
+    it is None because the target *is* a symlink, `_resolved_if_permitted` is asked the same
+    permission question `index_source` asked — but without requiring the far end to already
+    exist, which is the one difference the write side needs from the read side. A permitted
+    answer is the write destination, dangling or not; anything else is the refusal below.
     """
     source = index_source(store, config, machine)
     if source is not None:
         return source
     target = store.path / INDEX_NAME
-    if target.is_symlink():
+    if not target.is_symlink():
+        return target
+    resolved = _resolved_if_permitted(store, config, machine, target)
+    if resolved is None:
         raise Refusal(
             f"{target} is a symlink this store may not source ({INDEX_NAME} may link only "
             f"into this project's share of the recorded overlay, in overlay mode); refusing "
             f"to read or replace it"
         )
-    return target
+    return resolved
 
 
 def check_index(

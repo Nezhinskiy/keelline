@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
+from keelline.errors import Refusal
 from keelline.memory.index import (
     EXTRA_TITLE,
     INDEX_NAME,
@@ -425,3 +428,105 @@ def test_an_index_extra_entry_that_merely_ends_in_a_line_break_is_dropped(tmp_pa
     text = render_index(reconcile(store, config, write=False), config, store)
     assert EXTRA_TITLE not in text
     assert "ledger.md" not in text
+
+
+# --- CRITICAL 1: a permitted but dangling §6.3 link must bootstrap, not refuse ----------------
+
+OVERLAY_CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+
+[memory]
+mode = "overlay"
+groups = ["developer"]
+index_extra = {extra}
+"""
+
+
+def an_overlay_store(tmp_path: Path, *, extra: str = "[]") -> tuple[Store, Config, Path]:
+    """A store shaped like the §6.3 tree `attach` creates, except `developer` is a real,
+    repository-committed directory rather than a symlink into the overlay's own share — the
+    "mixed" shape the reviewer built by hand, since `attach` (another lane) is not present to
+    build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
+    overlay/projects/widget/memory)`; only the second is created here, which is enough for the
+    §9.1 resolution check `_resolved_if_permitted` runs — it never requires the far end to exist.
+    """
+    root = tmp_path / "project"
+    base = root / "docs" / "memory"
+    (base / "developer").mkdir(parents=True)
+    (root / CONFIG_FILE).write_text(OVERLAY_CONFIG.format(extra=extra), encoding="utf-8")
+    overlay = tmp_path / "overlay"
+    (overlay / "projects" / "widget" / "memory").mkdir(parents=True)
+    machine_file = tmp_path / "machine.toml"
+    machine_file.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    config = load(root, machine=tmp_path / "absent.toml")
+    store = Store(base, "overlay", root, {"developer": base / "developer"})
+    return store, config, machine_file
+
+
+def test_a_dangling_but_permitted_symlinked_index_sources_nothing_to_read(
+    tmp_path: Path,
+) -> None:
+    # The read answer must stay "nothing to read": there is no content at the far end yet, and
+    # `bundles._index`, `_appended` and `worktree.link` all route through this function.
+    store, config, machine_file = an_overlay_store(tmp_path)
+    target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
+    (store.path / INDEX_NAME).symlink_to(target)
+    assert not target.exists()
+    assert index_source(store, config, machine_file) is None
+
+
+def test_the_write_destination_bootstraps_the_same_dangling_permitted_link(
+    tmp_path: Path,
+) -> None:
+    # `index_source` answering None for a permitted-but-dangling link used to be read by
+    # `_destination` as "refused" — the answer meant for a link outside overlay mode or outside
+    # this project's share — and every `memory index` in a freshly `attach`ed overlay project
+    # raised `Refusal` (exit 2) before it ever wrote a byte. The write side must reach a
+    # different, non-raising answer from the very same symlink `index_source` calls dangling.
+    store, config, machine_file = an_overlay_store(tmp_path)
+    target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
+    (store.path / INDEX_NAME).symlink_to(target)
+
+    reconciled = reconcile(store, config, write=False, machine=machine_file)
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text, machine=machine_file)
+
+    assert path == target
+    assert target.is_file()
+    assert "# Memory Index" in target.read_text(encoding="utf-8")
+    assert (store.path / INDEX_NAME).is_symlink(), "the link was clobbered, not written through"
+    # And the second run reads back exactly what the first one wrote.
+    assert index_source(store, config, machine_file) == target.resolve()
+
+
+def test_the_write_destination_still_refuses_a_symlink_outside_overlay_mode(
+    tmp_path: Path,
+) -> None:
+    # Control case 1, on the write side this time: outside overlay mode there is no overlay to
+    # validate a symlink against, so it stays refused — dangling or not.
+    store, config = a_store(tmp_path)  # in-repo mode
+    (store.path / INDEX_NAME).symlink_to(tmp_path / "elsewhere.md")  # dangling
+    with pytest.raises(Refusal):
+        write_index(store, config, "text")
+
+
+def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
+    tmp_path: Path,
+) -> None:
+    # Control case 2: a link that resolves *outside* this project's own share of the recorded
+    # overlay must stay refused, whether or not anything exists at the far end.
+    store, config, machine_file = an_overlay_store(tmp_path)
+    another_projects_share = tmp_path / "overlay" / "projects" / "other" / "memory" / INDEX_NAME
+    (store.path / INDEX_NAME).symlink_to(another_projects_share)  # dangling, and not permitted
+    with pytest.raises(Refusal):
+        write_index(store, config, "text", machine=machine_file)

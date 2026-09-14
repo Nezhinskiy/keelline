@@ -418,6 +418,31 @@ def test_the_machines_own_index_is_still_harvested_into_the_machines_notes(
     assert "index_provenance: native" in written
 
 
+@needs_git
+def test_memory_index_bootstraps_a_dangling_section_6_3_link(
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `attach` creates the §6.3 symlink before any content exists behind it — that ordering is
+    # the whole point of a link over a copy. `index_source` correctly answers "nothing to read"
+    # for a dangling link, but `_destination` used to read that same `None` as "refused", the
+    # answer meant for a link resolving *outside* the permitted roots, and raised `Refusal`
+    # (exit 2). The very first `memory index` an overlay project ever runs hits exactly this
+    # shape — unlike the test above, which pre-creates the shared file and so never exercised
+    # it. `--check` afterwards proves the write and the read agree about which file this is.
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
+    link = overlay_project / "docs" / "memory" / "MEMORY.md"
+    link.symlink_to(share)
+    assert not share.exists()
+
+    assert invoke(["memory", "index", *common(overlay_project)]) == 0
+
+    assert link.is_symlink(), "the bootstrap write replaced the link instead of writing through it"
+    assert share.is_file()
+    assert "# Memory Index" in share.read_text(encoding="utf-8")
+    capsys.readouterr()
+    assert invoke(["memory", "index", "--check", *common(overlay_project)]) == 0
+
+
 def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
