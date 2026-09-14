@@ -423,3 +423,28 @@ def test_a_directory_that_merely_sits_under_a_checkout_is_not_a_worktree_of_it(
     config = a_config(hostile, "in-repo")
     assert resolve(hostile, config) is None
     assert refusal_reason(hostile, config) is not None
+
+
+# --- IMPORTANT: the C3 surface's own hazard, documented where it lives -----------------------
+
+
+def test_refusal_reason_documents_that_its_string_is_unsafe_for_model_context() -> None:
+    # `refusal_reason` embeds raw `memory.groups` entries — a field with no schema constraint —
+    # and had no docstring at all, despite `api.py` naming `overlay-hook` as a consumer that
+    # "needs the refusal line" and a hook lane being precisely the one that puts a string into
+    # `additionalContext`. `hooks.py`, this lane's own consumer, documents the hazard at length
+    # and refuses to use the value raw; the function that produces the value said nothing.
+    doc = refusal_reason.__doc__ or ""
+    assert "trust.wrap" in doc
+    assert "model context" in doc
+
+
+def test_store_unavailable_documents_that_its_values_are_unsafe_for_model_context() -> None:
+    # `Store.unavailable` carries the same repository-controlled prose `refusal_reason` does —
+    # `_group_targets` builds both out of the same `memory.groups` entries — and is exported
+    # from `api.py` with no warning attached anywhere near the field itself.
+    import inspect
+
+    source = inspect.getsource(Store)
+    assert "trust.wrap" in source
+    assert "model context" in source

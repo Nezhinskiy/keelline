@@ -78,6 +78,11 @@ class Store:
     mode: str
     root: Path
     groups: dict[str, Path] = field(default_factory=dict)
+    # Per-group refusal prose from `_group_targets`, built the same way `refusal_reason` builds
+    # its message: it embeds the raw `memory.groups` entry, a field with no schema constraint
+    # (a TOML multi-line string carries literal newlines through unchanged). Same hazard, same
+    # rule — never put a value out of this dict into model context unwrapped; `trust.wrap` it
+    # first if a consumer must show the detail.
     unavailable: dict[str, str] = field(default_factory=dict)
 
     def group_dir(self, group: str) -> Path | None:
@@ -317,6 +322,16 @@ def refusal_reason(
     override: str | None = None,
     machine: Path | None = None,
 ) -> str | None:
+    """Why `resolve` returned no store for this call, or `None` when it would not have refused.
+
+    The string is built out of `memory.groups` entries (`_group_targets`'s `unavailable`
+    messages) and out of `config.paths.memory`, both repository-controlled and neither
+    schema-constrained — a TOML multi-line string carries literal newlines through unchanged,
+    so this can come back multi-line, and the same repository text can appear in it twice. It
+    must never reach model context unwrapped: see `keelline.memory.hooks`, this lane's own
+    consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
+    A consumer that must show the detail wraps it first with `trust.wrap`.
+    """
     store, reason = _resolve_at(root, config, override, machine)
     if store is not None:
         return None
