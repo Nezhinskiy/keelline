@@ -425,6 +425,40 @@ def test_a_directory_that_merely_sits_under_a_checkout_is_not_a_worktree_of_it(
     assert refusal_reason(hostile, config) is not None
 
 
+def test_a_relocated_worktree_private_dir_with_a_matching_back_pointer_is_still_refused(
+    tmp_path: Path,
+) -> None:
+    # The other half, isolated. `test_a_directory_that_only_claims_to_be_a_worktree_resolves_no_
+    # store` above only pins the back-pointer: `hostile`'s claimed private dir sits at the
+    # correct `<common>/worktrees/<name>` location, so `private_dir.parent ==
+    # common_dir/_WORKTREES` there and the parent check never fires — mutating or deleting it
+    # would not fail that test, only the back-pointer mismatch does. This builds the opposite
+    # shape: git's own private worktree directory, physically moved out from under
+    # `<common>/worktrees/`, with its `gitdir` back-pointer edited to name `hostile` correctly.
+    # The back-pointer alone would now call this registered; only the parent check still refuses
+    # it.
+    victim = tmp_path / "victim"
+    a_committed_repo(victim)
+    git(victim, "worktree", "add", "-q", str(tmp_path / "side"), "-b", "side")
+    private = victim / ".git" / "worktrees" / "side"
+    relocated = tmp_path / "rogue" / "worktrees" / "side"
+    relocated.parent.mkdir(parents=True)
+    private.rename(relocated)
+    hostile = tmp_path / "hostile"
+    hostile.mkdir()
+    # `commondir` was relative to the private dir's old location (`../..`); moved, it must name
+    # the real common dir absolutely, or `--git-common-dir` would answer for the wrong repository
+    # rather than for `victim` — the shape this test needs to isolate the parent check at all.
+    (relocated / "commondir").write_text(f"{victim / '.git'}\n", encoding="utf-8")
+    # The back-pointer now correctly names `hostile`, exactly as the real worktree's did for
+    # `side` — this is what makes the back-pointer check alone insufficient here.
+    (relocated / "gitdir").write_text(f"{hostile / '.git'}\n", encoding="utf-8")
+    (hostile / ".git").write_text(f"gitdir: {relocated}\n", encoding="utf-8")
+    config = a_config(hostile, "in-repo")
+    assert resolve(hostile, config) is None
+    assert refusal_reason(hostile, config) is not None
+
+
 # --- IMPORTANT: the C3 surface's own hazard, documented where it lives -----------------------
 
 
