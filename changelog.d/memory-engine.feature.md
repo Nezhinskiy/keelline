@@ -1,0 +1,1 @@
+Memory store: a note reader that preserves what it did not change, store resolution bound to one project's share of an overlay, a generated index with reconciliation, injection bundles sized against the cap they are emitted under, worktree links, and the memory command group.

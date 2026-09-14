@@ -1,0 +1,98 @@
+"""Handlers this area contributes; `hooks-core` owns the entries that invoke them (C4, §5.3).
+
+Every import of `keelline.config`, `keelline.memory.store` and their neighbours happens
+**inside** a handler body. `tests/test_areas.py` asserts that `discover()` in a clean
+interpreter imports neither the configuration layer nor the presets, and discovery imports
+every area's `hooks` module — so a module-level `from keelline.config.schema import Config`
+here reddens a test that belongs to no wave-2 lane. The annotation is a string under
+`TYPE_CHECKING`, exactly as `keelline.hooks.api` already writes it.
+
+There is no `SessionStart` context handler here, and that absence is the design: the four
+injection bundles are invoked as their own `hooks.json` entries so each gets its own platform
+cap (see `bundles`). What remains is the one thing that must happen before any of them can
+work — linking the store into a worktree.
+
+Nothing a repository controls is ever put into `HookResult.context`. That field becomes
+`additionalContext` in the `SessionStart` payload — model input with no delimiter, no nonce, no
+trust record and no `may_inject` gate, which is precisely the channel `trust.wrap` exists to
+close. `store.refusal_reason` builds its message out of raw `memory.groups` entries, and
+`memory.groups` is an ordinary `keelline.toml` list with no schema constraint (a TOML
+multi-line string carries literal newlines), so a clone reaches that text with no overlay and
+no confirmation. A session-start diagnostic does not need to carry that text at all: every
+message below is fixed and repository-independent, and where a `memory` command can say more
+(`refusal_reason`'s detail, for instance) that is where the detail stays.
+
+What the messages do carry is *that* something did not happen — no store, half a tree, a
+refused path. A handler degrading open silently is how a half-built link tree became invisible
+twice over; the fixed lines are what keep "nothing to do" and "something went wrong" apart
+without putting a repository's words in front of the model.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from keelline.hooks.api import Handler, HookEvent, HookResult, Policy
+
+if TYPE_CHECKING:
+    from keelline.config.schema import Config
+
+# Fixed, and carrying nothing the repository chose. A plain string is not an import, so
+# these cost `discover()` nothing. `count` is the length of a list this module built, never a
+# value the repository supplied, so interpolating it changes nothing about that.
+NO_STORE = "keelline: no memory store for this project"
+LINKED = "keelline: linked {count} memory path(s) into this worktree"
+PARTIAL = LINKED + "; the rest could not be created"
+NOT_LINKED = "keelline: a memory path was refused for this worktree and was not linked"
+
+
+def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
+    if config is None or event.project_root is None:
+        return HookResult()
+    try:
+        from keelline.errors import Refusal
+        from keelline.memory.store import resolve
+        from keelline.memory.worktree import PartialLink, link
+
+        store = resolve(event.project_root, config)
+        if store is None:
+            return HookResult(context=NO_STORE)
+        try:
+            created = link(event.project_root, store, config)
+        except PartialLink as partial:
+            # A write failed part-way. `link` makes one symlink at a time, so the tree now
+            # holds some names and not the rest — and `worktree`'s own docstring says a group
+            # missing from the tree is missing from the floor the reference guard derives
+            # from it, "invisible twice". Keep degrading open, and say how many were made
+            # instead of letting the list die with the exception.
+            return HookResult(context=PARTIAL.format(count=len(partial.created)))
+        except Refusal:
+            # Not the same event as a disk error, and deliberately not reported as one.
+            # `link` raises `PathEscape` when a repository-controlled `memory.groups` name
+            # tries to leave the worktree tree; swallowing that in a blanket catch made an
+            # attempted escape indistinguishable from "nothing to do". It still must not cost
+            # the session, and the refusal's message is built out of the offending name — so
+            # the fixed line goes to the model and the name stays out of it, exactly as
+            # `refusal_reason`'s text does.
+            return HookResult(context=NOT_LINKED)
+        if not created:
+            return HookResult()
+        return HookResult(context=LINKED.format(count=len(created)))
+    # The backstop stays broad on purpose: §5.3 says a memory handler never costs a session,
+    # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
+    # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
+    # clauses above buy is that the two failures this function can actually produce are no
+    # longer silent, and are no longer the same event.
+    except Exception:
+        return HookResult()
+
+
+def register() -> list[Handler]:
+    return [
+        Handler(
+            name="worktree-link",
+            event="SessionStart",
+            policy=Policy.OPEN,
+            run=_link_worktree,
+        )
+    ]
