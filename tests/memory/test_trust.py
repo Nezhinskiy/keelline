@@ -13,6 +13,7 @@ from keelline.errors import Refusal
 from keelline.memory.store import Store, resolve
 from keelline.memory.trust import (
     DELIMITER,
+    UnreadableTrustRecord,
     UnsafeNote,
     changed,
     is_repository_data,
@@ -293,3 +294,67 @@ def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Pat
 
     assert state(store, edited, machine=machine).trusted is False
     assert may_inject(store, edited, machine=machine) is False
+
+
+# --- a broken record is not an empty one -------------------------------------------------
+
+
+def _trust_json(machine: Path) -> Path:
+    return machine.parent / "trust.json"
+
+
+def test_a_corrupt_record_refuses_rather_than_reading_as_untrusted(tmp_path: Path) -> None:
+    # `{}` for an absent file, an unreadable one, a syntax error and a non-dict payload alike
+    # is what made one stray byte look exactly like a fresh machine.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    broken = _trust_json(machine)
+    broken.write_text(broken.read_text(encoding="utf-8") + "x", encoding="utf-8")
+    with pytest.raises(UnreadableTrustRecord):
+        state(store, config, machine=machine)
+    with pytest.raises(UnreadableTrustRecord):
+        may_inject(store, config, machine=machine)
+
+
+def test_a_corrupt_record_is_never_overwritten(tmp_path: Path) -> None:
+    # The destructive half, and the one the owner walks straight into: told the store is
+    # untrusted, they run the command they are told to run, and every other project's approval
+    # on the machine is gone permanently with nothing said.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    broken = _trust_json(machine)
+    original = broken.read_text(encoding="utf-8").rstrip("\n") + ",\n"
+    broken.write_text(original, encoding="utf-8")
+    with pytest.raises(UnreadableTrustRecord):
+        record(store, config, machine=machine)
+    assert broken.read_text(encoding="utf-8") == original
+
+
+def test_a_record_that_is_not_an_object_refuses(tmp_path: Path) -> None:
+    store, config, machine = a_store(tmp_path, "in-repo")
+    _trust_json(machine).write_text('["not", "an", "object"]\n', encoding="utf-8")
+    with pytest.raises(UnreadableTrustRecord):
+        state(store, config, machine=machine)
+
+
+def test_an_absent_record_is_still_the_ordinary_fresh_machine(tmp_path: Path) -> None:
+    # The other half of the distinction: never approving anything must stay quiet, or the
+    # refusal above fires on every machine that has not run `memory trust` yet.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    assert not _trust_json(machine).exists()
+    assert may_inject(store, config, machine=machine) is False
+
+
+def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> None:
+    # A non-string value is a key this version cannot interpret, not a file it cannot read, so
+    # it is dropped rather than raised: that costs one project a re-approval instead of costing
+    # every project its record.
+    store, config, machine = a_store(tmp_path, "in-repo")
+    record(store, config, machine=machine)
+    broken = _trust_json(machine)
+    import json as _json
+
+    raw = _json.loads(broken.read_text(encoding="utf-8"))
+    raw["/somewhere/else"] = {"not": "a digest"}
+    broken.write_text(_json.dumps(raw), encoding="utf-8")
+    assert may_inject(store, config, machine=machine) is True

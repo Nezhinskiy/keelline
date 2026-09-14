@@ -11,6 +11,15 @@ Its own path is repository-controlled too. `.keelline` is an ordinary directory 
 repository may commit as a symlink, and a clone materialises one, so both ends of the ledger
 go through `contained()` first: otherwise `write` hands the records — content and all — to
 whatever the link points at, and `read` takes its idea of what Keelline owns from there.
+
+`contained()` catches a *committed* symlink and not the race the engine exists to survive — a
+component that becomes a link after the check passed. So the write goes through
+`fsops.write_within`, the same `O_NOFOLLOW` walk every scaffolded artifact is written through.
+It did not, and that was the gap worth naming: every file a user can shrug at was written
+through a descriptor, while the one file whose corruption bricks both `upgrade` and
+`uninstall` was written by re-resolved string path — `mkdir(parents=True)` following symlinks
+and `mkstemp` plus `os.replace` on the name. The strongest protection was applied to the least
+valuable targets.
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ from pathlib import Path
 
 from keelline.config.paths import contained
 from keelline.errors import Refusal
-from keelline.fsops import write_atomically
+from keelline.fsops import UnsafePath, write_within
 
 MANIFEST_PATH = Path(".keelline") / "manifest.json"
 FORMAT = 1
@@ -91,8 +100,8 @@ def _contained_path(root: Path) -> Path:
 
     The guard lives here rather than at each call site because this module owns
     `MANIFEST_PATH`: nothing else knows where the ledger lives, so nothing else can be asked
-    to remember to check it. `write_atomically` takes a path and not a descriptor, so
-    containment has to be settled before it is called.
+    to remember to check it. `read` consumes the returned path; `write` uses it only for the
+    verdict, and then writes through the walk instead of through the string.
     """
     return contained(root, str(MANIFEST_PATH))
 
@@ -125,13 +134,26 @@ class Manifest:
         return cls({key: _record_from(value, key) for key, value in artifacts.items()}, version)
 
     def write(self, root: Path) -> Path:
+        """Replace the ledger through the `O_NOFOLLOW` walk, and refuse rather than raise.
+
+        `contained()` first, for the verdict a user can act on and for the committed-symlink
+        case; `write_within` then, so no component of the path is resolved a second time
+        between the two. An `OSError` here is a `ManifestError` — this file is written from
+        `apply`'s `finally`, and a bare traceback out of that would take the report of what was
+        already written with it.
+        """
         path = _contained_path(root)
         body = {
             "_generated": GENERATED,
             "format": FORMAT,
             "artifacts": {key: asdict(self.records[key]) for key in sorted(self.records)},
         }
-        write_atomically(path, json.dumps(body, indent=2) + "\n")
+        try:
+            write_within(root, str(MANIFEST_PATH), json.dumps(body, indent=2) + "\n")
+        except UnsafePath as exc:
+            raise ManifestError(f"{MANIFEST_PATH} cannot be written: {exc}") from exc
+        except OSError as exc:
+            raise ManifestError(f"{MANIFEST_PATH} cannot be written: {exc}") from exc
         return path
 
     def get(self, artifact_id: str) -> Record | None:

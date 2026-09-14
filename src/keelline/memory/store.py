@@ -27,23 +27,22 @@ inherited `GIT_DIR` can point this module at another project's notes. Both halve
 by tests, and both matter because a committed `.claude/settings.json` may carry an `env` block
 that applies with no trust prompt in a non-interactive session.
 
-The *machine file* is a weaker claim than this docstring used to make. `machine_config_path`
-gates `KEELLINE_CONFIG` behind `interactive` for exactly that reason — but it reads
-`XDG_CONFIG_HOME` **ungated** (`config/machine.py`), and this lane routes §9.1's overlay
-anchor (`overlay_root(None)`) and §9.4's trust record (`trust._trust_file(None)`) through it.
-Wherever `machine` is `None` — the `SessionStart` handler's path; every `memory` command
-threads `--machine` — an `env` block therefore chooses which overlay root `permitted_roots` is
-computed from, and which `trust.json` `may_inject` consults.
+**The machine file makes the same claim now.** `machine_config_path` gates `KEELLINE_CONFIG`
+behind `interactive` — and `XDG_CONFIG_HOME` with it, which it did not, and which made the
+first gate worth nothing: both variables reach the same file and this lane routes §9.1's
+overlay anchor (`overlay_root(None)`) and §9.4's trust record (`trust._trust_file(None)`)
+through it. A committed `env` block therefore chose which overlay root `permitted_roots` was
+computed from, and which `trust.json` `may_inject` consulted, wherever no `--machine` was
+threaded.
 
-Stated exactly, because the residual exposure is not the same size as the invariant it breaks:
-pointing the variable somewhere of the author's choosing **suppresses** memory — no overlay
-root and no recorded digest means overlay stores refuse to resolve and the gate fails closed —
-while making it *grant* anything additionally requires a pre-recorded hash matching a digest of
-the store at the clone's absolute path, which is the key `trust` records under. No injection
-was built from this alone. It is still a hole in an invariant two other properties lean on, and
-the fix is not this lane's to make: `config/machine.py` belongs to the foundation, and the
-question for it is whether `XDG_CONFIG_HOME` should be gated behind `interactive` the way
-`KEELLINE_CONFIG` already is.
+Stated exactly, because the exposure was not the same size as the invariant it broke: pointing
+a variable somewhere of the author's choosing **suppressed** memory — no overlay root and no
+recorded digest means overlay stores refuse to resolve and the gate fails closed — while making
+it *grant* anything additionally required a pre-recorded hash matching a digest of the store at
+the clone's absolute path, which is the key `trust` records under. No injection was ever built
+from it. It was still a hole in an invariant two other properties lean on, and closing it in
+`config/machine.py` — the foundation's file — is what makes the claim above about `env` a claim
+about the whole module rather than about `resolve` alone.
 """
 
 from __future__ import annotations

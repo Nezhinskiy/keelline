@@ -36,8 +36,11 @@ matters more. Two copies of one boundary rule is one copy too many.
 
 One of the two gaps is not like the other. The links inside the worktree are read by this
 lane's own bundles, which gate on `trust.may_inject` and wrap what they emit; the harness
-project-memory link is read by the harness's own memory reader, outside both. `link` therefore
-asks the gate before it makes that one — see the note on `link` itself.
+project-memory link is read by the harness's own memory reader, outside both — so it is the one
+hop that leaves this lane's gate entirely, and the one place where asking the gate a slightly
+wrong question costs everything the gate was for. `link` asks it about the directory the link
+exposes, which in overlay mode is repository data even though the notes are not; see the note
+on `link` itself.
 """
 
 from __future__ import annotations
@@ -49,7 +52,7 @@ from keelline.config.paths import contained
 from keelline.config.schema import Config
 from keelline.memory import trust
 from keelline.memory.index import INDEX_NAME, index_source
-from keelline.memory.store import Store, main_checkout
+from keelline.memory.store import Store, in_repository, main_checkout
 
 
 class PartialLink(OSError):
@@ -162,13 +165,28 @@ def link(
     `keelline memory trust --in-repo-memory` hands repository-authored text to the model
     through a channel this lane does not control.
 
-    The condition is `trust.may_inject(store, config, machine=machine)` and nothing narrower.
-    It is already the predicate that means "these bytes may reach the model at all": it
-    short-circuits to True when `inside_project(store)` is False, so the machine owner's own
-    overlay notes keep their link with no record at all, and otherwise it demands a digest that
-    matches what the owner approved. Gating on `inside_project` alone would ask the wrong
-    question (it would refuse a trusted store for ever); gating on the mode would ask the
-    clone.
+    The condition is `trust.may_inject`, and it must be asked **about the directory this link
+    exposes**, which is what `repository_data=in_repository(store, store.path)` says. Asked
+    without that argument it fell through `inside_project(store)`, and in overlay mode that is
+    False by design — every group resolves out into the overlay — while `store.path` is a real
+    directory *inside the repository*. So a clone shipping a committed `docs/memory/MEMORY.md`
+    got the harness link created for it on no trust record at all, and the harness's own
+    **native** memory reader then injected the file with no delimiter, no nonce and no gate.
+    `bundles.blocks` correctly returned `[]` for the same store in the same session: this lane
+    refused to inject the file through the channel it controls, and created the link to the
+    channel it does not.
+
+    `bundles.blocks` already knew to ask the wider question and passes
+    `repository_data=in_repository(store, source)`. The difference here is only *what* is being
+    exposed: a link to a directory exposes every file under it, so the question is whether the
+    **directory** is repository data, not whether the notes are.
+
+    Nothing narrower than `may_inject` will do. It is already the predicate that means "these
+    bytes may reach the model at all": it short-circuits to True when neither
+    `inside_project(store)` nor `repository_data` holds, so the machine owner's own overlay
+    notes keep their link with no record at all, and otherwise it demands a digest that matches
+    what the owner approved. Gating on `inside_project` alone would ask the wrong question (it
+    would refuse a trusted store for ever); gating on the mode would ask the clone.
 
     Raises `PartialLink` — an `OSError` carrying the links already made — when a write fails
     part-way, rather than letting `created` die with the exception. The caller degrades open;
@@ -194,7 +212,12 @@ def link(
                 target = contained(base, name, allow_final_symlink=True)
                 if _link(source.resolve(), target):
                     created.append(target)
-        if trust.may_inject(store, config, machine=machine):
+        if trust.may_inject(
+            store,
+            config,
+            machine=machine,
+            repository_data=in_repository(store, store.path),
+        ):
             harness = harness_memory_path(worktree, home)
             if _link(store.path.resolve(), harness):
                 created.append(harness)

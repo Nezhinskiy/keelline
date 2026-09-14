@@ -461,6 +461,31 @@ def test_a_settings_document_the_engine_cannot_parse_refuses_only_its_own_artifa
     assert [(a.artifact_id, a.verb) for a in result.actions] == [("good", Verb.CREATE)]
 
 
+def test_a_keyed_entries_template_naming_no_entries_raises(tmp_path: Path) -> None:
+    # The symmetric case, and the one that was missing. `Template.entries` defaults to `None`
+    # and `apply_entries(current, {})` means "remove every Keelline entry", so a lane that
+    # forgot one keyword argument uninstalled the user's hook wiring — reported as
+    # `entries_update` / "refreshed", with the manifest rewritten as an ordinary upgrade.
+    settings = tmp_path / ".claude"
+    settings.mkdir()
+    (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
+    template = a_settings_template(OURS)
+    with pytest.raises(Refusal, match="names no entries"):
+        plan(tmp_path, a_config(tmp_path), [replace(template, entries=None)])
+
+
+def test_an_empty_entries_mapping_still_means_remove_everything(tmp_path: Path) -> None:
+    # `{}` is left meaning exactly what it meant: the caller that genuinely wants every marked
+    # entry gone. Only `None` — the default nobody chose — became a refusal.
+    settings = tmp_path / ".claude"
+    settings.mkdir()
+    (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
+    result = plan(tmp_path, a_config(tmp_path), [a_settings_template({})])
+    assert [a.verb for a in result.actions] == [Verb.ENTRIES_UPDATE]
+    apply(tmp_path, result)
+    assert json.loads((settings / "settings.json").read_text(encoding="utf-8")) == {}
+
+
 def test_a_template_naming_no_region_raises_rather_than_becoming_a_refusal(tmp_path: Path) -> None:
     # The boundary of what `plan` converts into a per-artifact refusal. A `MANAGED_REGION`
     # template carrying no region name is a malformed `Template`, so it is a bug in the lane

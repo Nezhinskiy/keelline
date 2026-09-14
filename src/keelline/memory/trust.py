@@ -71,12 +71,12 @@ def wrap(text: str, nonce: str) -> str:
 def _trust_file(machine: Path | None) -> Path:
     """The record `may_inject` consults, beside the machine configuration file.
 
-    `machine=None` resolves it through `machine_config_path`, which gates `KEELLINE_CONFIG`
-    behind `interactive` and reads `XDG_CONFIG_HOME` ungated — so a committed
-    `.claude/settings.json` `env` block chooses which `trust.json` this reads, wherever no
-    `--machine` was threaded. `store.py`'s module docstring states that exposure and its
-    limits in full; the fix, if there is one, belongs to `config/machine.py`, which is the
-    foundation's file and not this lane's.
+    `machine=None` resolves it through `machine_config_path`, which gates **both** variables
+    that can name that file behind `interactive`. It gated only `KEELLINE_CONFIG` once, and
+    `XDG_CONFIG_HOME` beside it chose this very file for a committed `.claude/settings.json`
+    `env` block, wherever no `--machine` was threaded — the gate the security record of this
+    module rests on, bypassed by the variable three lines below it. `store.py`'s module
+    docstring states what that exposure was and what bounded it.
     """
     base = machine_config_path(interactive=False) if machine is None else machine
     return base.parent / "trust.json"
@@ -219,15 +219,56 @@ def _key(store: Store) -> str:
     return str(store.path.resolve())
 
 
+class UnreadableTrustRecord(Refusal):
+    """`trust.json` exists and does not parse as the record it is supposed to be.
+
+    A refusal and not a `Failure`: every caller of `state` and `may_inject` reads a `False` as
+    "not approved", and a corrupt file must never be answered that way twice — once by
+    reporting the store untrusted, and again by the next `record` overwriting what could not be
+    read. Exit 2 is the code a caller may not read as permission.
+    """
+
+
 def _recorded(machine: Path | None) -> dict[str, str]:
+    """Every approval on this machine, or `UnreadableTrustRecord` when the file is broken.
+
+    **Absent and unreadable are not the same answer.** They were: an absent file, an
+    unreadable one, a syntax error and a non-dict payload all returned `{}`. `record` then
+    read `{}`, added one key and wrote the result back — so one stray byte collapsed the
+    machine-wide trust record and the very next `memory trust` persisted the collapse. The
+    owner was told their store was untrusted, with no hint the file was broken, re-ran the
+    command they were told to run, and lost every other project's approval permanently.
+
+    This is the security record of a tool whose whole gate rests on it, so it fails loudly
+    rather than quietly empty. An absent file still answers `{}`: never approving anything is
+    the ordinary state of a fresh machine, and it is the state `record` is for.
+
+    The per-key filter stays, and is deliberately not an error: a value that is not a string
+    is a key this version cannot interpret rather than a file it cannot read, and dropping one
+    costs that project a re-approval instead of costing every project its record.
+    """
     path = _trust_file(machine)
     if not path.is_file():
         return {}
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return {k: v for k, v in raw.items() if isinstance(v, str)} if isinstance(raw, dict) else {}
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise UnreadableTrustRecord(
+            f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
+        ) from exc
+    try:
+        raw = json.loads(text)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise UnreadableTrustRecord(
+            f"{path} is not valid JSON ({exc}); it holds every project's approval on this "
+            f"machine, so nothing here will overwrite it — repair or delete it"
+        ) from exc
+    if not isinstance(raw, dict):
+        raise UnreadableTrustRecord(
+            f"{path} is not a JSON object; it holds every project's approval on this machine, "
+            f"so nothing here will overwrite it — repair or delete it"
+        )
+    return {k: v for k, v in raw.items() if isinstance(v, str)}
 
 
 def state(store: Store, config: Config, *, machine: Path | None = None) -> TrustState:

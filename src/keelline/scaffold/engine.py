@@ -17,29 +17,30 @@ no longer say where it ends, a settings document that is not JSON: each is recor
 `Plan.refusals` and the remaining templates are still decided. `plan` raises only for input no
 per-artifact report could rescue — the configured profile, the manifest itself, and a malformed
 `Template`, which is a bug in the lane that built it rather than a file a user can put right.
+Both shapes of malformed `Template` raise, symmetrically: a managed region that names no
+region, and keyed entries that name no entries. The second did not, and `entries or {}` turned
+it into a silent uninstall of whatever the user had wired up.
 
 *Containment is not a string check.* `contained()` decides whether a path may be written;
 `fsops.open_within` decides what is actually written to, by walking the path with `O_NOFOLLOW`
 and handing back a descriptor. A component can still become a symlink after `contained()` has
 passed — that is the race this layer exists to survive — but it cannot redirect the write: the
 walk fails the open rather than following the link, and the string is never resolved a second
-time, not for the write and not for the parent directories, which `_mkdirs_within` creates one
-component at a time through the same walk rather than with `Path.mkdir`.
+time, not for the write and not for the parent directories, which `fsops.mkdirs_within`
+creates one component at a time through the same walk rather than with `Path.mkdir`.
 """
 
 from __future__ import annotations
 
-import contextlib
-import os
 import re
 from collections.abc import Sequence
 from importlib import resources
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, open_within, write_atomically_at
+from keelline.fsops import UnsafePath, remove_within, write_within
 from keelline.scaffold.entries import EntriesError, apply_entries, owned
 from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
 from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Template, Verb
@@ -52,8 +53,9 @@ _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # where it ends, and a settings document that cannot be parsed. Both are ordinary user state — a
 # bad merge, a half-typed edit — and both are answered per artifact. `Refusal` itself is
 # deliberately not caught: `_payload_and_stamp` raises it for a `MANAGED_REGION` template
-# carrying no region name, which is a malformed `Template` and so a bug in the lane that built
-# it, not something a user can put right by editing a file.
+# carrying no region name and for a `KEYED_ENTRIES` template carrying no entries, each a
+# malformed `Template` and so a bug in the lane that built it, not something a user can put
+# right by editing a file.
 _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
@@ -136,7 +138,16 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
         body = template.render()
         return upsert(current or "", template.region, body, template.style), body.rstrip("\r\n")
     if template.kind is Kind.KEYED_ENTRIES:
-        document = apply_entries(current or "", template.entries or {})
+        if template.entries is None:
+            # `{}` means "remove every Keelline entry", and `Template.entries` defaults to
+            # `None` — so `template.entries or {}` read a lane that forgot one keyword argument
+            # as a lane asking to uninstall the user's hook wiring, reported the result as
+            # `entries_update` / "refreshed", and rewrote the manifest as though it were an
+            # ordinary upgrade. The malformed-`Template` rule five lines above is the same
+            # rule: a bug in the lane that built it, raised rather than acted on. `{}` is left
+            # to mean removal, for the caller that genuinely wants it.
+            raise Refusal(f"{template.id}: a keyed-entries template names no entries")
+        document = apply_entries(current or "", template.entries)
         return document, owned(document)
     body = template.render()
     return body, body
@@ -396,33 +407,20 @@ def apply(root: Path, planned: Plan) -> Applied:
     return Applied(written=written, removed=removed, skipped=skipped)
 
 
-def _mkdirs_within(root: Path, target: str) -> None:
-    """Create `target`'s parent directories without ever leaving the root.
-
-    `Path.mkdir(parents=True)` cannot do this job: it takes a string and it follows symlinks,
-    so a component that became a link after `contained()` passed makes it create directories
-    outside the root — and it creates them before the `O_NOFOLLOW` walk gets a chance to
-    refuse. Each component here is created relative to a descriptor the walk just opened, so a
-    symlink anywhere along the path refuses with nothing created.
-    """
-    parts = PurePosixPath(target).parts[:-1]
-    for depth in range(len(parts)):
-        branch = "/".join(parts[: depth + 1])
-        with open_within(root, branch) as (dir_fd, name), contextlib.suppress(FileExistsError):
-            os.mkdir(name, dir_fd=dir_fd)
-
-
 def _write(root: Path, target: str, payload: str) -> None:
     """Create the parents and replace the file, or refuse — never raise a bare `OSError`.
+
+    The walk, the parent creation and the atomic replacement are `fsops.write_within`; what is
+    this area's is the translation below. That split is deliberate: `attach`, `setup`,
+    `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
+    is the walk, not this area's verdict vocabulary.
 
     The second clause is what keeps C5's exit 2 reachable. A user who saves a file where a
     directory component belongs while reading the dry-run report, then confirms, would
     otherwise get a traceback instead of a refusal, and no race is needed for that.
     """
     try:
-        _mkdirs_within(root, target)
-        with open_within(root, target) as (dir_fd, name):
-            write_atomically_at(dir_fd, name, payload)
+        write_within(root, target, payload)
     except UnsafePath as exc:
         raise Refusal(str(exc)) from exc
     except OSError as exc:
@@ -434,15 +432,13 @@ def _remove(root: Path, target: str, payload: str | None) -> None:
 
     The same second clause `_write` carries, for the same reason: a directory Keelline may read
     but not write to arrives here as EACCES from `os.unlink` rather than as an `UnsafePath`, and
-    only a refusal keeps C5's exit 2 reachable. `contextlib.suppress` is entered after
-    `open_within` has yielded, so it covers the unlink and not the walk.
+    only a refusal keeps C5's exit 2 reachable.
     """
     if payload is not None:
         _write(root, target, payload)
         return
     try:
-        with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
-            os.unlink(name, dir_fd=dir_fd)
+        remove_within(root, target)
     except UnsafePath as exc:
         raise Refusal(str(exc)) from exc
     except OSError as exc:
