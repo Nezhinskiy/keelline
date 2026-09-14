@@ -89,6 +89,12 @@ class Reconciliation:
     # this names the ones where that was a refusal rather than an absence, because a drop the
     # command cannot mention is a drop nobody reviews.
     refused_harvest: list[str] = field(default_factory=list)
+    # The write-side mirror of `refused_harvest`. A note whose own file is repository data, or
+    # a `memory.index_extra` entry (always repository data — it lives in `keelline.toml`),
+    # whose line would otherwise have been published into an index that reaches outside this
+    # repository (`_publishable`). Named here for the same reason `refused_harvest` is: a drop
+    # `render_index` makes on its own has no other channel back to a person running the command.
+    refused_publish: list[str] = field(default_factory=list)
 
 
 def _resolved_if_permitted(
@@ -199,7 +205,51 @@ def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
     return in_repository(store, note.path)
 
 
-def _relative(note: Note, store: Store) -> str:
+def _to_machine(store: Store, config: Config, machine: Path | None) -> bool:
+    """Whether the file `_destination` would write to reaches outside this project's own
+    repository — the write side of the same domain question `_harvestable` asks for reads.
+
+    Deliberately does not call `_destination`: a refused symlink is not a domain question, it
+    is a write that cannot happen at all, and the caller that actually attempts one
+    (`write_index`, `check_index`) is the one that raises for it. This only has to be right
+    when a write can actually land somewhere, so a refused or unrecorded overlay answers False
+    (repository) here — inert, because nothing downstream renders once that write is attempted.
+
+    Mirrors `index_source` and `_destination`'s own three-cause shape rather than reusing
+    either return value: `index_source`'s None already conflates "refused" with
+    "permitted-but-dangling", which is exactly the distinction this needs kept apart from the
+    *other* direction — a permitted, dangling link is machine state (`True`) the moment §9.1
+    would honour it, not only once something has been written there.
+    """
+    source = index_source(store, config, machine)
+    if source is not None:
+        return not in_repository(store, source)
+    target = store.path / INDEX_NAME
+    if not target.is_symlink():
+        return not in_repository(store, target)
+    resolved = _resolved_if_permitted(store, config, machine, target)
+    return resolved is not None and not in_repository(store, resolved)
+
+
+def _publishable(store: Store, to_machine: bool, note: Note) -> bool:
+    """Whether this note's own `index:` line may appear in an index that reaches `to_machine`.
+
+    The write-side mirror of `_harvestable`. Harvesting closes index→note: a repository index
+    may not write into a note that is not itself repository data. Nothing closed note→index —
+    a note's *own* `index:` line (curated in its frontmatter, or already harvested) is
+    repository-authored text whenever the note's own file is repository data, and `render_index`
+    put that text into `MEMORY.md` unconditionally, including when this run's destination is
+    machine state (§6.2's `common/memory`, shared across every project on the machine and
+    synced across machines). Same rule as `_harvestable`, same domain: repository bytes do not
+    become machine state.
+
+    `to_machine` is asked once per render, not recomputed per note, so every note in one run is
+    held to the same answer about where the index is actually going.
+    """
+    return not to_machine or not in_repository(store, note.path)
+
+
+def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
@@ -215,6 +265,7 @@ def reconcile(
     """
     source = index_source(store, config, machine)
     appended = _appended(source)
+    to_machine = _to_machine(store, config, machine)
     groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
     notes: list[Note] = []
@@ -222,11 +273,14 @@ def reconcile(
     provisional: list[str] = []
     written: list[Path] = []
     refused: list[str] = []
+    refused_publish: list[str] = []
     for note in found.notes:
         if note.index:
+            if not _publishable(store, to_machine, note):
+                refused_publish.append(note.name)
             notes.append(note)
             continue
-        line = appended.get(_relative(note, store))
+        line = appended.get(_relative(note))
         if line and not _harvestable(store, source, note):
             refused.append(note.name)
             line = None
@@ -239,8 +293,17 @@ def reconcile(
         if write:
             write_note(note)
             written.append(note.path)
+        if not _publishable(store, to_machine, note):
+            refused_publish.append(note.name)
         notes.append(note)
-    return Reconciliation(notes, harvested, provisional, found.unreadable, written, refused)
+    if to_machine:
+        # Always repository data — `keelline.toml` is a committed file — so every survivor of
+        # `_extra`'s own containment checks is still a contributing entry this destination may
+        # not carry, the same as a repository note's line above.
+        refused_publish.extend(_extra(config, store))
+    return Reconciliation(
+        notes, harvested, provisional, found.unreadable, written, refused, refused_publish
+    )
 
 
 def _order(note: Note) -> tuple[int, int, str]:
@@ -252,16 +315,16 @@ def _order(note: Note) -> tuple[int, int, str]:
     )
 
 
-def _entry(note: Note, store: Store) -> str:
-    return f"- [{note.index}]({_relative(note, store)})"
+def _entry(note: Note) -> str:
+    return f"- [{note.index}]({_relative(note)})"
 
 
-def _section(group: str, notes: list[Note], store: Store) -> list[str]:
+def _section(group: str, notes: list[Note]) -> list[str]:
     lines = [f"## {section_title(group)}", ""]
     if is_volatile(group):
         lines += [VOLATILE_LEAD, ""]
     ungrouped = sorted((n for n in notes if not n.group), key=_order)
-    lines += [_entry(note, store) for note in ungrouped]
+    lines += [_entry(note) for note in ungrouped]
     if ungrouped:
         lines.append("")
     # Grouped notes are collected by their `group` sub-heading first, then each heading is
@@ -274,7 +337,7 @@ def _section(group: str, notes: list[Note], store: Store) -> list[str]:
             by_heading.setdefault(note.group, []).append(note)
     for heading in sorted(by_heading, key=lambda h: min(_order(n) for n in by_heading[h])):
         lines += [f"### {heading}", ""]
-        lines += [_entry(note, store) for note in sorted(by_heading[heading], key=_order)]
+        lines += [_entry(note) for note in sorted(by_heading[heading], key=_order)]
     if by_heading:
         lines.append("")
     return lines
@@ -292,9 +355,12 @@ def _extra(config: Config, store: Store) -> list[str]:
     last component escaping the root is the same escape as one halfway up.
 
     An entry that escapes is dropped, the way `_group_targets` drops a group whose target it
-    refuses. Dropped silently, because `render_index` returns a string and has no report
-    channel; `store.unavailable` is the shape that would carry one, and giving the index its
-    own would change `Reconciliation` for every caller.
+    refuses. Dropped silently, because this function returns a plain list and has no report
+    channel of its own; `store.unavailable` is the shape that would carry one. (A *survivor* of
+    these checks can still be dropped later, loudly, by `render_index`'s own domain gate —
+    `reconcile` names those in `Reconciliation.refused_publish` — but that is a different
+    question from the one this function answers, and this function does not need to know it is
+    asked.)
 
     **What is kept is the path `contained` returned, not the string that was checked.** The
     value was validated as a path and then consumed as text: `contained` answers about
@@ -321,15 +387,27 @@ def _extra(config: Config, store: Store) -> list[str]:
     return kept
 
 
-def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
+def render_index(
+    reconciled: Reconciliation, config: Config, store: Store, *, machine: Path | None = None
+) -> str:
+    """The rendered `MEMORY.md` text, holding back whatever `_publishable` refuses.
+
+    `machine` is optional and defaults to the answer every in-repo and local-only store already
+    gets — `_to_machine` can only be `True` when the destination is a §9.1-permitted symlink
+    resolving outside this project's repository, which happens only in overlay mode. Every
+    existing caller that never had a reason to think about the overlay keeps rendering exactly
+    what it always has; only a destination that actually reaches machine state drops anything.
+    """
+    to_machine = _to_machine(store, config, machine)
     lines = [HEADER.rstrip("\n"), ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
-        by_group.setdefault(note.group_name, []).append(note)
+        if _publishable(store, to_machine, note):
+            by_group.setdefault(note.group_name, []).append(note)
     for group in config.memory.groups:
         if by_group.get(group):
-            lines += _section(group, by_group[group], store)
-    extra = _extra(config, store)
+            lines += _section(group, by_group[group])
+    extra = [] if to_machine else _extra(config, store)
     if extra:
         lines += [f"## {EXTRA_TITLE}", ""]
         lines += [f"- [{target}]({target})" for target in extra]
@@ -406,7 +484,7 @@ def check_index(
     """`machine` for the same reason `reconcile` takes one: without it this cannot call
     `index_source`, and a check that answers about a different file than the one harvested and
     injected is a green CI run over an empty bundle. Pass the value used to resolve `store`."""
-    text = render_index(reconciled, config, store)
+    text = render_index(reconciled, config, store, machine=machine)
     path = _destination(store, config, machine)
     current = path.read_text(encoding="utf-8") if path.is_file() else None
     caps = []
