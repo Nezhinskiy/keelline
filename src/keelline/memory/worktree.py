@@ -132,21 +132,13 @@ def _tree_base(worktree: Path, store: Store) -> Path | None:
     return contained(worktree, str(relative))
 
 
-def link(
-    worktree: Path,
-    store: Store,
-    config: Config,
-    *,
-    home: Path | None = None,
-    machine: Path | None = None,
-) -> list[Path]:
+def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> list[Path]:
     """Create what is missing and return it; already-correct links are not re-made.
 
     A no-op for the main checkout itself: it already holds the real store, not a link to it,
-    so there is nothing for this function to do there. `machine` is threaded through only to
-    validate a symlinked index in overlay mode (`index.index_source`); pass the same value
-    used to resolve `store` in the first place, or the two can disagree about where the
-    overlay is.
+    so there is nothing for this function to do there. Validating a symlinked index in overlay
+    mode (`index.index_source`) needs the machine file, and takes it from `store.machine`, so
+    the two can no longer disagree about where the overlay is.
 
     Raises `PathEscape` rather than skipping when a name leaves the tree. Every `name` here is
     repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and §7.4 says
@@ -200,7 +192,7 @@ def link(
         if base is not None:
             base.mkdir(parents=True, exist_ok=True)
             sources: dict[str, Path] = dict(store.groups)
-            found = index_source(store, config, machine)
+            found = index_source(store, config)
             if found is not None:
                 sources[INDEX_NAME] = found
             for name in linked_names(config):
@@ -212,12 +204,7 @@ def link(
                 target = contained(base, name, allow_final_symlink=True)
                 if _link(source.resolve(), target):
                     created.append(target)
-        if trust.may_inject(
-            store,
-            config,
-            machine=machine,
-            repository_data=in_repository(store, store.path),
-        ):
+        if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):
             harness = harness_memory_path(worktree, home)
             if _link(store.path.resolve(), harness):
                 created.append(harness)

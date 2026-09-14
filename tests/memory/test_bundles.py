@@ -92,7 +92,9 @@ def a_store(
         encoding="utf-8",
     )
     config = load(root, machine=tmp_path / "absent.toml")
-    store = Store(base, mode, root, {g: base / g for g in GROUPS})
+    # A machine file of this test's own. Without one the store carries `machine=None`, and
+    # `may_inject` would consult the developer's real `~/.config/keelline/trust.json`.
+    store = Store(base, mode, root, {g: base / g for g in GROUPS}, machine=a_machine(tmp_path))
     return store, config
 
 
@@ -162,10 +164,9 @@ def test_preset_rules_emit_nothing_while_the_preset_has_none(tmp_path: Path) -> 
 
 def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:
     store, config = a_store(tmp_path, mode="local-only")
-    machine = a_machine(tmp_path)
-    assert blocks(Bundle.STANDING_RULES, store, config, machine=machine) == []
-    record(store, config, machine=machine)
-    produced = blocks(Bundle.STANDING_RULES, store, config, machine=machine)
+    assert blocks(Bundle.STANDING_RULES, store, config) == []
+    record(store, config)
+    produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert all(block.startswith(DELIMITER) for block in produced)
 
@@ -183,14 +184,13 @@ def test_the_owners_own_preset_rules_need_no_trust(
         bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
     )
     store, config = a_store(tmp_path, mode="local-only")
-    machine = a_machine(tmp_path)
-    assert blocks(Bundle.PRESET_RULES, store, config, machine=machine) != []
-    assert blocks(Bundle.STANDING_RULES, store, config, machine=machine) == []
+    assert blocks(Bundle.PRESET_RULES, store, config) != []
+    assert blocks(Bundle.STANDING_RULES, store, config) == []
 
 
 def test_an_overlay_store_is_not_wrapped_as_repository_data(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
-    produced = blocks(Bundle.STANDING_RULES, store, config, machine=a_machine(tmp_path))
+    produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
 
@@ -395,7 +395,7 @@ def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_pa
     other.mkdir(parents=True)
     (other / INDEX_NAME).write_text("# another client's index\n", encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(other / INDEX_NAME)
-    assert blocks(Bundle.INDEX, store, config, machine=machine) == []
+    assert blocks(Bundle.INDEX, store, config) == []
 
 
 @needs_git
@@ -408,7 +408,7 @@ def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_pat
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
     (share / INDEX_NAME).write_text(content, encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share / INDEX_NAME)
-    assert blocks(Bundle.INDEX, store, config, machine=machine) == [content]
+    assert blocks(Bundle.INDEX, store, config) == [content]
 
 
 @needs_git
@@ -418,9 +418,9 @@ def test_an_index_committed_to_the_repository_is_gated_and_wrapped(tmp_path: Pat
     store, config, machine, _ = a_resolved_overlay_store(tmp_path)
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
     (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
-    assert blocks(Bundle.INDEX, store, config, machine=machine) == []
-    record(store, config, machine=machine)
-    produced = blocks(Bundle.INDEX, store, config, machine=machine)
+    assert blocks(Bundle.INDEX, store, config) == []
+    record(store, config)
+    produced = blocks(Bundle.INDEX, store, config)
     assert produced != []
     assert all(block.startswith(DELIMITER) for block in produced)
     assert content in "\n".join(produced)
@@ -432,6 +432,6 @@ def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: P
     # overlay notes are not repository content, and wrapping them as data would defeat every
     # standing rule in the mode this project actually ships.
     store, config, machine, _ = a_resolved_overlay_store(tmp_path)
-    produced = blocks(Bundle.STANDING_RULES, store, config, machine=machine)
+    produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)

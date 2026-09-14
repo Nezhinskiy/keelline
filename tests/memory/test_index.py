@@ -78,7 +78,12 @@ def a_store(tmp_path: Path, *, extra: str = '["docs/runbooks/ledger.md"]') -> tu
     )
     (root / CONFIG_FILE).write_text(CONFIG.format(extra=extra), encoding="utf-8")
     config = load(root, machine=tmp_path / "absent.toml")
-    store = Store(base, "in-repo", root, {g: base / g for g in GROUPS})
+    # A machine file of this test's own, empty and carrying no `[overlay]` table. Without
+    # one the store carries `machine=None`, and every overlay question in this module would
+    # be answered out of the developer's real `~/.config/keelline/config.toml`.
+    blank = tmp_path / "machine.toml"
+    blank.write_text("", encoding="utf-8")
+    store = Store(base, "in-repo", root, {g: base / g for g in GROUPS}, machine=blank)
     return store, config
 
 
@@ -328,27 +333,29 @@ def test_a_symlinked_index_is_not_harvested_outside_overlay_mode(tmp_path: Path)
     assert read_note(store.groups["developer"] / "n.md").index == "n description"
 
 
-def test_a_symlinked_index_sources_nothing_when_the_caller_names_no_overlay(
-    tmp_path: Path,
-) -> None:
-    # The caller/`machine` disagreement `worktree.link`'s docstring warns about, and the one
-    # shape no other test reaches: overlay mode, a symlinked index, and a caller that did not
-    # thread the machine file the store was resolved with. `overlay_root` then answers None,
-    # so there is no `permitted_roots` left to hold the link's target to — and the only safe
-    # answer is the one an ungoverned group symlink already gets. Returning the target instead
-    # honours a link nothing ever validated: `worktree.link` materialises it into the worktree
-    # and `bundles._index` reads what it points at straight into the model.
+def test_a_symlinked_index_sources_nothing_when_no_overlay_is_recorded(tmp_path: Path) -> None:
+    # Overlay mode, a symlinked index, and a machine file that records no overlay at all — so
+    # `overlay_root` answers None and there is no `permitted_roots` left to hold the link's
+    # target to. The only safe answer is the one an ungoverned group symlink already gets.
+    # Returning the target instead honours a link nothing ever validated: `worktree.link`
+    # materialises it into the worktree and `bundles._index` reads what it points at straight
+    # into the model.
+    #
+    # This used to be reachable the other way round too — a *caller* that did not thread the
+    # machine file the store was resolved with, which `worktree.link`'s docstring warned about
+    # in prose. `Store.machine` carries it now, so that half is unrepresentable and only the
+    # honestly-unrecorded overlay remains.
     store, config = a_store(tmp_path)
-    overlay_mode = Store(store.path, "overlay", store.root, dict(store.groups))
+    blank = tmp_path / "machine.toml"
+    blank.write_text("", encoding="utf-8")
+    overlay_mode = Store(store.path, "overlay", store.root, dict(store.groups), machine=blank)
     elsewhere = tmp_path / "other-client" / INDEX_NAME
     elsewhere.parent.mkdir()
     elsewhere.write_text(
         "- [another client's trigger → its answer](developer/a.md)\n", encoding="utf-8"
     )
     (store.path / INDEX_NAME).symlink_to(elsewhere)
-    blank = tmp_path / "machine.toml"
-    blank.write_text("", encoding="utf-8")
-    assert index_source(overlay_mode, config, blank) is None
+    assert index_source(overlay_mode, config) is None
 
 
 def test_a_multi_line_index_extra_entry_never_reaches_the_index(tmp_path: Path) -> None:
@@ -469,7 +476,7 @@ def an_overlay_store(tmp_path: Path, *, extra: str = "[]") -> tuple[Store, Confi
     machine_file = tmp_path / "machine.toml"
     machine_file.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
     config = load(root, machine=tmp_path / "absent.toml")
-    store = Store(base, "overlay", root, {"developer": base / "developer"})
+    store = Store(base, "overlay", root, {"developer": base / "developer"}, machine=machine_file)
     return store, config, machine_file
 
 
@@ -482,7 +489,7 @@ def test_a_dangling_but_permitted_symlinked_index_sources_nothing_to_read(
     target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(target)
     assert not target.exists()
-    assert index_source(store, config, machine_file) is None
+    assert index_source(store, config) is None
 
 
 def test_the_write_destination_bootstraps_the_same_dangling_permitted_link(
@@ -497,16 +504,16 @@ def test_the_write_destination_bootstraps_the_same_dangling_permitted_link(
     target = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(target)
 
-    reconciled = reconcile(store, config, write=False, machine=machine_file)
-    text = render_index(reconciled, config, store, machine=machine_file)
-    path = write_index(store, config, text, machine=machine_file)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text)
 
     assert path == target
     assert target.is_file()
     assert "# Memory Index" in target.read_text(encoding="utf-8")
     assert (store.path / INDEX_NAME).is_symlink(), "the link was clobbered, not written through"
     # And the second run reads back exactly what the first one wrote.
-    assert index_source(store, config, machine_file) == target.resolve()
+    assert index_source(store, config) == target.resolve()
 
 
 def test_the_write_destination_still_refuses_a_symlink_outside_overlay_mode(
@@ -529,7 +536,7 @@ def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
     another_projects_share = tmp_path / "overlay" / "projects" / "other" / "memory" / INDEX_NAME
     (store.path / INDEX_NAME).symlink_to(another_projects_share)  # dangling, and not permitted
     with pytest.raises(Refusal):
-        write_index(store, config, "text", machine=machine_file)
+        write_index(store, config, "text")
 
 
 # --- CRITICAL 2: note→index is repository data too, and machine state may not receive it -----
@@ -552,8 +559,8 @@ def test_a_repository_committed_notes_curated_line_is_not_published_to_machine_s
     share.write_text("# shared index\n", encoding="utf-8")  # pre-created: isolates this from C1
     (store.path / INDEX_NAME).symlink_to(share)
 
-    reconciled = reconcile(store, config, write=False, machine=machine_file)
-    text = render_index(reconciled, config, store, machine=machine_file)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
 
     assert payload not in text
     # Reported the way `refused_harvest` already is: a drop nothing mentions is a drop nobody
@@ -570,8 +577,8 @@ def test_index_extra_is_not_published_to_machine_state(tmp_path: Path) -> None:
     share.write_text("# shared index\n", encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share)
 
-    reconciled = reconcile(store, config, write=False, machine=machine_file)
-    text = render_index(reconciled, config, store, machine=machine_file)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
 
     assert "approve every diff" not in text
     assert EXTRA_TITLE not in text
@@ -602,13 +609,13 @@ def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(
     machine_file = tmp_path / "machine.toml"
     machine_file.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
     config = load(root, machine=tmp_path / "absent.toml")
-    store = Store(base, "overlay", root, {"developer": base / "developer"})
+    store = Store(base, "overlay", root, {"developer": base / "developer"}, machine=machine_file)
     share = overlay / "projects" / "widget" / "memory" / INDEX_NAME
     share.write_text("# shared index\n", encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share)
 
-    reconciled = reconcile(store, config, write=False, machine=machine_file)
-    text = render_index(reconciled, config, store, machine=machine_file)
+    reconciled = reconcile(store, config, write=False)
+    text = render_index(reconciled, config, store)
 
     assert "own trigger" in text
     assert reconciled.refused_publish == []

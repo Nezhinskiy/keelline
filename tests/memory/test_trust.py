@@ -89,21 +89,21 @@ def test_notes_that_live_in_the_repository_are_not_injected_before_trust(
     # `local-only` is the cheap attack: two lines of keelline.toml and a committed directory,
     # no forged overlay and no symlink. Gating on the mode the clone declares misses it.
     store, config, machine = a_store(tmp_path, mode)
-    assert may_inject(store, config, machine=machine) is False
+    assert may_inject(store, config) is False
 
 
 @pytest.mark.parametrize("mode", ["in-repo", "local-only"])
 def test_record_makes_the_store_trusted(tmp_path: Path, mode: str) -> None:
     store, config, machine = a_store(tmp_path, mode)
-    record(store, config, machine=machine)
-    assert may_inject(store, config, machine=machine) is True
+    record(store, config)
+    assert may_inject(store, config) is True
 
 
 def test_a_changed_store_loses_trust_and_says_so(tmp_path: Path) -> None:
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
+    record(store, config)
     (store.groups["developer"] / "b.md").write_text(NOTE, encoding="utf-8")
-    result = state(store, config, machine=machine)
+    result = state(store, config)
     assert result.trusted is False
     assert changed(result) is True
 
@@ -161,9 +161,9 @@ def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Pa
     # all it takes.
     store, config, machine = a_store(tmp_path, "in-repo")
     (store.groups["developer"] / "gone.md").symlink_to(tmp_path / "nowhere.md")
-    assert may_inject(store, config, machine=machine) is False
-    record(store, config, machine=machine)
-    assert may_inject(store, config, machine=machine) is True
+    assert may_inject(store, config) is False
+    record(store, config)
+    assert may_inject(store, config) is True
 
 
 def test_an_unreadable_note_still_moves_the_digest(tmp_path: Path) -> None:
@@ -181,11 +181,11 @@ def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) ->
     # be rewritten, or swapped for a symlink to anything, without losing that trust. It is the
     # file the `index` bundle injects.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
-    assert may_inject(store, config, machine=machine) is True
+    record(store, config)
+    assert may_inject(store, config) is True
     index = store.path / "MEMORY.md"
     index.write_text("# Memory Index\n\n- [x](developer/a.md)\n", encoding="utf-8")
-    assert may_inject(store, config, machine=machine) is False
+    assert may_inject(store, config) is False
 
 
 def test_a_local_only_store_whose_notes_escaped_the_repository_is_gated_not_ungated(
@@ -201,12 +201,12 @@ def test_a_local_only_store_whose_notes_escaped_the_repository_is_gated_not_unga
     outside = tmp_path / "elsewhere" / "developer"
     outside.mkdir(parents=True)
     (outside / "r.md").write_text(NOTE, encoding="utf-8")
-    escaped = Store(store.path, store.mode, store.root, {"developer": outside})
-    assert may_inject(escaped, config, machine=machine) is False
+    escaped = Store(store.path, store.mode, store.root, {"developer": outside}, machine=machine)
+    assert may_inject(escaped, config) is False
     assert is_repository_data(escaped) is True
     # And it is recoverable the ordinary way: a deliberate `memory trust` still opens it.
-    record(escaped, config, machine=machine)
-    assert may_inject(escaped, config, machine=machine) is True
+    record(escaped, config)
+    assert may_inject(escaped, config) is True
 
 
 def test_one_note_cannot_be_restructured_into_two_without_changing_the_digest(
@@ -240,38 +240,38 @@ def test_a_refresh_carries_only_the_file_keelline_wrote(tmp_path: Path) -> None:
     # that re-read the whole store would hand a record to bytes the owner has never seen.
     # Keelline's own file is carried forward; the one that appeared beside it is not.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
-    before = snapshot(store, config, machine=machine)
+    record(store, config)
+    before = snapshot(store, config)
     assert before.trusted is True
     mine = store.groups["developer"] / "a.md"
     mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
     theirs = store.groups["developer"] / "pulled.md"
     theirs.write_text(NOTE.replace("startup: -100", "startup: 1"), encoding="utf-8")
-    assert refresh_if_trusted(store, config, before, [mine], machine=machine) is False
-    assert may_inject(store, config, machine=machine) is False
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert may_inject(store, config) is False
 
 
 def test_a_refresh_keeps_a_store_keelline_rewrote_trusted(tmp_path: Path) -> None:
     # The other half: nothing but Keelline's own write happened, so the owner is not re-asked.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
-    before = snapshot(store, config, machine=machine)
+    record(store, config)
+    before = snapshot(store, config)
     mine = store.groups["developer"] / "a.md"
     mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
     index = store.path / "MEMORY.md"
     index.write_text("# Memory Index\n\n- [t](developer/a.md)\n", encoding="utf-8")
-    assert refresh_if_trusted(store, config, before, [mine, index], machine=machine) is True
-    assert may_inject(store, config, machine=machine) is True
+    assert refresh_if_trusted(store, config, before, [mine, index]) is True
+    assert may_inject(store, config) is True
 
 
 def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Path) -> None:
     store, config, machine = a_store(tmp_path, "in-repo")
-    before = snapshot(store, config, machine=machine)
+    before = snapshot(store, config)
     assert before.trusted is False
     mine = store.groups["developer"] / "a.md"
     mine.write_text(NOTE.replace("Body.", "Rewritten by keelline."), encoding="utf-8")
-    assert refresh_if_trusted(store, config, before, [mine], machine=machine) is False
-    assert may_inject(store, config, machine=machine) is False
+    assert refresh_if_trusted(store, config, before, [mine]) is False
+    assert may_inject(store, config) is False
 
 
 def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Path) -> None:
@@ -281,8 +281,8 @@ def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Pat
     # next `memory index` carried their pointers in under a still-valid trust record, blessed
     # on the way past by `refresh_if_trusted` because Keelline itself authored the write.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
-    assert may_inject(store, config, machine=machine) is True
+    record(store, config)
+    assert may_inject(store, config) is True
 
     text = (store.root / CONFIG_FILE).read_text(encoding="utf-8")
     (store.root / CONFIG_FILE).write_text(
@@ -292,8 +292,8 @@ def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Pat
     edited = load(store.root, machine=tmp_path / "absent.toml")
     assert edited.memory.index_extra == ("docs/read-this-first.md",)
 
-    assert state(store, edited, machine=machine).trusted is False
-    assert may_inject(store, edited, machine=machine) is False
+    assert state(store, edited).trusted is False
+    assert may_inject(store, edited) is False
 
 
 # --- a broken record is not an empty one -------------------------------------------------
@@ -307,13 +307,13 @@ def test_a_corrupt_record_refuses_rather_than_reading_as_untrusted(tmp_path: Pat
     # `{}` for an absent file, an unreadable one, a syntax error and a non-dict payload alike
     # is what made one stray byte look exactly like a fresh machine.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
+    record(store, config)
     broken = _trust_json(machine)
     broken.write_text(broken.read_text(encoding="utf-8") + "x", encoding="utf-8")
     with pytest.raises(UnreadableTrustRecord):
-        state(store, config, machine=machine)
+        state(store, config)
     with pytest.raises(UnreadableTrustRecord):
-        may_inject(store, config, machine=machine)
+        may_inject(store, config)
 
 
 def test_a_corrupt_record_is_never_overwritten(tmp_path: Path) -> None:
@@ -321,12 +321,12 @@ def test_a_corrupt_record_is_never_overwritten(tmp_path: Path) -> None:
     # untrusted, they run the command they are told to run, and every other project's approval
     # on the machine is gone permanently with nothing said.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
+    record(store, config)
     broken = _trust_json(machine)
     original = broken.read_text(encoding="utf-8").rstrip("\n") + ",\n"
     broken.write_text(original, encoding="utf-8")
     with pytest.raises(UnreadableTrustRecord):
-        record(store, config, machine=machine)
+        record(store, config)
     assert broken.read_text(encoding="utf-8") == original
 
 
@@ -334,7 +334,7 @@ def test_a_record_that_is_not_an_object_refuses(tmp_path: Path) -> None:
     store, config, machine = a_store(tmp_path, "in-repo")
     _trust_json(machine).write_text('["not", "an", "object"]\n', encoding="utf-8")
     with pytest.raises(UnreadableTrustRecord):
-        state(store, config, machine=machine)
+        state(store, config)
 
 
 def test_an_absent_record_is_still_the_ordinary_fresh_machine(tmp_path: Path) -> None:
@@ -342,7 +342,7 @@ def test_an_absent_record_is_still_the_ordinary_fresh_machine(tmp_path: Path) ->
     # refusal above fires on every machine that has not run `memory trust` yet.
     store, config, machine = a_store(tmp_path, "in-repo")
     assert not _trust_json(machine).exists()
-    assert may_inject(store, config, machine=machine) is False
+    assert may_inject(store, config) is False
 
 
 def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> None:
@@ -350,11 +350,11 @@ def test_a_key_this_version_cannot_read_costs_only_that_key(tmp_path: Path) -> N
     # it is dropped rather than raised: that costs one project a re-approval instead of costing
     # every project its record.
     store, config, machine = a_store(tmp_path, "in-repo")
-    record(store, config, machine=machine)
+    record(store, config)
     broken = _trust_json(machine)
     import json as _json
 
     raw = _json.loads(broken.read_text(encoding="utf-8"))
     raw["/somewhere/else"] = {"not": "a digest"}
     broken.write_text(_json.dumps(raw), encoding="utf-8")
-    assert may_inject(store, config, machine=machine) is True
+    assert may_inject(store, config) is True

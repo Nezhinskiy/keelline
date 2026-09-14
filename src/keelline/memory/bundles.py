@@ -191,9 +191,7 @@ def _index(source: Path | None) -> list[str]:
         return []
 
 
-def blocks(
-    bundle: Bundle, store: Store, config: Config, *, machine: Path | None = None
-) -> list[str]:
+def blocks(bundle: Bundle, store: Store, config: Config) -> list[str]:
     if bundle is Bundle.PRESET_RULES:
         # The owner's own rules, from the plugin. Never repository content, so no trust gate.
         return _preset_rules(config)
@@ -203,11 +201,11 @@ def blocks(
     # there used to reach the model with `may_inject` returning True on no trust record and
     # `is_repository_data` returning False, unwrapped. Where the file itself sits is the
     # question, and `in_repository` is the one that asks it.
-    source = index_source(store, config, machine) if bundle is Bundle.INDEX else None
+    source = index_source(store, config) if bundle is Bundle.INDEX else None
     from_repository = trust.is_repository_data(store) or (
         source is not None and in_repository(store, source)
     )
-    if not trust.may_inject(store, config, machine=machine, repository_data=from_repository):
+    if not trust.may_inject(store, config, repository_data=from_repository):
         return []
     produced = {
         Bundle.STANDING_RULES: lambda: _standing(store, config),
@@ -238,9 +236,9 @@ def split(parts: Sequence[str], cap: int) -> list[str]:
     return packed
 
 
-def fit(bundle: Bundle, store: Store, config: Config, *, machine: Path | None = None) -> Fit:
+def fit(bundle: Bundle, store: Store, config: Config) -> Fit:
     cap = _cap(config)
-    parts = split(blocks(bundle, store, config, machine=machine), cap)
+    parts = split(blocks(bundle, store, config), cap)
     return Fit(
         parts=len(parts),
         slots=SLOTS[bundle],
@@ -248,15 +246,8 @@ def fit(bundle: Bundle, store: Store, config: Config, *, machine: Path | None = 
     )
 
 
-def render(
-    bundle: Bundle,
-    store: Store,
-    config: Config,
-    *,
-    part: int = 1,
-    machine: Path | None = None,
-) -> str | None:
-    parts = split(blocks(bundle, store, config, machine=machine), _cap(config))
+def render(bundle: Bundle, store: Store, config: Config, *, part: int = 1) -> str | None:
+    parts = split(blocks(bundle, store, config), _cap(config))
     if part < 1 or part > len(parts):
         return None
     return parts[part - 1]

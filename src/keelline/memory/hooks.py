@@ -44,17 +44,28 @@ NO_STORE = "keelline: no memory store for this project"
 LINKED = "keelline: linked {count} memory path(s) into this worktree"
 PARTIAL = LINKED + "; the rest could not be created"
 NOT_LINKED = "keelline: a memory path was refused for this worktree and was not linked"
+# `git` could not be run, or the machine configuration file is broken. Neither is "there is
+# no store": both used to arrive as one, because `store._git` answered `None` for "could not
+# ask" and for "the answer is nothing" alike, and `overlay_root` answered `None` for a
+# syntax error and for an unrecorded overlay alike. Saying `NO_STORE` for those sent the
+# user to `keelline attach` for a fault that was in their machine, not in their project.
+NOT_ASKABLE = "keelline: the memory store could not be located on this machine"
 
 
 def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None:
         return HookResult()
     try:
-        from keelline.errors import Refusal
+        from keelline.errors import Failure, Refusal
         from keelline.memory.store import resolve
         from keelline.memory.worktree import PartialLink, link
 
-        store = resolve(event.project_root, config)
+        try:
+            store = resolve(event.project_root, config)
+        except Failure:
+            # `GitUnavailable` and `MachineConfigError`: the store could not be *asked* about,
+            # which is a different event from there not being one, and the fixed line says so.
+            return HookResult(context=NOT_ASKABLE)
         if store is None:
             return HookResult(context=NO_STORE)
         try:
@@ -66,6 +77,10 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             # from it, "invisible twice". Keep degrading open, and say how many were made
             # instead of letting the list die with the exception.
             return HookResult(context=PARTIAL.format(count=len(partial.created)))
+        except Failure:
+            # `main_checkout` runs first inside `link`, so the same "could not ask `git`" event
+            # can arrive here rather than from `resolve`. One fixed line for one event.
+            return HookResult(context=NOT_ASKABLE)
         except Refusal:
             # Not the same event as a disk error, and deliberately not reported as one.
             # `link` raises `PathEscape` when a repository-controlled `memory.groups` name

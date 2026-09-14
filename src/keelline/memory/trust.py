@@ -271,17 +271,17 @@ def _recorded(machine: Path | None) -> dict[str, str]:
     return {k: v for k, v in raw.items() if isinstance(v, str)}
 
 
-def state(store: Store, config: Config, *, machine: Path | None = None) -> TrustState:
+def state(store: Store, config: Config) -> TrustState:
     current = store_digest(store, config)
-    recorded = _recorded(machine).get(_key(store))
+    recorded = _recorded(store.machine).get(_key(store))
     return TrustState(trusted=recorded == current, recorded=recorded, current=current)
 
 
-def record(store: Store, config: Config, *, machine: Path | None = None) -> TrustState:
-    raw = _recorded(machine)
+def record(store: Store, config: Config) -> TrustState:
+    raw = _recorded(store.machine)
     raw[_key(store)] = store_digest(store, config)
-    write_atomically(_trust_file(machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
-    return state(store, config, machine=machine)
+    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    return state(store, config)
 
 
 @dataclass(frozen=True)
@@ -298,9 +298,9 @@ class Snapshot:
     entries: dict[str, str]
 
 
-def snapshot(store: Store, config: Config, *, machine: Path | None = None) -> Snapshot:
+def snapshot(store: Store, config: Config) -> Snapshot:
     read = _read(store, config)
-    recorded = _recorded(machine).get(_key(store))
+    recorded = _recorded(store.machine).get(_key(store))
     return Snapshot(trusted=recorded == _digest_of(read), entries=dict(read))
 
 
@@ -309,8 +309,6 @@ def refresh_if_trusted(
     config: Config,
     before: Snapshot,
     written: Iterable[Path],
-    *,
-    machine: Path | None = None,
 ) -> bool:
     """Carry trust across a write Keelline itself authored, and across nothing else.
 
@@ -348,15 +346,13 @@ def refresh_if_trusted(
             return False  # it appeared while the command ran, and Keelline did not write it
     if not set(before.entries) <= {key for key, _ in expected}:
         return False  # an approved file is gone, and Keelline does not delete notes
-    raw = _recorded(machine)
+    raw = _recorded(store.machine)
     raw[_key(store)] = _digest_of(expected)
-    write_atomically(_trust_file(machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    write_atomically(_trust_file(store.machine), json.dumps(raw, indent=2, sort_keys=True) + "\n")
     return True
 
 
-def may_inject(
-    store: Store, config: Config, *, machine: Path | None = None, repository_data: bool = False
-) -> bool:
+def may_inject(store: Store, config: Config, *, repository_data: bool = False) -> bool:
     """Whether this store's content may reach the model at all.
 
     `repository_data` is how a caller reports a file `inside_project` cannot see. The index
@@ -368,7 +364,7 @@ def may_inject(
     """
     if not (repository_data or inside_project(store)):
         return True
-    return state(store, config, machine=machine).trusted
+    return state(store, config).trusted
 
 
 def is_repository_data(store: Store) -> bool:

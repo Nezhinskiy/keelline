@@ -57,6 +57,7 @@ from pathlib import Path
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
+from keelline.errors import Failure
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 PROJECT_RECORD = "project.toml"
@@ -83,13 +84,91 @@ class Store:
     # rule — never put a value out of this dict into model context unwrapped; `trust.wrap` it
     # first if a consumer must show the detail.
     unavailable: dict[str, str] = field(default_factory=dict)
+    # The machine file this store was resolved against, carried rather than re-passed.
+    #
+    # It used to be an optional keyword on about twenty functions across four modules, five of
+    # which carried a docstring paragraph asking the caller *in prose* to "pass the same
+    # `machine` used to resolve `store`". Nothing enforced it, and `None` was not inert: it
+    # re-read `$XDG_CONFIG_HOME/keelline/config.toml` out of the process environment, silently
+    # changing `permitted_roots`, the index destination, and which `trust.json` was consulted.
+    # A caller that forgot one argument got a different overlay, a different write target and a
+    # different trust record, with nothing to say so.
+    #
+    # `Store` is frozen and `resolve` builds it exactly once, from the `machine` it was given.
+    # Putting the value here makes the mismatch unrepresentable instead of documented.
+    machine: Path | None = None
 
-    def group_dir(self, group: str) -> Path | None:
-        return self.groups.get(group)
+
+class GitUnavailable(Failure):
+    """`git` could not be run at all, or answered with an error.
+
+    Distinct from "git ran and said no", and the distinction is the whole point of the class.
+    `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
+    every caller read "could not ask" as "the answer is nothing" — and the user was told to run
+    `keelline attach` when the real fault was their `git`. This review machine hit exactly that
+    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `_GIT_ENV_KEEP` scrubs
+    `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
+    """
 
 
-def _git(root: Path, *args: str) -> str | None:
-    env = {key: os.environ[key] for key in _GIT_ENV_KEEP if key in os.environ}
+@dataclass(frozen=True)
+class GitAnswer:
+    """Three values, where there were two: an answer, no answer, or could not ask.
+
+    `value` is the answer when there is one. `ran` is False only when `git` could not be run or
+    exited non-zero — an empty stdout from a successful run is "no answer", which is a fact
+    about the repository rather than about the machine.
+    """
+
+    value: str | None
+    ran: bool = True
+
+    @property
+    def unavailable(self) -> bool:
+        return not self.ran
+
+    def require(self, what: str) -> str | None:
+        """The answer, raising rather than answering `None` when `git` could not be asked."""
+        if not self.ran:
+            raise GitUnavailable(
+                f"`git` could not answer {what} in this checkout; Keelline cannot tell where "
+                f"the store is without it — check that `git` runs here"
+            )
+        return self.value
+
+
+def _scrubbed_env() -> dict[str, str]:
+    return {key: os.environ[key] for key in _GIT_ENV_KEEP if key in os.environ}
+
+
+def _git_is_usable() -> bool:
+    """Whether the `git` on this PATH works at all, asked with the same scrubbed environment.
+
+    The discriminator for a non-zero exit, and the reason this is a second call rather than a
+    guess at exit codes. `git` answers "no" with a non-zero exit in ordinary, correct
+    situations — 128 for "not a git repository", 2 for "no such remote" — and a broken install
+    also exits non-zero, so the number alone cannot tell the two apart. This machine's failure
+    was exactly that shape: `/usr/bin/git` was the Xcode shim with an unaccepted licence, which
+    exits non-zero for every invocation, including `--version`. Asking a question that needs no
+    repository separates "git said no" from "git cannot speak".
+
+    Not cached. It runs only after a query has already failed, and caching it would make the
+    answer depend on which test ran first.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+            env=_scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
+
+def _git(root: Path, *args: str) -> GitAnswer:
     try:
         done = subprocess.run(
             ["git", *args],
@@ -97,11 +176,15 @@ def _git(root: Path, *args: str) -> str | None:
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
-            env=env,
+            env=_scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+        return GitAnswer(None, ran=False)
+    if done.returncode != 0:
+        # `git` ran and declined, *or* `git` is broken. `_git_is_usable` is what tells them
+        # apart; without it every caller read the second as the first.
+        return GitAnswer(None, ran=_git_is_usable())
+    return GitAnswer(done.stdout.strip() or None)
 
 
 def main_checkout(root: Path) -> Path:
@@ -109,8 +192,15 @@ def main_checkout(root: Path) -> Path:
 
     The result must be an ancestor of nothing and a sibling of anything — but it must be a
     real git answer, not one an inherited `GIT_DIR` produced, which is why `_git` scrubs.
+
+    Raises `GitUnavailable` rather than answering `root` when `git` could not be run. Answering
+    `root` made `worktree.link` open with "this is the main checkout" and become a silent
+    no-op: no group links, no index link, no harness link, and `hooks.py` emitting its "nothing
+    to do" answer while every memory bundle was empty and nothing reported a failure.
     """
-    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").require(
+        "which checkout owns this worktree"
+    )
     return Path(common).parent if common else root
 
 
@@ -146,9 +236,15 @@ def _registered_worktree(root: Path) -> Path | None:
     """
     common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     private = _git(root, "rev-parse", "--path-format=absolute", "--git-dir")
-    if common is None or private is None:
+    if common.unavailable or private.unavailable:
+        raise GitUnavailable(
+            "`git` could not answer whether this is a registered worktree; Keelline cannot "
+            "fall back to the checkout that owns the store without it — check that `git` "
+            "runs here"
+        )
+    if common.value is None or private.value is None:
         return None
-    common_dir, private_dir = Path(common).resolve(), Path(private).resolve()
+    common_dir, private_dir = Path(common.value).resolve(), Path(private.value).resolve()
     if private_dir.parent != common_dir / _WORKTREES:
         return None
     try:
@@ -161,14 +257,40 @@ def _registered_worktree(root: Path) -> Path | None:
     return None if owner == root.resolve() else owner
 
 
+class MachineConfigError(Failure):
+    """The machine configuration file exists and cannot be read as TOML.
+
+    `config.loader._personal` already raised `ConfigError` for exactly this file and exactly
+    this syntax error, while this reader answered `None` — so the two readers of one file
+    disagreed about whether it was broken, and the user of the second one was told to run
+    `keelline setup` for a file that was already there.
+    """
+
+
 def overlay_root(machine: Path | None) -> Path | None:
+    """The overlay root this machine records, or `None` when it records none.
+
+    `None` means **not recorded**, and nothing else. It used to mean six things — an absent
+    file, an `OSError`, a TOML syntax error, a missing `[overlay]`, a non-dict `[overlay]` and
+    a bad `root` — all collapsed into the one message `_resolve_at` prints for it: "no overlay
+    root is recorded in the machine configuration; run `keelline setup`". Three of those six
+    are a broken file, and for a broken file that message is wrong advice.
+
+    So a file that cannot be read or parsed raises, and the three shapes that genuinely record
+    no overlay keep answering `None`: an absent file (the ordinary state before `setup` has
+    run), no `[overlay]` table, and a table with no usable `root`.
+    """
     path = machine_config_path(interactive=False) if machine is None else machine
     if not path.is_file():
         return None
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise MachineConfigError(f"{path} cannot be read: {exc}") from exc
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{path} is not valid TOML: {exc}") from exc
     section = raw.get("overlay")
     if not isinstance(section, dict):
         return None
@@ -187,7 +309,14 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:
         return False
-    return _git(root, "remote", "get-url", "origin") == recorded
+    origin = _git(root, "remote", "get-url", "origin")
+    if origin.unavailable:
+        raise GitUnavailable(
+            "`git` could not read this repository's origin remote, so the overlay binding "
+            "cannot be checked — the fault is on this machine rather than in the binding; "
+            "check that `git` runs here"
+        )
+    return origin.value == recorded
 
 
 def _inside(candidate: Path, parent: Path) -> bool:
@@ -288,7 +417,7 @@ def _resolve_at(
     if not groups:
         reason = "; ".join(f"{k}: {v}" for k, v in unavailable.items()) or "the store has no groups"
         return None, reason
-    return Store(base, mode, root, groups, unavailable), None
+    return Store(base, mode, root, groups, unavailable, machine), None
 
 
 def resolve(

@@ -10,6 +10,8 @@ import pytest
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.memory.store import (
+    GitUnavailable,
+    MachineConfigError,
     Store,
     inside_project,
     main_checkout,
@@ -60,10 +62,11 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
-def a_repo(root: Path, remote: str = REMOTE) -> None:
+def a_repo(root: Path, remote: str | None = REMOTE) -> None:
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", remote)
+    if remote is not None:
+        git(root, "remote", "add", "origin", remote)
 
 
 def an_overlay(
@@ -482,3 +485,137 @@ def test_store_unavailable_documents_that_its_values_are_unsafe_for_model_contex
     source = inspect.getsource(Store)
     assert "trust.wrap" in source
     assert "model context" in source
+
+
+# --- the machine file the store was resolved against, carried rather than re-passed ---------
+
+
+def test_resolve_puts_the_machine_file_on_the_store(tmp_path: Path) -> None:
+    # It used to be an optional keyword on about twenty functions, five of which asked the
+    # caller *in prose* to "pass the same `machine` used to resolve `store`". `None` was not
+    # inert: it re-read `$XDG_CONFIG_HOME/keelline/config.toml` out of the process environment,
+    # so a forgotten argument silently changed `permitted_roots`, the index destination and
+    # which `trust.json` was consulted — with nothing to say the two had diverged.
+    root = tmp_path / "project"
+    a_repo(root)
+    overlay = an_overlay(tmp_path)
+    a_tree(root, overlay)
+    machine = a_machine_file(tmp_path, overlay)
+    store = resolve(root, a_config(root, "overlay"), machine=machine)
+    assert store is not None
+    assert store.machine == machine
+
+
+def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
+    # The honest `None`: a caller that genuinely named no machine file. It still means "read
+    # the default location", which is what it always meant — the difference is that it is now
+    # the store's recorded answer rather than a keyword each later call re-decides.
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / "docs" / "memory" / "developer").mkdir(parents=True)
+    store = resolve(root, a_config(root, "in-repo"))
+    assert store is not None
+    assert store.machine is None
+
+
+# --- "could not ask" is not "the answer is nothing" -----------------------------------------
+#
+# `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty stdout alike, so every
+# caller read a broken `git` as a fact about the repository. The review machine hit exactly that
+# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `_GIT_ENV_KEEP`
+# scrubs `DEVELOPER_DIR` — and was told to run `keelline attach`.
+
+
+def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("git: command not found")
+
+    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+
+
+def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "project"
+    a_repo(root)
+    overlay = an_overlay(tmp_path)
+    a_tree(root, overlay)
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    _git_that_cannot_run(monkeypatch)
+    with pytest.raises(GitUnavailable) as excinfo:
+        resolve(root, config, machine=machine)
+    assert "keelline attach" not in str(excinfo.value)
+    assert "git" in str(excinfo.value)
+
+
+def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `main_checkout` answered `root` when `_git` failed, so `worktree.link` opened with "this
+    # is the main checkout" and became a silent no-op: no links at all, `hooks.py` emitting
+    # "nothing to do", every memory bundle empty, and nothing reporting a failure.
+    root = tmp_path / "project"
+    a_repo(root)
+    _git_that_cannot_run(monkeypatch)
+    with pytest.raises(GitUnavailable):
+        main_checkout(root)
+
+
+def test_an_empty_git_answer_is_still_an_answer(tmp_path: Path) -> None:
+    # The other side of the distinction: a repository with no `origin` remote is a fact about
+    # the repository, and must stay the ordinary refusal it always was rather than becoming an
+    # error about the machine.
+    root = tmp_path / "project"
+    a_repo(root, remote=None)
+    overlay = an_overlay(tmp_path)
+    a_tree(root, overlay)
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    assert resolve(root, config, machine=machine) is None
+    reason = refusal_reason(root, config, machine=machine)
+    assert reason is not None and "keelline attach" in reason
+
+
+def test_a_machine_file_that_is_not_valid_toml_is_not_an_unrecorded_overlay(
+    tmp_path: Path,
+) -> None:
+    # `config.loader._personal` raises `ConfigError` for this very file and this very syntax
+    # error. This reader answered `None`, which `_resolve_at` renders as "no overlay root is
+    # recorded … run `keelline setup`" — wrong advice for a file that is already there.
+    broken = tmp_path / "machine.toml"
+    broken.write_text("[overlay\nroot = 'x'\n", encoding="utf-8")
+    with pytest.raises(MachineConfigError):
+        overlay_root(broken)
+
+
+def test_a_machine_file_recording_no_overlay_still_answers_none(tmp_path: Path) -> None:
+    blank = tmp_path / "machine.toml"
+    blank.write_text("[personal]\n", encoding="utf-8")
+    assert overlay_root(blank) is None
+    assert overlay_root(tmp_path / "absent.toml") is None
+
+
+def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review machine's own shape, reproduced: a `git` that *runs* and fails everything —
+    # the Xcode shim with an unaccepted licence, reached because `_GIT_ENV_KEEP` scrubs
+    # `DEVELOPER_DIR`. Exit codes alone cannot tell this from a correct "no such remote" (2) or
+    # "not a git repository" (128), which is why the discriminator is a second question that
+    # needs no repository.
+    root = tmp_path / "project"
+    a_repo(root)
+    overlay = an_overlay(tmp_path)
+    a_tree(root, overlay)
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    real = subprocess.run
+
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 69, "", "You have not agreed to the licence\n")
+
+    monkeypatch.setattr("keelline.memory.store.subprocess.run", broken)
+    with pytest.raises(GitUnavailable):
+        resolve(root, config, machine=machine)
+    monkeypatch.setattr("keelline.memory.store.subprocess.run", real)

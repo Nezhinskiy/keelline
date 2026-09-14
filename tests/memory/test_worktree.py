@@ -84,8 +84,11 @@ def a_checkout(
     (base / "MEMORY.md").write_text("# Memory Index\n", encoding="utf-8")
     listed = "[" + ", ".join(f'"{g}"' for g in groups) + "]"
     (root / CONFIG_FILE).write_text(CONFIG.format(mode="in-repo", groups=listed), encoding="utf-8")
+    # Resolved against a machine file of this test's own: `resolve` puts it on the `Store`,
+    # and every trust question downstream reads it from there rather than from the
+    # developer's real `~/.config/keelline/`.
     config = load(root, machine=tmp_path / "absent.toml")
-    store = resolve(root, config)
+    store = resolve(root, config, machine=a_machine_file(tmp_path))
     assert store is not None
     _commit_checkout(root)
     return root, store, config
@@ -175,9 +178,8 @@ def test_the_harness_memory_directory_is_keyed_by_the_worktree_path(tmp_path: Pa
     home = tmp_path / "home"
     # `a_checkout` is `in-repo`, so the notes are repository data and the harness link is
     # gated on the trust record below (see the section at the end of this file).
-    machine = a_machine_file(tmp_path)
-    record(store, config, machine=machine)
-    link(tree, store, config, home=home, machine=machine)
+    record(store, config)
+    link(tree, store, config, home=home)
     assert harness_memory_path(tree, home).is_symlink()
     slug = str(tree.resolve()).replace("/", "-").replace(".", "-")
     assert (home / ".claude" / "projects" / slug / "memory").is_symlink()
@@ -328,7 +330,7 @@ def test_an_index_the_overlay_boundary_refuses_is_never_linked_into_a_worktree(
 ) -> None:
     root, store, config, machine = an_overlay_checkout_with_a_leaked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    created = link(tree, store, config, home=tmp_path / "home")
     assert "MEMORY.md" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
 
@@ -403,7 +405,7 @@ def test_an_index_inside_the_overlay_boundary_is_still_linked(tmp_path: Path) ->
     # share".
     root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    created = link(tree, store, config, home=tmp_path / "home")
     assert "MEMORY.md" in {p.name for p in created}
     linked = (tree / "docs" / "memory" / "MEMORY.md").resolve()
     expected = tmp_path / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
@@ -436,7 +438,7 @@ def test_a_symlinked_index_is_refused_outside_overlay_mode_even_with_an_overlay_
     assert store is not None
     _commit_checkout(root)
     tree = a_worktree(root, tmp_path / "wt")
-    created = link(tree, store, config, home=tmp_path / "home", machine=machine)
+    created = link(tree, store, config, home=tmp_path / "home")
     assert "MEMORY.md" not in {p.name for p in created}
     assert not (tree / "docs" / "memory" / "MEMORY.md").exists()
 
@@ -498,8 +500,11 @@ def a_local_only_checkout(
     (root / CONFIG_FILE).write_text(
         LOCAL_ONLY_CONFIG.format(paths_memory=paths_memory), encoding="utf-8"
     )
+    # Resolved against a machine file of this test's own: `resolve` puts it on the `Store`,
+    # and every trust question downstream reads it from there rather than from the
+    # developer's real `~/.config/keelline/`.
     config = load(root, machine=tmp_path / "absent.toml")
-    store = resolve(root, config)
+    store = resolve(root, config, machine=a_machine_file(tmp_path))
     assert store is not None
     _commit_checkout(root, ignore=".keelline/local/")
     return root, store, config
@@ -577,8 +582,7 @@ def test_a_repository_data_store_gets_no_harness_link_before_trust(tmp_path: Pat
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
-    machine = a_machine_file(tmp_path)
-    created = link(tree, store, config, home=home, machine=machine)
+    created = link(tree, store, config, home=home)
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
     # Everything inside the worktree is still linked: the gate is on the hop that hands
@@ -591,10 +595,9 @@ def test_the_harness_link_appears_once_the_owner_has_trusted_the_store(tmp_path:
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
-    machine = a_machine_file(tmp_path)
     assert not harness_memory_path(tree, home).exists()
-    record(store, config, machine=machine)
-    created = link(tree, store, config, home=home, machine=machine)
+    record(store, config)
+    created = link(tree, store, config, home=home)
     assert harness_memory_path(tree, home) in created
     assert harness_memory_path(tree, home).resolve() == store.path.resolve()
 
@@ -610,14 +613,14 @@ def test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes(
     root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
-    created = link(tree, store, config, home=home, machine=machine)
+    created = link(tree, store, config, home=home)
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
     # Everything inside the worktree is still linked; only the hop outside this lane's gate
     # waits for the record.
     assert (tree / "docs" / "memory" / "developer").is_symlink()
-    record(store, config, machine=machine)
-    created = link(tree, store, config, home=home, machine=machine)
+    record(store, config)
+    created = link(tree, store, config, home=home)
     assert harness_memory_path(tree, home) in created
 
 
@@ -632,8 +635,8 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     root, store, config, machine = an_overlay_checkout_with_a_committed_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
-    assert blocks(Bundle.INDEX, store, config, machine=machine) == []
-    created = link(tree, store, config, home=home, machine=machine)
+    assert blocks(Bundle.INDEX, store, config) == []
+    created = link(tree, store, config, home=home)
     assert harness_memory_path(tree, home) not in created
     assert not harness_memory_path(tree, home).exists()
 
@@ -652,7 +655,7 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
     # raises `FileExistsError` there, and only after the two names before it are linked.
     (base / "sub").write_text("not a directory\n", encoding="utf-8")
     with pytest.raises(PartialLink) as excinfo:
-        link(tree, store, config, home=tmp_path / "home", machine=a_machine_file(tmp_path))
+        link(tree, store, config, home=tmp_path / "home")
     assert [p.name for p in excinfo.value.created] == ["MEMORY.md", "developer"]
     assert (base / "developer").is_symlink()
     assert not (base / "sub" / "nested").exists()

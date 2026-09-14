@@ -5,6 +5,12 @@ the same target rule as a link the resolver found, so passing a path is not a wa
 overlay binding. `--machine` exists for the same reason the resolver takes one — a test that
 did not thread it would read the developer's real configuration and, worse, write a trust
 record into their home directory.
+
+It is threaded exactly twice, into `load` and into `resolve`, and never again: `resolve` puts
+it on the `Store` it builds, so every later call takes it from there. It used to be an optional
+keyword on about twenty functions, and the only thing keeping a command's overlay, its index
+destination and its trust record in agreement was that each of those call sites remembered to
+pass it.
 """
 
 from __future__ import annotations
@@ -80,7 +86,7 @@ _NOT_PUBLISHED = (
 )
 
 
-def _gate(store: Store, config: Config, machine: Path | None) -> str | None:
+def _gate(store: Store, config: Config) -> str | None:
     """Whether the trust gate is what a person should be told about, after a command ran.
 
     Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
@@ -88,7 +94,7 @@ def _gate(store: Store, config: Config, machine: Path | None) -> str | None:
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    return None if trust.may_inject(store, config, machine=machine) else _UNTRUSTED
+    return None if trust.may_inject(store, config) else _UNTRUSTED
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -153,11 +159,10 @@ def _findings(report: IndexCheck, config: Config) -> list[str]:
 
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    machine = _machine(args)
     # Taken before anything is written, so it records the bytes the owner actually approved.
-    before = trust.snapshot(store, config, machine=machine)
-    reconciled = reconcile(store, config, write=not args.check, machine=machine)
-    report = check_index(store, config, reconciled, machine=machine)
+    before = trust.snapshot(store, config)
+    reconciled = reconcile(store, config, write=not args.check)
+    report = check_index(store, config, reconciled)
     findings = _findings(report, config)
     if args.check:
         if report.drifted:
@@ -169,7 +174,7 @@ def run_index(args: argparse.Namespace) -> Result:
         )
         summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
         return Result(
-            _with(summary, _gate(store, config, machine)),
+            _with(summary, _gate(store, config)),
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -181,17 +186,15 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_harvest": reconciled.refused_harvest,
                 "refused_publish": reconciled.refused_publish,
                 "unreadable": report.unreadable,
-                "trusted": trust.may_inject(store, config, machine=machine),
+                "trusted": trust.may_inject(store, config),
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
         )
-    text = render_index(reconciled, config, store, machine=machine)
-    path = write_index(store, config, text, machine=machine)
-    carried = trust.refresh_if_trusted(
-        store, config, before, [*reconciled.written, path], machine=machine
-    )
-    note = _DROPPED if before.trusted and not carried else _gate(store, config, machine)
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text)
+    carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+    note = _DROPPED if before.trusted and not carried else _gate(store, config)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
@@ -211,7 +214,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": trust.may_inject(store, config, machine=machine),
+            "trusted": trust.may_inject(store, config),
         },
     )
 
@@ -223,14 +226,14 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    text = render(bundle, store, config, part=args.part, machine=_machine(args))
+    text = render(bundle, store, config, part=args.part)
     return Result(text if text is not None else "")
 
 
 def run_trust(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    before = trust.state(store, config, machine=_machine(args))
-    after = trust.record(store, config, machine=_machine(args))
+    before = trust.state(store, config)
+    after = trust.record(store, config)
     return Result(
         f"recorded the store hash for {store.path}",
         {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
@@ -239,7 +242,7 @@ def run_trust(args: argparse.Namespace) -> Result:
 
 def run_inventory(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    reconciled = reconcile(store, config, write=False, machine=_machine(args))
+    reconciled = reconcile(store, config, write=False)
     entries = inventory(reconciled, config)
     counts = totals(entries, config)
     return Result(
@@ -254,7 +257,7 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     report = {
         bundle.value: {
-            "parts": (found := fit(bundle, store, config, machine=_machine(args))).parts,
+            "parts": (found := fit(bundle, store, config)).parts,
             "slots": found.slots,
             "overflow": found.overflow,
             "oversized": found.oversized,
@@ -263,11 +266,10 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     }
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
-    machine = _machine(args)
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = trust.may_inject(store, config, machine=machine)
+    trusted = trust.may_inject(store, config)
     return Result(
-        _with(summary, _gate(store, config, machine)),
+        _with(summary, _gate(store, config)),
         {"bundles": report, "trusted": trusted},
         exit_code=1 if bad else 0,
     )

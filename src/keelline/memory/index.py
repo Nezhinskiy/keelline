@@ -97,9 +97,7 @@ class Reconciliation:
     refused_publish: list[str] = field(default_factory=list)
 
 
-def _resolved_if_permitted(
-    store: Store, config: Config, machine: Path | None, target: Path
-) -> Path | None:
+def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path | None:
     """Where a symlinked index would resolve, if that location is one this store may use at
     all — independent of whether anything exists there yet.
 
@@ -119,7 +117,7 @@ def _resolved_if_permitted(
     """
     if store.mode != "overlay":
         return None
-    overlay = overlay_root(machine)
+    overlay = overlay_root(store.machine)
     if overlay is None:
         return None
     allowed = permitted_roots(overlay, config.project.name)
@@ -129,7 +127,7 @@ def _resolved_if_permitted(
     return resolved
 
 
-def index_source(store: Store, config: Config, machine: Path | None) -> Path | None:
+def index_source(store: Store, config: Config) -> Path | None:
     """The index's own §9.1 target rule — the one `store._group_targets` applies to every
     configured group, applied here because nothing upstream applies it to `MEMORY.md`.
 
@@ -154,7 +152,7 @@ def index_source(store: Store, config: Config, machine: Path | None) -> Path | N
     target = store.path / INDEX_NAME
     if not target.is_symlink():
         return target.resolve() if target.exists() else None
-    resolved = _resolved_if_permitted(store, config, machine, target)
+    resolved = _resolved_if_permitted(store, config, target)
     return resolved if resolved is not None and resolved.exists() else None
 
 
@@ -205,7 +203,7 @@ def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
     return in_repository(store, note.path)
 
 
-def _to_machine(store: Store, config: Config, machine: Path | None) -> bool:
+def _to_machine(store: Store, config: Config) -> bool:
     """Whether the file `_destination` would write to reaches outside this project's own
     repository — the write side of the same domain question `_harvestable` asks for reads.
 
@@ -221,13 +219,13 @@ def _to_machine(store: Store, config: Config, machine: Path | None) -> bool:
     *other* direction — a permitted, dangling link is machine state (`True`) the moment §9.1
     would honour it, not only once something has been written there.
     """
-    source = index_source(store, config, machine)
+    source = index_source(store, config)
     if source is not None:
         return not in_repository(store, source)
     target = store.path / INDEX_NAME
     if not target.is_symlink():
         return not in_repository(store, target)
-    resolved = _resolved_if_permitted(store, config, machine, target)
+    resolved = _resolved_if_permitted(store, config, target)
     return resolved is not None and not in_repository(store, resolved)
 
 
@@ -253,19 +251,17 @@ def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
 
-def reconcile(
-    store: Store, config: Config, *, write: bool, machine: Path | None = None
-) -> Reconciliation:
+def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     """Give every note an `index:` line, harvesting the second writer's before inventing one.
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
-    and the index's target rule needs `project.name` and — with `machine` — the recorded
-    overlay, which a `Sequence[str]` cannot carry. Pass the same `machine` used to resolve
-    `store`, exactly as `worktree.link` and `bundles.blocks` ask.
+    and the index's target rule needs `project.name` and the recorded overlay, which a
+    `Sequence[str]` cannot carry. The overlay comes from `store.machine`, so there is no longer
+    a second argument a caller can forget to keep in step with the one that built the store.
     """
-    source = index_source(store, config, machine)
+    source = index_source(store, config)
     appended = _appended(source)
-    to_machine = _to_machine(store, config, machine)
+    to_machine = _to_machine(store, config)
     groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
     notes: list[Note] = []
@@ -387,18 +383,15 @@ def _extra(config: Config, store: Store) -> list[str]:
     return kept
 
 
-def render_index(
-    reconciled: Reconciliation, config: Config, store: Store, *, machine: Path | None = None
-) -> str:
+def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
     """The rendered `MEMORY.md` text, holding back whatever `_publishable` refuses.
 
-    `machine` is optional and defaults to the answer every in-repo and local-only store already
-    gets — `_to_machine` can only be `True` when the destination is a §9.1-permitted symlink
-    resolving outside this project's repository, which happens only in overlay mode. Every
-    existing caller that never had a reason to think about the overlay keeps rendering exactly
-    what it always has; only a destination that actually reaches machine state drops anything.
+    `_to_machine` can only be `True` when the destination is a §9.1-permitted symlink
+    resolving outside this project's repository, which happens only in overlay mode — so every
+    in-repo and local-only store renders exactly what it always has, and only a destination
+    that actually reaches machine state drops anything.
     """
-    to_machine = _to_machine(store, config, machine)
+    to_machine = _to_machine(store, config)
     lines = [HEADER.rstrip("\n"), ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
@@ -427,7 +420,7 @@ class IndexCheck:
     unreadable: list[str]
 
 
-def _destination(store: Store, config: Config, machine: Path | None) -> Path:
+def _destination(store: Store, config: Config) -> Path:
     """The one file the writer writes and the check compares against: what the readers source.
 
     `index_source` is the rule every *reader* applies — `bundles._index`, `_appended`,
@@ -462,13 +455,13 @@ def _destination(store: Store, config: Config, machine: Path | None) -> Path:
     exist, which is the one difference the write side needs from the read side. A permitted
     answer is the write destination, dangling or not; anything else is the refusal below.
     """
-    source = index_source(store, config, machine)
+    source = index_source(store, config)
     if source is not None:
         return source
     target = store.path / INDEX_NAME
     if not target.is_symlink():
         return target
-    resolved = _resolved_if_permitted(store, config, machine, target)
+    resolved = _resolved_if_permitted(store, config, target)
     if resolved is None:
         raise Refusal(
             f"{target} is a symlink this store may not source ({INDEX_NAME} may link only "
@@ -478,14 +471,15 @@ def _destination(store: Store, config: Config, machine: Path | None) -> Path:
     return resolved
 
 
-def check_index(
-    store: Store, config: Config, reconciled: Reconciliation, *, machine: Path | None = None
-) -> IndexCheck:
-    """`machine` for the same reason `reconcile` takes one: without it this cannot call
-    `index_source`, and a check that answers about a different file than the one harvested and
-    injected is a green CI run over an empty bundle. Pass the value used to resolve `store`."""
-    text = render_index(reconciled, config, store, machine=machine)
-    path = _destination(store, config, machine)
+def check_index(store: Store, config: Config, reconciled: Reconciliation) -> IndexCheck:
+    """The drift report, against the file `index_source` says the index actually is.
+
+    Reading `store.path / INDEX_NAME` instead — `is_file()` follows the link — made this answer
+    about a file nothing injects: a green CI run over an empty bundle. `store.machine` is what
+    lets it ask, which is why the value lives on the store rather than in a keyword this could
+    be called without."""
+    text = render_index(reconciled, config, store)
+    path = _destination(store, config)
     current = path.read_text(encoding="utf-8") if path.is_file() else None
     caps = []
     if len(text.splitlines()) > config.native_caps.memory_index_lines:
@@ -504,17 +498,17 @@ def check_index(
     )
 
 
-def write_index(store: Store, config: Config, text: str, *, machine: Path | None = None) -> Path:
+def write_index(store: Store, config: Config, text: str) -> Path:
     """Write the index to the file the readers source, and return that file.
 
-    Takes `config` and `machine` — a C3 contract change — because `_destination` cannot answer
-    without them, and answering without them was the defect. The returned path is the file
-    actually written, which in overlay mode is the shared copy in the overlay rather than the
-    link inside the checkout; `trust.refresh_if_trusted` resolves both to the same file, so the
-    record still covers the index it just wrote.
+    Takes `config` — a C3 contract change — because `_destination` cannot answer without it,
+    and answering without it was the defect; the overlay half comes from `store.machine`. The
+    returned path is the file actually written, which in overlay mode is the shared copy in the
+    overlay rather than the link inside the checkout; `trust.refresh_if_trusted` resolves both
+    to the same file, so the record still covers the index it just wrote.
     """
     if not store.path.is_dir():
         raise Failure(f"{store.path} does not exist; the store was not created")
-    path = _destination(store, config, machine)
+    path = _destination(store, config)
     write_atomically(path, text)
     return path
