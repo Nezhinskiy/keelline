@@ -10,6 +10,23 @@ Encodes the two shapes rejected by the rule "a test must exercise the code under
   ``describe`` block naming the entry point and rebuilt the call the entry point
   makes internally, instead of calling the entry point.
 
+  WHAT THE PREDICATE ACTUALLY ASKS is "never MENTIONS again", not "never calls":
+  `_referenced_names` adds every `Name.id` and `Attribute.attr` it walks, whether or
+  not it is a call target. Both directions of the gap were measured. The textbook
+  instance is cleared by a bare mention -- `assert boot_demo is not None` satisfies the
+  predicate while calling nothing -- and a `conftest.py` fixture that DOES call the
+  entry point is still flagged, because the call lives outside the test function this
+  walks. On this repository's own suite the shape reports six candidates and all six
+  are name collisions between a test's name and an imported symbol.
+
+  Left as it is, deliberately, and the documentation corrected to match (`docs/cli.md`).
+  The audit exits 0 by design -- it is a triage list, not a gate -- so the gap costs a
+  reader a moment per candidate, while narrowing the predicate to call targets changes
+  what a ported scanner reports with none of its source corpus available to re-grade it
+  against. Restricting it to call targets, and reaching into the fixtures a test
+  requests, are the open options for the lane that turns this into a gate (`assess`),
+  where a tightened predicate can be graded before anything is blocked on it.
+
 This is an **audit tool, not yet a gate**. `test audit-entrypoints` exits 0 whether or not
 it finds candidates: a name collision between a test's name and an imported symbol is a
 candidate for a person to read, not a build failure, and a suite that has never been triaged
@@ -337,17 +354,32 @@ def import_roots(roots: Iterable[Path]) -> frozenset[str]:
     """
     names: set[str] = set()
     for directory in roots:
-        if (directory / "__init__.py").is_file():
-            names.add(directory.name)
-        for child in directory.iterdir():
-            if child.is_dir() and (child / "__init__.py").is_file():
-                names.add(child.name)
-            elif (
-                child.suffix == ".py"
-                and child.name != "__init__.py"
-                and not child.name.startswith("test_")
-            ):
-                names.add(child.stem)
+        # The WHOLE per-root read is guarded, not `iterdir` alone: `Path.is_file()` swallows a
+        # missing path but re-raises `PermissionError`, so the `__init__.py` probe one line
+        # down is the first thing an unreadable root raises from -- measured. A root that
+        # cannot be read -- unreadable, or gone since `contained_roots` judged it -- then
+        # contributes no import names instead of aborting the command with `internal error:
+        # PermissionError` and exit 2. Exit 2 is the code this CLI reserves for "could not
+        # answer"; callers are told never to read it as permission, so raising an undocumented
+        # one out of an advisory scan is the wrong failure. Under-reporting is the direction
+        # this module already chose for a file it cannot parse, and it is the same choice here.
+        try:
+            if (directory / "__init__.py").is_file():
+                names.add(directory.name)
+            # Materialised inside the `try`: `iterdir` is a generator, so the error it raises
+            # for an unreadable directory arrives on the first step, not on the call.
+            children = list(directory.iterdir())
+            for child in children:
+                if child.is_dir() and (child / "__init__.py").is_file():
+                    names.add(child.name)
+                elif (
+                    child.suffix == ".py"
+                    and child.name != "__init__.py"
+                    and not child.name.startswith("test_")
+                ):
+                    names.add(child.stem)
+        except OSError:
+            continue
     return frozenset(names)
 
 
@@ -359,7 +391,14 @@ def suite_files(roots: Iterable[Path]) -> list[Path]:
 def scan_file(path: Path, shapes: tuple[str, ...], roots: frozenset[str]) -> list[Finding]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (SyntaxError, UnicodeDecodeError):
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        # `OSError` covers the file that `suite_files` listed and this cannot read: a DANGLING
+        # SYMLINK is the routine one -- `rglob` yields the link by name, `read_text` then
+        # raises `FileNotFoundError` -- and it is what a bad merge leaves behind. Measured
+        # before this was caught: the whole scan aborted with `internal error:
+        # FileNotFoundError` and exit 2, the code callers are told never to read as
+        # permission. Skipping the file under-reports, which is the direction the two parse
+        # errors beside it already chose.
         return []
     facts = _ModuleFacts(tree, roots)
     findings: list[Finding] = []

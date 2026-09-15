@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import py_compile
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -156,6 +158,103 @@ def test_a_hash_based_pyc_is_not_judged(tmp_path: Path) -> None:
     # The file must exist, or `stale == 0` passes by finding nothing to judge — the same
     # vacuity `compile_module` was written to close.
     assert cache.is_file()
+    assert inspect(root, config(root)).stale == 0
+
+
+@needs_git
+def test_a_source_mtime_past_2106_is_compared_the_way_cpython_compares_it(tmp_path: Path) -> None:
+    """PEP 552's timestamp field is a uint32, so CPython masks the source mtime to 32 bits
+    before writing it. Comparing the unmasked `int(st_mtime)` against that field reports a
+    perfectly current `.pyc` as stale forever — the false-alarm direction again, reachable by
+    a clock that ran forward, an archive unpacked with a bad timestamp, or the year 2106.
+
+    Reddened by dropping `& _PYC_MTIME_MASK` from `_stale_bytecode`'s comparison; measured,
+    and it reddened this test alone.
+
+    Not in `mutations.toml`: the skip below is environmental — a filesystem that cannot store
+    a post-2106 mtime clamps it — and a declared mutation whose named test can SKIP reports
+    "caught" while proving nothing.
+    """
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    beyond = 2**32 + 5
+    os.utime(module, (beyond, beyond))
+    if int(module.stat().st_mtime) != beyond:
+        pytest.skip("this filesystem clamps a post-2106 mtime; the fault cannot be staged")
+    # Compiled AFTER the mtime is set, so the header holds CPython's own masked value (5) and
+    # the bytecode is genuinely current.
+    assert compile_module(module).is_file()
+    assert inspect(root, config(root)).stale == 0
+
+
+@needs_git
+def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
+    """Every consumer of `contained_roots` walks each entry with `rglob` and adds up what it
+    finds, so a repeated or nested entry double-counts. Measured before the pruning: with
+    `code_roots = ["src", "src", "src/pkg"]` the one stale `.pyc` under `src/pkg` was reported
+    three times and the one under `src` twice — `stale == 5` for two stale files, in a notice
+    whose only job is to be believed about a number.
+
+    Oracle: `mutations.toml`, "a code root listed twice is walked twice". Measured both ways —
+    deleting BOTH pruning lines gives `stale == 5`, and the declared single-line mutation (the
+    `if any(_covers(...))` guard alone) still gives `stale == 3`, because the descendant
+    rebuild below it happens to collapse the exact repeat while leaving the nested root. Each
+    reddened this test alone.
+
+    The `.pyc` count is asserted beside the root list deliberately: a de-duplicated list that
+    nothing counted would be a shape claim, and the doubled COUNT is the defect.
+    """
+    root = repo(tmp_path)
+    package = root / "src" / "pkg"
+    package.mkdir()
+    inner = package / "deep.py"
+    inner.write_text("y = 1\n", encoding="utf-8")
+    for module in (root / "src" / "mod.py", inner):
+        compile_module(module)
+        future = time.time() + 60
+        os.utime(module, (future, future))
+    (root / CONFIG_FILE).write_text(
+        CONFIG.replace('code_roots = ["src", "tests"]', 'code_roots = ["src", "src", "src/pkg"]'),
+        encoding="utf-8",
+    )
+    assert contained_roots(root, config(root)) == [root / "src"]
+    assert inspect(root, config(root)).stale == 2
+
+
+@needs_git
+def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
+    """The sibling of the hash-based case, in the same false-alarm direction. A `__pycache__`
+    accumulates one `.pyc` per interpreter tag and nothing removes the old ones, so a
+    `mod.cpython-311.pyc` from an earlier run sits there forever recording the source mtime as
+    of THAT run — while the bytecode this interpreter will actually import, compiled here and
+    fresh, matches. Reading past the magic word counted the leftover and the notice then fired
+    on every red run of a healthy tree. Measured before the magic check: `stale == 1`.
+    """
+    # Oracle: `mutations.toml`, "a .pyc from another interpreter is read as this one's".
+    root = repo(tmp_path)
+    module = root / "src" / "mod.py"
+    # The CURRENT tag's bytecode, fresh — so a non-zero count can only come from the leftover.
+    assert compile_module(module).is_file()
+    foreign = module.parent / "__pycache__" / f"{module.stem}.cpython-311.pyc"
+    # Hand-assembled rather than compiled: only one interpreter is installed in this test run,
+    # so the one header shape that matters here cannot be produced by asking `py_compile` for
+    # it. A magic this interpreter never writes, a timestamp-based flags word, and a recorded
+    # mtime deliberately unequal to the source's — the exact shape a stale leftover has.
+    #
+    # DERIVED from the running magic rather than written as some released version's literal,
+    # and that is not laziness: CI runs this suite on 3.11, 3.12 and 3.13, so any literal
+    # naming one of them is the RUNNING interpreter's magic on that leg and the test would
+    # then assert the opposite of what it means. The `!=` below is what the derivation has to
+    # buy, so it is asserted rather than assumed.
+    foreign_magic = bytes([importlib.util.MAGIC_NUMBER[0] ^ 0xFF]) + importlib.util.MAGIC_NUMBER[1:]
+    assert len(foreign_magic) == 4
+    assert foreign_magic != importlib.util.MAGIC_NUMBER
+    foreign.write_bytes(
+        foreign_magic
+        + struct.pack("<I", 0)
+        + struct.pack("<I", int(module.stat().st_mtime) - 10_000)
+        + struct.pack("<I", 4)
+    )
     assert inspect(root, config(root)).stale == 0
 
 

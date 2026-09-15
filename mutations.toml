@@ -519,14 +519,14 @@ reddens = [
 [[mutation]]
 name = "stale bytecode is never counted"
 file = "src/keelline/guards/hygiene.py"
-before = '                if recorded != int(source.stat().st_mtime):'
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
 after = '                if False:'
 reddens = ["tests/guards/test_hygiene.py::test_stale_bytecode_is_counted"]
 
 [[mutation]]
 name = "fresh bytecode is counted as stale"
 file = "src/keelline/guards/hygiene.py"
-before = '                if recorded != int(source.stat().st_mtime):'
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
 after = '                if True:'
 reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
 
@@ -662,4 +662,64 @@ before = '    _, bracket, tail = address.rpartition(">")'
 after = '    _, bracket, tail = address.partition(">")'
 reddens = [
   "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# The heredoc body read as GRAMMAR rather than as the data it is. `prepare` re-inserts an
+# unquoted body into the scanned text -- right for a caller matching paths, because the shell
+# expands such a body, and wrong for the one question this guard asks. Both directions were
+# measured through `judge(..., background=True)` before the flag was keyed off: a
+# `cat > README.md <<EOF` whose body carried `a=1&b=2` was DENIED by the plugin's only
+# `Policy.CLOSED` handler, and an apostrophe in a body ("don't") left `tokenize` returning
+# `None`, which degrades to ALLOW and let a real `sleep 5 &` after the heredoc through.
+[[mutation]]
+name = "a heredoc body is read as shell grammar again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    tokens = bashscan.tokenize(command, keep_unquoted_bodies=False)'
+after = '    tokens = bashscan.tokenize(command)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_heredoc_written_to_a_file_is_data_not_a_program",
+  "tests/guards/test_bgcleanup.py::test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak",
+]
+
+# The third half of the stale-bytecode header read, and the same class as the hash-based entry
+# above: PEP 552 bytes 8-12 are this interpreter's recorded source mtime only when bytes 0-4 are
+# this interpreter's magic. A `__pycache__` keeps one `.pyc` per interpreter tag and nothing
+# removes the old ones, so a `mod.cpython-311.pyc` records the mtime as of a run whose bytecode
+# will never be imported again -- and any edit since makes it mismatch. Measured on a tree whose
+# current bytecode had just been compiled and was fresh: `_stale_bytecode` -> 1, so the notice
+# fires on every red run of a healthy tree and `test hygiene` exits 1 forever.
+[[mutation]]
+name = "a .pyc from another interpreter is read as this one's"
+file = "src/keelline/guards/hygiene.py"
+before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
+after = '    if False:'
+reddens = ["tests/guards/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
+
+# `contained_roots` is what every consumer of `ledger.code_roots` walks, one `rglob` per entry
+# with the results added up, so a repeated or nested entry multiplies a count rather than
+# widening a scan. Measured with `code_roots = ["src", "src", "src/pkg"]` over two stale `.pyc`
+# files: `stale == 5` with no pruning at all, `stale == 3` with the mutation below, `2` as
+# shipped. A wrong number in a notice whose entire purpose is to be believed about a number.
+[[mutation]]
+name = "a code root listed twice is walked twice"
+file = "src/keelline/guards/roots.py"
+before = '        if any(_covers(kept, candidate) for kept in found):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_repeated_or_nested_code_root_is_walked_once",
+]
+
+# An advisory command's exit code is part of its contract. `suite_files` lists a `test_*.py`
+# symlink by name without following it, so a dangling one -- routine after a bad merge -- raised
+# `FileNotFoundError` out of `scan_file` and turned `test audit-entrypoints`, which exits 0 by
+# design, into `internal error: FileNotFoundError` and exit 2 -- the code callers are told never
+# to read as permission. Skipping the file under-reports, which is the direction the two parse
+# errors beside it already chose.
+[[mutation]]
+name = "an unreadable test file aborts the scan"
+file = "src/keelline/guards/audit.py"
+before = '    except (OSError, SyntaxError, UnicodeDecodeError):'
+after = '    except (SyntaxError, UnicodeDecodeError):'
+reddens = [
+  "tests/guards/test_audit.py::test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan",
 ]

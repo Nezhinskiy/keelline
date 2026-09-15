@@ -29,6 +29,7 @@ and counts this module computed; a `ledger.code_roots` entry is walked and never
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import struct
 import subprocess
@@ -73,10 +74,26 @@ STATUS_TIMEOUT_SECONDS = 20
 # therefore NOT JUDGED: under-reporting is this module's safe direction throughout, and telling
 # somebody their bytecode predates a fix -- delete `__pycache__` and re-run -- when it is in
 # fact current is exactly the false alarm that direction exists to avoid.
+#
+# The MAGIC decides whether this interpreter would ever open the file at all, and reading past a
+# foreign one is the same class of defect as reading a hash-based header as an mtime. A
+# `__pycache__` accumulates one `.pyc` per interpreter tag and nothing removes the old ones, so
+# a `mod.cpython-311.pyc` left by a 3.11 run sits beside the current tag's file forever,
+# recording the source mtime as of THAT run. Any edit since makes it mismatch -- while the
+# bytecode the running interpreter actually imports is fresh. Measured on a tree whose current
+# bytecode had just been compiled: one foreign-tag leftover, `_stale_bytecode` -> 1, and the
+# notice fires on every red run for as long as the file is on disk. So a header whose first four
+# bytes are not this interpreter's magic takes the same skip path as a hash-based one.
 _PYC_HEADER = 12
+_PYC_MAGIC = slice(0, 4)
 _PYC_FLAGS = slice(4, 8)
 _PYC_TIMESTAMP = slice(8, 12)
 _PYC_HASH_BASED = 0b1
+# CPython's own mask on the source mtime before it writes the header (`importlib._bootstrap_
+# external._code_to_timestamp_pyc`). Without it a source mtime past 2106 -- or a clock skewed
+# there -- compares a 33-bit number against the 32 bits the header can hold and mismatches
+# forever.
+_PYC_MTIME_MASK = 0xFFFFFFFF
 
 LEAD = "Before calling this red a flake, pre-existing, or caused by the branch:"
 DIRTY = (
@@ -181,9 +198,10 @@ def _dirty_count(root: Path) -> int | None:
 def _recorded_source_mtime(pyc: Path) -> int | None:
     """The source mtime CPython recorded in `pyc`'s header, or `None` when there is not one.
 
-    Three things produce `None` and they all mean the same thing to the caller -- skip this
-    file: the header could not be read, it is short, or it is hash-based and therefore carries
-    a hash fragment where an mtime would be (see `_PYC_HASH_BASED` above).
+    Four things produce `None` and they all mean the same thing to the caller -- skip this
+    file: the header could not be read, it is short, it was written by another interpreter and
+    this one will never open it (see `_PYC_MAGIC` above), or it is hash-based and therefore
+    carries a hash fragment where an mtime would be (see `_PYC_HASH_BASED` above).
     """
     try:
         with pyc.open("rb") as handle:
@@ -191,6 +209,8 @@ def _recorded_source_mtime(pyc: Path) -> int | None:
     except OSError:
         return None
     if len(header) < _PYC_HEADER:
+        return None
+    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:
         return None
     if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:
         return None
@@ -210,7 +230,7 @@ def _stale_bytecode(roots: Iterable[Path]) -> int:
                 recorded = _recorded_source_mtime(pyc)
                 if recorded is None:
                     continue
-                if recorded != int(source.stat().st_mtime):
+                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:
                     stale += 1
             except OSError:
                 continue

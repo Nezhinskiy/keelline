@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import re
 import shlex
+import time
 
 import pytest
 
-from keelline.guards.bgcleanup import ALLOW, LEAK_REASON, RESTORE_HINT, SLEEP_REASON, judge
+from keelline.guards import bgcleanup
+from keelline.guards.bgcleanup import (
+    ALLOW,
+    LEAK_REASON,
+    MAX_COMMAND_CHARS,
+    RESTORE_HINT,
+    SLEEP_REASON,
+    judge,
+)
 
 # The command from the incident, verbatim.
 _INCIDENT = """for i in $(seq 1 14); do (while :; do :; done) & done
@@ -129,21 +138,49 @@ def test_a_background_hidden_in_a_shell_c_string_is_denied() -> None:
     assert denied("bash -c 'sleep 300 & wait'")
 
 
-def test_a_background_hidden_in_a_shell_fed_heredoc_is_denied() -> None:
-    """A heredoc body with a QUOTED delimiter is removed from the scanned text entirely, so
-    this too presents nothing but the word `bash` unless the body is read as the program it
-    is."""
-    command = "bash <<'EOF'\nsleep 300 &\nwait\nEOF"
+@pytest.mark.parametrize("delimiter", ["'EOF'", "EOF"])
+def test_a_background_hidden_in_a_shell_fed_heredoc_is_denied(delimiter: str) -> None:
+    """A heredoc body fed to a SHELL is a program, and both delimiter spellings must be read
+    as one. A body with a QUOTED delimiter is removed from the scanned text entirely, so it
+    presents nothing but the word `bash` unless it is pulled back out of the heredoc list; an
+    UNQUOTED one is now removed from that text too (see the module docstring's `&` rule), so
+    it reaches this guard by the same route and by no other. The unquoted row is what proves
+    the fix for the false refusal below did not switch this path off with it."""
+    command = f"bash <<{delimiter}\nsleep 300 &\nwait\nEOF"
 
     assert denied(command)
 
 
-def test_a_heredoc_written_to_a_file_is_data_not_a_program() -> None:
-    """`cat > file <<'EOF'` writes its body; it does not run it. Reading it as a program would
-    make this plugin's own fixture authoring -- including this test file -- undeniable."""
-    command = "cat > /tmp/x.sh <<'EOF'\nsleep 300 &\nEOF"
-
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat > /tmp/x.sh <<'EOF'\nsleep 300 &\nEOF",
+        # The same body with an UNQUOTED delimiter -- which is what a writer must use to get
+        # `$VAR` expanded. Measured DENIED before `_scan` stopped reading bodies as grammar:
+        # `prepare` re-inserts an unquoted body into the scanned text, so its `&` arrived as
+        # an async operator from the plugin's only `Policy.CLOSED` handler.
+        "cat > /tmp/x.sh <<EOF\nsleep 300 &\nEOF",
+        # The cost in the shape a person actually hits: a README line carrying a URL's query
+        # separator, written with expansion wanted. Measured DENIED as well.
+        "cat > README.md <<EOF\nsee https://h/p?a=1&b=2 for $USER\nEOF",
+    ],
+)
+def test_a_heredoc_written_to_a_file_is_data_not_a_program(command: str) -> None:
+    """`cat > file <<EOF` writes its body; it does not run it. Reading it as a program would
+    make this plugin's own fixture authoring -- including this test file -- undeniable, and
+    reading it as GRAMMAR refuses every file whose content happens to contain an `&`."""
     assert judge(command, background=True) == ALLOW
+
+
+def test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak() -> None:
+    """The same root cause running the other way, and the direction that costs a leaked job
+    rather than a refusal. With the unquoted body in the scanned text, `don't` opened a quote
+    that never closed, `bashscan.tokenize` returned `None`, and `_scan` degraded to ALLOW --
+    so the `sleep 5 &` AFTER the heredoc, a genuine unreaped job, walked through. A body is
+    stdin to `cat`; the shell never parses an apostrophe in one."""
+    command = "cat > notes.md <<EOF\ndon't stop for $USER\nEOF\nsleep 5 &\nwait"
+
+    assert denied(command)
 
 
 def test_a_malformed_command_is_allowed_rather_than_refused() -> None:
@@ -311,12 +348,86 @@ def test_a_command_past_the_size_cap_is_allowed_unread() -> None:
     # a harness timeout on the one CLOSED handler would refuse a legitimate command.
     # The fixture leads with `echo`, not `sleep`: the `sleep` rule is judged before the `&`
     # scan, so a leading `sleep` would pin SLEEP_REASON and say nothing about the `&` rule.
-    from keelline.guards.bgcleanup import MAX_COMMAND_CHARS
-
+    #
+    # THE VALUE IS PINNED AGAINST THE LITERAL FIRST, and that line is not decoration. Every
+    # assertion below derives its fixture from `MAX_COMMAND_CHARS`, so all of them survive any
+    # change to the constant BY CONSTRUCTION -- the boundary moves and the fixture moves with
+    # it. The suite stayed green with the cap set to 200, which would silently stop reading
+    # ordinary commands. What the derived assertions do prove, and the literal cannot, is that
+    # the boundary is judged at `<=` rather than `<`: one character past it is unread and the
+    # command exactly at it is read.
+    assert MAX_COMMAND_CHARS == 65_536
     at_the_cap = "echo " + "x" * (MAX_COMMAND_CHARS - len("echo  &")) + " &"
     assert len(at_the_cap) == MAX_COMMAND_CHARS
     assert judge(at_the_cap + "x", background=True) == ALLOW
     assert judge(at_the_cap, background=True).deny == LEAK_REASON
+
+
+def test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did() -> None:
+    """The `-c` cluster pattern was rewritten for speed, so its LANGUAGE has to be pinned
+    against the pattern it replaced rather than against a description of it. The old pattern
+    is written out here as a literal -- never imported -- so the two sides cannot move
+    together.
+
+    The probe set is enumerated, not hand-picked: every string up to four characters over an
+    alphabet carrying each class the pattern distinguishes -- the leading `-`, the marker `c`,
+    another lowercase letter, an uppercase `C` (which is NOT the marker, since the pattern's
+    literal is lowercase), a digit, and the two braces from `-I{}`. 2,801 probes, covering
+    `-c`, `-ac`, `-ca`, `--c`, `-cC`, `-c0`, `-{c}` and every other arrangement of those
+    classes at that length.
+
+    No mutation entry: what this test is about is that two regexes accept the same strings, so
+    what reddens it is editing either pattern -- and editing the subject's pattern is the
+    change it exists to catch. Verified by putting `[A-Za-z]` back in the leading class of the
+    subject only... which does NOT redden it, because that is the slow pattern and the
+    languages agree. Measured, and recorded rather than hidden: equivalence is the claim, and
+    the timing test below is the separate assertion that the fast spelling is the one shipped.
+    """
+    old = re.compile(r"\A-[A-Za-z]*c[A-Za-z]*\Z")
+    alphabet = "-caC0{}"
+    probes: list[str] = [""]
+    frontier = [""]
+    for _ in range(4):
+        frontier = [prefix + letter for prefix in frontier for letter in alphabet]
+        probes.extend(frontier)
+    probes = sorted(set(probes))
+    assert len(probes) > 2_000  # the corpus must not have collapsed to a handful
+
+    disagreements = [
+        probe
+        for probe in probes
+        if bool(old.match(probe)) != bool(bgcleanup._SHELL_C_FLAG.match(probe))
+    ]
+    assert disagreements == []
+    # And it still matches the spellings the module's own docstring names, so an "equivalent"
+    # pair of patterns that both reject everything cannot pass this.
+    assert [p for p in ("-c", "-lc", "-ic") if bgcleanup._SHELL_C_FLAG.match(p)] == [
+        "-c",
+        "-lc",
+        "-ic",
+    ]
+    assert not any(bgcleanup._SHELL_C_FLAG.match(p) for p in ("--check", "--color", "-I{}", "-l"))
+
+
+def test_a_long_option_cluster_does_not_hang_the_closed_handler() -> None:
+    """`judge` runs in the plugin's only `Policy.CLOSED` `PreToolUse` handler, so the time it
+    takes is part of its contract: a handler that does not answer refuses the call. The old
+    `-[A-Za-z]*c[A-Za-z]*` backtracked quadratically on a cluster of `c`s ending in a
+    non-letter -- measured through `judge`, INSIDE `MAX_COMMAND_CHARS`, at 1.09 s / 4.44 s /
+    10.14 s for 20k / 40k / 60k characters, which is the 4x-per-doubling signature. The same
+    call now takes 0.13 s at 60k.
+
+    The ceiling is deliberately loose rather than tight: a slower machine is allowed to be
+    several times slower than this one without turning a real regression into a flake, and
+    three seconds is still far below the defect it is here to catch.
+    """
+    token = "-" + "c" * 60_000 + "0"
+    command = f"bash {token} 'echo hi'"
+    assert len(command) <= MAX_COMMAND_CHARS  # inside the cap, so the command IS read
+
+    start = time.perf_counter()
+    judge(command, background=True)
+    assert time.perf_counter() - start < 3.0
 
 
 def test_a_trailing_restore_without_a_trap_is_warned_about() -> None:

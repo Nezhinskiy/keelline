@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from keelline.guards.audit import SHAPES, import_roots, run_self_test, scan_file, suite_files
+import pytest
+
+from keelline.guards.audit import (
+    SHAPES,
+    import_roots,
+    run_self_test,
+    scan_file,
+    scan_paths,
+    suite_files,
+)
 
 ROOTS = frozenset({"widget"})
 
@@ -134,3 +143,58 @@ def test_suite_files_are_every_test_module_under_the_roots(tmp_path: Path) -> No
     (tests / "deep" / "test_b.py").write_text("", encoding="utf-8")
     (tests / "conftest.py").write_text("", encoding="utf-8")
     assert suite_files([tests]) == [tests / "deep" / "test_b.py", tests / "test_a.py"]
+
+
+def test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan(tmp_path: Path) -> None:
+    """A `test_*.py` symlink whose target is gone -- routine after a bad merge -- is listed by
+    `suite_files` (`rglob` matches on the name, without following the link) and then cannot be
+    read. Measured before `scan_file` caught `OSError`: `FileNotFoundError` escaped the scan
+    and the command exited `2`, the code this CLI reserves for "could not answer" and tells
+    callers never to read as permission -- on a command that exits `0` by design.
+
+    Oracle: `mutations.toml`, "an unreadable test file aborts the scan".
+
+    The real file beside it is what keeps the assertion from passing vacuously: the scan has
+    to get PAST the broken link and still report the finding the other file carries.
+    """
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_real.py").write_text(_RE_DERIVES_INSTEAD_OF_INVOKING, encoding="utf-8")
+    (tests / "test_dangling.py").symlink_to(tests / "gone.py")
+
+    found = suite_files([tests])
+    assert found == [tests / "test_dangling.py", tests / "test_real.py"]
+    assert [f.shape for f in scan_paths(found, SHAPES, ROOTS)] == ["names-but-never-invokes"]
+
+
+def test_a_code_root_that_cannot_be_read_yields_no_import_names(tmp_path: Path) -> None:
+    """The same direction on the other walk. `import_roots` reads each root the containment
+    check returned, and the tree can change between the two calls -- a checkout, a `rm -rf`, a
+    directory whose mode a repository's own setup narrowed. Measured before the catch:
+    `PermissionError` out of `Path.is_file()`, which swallows a MISSING path but re-raises a
+    forbidden one, so guarding `iterdir` alone was not enough.
+
+    Reddened by narrowing `import_roots`' `except OSError` to `except ValueError`, which
+    nothing on that path raises; measured.
+
+    Not in `mutations.toml`, deliberately: the skip below makes this test environment-
+    dependent -- a run as root reads a `0o000` directory regardless -- and a declared mutation
+    whose named test can SKIP reports "caught" while proving nothing, which is the vacuity the
+    oracle exists to rule out.
+    """
+    readable = tmp_path / "src"
+    readable.mkdir()
+    (readable / "helper.py").write_text("", encoding="utf-8")
+    forbidden = tmp_path / "vendor"
+    forbidden.mkdir(mode=0o000)
+    try:
+        try:
+            list(forbidden.iterdir())
+        except OSError:
+            pass
+        else:
+            pytest.skip("this run can read a 0o000 directory; the fault cannot be staged")
+        # The readable root is scanned anyway: the refusal is per root, not per command.
+        assert import_roots([readable, forbidden]) == frozenset({"helper"})
+    finally:
+        forbidden.chmod(0o700)

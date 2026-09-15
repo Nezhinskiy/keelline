@@ -42,7 +42,11 @@ THE `&` RULE, all three conditions required:
 2. The command backgrounds a job with a bare `&`. Read as a TOKEN from `bashscan.tokenize`,
    never as a regex over raw text -- `&&` and `2>&1` are precisely what a text scan gets
    wrong, and the tokenizer already resolves both (`a && b` -> `['a', '&&', 'b']`,
-   `cmd 2>&1` -> `['cmd', '2', '>&', '1']`, neither yielding a bare `&`).
+   `cmd 2>&1` -> `['cmd', '2', '>&', '1']`, neither yielding a bare `&`). Read, too, from a
+   command whose heredoc BODIES are gone -- every one of them, quoted delimiter or not: a
+   body is standard input to the header's command, never an operator of the enclosing shell,
+   and reading one as grammar refused an ordinary `cat > README.md <<EOF` whose text carried
+   a `&`. `_scan` carries that measurement.
 3. No `trap` naming `EXIT` anywhere in the command.
 
 THE `sleep` RULE is one condition on top of the flag: the first simple command is `sleep`.
@@ -184,7 +188,21 @@ _SHELL_INTERPRETERS = frozenset(
 # A single-dash short-option cluster containing `c`: `-c`, and equally `-lc`, `-ic`. Anchored
 # at both ends so a long option (`--check`, `--color`) and an inline value (`-I{}`) never
 # match.
-_SHELL_C_FLAG = re.compile(r"\A-[A-Za-z]*c[A-Za-z]*\Z")
+#
+# THE LEADING CLASS EXCLUDES `c` ON PURPOSE, and this is the whole difference between linear
+# and quadratic. `-[A-Za-z]*c[A-Za-z]*\Z` lets the first run consume a `c` too, so on a token
+# that has a `c` and then a non-letter -- `-ccc...c0` -- every `c` is a place the engine can
+# re-enter the tail, and the tail is itself a linear scan to `\Z`. Measured through `judge`,
+# INSIDE the 65,536-char cap this file's own comment says prevents exactly this, on the one
+# `Policy.CLOSED` handler: 20,002-char token 1.09 s, 40,002 4.44 s, 60,002 10.14 s -- the
+# 4x-per-doubling signature of O(n^2). With `c` out of the leading class there is exactly one
+# position at which the literal can match, so the tail runs at most once, and the same three
+# calls take 0.03 s, 0.06 s and 0.13 s -- linear, and the same cost as a token with no `c` in
+# it at all, which was never the slow shape. The language matched is unchanged -- "a `-`, then
+# ASCII letters, at least one of them a lowercase `c`" -- and
+# `test_the_shell_c_flag_matches_exactly_what_the_backtracking_pattern_did` holds that against
+# an enumerated probe set rather than against a reading of this comment.
+_SHELL_C_FLAG = re.compile(r"\A-[A-Zabd-z]*c[A-Za-z]*\Z")
 
 # D7: a cap on descent into a command hidden inside a string, not a config key. Real nesting
 # rarely goes past one level. Exceeding it stops looking, which ALLOWS, and that direction is
@@ -531,20 +549,42 @@ def _scan(command: str, depth: int) -> tuple[bool, bool]:
     anywhere, which is both the shell's own reading -- an EXIT trap fires for the shell that
     installed it, whichever line backgrounded the job -- and the permissive direction.
 
+    HEREDOC BODIES ARE NOT GRAMMAR, which is why both reads below ask for tokens with every
+    body removed rather than `bashscan`'s default text. `prepare` re-inserts an UNQUOTED body
+    into the scanned text, and that is right for a caller matching paths or words, because the
+    shell expands such a body. It is wrong here, because a body is standard input to the
+    header's command and never an operator of the enclosing shell. Measured, both directions,
+    before this was keyed off:
+
+    - `cat > README.md <<EOF` / `see https://h/p?a=1&b=2 for $USER` / `EOF` was DENIED. An
+      unquoted delimiter is what a writer must use to get `$VAR` expanded, so writing any file
+      whose content carries an `&` was refused outright by the one `Policy.CLOSED` handler.
+    - `cat > notes.md <<EOF` / `don't stop for $USER` / `EOF` / `sleep 5 &` was ALLOWED. The
+      apostrophe opened a quote that never closed, `tokenize` returned `None`, and a real
+      unreaped job walked through the `None` path below.
+
+    The bodies that ARE programs keep being judged, unchanged: `prepare` reports every heredoc
+    whatever the flag says about the text, and `_nested_programs` picks the shell-fed ones out
+    of that list and recurses into them.
+
     An unparseable command (unbalanced quotes) yields `(False, False)` and is therefore
     allowed. There is no fail-closed fallback available: the token this reader needs is `&`,
     the one thing a raw-text scan provably gets wrong, so a text-level fallback would refuse
-    ordinary quoted arguments. A command whose quotes do not balance is also one no shell
-    would run.
+    ordinary quoted arguments. With the bodies gone, an unbalanced quote in what remains is
+    a command no shell would run -- which is the claim this docstring used to make about the
+    whole command text, and which the apostrophe measurement above showed to be false while
+    a body was part of it.
     """
-    tokens = bashscan.tokenize(command)
+    tokens = bashscan.tokenize(command, keep_unquoted_bodies=False)
     if tokens is None:
         return False, False
     # `prepare` is called separately for the heredocs alone. `tokenize` runs it internally on
     # the raw command, so the tokens already have comments stripped, line continuations
     # joined, and every unquoted newline rewritten to `;` -- which is what makes the
-    # multi-line incident command read as the five separate commands it is.
-    _text, heredocs = bashscan.prepare(command)
+    # multi-line incident command read as the five separate commands it is. The heredoc list
+    # is the same whichever way the flag is set; it is passed here so the two calls cannot
+    # drift into reading the command two different ways.
+    _text, heredocs = bashscan.prepare(command, keep_unquoted_bodies=False)
     backgrounds = _backgrounds_a_job(tokens)
     traps = _installs_an_exit_trap(tokens)
     if depth < _MAX_RECURSION_DEPTH:

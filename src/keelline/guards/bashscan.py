@@ -309,7 +309,7 @@ def _quoted_spans(line: str, quote: str) -> tuple[list[bool], str]:
     return flags, quote
 
 
-def scan_heredocs(text: str) -> tuple[str, list[Heredoc]]:
+def scan_heredocs(text: str, *, keep_unquoted_bodies: bool = True) -> tuple[str, list[Heredoc]]:
     """``(text with quoted heredoc bodies removed, every heredoc found)``.
 
     Expects comment-stripped text (see `strip_comments` for why that order); `prepare`
@@ -319,6 +319,15 @@ def scan_heredocs(text: str) -> tuple[str, list[Heredoc]]:
     every line of it stays in the returned text and reaches the caller's ordinary token scan.
     Both kinds are reported in the list, because quoting says nothing about whether the body
     is EXECUTED -- see the module docstring.
+
+    ``keep_unquoted_bodies=False`` removes those bodies too, and is for the one caller shape
+    that asks a GRAMMAR question rather than a text one. A body is standard input to the
+    header's command; it is never command syntax of the enclosing shell. Keeping it is right
+    for a caller matching paths or words, because the shell expands it -- and wrong for a
+    caller asking "does this command carry an async operator", for which a bare `&` in a
+    README line is data and an apostrophe in one is not an unbalanced quote. Both kinds are
+    still reported in the list, so a caller that wants to judge a shell-fed body as a program
+    still has it. See `bgcleanup._scan`, which is that caller.
 
     Multiple redirects on one line (`cmd <<A <<B`) are consumed in order, the way bash reads
     them, rather than only the first: taking one per line and leaving the rest to be
@@ -357,13 +366,19 @@ def scan_heredocs(text: str) -> tuple[str, list[Heredoc]]:
     """
 
     lines = text.split("\n")
-    out, found, unbalanced = _scan_lines(lines, quote_aware=True)
+    out, found, unbalanced = _scan_lines(
+        lines, quote_aware=True, keep_unquoted_bodies=keep_unquoted_bodies
+    )
     if unbalanced:
-        out, found, _ = _scan_lines(lines, quote_aware=False)
+        out, found, _ = _scan_lines(
+            lines, quote_aware=False, keep_unquoted_bodies=keep_unquoted_bodies
+        )
     return "\n".join(out), found
 
 
-def _scan_lines(lines: list[str], *, quote_aware: bool) -> tuple[list[str], list[Heredoc], str]:
+def _scan_lines(
+    lines: list[str], *, quote_aware: bool, keep_unquoted_bodies: bool
+) -> tuple[list[str], list[Heredoc], str]:
     """One heredoc pass over ``lines``; see `scan_heredocs` for what the two passes are for.
 
     Returns the kept lines, the heredocs found, and the quote state left open at the end --
@@ -394,7 +409,7 @@ def _scan_lines(lines: list[str], *, quote_aware: bool) -> tuple[list[str], list
                 index += 1
             index += 1  # drop the closing tag line too; harmless if absent
             found.append(Heredoc(tag=tag, quoted=quoted, body="\n".join(body), header=line))
-            if not quoted:
+            if not quoted and keep_unquoted_bodies:
                 out.extend(body)
     return out, found, quote
 
@@ -624,7 +639,7 @@ def _strip_line_continuations(text: str) -> str:
     return "".join(out)
 
 
-def prepare(command: str) -> tuple[str, list[Heredoc]]:
+def prepare(command: str, *, keep_unquoted_bodies: bool = True) -> tuple[str, list[Heredoc]]:
     """``command`` reduced to the text a scanner should read, plus its heredocs.
 
     Comments removed, quoted heredoc bodies removed, unquoted heredoc bodies kept in place,
@@ -634,9 +649,14 @@ def prepare(command: str) -> tuple[str, list[Heredoc]]:
     the ORDER is the contract: the two line-based passes first, then continuation-joining,
     then newline rewriting last (see `_strip_line_continuations` for why each placement
     matters).
+
+    ``keep_unquoted_bodies=False`` drops the unquoted bodies as well; `scan_heredocs` states
+    which question that answers and why the default is the other way.
     """
 
-    text, heredocs = scan_heredocs(strip_comments(command))
+    text, heredocs = scan_heredocs(
+        strip_comments(command), keep_unquoted_bodies=keep_unquoted_bodies
+    )
     text = _strip_line_continuations(text)
     return _newlines_to_separators(text), heredocs
 
@@ -661,9 +681,17 @@ def strip_heredocs(command: str) -> str:
     return prepare(command)[0]
 
 
-def tokenize(command: str) -> list[str] | None:
-    """Shell tokens with redirects/separators preserved; ``None`` when unparseable."""
-    lexer = shlex.shlex(prepare(command)[0], posix=True, punctuation_chars=True)
+def tokenize(command: str, *, keep_unquoted_bodies: bool = True) -> list[str] | None:
+    """Shell tokens with redirects/separators preserved; ``None`` when unparseable.
+
+    ``keep_unquoted_bodies=False`` tokenizes the command with every heredoc body gone, which
+    is what a caller asking a grammar question wants; see `scan_heredocs`.
+    """
+    lexer = shlex.shlex(
+        prepare(command, keep_unquoted_bodies=keep_unquoted_bodies)[0],
+        posix=True,
+        punctuation_chars=True,
+    )
     lexer.whitespace_split = True
     lexer.commenters = ""  # `strip_comments` has handled them, correctly; see its docstring
     tokens: list[str] = []
