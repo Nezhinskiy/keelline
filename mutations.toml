@@ -272,3 +272,68 @@ after = ''
 reddens = [
   "tests/memory/test_surface.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface",
 ]
+
+# A `#` opens a comment only at the start of a word. `shlex`'s own `commenters` ends a token
+# at ANY unquoted `#`, which truncated `echo a#b && cat secrets/.env` to `['echo', 'a']` and
+# dropped a real command on the floor.
+[[mutation]]
+name = "a mid-word hash opens a comment again"
+file = "src/keelline/guards/bashscan.py"
+before = '        elif character == "#" and _starts_a_word(previous):'
+after = '        elif character == "#":'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_mid_word_hash_does_not_truncate_the_command",
+  "tests/guards/test_bashscan.py::test_a_hash_inside_a_path_argument_survives",
+]
+
+# The newline's separator is space-padded so it can never weld onto a typed `;` and become a
+# `;;` token that `segments` does not split on. `operator_pieces` decomposes such a run as
+# well, so the segment split survives the unpadded form — what reddens is the token-level
+# assertion, which is the one that pins the padding itself rather than the second guard.
+[[mutation]]
+name = "the newline separator welds onto a typed semicolon again"
+file = "src/keelline/guards/bashscan.py"
+before = '            out.append(" ; ")'
+after = '            out.append(";")'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_newline_after_a_separator_arrives_as_its_own_token",
+]
+
+# `uv run pytest` is an exact two-token wrapper pair, and stripping it is what lets an
+# argv0-keyed caller see the program instead of the launcher. Dropping the branch reddens the
+# unwrapped case and the documented under-report alike: the latter's expected value is what
+# the pair-strip leaves behind, so it pins that the pair IS stripped and that nothing past it
+# is.
+[[mutation]]
+name = "the two-token wrapper pair stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '            name == _DOUBLE_WRAPPER[0]'
+after = '            False'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_the_two_token_uv_run_prefix",
+  "tests/guards/test_bashscan.py::test_command_words_does_not_unwrap_a_launcher_it_does_not_recognise",
+]
+
+# The other two branches `command_words` implements, one entry each: a single mutation cannot
+# pin both, since each branch strips a different prefix and the entry above pins only the
+# `uv run` pair. Leaving the assignment on the front is what made an argv0 test read `FOO=1`
+# as the program.
+[[mutation]]
+name = "a leading environment assignment stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '        if _ASSIGNMENT.match(token):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# The `env` half of the same resolution: a bare wrapper token left on the front makes an
+# argv0 test judge the launcher instead of the program it launches.
+[[mutation]]
+name = "a bare wrapper token stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '        if name in _SINGLE_WRAPPERS:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
