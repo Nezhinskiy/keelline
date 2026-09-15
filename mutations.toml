@@ -459,3 +459,18 @@ reddens = [
   "tests/guards/test_commit.py::test_a_blank_tail_neither_hides_an_offence_nor_moves_its_line_number",
   "tests/guards/test_commit.py::test_positive_samples_are_flagged",
 ]
+
+# `commit strip` is the local half of the trailer gate (`commit check` is the CI half, already
+# covered above): without this guard a `COMMIT_EDITMSG` reached through a symlink would be
+# rewritten through it rather than refused. No mutation is declared for the `-`-prefixed-path
+# guard or the unreadable-file `Failure`: both are already `git-silently-discards-uncommitted-
+# work`-adjacent one-line refusals identical in shape to ones covered elsewhere in this file
+# (`commits_in`'s own leading-`-` refusal, a few entries above), and no `*/commands.py` in this
+# tree carries a mutation yet — this is the first, following the plan's house practice of one
+# declared entry per task rather than one per branch.
+[[mutation]]
+name = "commit strip writes through a symlink"
+file = "src/keelline/guards/commands.py"
+before = '    if path.is_symlink():'
+after = '    if False:'
+reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
