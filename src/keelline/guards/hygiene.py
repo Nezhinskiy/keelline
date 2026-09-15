@@ -84,7 +84,8 @@ DIRTY = (
     "A stashed-baseline A/B cannot see this: both halves run in it."
 )
 STALE = (
-    "{count} .pyc file(s) newer than their sources under the configured code roots -- the "
+    "{count} .pyc file(s) whose recorded source mtime no longer matches their source, under "
+    "the configured code roots -- the "
     "interpreter may be importing a build that predates a fix on disk, which fails "
     "DETERMINISTICALLY in the shape of the defect the test pins. Delete the `__pycache__` "
     "directories under those roots, then re-run before attributing anything."

@@ -45,44 +45,46 @@ terminator to stop at, and the caller treats missing evidence as absence. An unt
 UNQUOTED heredoc keeps every remaining line, for the same reason its terminated form does.
 
 WHICH `<<` IS A REDIRECT AT ALL is a quoting question too, and answering it by regex alone
-was a live false-open (`_quoted_spans`, fix round 7 / review C3). `_HEREDOC.finditer` used
-to run against the RAW line, so a `<<'TAG'` sequence that merely APPEARED INSIDE A QUOTED
-STRING was taken for a real quoted heredoc and every following line up to a `TAG` line --
-or, with no such line, to the end of the command -- was deleted from the text every caller
-reads. `git commit -m "note <<'E' "` followed by any second line is enough, which makes this
-reachable by accident and not only on purpose; the deleted line could equally have been `cat
-<an env file>` or `sed -i '' ... scripts/guard.py`. `strip_comments` above
-already tracks quote state carefully for exactly this class of question, and `scan_heredocs`
-now does the same, carrying the state ACROSS lines so a newline inside a quoted string does
-not reset it. Quote state deliberately does NOT advance through a heredoc BODY: a body is
-data to the shell's parser, not a place quotes open and close. And when the quotes do not
-balance -- a command no shell would run -- the quote-aware pass is thrown away and the scan
-redone without it, because a wrong "this is inside a string" verdict HIDES a real heredoc
-from the caller; that regression was measured, not imagined (see `scan_heredocs`).
+was a live false-open (`_quoted_spans`). `_HEREDOC.finditer` used to run against the RAW
+line, so a `<<'TAG'` sequence that merely APPEARED INSIDE A QUOTED STRING was taken for a
+real quoted heredoc and every following line up to a `TAG` line -- or, with no such line, to
+the end of the command -- was deleted from the text every caller reads. `git commit -m "note
+<<'E' "` followed by any second line is enough, which makes this reachable by accident and
+not only on purpose; the deleted line could equally have been `cat <an env file>` or
+`sed -i '' ... scripts/guard.py`. `strip_comments` above already tracks quote state
+carefully for exactly this class of question, and `scan_heredocs` now does the same, carrying
+the state ACROSS lines so a newline inside a quoted string does not reset it. Quote state
+deliberately does NOT advance through a heredoc BODY: a body is data to the shell's parser,
+not a place quotes open and close. And when the quotes do not balance -- a command no shell
+would run -- the quote-aware pass is thrown away and the scan redone without it, because a
+wrong "this is inside a string" verdict HIDES a real heredoc from the caller; that regression
+was measured, not imagined (see `scan_heredocs`).
 
-A NEWLINE IS A COMMAND SEPARATOR, and `_newlines_to_separators` (fix round 7 / review C2) is
-what makes the rest of the module see that. `shlex` with `whitespace_split = True` discards a
-newline as ordinary whitespace, so `segments` never saw a break and a multi-line command
-collapsed into ONE segment whose argv0 was the FIRST line's program. Token-based checks
-survived that -- they scan every token -- but every argv0-keyed check, including the
-edit-gated boundary protecting this very file, judged the whole command by its first line:
-`echo hi` + newline + `rm scripts/guard.py` was ALLOWED while the same command
-spelled with `;` was denied. Rewriting the newline to a space-padded `;` discards nothing and
-restores the shell's own reading. It must run LAST, after `strip_comments` and
-`scan_heredocs`: both are line-based, and a `;` where they expect a line break would make a
-comment swallow the rest of the command and a heredoc lose its body boundaries.
+A NEWLINE IS A COMMAND SEPARATOR, and `_newlines_to_separators` is what makes the rest of the
+module see that. `shlex` with `whitespace_split = True` discards a newline as ordinary
+whitespace, so `segments` never saw a break and a multi-line command collapsed into ONE
+segment whose argv0 was the FIRST line's program. Token-based checks survive that -- they
+scan every token -- but any argv0-keyed caller then judges the whole command by its first
+line: `echo hi` + newline + `rm scripts/guard.py` presented one segment beginning `echo`,
+while the same command spelled with `;` presented two. Rewriting the newline to a
+space-padded `;` discards nothing and restores the shell's own reading. It must run LAST,
+after `strip_comments` and `scan_heredocs`: both are line-based, and a `;` where they expect
+a line break would make a comment swallow the rest of the command and a heredoc lose its body
+boundaries.
 
-A SEPARATOR WELDED TO ITS NEIGHBOUR IS STILL A SEPARATOR (`operator_pieces`, fix round 7).
-This is the same defect as the newline one, and it was found while fixing it: `shlex`'s
+A SEPARATOR WELDED TO ITS NEIGHBOUR IS STILL A SEPARATOR (`operator_pieces`). This is the
+same defect as the newline one, and it was found while fixing it: `shlex`'s
 `punctuation_chars` mode emits a RUN of adjacent punctuation as ONE token, so `);`, `;;`,
 `&;`, `));` and `;>` are none of them members of `_SEPARATORS`, and `segments` carried
 straight past them into a single segment. No newline and no obfuscation is needed to reach
-it -- `(cd /tmp); rm scripts/guard.py` and `echo hi;>scripts/guard.py`
-were both measured ALLOWED against the real guard, one an ordinary subshell followed by an
-ordinary semicolon, the other an ordinary redirect. `segments` now decomposes such a run into
-the operators bash reads it as, which also restores the caller's redirect lookback: the `>`
-of a fused `;>` becomes the first token of the new segment, where
-`segment[index - 1] in _REDIRECT_OPERATORS` can see it.
+it: measured on this module, `(cd /tmp); rm scripts/guard.py` tokenized to
+`['(', 'cd', '/tmp', ');', 'rm', 'scripts/guard.py']` and `echo hi;>scripts/guard.py` to
+`['echo', 'hi', ';>', 'scripts/guard.py']`, and a membership-only split returned each whole,
+as ONE segment -- one an ordinary subshell followed by an ordinary semicolon, the other an
+ordinary redirect. `segments` now decomposes such a run into the operators bash reads it as,
+which also restores a caller's redirect lookback: the `>` of a fused `;>` becomes the first
+token of the new segment, so a caller asking whether the piece before a path is a redirect
+operator can see it.
 
 Tokenizing is built on `shlex.shlex` directly rather than `shlex.split`: `punctuation_chars`
 is a constructor argument of `shlex.shlex`, not a parameter of the `split()` convenience
@@ -100,28 +102,28 @@ would otherwise be the digit run before the closing parens). This is deliberatel
 conservative: a no-space form like `cat<<EOF` (delimiter preceded by a word character) is
 also rejected, even though bash accepts it. Missing that shape now leaves its body
 unstripped AND unrecognised as a command body -- the body's own tokens are still visible to
-the caller's scan, and (fix round 7) the newline rewriting makes each of those lines a
-segment of its own, so an argv0-keyed check sees them too; only the shell-body recursion
-does not run for it. Wrongly treating an arithmetic shift as a heredoc start, by contrast,
+the caller's scan, and the newline rewriting above makes each of those lines a segment of
+its own, so an argv0-keyed check sees them too; only the shell-body recursion does not run
+for it. Wrongly treating an arithmetic shift as a heredoc start, by contrast,
 silently discards every following line, which is exactly the false-open failure this module
 exists to avoid.
 
-A BACKSLASH-NEWLINE PAIR IS A LINE CONTINUATION (`_strip_line_continuations`, 2026-08-23
-security fix), and until this function existed nothing in the module joined one: `shlex`
-strips the backslash but leaves the newline sitting inside the token, so
-`cat secrets/\\<newline>.env` presented every path-matching check with a token that
-never equalled `secrets/.env` -- measured allowed for an env read, a boundary write, a
-boundary removal (confirmed deleting a real file in a disposable tree), and a sealed-script
-invocation. Bash joins the pair both outside quotes and inside double quotes, but never
-inside single quotes, where `\\<newline>` stays two literal characters -- verified with
-`bash -c` and `od -c` for both directions. `_strip_line_continuations` matches that exactly
-rather than stripping the pair everywhere: a quote-blind global strip would invent a match
-in an argument bash never produces (`'secrets/\\<newline>.env'` is not the path
-`secrets/.env` to bash, only to a scanner that stopped looking at quotes), which is a
-false denial, not a bypass -- but it is still a wrong model of the command, and this module
-has already paid once for a wrong model of what bash executes. See the function's own
-docstring for the placement in `prepare`'s pipeline, which is exactly as load-bearing as
-the ordering already documented above for comments, heredocs, and newlines.
+A BACKSLASH-NEWLINE PAIR IS A LINE CONTINUATION (`_strip_line_continuations`), and until
+that function existed nothing in the module joined one: `shlex` strips the backslash but
+leaves the newline sitting inside the token, so `cat secrets/\\<newline>.env` presented every
+path-matching check with a token that never equalled `secrets/.env` -- measured as passing an
+env read, a boundary write, a boundary removal (confirmed deleting a real file in a
+disposable tree), and a sealed-script invocation. Bash joins the pair both outside quotes and
+inside double quotes, but never inside single quotes, where `\\<newline>` stays two literal
+characters -- verified with `bash -c` and `od -c` for both directions.
+`_strip_line_continuations` matches that exactly rather than stripping the pair everywhere: a
+quote-blind global strip would invent a match in an argument bash never produces
+(`'secrets/\\<newline>.env'` is not the path `secrets/.env` to bash, only to a scanner that
+stopped looking at quotes), which is a false denial, not a bypass -- but it is still a wrong
+model of the command, and this module has already paid once for a wrong model of what bash
+executes. See the function's own docstring for the placement in `prepare`'s pipeline, which
+is exactly as load-bearing as the ordering already documented above for comments, heredocs,
+and newlines.
 """
 
 from __future__ import annotations
@@ -136,9 +138,9 @@ _SEPARATORS = frozenset({";", "&&", "||", "|", "&"})
 # separator glued to whatever stands beside it -- `);`, `;;`, `&;`, `));`, `;>` -- is not a
 # member of `_SEPARATORS` and `segments` used to carry straight past it. That is the SAME
 # argv0-blindness as the newline defect, reached with an ordinary typed `;` and no newline
-# anywhere: `(cd /tmp); rm scripts/guard.py` and `echo hi;>scripts/guard.py` were both
-# ALLOWED, measured against the real guard. `operator_pieces` below decomposes such a run
-# back into the operators bash reads it as.
+# anywhere: `(cd /tmp); rm scripts/guard.py` and `echo hi;>scripts/guard.py` each came back
+# as ONE segment (measured; see the module docstring). `operator_pieces` below decomposes
+# such a run back into the operators bash reads it as.
 _PUNCTUATION_CHARS = frozenset("();<>|&")
 # The characters that END a command. A run without one of these (`((`, `))`, `>>`, `<<`,
 # `<<<`, `<>`) cannot be hiding a separator, so it is handed back untouched -- the narrowest
@@ -147,11 +149,11 @@ _SEPARATOR_CHARS = frozenset(";&|")
 # Multi-character operators that must survive decomposition WHOLE, longest first. Two groups,
 # both load-bearing: `&>`/`&>>`/`>&`/`<&`/`>|` contain a separator character but are single
 # redirect operators, and splitting them would both invent a command break and destroy the
-# `segment[index - 1] in _REDIRECT_OPERATORS` lookback the caller uses to find a write
-# target; `>>`/`<<`/`<<<`/`<>` carry no separator themselves but can share a run with one
-# (`>>;`), and greedy matching keeps them intact there too. Deliberately ABSENT: `;;`, `;&`,
-# `;;&` and `|&` -- every piece of those ends a command, so letting them fall through to
-# single characters yields the right number of breaks with no extra table.
+# lookback a caller uses to find a write target -- asking whether the piece standing before a
+# path is a redirect operator; `>>`/`<<`/`<<<`/`<>` carry no separator themselves but can
+# share a run with one (`>>;`), and greedy matching keeps them intact there too. Deliberately
+# ABSENT: `;;`, `;&`, `;;&` and `|&` -- every piece of those ends a command, so letting them
+# fall through to single characters yields the right number of breaks with no extra table.
 _COMPOUND_OPERATORS = ("&>>", "<<<", "&>", ">&", "<&", ">|", ">>", "<<", "<>")
 # Four delimiter spellings, and the first three mean the same thing to bash: `<<'TAG'`,
 # `<<"TAG"` and `<<\TAG` all suppress expansion of the body, while a bare `<<TAG` does not.
@@ -159,17 +161,17 @@ _COMPOUND_OPERATORS = ("&>>", "<<<", "&>", ">&", "<&", ">|", ">>", "<<", "<>")
 # optional group (`(['\"]?)(\w+)\1`) cannot distinguish "no quote" from "quote" without also
 # accepting a mismatched pair.
 _HEREDOC = re.compile(
-    # `(?<!<)` alone, NOT `(?<![\w<])` (review round 1, finding 5). The `<` half is
-    # load-bearing -- it is what stops a herestring's second and third `<` being read as the
-    # start of a heredoc -- but the `\w` half rejected two spellings bash accepts: `cat<<'EOF'`
-    # with no space, and `2<<EOF`, where the word character is a file descriptor. Both were
-    # measured valid with `bash -n` and by running them, and the first is an ordinary
-    # spelling of the multi-line commit this scan exists to stop denying, so the fix
-    # reached only half of its own case. Recognising MORE real heredocs is the safe
-    # direction here: a quoted body leaves the general text (which is what the shell does
-    # with it too) but `scan_heredocs` still REPORTS it, so `_heredoc_programs` judges it
-    # as a program either way. `$((1<<2))` stays unmatched -- the trailing `(?!\S)`
-    # rejects it, since `)` follows the tag.
+    # `(?<!<)` alone, NOT `(?<![\w<])`. The `<` half is load-bearing -- it is what stops a
+    # herestring's second and third `<` being read as the start of a heredoc -- but the `\w`
+    # half rejected two spellings bash accepts: `cat<<'EOF'` with no space, and `2<<EOF`,
+    # where the word character is a file descriptor. Both were measured valid with `bash -n`
+    # and by running them, and the first is an ordinary spelling of the multi-line commit
+    # this scan exists to stop denying, so the narrower lookbehind reached only half of its
+    # own case. Recognising MORE real heredocs is the safe direction here: a quoted body
+    # leaves the general text (which is what the shell does with it too) but `scan_heredocs`
+    # still REPORTS it, so `bgcleanup._nested_programs` judges it as a program either way.
+    # `$((1<<2))` stays unmatched -- the trailing `(?!\S)` rejects it, since `)` follows the
+    # tag.
     r"(?<!<)<<-?(?!<)\s*"
     r"(?:(?P<quote>['\"])(?P<quoted_tag>\w+)(?P=quote)|(?P<backslash>\\)?(?P<tag>\w+))"
     r"(?!\S)"
@@ -322,27 +324,29 @@ def scan_heredocs(text: str) -> tuple[str, list[Heredoc]]:
     them, rather than only the first: taking one per line and leaving the rest to be
     rediscovered would misalign every body after it.
 
-    A `<<TAG` INSIDE A QUOTED STRING is not a redirect (`_quoted_spans`, fix round 7 /
-    review C3). Skipping such a match is the only direction that can be taken here: treating
-    it as a heredoc deletes every following line from the text -- the exact false-open this
-    module exists to prevent, and reachable by typing an ordinary `git commit -m "... <<'E'
-    "`. Quote state is carried from line to line, because a quoted string may span newlines,
-    but it is deliberately NOT advanced through a heredoc BODY: to the shell's parser a body
-    is data, so an apostrophe in it opens nothing.
+    A `<<TAG` INSIDE A QUOTED STRING is not a redirect (`_quoted_spans`). Skipping such a
+    match is the only direction that can be taken here: treating it as a heredoc deletes
+    every following line from the text -- the exact false-open this module exists to prevent,
+    and reachable by typing an ordinary `git commit -m "... <<'E' "`. Quote state is carried
+    from line to line, because a quoted string may span newlines, but it is deliberately NOT
+    advanced through a heredoc BODY: to the shell's parser a body is data, so an apostrophe
+    in it opens nothing.
 
     THE QUOTE-AWARE PASS IS ABANDONED WHEN ITS OWN PREMISE FAILS, and this is not a nicety:
     it was measured turning a deny into an allow. If the quotes do not balance over the lines
     the shell actually parses, then "this `<<` is inside a string" is an unreliable claim, and
-    acting on it hides a REAL heredoc from the caller -- `echo "unbalanced` + newline + `bash
-    <<'EOF'` + `rm scripts/guard.py` + `EOF` went DENY (shipped) -> ALLOW with the
-    quote-aware pass alone, because the hidden heredoc never reached `_heredoc_programs` and
-    the guard's unparseable-command fallback covers env paths, the marker and prod tokens but
-    not the edit-gated boundary. So the pass runs, and if it ends still inside a quote the
-    whole scan is redone with quote tracking OFF -- exactly the shipped behavior, for exactly
-    the commands that cannot balance their quotes. Nothing is given up by that: bash will not
-    run an unbalanced command either, so every command a shell would EXECUTE gets the
-    quote-aware answer. The balance is judged only over non-body lines, which is why the
-    fallback does not fire for the ordinary `cat > x <<'EOF'` / `don't` / `EOF` shape.
+    acting on it hides a REAL heredoc from the caller. Measured: `echo "unbalanced` + newline
+    + `bash <<'EOF'` + `rm scripts/guard.py` + `EOF` is returned as one `Heredoc` by the two-
+    pass scan and as NO heredoc at all under the quote-aware pass alone -- so the only route
+    this module offers to a shell-fed body as a PROGRAM (the list a caller like
+    `bgcleanup._nested_programs` reads) comes back empty, and a body that is a command line is
+    left to whatever a caller's ordinary token scan makes of it. So the pass runs, and if it
+    ends still inside a quote the whole scan is redone with quote tracking OFF -- exactly what
+    the quote-blind scan did, for exactly the commands that cannot balance their quotes.
+    Nothing is given up by that: bash will not run an unbalanced command either, so every
+    command a shell would EXECUTE gets the quote-aware answer. The balance is judged only
+    over non-body lines, which is why the fallback does not fire for the ordinary
+    `cat > x <<'EOF'` / `don't` / `EOF` shape.
 
     Lines are split on `\\n` alone rather than by `str.splitlines`, which also breaks on
     `\\v`, `\\f`, `\\x1c`-`\\x1e`, `\\x85`, `\\u2028` and `\\u2029`. A shell treats none of
@@ -399,34 +403,40 @@ def heredoc_body_end(text: str, index: int) -> int | None:
     """The offset just past the body of the heredoc whose redirect begins at ``index``, or
     ``None`` when no redirect begins there.
 
-    For a caller scanning INSIDE a command substitution, which is the one place
-    `scan_heredocs` above deliberately does not look. `git commit -m "$(cat <<'EOF'` /
-    body / `EOF` / `)"` puts the whole substitution inside a double-quoted string, so
-    `_quoted_spans` reports that `<<'EOF'` as text and no heredoc is found -- correct for
-    its own question, since a `<<TAG` inside a string really is not a redirect, and the
-    false-open that rule exists to prevent (module docstring, fix round 7 / review C3) is
-    not something to trade away. But bash parses a `$(...)` as a command in its OWN right,
-    and a heredoc inside one is a real redirect regardless of the quoting outside it.
+    PORTED AHEAD OF ITS CONSUMER: nothing in `src/` calls this yet, and it is not on
+    `guards/api.py`. It is here for a caller that walks command substitutions -- a `$(...)`
+    scan of its own -- and the lane that adds one is where it acquires a production caller.
+    Until then `tests/guards/test_bashscan.py` is what holds its contract, so the contract is
+    stated here in full rather than left to be reconstructed from a caller that does not
+    exist.
 
-    What the caller needs from that is not the body's text -- it already has it -- but
+    The need it answers is the one place `scan_heredocs` above deliberately does not look.
+    `git commit -m "$(cat <<'EOF'` / body / `EOF` / `)"` puts the whole substitution inside a
+    double-quoted string, so `_quoted_spans` reports that `<<'EOF'` as text and no heredoc is
+    found -- correct for its own question, since a `<<TAG` inside a string really is not a
+    redirect, and the false-open that rule exists to prevent (module docstring) is not
+    something to trade away. But bash parses a `$(...)` as a command in its OWN right, and a
+    heredoc inside one is a real redirect regardless of the quoting outside it.
+
+    What such a caller needs from that is not the body's text -- it already has it -- but
     where the body ENDS, so it can step over it. A body is DATA to the shell's parser, the
     same rule `scan_heredocs` already states for quote state: an apostrophe in a body opens
-    nothing, and a paren in one nests nothing. Without this, `_find_substitutions`' own
-    delimiter scan read the apostrophe in an ordinary English possessive as an unclosed
-    quote, swallowed the `)` that closed the substitution, and denied the whole command as
-    unparseable.
+    nothing, and a paren in one nests nothing. Without this, a substitution scan's own
+    delimiter walk reads the apostrophe in an ordinary English possessive as an unclosed
+    quote, swallows the `)` that closed the substitution, and hands its caller a command it
+    calls unparseable -- which was measured on the guard this was ported from.
 
     A REDIRECT WHOSE TERMINATOR LINE IS NOT THERE answers ``None`` -- "nothing to step
     over" -- rather than running to the end of ``text``, and that is the opposite of what
     `scan_heredocs` does with an unterminated body. The asymmetry is the point, and it was
-    measured rather than reasoned: this function's caller scans text `prepare` has ALREADY
+    measured rather than reasoned: a caller of this scans text `prepare` has ALREADY
     stripped, so much the commonest way to reach a `<<TAG` with no terminator is a heredoc
     that was found and removed normally, leaving its header behind (`X=$(bash <<'EOF'` /
     body / `EOF` / `)` strips to `X=$(bash <<'EOF'` / `)`). Running to the end of the text
-    there swallows the `)` that closes the substitution and denies the whole command as
-    unparseable -- a new false denial of exactly the kind this change exists to remove, and
-    three commands measured it. Not skipping costs nothing: the body's characters are then
-    read as ordinary text, which is what the caller did before this function existed.
+    there swallows the `)` that closes the substitution and makes the whole command
+    unparseable -- a new false denial of exactly the kind this exists to remove, and three
+    commands measured it. Not skipping costs nothing: the body's characters are then read as
+    ordinary text, which is what such a scan did before this function existed.
 
     `<<<` (a herestring, which has no body) is excluded by `_HEREDOC`'s own `(?!<)`, and its
     second and third `<` by the same pattern's own lookbehind, so neither is mistaken for a
@@ -518,15 +528,15 @@ def _strip_line_continuations(text: str) -> str:
     `secrets/.env`; so does the double-quoted form). Before this function existed,
     `_newlines_to_separators` deliberately left such pairs untouched (correctly, for ITS
     OWN job -- see its docstring) and nothing downstream ever removed them, so `tokenize`
-    handed `shlex` a token still carrying a literal embedded newline
-    (`secrets/<newline>.env`), which `shlex` turns into an escaped-but-not-rejoined
-    token -- not the single joined word bash actually reads. Every path-matching check
-    built on `tokenize` inherited the resulting hole. Measured against the shipped guard,
+    handed `shlex` a token still carrying a literal embedded newline (`secrets/<newline>.env`),
+    which `shlex` turns into an escaped-but-not-rejoined token -- not the single joined word
+    bash actually reads. Every path-matching check built on `tokenize` inherited the resulting
+    hole. Four shapes were measured against a path-matching guard built on these tokens, with
     `TMPDIR` on an empty scratch directory: `cat secrets/\\<newline>.env` (env read),
     `echo x > scripts/\\<newline>guard.py` (boundary write),
-    `rm scripts/\\<newline>guard.py` (boundary removal, confirmed executed in a
-    disposable tree), and `scripts/\\<newline>sealed.sh TOKEN` (sealed script) were
-    all ALLOWED; the removal case really did delete the file when run for real.
+    `rm scripts/\\<newline>guard.py` (boundary removal, confirmed executed in a disposable
+    tree), and `scripts/\\<newline>sealed.sh TOKEN` (sealed script) all passed it; the removal
+    case really did delete the file when run for real.
 
     QUOTE-AWARE, NOT A NAIVE GLOBAL STRIP -- the direction is load-bearing, not a style
     choice. Inside single quotes bash gives `\\` no special meaning at all: `\\<newline>`
@@ -565,8 +575,12 @@ def _strip_line_continuations(text: str) -> str:
       character, not a real shell quote, and could misjudge a continuation because of it. A
       known, narrower residual of running after extraction: an UNQUOTED heredoc body fed to
       an interpreter is judged from `Heredoc.body`, captured before this function ever
-      runs, so a continuation hidden inside such a body is not closed by this change (out
-      of scope for this fix -- see the bug entry).
+      runs, so a continuation hidden inside such a body is not joined. That body is read --
+      `bgcleanup._nested_programs` re-tokenizes a shell-fed one as a command line of its own
+      -- so the residual is reachable, and it is recorded rather than closed: joining it
+      means continuation-stripping each captured body separately, a second escaping model to
+      keep in step with this one, and this module degrades toward reporting LESS about a
+      body rather than inventing text no shell would run.
     - BEFORE `_newlines_to_separators`, so no bare `\\<newline>` pair reaches it: every one
       outside single quotes is already gone, and every one still present is inside single
       quotes, which that function's own quote tracking already leaves alone.
@@ -630,11 +644,18 @@ def prepare(command: str) -> tuple[str, list[Heredoc]]:
 def strip_heredocs(command: str) -> str:
     """`prepare`'s text half: comments and quoted heredoc bodies gone, everything else kept.
 
-    Kept under its original name because two hooks import it, but note what it no longer
-    does: an UNQUOTED heredoc body is not removed. A caller using this to ignore a command
-    quoted inside a document must quote the delimiter (`<<'EOF'`), which is what a document
-    fixture should do anyway -- an unquoted delimiter means the shell expands the body, and
-    a scanner that cannot see expanded text cannot judge it.
+    PORTED AHEAD OF ITS CONSUMER, like `heredoc_body_end` above: nothing in `src/` calls it
+    and it is not on `guards/api.py`, so its only callers today are in
+    `tests/guards/test_bashscan.py`. It is the convenience shape for a caller that wants the
+    prepared TEXT and no heredoc list -- a path-matching or token check rather than a
+    program-level one -- and the lane that adds such a check is where it acquires a production
+    caller.
+
+    Note what the name does NOT promise: an UNQUOTED heredoc body is not removed. A caller
+    using this to ignore a command quoted inside a document must quote the delimiter
+    (`<<'EOF'`), which is what a document fixture should do anyway -- an unquoted delimiter
+    means the shell expands the body, and a scanner that cannot see expanded text cannot
+    judge it.
     """
 
     return prepare(command)[0]
@@ -707,10 +728,10 @@ def segments(tokens: list[str]) -> list[list[str]]:
     A token that is a fused run of punctuation is decomposed first (`operator_pieces`), so a
     separator welded to a neighbouring operator still ends the command it ends in bash. The
     non-separator pieces are kept, in place: `);` leaves the `)` at the end of the segment it
-    closed, and `;>` puts the `>` at the FRONT of the segment it opens -- which is what makes
-    `segment[index - 1] in _REDIRECT_OPERATORS` find the write target of
-    `echo hi;>scripts/guard.py`, where the fused `;>` token matched neither a
-    separator nor a redirect and the write was invisible to both.
+    closed, and `;>` puts the `>` at the FRONT of the segment it opens -- which is what lets a
+    caller's redirect lookback, the test that the piece before a path is a redirect operator,
+    find the write target of `echo hi;>scripts/guard.py`, where the fused `;>` token matched
+    neither a separator nor a redirect and the write was invisible to both.
     """
 
     result: list[list[str]] = []

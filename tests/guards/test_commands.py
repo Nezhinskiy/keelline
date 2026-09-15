@@ -230,9 +230,10 @@ def test_commit_strip_refuses_an_option_shaped_path() -> None:
 def test_commit_strip_keeps_gits_trailing_comment_block_intact(tmp_path: Path) -> None:
     # T5-2: a realistic `prepare-commit-msg` file — subject, blank, an attribution trailer,
     # then git's own comment block (`core.commentChar` default `#`). `offending_lines` judges
-    # only the message's *final paragraph* (commit.py's docstring), and in this file that final
-    # paragraph is git's comment block, not the trailer — so a strip that does not split the
-    # comment block off first would no-op here, on exactly the path the hook exists for.
+    # only the message's *trailing attribution block* (commit.py's docstring), and in this file
+    # the last paragraph is git's comment block, which is not attribution and therefore ends
+    # that block where it starts — so a strip that does not split the comment block off first
+    # would no-op here, on exactly the path the hook exists for.
     message = tmp_path / "COMMIT_EDITMSG"
     message.write_text(
         "fix: thing\n"

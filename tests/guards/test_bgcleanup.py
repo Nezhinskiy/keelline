@@ -205,6 +205,28 @@ def test_a_subshell_background_inside_another_subshell_is_denied() -> None:
     assert denied("((sleep 300; sleep 1) & wait)")
 
 
+@pytest.mark.parametrize(
+    "command", ["echo $((3 & 1))", "echo $(( 3 & 1 ))", "x=$((5 & 3)); echo $x"]
+)
+def test_a_bitwise_and_in_an_arithmetic_expansion_is_the_documented_false_refusal(
+    command: str,
+) -> None:
+    """The module docstring's ONE admitted exception, and until now the only claim in it that
+    nothing executed. Measured here rather than restated: this is the plugin's only
+    `Policy.CLOSED` handler, so a documented false refusal that drifts either becomes a lie in
+    the docstring or a silent widening of what the guard denies, and neither shows up in a diff.
+
+    It has no mutation of its own, by construction: what reddens it is the fix the docstring
+    rejects -- suppressing `&` inside a run opened by `((` -- and that same edit reddens
+    `test_a_subshell_background_inside_another_subshell_is_denied`, which is the leak the
+    exception is paid for. The pair is the point; either alone can be made green by the wrong
+    change. The `background=False` half is what keeps the cost as small as the docstring says:
+    an arithmetic expression in an ordinary foreground call is not touched.
+    """
+    assert denied(command)
+    assert judge(command, background=False) == ALLOW
+
+
 def test_the_pipe_both_operator_is_not_backgrounding() -> None:
     """The negative control for the welded-separator fix. `|&` is bash's "pipe stdout and
     stderr"; `bashscan` deliberately leaves it out of its compound-operator table, so it

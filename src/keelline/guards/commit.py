@@ -28,13 +28,34 @@ needs the domain listed, and a vendor with no mail domain of its own can land **
 vendor uncovered on the trailer surface; the note beside ``_VENDOR_DOMAINS`` records which
 vendor is in that state today and why widening the domain table is not the answer.
 
-**Only the final paragraph is judged**, and that is this port's one deliberate divergence. Git
-trailers and harness footers are appended at the end of a message, so the last paragraph is
-the only place a real attribution can appear; everything above it is prose, and a repository
+**Only the trailing attribution block is judged**, and that is this port's one deliberate
+divergence. Git trailers and harness footers are appended at the end of a message, so the end
+is the only place a real attribution can appear; everything above it is prose, and a repository
 that uses coding agents writes that prose constantly — provider names, model ids, paths, and
 quoted trailers in a message about this very policy. Judging the whole message let ``strip``
 amputate a body sentence, which is the worse failure of the two: the range check still catches
 a trailer the hook left behind, but nothing puts a deleted sentence back.
+
+The block is the last paragraph, plus each paragraph above it whose every line is itself an
+attribution line. The walk stops dead at the first paragraph carrying any line that is not.
+**One paragraph was not enough**, and that is measured rather than foreseen: the canonical
+harness attribution is *two* paragraphs — a ``Generated with`` footer, a blank line, then a
+``Co-Authored-By:`` trailer — so judging only the last of them removed the trailer and left
+the footer. The hook printed a successful strip, the range check then failed the same commit
+in CI naming one of the two offences, and fixing the one it named failed again on the next
+run.
+
+**What the walk costs, stated rather than implied.** A paragraph of prose is safe because prose
+does not match; a paragraph is *not* safe merely because it is body text. Anything the rules
+below call an attribution is judged as one wherever the walk reaches it — and the walk reaches
+**every** paragraph in the run above the block whose lines all match, not only the one directly
+above it, and a paragraph of several quoted trailers as readily as a single line. A message
+that pastes forbidden trailers as examples, in as many paragraphs as it likes, loses all of
+them, ``commit strip`` doing the removing before the commit exists. The protection this keeps
+is the one that matters and the one the paragraph rule was for: the walk cannot step *over* a
+paragraph, so one non-matching line anywhere in a paragraph makes that paragraph and everything
+above it unreachable, and a body paragraph at the end of the message stops the walk before it
+starts.
 
 **Trailing blank lines are not the final paragraph.** The search for the paragraph separator
 starts at the last *non-blank* line, because otherwise a message ending in a blank — or in a
@@ -43,10 +64,27 @@ whose whole point is that it cannot be bypassed is bypassed by one trailing spac
 measured defect of the first cut of this module, not a hypothetical.
 
 The trailer rule reads the trailer's *value*, not the whole line: an address at a vendor's own
-mail domain, or a whole name that is a product phrase. **The domain rule's cost is chosen, not
-overlooked** — a person whose employer is a vendor (``alice@openai.com``) is indistinguishable
-from that vendor's bot by address alone, and is flagged. Dropping the domain rule to spare them
-would miss every bot whose trailer name is not a product phrase, which is most of them.
+mail domain, or a whole name that is a product phrase. **A value that continues into a WORD
+past its address is a sentence, not a trailer.** Without that test everything past the ``>`` is
+discarded as part of the address and an English sentence built on a trailer key reads as a bare
+trailer — measured, ``Reviewed-by: Copilot <x@y.z> said nothing useful.`` was flagged, and
+under the paragraph walk above it was stripped as well.
+
+The exact shape of that test is load-bearing, and both tempting simplifications of it were
+measured **missing a real trailer**, which is the expensive direction. "The value must end at
+``>``" loses an unterminated one (``<noreply@anthropic.com``, closing bracket knocked off),
+which carries no ``>`` at all. "Anything after ``>`` is prose" loses a trailer with ordinary
+trailing punctuation — ``Co-Authored-By: Claude <noreply@anthropic.com>.`` is the canonical
+harness trailer plus one typed full stop, and a gate that a full stop bypasses is not a gate.
+So: a word character in the tail after the **last** ``>``, the last rather than the first
+because a display name may carry brackets of its own (``Claude <bot> <address>``) and splitting
+at the first one reads the real address as prose. Prose that happens to end in ``>`` is flagged
+rather than missed, which is the cheap direction.
+
+**The domain rule's cost is chosen, not overlooked** — a person whose employer is a vendor
+(``alice@openai.com``) is indistinguishable from that vendor's bot by address alone, and is
+flagged. Dropping the domain rule to spare them would miss every bot whose trailer name is not
+a product phrase, which is most of them.
 
 Scope and limits. Only whole lines that *are* an attribution trailer or footer are matched, so
 a message discussing attribution in prose is untouched — and, symmetrically, a violation
@@ -62,9 +100,14 @@ itself writes LF, so this needs a hand-authored message file to reach. And a tra
 value is folded across a continuation line is matched on its first line only; no harness emits
 one today.
 
-One consequence worth knowing: a commit message whose final paragraph quotes a forbidden
-trailer as an example — plausible when editing this policy — fails the check. Describe the
-trailer instead of pasting it.
+One consequence worth knowing, and it is larger than a failed check. A commit message that
+quotes a forbidden trailer or footer as an example — plausible when editing this policy — is
+judged wherever the walk reaches it: not only in the closing paragraph but in every paragraph
+above it that is nothing *but* such quoted lines. ``commit check`` fails on it, and ``commit
+strip`` removes those lines from the message before the commit exists, silently apart from
+its count. Describe the trailer instead of pasting it, or keep a sentence of your own prose in
+the same paragraph — a paragraph with one non-matching line in it ends the walk and is never
+read.
 """
 
 from __future__ import annotations
@@ -90,8 +133,9 @@ _VENDORS = (
 )
 
 # A `-by:` trailer: any `<Something>-by:` key, because Reviewed-by, Signed-off-by and
-# Tested-by are all used by agent harnesses; the value is what decides. A value folded onto a
-# continuation line is read to the end of the first line only (see the docstring).
+# Tested-by are all used by agent harnesses; the value is what decides, and `_trailer_offence`
+# requires it to end at its address. A value folded onto a continuation line is read to the end
+# of the first line only (see the docstring).
 _TRAILER = re.compile(r"^[ \t]*[\w-]*-by:[ \t]*(?P<value>.+?)[ \t]*$", re.IGNORECASE)
 # The address rule: the bot's own domain. A person employed there is the documented cost.
 # Two domains are deliberately absent, for one reason: `github.com` is what GitHub puts on
@@ -124,6 +168,10 @@ _MARKER = re.compile(
     r"^[ \t]*(?:\U0001F916[ \t]*)?ai[- ]generated(?:[ \t]+(?:by|with)[ \t]+\S.*)?[ \t]*$",
     re.IGNORECASE,
 )
+# What tells a trailer's trailing punctuation from a sentence continuing past the address: one
+# word character. `\w` and not `[A-Za-z]` on purpose — a tail is prose in any script, and
+# `str.isalnum`-style breadth is what keeps this from being an English-only rule.
+_WORD = re.compile(r"\w")
 
 
 def _trailer_offence(line: str) -> bool:
@@ -131,6 +179,29 @@ def _trailer_offence(line: str) -> bool:
     if match is None:
         return False
     name, _, address = match.group("value").partition("<")
+    # A trailer's value ends at its address; a value that CONTINUES INTO A WORD past the
+    # address is a sentence. Without this, everything after the `>` lands in the discarded
+    # "address" half, so `Reviewed-by: Copilot <x@y.z> said nothing useful.` -- this module's
+    # own designated example of trailer-shaped prose -- read as a bare `Copilot` trailer.
+    #
+    # Two spellings were measured and rejected, both of which MISS A REAL TRAILER, which is
+    # the expensive direction here and the reason this reads the way it does:
+    #
+    # * "the value must end at `>`" loses an unterminated trailer
+    #   (`<noreply@anthropic.com`, closing bracket knocked off) -- it carries no `>` at all.
+    # * "anything at all after `>` is prose" loses a trailer with ordinary trailing
+    #   punctuation: a full stop, a comma, a semicolon, a closing paren, an em dash, an
+    #   ellipsis. `Co-Authored-By: Claude <noreply@anthropic.com>.` is the canonical trailer
+    #   with one typed character, and missing it is a bypass.
+    #
+    # So the test is a WORD CHARACTER after the address, and it is taken after the LAST `>`
+    # rather than the first: a display name that itself carries brackets
+    # (`Claude <bot> <noreply@anthropic.com>`) puts a real address after an inner `>`, and
+    # splitting at the first one reads the real trailer as prose. A prose line that happens to
+    # END in `>` is flagged instead -- a false positive, which is the cheap direction.
+    _, bracket, tail = address.rpartition(">")
+    if bracket and _WORD.search(tail):
+        return False
     if _VENDOR_DOMAINS.search(address):
         return True
     return _PRODUCTS.fullmatch(name.strip()) is not None
@@ -170,15 +241,18 @@ LOG_TIMEOUT_SECONDS = 60
 ATTRIBUTION_LABELS = tuple(label for label, _ in _PATTERNS)
 
 
-def _final_paragraph_start(lines: list[str]) -> int:
-    """Index of the first line of the last paragraph, counting trailing blanks as part of it.
+def _final_paragraph_start(lines: list[str], end: int | None = None) -> int:
+    """Index of the first line of the last paragraph of `lines[:end]`, blanks included in it.
 
     The scan for the separator begins at the last **non-blank** line, not at the last line. A
     message ending in a blank — or in a whitespace-only line, which no editor renders — would
     otherwise put the separator below every trailer and leave an empty final paragraph, and
     one trailing space would disable the check outright.
+
+    `end` exists so `_attribution_block_start` can ask the same question of the text above a
+    paragraph it has already judged; the default is the whole message.
     """
-    end = len(lines)
+    end = len(lines) if end is None else end
     while end > 0 and not lines[end - 1].strip():
         end -= 1
     for index in range(end - 1, -1, -1):
@@ -187,14 +261,49 @@ def _final_paragraph_start(lines: list[str]) -> int:
     return 0
 
 
+def _is_attribution(line: str) -> bool:
+    return any(matches(line) for _, matches in _PATTERNS)
+
+
+def _paragraph_is_all_attribution(lines: list[str], start: int, end: int) -> bool:
+    """True when `lines[start:end]` has content and every non-blank line of it is attribution.
+
+    Blank lines do not vote: the slice carries the separator below the paragraph, and a
+    message's trailing blanks ride on the last one. An empty or all-blank slice is *not* all
+    attribution — otherwise the walk would step through it into the body.
+    """
+    content = [line for line in lines[start:end] if line.strip()]
+    return bool(content) and all(_is_attribution(line) for line in content)
+
+
+def _attribution_block_start(lines: list[str]) -> int:
+    """Index of the first line judged: the last paragraph, plus wholly-attribution ones above.
+
+    The canonical harness attribution is two paragraphs, so stopping at the last one left the
+    footer behind (see the module docstring). This walks upwards **only while the paragraph it
+    reaches is attribution to the last line**, so the first paragraph holding any body line
+    ends the walk and nothing above it is ever read — which is what keeps `strip_message` from
+    amputating a sentence.
+    """
+    start = _final_paragraph_start(lines)
+    if not _paragraph_is_all_attribution(lines, start, len(lines)):
+        return start
+    while start > 0:
+        earlier = _final_paragraph_start(lines, start)
+        if not _paragraph_is_all_attribution(lines, earlier, start):
+            break
+        start = earlier
+    return start
+
+
 def offending_lines(message: str) -> list[Offence]:
-    """`(line number, label)` for every attribution line in `message`'s final paragraph.
+    """`(line number, label)` for every attribution line in `message`'s attribution block.
 
     The offending text itself is never carried: a commit message is repository-authored, and
     only what this module computed travels to a summary or a hook's context.
     """
     lines = message.splitlines()
-    start = _final_paragraph_start(lines)
+    start = _attribution_block_start(lines)
     hits: list[Offence] = []
     for number, line in enumerate(lines[start:], start=start + 1):
         for label, matches in _PATTERNS:
@@ -205,20 +314,20 @@ def offending_lines(message: str) -> list[Offence]:
 
 
 def strip_message(message: str) -> str:
-    """Drop the final paragraph's attribution lines and the blank their removal orphans.
+    """Drop the attribution block's attribution lines and the blank their removal orphans.
 
-    **The body is never rewritten.** Only lines at or after the final paragraph's start are
-    removed, and the one line above it this can touch is the blank separator the paragraph's
-    removal left dangling at the end of the message — popped with any other trailing blank,
-    because a trailing blank is not a body line. A doubled blank inside the body stays doubled:
-    normalising blank runs message-wide is what the first cut of this did, and it made the
-    docstring's own promise false. A message with no offence is returned byte for byte.
+    **The body is never rewritten.** Only lines at or after the block's start are removed, and
+    the one line above it this can touch is the blank separator the removal left dangling at
+    the end of the message — popped with any other trailing blank, because a trailing blank is
+    not a body line. A doubled blank inside the body stays doubled: normalising blank runs
+    message-wide is what the first cut of this did, and it made the docstring's own promise
+    false. A message with no offence is returned byte for byte.
     """
     lines = message.splitlines()
     doomed = {offence.line - 1 for offence in offending_lines(message)}
     if not doomed:
         return message
-    start = _final_paragraph_start(lines)
+    start = _attribution_block_start(lines)
     kept = lines[:start] + [
         line for index, line in enumerate(lines[start:], start=start) if index not in doomed
     ]
@@ -280,6 +389,13 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
 
 
 def check_range(root: Path, rev_range: str, config: Config) -> Report:
+    """Judge every message in `rev_range`, unless `attribution_check` switches the rules off.
+
+    The log runs either way, and that is the contract rather than an oversight: with the flag
+    false the report still says how many messages it read, and nothing but `git log` can
+    answer that. So the flag stops a message ever *being* a violation; it does not make an
+    unreadable range readable, and such a range is still a refusal.
+    """
     commits = commits_in(root, rev_range)
     violations: list[Violation] = []
     if not config.commit_messages.attribution_check:

@@ -153,7 +153,7 @@ _BACKGROUND_OPERATOR = "&"
 
 # Pieces that, standing immediately before an `&`, mean that `&` is part of a LONGER operator
 # rather than the async one. `|&` (pipe stdout and stderr), `;&` and `;;&` (case fall-through)
-# are deliberately absent from `bashscan`'s compound-operator table: for SEGMENTATION every
+# are deliberately absent from `bashscan._COMPOUND_OPERATORS`: for SEGMENTATION every
 # piece of them ends a command, so letting them fall through to single characters yields the
 # right number of breaks with no extra table. That is correct there and wrong here, so this
 # file reads the pieces and then interprets them -- a naive scan for a `&` piece would refuse

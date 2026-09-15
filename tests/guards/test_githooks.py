@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from keelline.errors import Refusal
+from keelline.guards.commit import offending_lines
 from keelline.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +24,16 @@ def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # `GIT_CONFIG_GLOBAL`. Without this the developer's own `core.hooksPath` would decide where
     # these tests install a hook — outside `tmp_path`, in a directory they actually use.
     monkeypatch.setenv("HOME", str(tmp_path))
+    # And `HOME` is not enough: the keep-list cannot carry `GIT_CONFIG_SYSTEM` either, so a
+    # `core.hooksPath` in `/etc/gitconfig` still points every `install`/`uninstall` below at a
+    # real directory, where a mid-test failure leaves the developer's own hook renamed. Skip
+    # rather than install: this module's writes are the only ones on this branch that could
+    # reach outside `tmp_path`.
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    git(tmp_path, probe, "init", "-q")
+    if tmp_path not in hooks_dir(probe).parents:
+        pytest.skip("a system-wide core.hooksPath points these tests outside tmp_path")
 
 
 def env(tmp_path: Path) -> dict[str, str]:
@@ -91,6 +102,14 @@ def committing(tmp_path: Path, root: Path, message: str) -> subprocess.Completed
 
 
 TRAILER = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+# What the harness actually appends: a footer, a blank line, and a trailer. Two paragraphs.
+CANONICAL_BLOCK = (
+    "fix: thing\n"
+    "\n"
+    "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)\n"
+    "\n"
+    "Co-Authored-By: Claude <noreply@anthropic.com>"
+)
 CLEAN = "fix: thing"
 FAILED_LINE = "keelline: commit strip failed"
 
@@ -108,6 +127,22 @@ def test_the_hook_strips_a_trailer_before_the_commit_is_written(tmp_path: Path) 
     root = repo(tmp_path)
     install(root)
     assert commit(tmp_path, root, TRAILER).strip() == "fix: thing"
+
+
+def test_the_hook_leaves_nothing_for_the_range_check_to_find(tmp_path: Path) -> None:
+    # The end-to-end half of the two-paragraph fix, across the seam the unit tests cannot see:
+    # real repository, real installed hook, the canonical block, then the committed message
+    # judged by the same function CI runs. This is the failure as it was reported — the hook
+    # said `stripped 1 attribution line(s)` and `commit check` rejected the commit anyway — so
+    # the two assertions are the hook's own claim and the gate's verdict, not one twice.
+    root = repo(tmp_path)
+    install(root)
+    completed = committing(tmp_path, root, CANONICAL_BLOCK)
+    assert completed.returncode == 0
+    assert "stripped 2 attribution line(s)" in completed.stderr
+    written = git(tmp_path, root, "log", "-1", "--format=%B")
+    assert offending_lines(written) == []
+    assert written.strip() == "fix: thing"
 
 
 def test_the_hook_survives_no_verify(tmp_path: Path) -> None:

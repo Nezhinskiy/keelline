@@ -83,10 +83,11 @@ def _split_trailing_comment_block(text: str) -> tuple[str, str]:
     never learn about `#`: in a message read from `git log` a `#` line is real content, so this
     split lives here, on the file-reading side, not in the module that judges the message text.
 
-    `offending_lines`/`strip_message` judge only a message's *final paragraph* (see
-    `commit.py`'s docstring), and in an ordinary interactive commit that final paragraph is
-    git's own comment block, not whatever a person or a tool wrote above it — so stripping the
-    file's text whole would no-op on exactly the file `prepare-commit-msg` hands the hook.
+    `offending_lines`/`strip_message` judge only a message's *trailing attribution block* (see
+    `commit.py`'s docstring), and in an ordinary interactive commit the last paragraph is git's
+    own comment block, not whatever a person or a tool wrote above it. A comment line is not an
+    attribution line, so the block's upward walk stops there too — stripping the file's text
+    whole would no-op on exactly the file `prepare-commit-msg` hands the hook.
     """
     lines = text.splitlines(keepends=True)
     index = len(lines)
@@ -206,7 +207,7 @@ def run_test_audit(args: argparse.Namespace) -> Result:
     }
     # Exit 0 with findings, on purpose: candidates are for triage, not a build failure. Run
     # over Keelline's own tests with Keelline's own code roots this command reports six
-    # candidates across 42 test files (measured), and every one of them is a name collision
+    # candidates across 43 test files (measured), and every one of them is a name collision
     # rather than a defect -- a test that states one imported symbol's tokens in its name and
     # exercises a neighbouring one, `override_is_honoured` inside
     # `test_the_override_is_honoured_from_an_interactive_shell`. So exit 1 would be red on its

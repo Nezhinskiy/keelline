@@ -33,6 +33,18 @@ from keelline.guards.commit import (
 # the oracle then reports as "0 test(s) ran", an environment fact dressed as a defect.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
+# The block the harness this module exists to defuse actually appends: a footer, a blank line,
+# and a trailer — two paragraphs, not one. Shared by the corpus and the strip test below.
+CANONICAL_BLOCK = (
+    "fix: something real\n"
+    "\n"
+    "A body paragraph that must survive.\n"
+    "\n"
+    "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)\n"
+    "\n"
+    "Co-Authored-By: Claude <noreply@anthropic.com>\n"
+)
+
 POSITIVES = [
     "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
     "Co-authored-by: Claude <noreply@anthropic.com>",
@@ -58,6 +70,11 @@ POSITIVES = [
     # later pattern change.
     "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n",
     "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n   \n",
+    # The canonical harness block, which is *two* paragraphs. It is in the corpus rather than
+    # only in the strip test below because the one-paragraph rule flagged it — one of its two
+    # lines — so "did it flag anything" was true all along; what was false is the pair of
+    # answers the strip test pins.
+    CANONICAL_BLOCK,
 ]
 
 # Vendor words in the places a repository legitimately puts them: subjects, provider names,
@@ -88,6 +105,49 @@ NEGATIVES = [
     "Tested-by: QA on the cursor-position branch",
     "Acked-by: the partnership team at a vendor",
     "Co-authored-by: Claude <claude@example.org>",
+    # A trailer value that does not END at its address is a sentence, not a trailer. These
+    # were flagged until the value-ends-at-the-address rule: everything past the `>` fell into
+    # the discarded "address" half, so each read as a bare `Copilot`/`Claude Code`/`Devin`
+    # trailer -- and under the paragraph walk, one of them standing alone above the harness
+    # block was STRIPPED with it. The last is the same hole reached through the domain rule
+    # rather than the name rule, so removing either rule's half leaves it measured.
+    "Reviewed-by: Copilot <x@y.z> said nothing useful.",
+    "Reviewed-by: Claude Code <x@y.z> was consulted and disagreed.",
+    "Helped-by: Devin <d@example.com> only on the parser, not the lexer.",
+    "Reviewed-by: someone <noreply@anthropic.com> and then a sentence.",
+    # Punctuation and THEN a word: the pair to the `PUNCTUATED` corpus below. A rule that
+    # looked only at the first character after `>` would read this as a trailer.
+    "Co-Authored-By: Claude <noreply@anthropic.com>. See below",
+]
+
+# The other side of that rule. Both of these are REAL attributions, and each was lost by one
+# of the two tempting spellings of "the value ends at its address" -- measured, not predicted.
+# They are the corpus that says the rule must test for a WORD after the LAST `>`, and nothing
+# simpler. A gate the canonical trailer plus one typed full stop walks through is not a gate.
+UNTERMINATED = [
+    # "the value must END at `>`" loses these: no `>` in the value at all.
+    "Co-Authored-By: Claude <noreply@anthropic.com",
+    "Signed-off-by: bot <bot@mistral.ai",
+]
+PUNCTUATED = [
+    # "anything after `>` is prose" loses all of these -- ordinary trailing punctuation on the
+    # canonical trailer, on the domain rule and on the product-name rule alike.
+    "Co-Authored-By: Claude <noreply@anthropic.com>.",
+    "Co-Authored-By: Claude <noreply@anthropic.com>,",
+    "Signed-off-by: Bob <bob@mistral.ai>.",
+    "Reviewed-by: GitHub Copilot <copilot@github.com>.",
+    "Reviewed-by: GitHub Copilot <copilot@github.com>;",
+    "Reviewed-by: GitHub Copilot <copilot@github.com>)",
+    "Co-Authored-By: Claude <noreply@anthropic.com>.),",
+    # Not ASCII punctuation, and `\w` rather than `[A-Za-z]` is what keeps these on this side.
+    "Co-Authored-By: Claude <noreply@anthropic.com>—",
+    "Co-Authored-By: Claude <noreply@anthropic.com>…",
+    # A doubled bracket, and a display name carrying brackets of its own: the second is why
+    # the tail is taken after the LAST `>` and not the first, where the real address below
+    # would be read as prose and the trailer missed.
+    "Co-Authored-By: Claude <noreply@anthropic.com>>",
+    "Co-authored-by: Claude <bot> <noreply@anthropic.com>",
+    "Co-authored-by: A > B <noreply@anthropic.com>",
 ]
 
 # The documented cost of the domain rule (Premise 12): a person whose employer is a vendor is
@@ -114,6 +174,61 @@ def test_a_human_at_a_vendor_domain_is_the_documented_cost(line: str) -> None:
     assert offending_lines(line), f"the domain rule no longer flags: {line!r}"
 
 
+@pytest.mark.parametrize("line", UNTERMINATED)
+def test_a_trailer_whose_closing_bracket_is_missing_is_still_caught(line: str) -> None:
+    # One of the two costs the trailer-value rule was spelled to avoid. Read as "the value
+    # must end at `>`", this shape cannot satisfy it -- and a harness trailer with its bracket
+    # knocked off would walk straight through the gate whose whole argument is that it cannot
+    # be bypassed.
+    assert offending_lines(line), f"an unterminated trailer is no longer flagged: {line!r}"
+
+
+@pytest.mark.parametrize("line", PUNCTUATED)
+def test_punctuation_after_the_address_does_not_disarm_the_trailer_rule(line: str) -> None:
+    # The other cost, and the one that shipped broken for a round: a rule reading "anything
+    # after `>` is prose" silently missed the canonical harness trailer with a full stop typed
+    # after it -- on BOTH the domain rule and the product-name rule. Punctuation is not a word;
+    # only a word after the address makes the line a sentence. Kept as a corpus rather than one
+    # example so a later narrowing is measured against the whole class it can break.
+    assert offending_lines(line), f"a real trailer is no longer flagged: {line!r}"
+
+
+def test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk() -> None:
+    """The walk's cost, measured and bounded rather than left to be rediscovered.
+
+    A paragraph is reached by the walk when EVERY line in it is an attribution, so a body
+    sentence that is itself a full trailer match and stands alone above the harness block
+    would be stripped with it. That is what this sentence -- the module's own designated
+    example of trailer-shaped prose, from `test_only_the_final_paragraph_is_judged` -- did
+    before the trailer value was required to end at its address:
+
+        offending: [Offence(3, trailer), Offence(5, footer), Offence(7, trailer)]
+        strip    : 'fix: t\\n'            <- the sentence gone
+
+    Both assertions are the point. The first says the sentence survives; the second says the
+    two-paragraph block above it is still removed whole, so this was bought by narrowing what
+    counts as a trailer and not by narrowing the walk. What is NOT claimed here: that no body
+    line is reachable. One that really is an attribution -- a forbidden trailer pasted as an
+    example, alone in its paragraph -- still is, and the module docstring says so.
+    """
+    message = (
+        "fix: t\n"
+        "\n"
+        "Reviewed-by: Copilot <x@y.z> said nothing useful.\n"
+        "\n"
+        "\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)\n"
+        "\n"
+        "Co-Authored-By: Claude <noreply@anthropic.com>\n"
+    )
+    assert offending_lines(message) == [
+        Offence(5, "generated-with footer"),
+        Offence(7, "attribution trailer naming an AI tool"),
+    ]
+    assert strip_message(message) == (
+        "fix: t\n\nReviewed-by: Copilot <x@y.z> said nothing useful.\n"
+    )
+
+
 def test_only_the_final_paragraph_is_judged() -> None:
     # Git trailers and harness footers live in the last paragraph; a body sentence that
     # happens to be trailer-shaped is prose, and prose is never a violation.
@@ -121,6 +236,16 @@ def test_only_the_final_paragraph_is_judged() -> None:
     assert offending_lines(body) == []
     tail = "fix: t\n\nMore body.\n\nReviewed-by: GitHub Copilot <copilot@github.com>\n"
     assert offending_lines(tail) == [Offence(5, "attribution trailer naming an AI tool")]
+    # THE WALK NEVER STARTS when the last paragraph is body. Measured, not assumed: the two
+    # fixtures above stopped proving this the moment a trailer value was required to end at
+    # its address, because the sentence in the first is no longer an attribution and the walk
+    # then declines to step for the ordinary reason. Deleting the guard that tests the LAST
+    # paragraph before stepping left every test in this file green -- a surviving mutant, and
+    # the assertion was redesigned rather than the entry reworded. Here the paragraph above
+    # the body really is attribution, which is the only shape that tells the two apart.
+    above = "fix: t\n\nGenerated with Codex\n\nMore body.\n"
+    assert offending_lines(above) == []
+    assert strip_message(above) == above
 
 
 @pytest.mark.parametrize("tail", ["", "\n", "\n   \n", "\n\n\n", "\n\t\n \n"])
@@ -164,6 +289,27 @@ def test_strip_removes_trailer_and_its_blank_line() -> None:
         "feat(food): let a decision select an observation by handle\n"
         "\n"
         "The decision now names the observation it used.\n"
+    )
+
+
+def test_strip_removes_a_whole_two_paragraph_attribution_block() -> None:
+    """The measured defect of the one-paragraph rule, and the reason the walk exists.
+
+    On the shipped module this block half-stripped: `offending_lines` named one offence, the
+    trailer, and `strip_message` returned the body *plus* the footer. The hook then printed
+    `stripped 1 attribution line(s)` and `commit check` failed the same commit in CI naming
+    the footer — so fixing what the developer was told about failed again on re-run.
+
+    Both halves are asserted, against fixed literals rather than against anything the module
+    produced: a `strip_message` that removed the block but reported one offence, or one that
+    named both and removed one, each passes half of this.
+    """
+    assert offending_lines(CANONICAL_BLOCK) == [
+        Offence(5, "generated-with footer"),
+        Offence(7, "attribution trailer naming an AI tool"),
+    ]
+    assert strip_message(CANONICAL_BLOCK) == (
+        "fix: something real\n\nA body paragraph that must survive.\n"
     )
 
 

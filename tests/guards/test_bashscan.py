@@ -399,7 +399,8 @@ def test_arithmetic_shift_is_not_taken_for_a_heredoc() -> None:
 
 def test_scan_heredocs_finds_a_glued_redirect() -> None:
     """The same relaxation seen through the caller that shares `_HEREDOC`: a quoted body
-    leaves the general text and is still REPORTED, so `_heredoc_programs` can judge it."""
+    leaves the general text and is still REPORTED, so `bgcleanup._nested_programs` can judge
+    it."""
     stripped, heredocs = bashscan.prepare("bash<<'EOF'\ncat secrets/.env\nEOF")
     assert "secrets/.env" not in stripped
     assert [h.body for h in heredocs] == ["cat secrets/.env"]

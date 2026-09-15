@@ -156,20 +156,24 @@ smoke test and a person can ask it without a harness. **Writes** nothing.
 ## `keelline commit check --range RANGE`
 
 Every message in `RANGE` (a `git log` revision range, e.g. `main..HEAD`), for lines in its
-final paragraph that are an AI/tool attribution trailer or footer: a `-by:` trailer whose
-address is at a vendor's domain or whose name is a product, a `Generated with <tool>` footer,
-or a line that is only `AI-generated`. Body prose is never judged, and a person whose name
-happens to be a vendor word is not a violation. `[commit_messages] attribution_check = false`
-switches it off. Exits `1` naming each offence as `sha line N [label]` — never the text,
-which is the repository's — and `2` when git cannot read the range or the range looks like an
-option. **Writes** nothing. This is what the reusable workflow runs.
+trailing attribution block that are an AI/tool attribution trailer or footer: a `-by:` trailer
+whose address is at a vendor's domain or whose name is a product, a `Generated with <tool>`
+footer, or a line that is only `AI-generated`. The block is the message's last paragraph plus
+every paragraph above it that is attribution to the last line — the canonical harness block is
+two paragraphs — and it ends at the first paragraph holding any body line. Body prose is never
+judged, and a person whose name happens to be a vendor word is not a violation.
+`[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
+a violation, but the range must still be readable, because the report says how many messages it
+read. Exits `1` naming each offence as `sha line N [label]` — never the text, which is the
+repository's — and `2` when git cannot read the range or the range looks like an option.
+**Writes** nothing. This is what the reusable workflow runs.
 
 ## `keelline commit strip FILE`
 
-Rewrite a commit-message file in place with the attribution lines of its final paragraph
-removed — never a line of the body. Exits `0` whether or not anything was stripped, and says
-which; a message that is *only* attribution is left alone, because
-emptying it aborts the commit with a confusing error and CI explains better. Refuses a symlink.
+Rewrite a commit-message file in place with the attribution lines of its trailing attribution
+block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
+says which; a message that is *only* attribution is left alone, because emptying it aborts the
+commit with a confusing error and CI explains better. Refuses a symlink.
 This is what the `prepare-commit-msg` hook that `keelline setup --git-hooks` installs calls;
 `git commit --no-verify` skips `commit-msg` but not this hook. **Writes** `FILE`.
 

@@ -42,7 +42,16 @@ ONCE_TEST_HYGIENE = "test-hygiene"
 
 
 def bash_command(event: HookEvent) -> str | None:
-    """The command of a Bash call, or None for any other tool or a malformed input."""
+    """The command of a Bash call, or None for any other tool or a malformed input.
+
+    A `command` that is present but not a string is allowed here and **refused** by
+    `guard bg-cleanup` on the CLI, and that divergence is chosen rather than an omission. The
+    CLI is the documented fail-closed row: its input is a file or a pipe somebody composed, and
+    a shape it cannot read is a shape it must not guess at. This handler reads what the harness
+    sends, and the harness never sends a non-string `command`; under `Policy.CLOSED` a `None`
+    returned here is silence, while raising would deny a real Bash call on the strength of a
+    payload shape nothing produces. Both surfaces agree on every input either actually sees.
+    """
     if event.tool_name != BASH:
         return None
     command = event.tool_input.get("command")

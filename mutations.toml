@@ -450,6 +450,14 @@ reddens = [
 # non-blank one, a message ending in a single space has an empty final paragraph and NOTHING
 # is ever flagged. A gate whose whole argument is that it cannot be bypassed was bypassable by
 # one invisible character, and no assertion in the file noticed.
+# Re-measured after the attribution-block walk was added: the same substitution now also
+# reddens `test_strip_removes_a_whole_two_paragraph_attribution_block`,
+# `test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk` and
+# `test_the_hook_leaves_nothing_for_the_range_check_to_find`, because the walk asks
+# `_final_paragraph_start` about the text above a paragraph and without the trim it answers
+# with the blank separator's own index, so the walk never steps. Collateral recorded rather
+# than declared: the two entries below it own that behaviour, and this one still says what it
+# was written to say.
 [[mutation]]
 name = "a trailing blank line empties the final paragraph again"
 file = "src/keelline/guards/commit.py"
@@ -563,4 +571,95 @@ after = '        reached = _reachable_names(node, facts) | facts.root_symbols'
 reddens = [
   "tests/guards/test_audit.py::test_an_import_alone_does_not_count_as_invoking_the_entry_point",
   "tests/guards/test_audit.py::test_flags_a_test_that_names_an_entry_point_it_never_invokes",
+]
+
+# The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
+# than a wider net. The canonical harness attribution is a `Generated with` footer, a blank
+# line, then a `Co-Authored-By:` trailer; judging the final paragraph alone removed the trailer
+# and left the footer, so the hook reported a successful strip and `commit check` failed the
+# same commit in CI. This mutation stops the walk after one paragraph, which is exactly that
+# defect. Measured over `tests/guards`: exactly these three redden and nothing else does -- the
+# unit answer, the same block through the real installed hook (which is the pair the defect was
+# reported as: the hook claimed success, the range check then failed the commit), and the test
+# that pins what the walk costs, which asserts the block is removed whole.
+[[mutation]]
+name = "only the final paragraph of an attribution block is judged again"
+file = "src/keelline/guards/commit.py"
+before = '        if not _paragraph_is_all_attribution(lines, earlier, start):'
+after = '        if True:'
+reddens = [
+  "tests/guards/test_commit.py::test_strip_removes_a_whole_two_paragraph_attribution_block",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+  "tests/guards/test_githooks.py::test_the_hook_leaves_nothing_for_the_range_check_to_find",
+]
+
+# The other half of the same walk, and the one that protects Premise 12: the walk starts only
+# when the LAST paragraph is attribution to the last line. Without that test it steps over a
+# body paragraph into whatever attribution sits above it, and `strip` rewrites the body around
+# it -- the failure the paragraph rule exists to prevent. Its target carries a fixture written
+# for it: once a trailer value had to end at its address, the test's original body sentence
+# stopped being an attribution and this mutation SURVIVED, green everywhere. The assertion was
+# redesigned rather than the entry reworded, and the shape that discriminates is an
+# attribution-only paragraph standing above a body one.
+[[mutation]]
+name = "the attribution walk starts above a body paragraph"
+file = "src/keelline/guards/commit.py"
+before = '    if not _paragraph_is_all_attribution(lines, start, len(lines)):'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged"]
+
+# A trailer's value ends at its address; a value that continues INTO A WORD past it is a
+# sentence. Without that test everything past the `>` is discarded as part of the address, so
+# `Reviewed-by: Copilot <x@y.z> said nothing useful.` reads as a bare `Copilot` trailer -- and
+# under the attribution walk above, one standing alone over the harness block was STRIPPED with
+# it. Four entries, because three tempting spellings of this rule each MISS A REAL TRAILER and
+# each was measured doing so; this class of mistake has now been made twice and the entries are
+# what stop a third.
+[[mutation]]
+name = "a trailer value may run on past its address again"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+]
+
+# Spelling 1: "the value must END at `>`". An unterminated trailer (`<noreply@anthropic.com`,
+# closing bracket knocked off) carries no `>` at all, so dropping the `bracket and` guard reads
+# its whole address as a prose tail and a real attribution walks through the gate.
+[[mutation]]
+name = "a trailer with no closing bracket stops being read"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if _WORD.search(tail):'
+reddens = [
+  "tests/guards/test_commit.py::test_a_trailer_whose_closing_bracket_is_missing_is_still_caught",
+]
+
+# Spelling 2: "anything after `>` is prose". THIS ONE SHIPPED FOR A ROUND and was caught in
+# review, not by a test: it silently missed the canonical harness trailer with a full stop typed
+# after it -- `Co-Authored-By: Claude <noreply@anthropic.com>.` -- on the domain rule and the
+# product-name rule alike. A gate that one keystroke bypasses is not a gate. Punctuation is not
+# a word; that is the whole distinction, and this entry is the one that holds it.
+[[mutation]]
+name = "trailing punctuation after the address reads as prose again"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if bracket and tail:'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# Spelling 3: split at the FIRST `>` rather than the last. A display name carrying brackets of
+# its own (`Claude <bot> <noreply@anthropic.com>`) then puts the real address after an inner
+# `>`, and the trailer reads as prose -- missed. The last `>` is the address's own closing
+# bracket in every shape measured.
+[[mutation]]
+name = "the prose tail is taken from the first closing bracket, not the last"
+file = "src/keelline/guards/commit.py"
+before = '    _, bracket, tail = address.rpartition(">")'
+after = '    _, bracket, tail = address.partition(">")'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
 ]
