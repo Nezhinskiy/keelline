@@ -9,6 +9,16 @@ on:
 permissions:
   contents: read
 
+# One run per branch, and the newest is the one that counts. A lane that pushes three commits
+# to an open pull request in five minutes queues three full matrices, and nobody reads the
+# first two answers — measured on this repository: `wp/fsops` alone ran six times. Never on
+# `main`: that run is the record that the branch everyone pulls is green, and the next push
+# must not cancel it. Public repositories are not billed for standard runners, so this buys
+# queue time and clarity rather than money.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: ${{ matrix.os }}
