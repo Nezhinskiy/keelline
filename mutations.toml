@@ -151,6 +151,28 @@ before = '    if note.verbatim is not None:'
 after = '    if False:'
 reddens = ["tests/memory/test_notes.py::test_an_unchanged_note_round_trips_byte_for_byte"]
 
+# The oracle's own two guards, declared here like any other. Self-mutation works because
+# `_check` rewrites the file on disk and the run it then launches is a subprocess that loads
+# this script fresh from that path — the parent's already-imported copy decides nothing.
+[[mutation]]
+name = "the oracle stops proving the named tests pass before it mutates"
+file = "scripts/mutation_oracle.py"
+before = '    if not clean.passed:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_test_id_that_does_not_exist_is_a_finding_not_a_catch",
+  "tests/scripts/test_mutation_oracle.py::test_a_run_where_every_named_test_skipped_proves_nothing",
+]
+
+[[mutation]]
+name = "the oracle reads a git that could not answer as a clean tree again"
+file = "scripts/mutation_oracle.py"
+before = '    if status.returncode != 0:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_tree_git_cannot_answer_about_is_refused_not_assumed_clean",
+]
+
 [[mutation]]
 name = "the atomic write stops syncing the bytes before the rename"
 file = "src/keelline/fsops.py"

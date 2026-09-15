@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,7 +62,50 @@ def declared() -> list[Mutation]:
     ]
 
 
-def _tests_pass(targets: tuple[str, ...]) -> bool:
+@dataclass(frozen=True)
+class Outcome:
+    """One pytest run, as the two facts the oracle reasons about.
+
+    `code` alone is not enough, and that is the whole point of this type. Exit 0 is "nothing
+    failed", which a run of zero tests satisfies just as well as a run of twenty — so an
+    oracle that reads only the exit code cannot tell a green assertion from an absent one.
+    `executed` is how many tests actually ran and reported a result, taken from pytest's own
+    JUnit report rather than parsed out of its prose.
+    """
+
+    code: int
+    executed: int
+
+    @property
+    def passed(self) -> bool:
+        return self.code == 0 and self.executed > 0
+
+
+def _executed(report: Path) -> int:
+    """How many tests ran and were not skipped, from pytest's own JUnit XML.
+
+    Machine-readable on purpose. The alternative — looking for the word "passed" in `-q`
+    output — makes the oracle's own correctness depend on the wording of a summary line, and
+    this file's history is a run of defects where the oracle could not tell one state from
+    another. A report pytest never wrote (a usage error, which is exactly what a mistyped test
+    id produces) counts as zero, which is the honest answer and the fail-closed one.
+    """
+    if not report.is_file():
+        return 0
+    try:
+        # `S314`, with the reasoning where a reviewer sees it, as the two `subprocess` sites
+        # below already do. This document is not untrusted input: it was written moments ago by
+        # the pytest this process launched, into a `TemporaryDirectory` this process created,
+        # and it is read before that directory is removed. Nothing a repository authors reaches
+        # it except through pytest's own attribute escaping.
+        root = ElementTree.parse(report).getroot()  # noqa: S314
+    except ElementTree.ParseError:
+        return 0
+    suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+    return sum(int(suite.get("tests", 0)) - int(suite.get("skipped", 0)) for suite in suites)
+
+
+def _run(targets: tuple[str, ...]) -> Outcome:
     """Run only the named tests, against a bytecode cache that cannot be stale.
 
     `PYTHONPYCACHEPREFIX` at a fresh empty directory, and this is not belt-and-braces — it is
@@ -78,6 +122,7 @@ def _tests_pass(targets: tuple[str, ...]) -> bool:
     source actually on disk.
     """
     with tempfile.TemporaryDirectory(prefix="keelline-oracle-") as cache:
+        report = Path(cache) / "report.xml"
         done = subprocess.run(  # noqa: S603
             [
                 sys.executable,
@@ -88,6 +133,7 @@ def _tests_pass(targets: tuple[str, ...]) -> bool:
                 "-p",
                 "no:cacheprovider",
                 "--no-header",
+                f"--junit-xml={report}",
                 *targets,
             ],
             cwd=ROOT,
@@ -95,11 +141,23 @@ def _tests_pass(targets: tuple[str, ...]) -> bool:
             text=True,
             env={**os.environ, "PYTHONPYCACHEPREFIX": cache, "PYTHONDONTWRITEBYTECODE": "1"},
         )
-    return done.returncode == 0
+        return Outcome(done.returncode, _executed(report))
 
 
 def _check(mutation: Mutation) -> str | None:
-    """`None` when the mutation was caught; the finding otherwise."""
+    """`None` when the mutation was caught; the finding otherwise.
+
+    **The clean-tree run comes first, and it is not a formality.** Without it this function
+    read "the named tests did not pass" as "the mutation was caught" — and a mistyped test id
+    makes pytest exit 4, which is not zero, which read as caught. So an entry could name
+    `test_this_does_not_exist`, the oracle would print `caught`, CI would go green, and the
+    guard it claims to prove would be provably unprotected. An oracle whose own failures look
+    exactly like its successes is worse than no oracle.
+
+    A run of zero tests is the same hole wearing a different face, so `Outcome.passed`
+    demands that something actually ran: an entry whose tests are all skipped in this
+    environment proves nothing here, and says so rather than banking the skip as a proof.
+    """
     if not mutation.file.is_file():
         return f"{mutation.file.relative_to(ROOT)} does not exist"
     original = mutation.file.read_text(encoding="utf-8")
@@ -111,13 +169,60 @@ def _check(mutation: Mutation) -> str | None:
         )
     if occurrences > 1:
         return f"its `before` line appears {occurrences} times; make it unique"
+    clean = _run(mutation.reddens)
+    if not clean.passed:
+        return (
+            f"{', '.join(mutation.reddens)} did not pass on a clean tree "
+            f"(pytest exited {clean.code}, {clean.executed} test(s) ran) — so nothing here can "
+            "tell a mutation this entry caught from one it never tested; fix or rename them"
+        )
     mutation.file.write_text(original.replace(mutation.before, mutation.after), encoding="utf-8")
     try:
-        survived = _tests_pass(mutation.reddens)
+        mutated = _run(mutation.reddens)
     finally:
         mutation.file.write_text(original, encoding="utf-8")
-    if survived:
+    if mutated.code == 0:
         return f"survived — {', '.join(mutation.reddens)} still passed with the guard broken"
+    return None
+
+
+def _uncommitted(files: set[Path]) -> str | None:
+    """`None` when every file is committed as it stands; the refusal otherwise.
+
+    This script writes source files and restores them from a string it holds in memory, so an
+    interruption between the write and the `finally` leaves a dirty file overwritten with bytes
+    nobody chose. The guard is therefore not advice, and **"could not ask" is not "clean"**: it
+    read any non-zero `git` exit as a clean tree, which is precisely the state an unpacked
+    sdist is in (`scripts/**` and `mutations.toml` ship in it, and it is not a checkout) and
+    the state a broken `git` installation produces. `git status` exits 128 outside a
+    repository, so the one arrangement with no way to recover a clobbered file was the one
+    where the guard stood down.
+
+    A `git` that cannot be launched at all raises rather than returning, and is caught here for
+    the same reason: an oracle that cannot establish the precondition refuses, it does not
+    proceed.
+    """
+    try:
+        status = subprocess.run(  # noqa: S603
+            ["git", "status", "--porcelain", "--", *sorted(str(f) for f in files)],  # noqa: S607
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return (
+            f"`git` could not be run ({exc}), so this cannot tell whether the files it is "
+            "about to rewrite hold uncommitted work — refusing rather than risking it"
+        )
+    if status.returncode != 0:
+        detail = status.stderr.strip() or f"exit {status.returncode}"
+        return (
+            f"`git status` could not answer here ({detail}), so this cannot tell whether the "
+            "files it is about to rewrite hold uncommitted work — refusing rather than risking "
+            "it. Run the oracle from a git checkout of the project"
+        )
+    if status.stdout.strip():
+        return "refusing to mutate files with uncommitted changes:\n" + status.stdout
     return None
 
 
@@ -129,19 +234,9 @@ def main(argv: list[str]) -> int:
     if not mutations:
         print(f"no mutation matches {pattern!r}", file=sys.stderr)
         return 1
-    # A dirty tree would be restored to the wrong bytes if this is interrupted between the write
-    # and the `finally`, and the restore writes the file it read — so refuse rather than risk it.
-    status = subprocess.run(  # noqa: S603
-        ["git", "status", "--porcelain", "--", *{str(m.file) for m in mutations}],  # noqa: S607
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
-    if status.returncode == 0 and status.stdout.strip():
-        print(
-            "refusing to mutate files with uncommitted changes:\n" + status.stdout,
-            file=sys.stderr,
-        )
+    dirty = _uncommitted({m.file for m in mutations})
+    if dirty is not None:
+        print(dirty, file=sys.stderr)
         return 1
 
     findings: list[str] = []
