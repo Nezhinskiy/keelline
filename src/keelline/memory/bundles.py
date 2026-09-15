@@ -281,8 +281,41 @@ def fit(bundle: Bundle, store: Store, config: Config) -> Fit:
     )
 
 
+# What an oversized part is replaced with. Keelline's own words and two values Keelline chose —
+# the bundle name and the slot number — so nothing repository-authored rides out through a
+# channel that has just been established not to be able to carry it safely.
+OVERSIZED_NOTICE = (
+    "keelline: the {bundle} bundle's part {part} is a single block larger than one "
+    "session-start slot, so it was withheld rather than delivered cut in half. Nothing here is "
+    "missing from the store; run `keelline memory fit` to see which block is oversized, and "
+    "split or shorten it."
+)
+
+
 def render(bundle: Bundle, store: Store, config: Config, *, part: int = 1) -> str | None:
-    parts = split(blocks(bundle, store, config), _cap(config))
+    """One numbered slot's text, or `None` when there is no such part.
+
+    **An oversized part is a notice, not the part.** `split` never breaks a block, so a single
+    block larger than the cap becomes a part larger than the cap — `fit` reports that as
+    `Fit.oversized`, and `render` used to hand it out anyway and exit 0. Nothing on the hook
+    path runs `fit`, so the only reader was `doctor`, and what actually happened was that the
+    platform truncated it. Measured, at `hook_output_chars = 10000`: a standing bundle with one
+    20,288-character part arrived with **one** of its two region markers — the model got an
+    opening delimiter, the lead sentence "It ends at the matching end marker and nowhere else",
+    and no end marker, which is the one thing `trust.wrap`'s nonce region exists to make
+    impossible. Handing out a region known to arrive unterminated is worse than handing out
+    nothing, and saying so is better than either.
+
+    The notice carries no repository content — the bundle name and the slot number are
+    Keelline's own — for the obvious reason that the channel has just been established not to
+    be able to carry any safely. It is emitted whatever the configured cap, because a truncated
+    notice still reads as a notice while a truncated region does not.
+    """
+    cap = _cap(config)
+    parts = split(blocks(bundle, store, config), cap)
     if part < 1 or part > len(parts):
         return None
-    return parts[part - 1]
+    text = parts[part - 1]
+    if len(text) > cap:
+        return OVERSIZED_NOTICE.format(bundle=bundle.value, part=part)
+    return text

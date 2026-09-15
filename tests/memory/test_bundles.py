@@ -255,6 +255,57 @@ def test_fit_reports_overflow_and_an_oversized_part_separately(tmp_path: Path) -
     assert report.fits is False
 
 
+def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
+    tmp_path: Path,
+) -> None:
+    # `split` never breaks a block, so one block larger than the cap becomes one part larger
+    # than the cap. `fit` reported it and `render` handed it out anyway, exiting 0 — and
+    # nothing on the hook path runs `fit`, so the only reader of that report was `doctor`.
+    # Measured at `hook_output_chars = 10000` before the fix: part 2 was 20,288 characters and
+    # arrived carrying **one** of its two region markers. The model got an opening delimiter,
+    # the lead sentence "It ends at the matching end marker and nowhere else", and no end
+    # marker — the exact state `trust.wrap`'s nonce region exists to make unreachable.
+    store, config = a_store(tmp_path, mode="in-repo")
+    for path in store.groups["developer"].glob("*.md"):
+        path.unlink()
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    (store.groups["developer"] / "huge.md").write_text(
+        note("huge", startup="1", body="x" * (cap * 2)), encoding="utf-8"
+    )
+    record(store, config)
+    assert fit(Bundle.STANDING_RULES, store, config).oversized == 1
+
+    text = render(Bundle.STANDING_RULES, store, config, part=2)
+    assert text is not None
+    assert len(text) <= cap
+    assert "was withheld" in text
+    # Neither half of a region, and nothing the repository wrote: an unterminated opening
+    # marker is the failure, so the notice must not carry a marker of its own either.
+    assert DELIMITER not in text
+    assert "x" * 100 not in text
+    # The parts that do fit are unaffected — this withholds one slot, not the bundle.
+    first = render(Bundle.STANDING_RULES, store, config, part=1)
+    assert first is not None and STANDING_LEAD in first
+
+
+def test_a_part_that_fits_is_never_replaced_by_the_notice(tmp_path: Path) -> None:
+    # The other side of the same boundary, and the reason it is `>` and not `>=`: a part packed
+    # exactly to `_cap` is the largest one that does fit, and `CAP_MARGIN` is what leaves room
+    # for it. Withholding that one would empty a bundle the platform can carry whole.
+    store, config = a_store(tmp_path)
+    for path in store.groups["developer"].glob("*.md"):
+        path.unlink()
+    heading = "### solo\n\n"
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    filler = cap - len(STANDING_LEAD) - len("\n\n") - len(heading)
+    (store.groups["developer"] / "solo.md").write_text(
+        note("solo", startup="1", body="x" * filler), encoding="utf-8"
+    )
+    text = render(Bundle.STANDING_RULES, store, config, part=1)
+    assert text is not None and len(text) == cap
+    assert "was withheld" not in text
+
+
 def test_many_standing_rules_overflow_the_declared_slots(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     for index in range(40):

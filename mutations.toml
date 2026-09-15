@@ -133,6 +133,19 @@ before = '    head, *sections = text.split(_SECTION)'
 after = '    head, sections = text, []'
 reddens = ["tests/memory/test_bundles.py::test_an_index_over_one_part_fills_the_second_slot"]
 
+# `split` never breaks a block, so one block larger than the cap is one part larger than
+# the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
+# — measured at 20,288 characters arriving with one of its two region markers, which is the
+# state `trust.wrap`'s nonce region exists to make unreachable.
+[[mutation]]
+name = "an oversized part is handed out to be truncated again"
+file = "src/keelline/memory/bundles.py"
+before = '    if len(text) > cap:'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
+]
+
 [[mutation]]
 name = "a nested group is keyed on its folder rather than its configured name"
 file = "src/keelline/memory/notes.py"
