@@ -410,3 +410,52 @@ reddens = [
   "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied",
   "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
 ]
+
+# §3: a value that reaches a subprocess is untrusted. Without the check a range shaped like an
+# option is handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
+[[mutation]]
+name = "a range shaped like an option reaches git"
+file = "src/keelline/guards/commit.py"
+before = '    if rev_range.startswith("-"):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_range_shaped_like_an_option_is_refused_before_git_sees_it",
+]
+
+# The name rule (Premise 12): a product phrase as the WHOLE name. Measured, not predicted:
+# `search` instead of `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a
+# person after a single-word product. The plan predicted a second; that one survives either
+# way, because `_PRODUCTS` carries no bare vendor word, only whole product phrases.
+[[mutation]]
+name = "a person whose name contains a product word is a bot again"
+file = "src/keelline/guards/commit.py"
+before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
+after = '    return _PRODUCTS.search(name.strip()) is not None'
+reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
+
+# The paragraph rule (Premise 12): only the final paragraph is judged, so a strip can never
+# amputate a body sentence.
+[[mutation]]
+name = "the whole message is judged again, body included"
+file = "src/keelline/guards/commit.py"
+before = '            return index + 1'
+after = '            return 0'
+reddens = [
+  "tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged",
+  "tests/guards/test_commit.py::test_strip_never_touches_the_body",
+]
+
+# The bypass review found in the first cut of this module, and the reason it is declared
+# rather than merely covered: with the scan starting at the last line instead of the last
+# non-blank one, a message ending in a single space has an empty final paragraph and NOTHING
+# is ever flagged. A gate whose whole argument is that it cannot be bypassed was bypassable by
+# one invisible character, and no assertion in the file noticed.
+[[mutation]]
+name = "a trailing blank line empties the final paragraph again"
+file = "src/keelline/guards/commit.py"
+before = '    while end > 0 and not lines[end - 1].strip():'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_blank_tail_neither_hides_an_offence_nor_moves_its_line_number",
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged",
+]
