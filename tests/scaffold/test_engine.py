@@ -183,6 +183,40 @@ def test_a_relocated_artifact_is_removed_from_its_old_home(tmp_path: Path) -> No
     ]
 
 
+def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_path: Path) -> None:
+    # The plan was `[(create, .keelline/local/AGENTS.md)]`, the report said "0 skipped, 0
+    # refused", the old file stayed on disk holding the user's edit, and the manifest ended
+    # empty — which `apply`'s own comment calls a defect: "a file Keelline wrote carrying no
+    # record, which every later run reads as somebody else's … invisible to `uninstall`". The
+    # symmetric `_plan_retired` path has always emitted `skip_modified` for this.
+    old = tmp_path / "AGENTS.md"
+    old.write_text("BODY\nand a line the user added\n", encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)  # recorded sha256 is of "BODY\n"
+    config = a_config(tmp_path, local=("agents-md",))
+    result = plan(tmp_path, config, [a_template()])
+    assert [(a.verb, a.target) for a in result.actions] == [
+        (Verb.SKIP_MODIFIED, "AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+    ]
+    assert result.actions[0].reason == "relocated and hand-edited"
+    applied = apply(tmp_path, result)
+    assert applied.skipped == ["AGENTS.md"]
+    assert old.read_text(encoding="utf-8") == "BODY\nand a line the user added\n"
+
+
+def test_a_relocation_whose_old_file_is_already_gone_reports_no_skip(tmp_path: Path) -> None:
+    # The one branch that must stay silent: nothing at the old path means the move has already
+    # happened, and a `skip_modified` there would report a file that is not on disk.
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    config = a_config(tmp_path, local=("agents-md",))
+    result = plan(tmp_path, config, [a_template()])
+    assert [(a.verb, a.target) for a in result.actions] == [
+        (Verb.REMOVE, "AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+    ]
+    assert apply(tmp_path, result).skipped == []
+
+
 def test_a_manifest_naming_a_target_outside_the_root_plans_nothing_for_it(tmp_path: Path) -> None:
     # The manifest is committed, so `record.target` is repository-controlled input.
     root = tmp_path / "project"
@@ -191,7 +225,11 @@ def test_a_manifest_naming_a_target_outside_the_root_plans_nothing_for_it(tmp_pa
     Manifest({}).with_record(a_record(target="../outside.md")).write(root)
     config = a_config(root, local=("agents-md",))
     result = plan(root, config, [a_template()])
-    assert [a.verb for a in result.actions] == [Verb.CREATE]
+    # Said out loud, not silent. The file is still not touched — that is the property — but a
+    # record naming a file Keelline will not remove is something the report has to carry, or
+    # the artifact is created at its new target with the old one left on disk and nothing said.
+    assert [a.verb for a in result.actions] == [Verb.SKIP_MODIFIED, Verb.CREATE]
+    assert result.actions[0].target == "../outside.md"
     assert (tmp_path / "outside.md").exists()
 
 
@@ -211,9 +249,13 @@ def test_a_recorded_target_this_template_could_never_produce_is_not_a_relocation
     record = a_record(target=".claude/settings.json", sha256=digest(before))
     Manifest({}).with_record(record).write(tmp_path)
     planned = plan(tmp_path, a_config(tmp_path), [a_template()])
-    assert [(a.verb, a.target) for a in planned.actions] == [(Verb.CREATE, "AGENTS.md")]
-    apply(tmp_path, planned)
+    assert [(a.verb, a.target) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, ".claude/settings.json"),
+        (Verb.CREATE, "AGENTS.md"),
+    ]
+    applied = apply(tmp_path, planned)
     assert settings.read_text(encoding="utf-8") == before
+    assert applied.skipped == [".claude/settings.json"]
 
 
 def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) -> None:

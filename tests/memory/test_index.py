@@ -619,3 +619,78 @@ def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(
 
     assert "own trigger" in text
     assert reconciled.refused_publish == []
+
+
+# --- a group is not always one path segment -------------------------------------------------
+
+
+NESTED_CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+
+[memory]
+mode = "in-repo"
+groups = ["team/project-stable"]
+index_extra = []
+"""
+
+
+def a_nested_store(tmp_path: Path) -> tuple[Store, Config]:
+    root = tmp_path / "project"
+    base = root / "docs" / "memory"
+    (base / "team" / "project-stable").mkdir(parents=True)
+    (base / "team" / "project-stable" / "n.md").write_text(
+        note("n", index="n trigger → n answer"), encoding="utf-8"
+    )
+    (root / CONFIG_FILE).write_text(NESTED_CONFIG, encoding="utf-8")
+    config = load(root, machine=tmp_path / "absent.toml")
+    blank = tmp_path / "machine.toml"
+    blank.write_text("", encoding="utf-8")
+    store = Store(
+        base,
+        "in-repo",
+        root,
+        {"team/project-stable": base / "team" / "project-stable"},
+        machine=blank,
+    )
+    return store, config
+
+
+def test_a_nested_group_still_gets_its_section(tmp_path: Path) -> None:
+    # `render_index` keys `by_group` on the note's group and then looks up the *configured*
+    # string, so with `group_name` answering `path.parent.name` the key was "project-stable"
+    # and the lookup was "team/project-stable": the note was found, rewritten with an `index:`
+    # line — and emitted nowhere. `memory index --check` then reported "index is current" and
+    # exited 0, so the note was invisible to routing, permanently, with no finding anywhere.
+    store, config = a_nested_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    assert [n.name for n in reconciled.notes] == ["n"]
+    text = render_index(reconciled, config, store)
+    assert "n trigger → n answer" in text
+    assert "team/project-stable/n.md" in text
+
+
+def test_a_nested_groups_routing_key_is_the_configured_one(tmp_path: Path) -> None:
+    # The same disagreement one module over: `trust._files` keys the digest on the configured
+    # group while `index._relative` keyed the link on the folder name, so a nested group's
+    # digest entry and its index line named two different files.
+    from keelline.memory.trust import _files
+
+    store, config = a_nested_store(tmp_path)
+    assert [key for key, _ in _files(store)] == ["team/project-stable/n.md"]
+
+
+def test_a_nested_section_title_keeps_every_segment() -> None:
+    # The folders are a hierarchy and the hyphens are `section_title`'s own convention, so the
+    # two separators must not collapse into one another.
+    assert section_title("project-stable") == "Project — stable"
+    assert section_title("team/project-stable") == "Team / Project — stable"

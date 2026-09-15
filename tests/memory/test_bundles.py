@@ -148,7 +148,7 @@ def test_the_index_bundle_returns_the_rendered_index_file(tmp_path: Path) -> Non
     store, config = a_store(tmp_path)
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
     (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
-    assert blocks(Bundle.INDEX, store, config) == [content]
+    assert blocks(Bundle.INDEX, store, config) == [content.rstrip("\n")]
 
 
 def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> None:
@@ -280,7 +280,7 @@ def test_the_declared_slot_counts_are_the_ones_hooks_json_has_to_ship() -> None:
         Bundle.PRESET_RULES: 1,
         Bundle.STANDING_RULES: 3,
         Bundle.VOLATILE_NOTES: 3,
-        Bundle.INDEX: 2,
+        Bundle.INDEX: 3,
     }
 
 
@@ -408,7 +408,7 @@ def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_pat
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
     (share / INDEX_NAME).write_text(content, encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share / INDEX_NAME)
-    assert blocks(Bundle.INDEX, store, config) == [content]
+    assert blocks(Bundle.INDEX, store, config) == [content.rstrip("\n")]
 
 
 @needs_git
@@ -435,3 +435,62 @@ def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: P
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
+
+
+# --- the slots the index declares have to be fillable ----------------------------------------
+
+
+def _an_index_of(sections: int, per_section: int) -> str:
+    body = "\n".join(f"- [t{i} → a{i}](developer/n{i}.md)" for i in range(per_section))
+    return "# Memory Index\n\n" + "\n\n".join(
+        f"## Section {s}\n\n{body}\n" for s in range(sections)
+    )
+
+
+def test_an_index_over_one_part_fills_the_second_slot(tmp_path: Path) -> None:
+    # `_index` returned the whole file as one block and `split` never breaks a block, so slot 2
+    # was dead: a 22,816-byte index — inside `memory_index_bytes` (25600) and inside every
+    # other configured cap — packed into one part of 23,126 characters that the harness
+    # truncated at 10,000, with part 2 `None` and `keelline memory index` exiting 0 saying
+    # "index is current".
+    store, config = a_store(tmp_path)
+    text = _an_index_of(sections=6, per_section=90)
+    assert len(text.encode("utf-8")) < config.native_caps.memory_index_bytes
+    (store.path / INDEX_NAME).write_text(text, encoding="utf-8")
+
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    assert len(text) > cap, "the fixture has to be bigger than one part or it proves nothing"
+    found = fit(Bundle.INDEX, store, config)
+    assert found.parts > 1
+    assert found.fits
+    assert render(Bundle.INDEX, store, config, part=2) is not None
+    assert all(
+        len(render(Bundle.INDEX, store, config, part=n) or "") <= cap
+        for n in range(1, found.parts + 1)
+    )
+
+
+def test_every_section_of_a_split_index_still_reaches_some_part(tmp_path: Path) -> None:
+    # Packing must not drop anything: the whole point of numbered slots is that the index
+    # arrives in full across them rather than truncated in one.
+    store, config = a_store(tmp_path)
+    text = _an_index_of(sections=6, per_section=90)
+    (store.path / INDEX_NAME).write_text(text, encoding="utf-8")
+    found = fit(Bundle.INDEX, store, config)
+    joined = "\n\n".join(
+        render(Bundle.INDEX, store, config, part=n) or "" for n in range(1, found.parts + 1)
+    )
+    for section in range(6):
+        assert f"## Section {section}" in joined
+    assert "- [t89 → a89](developer/n89.md)" in joined
+
+
+def test_the_slots_the_index_declares_can_hold_an_index_at_its_configured_cap(
+    tmp_path: Path,
+) -> None:
+    # The arithmetic `SLOTS[Bundle.INDEX]` is set from: `memory_index_bytes` over one part's
+    # capacity, rounded up. Two could never hold a cap-sized index however well it split.
+    store, config = a_store(tmp_path)
+    cap = config.native_caps.hook_output_chars - CAP_MARGIN
+    needed = -(-config.native_caps.memory_index_bytes // cap)
+    assert SLOTS[Bundle.INDEX] >= needed

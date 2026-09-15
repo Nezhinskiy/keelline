@@ -44,7 +44,14 @@ SLOTS: dict[Bundle, int] = {
     Bundle.PRESET_RULES: 1,
     Bundle.STANDING_RULES: 3,
     Bundle.VOLATILE_NOTES: 3,
-    Bundle.INDEX: 2,
+    # Three, and the arithmetic is the reason. `memory_index_bytes` is 25600 and a part holds
+    # `hook_output_chars - CAP_MARGIN` = 9984, so an index written right up to its own
+    # configured cap needs three parts and two could never hold it. It was two, and worse, the
+    # second was unreachable: `_index` returned the whole file as one block and `split` never
+    # breaks a block, so a 22,816-byte index — under every configured cap — packed into one
+    # part of 23,126 characters that the harness truncated at 10,000, with part 2 empty and
+    # `keelline memory index` exiting 0 saying "index is current".
+    Bundle.INDEX: 3,
 }
 
 # How much of `native_caps.hook_output_chars` this lane keeps back. `_cap` subtracts it, so a
@@ -175,6 +182,13 @@ def _preset_rules(config: Config) -> list[str]:
     return [f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)]
 
 
+# Where `_index` is allowed to break the index into blocks: the start of a `## ` section, which
+# is the same boundary `index.render_index` builds it on. `split` packs blocks and never breaks
+# one, so a bundle that returns a single block can only ever fill a single slot however many
+# the platform gives it — the mistake the `INDEX: 3` comment above describes.
+_SECTION = "\n## "
+
+
 def _index(source: Path | None) -> list[str]:
     """The index, once `index.index_source` has said which file the index actually is.
 
@@ -182,13 +196,25 @@ def _index(source: Path | None) -> list[str]:
     nothing asked where the link went, while `worktree.link` already applied §9.1's per-link
     target rule to the very same file. This is the path that reaches the model, so it gets the
     rule first, not last.
+
+    Returned as one block per section rather than as the whole file, so `split` has something
+    to pack. The header and every section keep their own text exactly; only the joins between
+    them are re-made, and `split` re-makes them as the blank line `render_index` already writes.
+    A section that is on its own larger than one part is still one block — the honest answer is
+    that it does not fit, which `Fit.oversized` reports and `doctor` reads, rather than a cut
+    made at whatever character the budget ran out on.
     """
     if source is None or not source.is_file():
         return []
     try:
-        return [source.read_text(encoding="utf-8")]
+        text = source.read_text(encoding="utf-8")
     except OSError:
         return []
+    if not text.strip():
+        return []
+    head, *sections = text.split(_SECTION)
+    blocks = [head.rstrip("\n"), *(f"## {section}".rstrip("\n") for section in sections)]
+    return [block for block in blocks if block.strip()]
 
 
 def blocks(bundle: Bundle, store: Store, config: Config) -> list[str]:

@@ -160,6 +160,10 @@ class Note:
     # byte and a key this module does not model is never touched.
     raw: tuple[str, ...] = ()
     original: dict[str, str] = field(default_factory=dict)
+    # The `memory.groups` entry this note was walked under, exactly as configured. `walk` sets
+    # it; a `Note` read on its own has no way to know, and `group_name` falls back to the
+    # folder's name for that case.
+    store_group: str | None = None
 
     @property
     def type(self) -> NoteType | None:
@@ -194,8 +198,19 @@ class Note:
 
     @property
     def group_name(self) -> str:
-        """The store group a note belongs to: its folder, always. `group` is a sub-heading."""
-        return self.path.parent.name
+        """The store group a note belongs to, as `memory.groups` spells it. `group` is a
+        sub-heading *inside* that section.
+
+        `path.parent.name` was the whole answer, and it is only the right one while every
+        configured group is a single path segment — which nothing checks. `contained()` admits
+        `"team/project-stable"` and `walk` finds the notes under it, but the folder's name is
+        then `"project-stable"` while `render_index` looks each group up by its configured
+        string: the section matched nothing and vanished from `MEMORY.md` entirely, with
+        `memory index --check` reporting "index is current" and exiting 0. The routing keys
+        disagreed too — `trust._files` keys on the configured group and `index._relative` on
+        this — so a nested group's digest entry and its index line named two different files.
+        """
+        return self.store_group or self.path.parent.name
 
 
 def _split(text: str, path: Path) -> tuple[list[str], str]:
@@ -369,7 +384,7 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
             if path.name.startswith((".", "_")):
                 continue
             try:
-                found.append(read_note(path))
+                found.append(replace(read_note(path), store_group=group))
             except NoteError as exc:
                 unreadable.append((path, str(exc)))
     return Walk(notes=found, unreadable=unreadable)

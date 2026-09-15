@@ -205,8 +205,7 @@ def plan(
             except _OWN_FILE_REFUSALS as exc:
                 refusals.append(Refused(template.id, record.target, str(exc)))
                 continue
-            if moved is not None:
-                actions.append(moved)
+            actions.append(moved)
             record = None
 
         current, reason = _read(path)
@@ -278,9 +277,7 @@ def plan(
     return Plan(actions=actions, refusals=refusals, unchanged=unchanged)
 
 
-def _relocation(
-    root: Path, resolved_root: Path, template: Template, record: Record
-) -> Action | None:
+def _relocation(root: Path, resolved_root: Path, template: Template, record: Record) -> Action:
     """A recorded artifact whose effective target moved — `[artifacts] local` gained or lost its id.
 
     The recorded target is repository-controlled through the committed manifest, so "does this
@@ -290,21 +287,48 @@ def _relocation(
     paths this template can produce — its configured target, or that target under `LOCAL_ROOT`
     — before anything else is asked. It is then contained before it is read, exactly like a
     configured one.
+
+    **Always an `Action`, never `None`.** Every branch that declines to remove the old file used
+    to answer `None`, and `plan` read that as "nothing to do here" and carried on creating the
+    file at the new target — so a relocated artifact whose old file a user had hand-edited was
+    left on disk holding that edit, the manifest ended empty, and the report said "0 skipped,
+    0 refused". `apply`'s own comment calls that state a defect: "a file Keelline wrote carrying
+    no record, which every later run reads as somebody else's … invisible to `uninstall`". The
+    symmetric `_plan_retired` path has always emitted `skip_modified` for it.
+
+    So the three ways the old file is not Keelline's to remove — a recorded target this template
+    could not have produced, one that no longer contains, and one whose bytes are not the ones
+    recorded — each become a `skip_modified` naming the old path and saying which it was.
     """
     if record.target not in (template.target, f"{LOCAL_ROOT}/{template.target}"):
-        return None
+        return _left_behind(
+            template,
+            record,
+            "the manifest records a target this artifact cannot produce, so the file at it "
+            "is not Keelline's to remove",
+        )
     try:
         old_path = contained(root, record.target, resolved_root=resolved_root)
-    except PathEscape:
-        return None
+    except PathEscape as exc:
+        return _left_behind(template, record, str(exc))
     old, reason = _read(old_path)
-    if reason is not None or old is None or digest(old) != record.sha256:
-        return None
+    if reason is not None:
+        return _left_behind(template, record, reason)
+    if old is None:
+        # Nothing at the old path: the move has effectively already happened, and there is no
+        # file to leave behind. A `skip_modified` here would report a file that is not there.
+        return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)
+    if digest(old) != record.sha256:
+        return _left_behind(template, record, "relocated and hand-edited")
     # The same payload `_plan_retired` computes, and for the same reason: for a managed region
     # or a set of keyed entries the file at the old path belongs to somebody else, so what
     # leaves is Keelline's own part of it and not the file.
     payload = _removal_payload(template, old)
     return Action(Verb.REMOVE, template.id, record.target, payload, "relocated", record)
+
+
+def _left_behind(template: Template, record: Record, reason: str) -> Action:
+    return Action(Verb.SKIP_MODIFIED, template.id, record.target, None, reason, None)
 
 
 def _plan_retired(

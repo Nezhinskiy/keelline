@@ -64,7 +64,18 @@ def entries_in(text: str) -> list[tuple[str, str]]:
 
 
 def section_title(group: str) -> str:
-    head, *rest = group.split("-")
+    """`"project-stable"` → `"Project — stable"`; a nested group keeps every segment.
+
+    A configured group may be more than one path segment (`contained()` admits
+    `"team/project-stable"`), and the two halves mean different things: the folders are a
+    hierarchy and the hyphens are this function's own convention. So the segments are titled
+    one at a time and joined with a separator that is not the one the hyphens produce.
+    """
+    return " / ".join(_segment_title(part) for part in group.split("/"))
+
+
+def _segment_title(segment: str) -> str:
+    head, *rest = segment.split("-")
     return " — ".join([head.capitalize(), *rest])
 
 
