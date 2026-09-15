@@ -337,3 +337,54 @@ after = '        if False:'
 reddens = [
   "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
 ]
+
+# `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
+# a pipe or a case fall-through, never to the async operator.
+[[mutation]]
+name = "a pipe-both operator reads as backgrounding again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '            if index and pieces[index - 1] in _COMMAND_ENDING_PIECES:'
+after = '            if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_pipe_both_operator_is_not_backgrounding",
+  "tests/guards/test_bgcleanup.py::test_a_case_fallthrough_terminator_is_not_backgrounding",
+]
+
+# `(cmd &)` arrives as `['(', 'cmd', '&)']` — no bare `&` anywhere — and the deliberate-detach
+# idiom was allowed until the welded run was decomposed. The measured note on the tests named:
+# the idiom's own `(sleep 300 &)` can no longer prove this, because the ported `_begins_with_sleep`
+# skips a leading `(` and refuses that command on the `sleep` rule before the `&` scan runs. A
+# non-sleep weld is what reddens, so that is what is named here.
+[[mutation]]
+name = "a background welded to a closing paren is invisible again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        pieces = bashscan.operator_pieces(token)'
+after = '        pieces = [token]'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_non_sleep_background_welded_to_a_closing_paren_is_denied",
+  "tests/guards/test_bgcleanup.py::test_the_incident_command_denies_without_the_space_before_the_ampersand",
+]
+
+# D7's cap on the same judge. Above it the command is not read at all, because tokenizing is
+# quadratic in token length and every Bash call pays it; removing the cap makes the over-cap
+# half of the test judge a 64 KiB command and refuse it.
+[[mutation]]
+name = "the background judge reads a command past its size cap again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if len(command) > MAX_COMMAND_CHARS:'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_command_past_the_size_cap_is_allowed_unread",
+]
+
+# The leading-`(` skip must drop a leading RUN, not every `(` in the segment: filtering the
+# whole segment pulls a `sleep` out of a command substitution and refuses `X=$(sleep 5) pytest`,
+# a false refusal of ordinary work from the one handler that fails closed.
+[[mutation]]
+name = "a sleep inside a command substitution reads as a leading sleep again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(list(dropwhile(lambda t: t == "(", commands[0])))'
+after = '    words = bashscan.command_words([t for t in commands[0] if t != "("])'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep",
+]
