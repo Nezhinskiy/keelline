@@ -1,1 +1,1 @@
-Package skeleton, configuration loader, CLI frame, hook dispatcher interface, release check, and plugin manifests.
+Keelline installs as a Claude Code and Codex plugin and as a `uv tool install keelline` command. It reads a committed `keelline.toml` under a shipped preset, dispatches the harness's hook events, and imports nothing outside the standard library at runtime, so a hook works wherever `python3` does.

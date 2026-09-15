@@ -66,6 +66,16 @@ jobs:
         env:
           KEELLINE_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
         run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
+      - name: The mutation oracle
+        # The plans ask that "every new assertion ships with the mutation that reddens it", and
+        # those mutations existed only as English sentences inside multi-thousand-line plan
+        # documents: a contributor could satisfy the rule only by hand-editing source and
+        # reverting, and a reviewer had no way to check they had. `mutations.toml` is that set as
+        # data, and this step is the check. Not a general mutation tester — coverage is the
+        # breadth measure; this proves a curated set of guards is load-bearing rather than merely
+        # executed, which is the distinction that let `open_within` be fully covered and contain
+        # nothing.
+        run: uv run python scripts/mutation_oracle.py
       - name: Version discipline
         run: uv run keelline release check
       - name: Build

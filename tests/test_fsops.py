@@ -191,7 +191,12 @@ def test_a_parent_component_anywhere_along_the_path_is_refused(tmp_path: Path) -
 def test_an_absolute_path_is_refused(tmp_path: Path) -> None:
     # `os.open` ignores `dir_fd` for an absolute path, so without this the walk restarts at the
     # filesystem root. This is the case that succeeds on Linux, where CI runs.
-    with pytest.raises(UnsafePath), open_within(tmp_path, "/etc/passwd"):
+    #
+    # `match=` and not a bare `raises`: with the explicit check deleted an absolute path is
+    # still refused, by the empty-first-component rule — `"/etc".split("/")` starts with `""`.
+    # So the assertion has to be about the *reason*, or a later edit to that other rule takes
+    # the absolute case with it silently. `mutations.toml` records this; the oracle found it.
+    with pytest.raises(UnsafePath, match="absolute"), open_within(tmp_path, "/etc/passwd"):
         pass
 
 

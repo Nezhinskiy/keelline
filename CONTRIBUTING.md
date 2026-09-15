@@ -62,8 +62,25 @@ name — there is no shared registry to edit.
 **Every new assertion ships with the mutation that reddens it, or a sentence saying why none
 exists.** This is the project's strongest test convention and the easiest to satisfy vacuously:
 write the assertion, break the line of source it is about, watch it fail, put the source back.
-Say what you broke, in the test's own comment or in the commit message. A reviewer has no other
-way to know you did it.
+Say what you broke, in the test's own comment or in the commit message.
+
+For a guard that is genuinely load-bearing — a containment check, a trust gate, a refusal that
+something downstream reads as permission — add it to `mutations.toml` instead of only describing
+it, and the check becomes reproducible:
+
+```bash
+uv run python scripts/mutation_oracle.py          # every declared mutation
+uv run python scripts/mutation_oracle.py fsops    # only the matching ones
+```
+
+Each entry names one file, one exact line to change, and the tests that must fail when it does.
+CI runs the whole set. A mutation that *survives* is a finding — and so is one whose `before`
+line no longer exists, because that means the assertion and the line it is about have drifted
+apart. This is not a coverage substitute; `--cov` is the breadth measure. It is the set of
+guards whose load-bearingness has to be proven rather than merely executed, which is exactly the
+distinction that let `fsops.open_within` be covered by twelve tests and contain nothing.
+
+Writing the oracle found two entries that did not hold, which is the argument for having it.
 
 Name a test after the behaviour, not the function:
 `test_a_corrupt_record_is_never_overwritten`, not `test_recorded`.

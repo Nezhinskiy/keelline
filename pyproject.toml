@@ -13,7 +13,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   # POSIX, and not "OS Independent": `fsops` depends on `dir_fd=`, `O_NOFOLLOW` and
   # `O_DIRECTORY`, and `_DIR_FLAGS` degrades to a bare `O_RDONLY` wherever the last two are
   # absent — which is to say the containment this package is built on does not hold there.
@@ -56,6 +55,7 @@ source-include = [
   "CODE_OF_CONDUCT.md",
   "RELEASING.md",
   "changelog.d/**",
+  "mutations.toml",
   ".claude-plugin/**",
   ".codex-plugin/**",
 ]
@@ -88,7 +88,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests", "scripts/keelline"]
+files = ["src", "tests", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
