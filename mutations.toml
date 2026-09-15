@@ -474,3 +474,33 @@ file = "src/keelline/guards/commands.py"
 before = '    if path.is_symlink():'
 after = '    if False:'
 reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
+
+# The chain. Without it, installing this hook silently disables whatever husky, pre-commit or
+# the repository had under the same name — the one failure mode the whole `.local` dance
+# exists to prevent, and the one nothing about the installed hook's own behaviour would show.
+[[mutation]]
+name = "the hook stops chaining to the hook it displaced"
+file = "src/keelline/guards/githooks.py"
+before = '    exec "$previous" "$@"'
+after = '    :'
+reddens = [
+  "tests/guards/test_githooks.py::test_a_pre_existing_hook_is_preserved_and_still_runs",
+  # And from a linked worktree, where `$0.local` is a sibling of the *common* directory's copy
+  # — the reason the chain is spelled off `$0` rather than computed from `--git-common-dir`.
+  "tests/guards/test_githooks.py::test_a_worktree_shares_the_main_checkouts_hook",
+]
+
+# The quiet outcome, declared rather than only covered because the first cut of this hook got
+# it backwards and nothing about the code looked wrong. `grep -v` exits 1 when it selects no
+# lines, which is exactly the "nothing to strip" case, so hanging the failure report off the
+# pipe's status announced a broken strip on every clean commit. `after` below is that exact
+# spelling: a false alarm on the ordinary path, on a tool whose whole job is to be trusted
+# about what it rewrote.
+[[mutation]]
+name = "a clean commit is told the strip failed"
+file = "src/keelline/guards/githooks.py"
+before = '| grep -v "$quiet" >&2 || true'
+after = '| grep -v "$quiet" >&2 || echo "$failed" >&2'
+reddens = [
+  "tests/guards/test_githooks.py::test_the_hook_says_nothing_when_there_was_nothing_to_strip",
+]
