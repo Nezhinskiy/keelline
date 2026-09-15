@@ -257,3 +257,18 @@ file = "src/keelline/fsops.py"
 before = '            os.fsync(stream.fileno())'
 after = ''
 reddens = ["tests/test_fsops.py::test_the_bytes_are_fsynced_before_the_rename"]
+
+# Two other tests redden with this one — `required` names `Links` and the export list is
+# compared against the imports — and that is the point rather than a weakness: those two are
+# the ones that *missed* the original omission, because both are the surface restating itself.
+# What no mutation of this file can express is the change that actually happened: a signature
+# in `worktree.py` growing a type this list does not carry. The derived test is what covers
+# that direction, and this entry is what proves the derived test is load-bearing at all.
+[[mutation]]
+name = "a type the surface names in a signature drops off the surface"
+file = "src/keelline/memory/api.py"
+before = '    "Links",'
+after = ''
+reddens = [
+  "tests/memory/test_surface.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface",
+]

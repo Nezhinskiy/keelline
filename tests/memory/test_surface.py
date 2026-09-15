@@ -17,6 +17,10 @@ def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None
         "NoteType",
         # `link` raises this and it carries `.created`; `attach` binds and links.
         "PartialLink",
+        # And `link` *returns* this. It was `list[Path]` until the harness link learned to be
+        # withdrawn, and the commit that changed the signature changed neither this list nor
+        # `api.py` — which is what the derived test below now catches without being told.
+        "Links",
         "Provenance",
         "Reconciliation",
         "SLOTS",
@@ -86,6 +90,45 @@ def test_the_export_list_is_exactly_what_the_module_imports_from_this_lane() -> 
     # run. Asserting `sorted()` here as well would be a second, disagreeing authority.
     for name in memory.__all__:
         assert hasattr(memory, name)
+
+
+def test_every_type_the_surface_names_in_a_signature_is_on_the_surface() -> None:
+    # The two tests above cannot catch a name nobody added to either side: `required` is a list
+    # a person maintains, and the export check compares the module against itself. `link` was
+    # given a `Links` return type by the commit that taught it to withdraw the harness link,
+    # and neither half noticed — leaving `attach`, the lane that binds and links, able to hold
+    # the value and unable to declare it, which is the one thing this surface exists to
+    # prevent. So the question is derived from the signatures instead of being restated: every
+    # type from this area that an exported callable takes or returns, and every type an
+    # exported dataclass field holds, has to be exported too.
+    #
+    # Exceptions stay with `required`: `raise` is not in a signature, so `PartialLink` and
+    # `UnsafeNote` are reachable only by someone writing them down.
+    import dataclasses
+    import inspect
+    import typing
+
+    def area_types(annotation: object) -> set[str]:
+        found: set[str] = set()
+        if isinstance(annotation, type) and annotation.__module__.startswith("keelline.memory"):
+            found.add(annotation.__name__)
+        for argument in typing.get_args(annotation):
+            found |= area_types(argument)
+        return found
+
+    exported = set(memory.__all__)
+    missing: dict[str, set[str]] = {}
+    for name in sorted(exported):
+        thing = getattr(memory, name)
+        is_record = isinstance(thing, type) and dataclasses.is_dataclass(thing)
+        if not (inspect.isfunction(thing) or is_record):
+            continue
+        named: set[str] = set()
+        for hint in typing.get_type_hints(thing).values():
+            named |= area_types(hint)
+        if named - exported:
+            missing[name] = named - exported
+    assert not missing, f"named by the surface and absent from it: {missing}"
 
 
 def test_the_surface_is_a_module_not_the_package_init() -> None:

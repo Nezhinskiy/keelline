@@ -29,6 +29,13 @@ make; a consumer can catch it as the `OSError` it is without this export, but re
 `.created` — the whole reason it exists rather than a bare `OSError` — would otherwise mean
 importing `keelline.memory.worktree`, which this docstring forbids.
 
+`Links` is the same rule again, and it arrived late because `link` used to return
+`list[Path]`: the call that withdraws the harness link when trust lapses gave it
+`Links(created, revoked)` instead, and a return type absent from this list is a value `attach`
+can hold and cannot declare. The list below is now checked against the signatures rather than
+only against itself — see `tests/memory/test_surface.py`, whose hand-written `required` set
+could not notice a name nobody had added to either side.
+
 **A name this list points at must be on it.** Three were not, and each is a place an exported
 docstring sends the reader by name — which is the same failure the `wrap`/`new_nonce` addition
 above closed, one function over:
@@ -113,7 +120,7 @@ from keelline.memory.trust import (
     snapshot,
     wrap,
 )
-from keelline.memory.worktree import PartialLink, link, linked_names
+from keelline.memory.worktree import Links, PartialLink, link, linked_names
 
 __all__ = [
     "DELIMITER",
@@ -123,6 +130,7 @@ __all__ = [
     "Entry",
     "Fit",
     "IndexCheck",
+    "Links",
     "Note",
     "NoteError",
     "NoteType",
