@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 # (§10, measured), so this one name serves both harnesses.
 BASH = "Bash"
 
+# The dispatcher owns the once-per-context bookkeeping (§5.3), so the handler declares the key
+# and stays pure. A red pytest over a dirty tree is the normal state of TDD — every "run it to
+# watch it fail" step would otherwise carry the same paragraph — so the note is worth one
+# appearance and no more.
+ONCE_TEST_HYGIENE = "test-hygiene"
+
 
 def bash_command(event: HookEvent) -> str | None:
     """The command of a Bash call, or None for any other tool or a malformed input."""
@@ -58,7 +64,38 @@ def _bg_cleanup(event: HookEvent, config: Config | None) -> HookResult:
     return HookResult(context=verdict.hint)
 
 
+def _test_hygiene(event: HookEvent, config: Config | None) -> HookResult:
+    """Name what could have falsified a red pytest run. Never a decision: the tool has already
+    run, and `Policy.OPEN` means a failure here costs the note and not the call."""
+    if config is None or event.project_root is None:
+        return HookResult()
+    command = bash_command(event)
+    if command is None:
+        return HookResult()
+    from keelline.guards.hygiene import context_for, red_exit
+
+    if red_exit(event.raw) is None:
+        return HookResult()
+    return HookResult(context=context_for(command, event.project_root, config))
+
+
 def register() -> list[Handler]:
     return [
         Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),
+        # Premise 1: a non-zero exit arrives on `PostToolUseFailure` in Claude Code, which
+        # `keelline.hooks.api.EVENTS` does not carry yet — and `registry.discover` refuses a
+        # handler whose event is not in that tuple, so registering it here today would take
+        # the whole plugin down. `EVENTS` is the `foundation` lane's file. When it gains the
+        # event, register the same handler there too:
+        # Handler(name="test-hygiene", event="PostToolUseFailure", policy=Policy.OPEN,
+        #         run=_test_hygiene, once_key=ONCE_TEST_HYGIENE),
+        # Kept ABOVE the row it annotates, not below it: a later lane appending a handler to
+        # the tail of this list would otherwise detach the comment from its subject.
+        Handler(
+            name="test-hygiene",
+            event="PostToolUse",
+            policy=Policy.OPEN,
+            run=_test_hygiene,
+            once_key=ONCE_TEST_HYGIENE,
+        ),
     ]

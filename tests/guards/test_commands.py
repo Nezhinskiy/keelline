@@ -3,8 +3,11 @@ from __future__ import annotations
 import io
 import json
 import os
+import py_compile
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -259,3 +262,89 @@ def test_commit_strip_keeps_gits_trailing_comment_block_intact(tmp_path: Path) -
         "#\n"
     )
     assert "Co-Authored-By" not in result
+
+
+@needs_git
+def test_test_hygiene_reports_the_two_faults(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Exit 1 is "findings", which is what makes this a command and not only a hook notice.
+    # Reddened by mutating `run_test_hygiene`'s `exit_code=1 if findings else 0` to `0`;
+    # measured. The `roots == 1` assertion has no mutation of its own here — `code_roots` is
+    # overridden to the single entry `src`, which exists, so neither the `is_dir()` filter nor
+    # the containment call changes this number (both were applied and this test stayed green).
+    # It is the wiring assertion: it pins that `--json` reports the walk's own count, and the
+    # filter and the containment check are pinned in `tests/guards/test_hygiene.py`.
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "keelline.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert invoke(argv) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["dirty"] >= 1 and out["stale"] == 0 and out["roots"] == 1
+
+
+@needs_git
+def test_test_hygiene_is_clean_on_a_committed_tree(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `repo()` leaves no `[ledger]`, so the roots are the preset's (`src`, `tests`, `scripts`)
+    # and none of them exists here: this pins the clean-tree path, not the walk. The walk is
+    # pinned in `tests/guards/test_hygiene.py`. Reddened by mutating `run_test_hygiene`'s
+    # `exit_code=1 if findings else 0` to `1`; measured.
+    root = repo(tmp_path)
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 0
+    assert "clean" in capsys.readouterr().out
+
+
+@needs_git
+def test_test_hygiene_refuses_a_tree_git_cannot_report_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Not in the ported plan: exit 2 is the third of the three exit codes the CLI row
+    # promises, and without this the `Refusal` branch of `run_test_hygiene` is unexercised —
+    # deleting it would report an unjudgeable tree as clean and exit 0. Reddened by replacing
+    # `raise Refusal(_NO_GIT)` with `found = found._replace(dirty=0)`; measured.
+    root = tmp_path / "bare"
+    root.mkdir()
+    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 2
+    assert "refused:" in capsys.readouterr().err
+
+
+@needs_git
+def test_test_hygiene_names_the_stale_count_in_its_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The summary's stale branch, which nothing else at the CLI level renders: the two tests
+    # above report `stale == 0` (and the clean one runs with `roots == 0`), so
+    # `f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)"` could be deleted
+    # with both still green. The walk itself is pinned in `tests/guards/test_hygiene.py`; this
+    # is the string a person reads. Reddened by mutating `run_test_hygiene`'s `if found.stale:`
+    # to `if False:`; measured.
+    root = repo(tmp_path)
+    (root / "src").mkdir()
+    module = root / "src" / "m.py"
+    module.write_text("x = 1\n", encoding="utf-8")
+    # Explicit `cfile` and `TIMESTAMP`, for the reasons `tests/guards/test_hygiene.py`'s
+    # `compile_module` gives: `cfile=None` follows `PYTHONPYCACHEPREFIX` out of the fixture,
+    # and `SOURCE_DATE_EPOCH` in the environment would make the header hash-based.
+    py_compile.compile(
+        str(module),
+        cfile=str(root / "src" / "__pycache__" / f"m.{sys.implementation.cache_tag}.pyc"),
+        doraise=True,
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    future = time.time() + 60
+    os.utime(module, (future, future))
+    (root / "keelline.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["src"]\n', encoding="utf-8"
+    )
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 1
+    assert "1 stale .pyc file(s) under 1 code root(s)" in capsys.readouterr().out

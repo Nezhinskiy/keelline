@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -148,6 +150,11 @@ def test_discovery_imports_no_guards_module_but_hooks(tmp_path: Path) -> None:
     assert "keelline.guards.hooks" in imported
     assert "keelline.guards.bgcleanup" not in imported
     assert "keelline.guards.bashscan" not in imported
+    # Task 8's two modules, named explicitly: `hygiene` imports `bashscan`, `roots` and
+    # `gitenv` at module scope, so a module-level import of it in `hooks.py` would be caught
+    # by the line above too — but only by accident of what it happens to import.
+    assert "keelline.guards.hygiene" not in imported
+    assert "keelline.guards.roots" not in imported
     assert "keelline.config" not in imported
 
 
@@ -183,3 +190,158 @@ def test_a_leaking_background_call_is_denied_through_the_real_dispatcher(tmp_pat
     allowed = dict(payload, tool_input={"command": "make && make test", "run_in_background": True})
     completed = hook("PreToolUse", json.dumps(allowed), root)
     assert completed.returncode == 0, completed.stderr
+
+
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def post_event(root: Path, command: str, raw_extra: dict[str, object]) -> HookEvent:
+    tool_input: dict[str, object] = {"command": command}
+    raw: dict[str, object] = {"tool_name": "Bash", "tool_input": tool_input, **raw_extra}
+    return HookEvent(
+        name="PostToolUse",
+        session_id="s1",
+        agent_id=None,
+        tool_name="Bash",
+        tool_input=tool_input,
+        cwd=root,
+        project_root=root,
+        harness="claude",
+        raw=raw,
+    )
+
+
+def dirty_project(tmp_path: Path) -> Path:
+    # A tracked file modified after its commit, not merely an untracked one: the dirty count
+    # comes from `git status --porcelain` under the owner's own git, and
+    # `status.showUntrackedFiles = no` or a broad excludes file would hide an untracked file.
+    root = a_project(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.com",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "chore: seed"]):
+        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+    (root / "src" / "m.py").write_text("x = 2\n", encoding="utf-8")
+    return root
+
+
+def hygiene() -> Handler:
+    return next(h for h in register() if h.name == "test-hygiene")
+
+
+def test_the_hygiene_notice_is_an_open_post_tool_use_handler_with_a_once_key() -> None:
+    # The policy is the whole of `test-hygiene`'s safety story: a notice that could refuse a
+    # tool call would be worse than no notice. Reddened by flipping `Policy.OPEN` to
+    # `Policy.CLOSED` in `register()`; measured. `once_key` is asserted against the literal
+    # "test-hygiene" rather than against `ONCE_TEST_HYGIENE`, so the expected value is a fixed
+    # one and not one read from the subject.
+    handler = hygiene()
+    assert handler.event == "PostToolUse"
+    assert handler.policy is Policy.OPEN
+    assert handler.once_key == "test-hygiene"
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "extra", [{"tool_response": {"exit_code": 1}}, {"error": "Exit code 1\nFAILED"}]
+)
+def test_a_red_pytest_over_a_dirty_tree_is_noticed(
+    tmp_path: Path, extra: dict[str, object]
+) -> None:
+    # Both payload shapes through the handler, not only through `red_exit`: Premise 1 is about
+    # which field the harness actually sends, so the parametrisation has to reach `event.raw`.
+    # Reddened by mutating `_test_hygiene`'s last line to `return HookResult()`; measured.
+    root = dirty_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    result = hygiene().run(post_event(root, "pytest -q", extra), config)
+    assert result.decision is None
+    assert result.context is not None and "uncommitted" in result.context
+
+
+@needs_git
+def test_a_green_run_or_a_non_pytest_command_is_silence(tmp_path: Path) -> None:
+    # Reddened by dropping `_test_hygiene`'s `if red_exit(event.raw) is None: return
+    # HookResult()` (the first assertion) and by dropping `context_for`'s `is_pytest_run`
+    # gate (the second); both measured.
+    root = dirty_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    assert (
+        hygiene()
+        .run(post_event(root, "pytest -q", {"tool_response": {"stdout": "ok"}}), config)
+        .context
+        is None
+    )
+    assert (
+        hygiene().run(post_event(root, "ls", {"tool_response": {"exit_code": 1}}), config).context
+        is None
+    )
+
+
+@needs_git
+def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # OPEN: the dispatcher swallows and records. The handler does not need its own try/except,
+    # and must not have one — a silent swallow is how a broken notice goes unnoticed.
+    # Reddened by flipping the handler's policy to `Policy.CLOSED` (exit 2, not 0); the stderr
+    # assertion is reddened by giving `_test_hygiene` its own try/except around `context_for`.
+    from keelline.guards import hygiene as module
+
+    def broken(command: str, root: Path, config: object) -> str | None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(module, "context_for", broken)
+    root = dirty_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    recorder = Recorder()
+    outcome = dispatch(
+        post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
+        register(),
+        config,
+        sink=recorder,
+    )
+    assert outcome.exit_code == 0
+    assert "test-hygiene: RuntimeError: boom" in outcome.stderr
+
+
+@needs_git
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Premise 2: dispatch marks once_key on any run; foundation owns marking on delivery, "
+        "and the commit that fixes it must delete this marker (xfail_strict is global)"
+    ),
+)
+def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> None:
+    # No mutation of its own: it pins an intended semantics this tree does not have yet, so it
+    # is red by construction and `xfail_strict` is what keeps that honest. `dispatch` calls
+    # `sink.mark(handler.once_key)` after EVERY successful run, including one that returned an
+    # empty `HookResult`, so once a durable sink exists the first unrelated Bash call of a
+    # session silently spends this handler's single delivery. The one-line fix — mark only
+    # when the result carried something — belongs to `foundation`, and the commit that makes
+    # it must delete this marker in the same change, or the fixed test reddens as an XPASS.
+    root = dirty_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    recorder = Recorder()
+    dispatch(
+        post_event(root, "ls", {"tool_response": {"stdout": ""}}), register(), config, sink=recorder
+    )
+    outcome = dispatch(
+        post_event(root, "pytest", {"tool_response": {"exit_code": 1}}),
+        register(),
+        config,
+        sink=recorder,
+    )
+    assert "uncommitted" in json.loads(outcome.stdout)["hookSpecificOutput"].get(
+        "additionalContext", ""
+    )

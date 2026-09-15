@@ -156,6 +156,34 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     return Result(f"stripped {count} attribution line(s) from {path}", {"stripped": count})
 
 
+# A tree git could not report on is not a clean tree. Exit 2 (refusal), never exit 0: the whole
+# value of this command is that it answers "can this red run be trusted", and "I do not know"
+# reported as "yes" is the one wrong answer.
+_NO_GIT = "git could not report the tree's status, so this tree cannot be judged"
+
+
+def run_test_hygiene(args: argparse.Namespace) -> Result:
+    from keelline.guards.hygiene import inspect
+
+    root, config = _root_and_config(args)
+    found = inspect(root, config)
+    if found.dirty is None:
+        raise Refusal(_NO_GIT)
+    findings: list[str] = []
+    if found.dirty:
+        findings.append(f"{found.dirty} uncommitted change(s) in the tree")
+    if found.stale:
+        findings.append(f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)")
+    # Counts and labels only: a `ledger.code_roots` entry is a repository-authored string and
+    # never reaches the summary. `data` is the documented exception and carries none either.
+    summary = (
+        "; ".join(findings)
+        or f"tree is clean and bytecode under {found.roots} code root(s) is fresh"
+    )
+    data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
+    return Result(summary, data, exit_code=1 if findings else 0)
+
+
 def register(groups: SubParsers) -> None:
     guard = groups.add_parser("guard", help="fail-closed guards over a tool call")
     guard_sub = guard.add_subparsers(dest="command", metavar="<command>")
@@ -172,3 +200,10 @@ def register(groups: SubParsers) -> None:
     strip = commit_sub.add_parser("strip", help="strip attribution lines from a message file")
     strip.add_argument("file", help="the commit-message file git handed the hook")
     strip.set_defaults(func=run_commit_strip)
+
+    test = groups.add_parser("test", help="test-suite hygiene")
+    test_sub = test.add_subparsers(dest="command", metavar="<command>")
+    hygiene = test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
+    hygiene.add_argument("--root", default=".", help="project root (default: current directory)")
+    hygiene.add_argument("--machine", default=None, help="machine configuration file to read")
+    hygiene.set_defaults(func=run_test_hygiene)
