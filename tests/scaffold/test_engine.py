@@ -115,8 +115,8 @@ def test_a_recorded_unchanged_file_yields_no_action(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("BODY\n", encoding="utf-8")
     Manifest({}).with_record(a_record()).write(tmp_path)
     result = plan(tmp_path, a_config(tmp_path), [a_template()])
-    assert result.actions == []
-    assert result.unchanged == ["agents-md"]
+    assert result.actions == ()
+    assert result.unchanged == ("agents-md",)
 
 
 def test_a_recorded_file_the_tool_wrote_is_updated(tmp_path: Path) -> None:
@@ -143,11 +143,17 @@ def test_force_overrides_a_hand_edit(tmp_path: Path) -> None:
 
 
 def test_a_once_artifact_is_never_updated(tmp_path: Path) -> None:
+    # `skip_modified` and not `unchanged`: the plan's decision table says so, and `unchanged`
+    # renders as "up to date" for a file Keelline deliberately never looks inside again. The
+    # user needs "left alone because it is yours", which is the statement that is true.
     (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
     template = a_template(id="claude-md", kind=Kind.ONCE, target="CLAUDE.md")
     result = plan(tmp_path, a_config(tmp_path), [template])
-    assert result.actions == []
-    assert result.unchanged == ["claude-md"]
+    assert [(a.verb, a.target) for a in result.actions] == [(Verb.SKIP_MODIFIED, "CLAUDE.md")]
+    assert result.unchanged == ()
+    before = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    assert apply(tmp_path, result).skipped == ("CLAUDE.md",)
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8") == before
 
 
 def test_a_retired_template_is_removed_while_its_hash_matches(tmp_path: Path) -> None:
@@ -200,7 +206,7 @@ def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_pat
     ]
     assert result.actions[0].reason == "relocated and hand-edited"
     applied = apply(tmp_path, result)
-    assert applied.skipped == ["AGENTS.md"]
+    assert applied.skipped == ("AGENTS.md",)
     assert old.read_text(encoding="utf-8") == "BODY\nand a line the user added\n"
 
 
@@ -214,7 +220,7 @@ def test_a_relocation_whose_old_file_is_already_gone_reports_no_skip(tmp_path: P
         (Verb.REMOVE, "AGENTS.md"),
         (Verb.CREATE, ".keelline/local/AGENTS.md"),
     ]
-    assert apply(tmp_path, result).skipped == []
+    assert apply(tmp_path, result).skipped == ()
 
 
 def test_a_manifest_naming_a_target_outside_the_root_plans_nothing_for_it(tmp_path: Path) -> None:
@@ -255,7 +261,7 @@ def test_a_recorded_target_this_template_could_never_produce_is_not_a_relocation
     ]
     applied = apply(tmp_path, planned)
     assert settings.read_text(encoding="utf-8") == before
-    assert applied.skipped == [".claude/settings.json"]
+    assert applied.skipped == (".claude/settings.json",)
 
 
 def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) -> None:
@@ -301,8 +307,8 @@ def test_a_local_artifact_whose_content_already_matches_is_unchanged(tmp_path: P
     config = a_config(tmp_path, local=("agents-md",))
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
     again = plan(tmp_path, config, [a_template()])
-    assert again.actions == []
-    assert again.unchanged == ["agents-md"]
+    assert again.actions == ()
+    assert again.unchanged == ("agents-md",)
 
 
 def test_a_retired_local_artifact_is_removed(tmp_path: Path) -> None:
@@ -340,7 +346,7 @@ def test_a_region_already_current_yields_no_action(tmp_path: Path) -> None:
         tmp_path
     )
     template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1")
-    assert plan(tmp_path, a_config(tmp_path), [template]).actions == []
+    assert plan(tmp_path, a_config(tmp_path), [template]).actions == ()
 
 
 def test_prose_around_a_region_may_change_without_reading_as_a_hand_edit(tmp_path: Path) -> None:
@@ -412,8 +418,8 @@ def test_an_unrelated_edit_beside_the_entries_is_not_a_hand_edit(tmp_path: Path)
     raw["permissions"] = {"deny": ["Read(./.env)"]}
     settings.write_text(json.dumps(raw, indent=2), encoding="utf-8")
     again = plan(tmp_path, a_config(tmp_path), [template])
-    assert again.actions == []
-    assert again.unchanged == ["claude-hooks"]
+    assert again.actions == ()
+    assert again.unchanged == ("claude-hooks",)
 
 
 def test_a_retired_keyed_entry_leaves_the_rest_of_the_document(tmp_path: Path) -> None:
@@ -433,7 +439,7 @@ def test_a_retired_keyed_entry_leaves_the_rest_of_the_document(tmp_path: Path) -
 @pytest.mark.parametrize("target", ["../outside.md", "/etc/keelline.md", "docs/../../x.md", ""])
 def test_an_escaping_target_is_refused_not_planned(tmp_path: Path, target: str) -> None:
     result = plan(tmp_path, a_config(tmp_path), [a_template(target=target)])
-    assert result.actions == []
+    assert result.actions == ()
     assert [r.artifact_id for r in result.refusals] == ["agents-md"]
 
 
@@ -553,11 +559,11 @@ def test_a_well_formed_profile_is_allowed_while_no_listing_exists(tmp_path: Path
     text = CONFIG.replace('profile = ""', 'profile = "python"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
-    assert plan(tmp_path, config, [a_template()]).actions != []
+    assert plan(tmp_path, config, [a_template()]).actions != ()
 
 
 def test_an_empty_profile_means_none_and_is_allowed(tmp_path: Path) -> None:
-    assert plan(tmp_path, a_config(tmp_path), [a_template()]).actions != []
+    assert plan(tmp_path, a_config(tmp_path), [a_template()]).actions != ()
 
 
 def test_a_file_carrying_only_a_region_end_marker_is_refused_and_left_alone(
@@ -570,7 +576,7 @@ def test_a_file_carrying_only_a_region_end_marker_is_refused_and_left_alone(
     (tmp_path / "AGENTS.md").write_text(before, encoding="utf-8")
     template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1")
     first = plan(tmp_path, a_config(tmp_path), [template])
-    assert first.actions == []
+    assert first.actions == ()
     assert [(r.artifact_id, "no beginning" in r.reason) for r in first.refusals] == [
         ("agents-md", True)
     ]
@@ -598,7 +604,7 @@ def test_apply_writes_the_payload_and_records_it(tmp_path: Path) -> None:
     config = a_config(tmp_path)
     result = apply(tmp_path, plan(tmp_path, config, [a_template()]))
     assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "BODY\n"
-    assert result.written == ["AGENTS.md"]
+    assert result.written == ("AGENTS.md",)
     assert Manifest.read(tmp_path).get("agents-md") is not None
 
 
@@ -632,7 +638,7 @@ def test_apply_refuses_a_dotdot_target_no_symlink_walk_would_catch(tmp_path: Pat
     outside.mkdir()
     action = Action(Verb.CREATE, "agents-md", f"../{outside.name}/AGENTS.md", "BODY\n", "new", None)
     with pytest.raises(PathEscape, match=r"\.\."):
-        apply(tmp_path, Plan(actions=[action]))
+        apply(tmp_path, Plan(actions=(action,)))
     assert list(outside.iterdir()) == []
 
 
@@ -656,7 +662,7 @@ def test_a_removal_deletes_the_file_and_the_record(tmp_path: Path) -> None:
     config = a_config(tmp_path)
     result = apply(tmp_path, plan(tmp_path, config, [a_template(retired=True)]))
     assert not (tmp_path / "AGENTS.md").exists()
-    assert result.removed == ["AGENTS.md"]
+    assert result.removed == ("AGENTS.md",)
     assert Manifest.read(tmp_path).get("agents-md") is None
 
 
@@ -671,7 +677,7 @@ def test_a_skipped_artifact_is_reported_and_not_written(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("mine\n", encoding="utf-8")
     config = a_config(tmp_path)
     result = apply(tmp_path, plan(tmp_path, config, [a_template()]))
-    assert result.skipped == ["AGENTS.md"]
+    assert result.skipped == ("AGENTS.md",)
     assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "mine\n"
 
 
@@ -788,7 +794,7 @@ def test_reordering_the_keys_inside_a_marked_entry_is_not_a_hand_edit(tmp_path: 
     settings.write_text(json.dumps(raw, indent=2), encoding="utf-8")
     again = plan(tmp_path, a_config(tmp_path), [template])
     assert [(a.verb, a.reason) for a in again.actions] == []
-    assert again.unchanged == ["claude-hooks"]
+    assert again.unchanged == ("claude-hooks",)
 
 
 def test_apply_records_the_files_it_wrote_before_a_later_action_refused(tmp_path: Path) -> None:

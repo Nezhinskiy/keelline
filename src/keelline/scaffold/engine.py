@@ -60,6 +60,20 @@ _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
+# Where the repository-root `profiles/` sits relative to this file, when this file *is* in a
+# checkout: `src/keelline/scaffold/engine.py` → three parents up is the repository root. From an
+# installed wheel the same arithmetic lands in `.../lib/python3.x/`, which is not a checkout and
+# has no `profiles/` of its own — but `validate_sources` is a refusal gate, so a listing found by
+# accident there would make its verdict depend on the installing machine's directory layout.
+# `_in_a_checkout` is what keeps the fallback to the case it was written for.
+_REPOSITORY_ROOT = 3
+_CHECKOUT_MARKERS = ("pyproject.toml", ".git")
+
+
+def _in_a_checkout(root: Path) -> bool:
+    return any((root / marker).exists() for marker in _CHECKOUT_MARKERS)
+
+
 def shipped_profiles() -> list[str] | None:
     """The profile names this build carries, or `None` while no `profiles/` exists anywhere.
 
@@ -68,12 +82,19 @@ def shipped_profiles() -> list[str] | None:
     lane that creates either runs in wave 5. Until then there is no listing to check against,
     and refusing every non-empty name would make `init --yes` on a Python repository produce a
     configuration that `plan()` rejects outright.
+
+    The package is asked first and is the only answer that holds for an installed Keelline. The
+    repository-root fallback exists for a checkout — running from `scripts/keelline` before any
+    wheel is built — and is taken only when the directory three levels up actually looks like
+    one, so an installed package cannot pick up a `profiles/` that happens to sit beside its
+    `site-packages`.
     """
     package = resources.files("keelline").joinpath("profiles")
     if package.is_dir():
         return sorted(entry.name for entry in package.iterdir())
-    root = Path(__file__).resolve().parents[3] / "profiles"
-    if root.is_dir():
+    checkout = Path(__file__).resolve().parents[_REPOSITORY_ROOT]
+    root = checkout / "profiles"
+    if _in_a_checkout(checkout) and root.is_dir():
         return sorted(entry.name for entry in root.iterdir())
     return None
 
@@ -222,7 +243,23 @@ def plan(
                 _plan_retired(template, record, current, target, location, actions, unchanged)
                 continue
             if template.kind is Kind.ONCE and current is not None:
-                unchanged.append(template.id)
+                # `skip_modified`, which is the plan's decision table (row: "no record, file
+                # present, kind is `template` or `once`"), and not `unchanged`, which is what
+                # this said. The plan contradicts itself between that row and its prose, so the
+                # choice is recorded here: `unchanged` renders as "up to date", and Keelline has
+                # no idea whether this file is up to date — a create-once artifact is one it
+                # deliberately never looks inside again. "Left alone because it is yours" is the
+                # true statement, and it is the one the user can act on.
+                actions.append(
+                    Action(
+                        Verb.SKIP_MODIFIED,
+                        template.id,
+                        target,
+                        None,
+                        "create-once, and the file is already there",
+                        None,
+                    )
+                )
                 continue
 
             payload, stamp = _payload_and_stamp(template, current)
@@ -274,7 +311,9 @@ def plan(
         except _OWN_FILE_REFUSALS as exc:
             refusals.append(Refused(template.id, target, str(exc)))
 
-    return Plan(actions=actions, refusals=refusals, unchanged=unchanged)
+    # The conversion to tuples happens here, at the boundary, so the object a user approves
+    # through `render_report` is the object `apply` consumes. See `Plan`.
+    return Plan(actions=tuple(actions), refusals=tuple(refusals), unchanged=tuple(unchanged))
 
 
 def _relocation(root: Path, resolved_root: Path, template: Template, record: Record) -> Action:
@@ -428,7 +467,7 @@ def apply(root: Path, planned: Plan) -> Applied:
     finally:
         manifest.write(root)
 
-    return Applied(written=written, removed=removed, skipped=skipped)
+    return Applied(written=tuple(written), removed=tuple(removed), skipped=tuple(skipped))
 
 
 def _write(root: Path, target: str, payload: str) -> None:

@@ -106,6 +106,12 @@ class Reconciliation:
     # repository (`_publishable`). Named here for the same reason `refused_harvest` is: a drop
     # `render_index` makes on its own has no other channel back to a person running the command.
     refused_publish: list[str] = field(default_factory=list)
+    # The `memory.index_extra` entries the same gate refused, kept apart from the note names
+    # above. They were appended to the same list, and `run_index`'s message renders that list as
+    # notes — so a refused pointer read as "`alpha, docs/architecture/overview.md` took no line
+    # in …", one note name and one path in a sentence that calls both of them notes. Two kinds
+    # of thing, two lists, two sentences.
+    refused_extra: list[str] = field(default_factory=list)
 
 
 def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path | None:
@@ -303,13 +309,21 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
         if not _publishable(store, to_machine, note):
             refused_publish.append(note.name)
         notes.append(note)
+    refused_extra: list[str] = []
     if to_machine:
         # Always repository data — `keelline.toml` is a committed file — so every survivor of
         # `_extra`'s own containment checks is still a contributing entry this destination may
         # not carry, the same as a repository note's line above.
-        refused_publish.extend(_extra(config, store))
+        refused_extra = _extra(config, store)
     return Reconciliation(
-        notes, harvested, provisional, found.unreadable, written, refused, refused_publish
+        notes,
+        harvested,
+        provisional,
+        found.unreadable,
+        written,
+        refused,
+        refused_publish,
+        refused_extra,
     )
 
 

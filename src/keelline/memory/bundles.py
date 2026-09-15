@@ -149,8 +149,17 @@ def _volatile(store: Store, config: Config) -> list[str]:
         return []
     today = date.today()
     ttl = config.budgets.effective("volatile_ttl_days")
-    notes.sort(key=lambda note: (note.as_of is not None, note.as_of or date.min), reverse=True)
-    notes.sort(key=lambda note: note.as_of is not None)
+    # Undated notes first — an `as_of` a writer never added is the one that most needs looking
+    # at — then the dated ones, newest first.
+    #
+    # One sort, where there were two. The second sorted on `as_of is not None`, which is
+    # *exactly* the first element of the first sort's key, so that element decided nothing: the
+    # second pass re-partitioned on the same predicate and only the date ordering inside each
+    # partition survived. Verified over 2,000 random orderings that the one key below is
+    # identical to the pair. Writing it as one sort is also what makes the ordering readable —
+    # "undated first, then newest first" is not a claim anybody could check against two
+    # `reverse=True` passes that partly undo each other.
+    notes.sort(key=lambda note: (note.as_of is not None, -(note.as_of or date.min).toordinal()))
     full = [
         f"### {note.name}"
         + (f" (as_of {note.as_of})" if note.as_of else "")

@@ -582,7 +582,11 @@ def test_index_extra_is_not_published_to_machine_state(tmp_path: Path) -> None:
 
     assert "approve every diff" not in text
     assert EXTRA_TITLE not in text
-    assert payload in reconciled.refused_publish
+    # `refused_extra`, not `refused_publish`: a `memory.index_extra` entry is a pointer in
+    # `keelline.toml`, not a note, and the two used to share one list that `run_index`
+    # renders as notes — "alpha, docs/architecture/overview.md took no line in …".
+    assert payload in reconciled.refused_extra
+    assert reconciled.refused_publish == []
 
 
 def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(

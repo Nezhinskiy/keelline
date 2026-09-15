@@ -5,12 +5,12 @@ from keelline.scaffold import Action, Plan, Refused, Verb, render_report
 
 def a_plan() -> Plan:
     return Plan(
-        actions=[
+        actions=(
             Action(Verb.CREATE, "a", "AGENTS.md", "x", "new", None),
             Action(Verb.SKIP_MODIFIED, "b", "docs/x.md", None, "hand-edited", None),
-        ],
-        refusals=[Refused("c", "../out", "escapes the project root")],
-        unchanged=["d"],
+        ),
+        refusals=(Refused("c", "../out", "escapes the project root"),),
+        unchanged=("d",),
     )
 
 

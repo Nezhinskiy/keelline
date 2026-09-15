@@ -160,6 +160,16 @@ class Note:
     # byte and a key this module does not model is never touched.
     raw: tuple[str, ...] = ()
     original: dict[str, str] = field(default_factory=dict)
+    # Everything after the closing fence, exactly as it was on disk, and the line ending the
+    # frontmatter used. `body` above is the normalised reading every consumer wants; these two
+    # are what `render_note` writes back, so a note this run did not change comes back byte for
+    # byte — the body included, which it did not.
+    #
+    # `None`, not `""`, for a `Note` built in code rather than read from a file: a note whose
+    # body is genuinely empty has `verbatim == ""` and must still round-trip to a file with
+    # nothing after the fence, which is not what `body` alone would render.
+    verbatim: str | None = None
+    newline: str = "\n"
     # The `memory.groups` entry this note was walked under, exactly as configured. `walk` sets
     # it; a `Note` read on its own has no way to know, and `group_name` falls back to the
     # folder's name for that case.
@@ -213,8 +223,28 @@ class Note:
         return self.store_group or self.path.parent.name
 
 
-def _split(text: str, path: Path) -> tuple[list[str], str]:
-    lines = text.splitlines()
+def _newline_of(text: str) -> str:
+    """The line ending the frontmatter uses, so a rewritten key keeps the file's own."""
+    return "\r\n" if "\r\n" in text.split("\n", 1)[0] + "\n" else "\n"
+
+
+def _split(text: str, path: Path) -> tuple[list[str], str, str]:
+    """`(frontmatter lines, the body, the body exactly as it was on disk)`.
+
+    Two forms of the body, because two things want it. `body` is normalised — line endings to
+    `\n`, leading and trailing blank lines gone — and is what word counts, bundles and every
+    reader are written against. `verbatim` is the bytes after the closing fence, untouched, and
+    is what `render_note` writes back when nothing changed it.
+
+    Without the second, `Note.raw`'s own claim that "an unchanged note round-trips byte for
+    byte" was true of the frontmatter and false of the body: a CRLF note, a note with two blank
+    lines before its first paragraph, or one with no trailing newline came back renormalised.
+    The first `memory index` over a store somebody else's tool wrote therefore produced exactly
+    the unreviewable diff this module exists to prevent — for *some* notes, which is harder to
+    notice than for all of them.
+    """
+    kept = text.splitlines(keepends=True)
+    lines = [line.rstrip("\r\n") for line in kept]
     if not lines or lines[0].strip() != FENCE:
         raise NoteError(f"{path}: no frontmatter; a note opens with '---'")
     try:
@@ -222,7 +252,7 @@ def _split(text: str, path: Path) -> tuple[list[str], str]:
     except StopIteration:
         raise NoteError(f"{path}: frontmatter is never closed") from None
     body = "\n".join(lines[end + 1 :]).strip("\n")
-    return lines[1:end], body
+    return lines[1:end], body, "".join(kept[end + 1 :])
 
 
 def _parse(lines: list[str], path: Path) -> tuple[dict[str, str], dict[str, str]]:
@@ -260,10 +290,15 @@ def _parse(lines: list[str], path: Path) -> tuple[dict[str, str], dict[str, str]
 
 def read_note(path: Path) -> Note:
     try:
-        text = path.read_text(encoding="utf-8")
+        # `newline=""` and not `read_text`: universal-newline translation turns every `\r\n`
+        # into `\n` before this module ever sees it, which makes the byte-for-byte round trip
+        # below impossible to keep for a CRLF note no matter how carefully the rewrite is done.
+        # `scaffold.engine._read` opens the same way, for the same reason.
+        with path.open(encoding="utf-8", newline="") as stream:
+            text = stream.read()
     except OSError as exc:
         raise NoteError(f"{path} cannot be read: {exc}") from exc
-    lines, body = _split(text, path)
+    lines, body, verbatim = _split(text, path)
     top, meta = _parse(lines, path)
     try:
         provenance = Provenance(top.get("index_provenance", Provenance.CURATED))
@@ -281,6 +316,8 @@ def read_note(path: Path) -> Note:
         metadata=meta,
         raw=tuple(lines),
         original=dict(top),
+        verbatim=verbatim,
+        newline=_newline_of(text),
     )
 
 
@@ -348,7 +385,13 @@ def render_note(note: Note) -> str:
         insert = [f"{key}: {_quote(str(changed[key]), note.path)}" for key in fresh]
         lines = lines[:cut] + insert + lines[cut:]
     lines.append(FENCE)
-    return "\n".join(lines) + "\n\n" + note.body + "\n"
+    frontmatter = note.newline.join(lines) + note.newline
+    # The body as it was, when there is one to preserve; the normalised form otherwise. Nothing
+    # in this lane edits a body — `with_index` changes the `index:` line and nothing else — so
+    # the first branch is the one every note read from disk takes.
+    if note.verbatim is not None:
+        return frontmatter + note.verbatim
+    return frontmatter + note.newline + note.body + note.newline
 
 
 def with_index(note: Note, line: str, provenance: Provenance) -> Note:

@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
-from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, dispatch, parse_event
+from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
 
@@ -484,3 +485,43 @@ def test_codex_is_detected_by_the_stdin_fields_s1_recorded() -> None:
     }
     ev = parse_event(payload, env={"CLAUDE_PLUGIN_ROOT": "/x"})
     assert ev.harness == "codex"
+
+
+def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `memory.store._git` scrubbed and said why — "it must be a real git answer, not one an
+    # inherited `GIT_DIR` produced" — while this one passed no `env=` at all. `project_root()`
+    # feeds *every* hook decision, so an inherited `GIT_DIR` or `GIT_WORK_TREE` made every
+    # handler in the process answer for a different repository than the session is in.
+    #
+    # `_git_toplevel` directly, and a `cwd` with no `.git` above it: `project_root` tries
+    # `_walk_to_git_root` first and would find the answer without ever asking `git`.
+    import shutil
+    import subprocess as sp
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+
+    def git(root: Path, *args: str) -> None:
+        sp.run(
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            env={
+                **os.environ,
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_SYSTEM": os.devnull,
+            },
+        )
+
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    git(victim, "init", "-q", "-b", "main")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    monkeypatch.setenv("GIT_DIR", str(victim / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(victim))
+    assert _git_toplevel(elsewhere) is None

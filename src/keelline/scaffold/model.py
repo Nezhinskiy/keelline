@@ -8,7 +8,7 @@ That is what keeps the engine testable without shipping any template at all.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -60,9 +60,21 @@ class Refused:
 
 @dataclass(frozen=True)
 class Plan:
-    actions: list[Action] = field(default_factory=list)
-    refusals: list[Refused] = field(default_factory=list)
-    unchanged: list[str] = field(default_factory=list)
+    """What `plan` decided, and what `apply` then writes — the same object, unchanged between.
+
+    `frozen=True` with three `list` fields froze the *bindings* and nothing else, so the plan a
+    user approved through `render_report` could still be appended to, or have an action's target
+    rewritten, before `apply` consumed it. That weakens the one claim this split exists to make:
+    "the report a user approves is produced by the same code path that then runs". The fields
+    are tuples, so the object really is what it was when it was rendered.
+
+    `plan` builds its three lists as lists and hands them here; the conversion happens once, at
+    the boundary, which is where the guarantee begins.
+    """
+
+    actions: tuple[Action, ...] = ()
+    refusals: tuple[Refused, ...] = ()
+    unchanged: tuple[str, ...] = ()
 
     @property
     def writes(self) -> list[str]:
@@ -75,6 +87,8 @@ class Plan:
 
 @dataclass(frozen=True)
 class Applied:
-    written: list[str] = field(default_factory=list)
-    removed: list[str] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)
+    """What `apply` actually did. Tuples for the same reason `Plan` uses them: it is a report."""
+
+    written: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()

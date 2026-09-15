@@ -111,6 +111,13 @@ _NOT_PUBLISHED = (
     "{names} took no line in {index}: committed to this repository, while this run's "
     "destination reaches outside it, so none of it was published into memory the machine shares"
 )
+# The same gate, the other kind of thing. `memory.index_extra` entries are pointers in
+# `keelline.toml`, not notes, and they used to be appended to the same list the notes above are
+# named from — so one sentence called a note name and a document path both notes.
+_EXTRA_NOT_PUBLISHED = (
+    "{names} took no pointer in {index}: `memory.index_extra` lives in this repository's "
+    "keelline.toml, while this run's destination reaches outside it"
+)
 
 
 def _trusted(store: Store, config: Config) -> bool:
@@ -160,10 +167,15 @@ def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
 
 def _publish(reconciled: Reconciliation, store: Store) -> str | None:
     """What `index._publishable` declined to write, named where a person will read it."""
-    if not reconciled.refused_publish:
-        return None
-    names = ", ".join(reconciled.refused_publish)
-    return _NOT_PUBLISHED.format(names=names, index=store.path / INDEX_NAME)
+    index = store.path / INDEX_NAME
+    said = []
+    if reconciled.refused_publish:
+        said.append(_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_publish), index=index))
+    if reconciled.refused_extra:
+        said.append(
+            _EXTRA_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_extra), index=index)
+        )
+    return "; ".join(said) or None
 
 
 # A note the store holds and cannot parse is the one failure this store cannot recover from by
@@ -234,6 +246,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "provisional": report.provisional,
                 "refused_harvest": reconciled.refused_harvest,
                 "refused_publish": reconciled.refused_publish,
+                "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
                 "trusted": _trusted(store, config),
             },
@@ -260,6 +273,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "provisional": reconciled.provisional,
             "refused_harvest": reconciled.refused_harvest,
             "refused_publish": reconciled.refused_publish,
+            "refused_extra": reconciled.refused_extra,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
@@ -293,7 +307,7 @@ def run_inventory(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     reconciled = reconcile(store, config, write=False)
     entries = inventory(reconciled, config)
-    counts = totals(entries, config)
+    counts = totals(entries)
     return Result(
         f"{counts['notes']} notes, {counts['words']} words, "
         f"{counts['provisional']} provisional, {counts['stale']} stale",

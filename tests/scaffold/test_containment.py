@@ -116,7 +116,7 @@ def test_the_engine_refuses_a_profile_the_loader_lets_through(tmp_path: Path) ->
 def test_every_escaping_target_yields_zero_actions(tmp_path: Path) -> None:
     write_config(tmp_path, VALID_HEAD)
     result = plan(tmp_path, load_at(tmp_path), escaping_templates())
-    assert result.actions == []
+    assert result.actions == ()
     assert len(result.refusals) == len(ESCAPES)
 
 

@@ -47,7 +47,6 @@ about the whole module rather than about `resolve` alone.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import tomllib
 from collections.abc import Mapping
@@ -58,18 +57,15 @@ from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
+from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
-_GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
-# Wall-clock bound on one `_git` call (D7: a cap, not read from config.budgets or
-# config.native_caps — no shipped file needs to change with it). Every call this module makes
-# is a local, argument-free, read-only query (`rev-parse`, `remote get-url`) against a
-# scrubbed environment, so it never touches the network; this only guards against a `git`
-# binary that hangs outright, and is generous for that without leaving store resolution
-# blocked for long.
-_GIT_TIMEOUT_SECONDS = 5
+# `keelline.gitenv` and not a copy: `hooks.dispatch` runs `git` too, and the reason this module
+# scrubs is exactly the reason that one has to. See that module's docstring.
+_GIT_ENV_KEEP = GIT_ENV_KEEP
+_GIT_TIMEOUT_SECONDS = GIT_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -137,10 +133,6 @@ class GitAnswer:
         return self.value
 
 
-def _scrubbed_env() -> dict[str, str]:
-    return {key: os.environ[key] for key in _GIT_ENV_KEEP if key in os.environ}
-
-
 def _git_is_usable() -> bool:
     """Whether the `git` on this PATH works at all, asked with the same scrubbed environment.
 
@@ -170,7 +162,7 @@ def _git_is_usable() -> bool:
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
-            env=_scrubbed_env(),
+            env=scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -185,7 +177,7 @@ def _git(root: Path, *args: str) -> GitAnswer:
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
-            env=_scrubbed_env(),
+            env=scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return GitAnswer(None, ran=False)
@@ -329,9 +321,14 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
 
 
 def _inside(candidate: Path, parent: Path) -> bool:
-    resolved = candidate.resolve()
-    base = parent.resolve()
-    return resolved == base or base in resolved.parents
+    """`candidate` is `parent` or sits under it, both resolved first.
+
+    `Path.is_relative_to` and not a hand-rolled `== base or base in parents`, which is the same
+    predicate written out longhand — and which `index._resolved_if_permitted` already spelled
+    the short way, so the module had two spellings of one rule. Two spellings of a containment
+    rule is one more place for them to stop agreeing.
+    """
+    return candidate.resolve().is_relative_to(parent.resolve())
 
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:

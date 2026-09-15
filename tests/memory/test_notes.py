@@ -314,3 +314,45 @@ def test_an_empty_value_is_one_line_and_is_still_written(tmp_path: Path) -> None
     path = tmp_path / "n.md"
     path.write_text(MINIMAL, encoding="utf-8")
     assert 'index: ""' in render_note(with_index(read_note(path), "", Provenance.NATIVE))
+
+
+# --- an unchanged note really does round-trip byte for byte -----------------------------------
+#
+# `Note.raw`'s comment claimed this and it was true of the frontmatter only: the body was
+# renormalised — CRLF to LF, blank lines around it stripped, a trailing newline added — so the
+# first `memory index` over a store somebody else's tool wrote produced exactly the unreviewable
+# diff this module exists to prevent, for the subset of notes shaped that way.
+
+
+@pytest.mark.parametrize(
+    ("label", "text"),
+    [
+        ("plain", "---\nname: n\ndescription: d\n---\n\nBody.\n"),
+        ("crlf", "---\r\nname: n\r\ndescription: d\r\n---\r\n\r\nBody.\r\n"),
+        ("no trailing newline", "---\nname: n\ndescription: d\n---\n\nBody."),
+        ("two blank lines before the body", "---\nname: n\ndescription: d\n---\n\n\nBody.\n"),
+        ("no blank line before the body", "---\nname: n\ndescription: d\n---\nBody.\n"),
+        ("blank lines after the body", "---\nname: n\ndescription: d\n---\n\nBody.\n\n\n"),
+        ("an empty body", "---\nname: n\ndescription: d\n---\n"),
+    ],
+)
+def test_an_unchanged_note_round_trips_byte_for_byte(tmp_path: Path, label: str, text: str) -> None:
+    path = tmp_path / "n.md"
+    path.write_text(text, encoding="utf-8", newline="")
+    assert render_note(read_note(path)) == text, label
+
+
+def test_a_rewritten_key_keeps_the_body_and_the_files_own_line_endings(tmp_path: Path) -> None:
+    # The half that has to keep working: when this lane *does* change a line, the change is the
+    # only difference — the body is still the body that was there, and a CRLF file stays CRLF
+    # rather than becoming a whole-file diff.
+    path = tmp_path / "n.md"
+    path.write_text(
+        "---\r\nname: n\r\ndescription: d\r\n---\r\n\r\nBody, unchanged.\r\n",
+        encoding="utf-8",
+        newline="",
+    )
+    written = render_note(with_index(read_note(path), "t → a", Provenance.PROVISIONAL))
+    assert "index: t → a\r\n" in written
+    assert written.endswith("\r\n\r\nBody, unchanged.\r\n")
+    assert "\n\n" not in written.replace("\r\n", "")

@@ -53,8 +53,15 @@ def inventory(reconciled: Reconciliation, config: Config) -> list[Entry]:
     return entries
 
 
-def totals(entries: list[Entry], config: Config) -> dict[str, int]:
-    del config
+def totals(entries: list[Entry]) -> dict[str, int]:
+    """Headline counts over what `inventory` returned.
+
+    No `config`. The parameter was here and the body opened with `del config` — a dead argument
+    baked into the C3 surface, where it gets more expensive to remove with every consumer that
+    writes a call against it. Every number below comes from the entries alone, and an entry
+    already carries the budget-derived fact (`stale`) that a config would have been consulted
+    for.
+    """
     return {
         "notes": len(entries),
         "words": sum(entry.words for entry in entries),

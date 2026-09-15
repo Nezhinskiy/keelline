@@ -48,6 +48,15 @@ above closed, one function over:
   before the write, `refresh_if_trusted` after with the paths this run authored — is not
   reconstructible from the rest of this surface, so it is part of it.
 
+**Three more, from the same rule that a name this list points at must be on it.**
+`trust.changed` and the `TrustState` it reads are §9.4's re-prompt predicate — "a store that was
+trusted and is not any more" — and neither was exported, so no consumer could reach the
+distinction they implement, and `TrustState.recorded` had no reader in production at all. A
+predicate a lane is required to honour and cannot import is a requirement with no way to meet
+it. `UnreadableTrustRecord` joins them because `state` and `may_inject` now raise it: a consumer
+that catches `Refusal` broadly is fine, but one that wants to tell "this record is broken" from
+"this store is not approved" — which is the whole point of the class — needs the name.
+
 **What the surface still owes, and to whom.** `docs-tooling` is a consumer of C3 and its row is
 not satisfied: `docs check --memory-graph` needs `refs.check` and `refs.audience_violations`,
 which Task 12 was to add and which are out of this lane's scope. They are absent from the list
@@ -93,7 +102,10 @@ from keelline.memory.store import (
 from keelline.memory.trust import (
     DELIMITER,
     Snapshot,
+    TrustState,
+    UnreadableTrustRecord,
     UnsafeNote,
+    changed,
     markers,
     may_inject,
     new_nonce,
@@ -119,9 +131,12 @@ __all__ = [
     "Reconciliation",
     "Snapshot",
     "Store",
+    "TrustState",
+    "UnreadableTrustRecord",
     "UnsafeNote",
     "Walk",
     "blocks",
+    "changed",
     "check_index",
     "fit",
     "in_repository",
