@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from keelline.gitenv import GIT_TIMEOUT_SECONDS, scrubbed_env
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink
 
 if TYPE_CHECKING:
@@ -58,12 +59,22 @@ def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = N
 
 def _git_toplevel(cwd: Path) -> Path | None:
     try:
-        completed = subprocess.run(
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+        # The environment is scrubbed for the same reason `memory.store._git` scrubs it, said
+        # there in as many words: "it must be a real git answer, not one an inherited `GIT_DIR`
+        # produced". This call did not, and `project_root()` feeds *every* hook decision — so an
+        # inherited `GIT_DIR` or `GIT_WORK_TREE` made every handler in the process answer for a
+        # different repository than the one the session is in.
+        #
+        # S603/S607. List form and never `shell=True`, so nothing is re-parsed by a shell.
+        # `cwd` is a path this process computed, not a repository value. `git` is resolved
+        # through `PATH` on purpose: the machine owner's `git` is the one that must answer.
+        completed = subprocess.run(  # noqa: S603 - see the comment above
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],  # noqa: S607
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=GIT_TIMEOUT_SECONDS,
+            env=scrubbed_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

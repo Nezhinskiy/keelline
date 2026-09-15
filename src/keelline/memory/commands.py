@@ -1,0 +1,383 @@
+"""The `memory` group (§5.2). Every command takes `--store PATH` (§9.1).
+
+`--store` is an override of *where the notes are*, not of the rules about them: it is held to
+the same target rule as a link the resolver found, so passing a path is not a way around the
+overlay binding. `--machine` exists for the same reason the resolver takes one — a test that
+did not thread it would read the developer's real configuration and, worse, write a trust
+record into their home directory.
+
+It is threaded exactly twice, into `load` and into `resolve`, and never again: `resolve` puts
+it on the `Store` it builds, so every later call takes it from there. It used to be an optional
+keyword on about twenty functions, and the only thing keeping a command's overlay, its index
+destination and its trust record in agreement was that each of those call sites remembered to
+pass it.
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from keelline.areas import SubParsers
+from keelline.config.loader import load
+from keelline.config.schema import Config
+from keelline.errors import Failure, Refusal
+from keelline.memory import trust
+from keelline.memory.bundles import Bundle, fit, render
+from keelline.memory.index import (
+    INDEX_NAME,
+    IndexCheck,
+    Reconciliation,
+    check_index,
+    index_source,
+    reconcile,
+    render_index,
+    write_index,
+)
+from keelline.memory.inventory import inventory, totals
+from keelline.memory.store import Store, in_repository, resolved
+from keelline.result import Result
+
+
+def _machine(args: argparse.Namespace) -> Path | None:
+    value = getattr(args, "machine", None)
+    return Path(value) if value else None
+
+
+# `refusal_reason`'s own docstring: the string "must never reach model context unwrapped". Its
+# only caller put it verbatim into a `Failure` message, and `cli._report` prints that message on
+# **stdout** under `--json` — twice, in one object, since the envelope carries it as both
+# `summary` and the message. `memory session-context` is a `hooks.json` entry, so the invariant
+# was holding only on the expectation that those entries never pass `--json`: an expectation
+# owned by a different lane, asserted by no test here, and contradicted by `hooks.py` going to
+# real lengths to keep this same string out of `HookResult.context`.
+#
+# So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
+# hand needs to know *which* group entry was refused; a model reading the same bytes needs the
+# region markers that say the text is data. `trust.wrap` is what `refusal_reason` names as the
+# way to have both, and `UnsafeNote` — a `Refusal`, exit 2 — is the right answer to a value
+# that tries to forge the markers.
+_NO_STORE = "no memory store; the reason below is repository-authored text, shown as data"
+
+
+def _no_store(reason: str | None) -> Failure:
+    if reason is None:
+        return Failure("no memory store")
+    return Failure(f"{_NO_STORE}\n{trust.wrap(reason, trust.new_nonce())}")
+
+
+def _store(args: argparse.Namespace) -> tuple[Store, Config]:
+    root = Path(args.root).resolve()
+    machine = _machine(args)
+    config = load(root, machine=machine)
+    # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
+    # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
+    # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
+    # bundle entry.
+    store, reason = resolved(root, config, override=args.store, machine=machine)
+    if store is None:
+        raise _no_store(reason)
+    return store, config
+
+
+# What `bundles.blocks` returns `[]` for, said where a person will read it. The failure this
+# closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`, so
+# it used to revoke the very record it depends on, and nothing in any summary said why the
+# model had stopped receiving standing rules.
+_UNTRUSTED = (
+    "this store's notes are repository data with no trust record, so the standing-rules, "
+    "volatile-notes and index bundles are empty — run `keelline memory trust --in-repo-memory`"
+)
+# The narrow case where a Keelline-authored write cannot carry trust forward: the store changed
+# under it, so re-recording would bless bytes the owner has never looked at. `refresh_if_trusted`
+# refuses rather than guess, which is right, and the human has to be told which it was.
+_DROPPED = (
+    "the store changed while this command ran, so its trust record was not carried over — "
+    "review the change and re-run `keelline memory trust --in-repo-memory`"
+)
+# `index._harvestable` refused to persist repository-authored titles into notes that are not
+# themselves repository data. Said out loud because the alternative is a silent drop: the notes
+# keep their own descriptions and nothing else in the output would differ.
+_NOT_HARVESTED = (
+    "{names} took no index line from {index}: it is committed to this repository and they are "
+    "not, so its text was not written into memory the machine owns"
+)
+# `index._publishable` refused to write a repository-authored line into {index} because this
+# run's destination reaches outside this project's own repository — the write-side mirror of
+# `_NOT_HARVESTED`, said out loud for the same reason: a drop `render_index` makes on its own
+# has no channel back to a person running the command, and a silent one is how repository text
+# reaches every other project sharing that destination.
+_NOT_PUBLISHED = (
+    "{names} took no line in {index}: committed to this repository, while this run's "
+    "destination reaches outside it, so none of it was published into memory the machine shares"
+)
+# The same gate, the other kind of thing. `memory.index_extra` entries are pointers in
+# `keelline.toml`, not notes, and they used to be appended to the same list the notes above are
+# named from — so one sentence called a note name and a document path both notes.
+_EXTRA_NOT_PUBLISHED = (
+    "{names} took no pointer in {index}: `memory.index_extra` lives in this repository's "
+    "keelline.toml, while this run's destination reaches outside it"
+)
+
+
+def _trusted(store: Store, config: Config) -> bool:
+    """The same question `bundles.blocks` asks, asked the same way.
+
+    `may_inject(store, config)` alone answers about the store's *notes*, through
+    `inside_project`. In overlay mode that is False by design — every group resolves out into
+    the overlay — while `store.path` is a real directory inside the repository, so a committed
+    `MEMORY.md` there makes `blocks(Bundle.INDEX, …)` return `[]` while this reported
+    `"trusted": true` and `_gate` said nothing. `_UNTRUSTED` exists precisely to stop that
+    silence — its own comment says "nothing in any summary said why the model had stopped
+    receiving standing rules" — and it was never appended.
+
+    `bundles.blocks` builds the same disjunction from `is_repository_data` and the index's own
+    `in_repository`; it is rebuilt here rather than exported because the two callers want
+    different halves of it, and one of them has to answer for a bundle it is not rendering.
+    """
+    index = index_source(store, config)
+    repository_data = trust.is_repository_data(store) or (
+        index is not None and in_repository(store, index)
+    )
+    return trust.may_inject(store, config, repository_data=repository_data)
+
+
+def _gate(store: Store, config: Config) -> str | None:
+    """Whether the trust gate is what a person should be told about, after a command ran.
+
+    Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
+    text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
+    rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
+    commands a person runs by hand are where this belongs.
+    """
+    return None if _trusted(store, config) else _UNTRUSTED
+
+
+def _with(summary: str, note: str | None) -> str:
+    return summary if note is None else f"{summary}; {note}"
+
+
+def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
+    """What `index._harvestable` declined to persist, named where a person will read it."""
+    if not reconciled.refused_harvest:
+        return None
+    names = ", ".join(reconciled.refused_harvest)
+    return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
+
+
+def _publish(reconciled: Reconciliation, store: Store) -> str | None:
+    """What `index._publishable` declined to write, named where a person will read it."""
+    index = store.path / INDEX_NAME
+    said = []
+    if reconciled.refused_publish:
+        said.append(_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_publish), index=index))
+    if reconciled.refused_extra:
+        said.append(
+            _EXTRA_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_extra), index=index)
+        )
+    return "; ".join(said) or None
+
+
+# A note the store holds and cannot parse is the one failure this store cannot recover from by
+# itself: `walk` quarantines it so one bad file does not cost the whole store, and from there
+# it is invisible to routing, to the standing rules and to volatile injection. It reached
+# `Result.data` and nothing a person reads.
+_UNREADABLE_NOTES = (
+    "{count} file(s) in the store cannot be read as a note, so they reach neither the index "
+    "nor any injection bundle: {paths}"
+)
+
+
+def _findings(report: IndexCheck, config: Config) -> list[str]:
+    """Everything `memory index` must both say out loud and exit non-zero for.
+
+    One list, read by the summary and by the exit code, because the two disagreed: the summary
+    branched on `drifted` alone while the exit code was `drifted or over_budget`, so a run
+    printed "index is current: N words, M lines" and exited 1 in the same breath. `over_caps` —
+    the two limits at which the harness truncates `MEMORY.md` — was computed by `check_index`
+    and then dropped entirely, absent from the data, the summary and the exit code alike.
+
+    Drift is deliberately not here. It is the one finding whose meaning differs between the two
+    callers: `--check` reports it, and the write path has just removed it.
+    """
+    found: list[str] = []
+    if report.over_budget:
+        budget = config.budgets.effective("memory_index_words")
+        found.append(f"the index is {report.words} words, over its {budget}-word budget")
+    if report.over_caps:
+        found.append(
+            f"the index is past the harness caps it is truncated at "
+            f"({', '.join(report.over_caps)}): {report.lines} lines, {report.bytes_} bytes"
+        )
+    if report.unreadable:
+        found.append(
+            _UNREADABLE_NOTES.format(
+                count=len(report.unreadable), paths=", ".join(report.unreadable)
+            )
+        )
+    return found
+
+
+def run_index(args: argparse.Namespace) -> Result:
+    store, config = _store(args)
+    # Taken before anything is written, so it records the bytes the owner actually approved.
+    before = trust.snapshot(store, config)
+    reconciled = reconcile(store, config, write=not args.check)
+    report = check_index(store, config, reconciled)
+    findings = _findings(report, config)
+    if args.check:
+        if report.drifted:
+            findings.insert(0, "the index is out of date; run `keelline memory index`")
+        summary = (
+            "; ".join(findings)
+            if findings
+            else f"index is current: {report.words} words, {report.lines} lines"
+        )
+        summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
+        return Result(
+            _with(summary, _gate(store, config)),
+            {
+                "drifted": report.drifted,
+                "words": report.words,
+                "lines": report.lines,
+                "bytes": report.bytes_,
+                "over_budget": report.over_budget,
+                "over_caps": report.over_caps,
+                "provisional": report.provisional,
+                "refused_harvest": reconciled.refused_harvest,
+                "refused_publish": reconciled.refused_publish,
+                "refused_extra": reconciled.refused_extra,
+                "unreadable": report.unreadable,
+                "trusted": _trusted(store, config),
+            },
+            # The same list the summary is built from, so the two can no longer disagree.
+            exit_code=1 if findings else 0,
+        )
+    text = render_index(reconciled, config, store)
+    path = write_index(store, config, text)
+    carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
+    note = _DROPPED if before.trusted and not carried else _gate(store, config)
+    # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
+    # are still said, because a person running this by hand is who can act on them.
+    wrote = "; ".join(
+        [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
+    )
+    wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
+    return Result(
+        _with(wrote, note),
+        {
+            "path": str(path),
+            "words": report.words,
+            "lines": report.lines,
+            "harvested": reconciled.harvested,
+            "provisional": reconciled.provisional,
+            "refused_harvest": reconciled.refused_harvest,
+            "refused_publish": reconciled.refused_publish,
+            "refused_extra": reconciled.refused_extra,
+            "unreadable": report.unreadable,
+            "over_budget": report.over_budget,
+            "over_caps": report.over_caps,
+            "trusted": _trusted(store, config),
+        },
+    )
+
+
+def run_session_context(args: argparse.Namespace) -> Result:
+    try:
+        bundle = Bundle(args.bundle)
+    except ValueError as exc:
+        known = ", ".join(b.value for b in Bundle)
+        raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
+    store, config = _store(args)
+    text = render(bundle, store, config, part=args.part)
+    return Result(text if text is not None else "")
+
+
+def run_trust(args: argparse.Namespace) -> Result:
+    store, config = _store(args)
+    before = trust.state(store, config)
+    after = trust.record(store, config)
+    return Result(
+        f"recorded the store hash for {store.path}",
+        {"was_trusted": before.trusted, "trusted": after.trusted, "digest": after.current},
+    )
+
+
+def run_inventory(args: argparse.Namespace) -> Result:
+    store, config = _store(args)
+    reconciled = reconcile(store, config, write=False)
+    entries = inventory(reconciled, config)
+    counts = totals(entries)
+    return Result(
+        f"{counts['notes']} notes, {counts['words']} words, "
+        f"{counts['provisional']} provisional, {counts['stale']} stale",
+        {"entries": [entry.as_dict() for entry in entries], **counts},
+    )
+
+
+def run_doctor_bundles(args: argparse.Namespace) -> Result:
+    """What `doctor` reads: whether each bundle fits the slots `hooks.json` declares."""
+    store, config = _store(args)
+    report = {
+        bundle.value: {
+            "parts": (found := fit(bundle, store, config)).parts,
+            "slots": found.slots,
+            "overflow": found.overflow,
+            "oversized": found.oversized,
+        }
+        for bundle in Bundle
+    }
+    bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
+    summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
+    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
+    trusted = _trusted(store, config)
+    return Result(
+        _with(summary, _gate(store, config)),
+        {"bundles": report, "trusted": trusted},
+        exit_code=1 if bad else 0,
+    )
+
+
+def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("--root", default=".", help="project root (default: current directory)")
+    parser.add_argument("--store", default=None, help="resolve the store at this path")
+    parser.add_argument("--machine", default=None, help="machine configuration file to read")
+    return parser
+
+
+def register(groups: SubParsers) -> None:
+    group = groups.add_parser("memory", help="the working-memory store")
+    sub = group.add_subparsers(dest="command", metavar="<command>")
+
+    index = _with_common(sub.add_parser("index", help="render MEMORY.md from the notes"))
+    index.add_argument("--check", action="store_true", help="report drift instead of writing")
+    index.set_defaults(func=run_index)
+
+    context = _with_common(sub.add_parser("session-context", help="render one injection bundle"))
+    context.add_argument("--bundle", required=True, help=", ".join(b.value for b in Bundle))
+    context.add_argument("--part", type=int, default=1, help="which numbered slot to render")
+    context.set_defaults(func=run_session_context)
+
+    trusted = _with_common(sub.add_parser("trust", help="trust notes committed to this repository"))
+    trusted.add_argument(
+        "--in-repo-memory",
+        action="store_true",
+        required=True,
+        # Required and never read by `run_trust` — that is not a missing guard, it is the whole
+        # point. This is an explicit-confirmation gesture, not a switch between two behaviours:
+        # its presence is what stops `memory trust` from being a bare, trivially scripted
+        # command. It is not a safety check either, so there is nothing here to branch on: trust
+        # is only ever *consulted* for content that lives in the repository — the notes, when
+        # `inside_project(store)`, and `MEMORY.md` whenever it resolves inside the repository,
+        # which it does in overlay mode too, since `store.path` is a real directory there. For
+        # a store holding neither, `trust.may_inject` short-circuits to `True`, so recording a
+        # hash for it is inert rather than dangerous.
+        help="the only kind of store trust applies to",
+    )
+    trusted.set_defaults(func=run_trust)
+
+    listing = _with_common(sub.add_parser("inventory", help="what a memory sweep reads"))
+    listing.set_defaults(func=run_inventory)
+
+    fitting = _with_common(sub.add_parser("fit", help="whether each bundle fits its hook slots"))
+    fitting.set_defaults(func=run_doctor_bundles)

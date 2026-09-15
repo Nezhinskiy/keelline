@@ -74,7 +74,7 @@ def test_a_section_that_is_not_a_table_is_rejected(tmp_path: Path) -> None:
 @pytest.mark.parametrize("name", ["../common", "Ai Daybook", "", "-leading", "a/b"])
 def test_project_name_must_be_one_lowercase_path_segment(tmp_path: Path, name: str) -> None:
     write(tmp_path, MINIMAL.replace('"sample"', f'"{name}"'))
-    with pytest.raises(ConfigError, match="project.name"):
+    with pytest.raises(ConfigError, match=r"project\.name"):
         load(tmp_path, machine=tmp_path / "no-machine.toml")
 
 
@@ -123,5 +123,110 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
     class Sample:
         ratio: float
 
-    with pytest.raises(ConfigError, match="sample.ratio has an unsupported schema type: float"):
+    with pytest.raises(ConfigError, match=r"sample\.ratio has an unsupported schema type: float"):
         _build(Sample, "sample", {"ratio": 1.5})
+
+
+def test_load_can_be_told_it_is_not_interactive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `machine.py`'s docstring: "a caller that knows it is a hook, the MCP server or a `--gate`
+    # run says `interactive=False` rather than relying on the terminal check". `load` called
+    # `machine_config_path()` with no argument, so the one shipped non-interactive caller had
+    # no way to say it and fell back to the `isatty` sniff.
+    home = tmp_path / "home"
+    (home / ".config" / "keelline").mkdir(parents=True)
+    (home / ".config" / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-owners"\n', encoding="utf-8"
+    )
+    hostile = tmp_path / "hostile"
+    (hostile / "keelline").mkdir(parents=True)
+    (hostile / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-repositorys"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(hostile))
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
+    assert load(root, interactive=False).personal.reply_language == "the-owners"
+    assert load(root, interactive=True).personal.reply_language == "the-repositorys"
+
+
+def test_one_command_reads_one_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `load` resolved the machine file with the `isatty` sniff while `store.overlay_root` and
+    # `trust._trust_file` always resolved it with `interactive=False`. On an interactive run
+    # with `XDG_CONFIG_HOME` set the two disagreed, so an owner who wrote one file holding both
+    # `[personal]` and `[overlay] root` got `[personal]` honoured and the overlay silently
+    # unrecorded — `memory index` refusing with "no overlay root is recorded in the machine
+    # configuration; run `keelline setup`" about the file it had just read successfully.
+    from keelline.config.machine import machine_config_path
+    from keelline.memory.store import overlay_root
+    from keelline.memory.trust import _trust_file
+
+    class ATty:
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr("sys.stdin", ATty())
+    home = tmp_path / "home"
+    (home / ".config" / "keelline").mkdir(parents=True)
+    (home / ".config" / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-owners"\n\n[overlay]\nroot = "/tmp/recorded"\n',
+        encoding="utf-8",
+    )
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "keelline").mkdir(parents=True)
+    (elsewhere / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-other-files"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(elsewhere))
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
+    # All three readers, with no `--machine` threaded, now name the same file — and it is the
+    # one the two security anchors were always going to read.
+    assert load(root).personal.reply_language == "the-owners"
+    assert overlay_root(None) == Path("/tmp/recorded")
+    assert _trust_file(None).parent == machine_config_path(interactive=False).parent
+
+
+def test_the_machine_file_a_person_names_is_honoured_by_every_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side: `--machine` is a path a person typed rather than one an environment
+    # chose, so it stays honoured — and by all three readers, which is what makes it the
+    # supported way to put the machine file somewhere else. A gate that left no such way would
+    # be a regression rather than a fix.
+    from keelline.memory.store import overlay_root
+    from keelline.memory.trust import _trust_file
+
+    mine = tmp_path / "mine" / "config.toml"
+    mine.parent.mkdir(parents=True)
+    mine.write_text(
+        '[personal]\nreply_language = "mine"\n\n[overlay]\nroot = "/tmp/mine"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
+    assert load(root, machine=mine).personal.reply_language == "mine"
+    assert overlay_root(mine) == Path("/tmp/mine")
+    assert _trust_file(mine) == mine.parent / "trust.json"
+
+
+def test_the_hook_path_says_it_is_not_interactive() -> None:
+    # The seam is only worth having if the shipped caller uses it. Read off the source rather
+    # than simulated, because the alternative — a hook invocation whose stdin is a tty — is not
+    # a thing a test can arrange, and the `isatty` sniff answers correctly by accident.
+    import inspect
+
+    from keelline.hooks import commands
+
+    assert "load(root, interactive=False)" in inspect.getsource(commands.run_hook)

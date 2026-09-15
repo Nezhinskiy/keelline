@@ -1,0 +1,12 @@
+# Every path, one owner. A single-maintainer project, stated rather than implied, so a pull
+# request gets a review request automatically instead of waiting to be noticed.
+*                       @Nezhinskiy
+
+# Named separately so a change to them is never skimmed as part of a larger diff: these are the
+# containment primitive, the trust gate, the machine anchors, and the workflow that runs
+# everything else.
+/src/keelline/fsops.py          @Nezhinskiy
+/src/keelline/config/machine.py @Nezhinskiy
+/src/keelline/memory/trust.py   @Nezhinskiy
+/.github/                       @Nezhinskiy
+/SECURITY.md                    @Nezhinskiy

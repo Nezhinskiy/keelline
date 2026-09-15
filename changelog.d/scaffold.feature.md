@@ -1,0 +1,1 @@
+Keelline can install and upgrade the files a methodology needs in your repository — whole files, a managed region inside a file you own, or keyed entries in a settings document — and records what it wrote, so an upgrade refreshes what it wrote and leaves alone what you edited. Every run decides first and writes second, so a dry run shows exactly what a real one will do.

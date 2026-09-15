@@ -13,6 +13,6 @@ if sys.version_info < (3, 11):  # noqa: UP036 - this check exists for older inte
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from keelline.cli import main  # noqa: E402
+from keelline.cli import main
 
 raise SystemExit(main())

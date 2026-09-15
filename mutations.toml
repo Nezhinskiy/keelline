@@ -1,0 +1,259 @@
+# The mutation oracle, as data rather than as prose.
+#
+# The plans set a strong bar — "every new assertion ships with the mutation that reddens it, or
+# a sentence saying why none exists" — and the mutations existed only as English sentences
+# scattered through multi-thousand-line documents. A contributor could satisfy the rule only by
+# hand-editing source and reverting, and a reviewer had no way to check they had. The discipline
+# was real and died with the maintainer's memory of it.
+#
+# Each entry below names a load-bearing line, the change that breaks it, and the test that must
+# go red when it does. `scripts/mutation_oracle.py` applies each one, runs only the tests named,
+# and fails if any mutation survives. Run it with:
+#
+#     uv run python scripts/mutation_oracle.py
+#
+# This is not a coverage substitute and is not exhaustive — `--cov` is the breadth measure. It
+# is the set of invariants whose *guard* must be proven to be load-bearing rather than merely
+# executed, which is the distinction that let `open_within` be fully covered and still not
+# contain anything.
+
+[[mutation]]
+name = "the containment walk stops refusing '..'"
+file = "src/keelline/fsops.py"
+before = '        if part in (_PARENT, _HERE):'
+after = '        if part in (_HERE,):'
+reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
+
+# The oracle found this one itself on its first run: with the explicit check gone, an absolute
+# path is still refused — by the empty-first-component rule, because `"/etc".split("/")` starts
+# with `""`. The guard is therefore load-bearing for the *message* rather than for the refusal,
+# and the test asserts the message, because "refused for a reason nobody wrote down" is how a
+# later edit to the empty-component rule would quietly take the absolute case with it.
+[[mutation]]
+name = "the containment walk stops refusing an absolute path by name"
+file = "src/keelline/fsops.py"
+before = '    if relative.startswith("/"):'
+after = '    if False:'
+reddens = ["tests/test_fsops.py::test_an_absolute_path_is_refused"]
+
+[[mutation]]
+name = "the machine path honours XDG_CONFIG_HOME non-interactively again"
+file = "src/keelline/config/machine.py"
+before = '    base = (env.get("XDG_CONFIG_HOME") if honoured else None) or str('
+after = '    base = env.get("XDG_CONFIG_HOME") or str('
+reddens = [
+  "tests/config/test_machine.py::test_the_override_is_ignored_when_the_caller_is_not_interactive",
+  "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
+]
+
+# Half a file behind a gate is not a gate. `load` resolved the machine file with the
+# `isatty` sniff while `overlay_root` and `_trust_file` — the two anchors §9.1 and §9.4
+# rest on — always resolved it with `interactive=False`, so one command read `[personal]`
+# out of one file and `[overlay] root` out of another.
+[[mutation]]
+name = "one command reads its machine configuration from two different files again"
+file = "src/keelline/config/loader.py"
+before = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:'
+after = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:'
+reddens = [
+  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
+]
+
+[[mutation]]
+name = "a corrupt trust record reads as an empty one again"
+file = "src/keelline/memory/trust.py"
+before = '    except (json.JSONDecodeError, UnicodeDecodeError) as exc:'
+after = '''    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    except RecursionError as exc:'''
+reddens = [
+  "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
+  "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+]
+
+# The digest framing. Removing it left all 617 tests green: what they proved was that
+# `_content_digest` is fixed-width, never the key hashing the docstring argues for. The
+# key is repository-controlled from both ends — a `memory.groups` entry may name a nested
+# directory and a note's filename is whatever the clone commits — so one note's key can
+# carry another entry's whole key and digest inside it.
+[[mutation]]
+name = "a digest entry is unframed again, so a routing key can splice two into one"
+file = "src/keelline/memory/trust.py"
+before = '    return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")'
+after = '    return (key + content).encode("utf-8")'
+reddens = [
+  "tests/memory/test_trust.py::test_a_routing_key_cannot_splice_two_entries_into_one",
+  "tests/memory/test_trust.py::test_every_digest_entry_is_the_same_width_whatever_its_key",
+]
+
+[[mutation]]
+name = "the harness link asks the gate about the notes rather than the directory"
+file = "src/keelline/memory/worktree.py"
+before = '        if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):'
+after = '        if trust.may_inject(store, config):'
+reddens = [
+  "tests/memory/test_worktree.py::test_a_committed_index_reaches_no_harness_link_before_trust",
+  "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
+]
+
+# The mirror of the entry above, and the direction the gate did not run in. Creation was gated
+# and revocation was not, so an approved link outlived the record that authorised it: one
+# `git pull` lapses the record, every channel this lane controls shuts, and the one it does not
+# control kept pointing at the new bytes.
+[[mutation]]
+name = "the harness link outlives the trust record that authorised it again"
+file = "src/keelline/memory/worktree.py"
+before = '        elif _unlink(store.path.resolve(), harness):'
+after = '        elif False:'
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
+  "tests/memory/test_worktree.py::test_a_dangling_harness_link_of_ours_is_still_withdrawn",
+]
+
+# Withdrawing a link is not licence to delete a directory: the two shapes `_link` declines to
+# clobber on the way in are the two `_unlink` must decline to remove on the way out.
+[[mutation]]
+name = "the withdrawal stops checking what the link it removes points at"
+file = "src/keelline/memory/worktree.py"
+before = '    if not target.is_symlink() or target.readlink() != source:'
+after = '    if not target.is_symlink():'
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
+]
+
+[[mutation]]
+name = "a keyed-entries template with no entries silently removes them"
+file = "src/keelline/scaffold/engine.py"
+before = '        if template.entries is None:'
+after = '        if False:'
+reddens = ["tests/scaffold/test_engine.py::test_a_keyed_entries_template_naming_no_entries_raises"]
+
+# The mirror of the entry above. `entries=None` silently uninstalled the user's wiring;
+# entries carrying no marker silently fail to install it, because `owned()` renders the
+# marked entries alone and so answers `{}` on both sides of the comparison.
+[[mutation]]
+name = "a keyed-entries template with unmarked entries silently installs nothing"
+file = "src/keelline/scaffold/engine.py"
+before = '        if missing := unmarked(template.entries):'
+after = '        if (missing := unmarked(template.entries)) and False:'
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_keyed_entries_template_whose_entries_carry_no_marker_raises",
+  "tests/scaffold/test_engine.py::test_one_unmarked_entry_beside_a_marked_one_is_still_a_refusal",
+]
+
+[[mutation]]
+name = "the index bundle is one block again, so its later slots go dead"
+file = "src/keelline/memory/bundles.py"
+before = '    head, *sections = text.split(_SECTION)'
+after = '    head, sections = text, []'
+reddens = ["tests/memory/test_bundles.py::test_an_index_over_one_part_fills_the_second_slot"]
+
+# `split` never breaks a block, so one block larger than the cap is one part larger than
+# the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
+# — measured at 20,288 characters arriving with one of its two region markers, which is the
+# state `trust.wrap`'s nonce region exists to make unreachable.
+# Two specified rules that no assertion discriminated: both mutations below left all 617
+# tests green. The first decides which note leads a section and which sub-heading opens
+# it; the second flips a note set sized exactly at the budget from full injection to
+# descriptions only.
+[[mutation]]
+name = "group_order outranks the startup rank in the index order"
+file = "src/keelline/memory/index.py"
+before = '''        UNRANKED if rank is None else rank,
+        UNRANKED if note.group_order is None else note.group_order,'''
+after = '''        UNRANKED if note.group_order is None else note.group_order,
+        UNRANKED if rank is None else rank,'''
+reddens = [
+  "tests/memory/test_index.py::test_the_startup_rank_outranks_group_order_everywhere_it_is_read",
+]
+
+[[mutation]]
+name = "the volatile budget excludes the set that is exactly the budget"
+file = "src/keelline/memory/bundles.py"
+before = '    if sum(len(block.split()) for block in full) <= config.budgets.effective('
+after = '    if sum(len(block.split()) for block in full) < config.budgets.effective('
+reddens = [
+  "tests/memory/test_bundles.py::test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full",
+]
+
+[[mutation]]
+name = "an oversized part is handed out to be truncated again"
+file = "src/keelline/memory/bundles.py"
+before = '    if len(text) > cap:'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
+]
+
+[[mutation]]
+name = "a nested group is keyed on its folder rather than its configured name"
+file = "src/keelline/memory/notes.py"
+before = '        return self.store_group or self.path.parent.name'
+after = '        return self.path.parent.name'
+reddens = [
+  "tests/memory/test_index.py::test_a_nested_group_still_gets_its_section",
+  "tests/memory/test_index.py::test_a_nested_groups_routing_key_is_the_configured_one",
+]
+
+[[mutation]]
+name = "a broken git reads as a repository that answered"
+file = "src/keelline/memory/store.py"
+before = '        return GitAnswer(None, ran=_git_is_usable())'
+after = '        return GitAnswer(None)'
+reddens = [
+  "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound",
+]
+
+[[mutation]]
+name = "the hook path's git inherits the session's GIT_DIR again"
+file = "src/keelline/hooks/dispatch.py"
+before = '            env=scrubbed_env(),'
+after = ''
+reddens = [
+  "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
+]
+
+[[mutation]]
+name = "a relocated artifact's hand-edited old file is orphaned silently"
+file = "src/keelline/scaffold/engine.py"
+before = '        return _left_behind(template, record, "relocated and hand-edited")'
+after = '        return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)'
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported",
+]
+
+[[mutation]]
+name = "an unchanged note's body is renormalised on the way out"
+file = "src/keelline/memory/notes.py"
+before = '    if note.verbatim is not None:'
+after = '    if False:'
+reddens = ["tests/memory/test_notes.py::test_an_unchanged_note_round_trips_byte_for_byte"]
+
+# The oracle's own two guards, declared here like any other. Self-mutation works because
+# `_check` rewrites the file on disk and the run it then launches is a subprocess that loads
+# this script fresh from that path — the parent's already-imported copy decides nothing.
+[[mutation]]
+name = "the oracle stops proving the named tests pass before it mutates"
+file = "scripts/mutation_oracle.py"
+before = '    if not clean.passed:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_test_id_that_does_not_exist_is_a_finding_not_a_catch",
+  "tests/scripts/test_mutation_oracle.py::test_a_run_where_every_named_test_skipped_proves_nothing",
+]
+
+[[mutation]]
+name = "the oracle reads a git that could not answer as a clean tree again"
+file = "scripts/mutation_oracle.py"
+before = '    if status.returncode != 0:'
+after = '    if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_tree_git_cannot_answer_about_is_refused_not_assumed_clean",
+]
+
+[[mutation]]
+name = "the atomic write stops syncing the bytes before the rename"
+file = "src/keelline/fsops.py"
+before = '            os.fsync(stream.fileno())'
+after = ''
+reddens = ["tests/test_fsops.py::test_the_bytes_are_fsynced_before_the_rename"]

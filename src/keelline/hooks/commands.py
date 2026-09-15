@@ -36,7 +36,12 @@ def run_hook(args: argparse.Namespace) -> int:
         config = None
         root = event.project_root
         if root is not None and (root / CONFIG_FILE).is_file():
-            config = load(root)
+            # `interactive=False`, said rather than sniffed. A hook's stdin is a pipe, so
+            # the terminal check happens to answer the same thing — but the gate on
+            # `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` is the one that decides which
+            # overlay root and which `trust.json` this process reads, and it should not
+            # rest on a property of how the harness happens to invoke us.
+            config = load(root, interactive=False)
         cap = _output_cap(config)
         # The durable, session-keyed sink belongs to the `hooks-core` lane. Until it exists
         # this process keeps nothing between invocations: diagnostics are discarded and
