@@ -10,8 +10,8 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.hooks.api import EVENTS, Decision, HookEvent, Policy
 from keelline.memory import worktree as worktree_module
-from keelline.memory.hooks import NOT_LINKED, PARTIAL, register
-from keelline.memory.worktree import PartialLink
+from keelline.memory.hooks import NOT_LINKED, PARTIAL, REVOKED, register
+from keelline.memory.worktree import Links, PartialLink
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -207,6 +207,26 @@ def test_a_half_built_tree_still_reports_what_was_made(
         result = handler.run(an_event(root), config)
         assert result.decision is None
         assert result.context == PARTIAL.format(count=2)
+
+
+def _revoke(*_args: object, **_kwargs: object) -> Links:
+    return Links(created=[], revoked=[Path("/home/.claude/projects/x/memory")])
+
+
+def test_a_withdrawn_harness_link_is_a_different_event_from_a_quiet_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A revocation produces no creations, so reported through the `created` count it is
+    # indistinguishable from "nothing to do" — and what just happened is that this session's
+    # native memory was withdrawn because the owner's approval lapsed. That is the one thing
+    # they have to act on, so it gets its own fixed line rather than a count of zero.
+    monkeypatch.setattr(worktree_module, "link", _revoke)
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    for handler in register():
+        result = handler.run(an_event(root), config)
+        assert result.decision is None
+        assert result.context == REVOKED
 
 
 def test_a_containment_refusal_is_a_different_event_from_a_disk_error(

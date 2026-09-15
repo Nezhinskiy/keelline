@@ -68,6 +68,31 @@ reddens = [
   "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
 ]
 
+# The mirror of the entry above, and the direction the gate did not run in. Creation was gated
+# and revocation was not, so an approved link outlived the record that authorised it: one
+# `git pull` lapses the record, every channel this lane controls shuts, and the one it does not
+# control kept pointing at the new bytes.
+[[mutation]]
+name = "the harness link outlives the trust record that authorised it again"
+file = "src/keelline/memory/worktree.py"
+before = '        elif _unlink(store.path.resolve(), harness):'
+after = '        elif False:'
+reddens = [
+  "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
+  "tests/memory/test_worktree.py::test_a_dangling_harness_link_of_ours_is_still_withdrawn",
+]
+
+# Withdrawing a link is not licence to delete a directory: the two shapes `_link` declines to
+# clobber on the way in are the two `_unlink` must decline to remove on the way out.
+[[mutation]]
+name = "the withdrawal stops checking what the link it removes points at"
+file = "src/keelline/memory/worktree.py"
+before = '    if not target.is_symlink() or target.readlink() != source:'
+after = '    if not target.is_symlink():'
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
+]
+
 [[mutation]]
 name = "a keyed-entries template with no entries silently removes them"
 file = "src/keelline/scaffold/engine.py"

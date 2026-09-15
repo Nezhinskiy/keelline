@@ -41,11 +41,20 @@ hop that leaves this lane's gate entirely, and the one place where asking the ga
 wrong question costs everything the gate was for. `link` asks it about the directory the link
 exposes, which in overlay mode is repository data even though the notes are not; see the note
 on `link` itself.
+
+**And it asks in both directions.** A gate evaluated once, at creation, over state that
+persists is not a gate: `~/.claude/projects/<slug>/memory` outlived the record that authorised
+it, so a `git pull` that adds a note to a trusted in-repo store lapses the record, closes every
+channel this lane controls — and left the one channel it does not controlling a live link to
+the new bytes. `link` therefore removes that link when the gate now answers False, in the same
+call that would have created it: it already knows both facts, and the only state it may act on
+is a symlink pointing at this store, never a real directory and never somebody else's link.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from keelline.config.paths import contained
@@ -106,6 +115,37 @@ def _link(source: Path, target: Path) -> bool:
     return True
 
 
+def _unlink(source: Path, target: Path) -> bool:
+    """Remove a symlink this module made; report whether it did anything.
+
+    The mirror of `_link`, and deliberately narrower than it. Only a symlink whose own target
+    is `source` is removed: a real file or directory is unmerged work or a store the harness
+    created on its own, and a symlink pointing anywhere else belongs to somebody else — the
+    same two things `_link` refuses to clobber. Withdrawing a link is not licence to delete a
+    directory. A *dangling* link at `source` is still this module's own and still goes: what
+    the gate refuses is the name, not the bytes behind it.
+    """
+    if not target.is_symlink() or target.readlink() != source:
+        return False
+    target.unlink()
+    return True
+
+
+@dataclass(frozen=True)
+class Links:
+    """What `link` changed: the links it made, and the harness link it withdrew.
+
+    Two lists and not one, because the caller says different things about them. `created` is
+    "this worktree can now see the store"; `revoked` is "the harness can no longer see it,
+    because the owner's approval has lapsed" — a security-relevant event, and the sort of
+    thing this module's own history says must never be silent. A run that revokes reports no
+    creations, so folding them together would render a revocation as "linked 1 path".
+    """
+
+    created: list[Path] = field(default_factory=list)
+    revoked: list[Path] = field(default_factory=list)
+
+
 def _tree_base(worktree: Path, store: Store) -> Path | None:
     """Where the worktree's copy of the link tree belongs: the store's own place in the checkout.
 
@@ -132,8 +172,8 @@ def _tree_base(worktree: Path, store: Store) -> Path | None:
     return contained(worktree, str(relative))
 
 
-def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> list[Path]:
-    """Create what is missing and return it; already-correct links are not re-made.
+def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> Links:
+    """Create what is missing, withdraw what is no longer authorised, and report both.
 
     A no-op for the main checkout itself: it already holds the real store, not a link to it,
     so there is nothing for this function to do there. Validating a symlinked index in overlay
@@ -180,13 +220,25 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     what the owner approved. Gating on `inside_project` alone would ask the wrong question (it
     would refuse a trusted store for ever); gating on the mode would ask the clone.
 
+    **The same gate runs in the other direction, in the same call.** Creation was gated and
+    removal was not, so the link outlived the record that authorised it: `record`, then a
+    `git pull` adding one note, and `state(...).trusted` is False, `blocks(...)` is `[]` —
+    every channel this lane controls correctly shut — while `~/.claude/projects/<slug>/memory`
+    still pointed at the store the new note is in, and the harness's native reader still read
+    it with no gate, no delimiter and no trust record. A gate asked once about state that
+    persists is not a gate. `_unlink` is deliberately narrower than `_link`: only a symlink
+    already pointing at this store is withdrawn, because refusing to expose a directory is not
+    licence to delete one.
+
     Raises `PartialLink` — an `OSError` carrying the links already made — when a write fails
     part-way, rather than letting `created` die with the exception. The caller degrades open;
-    it needs to be able to say which half of the tree exists while it does.
+    it needs to be able to say which half of the tree exists while it does. The withdrawal is
+    last, so a failure there carries out the creations and revokes nothing.
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
-        return []
+        return Links()
     created: list[Path] = []
+    revoked: list[Path] = []
     try:
         base = _tree_base(worktree, store)
         if base is not None:
@@ -204,10 +256,12 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
                 target = contained(base, name, allow_final_symlink=True)
                 if _link(source.resolve(), target):
                     created.append(target)
+        harness = harness_memory_path(worktree, home)
         if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):
-            harness = harness_memory_path(worktree, home)
             if _link(store.path.resolve(), harness):
                 created.append(harness)
+        elif _unlink(store.path.resolve(), harness):
+            revoked.append(harness)
     except OSError as exc:
         raise PartialLink(created, exc) from exc
-    return created
+    return Links(created, revoked)

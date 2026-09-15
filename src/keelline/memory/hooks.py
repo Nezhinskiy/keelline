@@ -44,6 +44,14 @@ NO_STORE = "keelline: no memory store for this project"
 LINKED = "keelline: linked {count} memory path(s) into this worktree"
 PARTIAL = LINKED + "; the rest could not be created"
 NOT_LINKED = "keelline: a memory path was refused for this worktree and was not linked"
+# The revocation half of the trust gate, and it gets its own line because it is its own event:
+# the harness's project-memory link has just been withdrawn because this store's approval has
+# lapsed, so a session that had native memory a moment ago no longer does. Reported as
+# `LINKED.format(count=0)` — or not at all — it would look like "nothing to do".
+REVOKED = (
+    "keelline: this store is no longer trusted, so the harness memory link was removed — "
+    "run `keelline memory trust --in-repo-memory` after reviewing what changed"
+)
 # `git` could not be run, or the machine configuration file is broken. Neither is "there is
 # no store": both used to arrive as one, because `store._git` answered `None` for "could not
 # ask" and for "the answer is nothing" alike, and `overlay_root` answered `None` for a
@@ -69,7 +77,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         if store is None:
             return HookResult(context=NO_STORE)
         try:
-            created = link(event.project_root, store, config)
+            links = link(event.project_root, store, config)
         except PartialLink as partial:
             # A write failed part-way. `link` makes one symlink at a time, so the tree now
             # holds some names and not the rest — and `worktree`'s own docstring says a group
@@ -90,9 +98,14 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
             # the fixed line goes to the model and the name stays out of it, exactly as
             # `refusal_reason`'s text does.
             return HookResult(context=NOT_LINKED)
-        if not created:
+        if links.revoked:
+            # Said before the count of what was linked, and instead of it: the approval that
+            # lapsed is what the owner has to act on, and the two never co-occur — the same
+            # gate decides both.
+            return HookResult(context=REVOKED)
+        if not links.created:
             return HookResult()
-        return HookResult(context=LINKED.format(count=len(created)))
+        return HookResult(context=LINKED.format(count=len(links.created)))
     # The backstop stays broad on purpose: §5.3 says a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
