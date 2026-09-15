@@ -255,6 +255,35 @@ def test_fit_reports_overflow_and_an_oversized_part_separately(tmp_path: Path) -
     assert report.fits is False
 
 
+def test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full(
+    tmp_path: Path,
+) -> None:
+    # `<=`, and loosening it to `<` left all 617 tests green — every fixture sat comfortably on
+    # one side of the line. The comparison decides whether a note set is injected whole or
+    # replaced by a list of descriptions, so the boundary is the behaviour: "within budget"
+    # has to include the set that is exactly the budget, or the budget means one word less
+    # than it says. Sized from the configured value rather than from a literal, so it cannot
+    # rot when `VOLATILE_LEAD` is reworded.
+    store, config = a_store(tmp_path)
+    for path in store.groups["project-volatile"].glob("*.md"):
+        path.unlink()
+    today = date.today().isoformat()
+    heading_words = len(f"### solo (as_of {today})".split())
+    budget = config.budgets.effective("volatile_notes_words")
+    (store.groups["project-volatile"] / "solo.md").write_text(
+        note("solo", as_of=today, body="word " * (budget - heading_words)), encoding="utf-8"
+    )
+    text = "\n".join(blocks(Bundle.VOLATILE_NOTES, store, config))
+    assert "outgrown its budget" not in text
+    assert text.count("word") == budget - heading_words
+
+    # One word past it, and the same set is a list of descriptions instead.
+    (store.groups["project-volatile"] / "solo.md").write_text(
+        note("solo", as_of=today, body="word " * (budget - heading_words + 1)), encoding="utf-8"
+    )
+    assert "outgrown its budget" in "\n".join(blocks(Bundle.VOLATILE_NOTES, store, config))
+
+
 def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
     tmp_path: Path,
 ) -> None:

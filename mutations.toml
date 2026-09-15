@@ -71,6 +71,21 @@ reddens = [
   "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
 ]
 
+# The digest framing. Removing it left all 617 tests green: what they proved was that
+# `_content_digest` is fixed-width, never the key hashing the docstring argues for. The
+# key is repository-controlled from both ends — a `memory.groups` entry may name a nested
+# directory and a note's filename is whatever the clone commits — so one note's key can
+# carry another entry's whole key and digest inside it.
+[[mutation]]
+name = "a digest entry is unframed again, so a routing key can splice two into one"
+file = "src/keelline/memory/trust.py"
+before = '    return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")'
+after = '    return (key + content).encode("utf-8")'
+reddens = [
+  "tests/memory/test_trust.py::test_a_routing_key_cannot_splice_two_entries_into_one",
+  "tests/memory/test_trust.py::test_every_digest_entry_is_the_same_width_whatever_its_key",
+]
+
 [[mutation]]
 name = "the harness link asks the gate about the notes rather than the directory"
 file = "src/keelline/memory/worktree.py"
@@ -137,6 +152,30 @@ reddens = ["tests/memory/test_bundles.py::test_an_index_over_one_part_fills_the_
 # the cap. `fit` reported it; `render` handed it out and exited 0, and the platform cut it
 # — measured at 20,288 characters arriving with one of its two region markers, which is the
 # state `trust.wrap`'s nonce region exists to make unreachable.
+# Two specified rules that no assertion discriminated: both mutations below left all 617
+# tests green. The first decides which note leads a section and which sub-heading opens
+# it; the second flips a note set sized exactly at the budget from full injection to
+# descriptions only.
+[[mutation]]
+name = "group_order outranks the startup rank in the index order"
+file = "src/keelline/memory/index.py"
+before = '''        UNRANKED if rank is None else rank,
+        UNRANKED if note.group_order is None else note.group_order,'''
+after = '''        UNRANKED if note.group_order is None else note.group_order,
+        UNRANKED if rank is None else rank,'''
+reddens = [
+  "tests/memory/test_index.py::test_the_startup_rank_outranks_group_order_everywhere_it_is_read",
+]
+
+[[mutation]]
+name = "the volatile budget excludes the set that is exactly the budget"
+file = "src/keelline/memory/bundles.py"
+before = '    if sum(len(block.split()) for block in full) <= config.budgets.effective('
+after = '    if sum(len(block.split()) for block in full) < config.budgets.effective('
+reddens = [
+  "tests/memory/test_bundles.py::test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full",
+]
+
 [[mutation]]
 name = "an oversized part is handed out to be truncated again"
 file = "src/keelline/memory/bundles.py"

@@ -157,6 +157,33 @@ def test_interleaved_group_members_stay_under_their_own_heading(tmp_path: Path) 
     assert "X trigger" in beta and "Z trigger" in beta
 
 
+def test_the_startup_rank_outranks_group_order_everywhere_it_is_read(tmp_path: Path) -> None:
+    # `_order` returns `(startup rank, group_order, name)`, and swapping its first two elements
+    # left all 617 tests green — every fixture that set both happened to agree about which note
+    # came first. The key decides two things and this pins both: which sub-heading a section
+    # opens with, and which note leads inside one. Each pair is deliberately in conflict, so
+    # only the precedence can satisfy them.
+    store, config = a_store(tmp_path)
+    for path in store.groups["developer"].glob("*.md"):
+        path.unlink()
+    # Alpha's member is ranked first for the session and placed last within its heading; Beta's
+    # is the other way round. Rank first puts Alpha's heading first; `group_order` first would
+    # put Beta's.
+    (store.groups["developer"] / "w.md").write_text(
+        note("w", index="W trigger → W", group="Alpha", order="9", startup="1"), encoding="utf-8"
+    )
+    (store.groups["developer"] / "x.md").write_text(
+        note("x", index="X trigger → X", group="Beta", order="1", startup="5"), encoding="utf-8"
+    )
+    # And the same conflict between two members of one heading.
+    (store.groups["developer"] / "y.md").write_text(
+        note("y", index="Y trigger → Y", group="Alpha", order="1", startup="7"), encoding="utf-8"
+    )
+    text = render_index(reconcile(store, config, write=False), config, store)
+    assert text.index("### Alpha") < text.index("### Beta")
+    assert text.index("W trigger") < text.index("Y trigger")
+
+
 def test_each_entry_points_at_the_note_relative_to_the_store(tmp_path: Path) -> None:
     assert "](developer/a.md)" in rendered(tmp_path)
 
