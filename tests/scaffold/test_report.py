@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from keelline.scaffold import Action, Plan, Refused, Verb, render_report
+
+
+def a_plan() -> Plan:
+    return Plan(
+        actions=(
+            Action(Verb.CREATE, "a", "AGENTS.md", "x", "new", None),
+            Action(Verb.SKIP_MODIFIED, "b", "docs/x.md", None, "hand-edited", None),
+        ),
+        refusals=(Refused("c", "../out", "escapes the project root"),),
+        unchanged=("d",),
+    )
+
+
+def action_lines(text: str) -> list[str]:
+    # The count line always contains every verb's name, so a substring search over the whole
+    # report passes on an empty plan. Only the lines above it are action lines.
+    return [line for line in text.splitlines() if line and "to create," not in line]
+
+
+def test_every_action_appears_on_its_own_line() -> None:
+    lines = action_lines(render_report(a_plan()))
+    assert any(line.startswith("create") and "AGENTS.md" in line for line in lines)
+    assert any(line.startswith("skip_modified") and "hand-edited" in line for line in lines)
+
+
+def test_an_empty_plan_lists_no_action_line() -> None:
+    # The anti-vacuity guard for the test above.
+    assert action_lines(render_report(Plan())) == []
+
+
+def test_a_refusal_names_the_target_and_the_reason() -> None:
+    text = render_report(a_plan())
+    assert "REFUSED" in text
+    assert "../out" in text
+    assert "escapes the project root" in text
+
+
+def test_the_count_line_names_every_outcome_including_the_zeros() -> None:
+    text = render_report(Plan())
+    assert text.strip().endswith(
+        "0 to create, 0 to update, 0 to remove, 0 skipped, 0 unchanged, 0 refused"
+    )
+
+
+def test_the_counts_follow_the_plan() -> None:
+    text = render_report(a_plan())
+    assert "1 to create, 0 to update, 0 to remove, 1 skipped, 1 unchanged, 1 refused" in text

@@ -38,7 +38,7 @@ def test_escapes_are_refused(tmp_path: Path, relative: str) -> None:
 
 def test_dotdot_is_refused_even_when_it_resolves_inside_the_root(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
-    with pytest.raises(PathEscape, match="'..'"):
+    with pytest.raises(PathEscape, match=r"'\.\.'"):
         contained(tmp_path, "docs/../docs/specs")
 
 
