@@ -9,6 +9,11 @@ mixes a marked entry with an unmarked one is **split**, not replaced: the unmark
 its matcher and its position. And what the manifest stamps is `owned(document)` — the marked
 entries alone — never the whole file, so a user adding a `permissions` block beside the hooks
 does not freeze Keelline's own entries forever.
+
+The second rule is why an *unmarked* entry arriving from a lane is a refusal and not a thing
+to install: unmarked, it is by definition one of the foreign entries those two rules exist to
+leave alone, so nothing downstream can tell Keelline's own wiring from somebody else's ever
+again. `unmarked()` is that check, and `mark()` is what a lane is supposed to have called.
 """
 
 from __future__ import annotations
@@ -36,6 +41,32 @@ def mark(command: str, entry_id: str) -> str:
     if marker_id(command) == entry_id:
         return command
     return f"{command}  {ENTRY_MARKER}{entry_id}"
+
+
+def unmarked(wanted: dict[str, list[dict[str, Any]]]) -> list[str]:
+    """Every command in a lane's `entries` that carries no `# keelline:<id>` marker.
+
+    The marker is not decoration: it is the key this whole module is built on. `owned()`
+    renders the marked entries alone, and the engine stamps that rendering — so entries with
+    no marker make `owned()` answer `{}` on both sides of the comparison, the digests match,
+    and the artifact is reported *unchanged* while the user's settings file was never written
+    and the wiring was never installed.
+
+    Reported as a list rather than a bool so the refusal can name the offending command. The
+    shape is checked on the way past for the same reason the marker is: `apply_entries` writes
+    `wanted` into the user's file verbatim, and nothing between a lane and that write looks at
+    it — `_entries_of` validates the *document*, never the mapping coming in. An entry that is
+    not an object, or whose command is not a string, cannot be keyed either, and `marker_id`
+    raises on a non-string rather than answering about one.
+    """
+    found: list[str] = []
+    for groups in wanted.values():
+        for group in groups:
+            for entry in group.get("hooks") or []:
+                command = entry.get("command") if isinstance(entry, dict) else entry
+                if not isinstance(command, str) or marker_id(command) is None:
+                    found.append(str(command))
+    return found
 
 
 def _load(document: str) -> dict[str, Any]:

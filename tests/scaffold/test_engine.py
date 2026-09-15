@@ -522,6 +522,78 @@ def test_a_keyed_entries_template_naming_no_entries_raises(tmp_path: Path) -> No
         plan(tmp_path, a_config(tmp_path), [replace(template, entries=None)])
 
 
+def test_a_keyed_entries_template_whose_entries_carry_no_marker_raises(tmp_path: Path) -> None:
+    # The third face of the same defect, and the one that was silent in the *install*
+    # direction. `_payload_and_stamp` stamps `owned(document)` — the marked entries alone — so
+    # with none of them marked `owned()` answers `{}` for the payload and `{}` for what is
+    # already on disk, the digests match, and `plan` reports the artifact `unchanged`. Measured
+    # before the fix, against a template whose command is `keelline hook PreToolUse` and no
+    # `mark()`: actions `[]`, unchanged `('hooks',)`, `apply` wrote nothing, and the user's
+    # `.claude/settings.json` still had no hook wiring in it while the report said up to date.
+    settings = tmp_path / ".claude"
+    settings.mkdir()
+    (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
+    unmarked_entries: dict[str, list[dict[str, Any]]] = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": "keelline hook PreToolUse"}],
+            }
+        ]
+    }
+    with pytest.raises(Refusal, match="no `# keelline:<id>` marker"):
+        plan(tmp_path, a_config(tmp_path), [a_settings_template(unmarked_entries)])
+
+
+def test_one_unmarked_entry_beside_a_marked_one_is_still_a_refusal(tmp_path: Path) -> None:
+    # Not "no entry is marked" — *any* unmarked entry is one this module's own two rules say
+    # belongs to somebody else, so it would be installed once and then left alone for ever,
+    # while `owned()` stamps only its marked neighbour. A check on the whole mapping rather
+    # than on it being empty is what tells those apart.
+    settings = tmp_path / ".claude"
+    settings.mkdir()
+    (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
+    mixed: dict[str, list[dict[str, Any]]] = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": mark("ours", "bg-cleanup")},
+                    {"type": "command", "command": "keelline hook PreToolUse"},
+                ],
+            }
+        ]
+    }
+    with pytest.raises(Refusal, match="'keelline hook PreToolUse'"):
+        plan(tmp_path, a_config(tmp_path), [a_settings_template(mixed)])
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param({"type": "command", "command": ["ls"]}, id="command-is-not-a-string"),
+        pytest.param({"type": "command"}, id="no-command-at-all"),
+        pytest.param("keelline hook PreToolUse", id="entry-is-not-an-object"),
+    ],
+)
+def test_an_entry_that_cannot_be_keyed_is_refused_rather_than_written(
+    tmp_path: Path, entry: object
+) -> None:
+    # `apply_entries` writes `wanted` into the user's file verbatim, and nothing between a lane
+    # and that write validates its shape — `_entries_of` checks the *document*, not the mapping
+    # coming in. An entry that cannot be keyed is the same bug whatever makes it unkeyable, and
+    # the last case is why the shape guard is a guard rather than decoration: without it
+    # `entry.get` raises `AttributeError` out of `plan` instead of naming the lane's bug.
+    settings = tmp_path / ".claude"
+    settings.mkdir()
+    (settings / "settings.json").write_text(json.dumps({"hooks": OURS}), encoding="utf-8")
+    malformed: dict[str, list[dict[str, Any]]] = {
+        "PreToolUse": [{"matcher": "Bash", "hooks": [entry]}]
+    }
+    with pytest.raises(Refusal, match="no `# keelline:<id>` marker"):
+        plan(tmp_path, a_config(tmp_path), [a_settings_template(malformed)])
+
+
 def test_an_empty_entries_mapping_still_means_remove_everything(tmp_path: Path) -> None:
     # `{}` is left meaning exactly what it meant: the caller that genuinely wants every marked
     # entry gone. Only `None` — the default nobody chose — became a refusal.

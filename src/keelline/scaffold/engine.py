@@ -41,7 +41,7 @@ from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Refusal
 from keelline.fsops import UnsafePath, remove_within, write_within
-from keelline.scaffold.entries import EntriesError, apply_entries, owned
+from keelline.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
 from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Template, Verb
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
@@ -168,6 +168,20 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
             # rule: a bug in the lane that built it, raised rather than acted on. `{}` is left
             # to mean removal, for the caller that genuinely wants it.
             raise Refusal(f"{template.id}: a keyed-entries template names no entries")
+        if missing := unmarked(template.entries):
+            # The same defect class as the branch above, in the other direction, and it landed
+            # the other way round: `entries=None` silently *uninstalled* the user's wiring,
+            # while entries carrying no `# keelline:<id>` marker silently fail to install it.
+            # `owned()` renders the marked entries alone, so with none marked it answers `{}`
+            # for both the payload and what is already on disk, the digests match, and the
+            # artifact is reported `unchanged` — the report says "up to date" about a file
+            # nothing wrote. A lane that did not call `entries.mark` is a bug in that lane,
+            # raised rather than acted on, exactly like a malformed `Template` above.
+            raise Refusal(
+                f"{template.id}: a keyed-entries template carries {len(missing)} entry/entries "
+                f"with no `{ENTRY_MARKER}<id>` marker, so nothing could ever recognise them as "
+                f"Keelline's own: {', '.join(repr(command) for command in missing)}"
+            )
         document = apply_entries(current or "", template.entries)
         return document, owned(document)
     body = template.render()
