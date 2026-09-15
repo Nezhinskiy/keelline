@@ -46,6 +46,19 @@ reddens = [
   "tests/config/test_machine.py::test_xdg_config_home_is_ignored_when_the_caller_is_not_interactive",
 ]
 
+# Half a file behind a gate is not a gate. `load` resolved the machine file with the
+# `isatty` sniff while `overlay_root` and `_trust_file` — the two anchors §9.1 and §9.4
+# rest on — always resolved it with `interactive=False`, so one command read `[personal]`
+# out of one file and `[overlay] root` out of another.
+[[mutation]]
+name = "one command reads its machine configuration from two different files again"
+file = "src/keelline/config/loader.py"
+before = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:'
+after = 'def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:'
+reddens = [
+  "tests/config/test_loader.py::test_one_command_reads_one_machine_file",
+]
+
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/keelline/memory/trust.py"

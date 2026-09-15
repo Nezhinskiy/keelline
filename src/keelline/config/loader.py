@@ -143,7 +143,7 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     return _build(Personal, "personal", values)
 
 
-def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:
+def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:
     """Read `keelline.toml` under the preset, and `[personal]` out of the machine file.
 
     `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
@@ -154,7 +154,25 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's
     stdin is a pipe, which means the gate held by circumstance rather than by construction.
 
-    `None` keeps the sniff, for an ordinary CLI run that genuinely does not know.
+    **It defaults to `False`, so that one command reads one machine file.** The sniff was the
+    default, and `store.overlay_root` and `trust._trust_file` — the two anchors §9.1 and §9.4
+    rest on — resolve that same file with `interactive=False` always. On an interactive run
+    with `XDG_CONFIG_HOME` or `KEELLINE_CONFIG` set, the two disagreed: `[personal]` came from
+    the owner's chosen file while `[overlay] root` and `trust.json` came from
+    `~/.config/keelline/`, so an XDG-honouring owner who wrote one file with both tables got
+    `[personal]` honoured and the overlay silently unrecorded — `keelline memory index`
+    refusing with "no overlay root is recorded in the machine configuration; run `keelline
+    setup`" about a file it had just read successfully.
+
+    Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a
+    pair. So the whole file follows the stricter of the two rules, and `--machine` stays the
+    supported way to name another one — honoured by all three readers, because it is a path a
+    person typed rather than one an environment chose. `keelline doctor` is where an ignored
+    `XDG_CONFIG_HOME` should be reported, which `machine.py`'s docstring already nominates it
+    for.
+
+    `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
+    what *would* have been honoured.
     """
     path = root / CONFIG_FILE
     try:
