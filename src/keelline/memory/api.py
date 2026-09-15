@@ -88,6 +88,7 @@ from keelline.memory.store import (
     permitted_roots,
     refusal_reason,
     resolve,
+    resolved,
 )
 from keelline.memory.trust import (
     DELIMITER,
@@ -143,6 +144,7 @@ __all__ = [
     "render_index",
     "render_note",
     "resolve",
+    "resolved",
     "snapshot",
     "split",
     "totals",

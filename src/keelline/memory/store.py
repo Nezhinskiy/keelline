@@ -420,6 +420,37 @@ def _resolve_at(
     return Store(base, mode, root, groups, unavailable, machine), None
 
 
+def resolved(
+    root: Path,
+    config: Config,
+    *,
+    override: str | None = None,
+    machine: Path | None = None,
+) -> tuple[Store | None, str | None]:
+    """The store and, when there is none, why — in **one** pass.
+
+    `resolve` and `refusal_reason` each walk the whole resolution, and a caller that needs both
+    (every `memory` command does: the store to work with, the reason to report) walked it
+    twice. Each walk runs up to four `git` queries with a five-second timeout apiece, so a
+    hanging `git` cost a refused command up to forty seconds — inside a `SessionStart` hook,
+    once per bundle entry. The two functions below stay, because a caller that wants only one
+    of the two answers should not have to say so; this is the one for callers that want both.
+
+    The reason is repository-authored text: see `refusal_reason` for what that obliges a
+    consumer to do with it.
+    """
+    store, reason = _resolve_at(root, config, override, machine)
+    if store is not None:
+        return store, None
+    # A worktree resolves through the checkout it is *registered against*, never through
+    # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
+    parent = _registered_worktree(root)
+    if parent is None:
+        return None, reason
+    upstream, upstream_reason = _resolve_at(parent, config, override, machine)
+    return upstream, None if upstream is not None else upstream_reason
+
+
 def resolve(
     root: Path,
     config: Config,
@@ -431,16 +462,7 @@ def resolve(
     # `env` is accepted and never read: §9.1 forbids selecting a store through the
     # environment, and a parameter that exists and is ignored is a claim a test can pin.
     del env
-    store, _ = _resolve_at(root, config, override, machine)
-    if store is not None:
-        return store
-    # A worktree resolves through the checkout it is *registered against*, never through
-    # whatever a redirected `GIT_DIR` named and never merely because a directory sits above it.
-    parent = _registered_worktree(root)
-    if parent is None:
-        return None
-    store, _ = _resolve_at(parent, config, override, machine)
-    return store
+    return resolved(root, config, override=override, machine=machine)[0]
 
 
 def refusal_reason(
@@ -460,14 +482,7 @@ def refusal_reason(
     consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
     A consumer that must show the detail wraps it first with `trust.wrap`.
     """
-    store, reason = _resolve_at(root, config, override, machine)
-    if store is not None:
-        return None
-    parent = _registered_worktree(root)
-    if parent is not None:
-        upstream, upstream_reason = _resolve_at(parent, config, override, machine)
-        return None if upstream is not None else upstream_reason
-    return reason
+    return resolved(root, config, override=override, machine=machine)[1]
 
 
 def inside_project(store: Store) -> bool:

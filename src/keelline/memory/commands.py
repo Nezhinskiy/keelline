@@ -29,12 +29,13 @@ from keelline.memory.index import (
     IndexCheck,
     Reconciliation,
     check_index,
+    index_source,
     reconcile,
     render_index,
     write_index,
 )
 from keelline.memory.inventory import inventory, totals
-from keelline.memory.store import Store, refusal_reason, resolve
+from keelline.memory.store import Store, in_repository, resolved
 from keelline.result import Result
 
 
@@ -43,13 +44,39 @@ def _machine(args: argparse.Namespace) -> Path | None:
     return Path(value) if value else None
 
 
+# `refusal_reason`'s own docstring: the string "must never reach model context unwrapped". Its
+# only caller put it verbatim into a `Failure` message, and `cli._report` prints that message on
+# **stdout** under `--json` — twice, in one object, since the envelope carries it as both
+# `summary` and the message. `memory session-context` is a `hooks.json` entry, so the invariant
+# was holding only on the expectation that those entries never pass `--json`: an expectation
+# owned by a different lane, asserted by no test here, and contradicted by `hooks.py` going to
+# real lengths to keep this same string out of `HookResult.context`.
+#
+# So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
+# hand needs to know *which* group entry was refused; a model reading the same bytes needs the
+# region markers that say the text is data. `trust.wrap` is what `refusal_reason` names as the
+# way to have both, and `UnsafeNote` — a `Refusal`, exit 2 — is the right answer to a value
+# that tries to forge the markers.
+_NO_STORE = "no memory store; the reason below is repository-authored text, shown as data"
+
+
+def _no_store(reason: str | None) -> Failure:
+    if reason is None:
+        return Failure("no memory store")
+    return Failure(f"{_NO_STORE}\n{trust.wrap(reason, trust.new_nonce())}")
+
+
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
-    config = load(root, machine=_machine(args))
-    store = resolve(root, config, override=args.store, machine=_machine(args))
+    machine = _machine(args)
+    config = load(root, machine=machine)
+    # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
+    # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
+    # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
+    # bundle entry.
+    store, reason = resolved(root, config, override=args.store, machine=machine)
     if store is None:
-        reason = refusal_reason(root, config, override=args.store, machine=_machine(args))
-        raise Failure(reason or "no memory store")
+        raise _no_store(reason)
     return store, config
 
 
@@ -86,6 +113,28 @@ _NOT_PUBLISHED = (
 )
 
 
+def _trusted(store: Store, config: Config) -> bool:
+    """The same question `bundles.blocks` asks, asked the same way.
+
+    `may_inject(store, config)` alone answers about the store's *notes*, through
+    `inside_project`. In overlay mode that is False by design — every group resolves out into
+    the overlay — while `store.path` is a real directory inside the repository, so a committed
+    `MEMORY.md` there makes `blocks(Bundle.INDEX, …)` return `[]` while this reported
+    `"trusted": true` and `_gate` said nothing. `_UNTRUSTED` exists precisely to stop that
+    silence — its own comment says "nothing in any summary said why the model had stopped
+    receiving standing rules" — and it was never appended.
+
+    `bundles.blocks` builds the same disjunction from `is_repository_data` and the index's own
+    `in_repository`; it is rebuilt here rather than exported because the two callers want
+    different halves of it, and one of them has to answer for a bundle it is not rendering.
+    """
+    index = index_source(store, config)
+    repository_data = trust.is_repository_data(store) or (
+        index is not None and in_repository(store, index)
+    )
+    return trust.may_inject(store, config, repository_data=repository_data)
+
+
 def _gate(store: Store, config: Config) -> str | None:
     """Whether the trust gate is what a person should be told about, after a command ran.
 
@@ -94,7 +143,7 @@ def _gate(store: Store, config: Config) -> str | None:
     rather than read by anyone. Nor into the handler, which stays `Policy.OPEN` and quiet. The
     commands a person runs by hand are where this belongs.
     """
-    return None if trust.may_inject(store, config) else _UNTRUSTED
+    return None if _trusted(store, config) else _UNTRUSTED
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -186,7 +235,7 @@ def run_index(args: argparse.Namespace) -> Result:
                 "refused_harvest": reconciled.refused_harvest,
                 "refused_publish": reconciled.refused_publish,
                 "unreadable": report.unreadable,
-                "trusted": trust.may_inject(store, config),
+                "trusted": _trusted(store, config),
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
@@ -214,7 +263,7 @@ def run_index(args: argparse.Namespace) -> Result:
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": trust.may_inject(store, config),
+            "trusted": _trusted(store, config),
         },
     )
 
@@ -267,7 +316,7 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
     # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = trust.may_inject(store, config)
+    trusted = _trusted(store, config)
     return Result(
         _with(summary, _gate(store, config)),
         {"bundles": report, "trusted": trusted},

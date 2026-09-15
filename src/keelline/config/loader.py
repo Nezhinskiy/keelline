@@ -143,7 +143,19 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     return _build(Personal, "personal", values)
 
 
-def load(root: Path, *, machine: Path | None = None) -> Config:
+def load(root: Path, *, machine: Path | None = None, interactive: bool | None = None) -> Config:
+    """Read `keelline.toml` under the preset, and `[personal]` out of the machine file.
+
+    `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
+    `machine.py`'s docstring says "a caller that knows it is a hook, the MCP server or a
+    `--gate` run says `interactive=False` rather than relying on the terminal check", and the
+    one shipped non-interactive caller — `hooks.commands.run_hook` — had no way to say it.
+    `load` called `machine_config_path()` with no argument, so the path the docstring singles
+    out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's
+    stdin is a pipe, which means the gate held by circumstance rather than by construction.
+
+    `None` keeps the sniff, for an ordinary CLI run that genuinely does not know.
+    """
     path = root / CONFIG_FILE
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -180,7 +192,7 @@ def load(root: Path, *, machine: Path | None = None) -> Config:
         CommitMessages, "commit_messages", _merged(raw, defaults, "commit_messages")
     )
     caps = _build(NativeCaps, "native_caps", dict(preset["native_caps"]))
-    personal = _personal(machine or machine_config_path(), preset)
+    personal = _personal(machine or machine_config_path(interactive=interactive), preset)
     config = Config(
         keelline=keelline,
         project=project,

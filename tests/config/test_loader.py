@@ -125,3 +125,41 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
 
     with pytest.raises(ConfigError, match="sample.ratio has an unsupported schema type: float"):
         _build(Sample, "sample", {"ratio": 1.5})
+
+
+def test_load_can_be_told_it_is_not_interactive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `machine.py`'s docstring: "a caller that knows it is a hook, the MCP server or a `--gate`
+    # run says `interactive=False` rather than relying on the terminal check". `load` called
+    # `machine_config_path()` with no argument, so the one shipped non-interactive caller had
+    # no way to say it and fell back to the `isatty` sniff.
+    home = tmp_path / "home"
+    (home / ".config" / "keelline").mkdir(parents=True)
+    (home / ".config" / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-owners"\n', encoding="utf-8"
+    )
+    hostile = tmp_path / "hostile"
+    (hostile / "keelline").mkdir(parents=True)
+    (hostile / "keelline" / "config.toml").write_text(
+        '[personal]\nreply_language = "the-repositorys"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(hostile))
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / CONFIG_FILE).write_text(MINIMAL, encoding="utf-8")
+    assert load(root, interactive=False).personal.reply_language == "the-owners"
+    assert load(root, interactive=True).personal.reply_language == "the-repositorys"
+
+
+def test_the_hook_path_says_it_is_not_interactive() -> None:
+    # The seam is only worth having if the shipped caller uses it. Read off the source rather
+    # than simulated, because the alternative — a hook invocation whose stdin is a tty — is not
+    # a thing a test can arrange, and the `isatty` sniff answers correctly by accident.
+    import inspect
+
+    from keelline.hooks import commands
+
+    assert "load(root, interactive=False)" in inspect.getsource(commands.run_hook)
