@@ -42,7 +42,8 @@ What it does, in order:
 2. **Invents what is missing.** A note with no `index:` gets a provisional one from its
    `description`. Provisional lines are reported so you can curate them.
 3. **Renders.** One section per configured group, a note's `group:` value as a sub-heading
-   inside it, ordered by `startup` rank then by name.
+   inside it, ordered by `startup` rank first, then by `group_order`, then by name — so a
+   note ranked for the session leads its section whatever its position within a sub-heading.
 
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note. The
@@ -90,7 +91,10 @@ run it by hand except to see what a session actually receives.
 | `index` | `MEMORY.md` itself, so the model can route. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
-independently. `--part N` selects one; a part past the end prints nothing and exits `0`.
+independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
+that is a single block too large for one slot is withheld — the command prints a short notice
+saying so instead, because the harness would otherwise truncate it and a truncated region loses
+the marker that says where repository content ends. `keelline memory fit` names the block.
 
 Output is deliberately **raw**, not JSON: the margin that keeps a bundle inside the platform cap
 is additive only because there is no envelope and no escaping. Do not pass `--json` from a hook
@@ -183,8 +187,12 @@ artifact_language = "en"
 root = "~/keelline-overlay"   # only read in overlay mode
 ```
 
-**This file's location is not selectable by a repository.** `KEELLINE_CONFIG` and
-`XDG_CONFIG_HOME` are both honoured only from an interactive shell; in a hook, an MCP server or
-any non-interactive run the path is `~/.config/keelline/config.toml` and nothing else. A
-committed `.claude/settings.json` `env` block would otherwise choose your overlay root and your
-trust record.
+**This file's location is not selectable by a repository.** The path is
+`~/.config/keelline/config.toml`, and neither `KEELLINE_CONFIG` nor `XDG_CONFIG_HOME` changes
+it: a committed `.claude/settings.json` `env` block would otherwise choose your overlay root
+and your trust record. Pass `--machine <path>` to read a different file — a path you typed
+rather than one an environment chose, and honoured by every reader of it.
+
+Only `[overlay]` and the trust record used to be held to that rule while `[personal]` followed
+the environment, so one command could read the two halves of this file out of two different
+files: `[personal]` honoured, and the overlay silently unrecorded a few lines below it.

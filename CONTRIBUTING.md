@@ -74,11 +74,13 @@ uv run python scripts/mutation_oracle.py fsops    # only the matching ones
 ```
 
 Each entry names one file, one exact line to change, and the tests that must fail when it does.
-CI runs the whole set. A mutation that *survives* is a finding — and so is one whose `before`
-line no longer exists, because that means the assertion and the line it is about have drifted
-apart. This is not a coverage substitute; `--cov` is the breadth measure. It is the set of
-guards whose load-bearingness has to be proven rather than merely executed, which is exactly the
-distinction that let `fsops.open_within` be covered by twelve tests and contain nothing.
+CI runs the whole set. Three things are findings: a mutation that *survives*; one whose `before`
+line no longer exists, because the assertion and the line it is about have drifted apart; and
+one whose named tests do not pass on a clean tree before the mutation is applied, because a test
+that is red, skipped or misspelled cannot prove anything about a guard. This is not a coverage
+substitute; `--cov` is the breadth measure. It is the set of guards whose load-bearingness has
+to be proven rather than merely executed, which is exactly the distinction that let
+`fsops.open_within` be covered by twelve tests and contain nothing.
 
 Writing the oracle found two entries that did not hold, which is the argument for having it.
 
