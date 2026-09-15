@@ -141,6 +141,55 @@ error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere els
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
 your prompt.
 
+## `keelline guard bg-cleanup`
+
+Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
+payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
+the call would be refused (a `&`-backgrounded job with no `trap … EXIT`, or a backgrounded
+command that begins with `sleep`), `1` when it carries a trailing restore no trap protects, and
+`0` otherwise. Anything it cannot read is `2`: this is the fail-closed row of the CLI table,
+and a guard that guessed would be guessing.
+
+This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
+smoke test and a person can ask it without a harness. **Writes** nothing.
+
+## `keelline commit check --range RANGE`
+
+Every message in `RANGE` (a `git log` revision range, e.g. `main..HEAD`), for lines in its
+final paragraph that are an AI/tool attribution trailer or footer: a `-by:` trailer whose
+address is at a vendor's domain or whose name is a product, a `Generated with <tool>` footer,
+or a line that is only `AI-generated`. Body prose is never judged, and a person whose name
+happens to be a vendor word is not a violation. `[commit_messages] attribution_check = false`
+switches it off. Exits `1` naming each offence as `sha line N [label]` — never the text,
+which is the repository's — and `2` when git cannot read the range or the range looks like an
+option. **Writes** nothing. This is what the reusable workflow runs.
+
+## `keelline commit strip FILE`
+
+Rewrite a commit-message file in place with the attribution lines of its final paragraph
+removed — never a line of the body. Exits `0` whether or not anything was stripped, and says
+which; a message that is *only* attribution is left alone, because
+emptying it aborts the commit with a confusing error and CI explains better. Refuses a symlink.
+This is what the `prepare-commit-msg` hook that `keelline setup --git-hooks` installs calls;
+`git commit --no-verify` skips `commit-msg` but not this hook. **Writes** `FILE`.
+
+## `keelline test hygiene`
+
+The two environment faults that make a red test run unattributable: uncommitted changes in
+the tree, and `.pyc` files whose recorded source mtime no longer matches their source. Counts
+both under `[ledger] code_roots` and exits `1` when either is present, `2` when git cannot
+report the tree. The `PostToolUse` `Bash` hook delivers the same note once per context after a
+red pytest run. **Writes** nothing.
+
+## `keelline test audit-entrypoints`
+
+Tests that never exercise what they name, in two shapes: an assertion whose value is produced
+by invoking a test double, and a test whose name states an entry point it imports but never
+calls. Scans every `test_*.py` under `[ledger] code_roots`, treating the packages and modules
+found directly under those roots as the code under test. Candidates are for triage: the
+command exits `0` and lists them in `--json`, and gating them is `keelline assess`'s. Refuses
+(`2`) if its own self-test no longer discriminates. **Writes** nothing.
+
 ---
 
 ## Configuration
