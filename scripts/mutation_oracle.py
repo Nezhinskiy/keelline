@@ -26,8 +26,10 @@ Exit codes match the rest of the project: 0 all held, 1 findings.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,12 +62,39 @@ def declared() -> list[Mutation]:
 
 
 def _tests_pass(targets: tuple[str, ...]) -> bool:
-    done = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--no-header", *targets],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
+    """Run only the named tests, against a bytecode cache that cannot be stale.
+
+    `PYTHONPYCACHEPREFIX` at a fresh empty directory, and this is not belt-and-braces — it is
+    load-bearing, and CI found that out. A `.pyc` header records the source's mtime **truncated
+    to whole seconds**, so two writes to one file inside the same second that leave it the same
+    size are indistinguishable to the import system. Two of the mutations below happen to change
+    `memory/notes.py` by exactly the same 20 bytes each; on a fast runner the second one was written
+    within a second of the first one's restore, Python reused the bytecode compiled under the
+    *first* mutation, and the second was reported as surviving when it does not.
+
+    An oracle whose own failures look exactly like findings is worse than no oracle, so the
+    cache is made unusable rather than merely discouraged: `PYTHONDONTWRITEBYTECODE` keeps the
+    fresh directory empty, and an empty cache directory means every module is compiled from the
+    source actually on disk.
+    """
+    with tempfile.TemporaryDirectory(prefix="keelline-oracle-") as cache:
+        done = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-B",
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                "--no-header",
+                *targets,
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPYCACHEPREFIX": cache, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
     return done.returncode == 0
 
 
