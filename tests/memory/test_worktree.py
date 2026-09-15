@@ -328,7 +328,7 @@ def an_overlay_checkout_with_a_leaked_index(tmp_path: Path) -> tuple[Path, Store
 def test_an_index_the_overlay_boundary_refuses_is_never_linked_into_a_worktree(
     tmp_path: Path,
 ) -> None:
-    root, store, config, machine = an_overlay_checkout_with_a_leaked_index(tmp_path)
+    root, store, config, _machine = an_overlay_checkout_with_a_leaked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     created = link(tree, store, config, home=tmp_path / "home")
     assert "MEMORY.md" not in {p.name for p in created}
@@ -403,7 +403,7 @@ def test_an_index_inside_the_overlay_boundary_is_still_linked(tmp_path: Path) ->
     # would refuse every legitimate overlay-mode index outright. Only a proper containment
     # check (`is_relative_to`) can tell "inside this project's share" from "is this project's
     # share".
-    root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
+    root, store, config, _machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     created = link(tree, store, config, home=tmp_path / "home")
     assert "MEMORY.md" in {p.name for p in created}
@@ -610,7 +610,7 @@ def test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes(
     # `store.path` is a real directory *inside the repository* in exactly that mode, and a link
     # to a directory exposes everything under it, including a file the clone committed there.
     # So the question the gate has to be asked is about the directory, not about the notes.
-    root, store, config, machine = an_overlay_checkout_with_a_linked_index(tmp_path)
+    root, store, config, _machine = an_overlay_checkout_with_a_linked_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
     created = link(tree, store, config, home=home)
@@ -632,7 +632,7 @@ def test_a_committed_index_reaches_no_harness_link_before_trust(tmp_path: Path) 
     # reader injected the text with no delimiter, no nonce and no gate.
     from keelline.memory.bundles import Bundle, blocks
 
-    root, store, config, machine = an_overlay_checkout_with_a_committed_index(tmp_path)
+    root, store, config, _machine = an_overlay_checkout_with_a_committed_index(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     home = tmp_path / "home"
     assert blocks(Bundle.INDEX, store, config) == []

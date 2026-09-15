@@ -156,8 +156,17 @@ def _git_is_usable() -> bool:
     answer depend on which test ran first.
     """
     try:
+        # S603/S607, answered once for both `subprocess` sites in this module. List form, never
+        # `shell=True`, so no argument is ever re-parsed by a shell; every argument is a
+        # literal written here, with no repository-controlled value among them; and `git` is
+        # deliberately resolved through `PATH` rather than pinned, because the machine owner's
+        # `git` is the one that must answer — a hardcoded `/usr/bin/git` is what would pick the
+        # Xcode shim on macOS over the working `git` the owner installed. `PATH` reaches this
+        # call through `_GIT_ENV_KEEP`, which is the machine owner's own environment and not a
+        # repository's: a committed `.claude/settings.json` `env` block can set it, and that is
+        # a harness-level exposure this module cannot close and does not pretend to.
         done = subprocess.run(
-            ["git", "--version"],
+            ["git", "--version"],  # noqa: S607 - see the comment above
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
@@ -170,8 +179,8 @@ def _git_is_usable() -> bool:
 
 def _git(root: Path, *args: str) -> GitAnswer:
     try:
-        done = subprocess.run(
-            ["git", *args],
+        done = subprocess.run(  # noqa: S603 - see `_git_is_usable`
+            ["git", *args],  # noqa: S607 - see `_git_is_usable`
             cwd=root,
             capture_output=True,
             text=True,

@@ -58,8 +58,11 @@ def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = N
 
 def _git_toplevel(cwd: Path) -> Path | None:
     try:
-        completed = subprocess.run(
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+        # S603/S607. List form and never `shell=True`, so nothing is re-parsed by a shell.
+        # `cwd` is a path this process computed, not a repository value. `git` is resolved
+        # through `PATH` on purpose: the machine owner's `git` is the one that must answer.
+        completed = subprocess.run(  # noqa: S603 - see the comment above
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],  # noqa: S607
             capture_output=True,
             text=True,
             check=False,

@@ -90,7 +90,7 @@ def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
 
 def test_the_loader_refuses_a_project_name_that_is_a_path(tmp_path: Path) -> None:
     write_config(tmp_path, HOSTILE_NAME)
-    with pytest.raises(ConfigError, match="project.name"):
+    with pytest.raises(ConfigError, match=r"project\.name"):
         load_at(tmp_path)
 
 

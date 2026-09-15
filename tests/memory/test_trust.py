@@ -88,19 +88,19 @@ def test_notes_that_live_in_the_repository_are_not_injected_before_trust(
 ) -> None:
     # `local-only` is the cheap attack: two lines of keelline.toml and a committed directory,
     # no forged overlay and no symlink. Gating on the mode the clone declares misses it.
-    store, config, machine = a_store(tmp_path, mode)
+    store, config, _machine = a_store(tmp_path, mode)
     assert may_inject(store, config) is False
 
 
 @pytest.mark.parametrize("mode", ["in-repo", "local-only"])
 def test_record_makes_the_store_trusted(tmp_path: Path, mode: str) -> None:
-    store, config, machine = a_store(tmp_path, mode)
+    store, config, _machine = a_store(tmp_path, mode)
     record(store, config)
     assert may_inject(store, config) is True
 
 
 def test_a_changed_store_loses_trust_and_says_so(tmp_path: Path) -> None:
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     (store.groups["developer"] / "b.md").write_text(NOTE, encoding="utf-8")
     result = state(store, config)
@@ -159,7 +159,7 @@ def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Pa
     # — so `memory session-context` and `memory fit` go dark and `memory trust`, the one
     # command that would recover the state, fails identically. A committed dangling symlink is
     # all it takes.
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     (store.groups["developer"] / "gone.md").symlink_to(tmp_path / "nowhere.md")
     assert may_inject(store, config) is False
     record(store, config)
@@ -180,7 +180,7 @@ def test_the_index_at_the_store_root_is_covered_by_the_digest(tmp_path: Path) ->
     # from the group directories never sees it — trust a store once and the index can afterwards
     # be rewritten, or swapped for a symlink to anything, without losing that trust. It is the
     # file the `index` bundle injects.
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     assert may_inject(store, config) is True
     index = store.path / "MEMORY.md"
@@ -239,7 +239,7 @@ def test_a_refresh_carries_only_the_file_keelline_wrote(tmp_path: Path) -> None:
     # harness's native memory writer) and a `git pull` can land at any moment, so a refresh
     # that re-read the whole store would hand a record to bytes the owner has never seen.
     # Keelline's own file is carried forward; the one that appeared beside it is not.
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     before = snapshot(store, config)
     assert before.trusted is True
@@ -253,7 +253,7 @@ def test_a_refresh_carries_only_the_file_keelline_wrote(tmp_path: Path) -> None:
 
 def test_a_refresh_keeps_a_store_keelline_rewrote_trusted(tmp_path: Path) -> None:
     # The other half: nothing but Keelline's own write happened, so the owner is not re-asked.
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     before = snapshot(store, config)
     mine = store.groups["developer"] / "a.md"
@@ -265,7 +265,7 @@ def test_a_refresh_keeps_a_store_keelline_rewrote_trusted(tmp_path: Path) -> Non
 
 
 def test_a_refresh_does_nothing_for_a_store_that_was_never_trusted(tmp_path: Path) -> None:
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     before = snapshot(store, config)
     assert before.trusted is False
     mine = store.groups["developer"] / "a.md"
@@ -280,7 +280,7 @@ def test_editing_only_index_extra_does_not_leave_the_store_trusted(tmp_path: Pat
     # injects. An attacker who changes nothing but that list left the digest untouched, and the
     # next `memory index` carried their pointers in under a still-valid trust record, blessed
     # on the way past by `refresh_if_trusted` because Keelline itself authored the write.
-    store, config, machine = a_store(tmp_path, "in-repo")
+    store, config, _machine = a_store(tmp_path, "in-repo")
     record(store, config)
     assert may_inject(store, config) is True
 

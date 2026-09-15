@@ -74,7 +74,7 @@ def test_a_section_that_is_not_a_table_is_rejected(tmp_path: Path) -> None:
 @pytest.mark.parametrize("name", ["../common", "Ai Daybook", "", "-leading", "a/b"])
 def test_project_name_must_be_one_lowercase_path_segment(tmp_path: Path, name: str) -> None:
     write(tmp_path, MINIMAL.replace('"sample"', f'"{name}"'))
-    with pytest.raises(ConfigError, match="project.name"):
+    with pytest.raises(ConfigError, match=r"project\.name"):
         load(tmp_path, machine=tmp_path / "no-machine.toml")
 
 
@@ -123,7 +123,7 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
     class Sample:
         ratio: float
 
-    with pytest.raises(ConfigError, match="sample.ratio has an unsupported schema type: float"):
+    with pytest.raises(ConfigError, match=r"sample\.ratio has an unsupported schema type: float"):
         _build(Sample, "sample", {"ratio": 1.5})
 
 

@@ -81,7 +81,9 @@ def test_the_export_list_is_exactly_what_the_module_imports_from_this_lane() -> 
         assert node.module is not None and node.module.startswith("keelline.memory.")
         imported |= {alias.asname or alias.name for alias in node.names}
     assert imported == set(memory.__all__)
-    assert memory.__all__ == sorted(memory.__all__), "the contract list stays reviewable"
+    # The ordering is `ruff`'s RUF022, not `sorted()`: constants, then classes, then functions,
+    # which is what a reader of a contract list wants and what the linter now enforces on every
+    # run. Asserting `sorted()` here as well would be a second, disagreeing authority.
     for name in memory.__all__:
         assert hasattr(memory, name)
 

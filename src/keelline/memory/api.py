@@ -104,11 +104,12 @@ from keelline.memory.trust import (
 from keelline.memory.worktree import PartialLink, link, linked_names
 
 __all__ = [
-    "Bundle",
     "DELIMITER",
+    "INDEX_NAME",
+    "SLOTS",
+    "Bundle",
     "Entry",
     "Fit",
-    "INDEX_NAME",
     "IndexCheck",
     "Note",
     "NoteError",
@@ -116,7 +117,6 @@ __all__ = [
     "PartialLink",
     "Provenance",
     "Reconciliation",
-    "SLOTS",
     "Snapshot",
     "Store",
     "UnsafeNote",

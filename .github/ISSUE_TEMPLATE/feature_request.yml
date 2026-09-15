@@ -1,0 +1,26 @@
+name: Feature request
+description: Something Keelline should do and does not
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What goes wrong today, in your own work. Describe the situation rather than the feature
+        — the shape of the fix is the part worth arguing about.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Existing commands, configuration, or a workaround outside Keelline.
+    validations:
+      required: false

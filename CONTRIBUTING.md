@@ -1,0 +1,108 @@
+# Contributing to Keelline
+
+Keelline's real conventions used to live only inside `docs/plans/`, which meant a first-time
+contributor's pull request could be rejected on rules they had no way to read. This file is
+those rules.
+
+## The short version
+
+```bash
+uv sync                         # once
+uv run pytest -q                # the suite
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+uv run keelline release check   # version discipline
+```
+
+All four run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13. CI also
+measures coverage and fails below 92%.
+
+## What this project is, and what that costs a change
+
+Keelline treats **a repository as untrusted input**. A clone can commit a `keelline.toml`, a
+`MEMORY.md`, a manifest, an `env` block and a tree of symlinks, and all of it reaches the code
+before a human has read any of it. Three rules follow, and a change that breaks one will be
+sent back however good it looks otherwise.
+
+**The runtime imports only the standard library.** Hooks run under whatever `python3` the
+wrapper finds, before any environment exists, so a third-party import works on your machine and
+fails inside a hook on somebody else's. `tests/test_import_boundary.py` enforces this on every
+supported interpreter. Development dependencies (`pytest`, `ruff`, `mypy`, `towncrier`) are
+fine; a runtime one is not.
+
+**Writes go through `fsops`.** `config.paths.contained()` decides whether a configured path
+*may* be written — it gives a user-facing refusal and catches a committed symlink — and
+`fsops.write_within` / `mkdirs_within` / `remove_within` then do the write through an
+`O_NOFOLLOW` walk, so a component that becomes a symlink after the check cannot redirect it.
+Do not add a `Path.write_text`, a `mkdir(parents=True)` or an `os.replace` on a string path to
+a lane that puts files into a repository.
+
+**Repository bytes are data.** Anything a repository authored — a note, an index line, a
+`memory.groups` entry, a refusal message built out of one — reaches the model only inside
+`trust.wrap`'s delimited region, and only after `keelline memory trust`. If you find yourself
+putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
+wrap it.
+
+## Areas
+
+An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by
+name — there is no shared registry to edit.
+
+- `commands.py` with a `register(groups)` gives the area its CLI group.
+- `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
+  handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
+  interpreter imports neither the configuration layer nor the presets.
+- `api.py` is the area's import surface. Other areas import from it and from nothing else, and
+  its `__all__` must equal exactly what it imports — a test parses the file and checks.
+- Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
+  namespace package, so one without it is invisible to both discovery paths.
+
+## Tests
+
+**Every new assertion ships with the mutation that reddens it, or a sentence saying why none
+exists.** This is the project's strongest test convention and the easiest to satisfy vacuously:
+write the assertion, break the line of source it is about, watch it fail, put the source back.
+Say what you broke, in the test's own comment or in the commit message. A reviewer has no other
+way to know you did it.
+
+Name a test after the behaviour, not the function:
+`test_a_corrupt_record_is_never_overwritten`, not `test_recorded`.
+
+Comment *why*, in the test. Most of this suite's comments name the defect the test exists to
+catch, which is what makes a later reader able to tell a load-bearing assertion from decoration.
+
+A test must never read or write the developer's real `~/.config/keelline/`. Pass `--machine` to
+a command, `machine=` to `resolve`, and use `tmp_path` for everything else.
+
+## Commits and changelog
+
+Conventional-commit subjects (`feat(memory):`, `fix(scaffold):`, `docs(plans):`), describing
+**intent** rather than mechanics. `fix(memory): stop a half-built worktree tree and a refusal
+from vanishing` is the house style; `fix: update worktree.py` is not.
+
+User-visible changes need a towncrier fragment in `changelog.d/`, named
+`<slug>.<type>.md` where type is `feature`, `fix` or `change`. Write it as a release note
+someone outside the project can read — not as a note to yourself about the lane.
+
+`uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
+the package, and both plugin manifests. It runs in CI; run it before you push.
+
+## Plans
+
+Substantial work is planned first, in `docs/plans/YYYY-MM-DD-<slug>.md`, against the extraction
+design. That design document is not public yet — it lives in a private repository — so a plan's
+references to it cannot be followed from here. You do not need a plan for a bug fix or a
+documentation change; open an issue or a pull request and say what you found.
+
+The delivered plans in `docs/plans/` are a record, not a work list. Their `**Interfaces:**`
+blocks are kept current and are what a later lane builds against; their code blocks are
+as-planned and may differ from what shipped.
+
+## Security
+
+Do not open a public issue for a containment bypass or a trust-gate bypass. See
+[SECURITY.md](SECURITY.md).
+
+## Code of conduct
+
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).

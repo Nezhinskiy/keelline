@@ -390,7 +390,7 @@ def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_pa
     # nothing asks where the link goes — while `worktree._index_source` already applies §9.1's
     # per-link target rule to the very same file for the *link* path. This is the path that
     # reaches the model.
-    store, config, machine, overlay = a_resolved_overlay_store(tmp_path)
+    store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
     other = overlay / "projects" / "other-client" / "memory"
     other.mkdir(parents=True)
     (other / INDEX_NAME).write_text("# another client's index\n", encoding="utf-8")
@@ -402,7 +402,7 @@ def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_pa
 def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_path: Path) -> None:
     # §6.3 makes a symlinked index a legitimate member of the tree `attach` creates, so the
     # rule is "inside this project's share", never "refuse every symlinked index".
-    store, config, machine, overlay = a_resolved_overlay_store(tmp_path)
+    store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
     share = overlay / "projects" / "widget" / "memory"
     share.mkdir(parents=True)
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
@@ -415,7 +415,7 @@ def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_pat
 def test_an_index_committed_to_the_repository_is_gated_and_wrapped(tmp_path: Path) -> None:
     # A real `MEMORY.md` at `store.path` in overlay mode is a file the clone ships: repository
     # content, however far outside the repository every group resolves.
-    store, config, machine, _ = a_resolved_overlay_store(tmp_path)
+    store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
     content = "# Memory Index\n\nA line only this test wrote, not a literal the code repeats.\n"
     (store.path / INDEX_NAME).write_text(content, encoding="utf-8")
     assert blocks(Bundle.INDEX, store, config) == []
@@ -431,7 +431,7 @@ def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: P
     # Widening the gate for the index must not widen it for the notes: the machine owner's
     # overlay notes are not repository content, and wrapping them as data would defeat every
     # standing rule in the mode this project actually ships.
-    store, config, machine, _ = a_resolved_overlay_store(tmp_path)
+    store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
@@ -490,7 +490,7 @@ def test_the_slots_the_index_declares_can_hold_an_index_at_its_configured_cap(
 ) -> None:
     # The arithmetic `SLOTS[Bundle.INDEX]` is set from: `memory_index_bytes` over one part's
     # capacity, rounded up. Two could never hold a cap-sized index however well it split.
-    store, config = a_store(tmp_path)
+    _store, config = a_store(tmp_path)
     cap = config.native_caps.hook_output_chars - CAP_MARGIN
     needed = -(-config.native_caps.memory_index_bytes // cap)
     assert SLOTS[Bundle.INDEX] >= needed
