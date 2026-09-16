@@ -944,3 +944,19 @@ reddens = [
   "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
   "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
 ]
+
+# The allocator can only count what this repository can see; the file's existence decides.
+[[mutation]]
+name = "a freshly allocated identifier overwrites an existing entry file"
+file = "src/keelline/ledger/write.py"
+before = '    if path.exists():'
+after = '    if False:'
+reddens = ["tests/ledger/test_write.py::test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns"]
+
+# A file the sweep could not read is reported, never assumed clean.
+[[mutation]]
+name = "the sweep skips an unreadable file in silence"
+file = "src/keelline/ledger/write.py"
+before = '            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")'
+after = '            pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints"]

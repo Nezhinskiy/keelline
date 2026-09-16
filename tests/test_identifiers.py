@@ -14,6 +14,15 @@ def test_the_default_prefix_reads_and_writes_three_digit_identifiers() -> None:
     assert ids.format(2345) == "BR-2345"
 
 
+def test_reading_the_number_out_of_a_non_identifier_is_refused() -> None:
+    # `number` is `Identifiers`' one lossy reader, and the allocator in `keelline.ledger.write`
+    # is its first caller: it asks `is_identifier` first, so this branch is reached only by a
+    # caller that does not — and a caller that guesses a number out of a filename that is not an
+    # identifier hands out an occupied one. Mutation: return `0` instead of raising — reddens.
+    with pytest.raises(Refusal):
+        Identifiers("BR").number("BR-42")
+
+
 def test_fewer_than_three_digits_is_not_an_identifier() -> None:
     # `renumber` and every reader enforce this; a two-digit heading was the shape the source's
     # index guard existed to catch. Mutation: change `{3,}` to `+` in `_DIGITS` — reddens this.
