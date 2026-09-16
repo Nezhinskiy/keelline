@@ -1238,3 +1238,94 @@ reddens = [
   "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
 ]
+
+# A trailing `; echo` hides the exit code the harness notification reports, but only after a
+# `;`: after `&&` a failing command skips the echo and the chain carries its code. Accepting
+# any chain operator turns every ordinary `cmd && echo done` into a false hint.
+[[mutation]]
+name = "the exit-code hint fires after && as well as after ;"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if not breaks or pieces[breaks[-1]] != ";":'
+after = '    if not breaks:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about",
+]
+
+# The hint is a fact about NOTIFICATIONS, which only a backgrounded call gets; unkeyed, it
+# fires on every foreground `cmd; echo done` a session types.
+[[mutation]]
+name = "the exit-code hint stops being keyed on the background flag"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)'
+after = '        for hint in (_restore_hint(command), _exit_echo_hint(command))'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_same_chain_in_the_foreground_is_silent",
+]
+
+# `command_words` is what lets `FOO=1 echo done` be read as an echo; `tail[0]` alone reads
+# the assignment and stays silent.
+[[mutation]]
+name = "the exit-code hint reads the echo's program from the raw first token"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(tail)'
+after = '    words = tail'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
+]
+
+# The last `;` of a compound statement falls after its terminator, so the masked segment is
+# `done` or `fi` alone and the hint advises making a keyword the last command of the chain.
+# A backgrounded loop ending in a progress echo is the traffic this rule sits in front of.
+[[mutation]]
+name = "the exit-code hint names a statement terminator as the masked command"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _ECHO_COMMANDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_compound_statement_terminator_is_never_named_as_the_masked_command",
+]
+
+# `cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back. Naming the second
+# echo tells the reader to read the status of an `echo` from the output it wrote.
+[[mutation]]
+name = "the exit-code hint names a second echo as the masked command"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _STATEMENT_KEYWORDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_second_echo_is_never_named_as_the_masked_command",
+]
+
+# A trailing `;` -- or the trailing newline every editor writes, which the tokenizer turns
+# into one -- leaves the last break with an empty tail, and the whole rule falls silent on the
+# commonest authoring of the shape it exists for.
+[[mutation]]
+name = "a trailing separator silences the exit-code hint again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    while pieces and pieces[-1] in _CHAIN_OPERATORS:'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_trailing_separator_does_not_silence_the_hint",
+]
+
+# Quoting every piece alike renders `>>` as a literal argument to `echo`, so the text offered
+# as "what you typed" is a different command -- in the shape this rule most often sees.
+[[mutation]]
+name = "the rendered tail quotes its redirect operators into arguments"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token)'
+after = '        shlex.quote(token)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_rendered_tail_keeps_its_redirect_a_redirect",
+]
+
+# `&>` and `&>>` are redirects beginning with neither `>` nor `<`, so a first-character test
+# walks past them and renders the redirect as part of the masked command's own name.
+[[mutation]]
+name = "the command head stops on a redirect's first character instead of the table"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        if piece in bashscan.REDIRECT_OPERATORS:'
+after = '        if piece[:1] in {">", "<"}:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
+]

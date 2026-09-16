@@ -151,8 +151,10 @@ your prompt.
 Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
 payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
 the call would be refused (a `&`-backgrounded job with no `trap … EXIT`, or a backgrounded
-command that begins with `sleep`), `1` when it carries a trailing restore no trap protects, and
-`0` otherwise. Both refusals need `run_in_background` to be `true` in the object you send —
+command that begins with `sleep`), `1` when it carries a trailing restore no trap protects or,
+for a backgrounded call, ends in a `; echo …` that hides the exit code the completion
+notification will report, and `0` otherwise. Both refusals need `run_in_background` to be
+`true` in the object you send —
 the leak and the `sleep` are only faults for a job the harness will not reap, so a CI smoke
 test written without that key measures `0` on a command that is refused in a session.
 Anything it cannot read is `2`: this is the fail-closed row of the CLI table, and a guard that

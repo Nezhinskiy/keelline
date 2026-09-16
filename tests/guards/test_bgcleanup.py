@@ -18,6 +18,7 @@ import pytest
 from keelline.guards import bgcleanup
 from keelline.guards.bgcleanup import (
     ALLOW,
+    EXIT_ECHO_HINT,
     LEAK_REASON,
     MAX_COMMAND_CHARS,
     RESTORE_HINT,
@@ -300,7 +301,7 @@ def test_the_reasons_carry_the_neutral_remedy_and_no_repository_path() -> None:
     the path regex alone is green against the unported source, whose residue was a sentence
     about two named test suites, not a path."""
     assert "parallelise the suite rather than wait on it" in LEAK_REASON
-    for text in (LEAK_REASON, SLEEP_REASON, RESTORE_HINT):
+    for text in (LEAK_REASON, SLEEP_REASON, RESTORE_HINT, EXIT_ECHO_HINT):
         assert re.findall(r"(?:docs|scripts|src|tests)/[\w./-]+", text) == [], text
         assert "suite" not in text.replace("parallelise the suite", "")
 
@@ -554,3 +555,153 @@ def test_a_restore_command_with_no_operands_is_judged_rather_than_raised() -> No
     here the handler is CLOSED, so an exception would refuse the call -- the opposite failure,
     and the reason `judge` must return rather than raise on any string."""
     assert judge("cp ci.yml ci.yml.bak; pytest; cp --", background=False) == ALLOW
+
+
+# A chain measured on 2026-09-16: argparse exited 2, the completion notification said 0.
+_MASKING_CHAIN = 'python3 gate.py --run > out.log 2>&1; echo "EXIT=$?" >> out.log'
+
+
+def test_a_trailing_echo_after_a_semicolon_is_warned_about_in_the_background() -> None:
+    """The harness reports the exit code of the chain's LAST command -- the echo's."""
+
+    context = judge(_MASKING_CHAIN, background=True).hint
+
+    assert context is not None, "silence is the bug"
+    assert "python3 gate.py --run" in context and "notification" in context
+
+
+def test_a_newline_before_the_echo_is_the_same_chain() -> None:
+    context = judge('pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log', background=True).hint
+
+    assert context is not None and "pytest -q" in context
+
+
+def test_an_env_prefixed_echo_is_still_an_echo() -> None:
+    """`command_words` is what this scanner has that the repository the guards were extracted
+    from lacks; pin that it is used."""
+
+    context = judge("pytest -q > out.log; FOO=1 echo done", background=True).hint
+
+    assert context is not None and "notification" in context
+
+
+def test_the_same_chain_in_the_foreground_is_silent() -> None:
+    assert judge(_MASKING_CHAIN, background=False).hint is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest -q > out.log 2>&1 && echo ok >> out.log",
+        "pytest -q > out.log 2>&1",
+        "echo starting; pytest -q > out.log 2>&1",
+        "pytest -q > out.log 2>&1; grep -c FAILED out.log",
+    ],
+)
+def test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about(command: str) -> None:
+    assert judge(command, background=True).hint is None
+
+
+def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor() -> None:
+    """PINS A KNOWN LIMITATION, not a desired outcome: `_command_head` cannot tell an ordinary
+    trailing numeric argument from a file descriptor before a redirect, so the masked command
+    this hint names can be short by one token -- here, a duration argument goes missing.
+
+    `cmd 2> err.log` and `sleep 5 > out.log` tokenize to the identical shape --
+    `['cmd', '2', '>', 'err.log']` next to `['sleep', '5', '>', 'out.log']` -- because
+    tokenizing drops the whitespace that is the only thing telling a numbered descriptor from
+    a genuine argument apart, so `_command_head` guesses descriptor and pops it either way.
+    Gating the pop on `>&`/`<&` does not help: measured directly against this module's own
+    `bashscan.tokenize`, neither shape carries one. There is no fix available from the token
+    list alone, which is all `_command_head` receives, and this test exists so a sharper
+    heuristic over those tokens is not written in the belief that one is there to find.
+
+    NOT AN IMPOSSIBILITY CLAIM. The caller holds the raw command text and does not pass it
+    down; an adjacency test on that text separates `cmd 2> err.log` from `sleep 5 > out.log`
+    at once. A change that supplies the text and updates this expectation is a correct
+    change, and this docstring must not read as an argument against it.
+
+    Prefixed with `true;` so the chain's FIRST command is not `sleep`: unprefixed, the
+    unrelated backgrounded-`sleep` rule denies the call outright before this hint is ever
+    computed, and the test would pin that rule instead of `_command_head`.
+    """
+    context = judge("true; sleep 5 > out.log; echo done", background=True).hint
+
+    assert context is not None
+    assert "`sleep`" in context and "sleep 5" not in context
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "for f in a b; do cat $f; done; echo done",
+        "if make > out.log; then echo ok; fi; echo finished",
+    ],
+)
+def test_a_compound_statement_terminator_is_never_named_as_the_masked_command(
+    command: str,
+) -> None:
+    """A hint advising "make `done` the last command of the chain" advises a command nobody
+    wrote.
+
+    The last `;` of a compound statement falls after its terminator word, so the segment
+    before it is `done` or `fi` alone -- a keyword, not a program with an exit code of its
+    own. A backgrounded loop closing with a progress echo is ordinary traffic for this rule,
+    so naming its terminator is the cry-wolf failure `_restores_at_the_end` records, reached
+    by the very shape this module's header opens with.
+    """
+    assert judge(command, background=True).hint is None
+
+
+def test_a_second_echo_is_never_named_as_the_masked_command() -> None:
+    """`cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back, and the
+    segment before the last `;` is another echo whose own exit code is never the one anyone
+    wanted. Silence beats naming the wrong command: a hint that says to read the status of an
+    `echo` from its output teaches the reader to distrust the rule."""
+    command = 'python -m pytest > out.log; echo "----"; echo "EXIT=$?"'
+
+    assert judge(command, background=True).hint is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'pytest -q > out.log 2>&1; echo "EXIT=$?" >> out.log;',
+        'pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log\n',
+    ],
+)
+def test_a_trailing_separator_does_not_silence_the_hint(command: str) -> None:
+    """A chain that ends with a separator it could have ended without is the same chain.
+
+    The tokenizer turns a newline into a `;`, so a command carrying the trailing newline
+    every editor writes reaches this rule with one break more than its author typed, and that
+    last break has nothing after it. Dropping the empty tail is what keeps the commonest
+    authoring of the flagship shape from passing unread.
+    """
+    context = judge(command, background=True).hint
+
+    assert context is not None, "silence is the bug"
+    assert "pytest -q" in context
+
+
+def test_the_rendered_tail_keeps_its_redirect_a_redirect() -> None:
+    """`_as_shell_text` promises text a shell reads as this file read it, and the hint invites
+    the reader to compare that text with what they typed. Quoting `>>` hands back a literal
+    argument to `echo` instead of an append, in the shape this rule most often sees."""
+    context = judge(_MASKING_CHAIN, background=True).hint
+
+    assert context is not None
+    assert "echo 'EXIT=$?' >> out.log" in context
+    assert "'>>'" not in context
+
+
+@pytest.mark.parametrize("operator", ["&>", "&>>"])
+def test_an_ampersand_redirect_is_not_part_of_the_masked_command(operator: str) -> None:
+    """Two redirect operators start with neither `>` nor `<`, so a head that stops on the
+    first character alone walks past them and renders the redirect as part of the command's
+    own name. Cosmetic -- `&>` is not a chain operator, so the right command is still found --
+    but the name handed back is not one the reader typed."""
+    context = judge(f"pytest -q {operator} out.log; echo done", background=True).hint
+
+    assert context is not None
+    assert "`pytest -q`" in context and operator not in context

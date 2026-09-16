@@ -118,6 +118,15 @@ def test_a_trailing_restore_arrives_as_context_not_a_decision(tmp_path: Path) ->
     assert result.context is not None and "trap" in result.context
 
 
+def test_a_masking_echo_arrives_as_context_not_a_decision(tmp_path: Path) -> None:
+    root = a_project(tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    command = 'pytest -q > out.log 2>&1; echo "EXIT=$?" >> out.log'
+    result = guard().run(bash_event(root, command, background=True), config)
+    assert result.decision is None
+    assert result.context is not None and "notification" in result.context
+
+
 def test_a_guard_that_cannot_judge_refuses_rather_than_permits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -27,12 +27,16 @@ TERM` runs where a trailing line does not, because the shell fires it on the way
 leaves. So the rules below refuse that shape before it starts where refusing is right and
 advise where it is not, each naming the remedy rather than the rule alone.
 
-WHAT THIS MODULE DOES, three readings of that one shape:
+WHAT THIS MODULE DOES, four readings of that one shape:
 
 1. It REFUSES a backgrounded command that leaks an `&` job with no trap (`LEAK_REASON`).
 2. It REFUSES a backgrounded command whose FIRST simple command is `sleep` (`SLEEP_REASON`).
 3. It ADVISES -- never refuses -- when a command's last line restores a backup outside a trap
    (`RESTORE_HINT`).
+4. It ADVISES, for a backgrounded call only, when the chain ends in `; echo …`, because the
+   harness's completion notification reports that echo's exit code and not the code of the
+   command before it (`EXIT_ECHO_HINT`). It cannot fire together with 3: a restore is a last
+   command, and so is the echo.
 
 THE `&` RULE, all three conditions required:
 
@@ -262,6 +266,30 @@ _RESTORE_COMMANDS = frozenset({"cp", "mv"})
 # opposite of what it is.
 _TARGET_DIRECTORY_OPTIONS = frozenset({"-t", "--target-directory"})
 
+# The completion notification of a backgrounded call reports the exit code of the LAST
+# command in the chain, so `check --run > out.log; echo "exit=$?"` notifies 0 after `check`
+# failed -- measured 2026-09-16 on an argparse usage error that exited 2. Advice, never a
+# refusal: writing the code into the file is a legitimate use of the chain, as long as the
+# notification is not the thing read. Keyed on the background flag, unlike the restore hint:
+# a foreground call's status is read from the tool result itself.
+EXIT_ECHO_HINT = (
+    "This backgrounded command ends in `; {tail}`, so its completion notification will report "
+    "that command's exit code, not the code of `{masked}`. Either make `{masked}` the last "
+    "command of the chain, or read its status from the output it wrote -- never from the "
+    "notification."
+)
+_ECHO_COMMANDS = frozenset({"echo", "printf"})
+# Words that can stand at the front of the segment before the last `;` without naming a
+# command anyone typed: the terminators and connectives of a compound statement. The last `;`
+# of `for f in a b; do cat $f; done; echo done` falls after `done`, so the masked segment is
+# the keyword alone, and the hint would advise making `done` the last command of the chain --
+# a command that is not one and that the reader never wrote.
+_STATEMENT_KEYWORDS = frozenset({"done", "fi", "esac", "then", "else", "elif", "do", "}", ")"})
+# Every operator that ends a simple command, AFTER `operator_pieces` has split welded runs.
+# Not `_COMMAND_ENDING_PIECES`: that set is read left of an `&` to decide whether the `&` is
+# part of a longer operator; this one is read as the breaks between commands.
+_CHAIN_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
+
 
 def judge(command: str, *, background: bool) -> Verdict:
     """The whole contract, as a pure function of the command text and the background flag.
@@ -279,7 +307,12 @@ def judge(command: str, *, background: bool) -> Verdict:
         backgrounds, traps = _scan(command, depth=0)
         if backgrounds and not traps:
             return Verdict(LEAK_REASON, None)
-    return Verdict(None, _restore_hint(command))
+    hints = [
+        hint
+        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)
+        if hint
+    ]
+    return Verdict(None, "\n\n".join(hints) or None)
 
 
 def _begins_with_sleep(tokens: list[str]) -> bool:
@@ -318,6 +351,100 @@ def _restore_hint(command: str) -> str | None:
     if not restore:
         return None
     return RESTORE_HINT.format(restore=restore, trap=shlex.quote(restore))
+
+
+def _exit_echo_hint(command: str) -> str | None:
+    """Advice for a backgrounded chain whose last command is an echo after a `;`."""
+
+    tokens = bashscan.tokenize(command)
+    if tokens is None:
+        return None
+    masked = _echo_after_a_semicolon(tokens)
+    if masked is None:
+        return None
+    return EXIT_ECHO_HINT.format(masked=masked[0], tail=masked[1])
+
+
+def _echo_after_a_semicolon(tokens: list[str]) -> tuple[str, str] | None:
+    """``(masked, tail)`` -- the command whose exit code a trailing `; echo …` hides and that
+    echo, both as shell text -- or None.
+
+    Only a `;` masks: after `&&` a failing command skips the echo and the chain exits with
+    its code, and after `||` the echo runs only when the code is already lost to `||`.
+    Newlines arrive as `;` from the tokenizer, so a two-line chain is the same chain -- and
+    so does the trailing newline every editor writes, which is why a chain's trailing
+    separators are dropped before the breaks are counted. Without that, the last break had an
+    empty tail and the flagship shape, authored into a file rather than typed, was read as
+    having no echo at all.
+
+    SILENT WHERE THE MASKED SEGMENT IS NOT A COMMAND, which is a false-hint rule rather than
+    a tidiness one. A compound statement's terminator (`done`, `fi`) and a second echo both
+    stand where a program with a meaningful exit code is expected, and naming either one
+    hands the reader advice about a command they never wrote. A backgrounded loop ending in a
+    progress echo is exactly the traffic this rule sits in front of, so the cost of naming it
+    wrongly is the rule being routed around.
+    """
+
+    pieces: list[str] = []
+    for token in tokens:
+        pieces.extend(bashscan.operator_pieces(token))
+    while pieces and pieces[-1] in _CHAIN_OPERATORS:
+        pieces.pop()
+    breaks = [index for index, piece in enumerate(pieces) if piece in _CHAIN_OPERATORS]
+    if not breaks or pieces[breaks[-1]] != ";":
+        return None
+    tail = pieces[breaks[-1] + 1 :]
+    words = bashscan.command_words(tail)
+    if not words or Path(words[0]).name not in _ECHO_COMMANDS:
+        return None
+    start = breaks[-2] + 1 if len(breaks) > 1 else 0
+    masked = _command_head(pieces[start : breaks[-1]])
+    head = bashscan.command_words(masked)
+    if not head:
+        return None
+    program = Path(head[0]).name
+    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:
+        return None
+    return " ".join(masked), _as_shell_text(tail)
+
+
+def _command_head(segment: list[str]) -> list[str]:
+    """The command and its arguments, without its redirects -- imprecise by one token in a
+    documented case.
+
+    `cmd > out.log 2>&1` tokenizes to `['cmd', '>', 'out.log', '2', '>&', '1']`: the head
+    stops at the first redirect operator, and a lone digit left in front of it is popped as a
+    file descriptor.
+
+    The stop is a membership test against `bashscan.REDIRECT_OPERATORS`, not a test of the
+    piece's first character. `&>` and `&>>` are redirects that begin with neither `>` nor
+    `<`, so the first-character test walked past them and rendered `pytest -q &> out.log` as
+    the command's own name.
+
+    THE POP IS A GUESS THE TOKENIZER CANNOT CHECK: a numbered file descriptor
+    (`cmd 2> err.log`) and an ordinary trailing numeric argument before an unrelated redirect
+    (`sleep 5 > out.log`) tokenize to the identical shape -- `['cmd', '2', '>', 'err.log']`
+    next to `['sleep', '5', '>', 'out.log']` -- because tokenizing drops the whitespace that
+    is the only thing telling them apart. Gating the pop on `>&`/`<&` does not help: neither
+    example has one. So a rendered head can be short by one token (`sleep 5` comes back
+    `sleep`); that is an accepted imprecision in an advisory-only reader, not a defect to
+    chase here.
+
+    THE LIMIT IS THE TOKEN LIST, NOT THE PROBLEM. Whitespace is what tells the two shapes
+    apart, and there is no fix available from the tokens alone -- but the caller holds the
+    raw command text and does not pass it down, so an adjacency test on that text would
+    settle every one of these cases. Stated precisely because a later change that supplies
+    the text is a correct change, not a heuristic sharpened past what it can know.
+    """
+
+    head: list[str] = []
+    for piece in segment:
+        if piece in bashscan.REDIRECT_OPERATORS:
+            break
+        head.append(piece)
+    if len(head) > 1 and head[-1].isdigit():
+        head.pop()
+    return head
 
 
 def _backgrounds_a_job(tokens: list[str]) -> bool:
@@ -488,8 +615,24 @@ def _restores_at_the_end(tokens: list[str]) -> str | None:
 
 
 def _as_shell_text(command: list[str]) -> str:
-    """A tokenized command back as text a shell reads the same way this file read it."""
-    return " ".join(shlex.quote(token) for token in command)
+    """A tokenized command back as text a shell reads the same way this file read it: words
+    quoted, redirect operators bare.
+
+    Quoting every piece alike broke the promise in the commonest shape this file renders.
+    `echo "EXIT=$?" >> out.log` came back as ``echo 'EXIT=$?' '>>' out.log``, in which `>>`
+    is a literal argument handed to `echo` and the append is gone -- a different command,
+    offered to the reader as the one they typed.
+
+    What it still cannot restore is a quoted argument that was punctuation from end to end
+    (`echo '>>'`): the tokens carry no memory of their quoting, `tokenize` discards it while
+    turning the command into a flat token stream, and nothing downstream can tell the
+    argument from the operator it is spelled like. That loss predates this function and is
+    recorded in `tokenize` itself; the exchange is one rare argument rendered bare against
+    every redirect rendered right.
+    """
+    return " ".join(
+        token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token) for token in command
+    )
 
 
 def _nested_programs(tokens: list[str], heredocs: list[bashscan.Heredoc]) -> list[str]:
