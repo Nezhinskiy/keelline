@@ -624,10 +624,11 @@ def _as_shell_text(command: list[str]) -> str:
     offered to the reader as the one they typed.
 
     What it still cannot restore is a quoted argument that was punctuation from end to end
-    (`echo '>>'`): the tokens carry no memory of their quoting, `operator_pieces` decomposes
-    such a run, and nothing downstream can tell it from the operator it is spelled like.
-    That loss predates this function and is recorded in `operator_pieces` itself; the
-    exchange is one rare argument rendered bare against every redirect rendered right.
+    (`echo '>>'`): the tokens carry no memory of their quoting, `tokenize` discards it while
+    turning the command into a flat token stream, and nothing downstream can tell the
+    argument from the operator it is spelled like. That loss predates this function and is
+    recorded in `tokenize` itself; the exchange is one rare argument rendered bare against
+    every redirect rendered right.
     """
     return " ".join(
         token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token) for token in command
