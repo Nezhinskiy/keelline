@@ -590,7 +590,10 @@ git commit -m "feat(ledger,docs): open the two areas under the §5.8 gate, with 
   `GIT_TIMEOUT_SECONDS`, `keelline.config.loader.load`, `keelline.config.schema.Config`.
 - Produces — four leaf modules (each imports nothing from an area, so any area may import
   them and no area edge is created; `prose.py` joins them in Task 8):
-  - `keelline.identifiers`: `PREFIX`; `Identifiers(prefix)` with `.exact`, `.mention`,
+  - `keelline.identifiers`: `PREFIX`, `DIGITS` (the three-digits-or-more rule; public
+    because the allocator's git-log reader and the plan lint's `Fixes` rule build their own
+    patterns from it, and a respelling inline would be a spelling the mutation entry over
+    this line cannot reach); `Identifiers(prefix)` with `.exact`, `.mention`,
     `.fixes` (the `Fixes <PREFIX>-nnn` claim a plan makes), `.number(id) -> int`,
     `.format(n) -> str`, `.is_identifier(text) -> bool`, `.shape` (`BR-nnn`);
     `identifiers(config) -> Identifiers`. One definition of the identifier grammar for the
@@ -3508,6 +3511,12 @@ Expected: all green; coverage over `src/keelline/ledger/` above the project floo
   `docs.hygiene` and `memory.refs`: `REFERENCE`, `FENCE`, `CODE_SPAN`,
   `blank_fences(text) -> str`, `blank_code_spans(text, placeholder="\x00") -> str`,
   `path_references(line) -> Iterator[str]`; `keelline.docs.hygiene`: `TRAIL_MARKER`, `STATUS_HEADING`,
+  `TRAIL_MARKER_LINE` (the whole-line pattern over `TRAIL_MARKER`; public because `docs.trail`
+  rebuilds the block that marker opens and must anchor it exactly where the budget cuts, and
+  two spellings of that rule would let the two disagree about where the listing starts),
+  `read_document(path, where) -> str` (one reader for every document this area opens, so a
+  permission bit or one non-UTF-8 byte reads as the operator's file being wrong (1) and never
+  as an internal error (2); `docs.trail`, `docs.plans` and the commands all call it),
   `section_lines(text, heading) -> int | None`, `roadmap_prose(text) -> str`,
   `local_markdown_targets(text) -> list[str]`, `check_budgets(root, config) -> list[Finding]`,
   `check_links(root, config) -> list[Finding]`.
@@ -5157,11 +5166,15 @@ exemption is decided before git is asked.)
   (no flag runs the two enforced checks; `--memory-graph` is opt-in, Premise 11),
   `keelline docs trail [--check]`, `keelline plan check [--base REF] [PATH …]`, each with
   `--root`/`--machine` through `keelline.command`; `keelline.docs.api` exporting
-  `TRAIL_MARKER`, `STATUS_HEADING`, `MARKER`, `END_MARKER`, `TRAIL_FILE`, `Trail`, `Lint`,
+  `TRAIL_MARKER`, `STATUS_HEADING`, `END_MARKER`, `TRAIL_FILE`, `Trail`, `Lint`,
   `check_budgets`, `check_links`, `check_memory_graph`, `read_trail`, `trail_path`,
   `render_listing`, `rebuild`, `undeclared_new_documents`, `lint` — what `assess` (every
   check as a library call) and `templates` (the markers and the trail file name) reach for.
-  `Finding` and `labels` are `keelline.findings`' and are imported from there.
+  `Finding` and `labels` are `keelline.findings`' and are imported from there. The trail
+  heading is exported once, under `TRAIL_MARKER`, the name that defines it: `docs.trail`'s
+  `MARKER` is a local alias for the same literal, and exporting both would offer two names
+  for one string to every lane that builds against this surface. This block promised `MARKER`
+  too; it is the line that was wrong, not the export.
 
 - [ ] **Step 1: Write the failing tests**
 
