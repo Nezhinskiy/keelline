@@ -296,7 +296,10 @@ the always-loaded document at `[paths] agents_md` exists, is within `agents_md_l
 `agents_md_words`, and has a `## Current status` section within `status_lines`; the roadmap at
 `[paths] roadmap`, up to the line `## Design and plan trail`, is within `roadmap_prose_lines`
 and `roadmap_prose_words` (a roadmap with no marker is budgeted whole; an absent one is not a
-finding); every relative local link in the agents file resolves to a file. Budgets are the
+finding); every relative local link in the agents file resolves to a file — read from that
+document's own directory, and only when it lands inside the project root, since a link that
+walks out through `..` would be settled against the machine rather than the repository (an
+absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
 effective ones — the preset's, lowered by `[budgets]` if the project chose to. **Advisory**
 (`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
 names a document in the store, no link is immediately repeated, and no ledger identifier is
