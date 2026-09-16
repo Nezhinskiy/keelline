@@ -31,10 +31,13 @@ from pathlib import Path
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
 # Wall-clock bound on one `git` call (D7: a cap, not read from `config.budgets` or
-# `config.native_caps` — no shipped file needs to change with it). Every call either caller makes
-# is a local, argument-free, read-only query (`rev-parse`, `remote get-url`, `--version`) against
-# the environment below, so it never touches the network; this only guards against a `git` binary
-# that hangs outright, and is generous for that without leaving a hook blocked for long.
+# `config.native_caps` — no shipped file needs to change with it). It is the bound for a local,
+# read-only query against the environment below (`rev-parse`, `remote get-url`, `--version`,
+# `log`), which never touches the network: this only guards against a `git` binary that hangs
+# outright, and is generous for that without leaving a hook blocked for long. A caller whose
+# query *does* reach the network passes its own, wider bound instead and says why beside it —
+# `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` on the allocator's pre-allocation fetch is the
+# one such caller today. Tune this number for the hang, not for a remote.
 GIT_TIMEOUT_SECONDS = 5
 
 

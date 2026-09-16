@@ -236,9 +236,13 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
         raise LedgerError(f"{bugs}/{old}.md does not exist")
     if target.exists():
         raise LedgerError(f"{new} already has an entry file; pick a free identifier")
-    # The last of the checks that reject with the tree untouched: this command regenerates the
-    # index at the end, and doing that over content the index alone holds deletes it.
-    refuse_index_overwrite(root, config, index_text(root, config))
+    # The last of the checks that reject with the tree untouched, and the one this command
+    # needs most: it regenerates the index at the end, by which time both endpoints and the
+    # whole sweep are already on disk, so a refusal that came any later would come after the
+    # damage. Bound to a local rather than inlined like `file_entry`'s identical call, so the
+    # oracle entry that pins this call site names a line that appears once in this file.
+    committed_index = index_text(root, config)
+    refuse_index_overwrite(root, config, committed_index)
 
     # The repo-relative form, which is `parse_entry`'s and `read_ledger_text`'s contract: it
     # names the file in every message either of them raises.

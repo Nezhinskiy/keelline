@@ -960,3 +960,22 @@ file = "src/keelline/ledger/write.py"
 before = '            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")'
 after = '            pass'
 reddens = ["tests/ledger/test_write.py::test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints"]
+
+# `renumber` regenerates the index after both endpoints and the whole sweep are on disk, so its
+# refusal is the one that has to come first. It is the same call `new` makes, at the call site
+# where dropping it costs the operator their hand-written lines.
+[[mutation]]
+name = "renumber regenerates over an index carrying content this tool did not generate"
+file = "src/keelline/ledger/write.py"
+before = '    refuse_index_overwrite(root, config, committed_index)'
+after = '    pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_refuses_over_foreign_index_content_without_moving_anything"]
+
+# `number` is the identifier grammar's one lossy reader: a caller that did not ask
+# `is_identifier` first must not be handed a number guessed out of a filename that has none.
+[[mutation]]
+name = "reading the number out of a non-identifier answers zero instead of refusing"
+file = "src/keelline/identifiers.py"
+before = '            raise Refusal(f"{identifier!r} is not a {self.shape} identifier")'
+after = '            return 0'
+reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]

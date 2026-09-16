@@ -135,12 +135,15 @@ def test_new_rejects_a_malformed_related_identifier_before_writing_anything(
 
 def test_new_refuses_over_foreign_index_content_without_writing(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    (root / "docs" / "bug-reports.md").write_text(
-        "# Bug reports\n\n## BR-009 — hand-written\n", encoding="utf-8"
-    )
+    index = root / "docs" / "bug-reports.md"
+    foreign = "# Bug reports\n\n## BR-009 — hand-written\n"
+    index.write_text(foreign, encoding="utf-8")
     with pytest.raises(Refusal):
         file_entry(root, config, title="t", severity="low", area="a", fetch=False)
     assert list((root / "docs" / "bugs").iterdir()) == []
+    # The refusal exists to stop the regeneration deleting the operator's own lines, so the
+    # bytes are the assertion: an exception raised over a file already rewritten proves nothing.
+    assert index.read_text(encoding="utf-8") == foreign
 
 
 def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(
@@ -233,10 +236,36 @@ def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_poi
 def test_renumber_refuses_an_occupied_target_and_a_missing_source(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     seed(root, config, 1, 2)
+    entries = {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()}
     with pytest.raises(LedgerError, match="pick a free identifier"):
         renumber(root, config, "BR-001", "BR-002")
     with pytest.raises(LedgerError, match="does not exist"):
         renumber(root, config, "BR-005", "BR-006")
+    # Neither rejection wrote: same files, none of them replaced. `renumber` overwrites its
+    # source in place, so a half-run would leave BR-001.md rewritten with its name unchanged.
+    assert {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()} == entries
+
+
+def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
+    tmp_path: Path,
+) -> None:
+    # `renumber` regenerates the index at the end, so it makes `new`'s refusal before its first
+    # write — and it is the destructive one: both endpoints and the whole sweep are already on
+    # disk by the time the regeneration runs.
+    # Oracle: `mutations.toml`, "renumber regenerates over an index carrying content this tool
+    # did not generate" — measured, and the only test in the suite that reddens under it.
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    index = root / "docs" / "bug-reports.md"
+    foreign = index.read_text(encoding="utf-8") + "\n## Notes an operator keeps here\n"
+    index.write_text(foreign, encoding="utf-8")
+    entry_file = root / "docs" / "bugs" / "BR-001.md"
+    before = entry_file.read_text(encoding="utf-8")
+    with pytest.raises(Refusal):
+        renumber(root, config, "BR-001", "BR-009")
+    assert index.read_text(encoding="utf-8") == foreign
+    assert not (root / "docs" / "bugs" / "BR-009.md").exists()
+    assert entry_file.read_text(encoding="utf-8") == before
 
 
 def test_renumber_normalises_an_id_line_with_nonstandard_spacing(tmp_path: Path) -> None:
@@ -350,8 +379,13 @@ def test_a_severity_outside_the_vocabulary_is_rejected_before_anything_is_alloca
 def test_renumber_rejects_an_endpoint_that_is_not_an_identifier(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     seed(root, config, 1)
+    entry_file = root / "docs" / "bugs" / "BR-001.md"
+    before = entry_file.stat().st_mtime_ns
     with pytest.raises(LedgerError, match="must look like BR-nnn"):
         renumber(root, config, "BR-42", "BR-009")
+    # Refused before the shape was ever resolved to a path, so nothing under the ledger moved.
+    assert [p.name for p in (root / "docs" / "bugs").iterdir()] == ["BR-001.md"]
+    assert entry_file.stat().st_mtime_ns == before
 
 
 def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
