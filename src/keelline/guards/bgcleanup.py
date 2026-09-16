@@ -27,12 +27,16 @@ TERM` runs where a trailing line does not, because the shell fires it on the way
 leaves. So the rules below refuse that shape before it starts where refusing is right and
 advise where it is not, each naming the remedy rather than the rule alone.
 
-WHAT THIS MODULE DOES, three readings of that one shape:
+WHAT THIS MODULE DOES, four readings of that one shape:
 
 1. It REFUSES a backgrounded command that leaks an `&` job with no trap (`LEAK_REASON`).
 2. It REFUSES a backgrounded command whose FIRST simple command is `sleep` (`SLEEP_REASON`).
 3. It ADVISES -- never refuses -- when a command's last line restores a backup outside a trap
    (`RESTORE_HINT`).
+4. It ADVISES, for a backgrounded call only, when the chain ends in `; echo …`, because the
+   harness's completion notification reports that echo's exit code and not the code of the
+   command before it (`EXIT_ECHO_HINT`). It cannot fire together with 3: a restore is a last
+   command, and so is the echo.
 
 THE `&` RULE, all three conditions required:
 
@@ -262,6 +266,24 @@ _RESTORE_COMMANDS = frozenset({"cp", "mv"})
 # opposite of what it is.
 _TARGET_DIRECTORY_OPTIONS = frozenset({"-t", "--target-directory"})
 
+# The completion notification of a backgrounded call reports the exit code of the LAST
+# command in the chain, so `check --run > out.log; echo "exit=$?"` notifies 0 after `check`
+# failed -- measured 2026-09-16 on an argparse usage error that exited 2. Advice, never a
+# refusal: writing the code into the file is a legitimate use of the chain, as long as the
+# notification is not the thing read. Keyed on the background flag, unlike the restore hint:
+# a foreground call's status is read from the tool result itself.
+EXIT_ECHO_HINT = (
+    "This backgrounded command ends in `; {tail}`, so its completion notification will report "
+    "that command's exit code, not the code of `{masked}`. Either make `{masked}` the last "
+    "command of the chain, or read its status from the output it wrote -- never from the "
+    "notification."
+)
+_ECHO_COMMANDS = frozenset({"echo", "printf"})
+# Every operator that ends a simple command, AFTER `operator_pieces` has split welded runs.
+# Not `_COMMAND_ENDING_PIECES`: that set is read left of an `&` to decide whether the `&` is
+# part of a longer operator; this one is read as the breaks between commands.
+_CHAIN_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
+
 
 def judge(command: str, *, background: bool) -> Verdict:
     """The whole contract, as a pure function of the command text and the background flag.
@@ -279,7 +301,12 @@ def judge(command: str, *, background: bool) -> Verdict:
         backgrounds, traps = _scan(command, depth=0)
         if backgrounds and not traps:
             return Verdict(LEAK_REASON, None)
-    return Verdict(None, _restore_hint(command))
+    hints = [
+        hint
+        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)
+        if hint
+    ]
+    return Verdict(None, "\n\n".join(hints) or None)
 
 
 def _begins_with_sleep(tokens: list[str]) -> bool:
@@ -318,6 +345,62 @@ def _restore_hint(command: str) -> str | None:
     if not restore:
         return None
     return RESTORE_HINT.format(restore=restore, trap=shlex.quote(restore))
+
+
+def _exit_echo_hint(command: str) -> str | None:
+    """Advice for a backgrounded chain whose last command is an echo after a `;`."""
+
+    tokens = bashscan.tokenize(command)
+    if tokens is None:
+        return None
+    masked = _echo_after_a_semicolon(tokens)
+    if masked is None:
+        return None
+    return EXIT_ECHO_HINT.format(masked=masked[0], tail=masked[1])
+
+
+def _echo_after_a_semicolon(tokens: list[str]) -> tuple[str, str] | None:
+    """``(masked, tail)`` -- the command whose exit code a trailing `; echo …` hides and that
+    echo, both as shell text -- or None.
+
+    Only a `;` masks: after `&&` a failing command skips the echo and the chain exits with
+    its code, and after `||` the echo runs only when the code is already lost to `||`.
+    Newlines arrive as `;` from the tokenizer, so a two-line chain is the same chain.
+    """
+
+    pieces: list[str] = []
+    for token in tokens:
+        pieces.extend(bashscan.operator_pieces(token))
+    breaks = [index for index, piece in enumerate(pieces) if piece in _CHAIN_OPERATORS]
+    if not breaks or pieces[breaks[-1]] != ";":
+        return None
+    tail = pieces[breaks[-1] + 1 :]
+    words = bashscan.command_words(tail)
+    if not words or Path(words[0]).name not in _ECHO_COMMANDS:
+        return None
+    start = breaks[-2] + 1 if len(breaks) > 1 else 0
+    masked = _command_head(pieces[start : breaks[-1]])
+    if not masked:
+        return None
+    return " ".join(masked), _as_shell_text(tail)
+
+
+def _command_head(segment: list[str]) -> list[str]:
+    """The command and its arguments, without its redirects.
+
+    `cmd > out.log 2>&1` tokenizes to `['cmd', '>', 'out.log', '2', '>&', '1']`: the head
+    stops at the first operator that starts with `>` or `<`, and a lone digit left in front
+    of it is a file descriptor, not an argument.
+    """
+
+    head: list[str] = []
+    for piece in segment:
+        if piece[:1] in {">", "<"}:
+            break
+        head.append(piece)
+    if len(head) > 1 and head[-1].isdigit():
+        head.pop()
+    return head
 
 
 def _backgrounds_a_job(tokens: list[str]) -> bool:

@@ -18,6 +18,7 @@ import pytest
 from keelline.guards import bgcleanup
 from keelline.guards.bgcleanup import (
     ALLOW,
+    EXIT_ECHO_HINT,
     LEAK_REASON,
     MAX_COMMAND_CHARS,
     RESTORE_HINT,
@@ -300,7 +301,7 @@ def test_the_reasons_carry_the_neutral_remedy_and_no_repository_path() -> None:
     the path regex alone is green against the unported source, whose residue was a sentence
     about two named test suites, not a path."""
     assert "parallelise the suite rather than wait on it" in LEAK_REASON
-    for text in (LEAK_REASON, SLEEP_REASON, RESTORE_HINT):
+    for text in (LEAK_REASON, SLEEP_REASON, RESTORE_HINT, EXIT_ECHO_HINT):
         assert re.findall(r"(?:docs|scripts|src|tests)/[\w./-]+", text) == [], text
         assert "suite" not in text.replace("parallelise the suite", "")
 
@@ -554,3 +555,47 @@ def test_a_restore_command_with_no_operands_is_judged_rather_than_raised() -> No
     here the handler is CLOSED, so an exception would refuse the call -- the opposite failure,
     and the reason `judge` must return rather than raise on any string."""
     assert judge("cp ci.yml ci.yml.bak; pytest; cp --", background=False) == ALLOW
+
+
+# A chain measured on 2026-09-16: argparse exited 2, the completion notification said 0.
+_MASKING_CHAIN = 'python3 gate.py --run > out.log 2>&1; echo "EXIT=$?" >> out.log'
+
+
+def test_a_trailing_echo_after_a_semicolon_is_warned_about_in_the_background() -> None:
+    """The harness reports the exit code of the chain's LAST command -- the echo's."""
+
+    context = judge(_MASKING_CHAIN, background=True).hint
+
+    assert context is not None, "silence is the bug"
+    assert "python3 gate.py --run" in context and "notification" in context
+
+
+def test_a_newline_before_the_echo_is_the_same_chain() -> None:
+    context = judge('pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log', background=True).hint
+
+    assert context is not None and "pytest -q" in context
+
+
+def test_an_env_prefixed_echo_is_still_an_echo() -> None:
+    """`command_words` is what Keelline's copy has that ai-daybook's lacks; pin that it is used."""
+
+    context = judge("pytest -q > out.log; FOO=1 echo done", background=True).hint
+
+    assert context is not None and "notification" in context
+
+
+def test_the_same_chain_in_the_foreground_is_silent() -> None:
+    assert judge(_MASKING_CHAIN, background=False).hint is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest -q > out.log 2>&1 && echo ok >> out.log",
+        "pytest -q > out.log 2>&1",
+        "echo starting; pytest -q > out.log 2>&1",
+        "pytest -q > out.log 2>&1; grep -c FAILED out.log",
+    ],
+)
+def test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about(command: str) -> None:
+    assert judge(command, background=True).hint is None

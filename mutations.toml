@@ -1238,3 +1238,37 @@ reddens = [
   "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
 ]
+
+# A trailing `; echo` hides the exit code the harness notification reports, but only after a
+# `;`: after `&&` a failing command skips the echo and the chain carries its code. Accepting
+# any chain operator turns every ordinary `cmd && echo done` into a false hint.
+[[mutation]]
+name = "the exit-code hint fires after && as well as after ;"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if not breaks or pieces[breaks[-1]] != ";":'
+after = '    if not breaks:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about",
+]
+
+# The hint is a fact about NOTIFICATIONS, which only a backgrounded call gets; unkeyed, it
+# fires on every foreground `cmd; echo done` a session types.
+[[mutation]]
+name = "the exit-code hint stops being keyed on the background flag"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)'
+after = '        for hint in (_restore_hint(command), _exit_echo_hint(command))'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_same_chain_in_the_foreground_is_silent",
+]
+
+# `command_words` is what lets `FOO=1 echo done` be read as an echo; `tail[0]` alone reads
+# the assignment and stays silent.
+[[mutation]]
+name = "the exit-code hint reads the echo's program from the raw first token"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(tail)'
+after = '    words = tail'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
+]
