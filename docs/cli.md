@@ -11,7 +11,8 @@ Three things hold everywhere:
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result.
 - **Every `memory` command takes the same three options**, described once here rather than five
-  times below.
+  times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
+  command takes them with the same meaning, and `docs check` takes `--store` as well.
 
 | Option | Meaning |
 |---|---|
@@ -273,8 +274,8 @@ swept. **Writes** nothing.
 Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
 a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
 index is regenerated — both endpoints first, then the sweep, so an interruption leaves `OLD`
-resolving to the pointer rather than to nothing. Refuses an occupied `NEW` or a missing `OLD`
-(`1`) and the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
+resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a missing `OLD`
+(`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
 exists a stale mention in that file looks intentional to `bugs check` forever. The moved entry's
 own body is the operator's to rewrite and is not swept. **Writes** the two entry files, every

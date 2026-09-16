@@ -69,12 +69,16 @@ target-version = "py311"
 extend-include = ["scripts/keelline"]
 
 [tool.ruff.format]
-# Ruff formats Python code blocks inside Markdown from 0.16 on, and this tree's Markdown is
-# documents rather than source: `docs/plans/` holds delivered plans, which say of themselves
-# that their code blocks are as-planned and unformatted, and that reflowing one is the
-# implementer's job at copy time. Without this, the `uv run ruff format .` every contributor is
-# told to run before every commit silently rewrites a plan nobody asked it to touch — it
-# reflowed 1,250 lines of one and invalidated every line reference into it before anyone noticed.
+# Ruff formats Python code blocks inside Markdown from 0.16 on. This excludes every Markdown
+# file and not only `docs/plans/`, and the breadth is deliberate: each one here is a document,
+# and a Python block in any of them is an illustration — a fragment mid-sentence, a snippet that
+# does not parse alone, an example written to be read. `README.md`, `CONTRIBUTING.md` and
+# `skills/*.md` are as much prose as the plans are, so the rule must not turn on which of them
+# happens to carry a Python fence this week. The plans are where it was felt: they say of
+# themselves that their code blocks are as-planned and unformatted and that reflowing one is the
+# implementer's job at copy time, and without this the `uv run ruff format .` every contributor
+# is told to run before every commit reflowed 1,250 lines of one and invalidated every line
+# reference into it before anyone noticed.
 exclude = ["*.md"]
 
 [tool.ruff.lint]

@@ -35,9 +35,10 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     # `claude plugin validate` refuses "../skills/" as a path traversal attempt and
     # reports "./skills/" as not found, because the value resolves relative to
     # .codex-plugin/ itself: no string reaches the root-level skills/ directory from
-    # there. Foundation ships no skills, so it omits the key rather than asserting an
-    # unreachable path; the Codex skills-path convention is left to the skills lanes,
-    # once Codex's own manifest reading has actually been measured.
+    # there. `skills/` now holds skills, but the key is the foundation/release lane's to
+    # add — this assertion is what encodes its absence today, and the lane that adds it
+    # rewrites this test and its name, once Codex's own manifest reading has actually
+    # been measured.
     assert "skills" not in manifest
 
 
