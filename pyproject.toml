@@ -68,6 +68,15 @@ line-length = 100
 target-version = "py311"
 extend-include = ["scripts/keelline"]
 
+[tool.ruff.format]
+# Ruff formats Python code blocks inside Markdown from 0.16 on, and this tree's Markdown is
+# documents rather than source: `docs/plans/` holds delivered plans, which say of themselves
+# that their code blocks are as-planned and unformatted, and that reflowing one is the
+# implementer's job at copy time. Without this, the `uv run ruff format .` every contributor is
+# told to run before every commit silently rewrites a plan nobody asked it to touch — it
+# reflowed 1,250 lines of one and invalidated every line reference into it before anyone noticed.
+exclude = ["*.md"]
+
 [tool.ruff.lint]
 # `S` (bandit) and `RUF` are here and the other candidates are not, measured rather than
 # assumed. `S` yields four findings on this tree — `S603`/`S607` on exactly the two

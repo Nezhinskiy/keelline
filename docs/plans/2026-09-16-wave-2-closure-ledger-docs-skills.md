@@ -522,13 +522,8 @@ of the four leaf modules:
 def test_mutations_toml_carries_no_source_repository_string() -> None:
     text = (ROOT / "mutations.toml").read_text(encoding="utf-8")
     mine = (
-        "keelline/ledger/",
-        "keelline/docs/",
-        "keelline/memory/refs.py",
-        "keelline/identifiers.py",
-        "keelline/findings.py",
-        "keelline/command.py",
-        "keelline/prose.py",
+        "keelline/ledger/", "keelline/docs/", "keelline/memory/refs.py",
+        "keelline/identifiers.py", "keelline/findings.py", "keelline/command.py", "keelline/prose.py",
     )
     entries = [b for b in text.split("[[mutation]]") if any(name in b for name in mine)]
     for block in entries:
@@ -684,10 +679,7 @@ from keelline.findings import LISTED_LIMIT, Finding, labels, listed
 def test_a_label_is_the_path_the_line_and_the_rule_and_never_the_detail() -> None:
     # The summary line carries labels; `detail` may quote the repository and stays in `--json`.
     assert Finding("dead-link", "docs/a.md", 12, "quoted text").label == "docs/a.md:12 [dead-link]"
-    assert (
-        Finding("stale-index", "docs/bug-reports.md", None, "x").label
-        == "docs/bug-reports.md [stale-index]"
-    )
+    assert Finding("stale-index", "docs/bug-reports.md", None, "x").label == "docs/bug-reports.md [stale-index]"
     assert Finding("base-unresolvable", "", None, "x").label == "- [base-unresolvable]"
 
 
@@ -703,9 +695,7 @@ def test_listed_caps_the_tail_and_says_how_many_it_dropped() -> None:
 
 def test_labels_renders_findings_through_the_same_cap() -> None:
     findings = [Finding("r", f"p{n}.md", n, "d") for n in range(LISTED_LIMIT + 1)]
-    assert labels(findings).startswith("p0.md:0 [r], ") and labels(findings).endswith(
-        ", and 1 more"
-    )
+    assert labels(findings).startswith("p0.md:0 [r], ") and labels(findings).endswith(", and 1 more")
 ```
 
 ```python
@@ -741,9 +731,7 @@ def test_a_non_zero_exit_is_returned_not_collapsed(tmp_path: Path) -> None:
     assert code == 1
 
 
-def test_a_git_that_cannot_run_is_minus_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_git_that_cannot_run_is_minus_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))  # no git here
     assert git_run(tmp_path, "rev-parse") == (-1, "")
 
@@ -787,22 +775,14 @@ def test_common_flags_are_root_and_machine_and_store_only_on_request() -> None:
     plain = common_flags(argparse.ArgumentParser())
     assert vars(plain.parse_args([])) == {"root": ".", "machine": None}
     with_store = common_flags(argparse.ArgumentParser(), store=True)
-    assert vars(with_store.parse_args(["--store", "s"])) == {
-        "root": ".",
-        "machine": None,
-        "store": "s",
-    }
+    assert vars(with_store.parse_args(["--store", "s"])) == {"root": ".", "machine": None, "store": "s"}
 
 
-def test_root_and_config_resolves_the_root_and_loads_under_the_named_machine_file(
-    tmp_path: Path,
-) -> None:
+def test_root_and_config_resolves_the_root_and_loads_under_the_named_machine_file(tmp_path: Path) -> None:
     root = tmp_path / "widget"
     root.mkdir()
     (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
-    args = common_flags(argparse.ArgumentParser()).parse_args(
-        ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
-    )
+    args = common_flags(argparse.ArgumentParser()).parse_args(["--root", str(root), "--machine", str(tmp_path / "m.toml")])
     resolved, config = root_and_config(args)
     assert resolved == root.resolve() and config.project.name == "widget"
 ```
@@ -1004,9 +984,7 @@ from keelline.config.loader import load
 from keelline.config.schema import Config
 
 
-def common_flags(
-    parser: argparse.ArgumentParser, *, store: bool = False
-) -> argparse.ArgumentParser:
+def common_flags(parser: argparse.ArgumentParser, *, store: bool = False) -> argparse.ArgumentParser:
     parser.add_argument("--root", default=".", help="project root (default: current directory)")
     parser.add_argument("--machine", default=None, help="machine configuration file to read")
     if store:
@@ -1153,7 +1131,7 @@ def test_parse_entry_reads_every_field() -> None:
         source="audit-2026-07-21",
         fixed_in="",
         related=("BR-039",),
-        body="- **Found:** 2026-07-21 (audit)\n- **Where:** `src/widget/bars.py`\n\nBody prose.\n",
+        body='- **Found:** 2026-07-21 (audit)\n- **Where:** `src/widget/bars.py`\n\nBody prose.\n',
         path=PATH,
     )
     assert entry.number == 42
@@ -1167,50 +1145,17 @@ def test_parse_entry_reads_every_field() -> None:
         ("---\nid: BR-001\nbogus line\n---\n", "expected `key: value`"),
         ("---\nid: BR-001\ncolour: red\n---\n", "unknown frontmatter key"),
         ("---\nid: BR-001\nid: BR-002\n---\n", "duplicate key"),
-        (
-            "---\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n",
-            "missing required frontmatter key `id`",
-        ),
-        (
-            "---\nid: BR-4x\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n",
-            "must look like BR-nnn",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: done\nfound: 2026-01-01\n---\n",
-            "`status` must be one of",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n",
-            "missing required frontmatter key `severity`",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: huge\narea: a\nfound: 2026-01-01\n---\n",
-            "`severity` must be one of",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026/01/01\n---\n",
-            "must be an ISO date",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-02-30\n---\n",
-            "names a date that does not exist",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\nrelated: BR-002\n---\n",
-            "must be an inline list",
-        ),
-        (
-            "---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\nrelated: [BR-2]\n---\n",
-            "which is not a BR identifier",
-        ),
-        (
-            '---\nid: BR-001\ntitle: "unterminated\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n---\n',
-            "unterminated quoted value",
-        ),
-        (
-            '---\nid: BR-001\ntitle: "bad \\q escape"\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n---\n',
-            "unsupported escape",
-        ),
+        ("---\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n", "missing required frontmatter key `id`"),
+        ("---\nid: BR-4x\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n", "must look like BR-nnn"),
+        ("---\nid: BR-001\ntitle: x\nstatus: done\nfound: 2026-01-01\n---\n", "`status` must be one of"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nfound: 2026-01-01\n---\n", "missing required frontmatter key `severity`"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nseverity: huge\narea: a\nfound: 2026-01-01\n---\n", "`severity` must be one of"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026/01/01\n---\n", "must be an ISO date"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-02-30\n---\n", "names a date that does not exist"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\nrelated: BR-002\n---\n", "must be an inline list"),
+        ("---\nid: BR-001\ntitle: x\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\nrelated: [BR-2]\n---\n", "which is not a BR identifier"),
+        ('---\nid: BR-001\ntitle: "unterminated\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n---\n', "unterminated quoted value"),
+        ('---\nid: BR-001\ntitle: "bad \\q escape"\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n---\n', "unsupported escape"),
     ],
 )
 def test_parse_entry_rejects_broken_frontmatter(text: str, fragment: str) -> None:
@@ -1222,27 +1167,7 @@ def test_parse_entry_rejects_broken_frontmatter(text: str, fragment: str) -> Non
     assert str(PATH) in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "#412 in the tracker",
-        "- a dash",
-        "a: b",
-        "key #1",
-        "ends in a colon:",
-        "[x]",
-        "{y}",
-        "*star",
-        "!bang",
-        "|pipe",
-        ">gt",
-        "'q",
-        '"',
-        "%p",
-        "@at",
-        "`tick`",
-    ],
-)
+@pytest.mark.parametrize("raw", ["#412 in the tracker", "- a dash", "a: b", "key #1", "ends in a colon:", "[x]", "{y}", "*star", "!bang", "|pipe", ">gt", "'q", '"', "%p", "@at", "`tick`"])
 def test_a_value_that_is_not_a_plain_yaml_string_needs_quotes(raw: str) -> None:
     # The subset stays valid YAML: a bare `#412 …` reads as a comment to a real YAML reader
     # and the key as null. Mutation: narrow `_NEEDS_QUOTING`'s leading class to `[-?:,]` —
@@ -1252,18 +1177,7 @@ def test_a_value_that_is_not_a_plain_yaml_string_needs_quotes(raw: str) -> None:
         parse_entry(text, path=PATH, ids=IDS)
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        "plain",
-        "#412 in the tracker",
-        "ends in a colon:",
-        "`f88a`",
-        'say "hi"',
-        "back\\slash",
-        "trail\\",
-    ],
-)
+@pytest.mark.parametrize("value", ["plain", "#412 in the tracker", "ends in a colon:", "`f88a`", 'say "hi"', "back\\slash", "trail\\"])
 def test_the_reader_accepts_every_value_the_writer_produces(value: str) -> None:
     # `scalar` quotes exactly when `_unquote` would refuse the bare form; the two are one pair.
     # The `trail\\` case is the title ending in a backslash that aborted the source's whole
@@ -1295,17 +1209,7 @@ def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
     # `KEYS` is the reader's whole vocabulary; `STATUSES` must each have an index section
     # (pinned again in test_index.py). No mutation: a key added to one side and not the other
     # reddens `test_parse_entry_reads_every_field` or the render test, which is the point.
-    assert set(KEYS) == {
-        "id",
-        "title",
-        "status",
-        "severity",
-        "area",
-        "found",
-        "source",
-        "fixed_in",
-        "related",
-    }
+    assert set(KEYS) == {"id", "title", "status", "severity", "area", "found", "source", "fixed_in", "related"}
     assert STATUSES == ("open", "partial", "fixed", "rejected", "void")
 ```
 
@@ -1439,13 +1343,7 @@ def project(tmp_path: Path, extra: str = "") -> tuple[Path, Config]:
     return root, load(root, machine=tmp_path / "m.toml")
 
 
-def entry(
-    number: int,
-    status: str = "open",
-    severity: str = "low",
-    title: str = "a title",
-    fixed_in: str = "",
-) -> str:
+def entry(number: int, status: str = "open", severity: str = "low", title: str = "a title", fixed_in: str = "") -> str:
     fixed = f'fixed_in: "{fixed_in}"' if fixed_in else "fixed_in:"
     if status == "void":
         return f"---\nid: BR-{number:03d}\ntitle: {title}\nstatus: void\nfound: 2026-01-0{number % 9 + 1}\n---\n\nvoid\n"
@@ -1474,10 +1372,7 @@ def test_the_header_is_computed_from_the_configured_paths(tmp_path: Path) -> Non
 
 def test_the_header_follows_a_moved_ledger(tmp_path: Path) -> None:
     # Mutation: hard-code `bugs/` in `header` — this reddens while the test above stays green.
-    root, config = project(
-        tmp_path,
-        '\n[paths]\nbugs = "ledger/entries"\nbug_index = "ledger/INDEX.md"\nrunbooks = "guides"\n',
-    )
+    root, config = project(tmp_path, '\n[paths]\nbugs = "ledger/entries"\nbug_index = "ledger/INDEX.md"\nrunbooks = "guides"\n')
     text = header(config)
     assert "from `entries/BR-*.md`" in text
     assert "[runbook](../guides/bug-reports.md)" in text
@@ -1485,31 +1380,14 @@ def test_the_header_follows_a_moved_ledger(tmp_path: Path) -> None:
 
 def test_render_index_groups_by_status_and_counts_each_section(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    ledger(
-        root,
-        {
-            1: entry(1),
-            2: entry(2, "fixed", fixed_in="`abc1234`"),
-            3: entry(3, "void"),
-            4: entry(4, "partial", "high"),
-        },
-    )
+    ledger(root, {1: entry(1), 2: entry(2, "fixed", fixed_in="`abc1234`"), 3: entry(3, "void"), 4: entry(4, "partial", "high")})
     text = render_index(load_entries(root, config), config)
     assert text.startswith(header(config))
-    assert (
-        "## Open (1)\n\n| ID | Sev | Area | Title | Found |\n|---|---|---|---|---|\n| [BR-001](bugs/BR-001.md) | low | an area | a title | 2026-01-02 |\n"
-        in text
-    )
+    assert "## Open (1)\n\n| ID | Sev | Area | Title | Found |\n|---|---|---|---|---|\n| [BR-001](bugs/BR-001.md) | low | an area | a title | 2026-01-02 |\n" in text
     assert "## Partially fixed (1)\n" in text
     assert "## Rejected (0)\n\n| ID | Sev | Area | Title | Found |\n" in text
-    assert (
-        "## Fixed (1)\n\n| ID | Title | Fixed in |\n|---|---|---|\n| [BR-002](bugs/BR-002.md) | a title | `abc1234` |\n"
-        in text
-    )
-    assert (
-        "## Void identifiers (1)\n\n| ID | Why |\n|---|---|\n| [BR-003](bugs/BR-003.md) | a title |\n"
-        in text
-    )
+    assert "## Fixed (1)\n\n| ID | Title | Fixed in |\n|---|---|---|\n| [BR-002](bugs/BR-002.md) | a title | `abc1234` |\n" in text
+    assert "## Void identifiers (1)\n\n| ID | Why |\n|---|---|\n| [BR-003](bugs/BR-003.md) | a title |\n" in text
 
 
 def test_every_status_has_a_section_to_be_rendered_into() -> None:
@@ -1523,11 +1401,7 @@ def test_a_cell_escapes_what_would_break_out_of_its_column(tmp_path: Path) -> No
     # separator, and the Found date slides under the wrong heading.
     root, config = project(tmp_path)
     ledger(root, {1: entry(1, title='"a \\\\| b"')})
-    rows = [
-        line
-        for line in render_index(load_entries(root, config), config).splitlines()
-        if line.startswith("| [BR-001]")
-    ]
+    rows = [line for line in render_index(load_entries(root, config), config).splitlines() if line.startswith("| [BR-001]")]
     assert rows == ["| [BR-001](bugs/BR-001.md) | low | an area | a \\\\\\| b | 2026-01-02 |"]
     assert rows[0].count("|") - rows[0].count("\\|") == 6
 
@@ -1545,18 +1419,14 @@ def test_a_generated_index_is_recognised_by_its_first_paragraph(tmp_path: Path) 
     assert is_generated_index(render_index([], config))
     # The generator this one replaces wrote a different invocation into the same sentence;
     # adopting the port must not refuse to regenerate over it (Premise 4).
-    assert is_generated_index(
-        "# Bug reports\n\n_Generated by `python3 a_script.py index` from x._\n"
-    )
+    assert is_generated_index("# Bug reports\n\n_Generated by `python3 a_script.py index` from x._\n")
     assert not is_generated_index("# Bug reports\n\n## BR-001 — a hand-written ledger\n")
     assert not is_generated_index("# Bug reports\n\n_Generated by `something else` from x._\n")
 
 
 def test_a_reworded_generated_header_is_a_stale_index_not_foreign_content(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    text = render_index([], config).replace(
-        "edit the entry\nfiles", "edit the entry files\nand nothing else"
-    )
+    text = render_index([], config).replace("edit the entry\nfiles", "edit the entry files\nand nothing else")
     assert foreign_index_lines(text, config) == []
 
 
@@ -1568,27 +1438,11 @@ def test_a_paragraph_added_under_the_generated_header_is_still_foreign(tmp_path:
 
 def test_every_line_the_generator_writes_is_inside_the_grammar_it_enforces(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    ledger(
-        root,
-        {
-            1: entry(1),
-            2: entry(2, "fixed", fixed_in="`abc`"),
-            3: entry(3, "void"),
-            4: entry(4, "rejected"),
-        },
-    )
+    ledger(root, {1: entry(1), 2: entry(2, "fixed", fixed_in="`abc`"), 3: entry(3, "void"), 4: entry(4, "rejected")})
     assert foreign_index_lines(render_index(load_entries(root, config), config), config) == []
 
 
-@pytest.mark.parametrize(
-    "line",
-    [
-        "##  Open (1)",
-        "### Open (1)",
-        "## BR-009 — a resurrected section",
-        "prose with no identifier",
-    ],
-)
+@pytest.mark.parametrize("line", ["##  Open (1)", "### Open (1)", "## BR-009 — a resurrected section", "prose with no identifier"])
 def test_index_refuses_to_delete_any_content_it_did_not_generate(tmp_path: Path, line: str) -> None:
     # `index` renders from the entry files alone, so anything else in the file is deleted by
     # that write with no diff and exit 0. Mutation: make `foreign_index_lines` return `[]` —
@@ -1615,6 +1469,7 @@ def test_a_stale_but_generated_index_is_not_refused(tmp_path: Path) -> None:
     stale = render_index([], config)
     refuse_index_overwrite(root, config, stale)  # no raise: the remedy is regeneration
     assert index_path(root, config) == root / "docs" / "bug-reports.md"
+
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -1724,10 +1579,7 @@ def render_index(entries: list[Entry], config: Config) -> str:
         parts.append(f"\n## {heading} ({len(selected)})\n\n")
         if status == "fixed":
             parts.append(_FIXED_COLUMNS)
-            parts.extend(
-                f"| {_link(e, config)} | {_cell(e.title)} | {_cell(e.fixed_in)} |\n"
-                for e in selected
-            )
+            parts.extend(f"| {_link(e, config)} | {_cell(e.title)} | {_cell(e.fixed_in)} |\n" for e in selected)
         elif status == "void":
             parts.append("| ID | Why |\n|---|---|\n")
             parts.extend(f"| {_link(e, config)} | {_cell(e.title)} |\n" for e in selected)
@@ -1965,12 +1817,7 @@ def test_the_top_level_files_are_scanned(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "location",
-    [
-        "node_modules/pkg/index.js",
-        "src/build/generated.py",
-        "tests/dist/bundle.js",
-        "scripts/__pycache__/x.py",
-    ],
+    ["node_modules/pkg/index.js", "src/build/generated.py", "tests/dist/bundle.js", "scripts/__pycache__/x.py"],
 )
 def test_the_walk_enters_no_vendored_or_generated_directory(tmp_path: Path, location: str) -> None:
     root, config = project(tmp_path)
@@ -2010,17 +1857,11 @@ def test_a_fixture_holder_is_excluded_from_the_scan(tmp_path: Path) -> None:
 def test_the_marker_is_read_only_from_the_head_of_a_file(tmp_path: Path) -> None:
     # A marker buried past the window is prose about the marker, not the marker.
     root, config = project(tmp_path)
-    write(
-        root,
-        "tests/test_x.py",
-        "x = 1\n" * (FIXTURE_MARKER_WINDOW // 6 + 1) + f"# {FIXTURE_MARKER}\nENTRY = 'BR-404'\n",
-    )
+    write(root, "tests/test_x.py", "x = 1\n" * (FIXTURE_MARKER_WINDOW // 6 + 1) + f"# {FIXTURE_MARKER}\nENTRY = 'BR-404'\n")
     assert list(code_mentions(root, config)) == ["BR-404"]
 
 
-def test_an_undecodable_file_is_not_text_and_an_unreadable_one_carries_its_error(
-    tmp_path: Path,
-) -> None:
+def test_an_undecodable_file_is_not_text_and_an_unreadable_one_carries_its_error(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     (root / "src" / "latin.py").write_bytes(b"# \xff BR-404\n")
     write(root, "src/ok.py", "# BR-405\n")
@@ -2062,17 +1903,13 @@ def test_a_citation_of_an_entry_file_is_resolved_two_ways(tmp_path: Path) -> Non
     write(root, "src/a.py", "# see docs/bugs/BR-404.md\n")
     write(root, "docs/roadmap.md", "see [x](bugs/BR-405.md)\n")
     write(root, "docs/deeper/note.md", "see [x](../bugs/BR-406.md)\n")
-    write(
-        root, "docs/deeper/other.md", "see [x](bugs/BR-407.md)\n"
-    )  # resolves to docs/deeper/bugs/: not a citation
+    write(root, "docs/deeper/other.md", "see [x](bugs/BR-407.md)\n")  # resolves to docs/deeper/bugs/: not a citation
     found = entry_citations(root, config)
     assert set(found) == {"BR-404", "BR-405", "BR-406"}
     assert found["BR-404"] == [(PurePosixPath("src/a.py"), 1)]
 
 
-def test_an_absolute_path_that_merely_contains_the_entry_path_is_not_a_citation(
-    tmp_path: Path,
-) -> None:
+def test_an_absolute_path_that_merely_contains_the_entry_path_is_not_a_citation(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     write(root, "src/a.py", "# /tmp/x/docs/bugs/BR-404.md\n")
     assert entry_citations(root, config) == {}
@@ -2146,9 +1983,7 @@ def ledger(root: Path, config: Config, entries: dict[str, str]) -> None:
     bugs.mkdir(parents=True, exist_ok=True)
     for name, text in entries.items():
         (bugs / f"{name}.md").write_text(text, encoding="utf-8")
-    (root / "docs" / "bug-reports.md").write_text(
-        render_index(load_entries(root, config), config), encoding="utf-8"
-    )
+    (root / "docs" / "bug-reports.md").write_text(render_index(load_entries(root, config), config), encoding="utf-8")
 
 
 def rules(root: Path, config: Config) -> list[str]:
@@ -2178,9 +2013,7 @@ def test_check_accepts_a_clean_ledger(tmp_path: Path) -> None:
 def test_a_conflict_marker_is_reported_before_the_entry_is_parsed(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
-    (root / "docs" / "bugs" / "BR-001.md").write_text(
-        "<<<<<<< ours\n" + entry(1) + "=======\n>>>>>>> theirs\n", encoding="utf-8"
-    )
+    (root / "docs" / "bugs" / "BR-001.md").write_text("<<<<<<< ours\n" + entry(1) + "=======\n>>>>>>> theirs\n", encoding="utf-8")
     found = problems(root, config)
     assert [p.rule for p in found] == ["conflict-marker", "stale-index"]
     assert found[0].path == "docs/bugs/BR-001.md"
@@ -2221,31 +2054,13 @@ def test_the_untouched_scaffold_placeholder_does_not_satisfy_the_rule(tmp_path: 
     # A placeholder that satisfies its own check is the failure mode the rule exists to
     # prevent. Mutation: drop the negative lookahead — this reddens.
     root, config = project(tmp_path)
-    ledger(
-        root,
-        config,
-        {
-            "BR-001": entry(
-                1, severity="high", body=f"{EVIDENCE_LABEL} {EVIDENCE_PLACEHOLDER} —\nname what.\n"
-            )
-        },
-    )
+    ledger(root, config, {"BR-001": entry(1, severity="high", body=f"{EVIDENCE_LABEL} {EVIDENCE_PLACEHOLDER} —\nname what.\n")})
     assert rules(root, config) == ["evidence-boundary"]
 
 
 def test_a_filled_evidence_boundary_passes(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    ledger(
-        root,
-        config,
-        {
-            "BR-001": entry(
-                1,
-                severity="high",
-                body=f"{EVIDENCE_LABEL} whether the read path is reached at all.\n",
-            )
-        },
-    )
+    ledger(root, config, {"BR-001": entry(1, severity="high", body=f"{EVIDENCE_LABEL} whether the read path is reached at all.\n")})
     assert problems(root, config) == []
 
 
@@ -2253,32 +2068,22 @@ def test_an_empty_boundary_line_is_not_rescued_by_later_body_text(tmp_path: Path
     # `[^\S\n]*` and not `\s*`: the latter crosses newlines under MULTILINE. Mutation: replace
     # it with `\s*` — this reddens.
     root, config = project(tmp_path)
-    ledger(
-        root,
-        config,
-        {"BR-001": entry(1, severity="high", body=f"{EVIDENCE_LABEL}\n\nlater prose\n")},
-    )
+    ledger(root, config, {"BR-001": entry(1, severity="high", body=f"{EVIDENCE_LABEL}\n\nlater prose\n")})
     assert rules(root, config) == ["evidence-boundary"]
 
 
 def test_the_severities_that_need_a_boundary_come_from_configuration(tmp_path: Path) -> None:
-    root, config = project(
-        tmp_path, '\n[ledger]\nevidence_boundary_required_for = ["high", "medium"]\n'
-    )
+    root, config = project(tmp_path, '\n[ledger]\nevidence_boundary_required_for = ["high", "medium"]\n')
     ledger(root, config, {"BR-001": entry(1, severity="medium")})
     assert rules(root, config) == ["evidence-boundary"]
 
 
-def test_foreign_index_content_is_reported_and_staleness_is_not_named_beside_it(
-    tmp_path: Path,
-) -> None:
+def test_foreign_index_content_is_reported_and_staleness_is_not_named_beside_it(tmp_path: Path) -> None:
     # Regenerating is what deletes the content, so the stale row must not recommend it.
     root, config = project(tmp_path)
     ledger(root, config, {"BR-001": entry(1)})
     index = root / "docs" / "bug-reports.md"
-    index.write_text(
-        index.read_text(encoding="utf-8") + "\nAn operator's note.\n", encoding="utf-8"
-    )
+    index.write_text(index.read_text(encoding="utf-8") + "\nAn operator's note.\n", encoding="utf-8")
     (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2), encoding="utf-8")
     assert rules(root, config) == ["foreign-index-content"]
 
@@ -2317,9 +2122,7 @@ def test_a_citation_of_an_unfiled_entry_is_reported_from_a_document(tmp_path: Pa
     ledger(root, config, {"BR-001": entry(1)})
     (root / "docs" / "roadmap.md").write_text("see [x](bugs/BR-404.md)\n", encoding="utf-8")
     found = problems(root, config)
-    assert [(p.rule, p.path, p.line) for p in found] == [
-        ("dangling-citation", "docs/roadmap.md", 1)
-    ]
+    assert [(p.rule, p.path, p.line) for p in found] == [("dangling-citation", "docs/roadmap.md", 1)]
 
 
 def test_a_worked_example_in_a_document_is_not_a_dangling_mention(tmp_path: Path) -> None:
@@ -2430,21 +2233,7 @@ FIXTURE_MARKER_WINDOW = 2048
 EXCLUDED_DIRNAMES = frozenset({"node_modules", ".git", ".venv", "dist", "build", "__pycache__"})
 # Suffixes no identifier can be read out of or written back into.
 BINARY_SUFFIXES = frozenset(
-    {
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".pdf",
-        ".ico",
-        ".ogg",
-        ".mp3",
-        ".wav",
-        ".pyc",
-        ".zip",
-        ".woff",
-        ".woff2",
-    }
+    {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".ico", ".ogg", ".mp3", ".wav", ".pyc", ".zip", ".woff", ".woff2"}
 )
 
 
@@ -2461,9 +2250,7 @@ class Scanned:
 
 def mention_roots(root: Path, config: Config) -> tuple[str, ...]:
     names = [TOP_LEVEL]
-    names.extend(
-        directory.relative_to(root).as_posix() for directory in contained_roots(root, config)
-    )
+    names.extend(directory.relative_to(root).as_posix() for directory in contained_roots(root, config))
     return tuple(names)
 
 
@@ -2499,14 +2286,7 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
     if not toplevel or Path(toplevel).resolve() != root.resolve():
         return None
     listed = git_output(
-        root,
-        "ls-files",
-        "-z",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "--",
-        *(_pathspec(n) for n in names),
+        root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *(_pathspec(n) for n in names)
     )
     return [root / name for name in listed.split("\0") if name]
 
@@ -2590,9 +2370,7 @@ def entry_citations(root: Path, config: Config) -> dict[str, list[tuple[PurePosi
         for match in pattern.finditer(item.text):
             if not _cited_entry(item.relative, match.group(1), match.group(2), bugs):
                 continue
-            found[match.group(2)].append(
-                (item.relative, item.text.count("\n", 0, match.start()) + 1)
-            )
+            found[match.group(2)].append((item.relative, item.text.count("\n", 0, match.start()) + 1))
     return found
 
 
@@ -2675,14 +2453,7 @@ def problems(root: Path, config: Config) -> list[Finding]:
     bugs = bugs_dir(root, config)
     index_name = config.paths.bug_index
     if not bugs.is_dir():
-        return [
-            Finding(
-                "entries-missing",
-                index_name,
-                None,
-                ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name),
-            )
-        ]
+        return [Finding("entries-missing", index_name, None, ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name))]
 
     entries: list[Entry] = []
     required = set(config.ledger.evidence_boundary_required_for)
@@ -2698,29 +2469,11 @@ def problems(root: Path, config: Config) -> list[Finding]:
             found.append(Finding("unreadable-entry", relative, None, str(error)))
             continue
         if entry.id != path.stem:
-            found.append(
-                Finding(
-                    "id-mismatch", relative, None, f"`id` {entry.id} does not match its filename"
-                )
-            )
+            found.append(Finding("id-mismatch", relative, None, f"`id` {entry.id} does not match its filename"))
         if _BODY_STATE_BULLET.search(entry.body):
-            found.append(
-                Finding(
-                    "state-in-body",
-                    relative,
-                    None,
-                    "body restates `**Status:**`/`**Severity:**`; those live in the frontmatter alone",
-                )
-            )
+            found.append(Finding("state-in-body", relative, None, "body restates `**Status:**`/`**Severity:**`; those live in the frontmatter alone"))
         if entry.severity in required and not _EVIDENCE_BOUNDARY.search(entry.body):
-            found.append(
-                Finding(
-                    "evidence-boundary",
-                    relative,
-                    None,
-                    f"severity `{entry.severity}` needs a filled `{EVIDENCE_LABEL}` line — a plan built on this entry inherits its silences as premises",
-                )
-            )
+            found.append(Finding("evidence-boundary", relative, None, f"severity `{entry.severity}` needs a filled `{EVIDENCE_LABEL}` line — a plan built on this entry inherits its silences as premises"))
         entries.append(entry)
 
     known = {entry.id for entry in entries}
@@ -2729,62 +2482,27 @@ def problems(root: Path, config: Config) -> list[Finding]:
         by_id[entry.id].append(entry)
     for identifier, holders in sorted(by_id.items()):
         if len(holders) > 1:
-            found.append(
-                Finding(
-                    "duplicate-id",
-                    "",
-                    None,
-                    f"{identifier} is claimed by more than one file: {', '.join(str(h.path) for h in holders)}",
-                )
-            )
+            found.append(Finding("duplicate-id", "", None, f"{identifier} is claimed by more than one file: {', '.join(str(h.path) for h in holders)}"))
     for entry in entries:
         for identifier in entry.related:
             if identifier not in known:
-                found.append(
-                    Finding(
-                        "dangling-related",
-                        entry.path.as_posix(),
-                        None,
-                        f"`related` names {identifier}, which has no entry file",
-                    )
-                )
+                found.append(Finding("dangling-related", entry.path.as_posix(), None, f"`related` names {identifier}, which has no entry file"))
 
     current = index_text(root, config)
     foreign = foreign_index_lines(current, config)
     if foreign:
-        found.append(
-            Finding(
-                "foreign-index-content",
-                index_name,
-                None,
-                FOREIGN_CONTENT.format(index=index_name, count=len(foreign), first=foreign[0]),
-            )
-        )
+        found.append(Finding("foreign-index-content", index_name, None, FOREIGN_CONTENT.format(index=index_name, count=len(foreign), first=foreign[0])))
     elif current != render_index(sorted(entries, key=lambda e: e.number), config):
         found.append(Finding("stale-index", index_name, None, "is stale; run: keelline bugs index"))
 
     for identifier, locations in sorted(code_mentions(root, config).items()):
         if identifier not in known:
             path, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-mention",
-                    path.as_posix(),
-                    line,
-                    f"mentions {identifier}, which has no entry file (referenced {len(locations)} time(s))",
-                )
-            )
+            found.append(Finding("dangling-mention", path.as_posix(), line, f"mentions {identifier}, which has no entry file (referenced {len(locations)} time(s))"))
     for identifier, locations in sorted(entry_citations(root, config).items()):
         if identifier not in known:
             path, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-citation",
-                    path.as_posix(),
-                    line,
-                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist (referenced {len(locations)} time(s))",
-                )
-            )
+            found.append(Finding("dangling-citation", path.as_posix(), line, f"cites {config.paths.bugs}/{identifier}.md, which does not exist (referenced {len(locations)} time(s))"))
     return found
 ```
 
@@ -2915,22 +2633,12 @@ def entry(number: int, related: str = "") -> str:
 def seed(root: Path, config: Config, *numbers: int) -> None:
     for number in numbers:
         (root / "docs" / "bugs" / f"BR-{number:03d}.md").write_text(entry(number), encoding="utf-8")
-    (root / "docs" / "bug-reports.md").write_text(
-        render_index(load_entries(root, config), config), encoding="utf-8"
-    )
+    (root / "docs" / "bug-reports.md").write_text(render_index(load_entries(root, config), config), encoding="utf-8")
 
 
 def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env
-    ).stdout
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_TERMINAL_PROMPT": "0", "HOME": str(root.parent)}
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env).stdout
 
 
 def commit_all(root: Path, message: str = "seed") -> None:
@@ -2940,36 +2648,20 @@ def commit_all(root: Path, message: str = "seed") -> None:
 
 def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    filed = file_entry(
-        root,
-        config,
-        title="the reconciler collides with its own id",
-        severity="high",
-        area="delivery",
-        source="audit-2026-08-16",
-        today="2026-08-16",
-        fetch=False,
-    )
+    filed = file_entry(root, config, title="the reconciler collides with its own id", severity="high", area="delivery", source="audit-2026-08-16", today="2026-08-16", fetch=False)
     assert filed.identifier == "BR-001" and filed.warning is None
     written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert 'title: "the reconciler collides with its own id"' not in written  # no quoting needed
     assert "title: the reconciler collides with its own id\n" in written
-    assert (
-        "status: open\nseverity: high\narea: delivery\nfound: 2026-08-16\nsource: audit-2026-08-16\nfixed_in:\nrelated:\n"
-        in written
-    )
+    assert "status: open\nseverity: high\narea: delivery\nfound: 2026-08-16\nsource: audit-2026-08-16\nfixed_in:\nrelated:\n" in written
     assert EVIDENCE_LABEL in written
     assert "BR-001" in (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
-    assert [p.rule for p in problems(root, config)] == [
-        "evidence-boundary"
-    ]  # scaffolded, not filled
+    assert [p.rule for p in problems(root, config)] == ["evidence-boundary"]  # scaffolded, not filled
 
 
 def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    file_entry(
-        root, config, title="t", severity="low", area="a", source="#412 in the tracker", fetch=False
-    )
+    file_entry(root, config, title="t", severity="low", area="a", source="#412 in the tracker", fetch=False)
     written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert 'source: "#412 in the tracker"' in written
     assert load_entries(root, config)[0].source == "#412 in the tracker"
@@ -2978,51 +2670,37 @@ def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
 def test_new_rejects_a_malformed_related_identifier_before_writing_anything(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     with pytest.raises(LedgerError):
-        file_entry(
-            root, config, title="t", severity="low", area="a", related=("BR-2",), fetch=False
-        )
+        file_entry(root, config, title="t", severity="low", area="a", related=("BR-2",), fetch=False)
     assert list((root / "docs" / "bugs").iterdir()) == []
     assert not (root / "docs" / "bug-reports.md").exists()
 
 
 def test_new_refuses_over_foreign_index_content_without_writing(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    (root / "docs" / "bug-reports.md").write_text(
-        "# Bug reports\n\n## BR-009 — hand-written\n", encoding="utf-8"
-    )
+    (root / "docs" / "bug-reports.md").write_text("# Bug reports\n\n## BR-009 — hand-written\n", encoding="utf-8")
     with pytest.raises(Refusal):
         file_entry(root, config, title="t", severity="low", area="a", fetch=False)
     assert list((root / "docs" / "bugs").iterdir()) == []
 
 
-def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The allocator cannot see a branch this checkout never fetched; the file's existence
     # decides. Mutation: drop the `path.exists()` refusal — this reddens.
     root, config = project(tmp_path)
     seed(root, config, 1)
     from keelline.ledger import write as module
 
-    monkeypatch.setattr(
-        module, "next_identifier", lambda *a, **k: module.Allocation("BR-001", None)
-    )
+    monkeypatch.setattr(module, "next_identifier", lambda *a, **k: module.Allocation("BR-001", None))
     before = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     with pytest.raises(LedgerError, match="already exists"):
         file_entry(root, config, title="t", severity="low", area="a", fetch=False)
     assert (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8") == before
 
 
-def test_next_identifier_counts_void_numbers_and_a_filename_whose_id_disagrees(
-    tmp_path: Path,
-) -> None:
+def test_next_identifier_counts_void_numbers_and_a_filename_whose_id_disagrees(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    (root / "docs" / "bugs" / "BR-003.md").write_text(
-        "---\nid: BR-003\ntitle: v\nstatus: void\nfound: 2026-01-01\n---\n", encoding="utf-8"
-    )
-    (root / "docs" / "bugs" / "BR-007.md").write_text(
-        entry(2), encoding="utf-8"
-    )  # id BR-002 under filename BR-007
+    (root / "docs" / "bugs" / "BR-003.md").write_text("---\nid: BR-003\ntitle: v\nstatus: void\nfound: 2026-01-01\n---\n", encoding="utf-8")
+    (root / "docs" / "bugs" / "BR-007.md").write_text(entry(2), encoding="utf-8")  # id BR-002 under filename BR-007
     assert next_identifier(root, config, fetch=False).identifier == "BR-008"
 
 
@@ -3040,9 +2718,7 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
     assert next_identifier(root, config, fetch=False).identifier == "BR-006"
 
 
-def test_a_failed_fetch_is_reported_not_raised(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_failed_fetch_is_reported_not_raised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, config = project(tmp_path)
     from keelline.ledger import write as module
 
@@ -3056,28 +2732,20 @@ def test_a_failed_fetch_is_reported_not_raised(
     assert allocation.warning is not None and "fetch" in allocation.warning
 
 
-def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(
-    tmp_path: Path,
-) -> None:
+def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     seed(root, config, 1, 2)
-    (root / "docs" / "bugs" / "BR-002.md").write_text(
-        entry(2, related="[BR-001]"), encoding="utf-8"
-    )
+    (root / "docs" / "bugs" / "BR-002.md").write_text(entry(2, related="[BR-001]"), encoding="utf-8")
     (root / "src" / "a.py").write_text("# BR-001 and XBR-001 stays\n", encoding="utf-8")
     (root / "docs" / "note.md").write_text("see [BR-001](bugs/BR-001.md)\n", encoding="utf-8")
     result = renumber(root, config, "BR-001", "BR-009", today="2026-01-02")
     assert result.unswept == []
     assert result.void == root / "docs" / "bugs" / "BR-001.md"
     assert (root / "src" / "a.py").read_text(encoding="utf-8") == "# BR-009 and XBR-001 stays\n"
-    assert (root / "docs" / "note.md").read_text(
-        encoding="utf-8"
-    ) == "see [BR-009](bugs/BR-009.md)\n"
+    assert (root / "docs" / "note.md").read_text(encoding="utf-8") == "see [BR-009](bugs/BR-009.md)\n"
     assert "related: [BR-009]" in (root / "docs" / "bugs" / "BR-002.md").read_text(encoding="utf-8")
     moved = (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8")
-    assert (
-        moved.startswith("---\nid: BR-009\n") and "body mentioning BR-001" in moved
-    )  # the body is the operator's
+    assert moved.startswith("---\nid: BR-009\n") and "body mentioning BR-001" in moved  # the body is the operator's
     void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
     assert "status: void" in void and "related: [BR-009]" in void and "[BR-009](BR-009.md)" in void
     assert problems(root, config) == []
@@ -3096,15 +2764,9 @@ def test_renumber_normalises_an_id_line_with_nonstandard_spacing(tmp_path: Path)
     root, config = project(tmp_path)
     seed(root, config, 1)
     path = root / "docs" / "bugs" / "BR-001.md"
-    path.write_text(
-        path.read_text(encoding="utf-8").replace("id: BR-001", "id:   BR-001"), encoding="utf-8"
-    )
+    path.write_text(path.read_text(encoding="utf-8").replace("id: BR-001", "id:   BR-001"), encoding="utf-8")
     renumber(root, config, "BR-001", "BR-009")
-    assert (
-        (root / "docs" / "bugs" / "BR-009.md")
-        .read_text(encoding="utf-8")
-        .startswith("---\nid: BR-009\n")
-    )
+    assert (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8").startswith("---\nid: BR-009\n")
 
 
 def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> None:
@@ -3128,9 +2790,7 @@ def test_renumber_does_not_follow_a_symlink_out_of_the_tree(tmp_path: Path) -> N
     assert outside.read_text(encoding="utf-8") == "# BR-001\n"
 
 
-def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(
-    tmp_path: Path,
-) -> None:
+def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(tmp_path: Path) -> None:
     # Once the void pointer exists, `known` makes a stale mention look intentional forever, so
     # an unreadable file is reported and the command fails rather than claiming a rewrite it
     # did not deliver. Mutation: `continue` silently on `item.error` — this reddens.
@@ -3146,9 +2806,7 @@ def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(
     finally:
         locked.chmod(0o644)
     assert len(result.unswept) == 1 and "src/locked.py" in result.unswept[0]
-    assert (root / "docs" / "bugs" / "BR-009.md").is_file() and "status: void" in (
-        root / "docs" / "bugs" / "BR-001.md"
-    ).read_text(encoding="utf-8")
+    assert (root / "docs" / "bugs" / "BR-009.md").is_file() and "status: void" in (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -3276,19 +2934,10 @@ def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Alloca
     numbers: set[int] = set()
     if bugs.is_dir():
         numbers.update(entry.number for entry in load_entries(root, config))
-        numbers.update(
-            ids.number(path.stem)
-            for path in bugs.glob(f"{ids.prefix}-*.md")
-            if ids.is_identifier(path.stem)
-        )
+        numbers.update(ids.number(path.stem) for path in bugs.glob(f"{ids.prefix}-*.md") if ids.is_identifier(path.stem))
     tracked = f"{config.paths.bugs}/"
-    added = git_output(
-        root, "log", "--all", "--diff-filter=A", "--format=", "--name-only", "--", tracked
-    )
-    numbers.update(
-        int(m)
-        for m in re.findall(rf"{re.escape(tracked)}{re.escape(ids.prefix)}-(\d{{3,}})\.md", added)
-    )
+    added = git_output(root, "log", "--all", "--diff-filter=A", "--format=", "--name-only", "--", tracked)
+    numbers.update(int(m) for m in re.findall(rf"{re.escape(tracked)}{re.escape(ids.prefix)}-(\d{{3,}})\.md", added))
     return Allocation(ids.format(max(numbers, default=0) + 1), warning)
 
 
@@ -3360,12 +3009,7 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
     fsops.write_within(
         root,
         f"{bugs}/{old}.md",
-        _VOID_POINTER.format(
-            old=old,
-            new=new,
-            title=quote(f"renumbered to {new} — {entry.title}"),
-            today=today or date.today().isoformat(),
-        ),
+        _VOID_POINTER.format(old=old, new=new, title=quote(f"renumbered to {new} — {entry.title}"), today=today or date.today().isoformat()),
     )
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
@@ -3499,56 +3143,19 @@ def project(tmp_path: Path) -> tuple[Path, list[str]]:
     return root, ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
 
 
-def test_new_files_an_entry_and_prints_its_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_new_files_an_entry_and_prints_its_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
-    assert (
-        invoke(
-            [
-                "bugs",
-                "new",
-                "a title",
-                "--severity",
-                "low",
-                "--area",
-                "an area",
-                "--no-fetch",
-                *common,
-            ]
-        )
-        == 0
-    )
+    assert invoke(["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch", *common]) == 0
     out = capsys.readouterr().out
     assert out == "filed docs/bugs/BR-001.md\n"
     assert (root / "docs" / "bug-reports.md").is_file()
 
 
-def test_new_json_carries_the_identifier_and_the_fetch_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_new_json_carries_the_identifier_and_the_fetch_warning(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
-    assert (
-        invoke(
-            [
-                "bugs",
-                "new",
-                "t",
-                "--severity",
-                "low",
-                "--area",
-                "a",
-                "--no-fetch",
-                "--json",
-                *common,
-            ]
-        )
-        == 0
-    )
+    assert invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", "--json", *common]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert (
-        data["id"] == "BR-001" and data["path"] == "docs/bugs/BR-001.md" and data["warning"] is None
-    )
+    assert data["id"] == "BR-001" and data["path"] == "docs/bugs/BR-001.md" and data["warning"] is None
 
 
 def test_new_with_a_bad_severity_is_refused_by_argparse(tmp_path: Path) -> None:
@@ -3557,26 +3164,20 @@ def test_new_with_a_bad_severity_is_refused_by_argparse(tmp_path: Path) -> None:
         invoke(["bugs", "new", "t", "--severity", "huge", "--area", "a", *common])
 
 
-def test_check_is_inert_on_a_project_with_no_ledger(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_check_is_inert_on_a_project_with_no_ledger(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     (root / "docs" / "bugs").rmdir()
     assert invoke(["bugs", "check", *common]) == 0
     assert "nothing to check" in capsys.readouterr().out
 
 
-def test_check_reports_problems_on_one_line_and_lists_them_in_json(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_check_reports_problems_on_one_line_and_lists_them_in_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     (root / "src" / "a.py").write_text("# BR-404\n# BR-405\n", encoding="utf-8")
     assert invoke(["bugs", "check", *common]) == 1
     line = capsys.readouterr().out
-    assert line.startswith(
-        "FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:2 [dangling-mention]"
-    )
+    assert line.startswith("FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:2 [dangling-mention]")
     assert line.count("\n") == 1
     assert invoke(["bugs", "check", "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)
@@ -3589,15 +3190,10 @@ def test_check_passes_a_clean_ledger(tmp_path: Path, capsys: pytest.CaptureFixtu
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     capsys.readouterr()
     assert invoke(["bugs", "check", *common]) == 0
-    assert (
-        capsys.readouterr().out
-        == "OK: bug ledger entries, index freshness, and identifier references\n"
-    )
+    assert capsys.readouterr().out == "OK: bug ledger entries, index freshness, and identifier references\n"
 
 
-def test_index_check_reports_staleness_and_index_repairs_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_index_check_reports_staleness_and_index_repairs_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     (root / "docs" / "bug-reports.md").write_text("", encoding="utf-8")
@@ -3608,13 +3204,9 @@ def test_index_check_reports_staleness_and_index_repairs_it(
     assert invoke(["bugs", "index", "--check", *common]) == 0
 
 
-def test_index_refuses_over_foreign_content_with_exit_2(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_index_refuses_over_foreign_content_with_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
-    (root / "docs" / "bug-reports.md").write_text(
-        "# Bug reports\n\n## BR-009 — hand-written\n", encoding="utf-8"
-    )
+    (root / "docs" / "bug-reports.md").write_text("# Bug reports\n\n## BR-009 — hand-written\n", encoding="utf-8")
     assert invoke(["bugs", "index", *common]) == 2
     assert "refused" in capsys.readouterr().err
 
@@ -3624,19 +3216,11 @@ def test_renumber_reports_its_endpoints(tmp_path: Path, capsys: pytest.CaptureFi
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     capsys.readouterr()
     assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 0
-    assert (
-        capsys.readouterr().out
-        == "BR-001 -> BR-009; a void pointer remains at docs/bugs/BR-001.md\n"
-    )
+    assert capsys.readouterr().out == "BR-001 -> BR-009; a void pointer remains at docs/bugs/BR-001.md\n"
 
 
-def test_a_missing_configuration_is_a_failure_not_a_refusal(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert (
-        invoke(["bugs", "check", "--root", str(tmp_path), "--machine", str(tmp_path / "m.toml")])
-        == 1
-    )
+def test_a_missing_configuration_is_a_failure_not_a_refusal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert invoke(["bugs", "check", "--root", str(tmp_path), "--machine", str(tmp_path / "m.toml")]) == 1
     assert "failed" in capsys.readouterr().err
 ```
 
@@ -3651,22 +3235,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # An equality, for the reason tests/guards/test_surface.py gives: a subset let an export
     # arrive unnoticed. No mutation entry: the mutation is adding an export (two lines).
     required = {
-        "Entry",
-        "LedgerError",
-        "STATUSES",
-        "SEVERITIES",
-        "FIXTURE_MARKER",
-        "ENTRIES_MISSING",
-        "FOREIGN_CONTENT",
-        "parse_entry",
-        "load_entries",
-        "render_index",
-        "is_generated_index",
-        "uninitialised",
-        "problems",
-        "next_identifier",
-        "file_entry",
-        "renumber",
+        "Entry", "LedgerError", "STATUSES", "SEVERITIES", "FIXTURE_MARKER", "ENTRIES_MISSING",
+        "FOREIGN_CONTENT", "parse_entry", "load_entries", "render_index", "is_generated_index",
+        "uninitialised", "problems", "next_identifier", "file_entry", "renumber",
     }
     assert required == set(ledger.__all__)
 
@@ -3739,19 +3310,12 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
     index = config.paths.bug_index
     if args.check:
         if current != rendered:
-            return Result(
-                f"{index} is stale; run: keelline bugs index", {"stale": True}, exit_code=1
-            )
+            return Result(f"{index} is stale; run: keelline bugs index", {"stale": True}, exit_code=1)
         return Result(f"OK: {index} is current ({len(entries)} entries)", {"stale": False})
     if current == rendered:
-        return Result(
-            f"{index} is current ({len(entries)} entries)",
-            {"written": False, "entries": len(entries)},
-        )
+        return Result(f"{index} is current ({len(entries)} entries)", {"written": False, "entries": len(entries)})
     fsops.write_within(root, index, rendered)
-    return Result(
-        f"rewrote {index} ({len(entries)} entries)", {"written": True, "entries": len(entries)}
-    )
+    return Result(f"rewrote {index} ({len(entries)} entries)", {"written": True, "entries": len(entries)})
 
 
 def run_bugs_check(args: argparse.Namespace) -> Result:
@@ -3766,11 +3330,7 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
         return Result(_OK, data)
     # Labels only on the line: a path, a line number and a rule are this lane's; the detail may
     # quote the repository and stays in `data`.
-    return Result(
-        f"FAIL: {len(found)} ledger problem(s): {listed([p.label for p in found])}",
-        data,
-        exit_code=1,
-    )
+    return Result(f"FAIL: {len(found)} ledger problem(s): {listed([p.label for p in found])}", data, exit_code=1)
 
 
 def run_bugs_new(args: argparse.Namespace) -> Result:
@@ -3778,14 +3338,8 @@ def run_bugs_new(args: argparse.Namespace) -> Result:
 
     root, config = root_and_config(args)
     filed = file_entry(
-        root,
-        config,
-        title=args.title,
-        severity=args.severity,
-        area=args.area,
-        source=args.source,
-        related=tuple(args.related),
-        fetch=not args.no_fetch,
+        root, config, title=args.title, severity=args.severity, area=args.area,
+        source=args.source, related=tuple(args.related), fetch=not args.no_fetch,
     )
     relative = filed.path.relative_to(root).as_posix()
     summary = f"filed {relative}" + (f"; {filed.warning}" if filed.warning else "")
@@ -3824,9 +3378,7 @@ def register(groups: SubParsers) -> None:
     index = common_flags(sub.add_parser("index", help="regenerate the index from the entry files"))
     index.add_argument("--check", action="store_true", help="fail if the index is stale")
     index.set_defaults(func=run_bugs_index)
-    check = common_flags(
-        sub.add_parser("check", help="validate the ledger, the index and every reference")
-    )
+    check = common_flags(sub.add_parser("check", help="validate the ledger, the index and every reference"))
     check.set_defaults(func=run_bugs_check)
     renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
     renumber.add_argument("old")
@@ -3970,27 +3522,17 @@ from keelline.prose import blank_code_spans, blank_fences, path_references
 
 
 def test_a_backticked_path_with_a_slash_is_a_reference_and_a_bare_filename_is_prose() -> None:
-    assert list(path_references("see `src/widget/boot.py` and `config.py`")) == [
-        "src/widget/boot.py"
-    ]
+    assert list(path_references("see `src/widget/boot.py` and `config.py`")) == ["src/widget/boot.py"]
 
 
 def test_a_location_suffix_is_not_part_of_the_name() -> None:
-    assert list(path_references("`src/a.py:12` and `tests/test_a.py::test_x`")) == [
-        "src/a.py",
-        "tests/test_a.py",
-    ]
+    assert list(path_references("`src/a.py:12` and `tests/test_a.py::test_x`")) == ["src/a.py", "tests/test_a.py"]
 
 
 def test_typescript_and_toml_count_as_files_this_grammar_stores() -> None:
     # The drift that built this module: one reader accepted `.ts`/`.tsx` and the other did not.
     # Mutation: drop `tsx?` from `REFERENCE` — this reddens.
-    assert list(path_references("`web/app.tsx` `web/x.ts` `cfg/a.toml` `k/v.yaml`")) == [
-        "web/app.tsx",
-        "web/x.ts",
-        "cfg/a.toml",
-        "k/v.yaml",
-    ]
+    assert list(path_references("`web/app.tsx` `web/x.ts` `cfg/a.toml` `k/v.yaml`")) == ["web/app.tsx", "web/x.ts", "cfg/a.toml", "k/v.yaml"]
 
 
 def test_a_shell_command_or_a_url_is_never_a_reference() -> None:
@@ -4107,14 +3649,8 @@ def test_the_agents_file_path_comes_from_configuration(tmp_path: Path) -> None:
     assert check_budgets(root, config) == [] and check_links(root, config) == []
 
 
-def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(
-    tmp_path: Path,
-) -> None:
-    root, config = project(
-        tmp_path,
-        agents=AGENTS
-        + "- [gone](docs/gone.md) [a](#x) [b](/abs) [c](https://e.com/x.md) [d](mailto:a@b.c)\n",
-    )
+def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(tmp_path: Path) -> None:
+    root, config = project(tmp_path, agents=AGENTS + "- [gone](docs/gone.md) [a](#x) [b](/abs) [c](https://e.com/x.md) [d](mailto:a@b.c)\n")
     found = check_links(root, config)
     assert [(f.rule, f.detail) for f in found] == [("missing-link", "docs/gone.md")]
 
@@ -4128,13 +3664,9 @@ def test_a_link_inside_a_fence_is_an_example_not_a_claim(tmp_path: Path) -> None
 
 def test_the_roadmap_prose_is_budgeted_up_to_the_trail_marker(tmp_path: Path) -> None:
     root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 3\n")
-    (root / "docs" / "roadmap.md").write_text(
-        "# R\n\nprose\n" + f"{TRAIL_MARKER}\n" + "row\n" * 10, encoding="utf-8"
-    )
+    (root / "docs" / "roadmap.md").write_text("# R\n\nprose\n" + f"{TRAIL_MARKER}\n" + "row\n" * 10, encoding="utf-8")
     assert check_budgets(root, config) == []
-    (root / "docs" / "roadmap.md").write_text(
-        "# R\n\nprose\nmore\n" + f"{TRAIL_MARKER}\n", encoding="utf-8"
-    )
+    (root / "docs" / "roadmap.md").write_text("# R\n\nprose\nmore\n" + f"{TRAIL_MARKER}\n", encoding="utf-8")
     assert rules(check_budgets(root, config)) == ["roadmap-lines"]
 
 
@@ -4144,9 +3676,7 @@ def test_a_deeper_heading_containing_the_marker_does_not_split_the_prose(tmp_pat
     assert roadmap_prose(text).count("\n") == 8
 
 
-def test_a_roadmap_without_the_marker_is_measured_whole_and_an_absent_one_is_not_a_finding(
-    tmp_path: Path,
-) -> None:
+def test_a_roadmap_without_the_marker_is_measured_whole_and_an_absent_one_is_not_a_finding(tmp_path: Path) -> None:
     root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 2\n")
     assert check_budgets(root, config) == []
     (root / "docs" / "roadmap.md").write_text("a\nb\nc\n", encoding="utf-8")
@@ -4239,9 +3769,7 @@ def local_markdown_targets(text: str) -> list[str]:
     return [target for target in targets if target]
 
 
-def _over(
-    findings: list[Finding], rule: str, path: str, measured: int, config: Config, budget: str
-) -> None:
+def _over(findings: list[Finding], rule: str, path: str, measured: int, config: Config, budget: str) -> None:
     limit = config.budgets.effective(budget)
     if measured > limit:
         findings.append(Finding(rule, path, None, f"{measured} > {limit} ({budget})"))
@@ -4251,59 +3779,20 @@ def check_budgets(root: Path, config: Config) -> list[Finding]:
     found: list[Finding] = []
     agents_path = contained(root, config.paths.agents_md)
     if not agents_path.is_file():
-        return [
-            Finding(
-                "missing-document",
-                config.paths.agents_md,
-                None,
-                "the always-loaded document does not exist",
-            )
-        ]
+        return [Finding("missing-document", config.paths.agents_md, None, "the always-loaded document does not exist")]
     agents = agents_path.read_text(encoding="utf-8")
-    _over(
-        found,
-        "agents-lines",
-        config.paths.agents_md,
-        len(agents.splitlines()),
-        config,
-        "agents_md_lines",
-    )
-    _over(
-        found,
-        "agents-words",
-        config.paths.agents_md,
-        len(agents.split()),
-        config,
-        "agents_md_words",
-    )
+    _over(found, "agents-lines", config.paths.agents_md, len(agents.splitlines()), config, "agents_md_lines")
+    _over(found, "agents-words", config.paths.agents_md, len(agents.split()), config, "agents_md_words")
     status = section_lines(agents, STATUS_HEADING)
     if status is None:
-        found.append(
-            Finding(
-                "status-missing", config.paths.agents_md, None, f"no `{STATUS_HEADING}` section"
-            )
-        )
+        found.append(Finding("status-missing", config.paths.agents_md, None, f"no `{STATUS_HEADING}` section"))
     else:
         _over(found, "status-lines", config.paths.agents_md, status, config, "status_lines")
     roadmap_path = contained(root, config.paths.roadmap)
     if roadmap_path.is_file():
         prose = roadmap_prose(roadmap_path.read_text(encoding="utf-8"))
-        _over(
-            found,
-            "roadmap-lines",
-            config.paths.roadmap,
-            len(prose.splitlines()),
-            config,
-            "roadmap_prose_lines",
-        )
-        _over(
-            found,
-            "roadmap-words",
-            config.paths.roadmap,
-            len(prose.split()),
-            config,
-            "roadmap_prose_words",
-        )
+        _over(found, "roadmap-lines", config.paths.roadmap, len(prose.splitlines()), config, "roadmap_prose_lines")
+        _over(found, "roadmap-words", config.paths.roadmap, len(prose.split()), config, "roadmap_prose_words")
     return found
 
 
@@ -4389,15 +3878,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.docs.trail import (
-    END_MARKER,
-    MARKER,
-    read_trail,
-    rebuild,
-    render_listing,
-    trail_path,
-    undeclared_new_documents,
-)
+from keelline.docs.trail import END_MARKER, MARKER, read_trail, rebuild, render_listing, trail_path, undeclared_new_documents
 
 CONFIG = """
 [keelline]
@@ -4430,26 +3911,11 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 
 
 def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env
-    ).stdout
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_TERMINAL_PROMPT": "0", "HOME": str(root.parent)}
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env).stdout
 
 
-def corpus(
-    tmp_path: Path,
-    *,
-    specs: tuple[str, ...] = (),
-    plans: tuple[str, ...] = (),
-    trail: str | None = TRAIL,
-    git_init: bool = True,
-) -> tuple[Path, Config]:
+def corpus(tmp_path: Path, *, specs: tuple[str, ...] = (), plans: tuple[str, ...] = (), trail: str | None = TRAIL, git_init: bool = True) -> tuple[Path, Config]:
     root = tmp_path / "widget"
     (root / "docs" / "specs").mkdir(parents=True)
     (root / "docs" / "plans").mkdir(parents=True)
@@ -4471,35 +3937,19 @@ def listing(root: Path, config: Config) -> str:
     return render_listing(root, config, read_trail(trail_path(root, config)))
 
 
-def test_documents_are_grouped_by_the_first_theme_that_matches_and_linked_from_the_roadmap(
-    tmp_path: Path,
-) -> None:
-    root, config = corpus(
-        tmp_path,
-        specs=("2026-01-01-widget-design.md",),
-        plans=("2026-01-02-gizmo.md", "2026-01-03-other.md"),
-    )
+def test_documents_are_grouped_by_the_first_theme_that_matches_and_linked_from_the_roadmap(tmp_path: Path) -> None:
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",), plans=("2026-01-02-gizmo.md", "2026-01-03-other.md"))
     text = listing(root, config)
-    assert (
-        "\n### Widgets (1)\n\n- [`specs/2026-01-01-widget-design.md`](specs/2026-01-01-widget-design.md) — designed\n"
-        in text
-    )
-    assert (
-        "\n### Gadgets (1)\n\n- [`plans/2026-01-02-gizmo.md`](plans/2026-01-02-gizmo.md) — delivered\n"
-        in text
-    )
+    assert "\n### Widgets (1)\n\n- [`specs/2026-01-01-widget-design.md`](specs/2026-01-01-widget-design.md) — designed\n" in text
+    assert "\n### Gadgets (1)\n\n- [`plans/2026-01-02-gizmo.md`](plans/2026-01-02-gizmo.md) — delivered\n" in text
     assert "\n### Unfiled (1)\n" in text
-    assert text.rstrip().endswith(
-        f"<!-- generated by keelline docs trail — 3 documents, 1 not plainly delivered -->\n{END_MARKER}"
-    )
+    assert text.rstrip().endswith(f"<!-- generated by keelline docs trail — 3 documents, 1 not plainly delivered -->\n{END_MARKER}")
 
 
 def test_links_are_relative_to_the_roadmap_not_the_root(tmp_path: Path) -> None:
     # Mutation: link `f"{config.paths.specs}/{name}"` verbatim — this reddens.
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
-    (root / "keelline.toml").write_text(
-        CONFIG + '\n[paths]\nroadmap = "ROADMAP.md"\n', encoding="utf-8"
-    )
+    (root / "keelline.toml").write_text(CONFIG + '\n[paths]\nroadmap = "ROADMAP.md"\n', encoding="utf-8")
     (root / "docs" / "roadmap.md").rename(root / "ROADMAP.md")
     (root / "docs" / "trail.toml").rename(root / "trail.toml")
     config = load(root, machine=tmp_path / "m.toml")
@@ -4513,24 +3963,14 @@ def test_a_missing_trail_file_is_one_unfiled_bucket_with_no_states(tmp_path: Pat
     assert "### Unfiled (1)" in render_listing(root, config, trail)
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "[[theme]]\nlabel = 1\npattern = 'x'\n",
-        "[[theme]]\nlabel = 'x'\npattern = '('\n",
-        "[states]\n'a.md' = 3\n",
-        "not toml [",
-    ],
-)
+@pytest.mark.parametrize("text", ["[[theme]]\nlabel = 1\npattern = 'x'\n", "[[theme]]\nlabel = 'x'\npattern = '('\n", "[states]\n'a.md' = 3\n", "not toml ["])
 def test_a_trail_file_outside_the_contract_fails_loudly(tmp_path: Path, text: str) -> None:
     root, config = corpus(tmp_path, trail=text)
     with pytest.raises(Failure):
         read_trail(trail_path(root, config))
 
 
-def test_a_generated_listing_passes_its_own_check_and_regenerates_byte_identically(
-    tmp_path: Path,
-) -> None:
+def test_a_generated_listing_passes_its_own_check_and_regenerates_byte_identically(tmp_path: Path) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     trail = read_trail(trail_path(root, config))
     once = rebuild(SEED, root, config, trail)
@@ -4538,17 +3978,8 @@ def test_a_generated_listing_passes_its_own_check_and_regenerates_byte_identical
     assert once.startswith("# Roadmap\n\nprose above\n\n") and once.endswith("\nprose below\n")
 
 
-@pytest.mark.parametrize(
-    "edit",
-    [
-        lambda t: t.replace("designed", "delivered"),
-        lambda t: t.replace("### Widgets (1)", "### Widgets (2)"),
-        lambda t: t.replace("- [`specs", "- [`plans"),
-    ],
-)
-def test_the_check_is_red_for_every_way_the_listing_goes_stale(
-    tmp_path: Path, edit: object
-) -> None:
+@pytest.mark.parametrize("edit", [lambda t: t.replace("designed", "delivered"), lambda t: t.replace("### Widgets (1)", "### Widgets (2)"), lambda t: t.replace("- [`specs", "- [`plans")])
+def test_the_check_is_red_for_every_way_the_listing_goes_stale(tmp_path: Path, edit: object) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     trail = read_trail(trail_path(root, config))
     current = rebuild(SEED, root, config, trail)
@@ -4564,9 +3995,7 @@ def test_a_state_naming_a_vanished_document_aborts_instead_of_defaulting(tmp_pat
         listing(root, config)
 
 
-def test_a_new_document_that_declares_no_state_is_reported_and_one_that_declares_delivered_is_not(
-    tmp_path: Path,
-) -> None:
+def test_a_new_document_that_declares_no_state_is_reported_and_one_that_declares_delivered_is_not(tmp_path: Path) -> None:
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     trail = read_trail(trail_path(root, config))
     before = rebuild(SEED, root, config, trail)
@@ -4578,16 +4007,11 @@ def test_a_new_document_that_declares_no_state_is_reported_and_one_that_declares
     from keelline.docs.trail import Trail
 
     with_state = Trail(trail.themes, {**trail.states, "plans/2026-02-02-new.md": "delivered"})
-    assert (
-        undeclared_new_documents(before, rebuild(before, root, config, with_state), with_state)
-        == []
-    )
+    assert undeclared_new_documents(before, rebuild(before, root, config, with_state), with_state) == []
 
 
 def test_the_first_generation_does_not_call_the_whole_corpus_new(tmp_path: Path) -> None:
-    root, config = corpus(
-        tmp_path, specs=("2026-01-01-widget-design.md",), plans=("2026-01-02-gizmo.md",)
-    )
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",), plans=("2026-01-02-gizmo.md",))
     trail = read_trail(trail_path(root, config))
     assert undeclared_new_documents(SEED, rebuild(SEED, root, config, trail), trail) == []
 
@@ -4696,22 +4120,14 @@ def read_trail(path: Path) -> Trail:
         raise Failure(f"{path} is not valid TOML: {exc}") from None
     themes: list[tuple[str, re.Pattern[str]]] = []
     for entry in raw.get("theme", []):
-        if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("label"), str)
-            or not isinstance(entry.get("pattern"), str)
-        ):
+        if not isinstance(entry, dict) or not isinstance(entry.get("label"), str) or not isinstance(entry.get("pattern"), str):
             raise Failure(f"{path}: every [[theme]] needs a string `label` and a string `pattern`")
         try:
             themes.append((entry["label"], re.compile(entry["pattern"])))
         except re.error as exc:
-            raise Failure(
-                f"{path}: theme {entry['label']!r} has an invalid pattern: {exc}"
-            ) from None
+            raise Failure(f"{path}: theme {entry['label']!r} has an invalid pattern: {exc}") from None
     states = raw.get("states", {})
-    if not isinstance(states, dict) or not all(
-        isinstance(k, str) and isinstance(v, str) for k, v in states.items()
-    ):
+    if not isinstance(states, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in states.items()):
         raise Failure(f"{path}: [states] must map document rows to state strings")
     return Trail(tuple(themes), dict(states))
 
@@ -4730,10 +4146,7 @@ def _ignored(root: Path, paths: list[Path]) -> set[Path]:
         return set()
     stdin = "\n".join(str(p.relative_to(root)) for p in paths)
     code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin=stdin)
-    if code not in (
-        0,
-        1,
-    ):  # 1 simply means "nothing matched"; anything else is a tree git cannot speak for
+    if code not in (0, 1):  # 1 simply means "nothing matched"; anything else is a tree git cannot speak for
         return set()
     return {root / line for line in out.splitlines() if line}
 
@@ -4743,15 +4156,7 @@ def _untracked(root: Path, paths: list[Path]) -> set[Path]:
     listing from the tracked tree. Falls back to "nothing untracked" where git cannot answer."""
     if not paths:
         return set()
-    code, out = git_run(
-        root,
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z",
-        "--",
-        *(str(p.relative_to(root)) for p in paths),
-    )
+    code, out = git_run(root, "ls-files", "--others", "--exclude-standard", "-z", "--", *(str(p.relative_to(root)) for p in paths))
     if code != 0:
         return set()
     return {root / name for name in out.split("\0") if name}
@@ -4804,9 +4209,7 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
             if state != DELIVERED:
                 pending += 1
             lines.append(f"- [`{row}`]({link}) — {state}")
-    lines.append(
-        f"\n<!-- generated by keelline docs trail — {total} documents, {pending} not plainly delivered -->"
-    )
+    lines.append(f"\n<!-- generated by keelline docs trail — {total} documents, {pending} not plainly delivered -->")
     lines.append(END_MARKER)
     return "\n".join(lines) + "\n"
 
@@ -4832,7 +4235,7 @@ def rebuild(text: str, root: Path, config: Config, trail: Trail) -> str:
     if end == -1:
         raise Failure(f"{config.paths.roadmap} is missing the '{END_MARKER}' comment")
     head = text[: start.end()]
-    tail = text[end + len(END_MARKER) :]
+    tail = text[end + len(END_MARKER):]
     return head + _PREAMBLE + render_listing(root, config, trail) + tail.lstrip("\n")
 ```
 
@@ -4932,20 +4335,8 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 
 
 def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), "-c", "user.email=t@example.com", "-c", "user.name=t", *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    ).stdout
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_TERMINAL_PROMPT": "0", "HOME": str(root.parent)}
+    return subprocess.run(["git", "-C", str(root), "-c", "user.email=t@example.com", "-c", "user.name=t", *args], capture_output=True, text=True, check=True, env=env).stdout
 
 
 def project(tmp_path: Path) -> tuple[Path, Config]:
@@ -4965,17 +4356,11 @@ def rules(root: Path, config: Config, *paths: Path) -> list[str]:
     return [f.rule for f in lint(root, config, plans=list(paths)).findings]
 
 
-def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(
-    tmp_path: Path,
-) -> None:
+def test_an_unresolvable_reference_fails_and_a_resolvable_or_created_one_passes(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "ok.py").write_text("", encoding="utf-8")
-    path = plan(
-        root,
-        SCOPE
-        + "- Modify: `src/gone.py`\n- Modify: `src/ok.py`\n- Create: `src/new.py`\nlater `src/new.py` (create)\n",
-    )
+    path = plan(root, SCOPE + "- Modify: `src/gone.py`\n- Modify: `src/ok.py`\n- Create: `src/new.py`\nlater `src/new.py` (create)\n")
     found = lint(root, config, plans=[path]).findings
     assert [(f.rule, f.line, f.detail) for f in found] == [("dead-reference", 3, "src/gone.py")]
 
@@ -4986,15 +4371,7 @@ def test_a_reference_inside_a_fence_is_fixture_text(tmp_path: Path) -> None:
     assert rules(root, config, path) == []
 
 
-@pytest.mark.parametrize(
-    "step",
-    [
-        "confirm that nothing bounds X",
-        "verify nothing is logged",
-        "check that no row exists",
-        "Confirm it does not raise",
-    ],
-)
+@pytest.mark.parametrize("step", ["confirm that nothing bounds X", "verify nothing is logged", "check that no row exists", "Confirm it does not raise"])
 def test_a_leading_verification_step_fails(tmp_path: Path, step: str) -> None:
     root, config = project(tmp_path)
     assert rules(root, config, plan(root, SCOPE + f"- {step}\n")) == ["leading-step"]
@@ -5019,17 +4396,8 @@ def test_a_fixes_claim_needs_a_premise_line_with_content(tmp_path: Path) -> None
     # in the premise rule — the bare-marker case reddens.
     root, config = project(tmp_path)
     assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n")) == ["premise-missing"]
-    assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n\n**Premise:**\n\nlater\n")) == [
-        "premise-missing"
-    ]
-    assert (
-        rules(
-            root,
-            config,
-            plan(root, SCOPE + "Fixes BR-042.\n\n**Premise (entry):** the entry says X.\n"),
-        )
-        == []
-    )
+    assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n\n**Premise:**\n\nlater\n")) == ["premise-missing"]
+    assert rules(root, config, plan(root, SCOPE + "Fixes BR-042.\n\n**Premise (entry):** the entry says X.\n")) == []
     assert rules(root, config, plan(root, SCOPE + "```\nFixes BR-042\n```\n")) == []
 
 
@@ -5040,31 +4408,19 @@ def test_a_fixes_claim_needs_a_premise_line_with_content(tmp_path: Path) -> None
         ("Watch the fail-closed test go red under that mutation.", True),
         ("Verify it stays green if the clone step is dropped.", True),
         ("The change reddens **8 assertions** in the module.", True),
-        (
-            "Expected: removing the guard -> the test reddens; if it reddens for another reason redesign it.",
-            False,
-        ),
+        ("Expected: removing the guard -> the test reddens; if it reddens for another reason redesign it.", False),
         ("Removing the guard -> the test reddened, alone.", False),
         ("Run the test to verify it fails.", False),
-        (
-            "Data flows a -> b -> c, and very much later in this deliberately long and winding sentence the structural check must stay green.",
-            False,
-        ),
+        ("Data flows a -> b -> c, and very much later in this deliberately long and winding sentence the structural check must stay green.", False),
     ],
 )
-def test_an_asserted_mutation_outcome_is_a_finding_unless_marked_or_reported(
-    text: str, flagged: bool
-) -> None:
+def test_an_asserted_mutation_outcome_is_a_finding_unless_marked_or_reported(text: str, flagged: bool) -> None:
     assert (asserted_outcomes(text + "\n") != []) is flagged
 
 
 def test_a_claim_split_across_a_wrap_is_still_one_sentence(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    path = plan(
-        root,
-        SCOPE
-        + "Drop the guard ->\nthe test reddens.\n\n**Expected:** dropping the other guard ->\nit reddens.\n",
-    )
+    path = plan(root, SCOPE + "Drop the guard ->\nthe test reddens.\n\n**Expected:** dropping the other guard ->\nit reddens.\n")
     found = lint(root, config, plans=[path]).findings
     assert [(f.rule, f.line) for f in found] == [("asserted-outcome", 3)]
 
@@ -5177,34 +4533,17 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)
         if touched is None:
-            return Lint(
-                [
-                    Finding(
-                        "base-unresolvable",
-                        "",
-                        None,
-                        _BASE_UNRESOLVABLE.format(base=base, root=root),
-                    )
-                ],
-                [],
-                [],
-            )
+            return Lint([Finding("base-unresolvable", "", None, _BASE_UNRESOLVABLE.format(base=base, root=root))], [], [])
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
-            raise Failure(
-                f"git status could not be read under {root}, so uncommitted plans could not be found"
-            )
+            raise Failure(f"git status could not be read under {root}, so uncommitted plans could not be found")
         selected = [p for p in touched if p.is_file()]
         unlinted = [p for p in pending if p not in set(touched)]
     else:
         selected = sorted(plans_dir.glob("*.md")) if plans_dir.is_dir() else []
     findings: list[Finding] = []
     for path in sorted(selected):
-        findings.extend(
-            _lint_one(
-                path, path.relative_to(root).as_posix(), root, fixes=identifiers(config).fixes
-            )
-        )
+        findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=identifiers(config).fixes))
     return Lint(findings, sorted(selected), sorted(unlinted))
 ```
 
@@ -5322,14 +4661,7 @@ groups = ["developer", "project-stable", "project-volatile"]
 
 def project(tmp_path: Path) -> tuple[Path, Config]:
     root = tmp_path / "widget"
-    for name in (
-        "src/widget",
-        "tests",
-        "docs",
-        "notes/developer",
-        "notes/project-stable",
-        "notes/project-volatile",
-    ):
+    for name in ("src/widget", "tests", "docs", "notes/developer", "notes/project-stable", "notes/project-volatile"):
         (root / name).mkdir(parents=True)
     (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
     (root / "src" / "widget" / "boot.py").write_text("", encoding="utf-8")
@@ -5338,20 +4670,14 @@ def project(tmp_path: Path) -> tuple[Path, Config]:
 
 def note(root: Path, group: str, name: str, body: str) -> Path:
     path = root / "notes" / group / f"{name}.md"
-    path.write_text(
-        f"---\nname: {name}\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}",
-        encoding="utf-8",
-    )
+    path.write_text(f"---\nname: {name}\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}", encoding="utf-8")
     return path
 
 
 def findings(root: Path, config: Config) -> list[tuple[str, int, str, str]]:
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
-    return [
-        (f.path, f.line, f.detail, f.rule)
-        for f in unresolved(root, config, store, walk(store.path, config.memory.groups))
-    ]
+    return [(f.path, f.line, f.detail, f.rule) for f in unresolved(root, config, store, walk(store.path, config.memory.groups))]
 
 
 def test_a_reference_to_a_deleted_file_is_reported_and_a_live_one_is_not(tmp_path: Path) -> None:
@@ -5366,31 +4692,17 @@ def test_shorthand_under_a_source_root_resolves(tmp_path: Path) -> None:
     # reddens.
     root, config = project(tmp_path)
     assert source_roots(root, config) == ("", "src", "tests", "docs")
-    note(
-        root,
-        "developer",
-        "a",
-        "see `widget/boot.py` (under src) and `boot.py` (a bare filename, prose)\n",
-    )
+    note(root, "developer", "a", "see `widget/boot.py` (under src) and `boot.py` (a bare filename, prose)\n")
     assert findings(root, config) == []
 
 
-def test_placeholders_absolute_paths_outside_the_repository_and_fenced_text_are_not_reported(
-    tmp_path: Path,
-) -> None:
+def test_placeholders_absolute_paths_outside_the_repository_and_fenced_text_are_not_reported(tmp_path: Path) -> None:
     root, config = project(tmp_path)
-    note(
-        root,
-        "developer",
-        "a",
-        "`scripts/foo.py` `/etc/nginx/x.conf` `/opt/app/run.sh`\n\n```\n`src/gone.py`\n```\n",
-    )
+    note(root, "developer", "a", "`scripts/foo.py` `/etc/nginx/x.conf` `/opt/app/run.sh`\n\n```\n`src/gone.py`\n```\n")
     assert findings(root, config) == []
 
 
-def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules(
-    tmp_path: Path,
-) -> None:
+def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules(tmp_path: Path) -> None:
     # `.gitignore` covers the whole store, so asking it about a note→note reference discards
     # precisely the class this guard exists to find. Mutation: drop the inside-store exemption —
     # this reddens.
@@ -5403,9 +4715,7 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
     subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
     (root / ".gitignore").write_text("notes/\n", encoding="utf-8")
     note(root, "developer", "a", "see `notes/developer/gone.md`\n")
-    assert findings(root, config) == [
-        ("developer/a.md", 8, "notes/developer/gone.md", "dead-reference")
-    ]
+    assert findings(root, config) == [("developer/a.md", 8, "notes/developer/gone.md", "dead-reference")]
 
 
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
@@ -5421,9 +4731,7 @@ def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_pat
     assert findings(root, config) == []
 
 
-def test_a_group_the_resolver_could_not_provide_is_named_not_silently_skipped(
-    tmp_path: Path,
-) -> None:
+def test_a_group_the_resolver_could_not_provide_is_named_not_silently_skipped(tmp_path: Path) -> None:
     # A walk that read a subset and reported "nothing stale" is worse than no guard. The
     # record is the resolver's own (`store.unavailable`), reason included.
     root, config = project(tmp_path)
@@ -5431,19 +4739,14 @@ def test_a_group_the_resolver_could_not_provide_is_named_not_silently_skipped(
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
     report = check_refs(root, config, store)
-    assert (
-        list(report.unavailable) == ["project-volatile"]
-        and "not in the store" in report.unavailable["project-volatile"]
-    )
+    assert list(report.unavailable) == ["project-volatile"] and "not in the store" in report.unavailable["project-volatile"]
 
 
 def test_a_note_that_will_not_parse_is_reported_not_dropped(tmp_path: Path) -> None:
     # `renumber` reports every file its sweep could not read; a note the walk quarantined is
     # the same claim about the store. Mutation: return `[]` for `unreadable` — this reddens.
     root, config = project(tmp_path)
-    (root / "notes" / "developer" / "broken.md").write_text(
-        "---\nname: broken\n  nested: yes\n---\n", encoding="utf-8"
-    )
+    (root / "notes" / "developer" / "broken.md").write_text("---\nname: broken\n  nested: yes\n---\n", encoding="utf-8")
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
     report = check_refs(root, config, store)
@@ -5502,10 +4805,7 @@ def project(tmp_path: Path) -> tuple[Path, Config]:
 
 
 def note(root: Path, group: str, name: str, body: str) -> None:
-    (root / "notes" / group / f"{name}.md").write_text(
-        f"---\nname: {name}\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}",
-        encoding="utf-8",
-    )
+    (root / "notes" / group / f"{name}.md").write_text(f"---\nname: {name}\ndescription: d\nmetadata:\n  type: feedback\n---\n\n{body}", encoding="utf-8")
 
 
 def graph(root: Path, config: Config) -> list[tuple[str, str, str]]:
@@ -5534,9 +4834,7 @@ def test_a_dead_link_a_repeat_and_a_bracketed_identifier_are_each_noted(tmp_path
     ]
 
 
-def test_a_link_inside_a_code_span_or_fence_is_not_a_link_and_code_between_links_is_not_a_repeat(
-    tmp_path: Path,
-) -> None:
+def test_a_link_inside_a_code_span_or_fence_is_not_a_link_and_code_between_links_is_not_a_repeat(tmp_path: Path) -> None:
     # Mutation: stop blanking code spans — the `[[ -f x ]]` case reddens.
     root, config = project(tmp_path)
     note(root, "developer", "a", "`[[ -f x ]]` and\n```\n[[gone]]\n```\n[[b]] `x` [[b]]\n")
@@ -5548,9 +4846,7 @@ def test_every_adjacent_repeat_form_is_noted(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     note(root, "developer", "a", "[[b]], [[b]] and [[b]] or [[b]]\n")
     note(root, "project-stable", "b", "x\n")
-    assert [f for f in graph(root, config) if f[0] == "repeated-link"] == [
-        ("repeated-link", "developer/a.md", "b")
-    ] * 3
+    assert [f for f in graph(root, config) if f[0] == "repeated-link"] == [("repeated-link", "developer/a.md", "b")] * 3
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -5648,9 +4944,7 @@ def _ignored(root: Path, targets: set[str]) -> set[str]:
     exit 1 is "nothing matched", an answer, which is why the runner does not collapse it."""
     if not targets:
         return set()
-    code, out = git_run(
-        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))
-    )
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets)))
     if code not in (0, 1):
         return set()
     return {line for line in out.splitlines() if line}
@@ -5691,11 +4985,7 @@ def audience_violations(store: Store, config: Config, walked: Walk) -> list[Find
     if overlay is None or store.mode != "overlay":
         return []
     common, _project = permitted_roots(overlay, config.project.name)
-    common_groups = {
-        name
-        for name, path in store.groups.items()
-        if path.resolve().is_relative_to(common.resolve())
-    }
+    common_groups = {name for name, path in store.groups.items() if path.resolve().is_relative_to(common.resolve())}
     project_notes = {n.name for n in walked.notes if n.store_group not in common_groups}
     found: list[Finding] = []
     for note in walked.notes:
@@ -5927,71 +5217,46 @@ def project(tmp_path: Path) -> tuple[Path, list[str]]:
     return root, ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
 
 
-def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     assert invoke(["docs", "check", *common]) == 0
     assert capsys.readouterr().out == "OK: documentation budgets and link targets\n"
 
 
-def test_docs_check_does_not_resolve_the_store_unless_asked(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_check_does_not_resolve_the_store_unless_asked(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # The default is exactly the enforced set the success line names (Premise 11). Mutation:
     # run the graph when no flag is given — this reddens on the NOTE count.
     root, common = project(tmp_path)
-    (root / "notes" / "developer" / "a.md").write_text(
-        "---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n[[gone]]\n",
-        encoding="utf-8",
-    )
+    (root / "notes" / "developer" / "a.md").write_text("---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n[[gone]]\n", encoding="utf-8")
     assert invoke(["docs", "check", "--json", *common]) == 0
     assert json.loads(capsys.readouterr().out)["notices"] == []
 
 
-def test_docs_check_reports_a_budget_finding_on_one_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_check_reports_a_budget_finding_on_one_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     (root / "AGENTS.md").write_text("# A\n\n## Rules\n", encoding="utf-8")
     assert invoke(["docs", "check", "--budgets", *common]) == 1
-    assert (
-        capsys.readouterr().out == "FAIL: 1 documentation problem(s): AGENTS.md [status-missing]\n"
-    )
+    assert capsys.readouterr().out == "FAIL: 1 documentation problem(s): AGENTS.md [status-missing]\n"
 
 
-def test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # Mutation: give a graph finding `exit_code=1` — this reddens.
     root, common = project(tmp_path)
-    (root / "notes" / "developer" / "a.md").write_text(
-        "---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n[[gone]]\n",
-        encoding="utf-8",
-    )
+    (root / "notes" / "developer" / "a.md").write_text("---\nname: a\ndescription: d\nmetadata:\n  type: feedback\n---\n\n[[gone]]\n", encoding="utf-8")
     assert invoke(["docs", "check", "--memory-graph", "--json", *common]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["notices"][0]["rule"] == "dead-wiki-link"
-    assert (
-        "1 advisory NOTE(s)" in data["summary"]
-        and "does not vouch for the memory store" in data["summary"]
-    )
+    assert "1 advisory NOTE(s)" in data["summary"] and "does not vouch for the memory store" in data["summary"]
 
 
-def test_docs_check_without_a_store_is_silent_about_the_graph(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_check_without_a_store_is_silent_about_the_graph(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
-    (root / "keelline.toml").write_text(
-        CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8"
-    )
+    (root / "keelline.toml").write_text(CONFIG.replace('mode = "in-repo"', 'mode = "local-only"'), encoding="utf-8")
     assert invoke(["docs", "check", "--memory-graph", *common]) == 0
     assert "NOTE" not in capsys.readouterr().out
 
 
-def test_docs_trail_writes_the_listing_and_check_reports_staleness(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_docs_trail_writes_the_listing_and_check_reports_staleness(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
     assert invoke(["docs", "trail", "--check", *common]) == 1
@@ -6001,34 +5266,22 @@ def test_docs_trail_writes_the_listing_and_check_reports_staleness(
     (root / "docs" / "plans" / "2026-02-02-y.md").write_text("# p\n", encoding="utf-8")
     assert invoke(["docs", "trail", *common]) == 1  # written, then the undeclared-state report
     out = capsys.readouterr().out
-    assert (
-        out.startswith("rewrote docs/roadmap.md; 1 document(s) entered the trail")
-        and "plans/2026-02-02-y.md" in out
-    )
-    (root / "docs" / "trail.toml").write_text(
-        '[states]\n"plans/2026-02-02-y.md" = "planned"\n', encoding="utf-8"
-    )
+    assert out.startswith("rewrote docs/roadmap.md; 1 document(s) entered the trail") and "plans/2026-02-02-y.md" in out
+    (root / "docs" / "trail.toml").write_text('[states]\n"plans/2026-02-02-y.md" = "planned"\n', encoding="utf-8")
     assert invoke(["docs", "trail", *common]) == 0
     assert invoke(["docs", "trail", "--check", *common]) == 0
 
 
-def test_plan_check_lints_the_named_plans_and_counts_them(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_plan_check_lints_the_named_plans_and_counts_them(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     root, common = project(tmp_path)
     plan = root / "docs" / "plans" / "2026-01-01-x.md"
     plan.write_text("**Scope:** iff x.\n", encoding="utf-8")
     assert invoke(["plan", "check", str(plan), *common]) == 0
-    assert (
-        capsys.readouterr().out
-        == "OK: linted 1 plan(s) — references resolve, steps are non-leading, mutation outcomes are expectations, Scope/Premise are present\n"
-    )
+    assert capsys.readouterr().out == "OK: linted 1 plan(s) — references resolve, steps are non-leading, mutation outcomes are expectations, Scope/Premise are present\n"
     plan.write_text("no scope\n", encoding="utf-8")
     assert invoke(["plan", "check", str(plan), "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)
-    assert data["findings"][0]["rule"] == "scope-missing" and data["linted"] == [
-        "docs/plans/2026-01-01-x.md"
-    ]
+    assert data["findings"][0]["rule"] == "scope-missing" and data["linted"] == ["docs/plans/2026-01-01-x.md"]
 ```
 
 ```python
@@ -6040,22 +5293,9 @@ import keelline.docs.api as docs
 
 def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     required = {
-        "TRAIL_MARKER",
-        "STATUS_HEADING",
-        "MARKER",
-        "END_MARKER",
-        "TRAIL_FILE",
-        "Trail",
-        "Lint",
-        "check_budgets",
-        "check_links",
-        "check_memory_graph",
-        "read_trail",
-        "trail_path",
-        "render_listing",
-        "rebuild",
-        "undeclared_new_documents",
-        "lint",
+        "TRAIL_MARKER", "STATUS_HEADING", "MARKER", "END_MARKER", "TRAIL_FILE", "Trail", "Lint",
+        "check_budgets", "check_links", "check_memory_graph", "read_trail", "trail_path",
+        "render_listing", "rebuild", "undeclared_new_documents", "lint",
     }
     assert required == set(docs.__all__)
 
@@ -6082,11 +5322,7 @@ def test_the_surface_is_a_module_not_the_package_init() -> None:
     import keelline.docs
 
     init = Path(next(iter(keelline.docs.__path__))) / "__init__.py"
-    assert not [
-        n
-        for n in ast.walk(ast.parse(init.read_text(encoding="utf-8")))
-        if isinstance(n, ast.Import | ast.ImportFrom)
-    ]
+    assert not [n for n in ast.walk(ast.parse(init.read_text(encoding="utf-8"))) if isinstance(n, ast.Import | ast.ImportFrom)]
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -6149,9 +5385,7 @@ def run_docs_check(args: argparse.Namespace) -> Result:
     notices = _graph_notices(args, root, config) if args.memory_graph else []
     data = {"problems": [asdict(p) for p in problems], "notices": [asdict(n) for n in notices]}
     if problems:
-        return Result(
-            f"FAIL: {len(problems)} documentation problem(s): {labels(problems)}", data, exit_code=1
-        )
+        return Result(f"FAIL: {len(problems)} documentation problem(s): {labels(problems)}", data, exit_code=1)
     # The success line names the enforced set alone. Naming the graph here once made an exit-0
     # line vouch for a graph the run had just reported broken.
     verdict = _OK
@@ -6176,11 +5410,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     updated = rebuild(current, root, config, trail)
     if args.check:
         if current != updated:
-            return Result(
-                f"{config.paths.roadmap} trail listing is stale; run: keelline docs trail",
-                {"stale": True},
-                exit_code=1,
-            )
+            return Result(f"{config.paths.roadmap} trail listing is stale; run: keelline docs trail", {"stale": True}, exit_code=1)
         return Result(f"OK: {config.paths.roadmap} trail listing is current", {"stale": False})
     written = current != updated
     if written:
@@ -6188,11 +5418,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     # After the write, so the listing is never left stale by this report.
     undeclared = undeclared_new_documents(current, updated, trail)
     data = {"written": written, "undeclared": undeclared}
-    summary = (
-        f"rewrote {config.paths.roadmap}"
-        if written
-        else f"{config.paths.roadmap} trail listing is current"
-    )
+    summary = f"rewrote {config.paths.roadmap}" if written else f"{config.paths.roadmap} trail listing is current"
     if undeclared:
         return Result(
             f"{summary}; {len(undeclared)} document(s) entered the trail with no declared state and were "
@@ -6210,17 +5436,9 @@ def run_plan_check(args: argparse.Namespace) -> Result:
     result = lint(root, config, plans=[Path(p).resolve() for p in args.paths], base=args.base)
     linted = [p.relative_to(root).as_posix() for p in result.linted]
     unlinted = [p.relative_to(root).as_posix() for p in result.unlinted]
-    data = {
-        "findings": [asdict(f) for f in result.findings],
-        "linted": linted,
-        "unlinted": unlinted,
-    }
+    data = {"findings": [asdict(f) for f in result.findings], "linted": linted, "unlinted": unlinted}
     if result.findings:
-        return Result(
-            f"FAIL: {len(result.findings)} plan problem(s): {labels(result.findings)}",
-            data,
-            exit_code=1,
-        )
+        return Result(f"FAIL: {len(result.findings)} plan problem(s): {labels(result.findings)}", data, exit_code=1)
     summary = _PLAN_OK.format(n=len(linted))
     if unlinted:
         summary += f"; {len(unlinted)} uncommitted plan(s) not linted — name them as PATH arguments"
@@ -6230,30 +5448,19 @@ def run_plan_check(args: argparse.Namespace) -> Result:
 def register(groups: SubParsers) -> None:
     docs = groups.add_parser("docs", help="documentation budgets, links and the design trail")
     docs_sub = docs.add_subparsers(dest="command", metavar="<command>")
-    check = common_flags(
-        docs_sub.add_parser("check", help="budgets and link targets; the memory graph as advice"),
-        store=True,
-    )
+    check = common_flags(docs_sub.add_parser("check", help="budgets and link targets; the memory graph as advice"), store=True)
     check.add_argument("--budgets", action="store_true")
     check.add_argument("--links", action="store_true")
-    check.add_argument(
-        "--memory-graph", action="store_true", help="also report the store's link graph (advisory)"
-    )
+    check.add_argument("--memory-graph", action="store_true", help="also report the store's link graph (advisory)")
     check.set_defaults(func=run_docs_check)
-    trail = common_flags(
-        docs_sub.add_parser("trail", help="regenerate the design-and-plan trail in the roadmap")
-    )
+    trail = common_flags(docs_sub.add_parser("trail", help="regenerate the design-and-plan trail in the roadmap"))
     trail.add_argument("--check", action="store_true", help="fail if the listing is stale")
     trail.set_defaults(func=run_docs_trail)
 
     plan = groups.add_parser("plan", help="implementation-plan lint")
     plan_sub = plan.add_subparsers(dest="command", metavar="<command>")
-    lint = common_flags(
-        plan_sub.add_parser("check", help="lint the plans a change touches, or the named ones")
-    )
-    lint.add_argument(
-        "--base", default=None, help="base ref (default: origin/<project.base_branch>)"
-    )
+    lint = common_flags(plan_sub.add_parser("check", help="lint the plans a change touches, or the named ones"))
+    lint.add_argument("--base", default=None, help="base ref (default: origin/<project.base_branch>)")
     lint.add_argument("paths", nargs="*", help="plans to lint instead of the diff")
     lint.set_defaults(func=run_plan_check)
 ```
@@ -6405,19 +5612,8 @@ SKILL_MAX_LINES = 80
 # Harness tool names a skill body may not use (§5.5: "action language, never tool names").
 # The per-harness mapping lives in skills/README.md and is held to this same list.
 TOOL_NAMES = (
-    "Read",
-    "Grep",
-    "Glob",
-    "Bash",
-    "Edit",
-    "Write",
-    "WebFetch",
-    "WebSearch",
-    "AskUserQuestion",
-    "Agent",
-    "LSP",
-    "NotebookEdit",
-    "TodoWrite",
+    "Read", "Grep", "Glob", "Bash", "Edit", "Write", "WebFetch", "WebSearch",
+    "AskUserQuestion", "Agent", "LSP", "NotebookEdit", "TodoWrite",
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against C5 before the command exists, keyed to the
@@ -6491,9 +5687,7 @@ def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
             except SystemExit:
                 parsed = False
         if argv[0] in NOT_YET_SHIPPED:
-            assert not parsed, (
-                f"`keelline {invocation}` parses now; delete its NOT_YET_SHIPPED entry ({NOT_YET_SHIPPED[argv[0]]} shipped it)"
-            )
+            assert not parsed, f"`keelline {invocation}` parses now; delete its NOT_YET_SHIPPED entry ({NOT_YET_SHIPPED[argv[0]]} shipped it)"
         else:
             assert parsed, f"`keelline {invocation}` does not parse against the real parser"
 
