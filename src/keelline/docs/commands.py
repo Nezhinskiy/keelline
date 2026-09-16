@@ -47,7 +47,7 @@ def run_docs_check(args: argparse.Namespace) -> Result:
     if enforced or args.links:
         problems.extend(check_links(root, config))
     notices = _graph_notices(args, root, config) if args.memory_graph else []
-    data = {"problems": [asdict(p) for p in problems], "notices": [asdict(n) for n in notices]}
+    data = {"findings": [asdict(p) for p in problems], "notices": [asdict(n) for n in notices]}
     if problems:
         return Result(
             f"FAIL: {len(problems)} documentation problem(s): {labels(problems)}",

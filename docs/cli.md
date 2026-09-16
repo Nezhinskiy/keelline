@@ -6,7 +6,11 @@ gives you the one-line version; this is the rest.
 Three things hold everywhere:
 
 - **`--json` is accepted anywhere** and prints one machine-readable object instead of one line.
-  It is not declared per command — the frame strips it from `argv` before parsing.
+  It is not declared per command — the frame strips it from `argv` before parsing. A command
+  whose result is a list of findings carries it under **`findings`**, named after what the
+  values are and spelled the same way by every command, whatever its summary line calls them.
+  A list that is not findings keeps its own key: `docs check`'s advisory `notices`, and
+  `docs trail`'s `written`, `undeclared` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result.
@@ -264,7 +268,7 @@ this tool did not generate, and is current; every `<PREFIX>-nnn` mentioned under
 files and `[ledger] code_roots` has an entry (a `void` entry counts); every citation of an entry
 *file* — from those roots and from the directories the `[paths]` values live under — names a
 file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
-line; `--json` carries every problem with its `detail`, which may quote the repository and is
+line; `--json` carries every finding with its `detail`, which may quote the repository and is
 why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
 generated index — prints `nothing to check` and exits `0`; a generated index with no directory
 behind it is a deleted ledger and exits `1`. Git enumerates the files where the root is the top

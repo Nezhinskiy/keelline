@@ -94,8 +94,10 @@ def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     assert line.count("\n") == 1
     assert invoke(["bugs", "check", "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)
-    assert [p["rule"] for p in data["problems"]] == ["dangling-mention", "dangling-mention"]
-    assert "BR-404" in data["problems"][0]["detail"]
+    # `findings` and not `problems`: one name across every command that returns a list of
+    # `Finding`. Mutation: spell the key `problems` in `run_bugs_check` — this reddens.
+    assert [p["rule"] for p in data["findings"]] == ["dangling-mention", "dangling-mention"]
+    assert "BR-404" in data["findings"][0]["detail"]
 
 
 def test_check_passes_a_clean_ledger(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

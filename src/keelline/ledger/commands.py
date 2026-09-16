@@ -48,9 +48,9 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
 
     root, config = root_and_config(args)
     if uninitialised(root, config):
-        return Result(_INERT, {"checked": False, "problems": []})
+        return Result(_INERT, {"checked": False, "findings": []})
     found = problems(root, config)
-    data = {"checked": True, "problems": [asdict(p) for p in found]}
+    data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
         return Result(_OK, data)
     # Labels only on the line: a path, a line number and a rule are this lane's; the detail may

@@ -83,6 +83,12 @@ def test_docs_check_reports_a_budget_finding_on_one_line(
     assert capsys.readouterr().out == (
         "FAIL: 1 documentation problem(s): AGENTS.md [status-missing]\n"
     )
+    # The enforced findings ride under `findings`, the one key every command that returns a
+    # list of `Finding` uses — `notices` beside it is a different list, not a second spelling.
+    # Mutation: spell the key `problems` in `run_docs_check` — this reddens.
+    assert invoke(["docs", "check", "--budgets", "--json", *common]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["findings"][0]["rule"] == "status-missing"
 
 
 def test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store(
