@@ -141,6 +141,91 @@ error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere els
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
 your prompt.
 
+## `keelline guard bg-cleanup`
+
+Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
+payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
+the call would be refused (a `&`-backgrounded job with no `trap … EXIT`, or a backgrounded
+command that begins with `sleep`), `1` when it carries a trailing restore no trap protects, and
+`0` otherwise. Both refusals need `run_in_background` to be `true` in the object you send —
+the leak and the `sleep` are only faults for a job the harness will not reap, so a CI smoke
+test written without that key measures `0` on a command that is refused in a session.
+Anything it cannot read is `2`: this is the fail-closed row of the CLI table, and a guard that
+guessed would be guessing. That is about the JSON, not about the command inside it: a command
+longer than the 64 KiB cap is not read either, and is allowed (`0`) rather than refused,
+because tokenizing an unbounded string in front of every Bash call is the larger fault.
+
+This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
+smoke test and a person can ask it without a harness. **Writes** nothing.
+
+## `keelline commit check --range RANGE`
+
+Every message in `RANGE` (a `git log` revision range, e.g. `main..HEAD`), for lines in its
+trailing attribution block that are an AI/tool attribution trailer or footer: a `-by:` trailer
+whose address is at a vendor's domain or whose name is a product, a `Generated with <tool>`
+footer, or a line that is only `AI-generated`. The block is the message's last paragraph plus
+every paragraph above it that is attribution to the last line — the canonical harness block is
+two paragraphs — and it ends at the first paragraph holding any body line. Body prose is never
+judged, and a person whose name happens to be a vendor word is not a violation.
+`[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
+a violation, but the range must still be readable, because the report says how many messages it
+read. Exits `1` naming each offence as `sha line N [label]` — never the text, which is the
+repository's — and `2` when git cannot read the range or the range looks like an option.
+**Writes** nothing. This is what the reusable workflow runs.
+
+Exit `1` has two meanings here and a gate should know both: messages were read and some carry a
+trailer (`FAIL: …`), and *no `keelline.toml` was found under `--root`*, which the configuration
+loader reports as a failure — `keelline: failed: …/keelline.toml does not exist` — and not as a
+refusal. A workflow that must tell them apart reads the first word of the output, or checks the
+file is there before it runs the gate.
+
+## `keelline commit strip FILE`
+
+Rewrite a commit-message file in place with the attribution lines of its trailing attribution
+block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
+says which; a message that is *only* attribution is left alone, because emptying it aborts the
+commit with a confusing error and CI explains better. Refuses a symlink, and fails (`1`) on a
+file it cannot read, a file that is not UTF-8 included.
+
+Git's own trailing comment block is kept, and so is everything below the scissors line that
+`commit.verbose = true` puts the staged diff under — the message is what lies above both.
+
+This is what the chained `prepare-commit-msg` hook runs, so the trailer is gone before the
+commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. Installing the
+hook is a library call today (`keelline.guards.api.install`) — no `keelline` subcommand offers
+it yet. **Writes** `FILE`.
+
+## `keelline test hygiene`
+
+The two environment faults that make a red test run unattributable: uncommitted changes in
+the tree, and `.pyc` files whose recorded source mtime no longer matches their source. Counts
+the bytecode under `[ledger] code_roots` and the uncommitted changes across the whole
+repository — a dirty tree anywhere makes a red run unattributable — and exits `1` when either
+is present, `2` when git cannot report the tree. The `PostToolUse` `Bash` hook delivers the
+same note once per context after a red pytest run. **Writes** nothing.
+
+## `keelline test audit-entrypoints`
+
+Tests that never exercise what they name, in two shapes: an assertion whose value is produced
+by invoking a test double, and a test whose name states an entry point it imports but never
+mentions again, in its own body or in the local helpers it reaches. Scans every `test_*.py`
+under `[ledger] code_roots`, treating the packages and modules found directly under those
+roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
+`--json`, **with findings and no way to fail on them** — that is deliberate, not an oversight,
+and nothing here gates. Run over a repository's own suite the scanner names name-collision
+candidates that are not defects, so an exit `1` would be red from the first run, and the
+configuration has no per-command switch to turn it off with. Gating belongs to a lane that has
+triaged them to zero, and that lane has not shipped. Refuses (`2`) if its own self-test no
+longer discriminates. **Writes** nothing.
+
+The `--json` object carries `summary` (the line the command would have printed), `files` (how
+many test files were scanned), `import_roots` (the
+top-level names treated as the code under test) and `findings`, sorted by path then line. Each
+finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-on-double` or
+`names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
+`detail` are repository-authored strings, which is why they are in `--json` and not in the
+summary line.
+
 ---
 
 ## Configuration
