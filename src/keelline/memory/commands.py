@@ -338,6 +338,31 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     )
 
 
+# The refusal carries the resolver's reasons rather than naming a command that would report
+# them, because no command does: `run_index` builds its findings from `_findings` and drift and
+# reads `store.unavailable` nowhere, in either `--json` object or on the summary. The one case a
+# resolver reason does surface elsewhere is total failure — `resolve` returns `None` and
+# `_no_store` raises — and that never reaches here, so a pointer would have been false in
+# precisely and only the case that produces it: partial group resolution. `ledger/index.py` says
+# at length why a refusal pointing away from the fix is worth rewriting a guard to avoid.
+#
+# The reasons are built out of `memory.groups` entries and name paths, so they are
+# repository-authored text and reach a reader the way `_no_store`'s reason does: inside
+# `trust.wrap`, with the region markers that say the text is data.
+_UNAVAILABLE_GROUPS = (
+    "{count} configured group(s) could not be resolved ({names}), so the walk read a subset and "
+    "no answer from it means anything; the reasons below are repository-authored text, shown as "
+    "data"
+)
+
+
+def _unavailable(unavailable: dict[str, str]) -> Refusal:
+    names = sorted(unavailable)
+    reasons = "\n".join(f"{group}: {unavailable[group]}" for group in names)
+    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(names))
+    return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
+
+
 def run_refs(args: argparse.Namespace) -> Result:
     from dataclasses import asdict
 
@@ -347,13 +372,7 @@ def run_refs(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     report = check_refs(Path(args.root).resolve(), config, store)
     if report.unavailable:
-        # Group names are configuration keys this lane read; the resolver's reasons name paths
-        # and stay out of the message — the summary is what a stranger's terminal sees.
-        raise Refusal(
-            f"{len(report.unavailable)} configured group(s) could not be resolved "
-            f"({', '.join(sorted(report.unavailable))}), so the walk read a subset and no answer "
-            "from it means anything; `keelline memory index --check` names why"
-        )
+        raise _unavailable(report.unavailable)
     data = {
         "findings": [asdict(f) for f in report.findings],
         "unreadable": [str(path.relative_to(store.path)) for path, _ in report.unreadable],

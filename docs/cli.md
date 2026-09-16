@@ -337,8 +337,9 @@ filenames are skipped. In an overlay store, a note in a cross-project group that
 into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
 targets are in `--json`. A note that exists and would not parse is counted on the line and
 named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
-configured group could not be resolved — the resolver's own record, reason included — because
-a walk over a subset that reports nothing stale is worse than no guard. Write a path that
+configured group could not be resolved, naming each group and carrying the resolver's own reason
+for it inside the delimited region that marks repository-authored text as data — because a walk
+over a subset that reports nothing stale is worse than no guard. Write a path that
 deliberately does not resolve in *italics*. **Writes** nothing.
 
 ---
