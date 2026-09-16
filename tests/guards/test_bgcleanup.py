@@ -577,7 +577,8 @@ def test_a_newline_before_the_echo_is_the_same_chain() -> None:
 
 
 def test_an_env_prefixed_echo_is_still_an_echo() -> None:
-    """`command_words` is what Keelline's copy has that ai-daybook's lacks; pin that it is used."""
+    """`command_words` is what this scanner has that the repository the guards were extracted
+    from lacks; pin that it is used."""
 
     context = judge("pytest -q > out.log; FOO=1 echo done", background=True).hint
 
