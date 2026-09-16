@@ -371,8 +371,8 @@ why so few of them are trusted with anything.
 
 ```toml
 [keelline]
-version = "0.1.0"
-state = "installed"
+version = "0.1.0"        # required; there is no default
+state = "installed"      # initialised | adopting | installed — default: initialised
 preset = "recommended"
 profile = ""
 agents = ["claude", "codex"]
@@ -417,8 +417,14 @@ volatile_notes_words = 2500
 volatile_ttl_days = 30
 ```
 
-Every value above is the `recommended` preset's default and is what a key you leave out takes,
-`[project] name` excepted — it has no default and is yours to write.
+Every value above is what a key you leave out takes, from the `recommended` preset — with two
+exceptions, and one line that is an example rather than a default. `[keelline] version` and
+`[project] name` have no default at all and are yours to write: a file without `version` does
+not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
+defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
+`installed` above shows a set value, not what an omitted key takes. Everything from
+`[project] base_branch` down, `[paths]`, `[memory]`, `[ledger]` and `[budgets]` included, is the
+preset's default exactly as written.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two
