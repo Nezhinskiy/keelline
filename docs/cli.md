@@ -279,6 +279,68 @@ exists a stale mention in that file looks intentional to `bugs check` forever. T
 own body is the operator's to rewrite and is not swept. **Writes** the two entry files, every
 rewritten file, and `<paths.bug_index>`.
 
+## `keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
+
+Two kinds of check, and the difference is the whole design; no flag runs the enforced
+two, and `--memory-graph` is opt-in. **Enforced** (exit `1`, `FAIL:`):
+the always-loaded document at `[paths] agents_md` exists, is within `agents_md_lines` and
+`agents_md_words`, and has a `## Current status` section within `status_lines`; the roadmap at
+`[paths] roadmap`, up to the line `## Design and plan trail`, is within `roadmap_prose_lines`
+and `roadmap_prose_words` (a roadmap with no marker is budgeted whole; an absent one is not a
+finding); every relative local link in the agents file resolves to a file. Budgets are the
+effective ones — the preset's, lowered by `[budgets]` if the project chose to. **Advisory**
+(`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
+names a document in the store, no link is immediately repeated, and no ledger identifier is
+bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
+the store. Silent where no store resolves. **Writes** nothing.
+
+## `keelline docs trail [--check]`
+
+Rewrite the listing between `## Design and plan trail` and `<!-- end design and plan trail -->`
+in the roadmap: every `*.md` under `[paths] specs` and `[paths] plans` that git tracks and does
+not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap) whose
+`pattern` matches its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
+`delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
+the listing unable to lie by silence: a state naming a document that no longer exists fails
+(`1`) before anything is written, and a document that enters the listing without a declared
+state is written as `delivered` and then reported (`1`) — a design is written before the thing
+is built. That second guard fires on the writing path only: a row enters the listing through
+`docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
+against, so a defaulted `delivered` that was committed over that report is invisible to CI.
+A `trail.toml` outside its contract (a non-string label, a pattern that does not compile)
+fails. **Writes** `[paths] roadmap`.
+
+## `keelline plan check [--base REF] [PATH …]`
+
+With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
+`REF...HEAD` touches, `REF` defaulting to `origin/<project.base_branch>`. Four rules, each from a
+retrospective: every backticked path resolves unless the line says `(create)` or declares it
+on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
+nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
+present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with content; and a
+mutation's outcome stated as fact in the present tense (`-> the test reddens`, `watch it go
+red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an expectation.
+Fenced code is fixture text. A base that does not resolve is a finding (`1`), never an OK:
+in CI the cause is a checkout too shallow to hold the ref (`fetch-depth: 0`). Uncommitted plans
+are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
+lints it. **Writes** nothing.
+
+## `keelline memory refs`
+
+Every backticked repository path a note names still exists. Notes are read as authoritative and
+age silently, so a path to a deleted module sends the next session after it. A candidate is
+dropped when the tree explains it: shorthand that resolves under the root, a code root or the
+directory a `[paths]` value lives in; an absolute path outside the repository; a placeholder
+(`scripts/foo.py`); a path the repository's ignore rules cover — except a path into the store
+itself, which those rules cover wholesale and which is settled on disk. Fenced code and bare
+filenames are skipped. In an overlay store, a note in a cross-project group that `[[links]]`
+into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
+targets are in `--json`. A note that exists and would not parse is counted on the line and
+named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
+configured group could not be resolved — the resolver's own record, reason included — because
+a walk over a subset that reports nothing stale is worse than no guard. Write a path that
+deliberately does not resolve in *italics*. **Writes** nothing.
+
 ---
 
 ## Configuration
