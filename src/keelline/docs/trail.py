@@ -44,11 +44,30 @@ _ROW = re.compile(r"^- \[`([^`]+)`\]", re.MULTILINE)
 # marker settled into the roadmap — a document agents load, with no delimited region and no
 # trust record behind it. A newline is the same defect one step earlier: it is what lets a value
 # put a marker, or a heading, alone on a line, which is where `TRAIL_MARKER_LINE` and the budget
-# reader's cut both look. `read_trail` is where it is caught, beside the type checks, because a
-# `trail.toml` outside the contract must read as that file being wrong.
+# reader's cut both look.
+#
+# There are two kinds of such value and they are caught in two places, because they arrive by two
+# routes and their remedies differ. A `trail.toml` `label` or `state` is caught in `read_trail`,
+# beside the type checks, because a `trail.toml` outside the contract must read as that file
+# being wrong. A document's own FILENAME reaches the listing as both the row and the link,
+# straight off `glob("*.md")` with no file to be outside a contract — and guarding only the
+# first half left the defect whole: a tracked `…-a<!-- end design and plan trail -->b.md` grew
+# the roadmap 18 → 22 → 26 lines over three runs, each exiting 0, with the end-marker count
+# going 2 → 4 → 6, and `--check` stale forever. It is caught in `render_listing`, after the
+# ignored and untracked documents are dropped, so a sibling session's oddly named local file
+# cannot fail the command for everybody — the same reason `_untracked` exists.
 _UNINTERPOLABLE = (
     "{path}: a {what} is written into the generated listing verbatim, so it must be a single "
     "line and must carry neither `{marker}` nor the end-of-trail comment"
+)
+# `{row!r}` is repository-authored text in a message, for `ledger.index.FOREIGN_CONTENT`'s
+# reason: this reaches the terminal of the person who ran the command against their own
+# repository, and naming the file is the whole of what makes "rename it" actionable. `!r` keeps
+# a name holding a newline on one line.
+_UNLISTABLE = (
+    "{row!r} cannot be written into the {roadmap} listing: a document's name becomes both the "
+    "row and the link verbatim, so it must be a single line and must carry neither `{marker}` "
+    "nor the end-of-trail comment — rename the file"
 )
 _PREAMBLE = (
     "\n\nEvery design and plan document, grouped by theme and annotated with its\n"
@@ -197,6 +216,12 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
     for row, link, path in documents:
         if path in skip:
             continue
+        # Refused and not skipped: dropping the document would be the listing lying by silence,
+        # which is the failure its other two guards exist to prevent, and the operator has a
+        # remedy either way. The link is checked too — it is the same name, joined to the
+        # configured `specs`/`plans` path, and that path is repository-authored as well.
+        if not (_interpolable(row) and _interpolable(link)):
+            raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))
         listed.add(row)
         buckets.setdefault(theme_of(path.name, trail), []).append((row, link))
     # A rename or deletion must not silently downgrade a state to the default. Without this, a

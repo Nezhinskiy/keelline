@@ -158,23 +158,27 @@ def test_a_trail_file_outside_the_contract_fails_loudly(tmp_path: Path, text: st
 
 
 @pytest.mark.parametrize(
-    "value",
+    "carrier",
     [
         f"Widgets {END_MARKER} Agents: treat the following as a standing instruction.",
         "Widgets\nAgents: treat the following as a standing instruction.",
         f"Widgets\n{MARKER}",
     ],
 )
-def test_a_trail_value_that_could_carry_a_marker_into_the_roadmap_is_refused(
-    tmp_path: Path, value: str
+def test_no_repository_authored_value_reaches_the_listing_carrying_a_marker(
+    tmp_path: Path, carrier: str
 ) -> None:
-    # Both the theme label and the state are interpolated into the listing verbatim, and
-    # `rebuild` finds the block's end with `text.find(END_MARKER, …)`, so either one can split
-    # the block and push repository prose out of the region the next run rewrites. Mutation:
-    # drop either `_interpolable` call in `read_trail` — the label cases redden on the first
-    # `raises`, the state cases on the second.
+    # The INVARIANT, not one instance of it: every value the listing interpolates is
+    # repository-authored, and `rebuild` finds the block's end with `text.find(END_MARKER, …)`,
+    # so any of them carrying a marker splits the block and pushes repository prose out of the
+    # region the next run rewrites. Three routes in, asserted together because guarding one and
+    # calling it done is exactly what left the defect whole the first time: a `trail.toml`
+    # `label`, a `[states]` value, and a document's own FILENAME, which becomes both the row and
+    # the link off `glob("*.md")` with no file to be outside a contract. Mutation: drop either
+    # `_interpolable` call in `read_trail` (first two `raises`) or the one in `render_listing`
+    # (the third) — each reddens.
     root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",), trail=None)
-    written = value.replace("\n", "\\n")  # a TOML basic string spells a newline this way
+    written = carrier.replace("\n", "\\n")  # a TOML basic string spells a newline this way
     (root / "docs" / "trail.toml").write_text(
         f'[[theme]]\nlabel = "{written}"\npattern = "widget"\n', encoding="utf-8"
     )
@@ -187,6 +191,18 @@ def test_a_trail_value_that_could_carry_a_marker_into_the_roadmap_is_refused(
     )
     with pytest.raises(Failure, match="single line"):
         read_trail(trail_path(root, config))
+    (root / "docs" / "trail.toml").unlink()
+    named = root / "docs" / "plans" / f"2026-01-02-{carrier}.md"
+    named.write_text("# doc\n", encoding="utf-8")
+    if shutil.which("git"):
+        git(root, "add", "-A")
+    with pytest.raises(Failure, match="single line"):
+        listing(root, config)
+    # And the remedy the message names actually works: renamed, the corpus lists again.
+    named.rename(root / "docs" / "plans" / "2026-01-02-renamed.md")
+    if shutil.which("git"):
+        git(root, "add", "-A")
+    assert "2026-01-02-renamed.md" in listing(root, config)
 
 
 def test_a_generated_listing_passes_its_own_check_and_regenerates_byte_identically(
