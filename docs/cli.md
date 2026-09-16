@@ -243,8 +243,11 @@ result line, not hidden. **Writes** the entry file and `<paths.bug_index>`.
 Render `<paths.bug_index>` from the entry files alone. `--check` exits `1` when the committed
 index differs from that rendering and writes nothing. Either form refuses (`2`) while the write
 would destroy something: a line the index holds that this tool did not generate (a hand-written
-section, an operator's note — recover it into an entry file first), or a generated index whose
-entry directory is gone (restore the files; the index carries nothing of its own). A reworded
+section, an operator's note, or a table row with no entry file behind it — recover it into an
+entry file first), or a generated index whose entry directory is gone (restore the files; the
+index carries nothing of its own). A row is judged by the entry it links and not by its shape,
+so a row whose entry file went missing in a merge — the last record that bug existed — is not
+something regenerating may delete. A reworded
 header is a stale index, not foreign content. The first paragraph names the generator, and that
 paragraph is recognised structurally rather than by an exact string, so an index left by an
 older generated format is still read as generated rather than refused as hand-written content.
@@ -309,8 +312,11 @@ state is written as `delivered` and then reported (`1`) — a design is written 
 is built. That second guard fires on the writing path only: a row enters the listing through
 `docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
 against, so a defaulted `delivered` that was committed over that report is invisible to CI.
-A `trail.toml` outside its contract (a non-string label, a pattern that does not compile)
-fails. **Writes** `[paths] roadmap`.
+A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern that does not
+compile, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+line or that carries either marker — both are written into the listing verbatim, so one could
+otherwise split the block and push repository prose into the roadmap. **Writes**
+`[paths] roadmap`.
 
 ## `keelline plan check [--base REF] [PATH …]`
 
@@ -322,8 +328,12 @@ nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` lin
 present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with content; and a
 mutation's outcome stated as fact in the present tense (`-> the test reddens`, `watch it go
 red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an expectation.
-Fenced code is fixture text. A base that does not resolve is a finding (`1`), never an OK:
-in CI the cause is a checkout too shallow to hold the ref (`fetch-depth: 0`). Uncommitted plans
+Fenced code is fixture text, and so is a path claim that lands outside the project root —
+an absolute one, or one that walks out through `..` — which is never settled against the
+filesystem, because that answer would be about the machine rather than about the repository. A
+base that does not resolve is a finding (`1`), never an OK: in CI the cause is a checkout too
+shallow to hold the ref (`fetch-depth: 0`). A `REF` shaped like an option is refused (`2`)
+before git sees it. Uncommitted plans
 are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
 lints it. **Writes** nothing.
 
