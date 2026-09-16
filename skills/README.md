@@ -18,6 +18,12 @@ in five of the six. `tests/skills/test_skills.py` holds every `SKILL.md` to this
 | resolve a symbol precisely | `LSP` (when a language-server plugin is installed) | not available; fall back to searching |
 | keep a running checklist | `TodoWrite` | a checklist in the reply |
 
+Two columns because those are the two harnesses this plugin ships a manifest for. A third
+harness adds a **column**, never a second vocabulary in the skills: fill each row with that
+harness's own tool, and where it has none write what to do instead. The Codex column already
+models both cases — a tool under another name (`apply_patch`), and a capability that is simply
+absent ("do the work inline").
+
 Skills reference the CLI by name (`keelline …`): the plugin root placeholder is not substituted
 in skill content under Codex, so a path to the launcher would break there. Detail beyond a
 short procedure goes in `<skill>/references/`.

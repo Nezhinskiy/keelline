@@ -5,7 +5,9 @@ description: Diagnose a Keelline installation — hooks, memory store, budgets, 
 
 # Diagnosing an installation
 
-Written against the CLI contract; the command ships with the `hooks-core` lane.
+Written against the CLI contract; the command ships with the `hooks-core` lane and is not
+available yet. If an invocation below is rejected as an unknown command, say so and
+stop — do not improvise a substitute.
 
 1. Run `keelline doctor --json` and read the report: not initialised; store unresolved and
    why; a hook whose last run failed, with its reason; a bundle that does not fit its slots;

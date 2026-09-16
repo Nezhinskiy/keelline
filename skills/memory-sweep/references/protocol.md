@@ -15,10 +15,11 @@ that decides the work. No status tail either — a factual tail is the same fail
 position.
 
 Notes with `metadata.startup: <rank>` are standing rules, injected whole at session start in
-rank order; volatile notes are injected whole too, and `keelline memory session-context`
-reports one past its `as_of` or its budget. Before ranking a note, decide where it belongs at
-all: a rule that fires on an *action* belongs on that action's hook; a rule already
-mechanized by a repository setting or a CI gate belongs in neither, and the note is deleted.
+rank order; volatile notes are injected whole too, and
+`keelline memory session-context --bundle volatile-notes` reports one past its `as_of` or its
+budget. Before ranking a note, decide where it belongs at all: a rule that fires on an
+*action* belongs on that action's hook; a rule already mechanized by a repository setting or a
+CI gate belongs in neither, and the note is deleted.
 
 ## Before writing a note
 
@@ -45,6 +46,9 @@ mechanized by a repository setting or a CI gate belongs in neither, and the note
 
 ## In a worktree
 
-The store is linked, not copied: `keelline memory index` from a worktree registers the link
-so a note written from either side is the same note. A group the resolver cannot provide is
-named by `keelline memory refs` as a refusal; nothing else reports it.
+The store is linked, not copied, so a note written from either side is the same note and
+nothing is lost when the worktree goes. Linking is automatic, and it is not the job of
+`keelline memory index`: a `SessionStart` handler makes one link per group at the start of a
+session and says how many it made. When a group is missing from the worktree, read that line
+first — the handler reports a path it refused rather than failing the session — and
+`keelline memory refs` refuses for the same gap once the sweep runs.

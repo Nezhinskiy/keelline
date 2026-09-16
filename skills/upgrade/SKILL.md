@@ -5,7 +5,9 @@ description: Upgrade the Keelline footprint in a repository after a plugin updat
 
 # Upgrading the footprint
 
-Written against the CLI contract; the command ships with the `upgrade` lane.
+Written against the CLI contract; the command ships with the `upgrade` lane and is not
+available yet. If an invocation below is rejected as an unknown command, say so and
+stop — do not improvise a substitute.
 
 1. Run `keelline upgrade --dry-run` and relay each artifact with its verdict: update, skip
    (hand-edited), new, or remove — plus the migrations that would run and the `[ci] ref` it

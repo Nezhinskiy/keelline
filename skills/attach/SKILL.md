@@ -5,7 +5,9 @@ description: Bind a repository to its private memory overlay and link the note s
 
 # Attaching the overlay
 
-Written against the CLI contract; the command ships with the `attach` lane.
+Written against the CLI contract; the command ships with the `attach` lane and is not
+available yet. If an invocation below is rejected as an unknown command, say so and
+stop — do not improvise a substitute.
 
 1. Run `keelline attach --store PATH --check` first: it reports whether the overlay's record
    binds this repository's remote and what the permission diff would be, and writes nothing.

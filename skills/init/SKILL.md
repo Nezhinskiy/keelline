@@ -5,7 +5,9 @@ description: Set up Keelline in a repository — questions, footprint, then an a
 
 # Initialising a project
 
-Written against the CLI contract; the command ships with the `onboarding` lane.
+Written against the CLI contract; the command ships with the `onboarding` lane and is not
+available yet. If an invocation below is rejected as an unknown command, say so and
+stop — do not improvise a substitute.
 
 1. Show what would be written first: run `keelline init --dry-run` and relay the list of
    files, managed regions and settings entries it names, unchanged.

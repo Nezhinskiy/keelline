@@ -5,7 +5,9 @@ description: Configure the machine for Keelline — the preset, the personal par
 
 # Machine setup
 
-Written against the CLI contract; the command ships with the `setup` lane.
+Written against the CLI contract; the command ships with the `setup` lane and is not
+available yet. If an invocation below is rejected as an unknown command, say so and
+stop — do not improvise a substitute.
 
 1. Run `keelline setup --preset recommended` and relay what it writes to the machine
    configuration file and which plugins and standing rules the preset enables; use

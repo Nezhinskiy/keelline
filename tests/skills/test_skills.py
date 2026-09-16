@@ -59,6 +59,19 @@ def skills() -> list[Path]:
     return sorted(SKILLS.glob("*/SKILL.md"))
 
 
+def documents() -> list[Path]:
+    """Every skill document the invocation check reads: the `SKILL.md` entry points and the
+    `references/` files beside them.
+
+    A reference is skill content a model reads and copies, so an invocation that does not parse
+    is as wrong there as in a procedure. `skills/README.md` is excluded because its table names
+    harness tools rather than commands. The tool-name rule is deliberately *not* widened this
+    way: a reference writes ordinary English about writing ("Write the rule, not the incident")
+    that `_TOOL` would read as the harness tool of the same name.
+    """
+    return sorted(path for path in SKILLS.rglob("*.md") if path.name != "README.md")
+
+
 def split(path: Path) -> tuple[dict[str, str], str]:
     match = _FRONTMATTER.match(path.read_text(encoding="utf-8"))
     assert match is not None, f"{path} has no frontmatter"
@@ -71,8 +84,15 @@ def split(path: Path) -> tuple[dict[str, str], str]:
 
 def test_the_walk_finds_the_ported_skills() -> None:
     # The mutation guard for the parametrised tests below: an empty `skills/` passes them all.
+    # Every skill this lane ships is named, not only the two ported ones — deleting the six
+    # wrappers would otherwise leave NOT_YET_SHIPPED describing commands no skill names, with
+    # the suite still green. Subsets, not equalities: `skills-author` grows this directory.
     names = {path.parent.name for path in skills()}
     assert {"close-bug", "memory-sweep"} <= names
+    assert {"init", "upgrade", "uninstall", "attach", "setup", "doctor"} <= names
+    # The same guard for the wider walk: a `references/` that goes quiet takes its own
+    # invocation cases with it.
+    assert SKILLS / "memory-sweep" / "references" / "protocol.md" in documents()
 
 
 @pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
@@ -94,12 +114,17 @@ def test_no_skill_body_names_a_harness_tool(path: Path) -> None:
     assert _TOOL.search(body) is None, _TOOL.search(body)
 
 
-@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("path", documents(), ids=lambda p: str(p.relative_to(SKILLS)))
 def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
     parser = build_parser(discover_registrars())
-    _, body = split(path)
+    # The whole file, not `split`'s body: a reference carries no frontmatter, and a description
+    # that named a command would have to parse too.
+    body = path.read_text(encoding="utf-8")
     invocations = _INVOCATION.findall(body)
-    assert invocations, "a skill that names no command is not a wrapper"
+    if path.name == "SKILL.md":
+        # Scoped to the entry points: a reference may be pure convention prose with no command
+        # in it, and nothing is wrong with that.
+        assert invocations, "a skill that names no command is not a wrapper"
     for invocation in invocations:
         argv, _ = split_json_flag(shlex.split(invocation))
         with redirect_stderr(io.StringIO()):
@@ -111,7 +136,9 @@ def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
         if argv[0] in NOT_YET_SHIPPED:
             assert not parsed, (
                 f"`keelline {invocation}` parses now; delete its NOT_YET_SHIPPED entry "
-                f"({NOT_YET_SHIPPED[argv[0]]} shipped it)"
+                f"({NOT_YET_SHIPPED[argv[0]]} shipped it) and re-read this skill against the "
+                f"flags that actually shipped — this test proves the command parses, never "
+                f"that the skill describes it correctly"
             )
         else:
             assert parsed, f"`keelline {invocation}` does not parse against the real parser"
