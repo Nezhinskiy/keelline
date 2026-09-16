@@ -226,6 +226,59 @@ finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-o
 `detail` are repository-authored strings, which is why they are in `--json` and not in the
 summary line.
 
+## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
+
+File a bug: allocate the next free identifier (`1 + max` over every entry in the working tree
+and every entry ever added on any ref, after a bounded `git fetch origin` unless `--no-fetch`),
+write `<paths.bugs>/<PREFIX>-nnn.md` from the template, and regenerate the index. Every
+rejection happens before the first write: a title or source the flat frontmatter subset cannot
+hold is quoted for you; a `--related` value that is not an identifier, an index carrying content
+this tool did not generate (`2`), and an allocated identifier whose file already exists (`1`,
+naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
+result line, not hidden. **Writes** the entry file and `<paths.bug_index>`.
+
+## `keelline bugs index [--check]`
+
+Render `<paths.bug_index>` from the entry files alone. `--check` exits `1` when the committed
+index differs from that rendering and writes nothing. Either form refuses (`2`) while the write
+would destroy something: a line the index holds that this tool did not generate (a hand-written
+section, an operator's note — recover it into an entry file first), or a generated index whose
+entry directory is gone (restore the files; the index carries nothing of its own). A reworded
+header is a stale index, not foreign content. The first paragraph names the generator, and an
+index written by the generator this one replaced is recognised as generated too. **Writes**
+`<paths.bug_index>`.
+
+## `keelline bugs check`
+
+Every rule the ledger holds, in one pass: each entry parses under the flat frontmatter subset
+and its `id:` matches its filename; no entry restates `**Status:**`/`**Severity:**` in its
+body; every severity in `[ledger] evidence_boundary_required_for` carries a filled `**What this
+evidence does not establish:**` line (the template's placeholder does not count); no identifier
+is claimed by two files; every `related:` identifier has an entry; the index carries nothing
+this tool did not generate, and is current; every `<PREFIX>-nnn` mentioned under the top-level
+files and `[ledger] code_roots` has an entry (a `void` entry counts); every citation of an entry
+*file* — from those roots and from the directories the `[paths]` values live under — names a
+file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
+line; `--json` carries every problem with its `detail`, which may quote the repository and is
+why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
+generated index — prints `nothing to check` and exits `0`; a generated index with no directory
+behind it is a deleted ledger and exits `1`. Git enumerates the files where the root is the top
+of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A file whose
+first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither scanned nor
+swept. **Writes** nothing.
+
+## `keelline bugs renumber OLD NEW`
+
+Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
+a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
+index is regenerated — both endpoints first, then the sweep, so an interruption leaves `OLD`
+resolving to the pointer rather than to nothing. Refuses an occupied `NEW` or a missing `OLD`
+(`1`) and the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
+could not read or write is listed and the command exits `1` naming it, because once the pointer
+exists a stale mention in that file looks intentional to `bugs check` forever. The moved entry's
+own body is the operator's to rewrite and is not swept. **Writes** the two entry files, every
+rewritten file, and `<paths.bug_index>`.
+
 ---
 
 ## Configuration
