@@ -164,12 +164,20 @@ def _is_git_repo(root: Path) -> bool:
 
 
 def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
-    """Plans this change touches; None when git cannot answer."""
+    """Plans this change touches; None when git cannot answer.
+
+    Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
+    C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
+    `2026-01-03-a draft.md` into two fragments and neither ends in `.md`. The plan is committed,
+    so `unlinted_plans` does not list it either — it is neither linted nor reported, and
+    vanishes from the gate in silence. `-z` NUL-terminates each record instead and never quotes;
+    the trailing empty field falls out with everything that does not end in `.md`.
+    """
     relative = plans_dir.relative_to(root).as_posix()
-    code, out = git_run(root, "diff", "--name-only", f"{base}...HEAD", "--", relative)
+    code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
     if code != 0:
         return None
-    return [root / line for line in out.split() if line.endswith(".md")]
+    return [root / name for name in out.split("\0") if name.endswith(".md")]
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
@@ -300,6 +308,16 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
         missing = [p for p in plans if not p.is_file()]
         if missing:
             raise Failure("not a plan file: " + ", ".join(str(p) for p in missing))
+        # Every finding carries a repo-relative path, so a named plan outside the root is
+        # refused here rather than reaching `relative_to` below, where it is a `ValueError` the
+        # frame reports as an internal error (2) instead of as the findings-shaped failure the
+        # missing-file case two lines up already produces.
+        outside = [p for p in plans if not p.is_relative_to(root)]
+        if outside:
+            raise Failure(
+                "not inside the project root, so not this project's plan: "
+                + ", ".join(str(p) for p in outside)
+            )
         selected = list(plans)
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)

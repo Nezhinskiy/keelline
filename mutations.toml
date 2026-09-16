@@ -1036,3 +1036,13 @@ file = "src/keelline/memory/refs.py"
 before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _inside_store(root, store, t)})'
 after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
 reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]
+
+# Advice must never gate. `--memory-graph` is opt-in precisely because the store is shared by
+# every session on the machine, so a sibling's half-finished sweep is not this tree's fault to
+# fail on — and an exit code is the one part of that promise a caller acts on silently.
+[[mutation]]
+name = "an advisory memory-graph finding gates the exit code"
+file = "src/keelline/docs/commands.py"
+before = '    return Result(verdict, data)'
+after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
+reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]

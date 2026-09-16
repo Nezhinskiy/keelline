@@ -199,6 +199,29 @@ def test_without_paths_only_the_plans_the_diff_touches_are_linted(tmp_path: Path
 
 
 @needs_git
+def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
+    tmp_path: Path,
+) -> None:
+    # `git diff --name-only` prints such a path unquoted, so splitting on whitespace tears it in
+    # two and neither fragment ends in `.md`. The plan is committed, so `unlinted_plans` does not
+    # list it either: it would be neither linted nor reported. Mutation: drop `-z` and split on
+    # whitespace — this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-qb", "feature")
+    spaced = plan(root, "no scope here\n", "2026-01-03-a draft.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "a plan with a space in its name")
+    result = lint(root, config, plans=[])
+    assert result.linted == [spaced] and result.unlinted == []
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
 def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> None:
     # This gate ran green for its whole life on a shallow checkout that had no base ref.
     # Mutation: return an empty finding list when `touched_plans` is None — this reddens.
@@ -231,3 +254,20 @@ def test_a_named_plan_that_does_not_exist_is_a_failure(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     with pytest.raises(Failure):
         lint(root, config, plans=[root / "docs" / "plans" / "missing.md"])
+
+
+def test_a_named_plan_outside_the_project_is_a_failure_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # Every finding carries a repo-relative path, so this would otherwise reach `relative_to`
+    # and raise `ValueError`, which the frame reports as an internal error (2) rather than as
+    # the failure the missing-file case beside it already produces. Mutation: drop the
+    # `is_relative_to` guard — this reddens with `ValueError`.
+    from keelline.errors import Failure
+
+    root, config = project(tmp_path)
+    elsewhere = tmp_path / "other" / "2026-01-01-x.md"
+    elsewhere.parent.mkdir(parents=True)
+    elsewhere.write_text("**Scope:** iff x.\n", encoding="utf-8")
+    with pytest.raises(Failure, match="not inside the project root"):
+        lint(root, config, plans=[elsewhere])

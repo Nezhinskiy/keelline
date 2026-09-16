@@ -101,6 +101,21 @@ def test_placeholders_absolute_paths_outside_the_repository_and_fenced_text_are_
     assert findings(root, config) == []
 
 
+def test_a_placeholder_is_matched_per_component_and_a_name_that_merely_contains_one_is_not(
+    tmp_path: Path,
+) -> None:
+    # The source matches a placeholder stem in any component, and that is a rule rather than
+    # state, so the port keeps it: `docs/foo/thing.py` names no file anywhere and never will.
+    # It stays a stem match, so `widget/foobar.py` is a real module name and is still settled
+    # against the tree. Mutation: match only `PurePosixPath(target).stem` — the first assertion
+    # reddens.
+    root, config = project(tmp_path)
+    note(root, "developer", "a", "see `docs/foo/thing.py`\n")
+    assert findings(root, config) == []
+    note(root, "developer", "a", "see `widget/foobar.py`\n")
+    assert findings(root, config) == [("developer/a.md", 8, "widget/foobar.py", "dead-reference")]
+
+
 def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules(
     tmp_path: Path,
 ) -> None:

@@ -144,6 +144,10 @@ def test_a_missing_trail_file_is_one_unfiled_bucket_with_no_states(tmp_path: Pat
         "[[theme]]\nlabel = 1\npattern = 'x'\n",
         "[[theme]]\nlabel = 'x'\npattern = '('\n",
         "[states]\n'a.md' = 3\n",
+        # `theme` as a scalar: iterated without a guard this is a `TypeError`, which the frame
+        # reports as an internal error (2) — a repository's malformed file reading as a broken
+        # tool, which is the one exit-code outcome this contract exists to prevent.
+        "theme = 1\n",
         "not toml [",
     ],
 )

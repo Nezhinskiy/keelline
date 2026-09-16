@@ -64,7 +64,14 @@ def read_trail(path: Path) -> Trail:
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{path} is not valid TOML: {exc}") from None
     themes: list[tuple[str, re.Pattern[str]]] = []
-    for entry in raw.get("theme", []):
+    # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is
+    # repository-authored, and `theme = 1` would otherwise be iterated straight into a
+    # `TypeError` the frame reports as an internal error (2). A project's malformed file must
+    # read as their file being wrong, never as this tool being broken.
+    declared = raw.get("theme", [])
+    if not isinstance(declared, list):
+        raise Failure(f"{path}: `theme` must be a list of [[theme]] tables")
+    for entry in declared:
         if (
             not isinstance(entry, dict)
             or not isinstance(entry.get("label"), str)

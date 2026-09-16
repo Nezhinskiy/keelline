@@ -59,7 +59,10 @@ def source_roots(root: Path, config: Config) -> tuple[str, ...]:
 
 
 def _is_placeholder(target: str) -> bool:
-    return PurePosixPath(target).stem in _PLACEHOLDER_STEMS
+    """Matched per path component, and on the stem alone, so `docs/foo/thing.py` is a
+    placeholder while a real module whose name merely contains one — `widget/foobar.py` — is
+    still settled against the tree."""
+    return any(PurePosixPath(part).stem in _PLACEHOLDER_STEMS for part in target.split("/"))
 
 
 def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
