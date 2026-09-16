@@ -891,3 +891,12 @@ file = "src/keelline/gitenv.py"
 before = '    return completed.returncode, completed.stdout'
 after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
 reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
+
+# A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
+# the subset stays valid YAML only because the leading class is YAML's whole indicator set.
+[[mutation]]
+name = "the frontmatter reader accepts a bare value a YAML reader would misparse"
+file = "src/keelline/ledger/entries.py"
+before = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")'''
+after = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,]|: | #|:\Z")'''
+reddens = ["tests/ledger/test_entries.py::test_a_value_that_is_not_a_plain_yaml_string_needs_quotes"]
