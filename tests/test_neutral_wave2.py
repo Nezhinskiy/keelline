@@ -151,6 +151,7 @@ def test_the_gate_reads_something() -> None:
     assert ROOT / PLAN in files
     assert ROOT / "src" / "keelline" / "identifiers.py" in files
     assert ROOT / "src" / "keelline" / "findings.py" in files
+    assert ROOT / "skills" / "close-bug" / "SKILL.md" in files
 
 
 def test_the_denylist_is_stored_as_digests() -> None:
