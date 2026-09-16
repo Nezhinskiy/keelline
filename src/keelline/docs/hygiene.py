@@ -10,7 +10,7 @@ from urllib.parse import unquote
 from keelline.config.paths import contained
 from keelline.errors import Failure
 from keelline.findings import Finding
-from keelline.prose import blank_fences
+from keelline.prose import blank_fences, resolves_within
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -157,6 +157,10 @@ def check_links(root: Path, config: Config) -> list[Finding]:
     agents = read_document(agents_path, config.paths.agents_md)
     # Fenced code is an example, not a claim — the same rule every other reader here applies.
     for target in local_markdown_targets(blank_fences(agents)):
-        if not (agents_path.parent / target).exists():
+        # Relative to the document's own directory, contained against the project root: a link
+        # out of `docs/` into `src/` is inside the project, while `../../../etc/hosts` is not
+        # and is never asked of the filesystem — that answer would be about this disk.
+        landed = resolves_within(root, target, base=agents_path.parent)
+        if landed is not None and not landed.exists():
             found.append(Finding("missing-link", config.paths.agents_md, None, target))
     return found

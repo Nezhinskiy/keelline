@@ -79,7 +79,7 @@ from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
 from keelline.gitenv import git_run
 from keelline.identifiers import identifiers
-from keelline.prose import blank_fences, path_references
+from keelline.prose import blank_fences, path_references, resolves_within
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -304,7 +304,11 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
     for number, line in enumerate(prose.splitlines(), 1):
         if not _CREATE_MARK.search(line):
             for target in path_references(line):
-                if (root / target).exists() or target in declared:
+                # A claim that lands outside the root is not asked of the filesystem: the
+                # answer would be about this disk rather than about the repository, and a plan
+                # naming an absolute path that exists locally would pass here and fail in CI.
+                landed = resolves_within(root, target)
+                if landed is None or landed.exists() or target in declared:
                     continue
                 found.append(Finding("dead-reference", where, number, target))
         if _LEADING.search(line):

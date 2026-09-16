@@ -1195,3 +1195,29 @@ file = "src/keelline/memory/refs.py"
 before = '''        root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(targets))'''
 after = '''        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))'''
 reddens = ["tests/memory/test_refs.py::test_the_ignore_query_matches_a_non_ascii_path_it_asked_about"]
+
+# The grammar was shared and the resolution was not. `Path(root) / "/etc/passwd.md"` discards
+# `root` and a `..` walks out of it, so a plan naming an absolute path that happens to exist on
+# the developer's disk passed the dead-reference lint and did not exist in CI — and both readers
+# were an existence oracle for every path outside the root.
+[[mutation]]
+name = "a path claim is settled against the filesystem wherever it lands"
+file = "src/keelline/prose.py"
+before = '    return landed if landed.is_relative_to(os.path.normpath(str(root))) else None'
+after = "    return landed"
+reddens = [
+  "tests/docs/test_prose.py::test_a_claim_that_lands_outside_the_root_resolves_nowhere",
+  "tests/docs/test_plans.py::test_a_path_claim_outside_the_root_is_never_settled_against_this_disk",
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_root_is_never_settled_against_this_disk",
+]
+
+# A markdown link is read from its own document's directory; only the boundary is the root.
+# Containing against the document's directory instead refuses a link from `docs/` into `src/`.
+[[mutation]]
+name = "a link is contained against its own document's directory instead of the root"
+file = "src/keelline/docs/hygiene.py"
+before = '        landed = resolves_within(root, target, base=agents_path.parent)'
+after = '        landed = resolves_within(agents_path.parent, target)'
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_resolves",
+]

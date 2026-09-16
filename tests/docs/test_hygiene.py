@@ -157,3 +157,39 @@ def test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_er
         check_budgets(root, config)
     with pytest.raises(Failure, match=r"AGENTS\.md: is not valid UTF-8"):
         check_links(root, config)
+
+
+def test_a_link_out_of_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:
+    # `_normalize_target` already drops an absolute link; a `..` one walked out of the project
+    # and was settled against the developer's disk, which is an existence oracle and makes the
+    # verdict depend on the machine. The assertion is that the answer does not change with the
+    # file. Mutation: drop `resolves_within`'s containment — the second call reddens.
+    root, config = project(tmp_path, agents=AGENTS + "\n- [out](../outside/secret.md)\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    assert check_links(root, config) == []
+    (outside / "secret.md").unlink()
+    assert check_links(root, config) == []
+
+
+def test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_resolves(
+    tmp_path: Path,
+) -> None:
+    # Containment is judged against the project root, not against the document's directory: a
+    # link from `docs/AGENTS.md` into `src/` is inside the project. Mutation: contain against
+    # `agents_path.parent` — the first assertion reddens.
+    root, _config = project(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "boot.py").write_text("", encoding="utf-8")
+    (root / "docs" / "AGENTS.md").write_text(
+        AGENTS + "\n- [b](../src/boot.py)\n- [g](../src/gone.py)\n", encoding="utf-8"
+    )
+    (root / "keelline.toml").write_text(
+        CONFIG + '\n[paths]\nagents_md = "docs/AGENTS.md"\n', encoding="utf-8"
+    )
+    config = load(root, machine=tmp_path / "m.toml")
+    # `docs/guide.md` too: from `docs/` that link names `docs/docs/guide.md`, which is the
+    # point — a link is read from its own document's directory, and only the containment
+    # boundary is the root.
+    assert [f.detail for f in check_links(root, config)] == ["docs/guide.md", "../src/gone.py"]

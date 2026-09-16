@@ -304,3 +304,26 @@ def test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Pa
     path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
     with pytest.raises(Failure, match="is not valid UTF-8"):
         lint(root, config, plans=[path])
+
+
+def test_a_path_claim_outside_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:
+    # The verdict must not depend on the developer's filesystem. Before, `/abs/x.md` that
+    # happened to exist locally passed the lint and did not exist in CI, while the same claim
+    # with the file absent was a finding — which is an existence oracle for every path outside
+    # the root, in both directions. The assertion is that the two answers are the same.
+    # Mutation: drop `resolves_within`'s containment and resolve the claim anyway — the second
+    # and fourth `rules(...)` calls redden.
+    root, config = project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    absolute = plan(root, SCOPE + f"see `{outside / 'secret.md'}`\n", "2026-01-01-abs.md")
+    relative = plan(root, SCOPE + "see `../outside/secret.md`\n", "2026-01-02-rel.md")
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    assert rules(root, config, absolute) == [] and rules(root, config, relative) == []
+    (outside / "secret.md").unlink()
+    assert rules(root, config, absolute) == [] and rules(root, config, relative) == []
+    # And a claim that does stay inside the root is still settled, so this did not turn the
+    # lint off.
+    assert rules(root, config, plan(root, SCOPE + "see `src/gone.py`\n", "2026-01-03-in.md")) == [
+        "dead-reference"
+    ]

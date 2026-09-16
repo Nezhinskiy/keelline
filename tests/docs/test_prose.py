@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from keelline.prose import blank_code_spans, blank_fences, path_references
+from pathlib import Path
+
+from keelline.prose import (
+    blank_code_spans,
+    blank_fences,
+    path_references,
+    resolves_within,
+)
 
 
 def test_a_backticked_path_with_a_slash_is_a_reference_and_a_bare_filename_is_prose() -> None:
@@ -44,3 +51,20 @@ def test_code_spans_are_replaced_by_a_placeholder_that_keeps_neighbours_apart() 
     # graph check reads that as a repeated link. Mutation: replace with "" — this reddens.
     assert blank_code_spans("[[a]] `x` [[a]]") == "[[a]] \x00 [[a]]"
     assert blank_code_spans("no code") == "no code"
+
+
+def test_a_claim_that_lands_outside_the_root_resolves_nowhere(tmp_path: Path) -> None:
+    # The grammar is shared and the resolution was not: `Path(root) / "/etc/passwd.md"` discards
+    # `root`, and a `..` walks out of it. Both are answered as None so no reader asks the
+    # filesystem about them. Mutation: return `landed` unconditionally — this reddens on the
+    # first three cases. Lexical, so a symlink never decides containment.
+    root = tmp_path / "widget"
+    (root / "docs").mkdir(parents=True)
+    assert resolves_within(root, "/etc/passwd.md") is None
+    assert resolves_within(root, "../../../../secrets/keys.py") is None
+    assert resolves_within(root, "docs/../../out.md") is None
+    assert resolves_within(root, "src/widget/boot.py") == root / "src" / "widget" / "boot.py"
+    # `base` moves where a relative claim is read from; containment stays against the root, so a
+    # link out of `docs/` into `src/` is inside the project and still resolves.
+    assert resolves_within(root, "../src/a.py", base=root / "docs") == root / "src" / "a.py"
+    assert resolves_within(root, "../../src/a.py", base=root / "docs") is None
