@@ -35,6 +35,21 @@ TRAIL_FILE = "trail.toml"
 UNFILED = "Unfiled"
 DELIVERED = "delivered"
 _ROW = re.compile(r"^- \[`([^`]+)`\]", re.MULTILINE)
+# Every value this file interpolates into the listing has to survive being written into it
+# verbatim. `rebuild` locates the block it replaces with `text.find(END_MARKER, …)`, so an end
+# marker inside a `label` or a `state` splits the block there, and everything past the split
+# falls outside the region the next run rewrites: three successive `keelline docs trail` runs
+# grew the roadmap by its own height each time, `docs trail --check` became permanently stale
+# with nothing an operator could do to satisfy it, and the prose the value carried after the
+# marker settled into the roadmap — a document agents load, with no delimited region and no
+# trust record behind it. A newline is the same defect one step earlier: it is what lets a value
+# put a marker, or a heading, alone on a line, which is where `TRAIL_MARKER_LINE` and the budget
+# reader's cut both look. `read_trail` is where it is caught, beside the type checks, because a
+# `trail.toml` outside the contract must read as that file being wrong.
+_UNINTERPOLABLE = (
+    "{path}: a {what} is written into the generated listing verbatim, so it must be a single "
+    "line and must carry neither `{marker}` nor the end-of-trail comment"
+)
 _PREAMBLE = (
     "\n\nEvery design and plan document, grouped by theme and annotated with its\n"
     "delivery state. Regenerate with `keelline docs trail` after adding a document.\n"
@@ -52,6 +67,11 @@ class Trail:
 def trail_path(root: Path, config: Config) -> Path:
     directory = PurePosixPath(config.paths.roadmap).parent
     return contained(root, str(directory / TRAIL_FILE))
+
+
+def _interpolable(value: str) -> bool:
+    """Whether a repository-authored value may be written into the listing unchanged."""
+    return "\n" not in value and MARKER not in value and END_MARKER not in value
 
 
 def read_trail(path: Path) -> Trail:
@@ -78,6 +98,10 @@ def read_trail(path: Path) -> Trail:
             or not isinstance(entry.get("pattern"), str)
         ):
             raise Failure(f"{path}: every [[theme]] needs a string `label` and a string `pattern`")
+        if not _interpolable(entry["label"]):
+            raise Failure(
+                _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
+            )
         try:
             themes.append((entry["label"], re.compile(entry["pattern"])))
         except re.error as exc:
@@ -89,6 +113,8 @@ def read_trail(path: Path) -> Trail:
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()
     ):
         raise Failure(f"{path}: [states] must map document rows to state strings")
+    if not all(_interpolable(state) for state in states.values()):
+        raise Failure(_UNINTERPOLABLE.format(path=path, what="[states] value", marker=MARKER))
     return Trail(tuple(themes), dict(states))
 
 

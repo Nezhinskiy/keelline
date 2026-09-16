@@ -1073,3 +1073,30 @@ before = '''    if base.startswith("-"):
 after = '''    if False:
         raise Refusal(f"{base!r} looks like an option, not a base ref")'''
 reddens = ["tests/docs/test_plans.py::test_an_option_shaped_base_never_reaches_a_git_argv_slot"]
+
+# A `label` or a `state` is written into the listing verbatim, and `rebuild` finds the block's
+# end with `text.find(END_MARKER, …)` — so a marker inside either one splits the block, the
+# roadmap grows by its own height on every run, `--check` is stale forever, and the repository's
+# prose lands in a document agents load with no delimited region behind it.
+[[mutation]]
+name = "a theme label can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''        if not _interpolable(entry["label"]):
+            raise Failure(
+                _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
+            )'''
+after = "        pass"
+reddens = [
+  "tests/docs/test_commands.py::test_a_trail_label_carrying_the_end_marker_never_grows_the_roadmap",
+  "tests/docs/test_trail.py::test_a_trail_value_that_could_carry_a_marker_into_the_roadmap_is_refused",
+]
+
+[[mutation]]
+name = "a declared state can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''    if not all(_interpolable(state) for state in states.values()):
+        raise Failure(_UNINTERPOLABLE.format(path=path, what="[states] value", marker=MARKER))'''
+after = "    pass"
+reddens = [
+  "tests/docs/test_trail.py::test_a_trail_value_that_could_carry_a_marker_into_the_roadmap_is_refused",
+]
