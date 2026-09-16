@@ -995,3 +995,19 @@ file = "src/keelline/prose.py"
 before = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")'
 after = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml))(?::\d+|::[\w.]+)?`")'
 reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_this_grammar_stores"]
+
+# A renamed design would otherwise reappear as `delivered` and `--check` would stay green.
+[[mutation]]
+name = "a state naming a vanished document defaults instead of aborting"
+file = "src/keelline/docs/trail.py"
+before = '    stale = sorted(set(trail.states) - listed)'
+after = '    stale: list[str] = []'
+reddens = ["tests/docs/test_trail.py::test_a_state_naming_a_vanished_document_aborts_instead_of_defaulting"]
+
+# `check-ignore` without `--no-index` answers "not ignored" for anything tracked.
+[[mutation]]
+name = "an untracked document is listed as if CI could see it"
+file = "src/keelline/docs/trail.py"
+before = '    skip = _ignored(root, paths) | _untracked(root, paths)'
+after = '    skip = _ignored(root, paths)'
+reddens = ["tests/docs/test_trail.py::test_an_untracked_or_ignored_document_is_not_listed"]
