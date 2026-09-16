@@ -4,9 +4,10 @@ A methodology harness for coding agents — a bug ledger, curated working memory
 adoption state machine — packaged as one plugin for Claude Code and Codex, and as a Python
 package with **no runtime dependencies**.
 
-> **Pre-1.0, and early.** Two areas ship today: the memory store and its trust gate, and the
-> scaffolding engine that writes files into a repository. The ledger, the guards and the
-> adoption state machine are not here yet. The CLI surface below is what exists.
+> **Pre-1.0, and early.** Three areas ship today: the memory store and its trust gate, the
+> scaffolding engine that writes files into a repository, and the guards that hold a session's
+> shell, its commit messages and its test runs. The ledger and the adoption state machine are
+> not here yet. The CLI surface below is what exists.
 
 ## Install
 
@@ -66,6 +67,11 @@ keelline memory fit                # whether each injection bundle fits its hook
 keelline memory session-context --bundle <name> [--part N]
 keelline release check             # one version across six sources (this repository's own)
 keelline hook <event>              # internal: dispatch one harness hook event
+keelline guard bg-cleanup          # judge one Bash call, read as JSON on stdin
+keelline commit check --range <git log range>
+keelline commit strip FILE         # take the attribution block out of a message file
+keelline test hygiene              # the faults that make a red run unattributable
+keelline test audit-entrypoints    # tests that never exercise what they name
 ```
 
 Every `memory` command takes `--root` (default: the current directory), `--store` (resolve the
@@ -73,7 +79,10 @@ store at a path), and `--machine` (read a machine configuration file other than 
 `--json` is accepted anywhere and prints a machine-readable object instead of one line.
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
-internal error. A caller must never read 2 as permission.
+internal error. A caller must never read 2 as permission. One command is deliberately outside
+that rule: `keelline test audit-entrypoints` exits **0** even when it has findings, and lists
+them under `--json`, because its candidates are for triage and gating on them belongs to a lane
+that has not shipped.
 
 ### `keelline memory trust`
 

@@ -854,3 +854,16 @@ after = '        problems = []'
 reddens = [
   "tests/guards/test_commands.py::test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating",
 ]
+
+# §5.8's gate stores its denylist as digests so the file that hides a name does not publish it,
+# which means the match is a windowed hash comparison rather than a substring test — an
+# invisible mechanism whose failure mode is silence. Empty the per-width digest set and every
+# scan comes back clean: the whole-lane walk goes green over a tree that could name anything.
+[[mutation]]
+name = "the hashed neutrality denylist stops matching a planted token"
+file = "tests/guards/test_neutral.py"
+before = '        wanted = {digest for length, digest in forbidden if length == width}'
+after = '        wanted = set()'
+reddens = [
+  "tests/guards/test_neutral.py::test_the_gate_discriminates",
+]
