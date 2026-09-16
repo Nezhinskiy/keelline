@@ -351,7 +351,11 @@ targets are in `--json`. A note that exists and would not parse is counted on th
 named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
 configured group could not be resolved, naming each group and carrying the resolver's own reason
 for it inside the delimited region that marks repository-authored text as data — because a walk
-over a subset that reports nothing stale is worse than no guard. Write a path that
+over a subset that reports nothing stale is worse than no guard. Where *no* store resolves at
+all, the exit is `1`: that comes from the resolver every `memory` command shares, so part of the
+store being unreadable is a refusal while the whole of it being unreadable is findings. That is
+the wrong way round by the ordering above, it is a known issue the memory lane owns, and until
+it is fixed a caller should gate on a non-zero exit rather than on the number. Write a path that
 deliberately does not resolve in *italics*. **Writes** nothing.
 
 ---

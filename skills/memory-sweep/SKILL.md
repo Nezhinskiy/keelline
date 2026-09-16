@@ -21,10 +21,11 @@ description: Sweep the working-memory store — inventory by size, verify anchor
    no link is immediately repeated, no identifier is bracketed. Advice, not a gate — the
    store is shared by every session on the machine.
 6. **Check the pointers out of the store.** Run `keelline memory refs`: every backticked
-   repository path a note names still exists. Exit 2 is not a pass with a warning — a
-   configured group could not be resolved, so the walk read a subset; fix that before an
-   exit 0 means anything. Exit 1 lists paths to fix, or to rewrite in *italics* where the
-   note deliberately records a file that is gone.
+   repository path a note names still exists. Only exit 0 is a pass. Exit 2 means a configured
+   group could not be resolved, so the walk covered a subset; fix that before an exit 0 means
+   anything. Exit 1 is either stale paths — fix them, or rewrite in *italics* the ones where a
+   note deliberately records a file that is gone — or no store resolving at all, which is a
+   sweep that covered nothing. The summary line says which; the number alone does not.
 7. **Regenerate the index.** Run `keelline memory index`, then `keelline memory index --check`.
 
 Conventions for what a note is and how the index routes: [references/protocol.md](references/protocol.md).
