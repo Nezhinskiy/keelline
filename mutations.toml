@@ -900,3 +900,11 @@ file = "src/keelline/ledger/entries.py"
 before = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")'''
 after = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,]|: | #|:\Z")'''
 reddens = ["tests/ledger/test_entries.py::test_a_value_that_is_not_a_plain_yaml_string_needs_quotes"]
+
+# Regenerating over content the tool did not write deletes it with no diff and exit 0.
+[[mutation]]
+name = "the index overwrite guard stops seeing foreign lines"
+file = "src/keelline/ledger/index.py"
+before = '    foreign = foreign_index_lines(current, config)'
+after = '    foreign: list[str] = []'
+reddens = ["tests/ledger/test_index.py::test_index_refuses_to_delete_any_content_it_did_not_generate"]
