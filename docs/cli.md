@@ -374,20 +374,84 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]
-memory = "docs/memory"   # and the other document paths; each must stay inside the root
+[paths]                  # each must stay inside the root
+agents_md = "AGENTS.md"
+architecture = "docs/architecture"
+runbooks = "docs/runbooks"
+adr = "docs/adr"
+specs = "docs/specs"
+plans = "docs/plans"
+bugs = "docs/bugs"
+bug_index = "docs/bug-reports.md"
+roadmap = "docs/roadmap.md"
+roadmap_history = "docs/roadmap-history.md"
+memory = "docs/memory"
 
 [memory]
 mode = "local-only"      # local-only | in-repo | overlay
 groups = ["developer", "project-stable", "project-volatile", "specs"]
 index_extra = []         # extra pointers rendered into MEMORY.md
 
+[ledger]
+id_prefix = "BR"         # a capital letter, then up to seven more capitals or digits
+code_roots = ["src", "tests", "scripts"]
+evidence_boundary_required_for = ["high"]
+
 [budgets]                # a project may lower a preset's budget, never raise it
+agents_md_lines = 300
+agents_md_words = 3000
+status_lines = 50
+roadmap_prose_lines = 350
+roadmap_prose_words = 3500
 memory_index_words = 1200
 startup_rules_words = 1600
 volatile_notes_words = 2500
 volatile_ttl_days = 30
 ```
+
+Every value above is the `recommended` preset's default and is what a key you leave out takes,
+`[project] name` excepted — it has no default and is yours to write.
+
+**Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
+budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two
+trees `docs trail` lists, and `plans` is where `plan check` looks for the plans a diff touched.
+`bugs` is the ledger's entry directory and `bug_index` its generated index — `bugs new`,
+`bugs index`, `bugs check` and `bugs renumber` all read both — and `runbooks` supplies the
+`<runbooks>/bug-reports.md` link that index's generated header writes. `memory` is the note
+store, which `memory refs` walks. The remaining three are read for their location alone, and so
+is every one of the others: `bugs check` treats the first component of every `[paths]` value
+that has more than one — `docs`, for the defaults — as a directory documents live in, and
+therefore as a place a citation of an entry file may be written and must resolve. Pointing a
+path key somewhere unusual widens that sweep; it cannot take a document outside it, because a
+value that leaves the root is refused before any command runs.
+
+**`[ledger]`.** `id_prefix` is the one definition of what an identifier looks like: `BR-001`,
+and `BR-nnn` in every message. It is interpolated into patterns and filenames, so it is held to
+a shape — a capital letter followed by up to seven more capitals or digits — and a prefix
+outside it is a refusal (`2`), not a finding. The number is three digits or more. `code_roots`
+are the trees `bugs check` sweeps for mentions of an identifier, each of which must have an
+entry behind it; `evidence_boundary_required_for` names the severities whose entries must carry
+a filled `**What this evidence does not establish:**` line, the template's placeholder not
+counting. Widening it is how a project asks the same of `medium`.
+
+**The two ledger vocabularies**, neither of them configurable — they are the entry contract, and
+a value outside either is a finding (`1`) naming the file:
+
+| Field | Values |
+|---|---|
+| `status:` | `open`, `partial`, `fixed`, `rejected`, `void` |
+| `severity:` | `high`, `medium`, `low` |
+
+`void` is the one that is not a state of a bug: it records a number that was allocated and never
+carried one — what `bugs renumber` leaves behind at the old identifier — and it is the only
+status that needs neither `severity:` nor `area:`. `severity` is `bugs new`'s required
+`--severity`, and `--area` beside it is free text that becomes the entry's Area column.
+
+**`[budgets]`.** The first five are the documentation budgets `docs check` enforces:
+`agents_md_lines`, `agents_md_words` and `status_lines` over the always-loaded document and its
+`## Current status` section, `roadmap_prose_lines` and `roadmap_prose_words` over the roadmap
+above its trail marker. The last four bound the memory store. A budget is only ever lowered: a
+value above the preset's is ignored rather than refused, so raising one is not an escape.
 
 `~/.config/keelline/config.toml` is yours, not the project's:
 

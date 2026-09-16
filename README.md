@@ -4,10 +4,12 @@ A methodology harness for coding agents — a bug ledger, curated working memory
 adoption state machine — packaged as one plugin for Claude Code and Codex, and as a Python
 package with **no runtime dependencies**.
 
-> **Pre-1.0, and early.** Three areas ship today: the memory store and its trust gate, the
-> scaffolding engine that writes files into a repository, and the guards that hold a session's
-> shell, its commit messages and its test runs. The ledger and the adoption state machine are
-> not here yet. The CLI surface below is what exists.
+> **Pre-1.0, and early.** Five areas ship today: the memory store and its trust gate, the
+> scaffolding engine that writes files into a repository, the guards that hold a session's
+> shell, its commit messages and its test runs, the bug ledger, and the documentation and plan
+> lints. The adoption state machine is not here yet. The command list below is not the whole
+> surface — it predates the ledger and the lints; [docs/cli.md](docs/cli.md) is the reference
+> that carries every command.
 
 ## Install
 
