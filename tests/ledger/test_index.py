@@ -265,6 +265,24 @@ def test_an_injected_section_of_hand_written_rows_is_foreign(tmp_path: Path) -> 
         refuse_index_overwrite(root, config, current)
 
 
+def test_an_index_over_an_empty_entry_directory_is_refused_row_by_row(tmp_path: Path) -> None:
+    # The gap between the two refusals, and a path the row rule opened: `ENTRIES_MISSING` fires
+    # only when the ledger DIRECTORY is gone, so a directory that exists and holds nothing left
+    # a fully linked index classified as merely stale — and regenerating it would have deleted
+    # every record in one write. `_entry_identifiers` answers the empty set here, which is the
+    # fail-closed answer, and every row is foreign. Mutation: allow any `|` line in
+    # `foreign_index_lines` — both assertions redden.
+    root, config = project(tmp_path)
+    ledger(root, {1: entry(1), 2: entry(2)})
+    current = render_index(load_entries(root, config), config)
+    for path in (root / "docs" / "bugs").iterdir():
+        path.unlink()
+    assert (root / "docs" / "bugs").is_dir()  # the directory survives, so ENTRIES_MISSING cannot
+    assert len(foreign_index_lines(root, current, config)) == 2
+    with pytest.raises(Refusal, match="recover it before regenerating"):
+        refuse_index_overwrite(root, config, current)
+
+
 def test_a_generated_index_whose_entry_files_are_gone_is_refused(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     ledger(root, {1: entry(1)})

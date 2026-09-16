@@ -1113,6 +1113,7 @@ after = "            if True:"
 reddens = [
   "tests/ledger/test_index.py::test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index",
   "tests/ledger/test_index.py::test_an_injected_section_of_hand_written_rows_is_foreign",
+  "tests/ledger/test_index.py::test_an_index_over_an_empty_entry_directory_is_refused_row_by_row",
 ]
 
 # `renumber` regenerates the index last, and that parses every entry file in the directory. One
