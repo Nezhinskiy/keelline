@@ -347,8 +347,36 @@ def test_install_creates_a_hooks_directory_core_hooks_path_only_names(tmp_path: 
 def test_hooks_dir_refuses_where_git_cannot_answer(tmp_path: Path) -> None:
     # The `Refusal` arm: outside a repository `rev-parse` exits non-zero, and a caller that
     # read the empty answer as a path would install a hook into a directory of its own making.
-    with pytest.raises(Refusal):
+    with pytest.raises(Refusal) as raised:
         hooks_dir(tmp_path / "not-a-repo")
+    # And the refusal says so in this module's own words. `rev-parse`'s stderr is
+    # repository-authored — here `fatal: not a git repository …`, and for a `core.hooksPath` git
+    # dislikes it quotes the config VALUE — so piping it into the message puts bytes a repository
+    # chose in front of a person. `commit.commits_in` carries the same reasoning and was fixed in
+    # this lane's own review; this one was not, and the assertion is what makes that visible.
+    message = str(raised.value)
+    assert "not a git repository" not in message
+    assert "fatal" not in message
+    assert str(tmp_path / "not-a-repo") in message
+
+
+def test_a_hooks_dir_that_times_out_refuses_without_rendering_the_argv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other arm, and the one no repository fixture can reach. `TimeoutExpired.__str__`
+    # renders the whole command — `Command '['git', '-C', '/…', 'rev-parse', …]' timed out` —
+    # so `f"…: {exc}"` published the argv, which carries `root` twice over and whatever a later
+    # caller puts in it. The same is true of `OSError`.
+    import subprocess as sp
+
+    def explode(*args: object, **kwargs: object) -> object:
+        raise sp.TimeoutExpired(["git", "-C", "/SECRET", "rev-parse"], 5)
+
+    monkeypatch.setattr(sp, "run", explode)
+    with pytest.raises(Refusal) as raised:
+        hooks_dir(tmp_path)
+    assert "SECRET" not in str(raised.value)
+    assert "rev-parse" not in str(raised.value)
 
 
 def test_a_worktree_shares_the_main_checkouts_hook(tmp_path: Path) -> None:

@@ -223,6 +223,23 @@ def test_commit_strip_never_writes_through_a_symlink(
     assert link.is_symlink()
 
 
+def test_commit_strip_reports_a_message_file_that_is_not_utf_8_as_a_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `except OSError` does not catch `UnicodeDecodeError`, so a legitimately non-UTF-8 message
+    # file (git has `i18n.commitEncoding` for exactly this) reached the CLI frame as
+    # `internal error: UnicodeDecodeError` and exit 2 — the code this project's callers are told
+    # never to read as permission. It is a file the command cannot read, like the `OSError`
+    # beside it, so it is exit 1. Both assertions matter: the exit code, and that the offending
+    # byte the exception names does not travel into the message.
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_bytes("fix: thing\n\nCo-Authored-By: Claude\n".encode("cp1251") + b"\xff\xfe")
+    assert invoke(["commit", "strip", str(message)]) == 1
+    err = capsys.readouterr().err
+    assert "UnicodeDecodeError" not in err
+    assert "0xff" not in err
+
+
 def test_commit_strip_refuses_an_option_shaped_path() -> None:
     assert invoke(["commit", "strip", "--", "-weird"]) == 2
 
@@ -262,6 +279,84 @@ def test_commit_strip_keeps_gits_trailing_comment_block_intact(tmp_path: Path) -
         "#\tnew file:   widget.py\n"
         "#\n"
     )
+    assert "Co-Authored-By" not in result
+
+
+# Everything git appends below the message under `commit.verbose = true`, captured from a real
+# `prepare-commit-msg` hook in a repository with the key set, and retyped. Kept separate from the
+# message above it so the assertion that it comes back byte for byte is against a fixed literal.
+VERBOSE_TAIL = (
+    "\n"
+    "# Please enter the commit message for your changes. Lines starting\n"
+    "# with '#' will be ignored, and an empty message aborts the commit.\n"
+    "#\n"
+    "# On branch main\n"
+    "# Changes to be committed:\n"
+    "#\tmodified:   a.txt\n"
+    "#\n"
+    "# ------------------------ >8 ------------------------\n"
+    "# Do not modify or remove the line above.\n"
+    "# Everything below it will be ignored.\n"
+    "diff --git a/a.txt b/a.txt\n"
+    "index 4cb29ea..6addb9b 100644\n"
+    "--- a/a.txt\n"
+    "+++ b/a.txt\n"
+    "@@ -1,3 +1,4 @@\n"
+    " one\n"
+    "-two\n"
+    "+TWO\n"
+    " three\n"
+    "+four\n"
+)
+VERBOSE_EDITMSG = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n" + VERBOSE_TAIL
+
+
+def test_commit_strip_still_strips_when_commit_verbose_appends_the_diff(tmp_path: Path) -> None:
+    """One config key turned the whole local layer into a silent no-op. Measured, not foreseen.
+
+    `commit.verbose = true` makes git append the staged diff below a scissors line, and a diff's
+    lines begin with `diff`, `+`, `-`, `@@` or a space — none of which is a comment or a blank.
+    The walk back from the end of the file stopped at the first of them, the whole file read as
+    "message", the attribution block was no longer trailing, and nothing was stripped:
+
+        A) CONTROL, no verbose      : stripped 2 attribution line(s); trailer stored: 0
+        B) SAME, commit.verbose=true: trailer in the stored message: 1   (DEFECT)
+
+    The fixture is git's own output, captured from a `prepare-commit-msg` hook in a real
+    repository with `commit.verbose` set, and retyped here.
+
+    Both assertions are needed. "The trailer is gone" alone is satisfied by a split that threw
+    the diff away, which would be a corruption rather than a no-op; the second is against a fixed
+    literal and says every byte git appended comes back. The diff is what the earlier
+    comment-block test cannot pin, because without `verbose` there is none.
+    """
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text(VERBOSE_EDITMSG, encoding="utf-8")
+    assert invoke(["commit", "strip", str(message)]) == 0
+    result = message.read_text(encoding="utf-8")
+    assert "Co-Authored-By" not in result
+    assert result == "fix: thing\n" + VERBOSE_TAIL
+
+
+def test_a_scissors_line_is_found_by_its_marker_not_by_gits_english_sentence(
+    tmp_path: Path,
+) -> None:
+    # The two lines under the scissors ("Do not modify or remove the line above.") go through
+    # gettext, so a rule keyed on that wording stops splitting in a translated checkout and the
+    # hook silently no-ops there. The ruler and its `>8` are not translated. This fixture is the
+    # same file with those two lines in another language; the answer must not move.
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text(
+        VERBOSE_EDITMSG.replace(
+            "# Do not modify or remove the line above.\n# Everything below it will be ignored.\n",
+            "# Ne modifiez pas et ne supprimez pas la ligne ci-dessus.\n"
+            "# Tout ce qui suit sera ignore.\n",
+        ),
+        encoding="utf-8",
+    )
+    assert invoke(["commit", "strip", str(message)]) == 0
+    result = message.read_text(encoding="utf-8")
+    assert result.startswith("fix: thing\n\n# Please enter")
     assert "Co-Authored-By" not in result
 
 
@@ -386,6 +481,14 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
     out = json.loads(capsys.readouterr().out)
     assert out["import_roots"] == ["widget"]
     assert out["findings"][0]["shape"] == "names-but-never-invokes"
+    # The JSON keys are a documented contract (`docs/cli.md`), and they used to be produced by
+    # `f.__dict__` — so renaming a dataclass attribute changed the wire format silently and
+    # nothing here noticed. Against fixed literals, not against anything `Finding` produced.
+    # No `mutations.toml` entry: this is a wire contract, not a guard something reads as
+    # permission. Measured by hand — renaming the emitted `shape` key to `shapes` reddens this
+    # test and nothing else in the file.
+    assert sorted(out) == ["files", "findings", "import_roots", "summary"]
+    assert sorted(out["findings"][0]) == ["detail", "line", "path", "shape", "test"]
 
 
 @needs_git

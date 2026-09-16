@@ -471,11 +471,12 @@ reddens = [
 # `commit strip` is the local half of the trailer gate (`commit check` is the CI half, already
 # covered above): without this guard a `COMMIT_EDITMSG` reached through a symlink would be
 # rewritten through it rather than refused. No mutation is declared for the `-`-prefixed-path
-# guard or the unreadable-file `Failure`: both are already `git-silently-discards-uncommitted-
-# work`-adjacent one-line refusals identical in shape to ones covered elsewhere in this file
-# (`commits_in`'s own leading-`-` refusal, a few entries above), and no `*/commands.py` in this
-# tree carries a mutation yet — this is the first, following the plan's house practice of one
-# declared entry per task rather than one per branch.
+# guard: it is a one-line refusal identical in shape to `commits_in`'s own leading-`-` refusal,
+# a few entries above. The area's other refusals — the two in `_tool_input`, `run_test_hygiene`'s
+# `_NO_GIT`, `run_test_audit`'s self-test raise and the unreadable-file `Failure` — were left
+# undeclared on the same "one entry per task" reasoning and are declared at the end of this file
+# instead: review pointed out that the word `Refusal` occurred nowhere here, and a fail-closed
+# row whose refusals are undeclared is exactly what CONTRIBUTING names as belonging in this file.
 [[mutation]]
 name = "commit strip writes through a symlink"
 file = "src/keelline/guards/commands.py"
@@ -722,4 +723,134 @@ before = '    except (OSError, SyntaxError, UnicodeDecodeError):'
 after = '    except (SyntaxError, UnicodeDecodeError):'
 reddens = [
   "tests/guards/test_audit.py::test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan",
+]
+
+# ---------------------------------------------------------------------------------------------
+# Wave B of the guards review. The first six are defects review measured on the shipped modules;
+# the last four are the area's fail-closed refusals, which were described in comments and in
+# tests but declared nowhere — the word `Refusal` did not occur in this file at all.
+
+# A footer had no bounded tail, so ANY line beginning with the words was one whatever followed:
+# `Generated with Claude Code and then reviewed by a human.` was an offence, and `commit strip`
+# deleted that sentence from the message before the commit existed, reporting only a count. The
+# worse of the two failure directions by the module's own docstring — the range check still
+# catches a trailer the hook left behind, and nothing puts a deleted sentence back. The
+# replacement is the pre-fix pattern exactly: an empty tail is "the line may go on forever".
+[[mutation]]
+name = "a generated-with footer may run on into a sentence again"
+file = "src/keelline/guards/commit.py"
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+after = '_FOOTER_TAIL = r""'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
+]
+
+# The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL
+# cannot; `\x01` can, and git stores it. One such byte in a body split one commit into two
+# records, sent the rest of the message into the field read as a `sha`, inflated the count 1 -> 2
+# and left the trailer in a record nothing judged — the CI gate voided for that commit by one
+# byte, the same class as the trailing-space bypass this branch already fixed once.
+[[mutation]]
+name = "the commit stream is split on a byte a message can carry"
+file = "src/keelline/guards/commit.py"
+before = '    fields = completed.stdout.split("\x00")'
+after = '    fields = completed.stdout.split("\x01")'
+reddens = [
+  "tests/guards/test_commit.py::test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records",
+]
+
+# The other half of the same guard, and the reason NUL can be the only delimiter: `-z` is what
+# terminates each record with NUL instead of a newline. Without it the records run together and
+# the pairing reads one commit where there are two. Declared separately because the `\x01`
+# fixture above does NOT redden on this one — a two-part guard needs two entries or half of it
+# is unproven.
+[[mutation]]
+name = "the log stops being NUL-terminated"
+file = "src/keelline/guards/commit.py"
+before = '                "-z",'
+after = '                "--reverse",'
+reddens = [
+  "tests/guards/test_commit.py::test_check_range_reports_each_offending_commit_once",
+]
+
+# `commit.verbose = true` puts the staged diff in the message file below a scissors line, and a
+# diff's lines start with `diff`, `+`, `-`, `@@` or a space. Without the scissors rule the walk
+# back over comment and blank lines stopped at the first of them, the whole file read as
+# "message", the attribution block was no longer trailing and the hook became a silent no-op —
+# one config key disabling the entire local layer.
+[[mutation]]
+name = "the verbose diff is read as part of the commit message again"
+file = "src/keelline/guards/commands.py"
+before = '        if line.startswith(_COMMENT_CHAR) and _SCISSORS_MARKER in line:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_still_strips_when_commit_verbose_appends_the_diff",
+  "tests/guards/test_commands.py::test_a_scissors_line_is_found_by_its_marker_not_by_gits_english_sentence",
+]
+
+# A trailer whose value is a bare address (`Co-Authored-By: noreply@anthropic.com`, brackets left
+# off) has no display name to split at, so `address` was empty and `_VENDOR_DOMAINS` could never
+# fire — while the identical address in brackets was caught. The third way past the trailer's
+# value rule, after the unterminated one and the punctuated one already declared above.
+[[mutation]]
+name = "a bare address is no longer read as the trailer's address"
+file = "src/keelline/guards/commit.py"
+before = '    if not bracket and len(name.split()) == 1:'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_positive_samples_are_flagged"]
+
+# `UnicodeDecodeError` is not an `OSError`. Without its own arm a message file in a non-UTF-8
+# encoding — `i18n.commitEncoding` is a real git setting — left `commit strip` as
+# `internal error: UnicodeDecodeError` and exit 2, the code callers are told never to read as
+# permission, for a file the command simply cannot read. Same shape as the audit's dangling
+# symlink entry above.
+[[mutation]]
+name = "a non-UTF-8 message file is an internal error again"
+file = "src/keelline/guards/commands.py"
+before = '    except UnicodeDecodeError:'
+after = '    except KeyError:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_reports_a_message_file_that_is_not_utf_8_as_a_failure",
+]
+
+# `guard bg-cleanup` is the CLI table's fail-closed row and `_tool_input` is where it closes.
+# Both of its refusals are replaced here with the answer a guard must never give for input it
+# could not read: `None`, which the command reports as "not a Bash call" and exit 0 — a refusal
+# that everything downstream reads as permission, which is the category CONTRIBUTING names.
+[[mutation]]
+name = "a payload that is not JSON is allowed instead of refused"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}; {exc}") from None'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+[[mutation]]
+name = "a payload carrying no command string is allowed instead of refused"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+# "A tree git could not report on is not a clean tree." The whole value of `test hygiene` is that
+# it answers "can this red run be trusted", and "I do not know" reported as "yes" is the one
+# wrong answer. The replacement is the shape that makes it green and silent.
+[[mutation]]
+name = "a tree git cannot report on is reported as clean"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(_NO_GIT)'
+after = '        found = found._replace(dirty=0)'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_git_cannot_report_on",
+]
+
+# A scanner that cannot go red is not evidence. Without this raise, `test audit-entrypoints`
+# exits 0 over a suite nothing actually graded, which reads exactly like a clean audit.
+[[mutation]]
+name = "a scanner that stopped discriminating still reports an audit"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))'
+after = '        problems = []'
+reddens = [
+  "tests/guards/test_commands.py::test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating",
 ]

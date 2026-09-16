@@ -61,10 +61,15 @@ def run_bg_cleanup(args: argparse.Namespace) -> Result:
     return Result(_CLEAN, {"hint": None})
 
 
+# Printed on every `commit check` failure, which is inside the CI gate's own output, so it may
+# only name commands that exist. It named `keelline setup --git-hooks`, which does not: the hook
+# installer ships as a library this lane owns and `setup` is the lane that will offer it from the
+# command line. A remedy that sends a person to an unknown subcommand costs more than the missing
+# clause does.
 _STRIP_REMEDY = (
     "Rewrite the messages without the trailer (`git rebase -i --exec 'git commit --amend "
-    "--no-edit' <base>`, or `git commit --amend` for the last one). `keelline setup "
-    "--git-hooks` installs the hook that strips these before a commit is written."
+    "--no-edit' <base>`, or `git commit --amend` for the last one). `keelline commit strip "
+    "FILE` does the same to one message file."
 )
 
 # git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read
@@ -74,30 +79,54 @@ _STRIP_REMEDY = (
 # split and therefore no strip on that file — a no-op, not a corruption.
 _COMMENT_CHAR = "#"
 
+# git's scissors line, matched on `>8` alone and not on the sentence around it. The line git
+# writes is `# ------------------------ >8 ------------------------`, and the two lines under it
+# ("Do not modify or remove the line above.") go through gettext — a German or Japanese checkout
+# writes them translated, and a rule keyed on the English wording would silently stop splitting
+# there. The ruler and its `>8` are not translated.
+_SCISSORS_MARKER = ">8"
+
 
 def _split_trailing_comment_block(text: str) -> tuple[str, str]:
-    """Split a `prepare-commit-msg` file into `(message region, trailing comment block)`.
+    """Split a `prepare-commit-msg` file into `(message region, everything git will discard)`.
 
-    The comment block is the run of lines at the end of `text` whose first character is
-    `_COMMENT_CHAR`, together with any blank lines between or after them. `commit.py` must
-    never learn about `#`: in a message read from `git log` a `#` line is real content, so this
-    split lives here, on the file-reading side, not in the module that judges the message text.
+    Two things are discarded, and the first of them was missed. **`commit.verbose = true` puts
+    the staged diff in this file**, below a scissors line, and a diff's lines start with `diff`,
+    `+`, `-`, `@@` or a space — so the walk back over comment and blank lines stopped at the
+    very first one it saw, the whole file read as "message", the attribution block was no longer
+    trailing and the hook became a silent no-op. Measured: with `commit.verbose` set, the same
+    commit that reports `stripped 2 attribution line(s)` without it stored the trailer intact.
+    One config key disabling the whole local layer is worth the extra rule.
 
-    `offending_lines`/`strip_message` judge only a message's *trailing attribution block* (see
-    `commit.py`'s docstring), and in an ordinary interactive commit the last paragraph is git's
-    own comment block, not whatever a person or a tool wrote above it. A comment line is not an
-    attribution line, so the block's upward walk stops there too — stripping the file's text
-    whole would no-op on exactly the file `prepare-commit-msg` hands the hook.
+    So the scissors line is found first and everything from it down is discarded region; then
+    the run of comment and blank lines at the end of what is left is discarded too. The second
+    part is the ordinary interactive commit: git's `# Please enter the commit message…` block is
+    the file's last paragraph, and `offending_lines`/`strip_message` judge only a message's
+    *trailing attribution block* (see `commit.py`'s docstring), which a comment line is not — so
+    stripping the file's text whole would no-op on exactly the file the hook is handed.
+
+    `commit.py` must never learn about `#` or about scissors: in a message read from `git log` a
+    `#` line is real content, so this split lives here, on the file-reading side. Both rules fail
+    the same way, which is the safe way: a message that itself carries a `#` line with `>8` in it
+    loses the strip below that point and keeps every byte, a no-op rather than a corruption.
     """
     lines = text.splitlines(keepends=True)
-    index = len(lines)
+    cut = len(lines)
+    for index, line in enumerate(lines):
+        # The FIRST scissors line: git truncates the message there, so anything below it —
+        # including a second one — is already not part of the message.
+        if line.startswith(_COMMENT_CHAR) and _SCISSORS_MARKER in line:
+            cut = index
+            break
+    above, below = lines[:cut], lines[cut:]
+    index = len(above)
     while index > 0 and (
-        lines[index - 1].strip() == "" or lines[index - 1].startswith(_COMMENT_CHAR)
+        above[index - 1].strip() == "" or above[index - 1].startswith(_COMMENT_CHAR)
     ):
         index -= 1
-    if not any(line.startswith(_COMMENT_CHAR) for line in lines[index:]):
-        index = len(lines)  # no comment line back there; nothing to split off
-    return "".join(lines[:index]), "".join(lines[index:])
+    if not any(line.startswith(_COMMENT_CHAR) for line in above[index:]):
+        index = len(above)  # no comment line back there; nothing to split off
+    return "".join(above[:index]), "".join(above[index:] + below)
 
 
 def _root_and_config(args: argparse.Namespace) -> tuple[Path, Config]:
@@ -144,8 +173,17 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     # makes it absolute before any `git -C` sees it; this argument is not resolved, so it is.
     try:
         original = path.read_text(encoding="utf-8")
+    # `UnicodeDecodeError` is not an `OSError`, and without it a message file in a non-UTF-8
+    # encoding — `i18n.commitEncoding` is a real git setting — reached the CLI frame as
+    # `internal error: UnicodeDecodeError` and exit 2, the code a caller is told never to read
+    # as permission. It is a file this command cannot read, exactly like the `OSError` beside
+    # it, so it is the same `Failure`. `audit.py` and `githooks.py` both catch it explicitly;
+    # this was the one place that did not. It does not render the exception: that one names the
+    # offending byte, and the byte came out of the file.
     except OSError as exc:
         raise Failure(f"cannot read {path}: {exc}") from None
+    except UnicodeDecodeError:
+        raise Failure(f"cannot read {path}: it is not valid UTF-8") from None
     message, comment_block = _split_trailing_comment_block(original)
     stripped_message = strip_message(message)
     # A message that is *only* attribution would be emptied, which aborts the commit with a
@@ -200,8 +238,21 @@ def run_test_audit(args: argparse.Namespace) -> Result:
     # `data` is the documented exception to "repository bytes are data": the JSON object is
     # read by the person or the CI job that owns the repository, so it carries the test paths
     # and the derived import names. The summary below is counts only.
+    # Spelled out rather than `f.__dict__`: the dataclass is an internal shape and the JSON is a
+    # documented contract (`docs/cli.md`), so reflecting one into the other made every attribute
+    # rename a silent wire break and every attribute added a key nobody documented. These five
+    # keys are the contract; a sixth arrives by being written here.
     data = {
-        "findings": [f.__dict__ for f in sorted(findings, key=lambda f: (f.path, f.line))],
+        "findings": [
+            {
+                "path": finding.path,
+                "line": finding.line,
+                "test": finding.test,
+                "shape": finding.shape,
+                "detail": finding.detail,
+            }
+            for finding in sorted(findings, key=lambda f: (f.path, f.line))
+        ],
         "files": len(files),
         "import_roots": sorted(names),
     }

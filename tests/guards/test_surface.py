@@ -6,7 +6,17 @@ import keelline.guards.api as guards
 
 def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # This list is the contract. A lane that needs something absent from it grows the list
-    # deliberately, in a commit that says which lane and why.
+    # deliberately, in a commit that says which lane and why — and an EQUALITY is what makes
+    # that true. `required <= set(__all__)` let an export be added and pass, and so did the
+    # second test below, which compares `__all__` against this module's own imports: adding an
+    # import and an `__all__` entry together satisfied both, so between them the two tests
+    # could only catch a REMOVED export. Nothing an area publishes should arrive unnoticed;
+    # growing this set in the same commit is the whole cost.
+    #
+    # No `mutations.toml` entry: the mutation is adding an export, which is two lines in
+    # `api.py` (the import and the `__all__` entry) and not one substituted line. Measured by
+    # hand instead — re-exporting `hygiene.is_pytest_run` reddens this test and this test alone,
+    # and under the old `required <= set(...)` the very same change left all three tests green.
     required = {
         # the scanner, for any later guard
         "Heredoc",
@@ -48,7 +58,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "suite_files",
         "contained_roots",
     }
-    assert required <= set(guards.__all__)
+    assert required == set(guards.__all__)
 
 
 def test_the_export_list_is_exactly_what_the_module_imports_from_this_lane() -> None:

@@ -14,8 +14,8 @@ Two surfaces share one pattern set, so they cannot drift apart:
 
 * ``commit check --range A..B`` — CI, on every push and every pull request. The authoritative
   gate.
-* ``commit strip FILE`` — the ``prepare-commit-msg`` hook that ``setup --git-hooks`` installs.
-  Local and early, so the trailer is gone before the commit exists. ``git commit --no-verify``
+* ``commit strip FILE`` — what the ``prepare-commit-msg`` hook in ``githooks`` runs. Local and
+  early, so the trailer is gone before the commit exists. ``git commit --no-verify``
   skips ``pre-commit`` and ``commit-msg`` but *not* ``prepare-commit-msg``, so this survives
   the usual bypass.
 
@@ -80,6 +80,19 @@ So: a word character in the tail after the **last** ``>``, the last rather than 
 because a display name may carry brackets of its own (``Claude <bot> <address>``) and splitting
 at the first one reads the real address as prose. Prose that happens to end in ``>`` is flagged
 rather than missed, which is the cheap direction.
+
+**A footer, too, must end where its product name ends.** The same class of defect as the
+trailer's, found on the other rule and one round later: ``_FOOTER`` was anchored at the start
+only, so any line *beginning* with the words was a footer whatever followed it, and ``Generated
+with Claude Code and then reviewed by a human.`` was an offence — a body sentence that ``commit
+strip`` then deleted before the commit existed, reporting only a count. Past the vendor word the
+line may carry more of the product's name (a proper noun, so a capital or a digit starts it), a
+version or a link (lowercase, but carrying a digit or a ``/``, which no English word does), the
+markdown link target the canonical footer ends with, and punctuation — and then it must end. A
+word beginning with a lowercase letter is prose and ends the match. The cost is stated beside
+``_FOOTER_TAIL``: a lowercase-typed footer is missed here, and that is the cheap direction,
+because the harness appends a ``Co-Authored-By:`` trailer alongside it that the trailer rule
+catches, while nothing puts a deleted sentence back.
 
 **The domain rule's cost is chosen, not overlooked** — a person whose employer is a vendor
 (``alice@openai.com``) is indistinguishable from that vendor's bot by address alone, and is
@@ -150,16 +163,45 @@ _VENDOR_DOMAINS = re.compile(
     r"|windsurf\.com|mistral\.ai|devin\.ai|aider\.chat)\b",
     re.IGNORECASE,
 )
-# The name rule: the whole name is a product, not a person. `Claude Lemaire` is a person.
+# The name rule, and `fullmatch` is the whole of it: the trailer's display name must be a
+# product phrase AND NOTHING ELSE. `Claude Lemaire` is a person, and so are `Devin Clark` and
+# `Gemini Rossi`, which is why this can never be a search. The cost is stated rather than
+# patched: `Devin AI`, `Codex CLI` and `Claude Code Bot` are real bot names and are not matched
+# here, and widening the rule to a substring is what re-opens the human co-author false
+# positives this whole table exists to avoid. Those bots are caught, if at all, by their mail
+# domain in `_VENDOR_DOMAINS`; a bot with neither an exact product name nor a vendor domain is a
+# known gap, like Gemini's above.
 _PRODUCTS = re.compile(
     r"(?:claude code|claude (?:opus|sonnet|haiku)(?: [\w.]+)*|github copilot|copilot"
     r"|cursor agent|openai codex|codex|devin|windsurf|aider|gemini cli|gemini code assist)",
     re.IGNORECASE,
 )
+# What ends a footer, and it is the same shape of test `_trailer_offence` applies to a trailer's
+# value: past the vendor word the line must be *finished*, not carry on into a sentence. Without
+# it any line BEGINNING with the words was a footer whatever followed — measured, `Generated with
+# Claude Code and then reviewed by a human.` was an offence, and `commit strip` deleted that
+# sentence from the message before the commit existed. Three things may follow the vendor word:
+#
+# * more of the product's name — `Code`, `Opus 5`, `CLI`. A product is a proper noun, so a
+#   continuation word begins with a capital or a digit; a word beginning lowercase is prose and
+#   ends the match. `(?-i:...)` because the pattern as a whole is case-insensitive.
+# * a version or a link — `v1.2`, `(https://claude.com/claude-code)`. Lowercase, so the case
+#   test alone would lose both; a token carrying a digit or a `/` is not an English word.
+# * the canonical footer's own markdown link target, `](https://claude.com/claude-code)`, then
+#   any run of non-word characters: a closing bracket, trailing punctuation, a trailing emoji.
+#
+# Its cost, chosen rather than overlooked and the mirror of the trailer rule's: a footer whose
+# product name is typed in lowercase (`generated with claude code`), or which appends an
+# ordinary word (`Generated with Claude Code on 2026-09-16`), is no longer caught here. Widening
+# this back is what amputates a body sentence, and nothing puts a deleted sentence back — while a
+# footer missed on this surface is still a commit whose paired `Co-Authored-By:` trailer the
+# trailer rule catches, and `commit check` still fails it in CI.
+_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"
 # A footer names the vendor as a word, never as a prefix of a package (`openai-python`) or a
 # possessive (`openai's`).
 _FOOTER = re.compile(
-    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])",
+    rf"^[ \t]*(?:\U0001F916[ \t]*)?generated (?:with|by)[ \t]*\[?(?:{_VENDORS})\b(?![-'])"
+    rf"{_FOOTER_TAIL}",
     re.IGNORECASE,
 )
 # The marker is the whole line, optionally `by <tool>`; a sentence that starts with the words
@@ -178,7 +220,15 @@ def _trailer_offence(line: str) -> bool:
     match = _TRAILER.match(line)
     if match is None:
         return False
-    name, _, address = match.group("value").partition("<")
+    name, bracket, address = match.group("value").partition("<")
+    # A trailer whose value is a BARE ADDRESS -- `Co-Authored-By: noreply@anthropic.com`, angle
+    # brackets left off -- has no display name, so `address` was empty and `_VENDOR_DOMAINS`
+    # could never fire on it while the bracketed form was caught. The same hole as the
+    # unterminated trailer above, reached from the other side. The bound is one token: a value
+    # that is a single word IS an address, and a value with a space in it is a display name or a
+    # sentence (`Reviewed-by: write to bob@anthropic.com about it`) and is read as it was.
+    if not bracket and len(name.split()) == 1:
+        address = name
     # A trailer's value ends at its address; a value that CONTINUES INTO A WORD past the
     # address is a sentence. Without this, everything after the `>` lands in the discarded
     # "address" half, so `Reviewed-by: Copilot <x@y.z> said nothing useful.` -- this module's
@@ -339,9 +389,22 @@ def strip_message(message: str) -> str:
 def commits_in(root: Path, rev_range: str) -> list[Commit]:
     """`(sha, message)` for each commit in `rev_range`, oldest first.
 
-    `%x00` separates sha from message and `%x01` separates commits: neither can occur in a
-    commit message, unlike any printable delimiter. The range is refused when it is shaped
-    like an option (§3) and closed with `--` so it can never be read as a pathspec.
+    **NUL is the only delimiter, and that is measured rather than assumed.** `%x00` separates a
+    sha from its message and `-z` terminates each record with NUL as well, so the stream is a
+    flat alternation of the two. NUL is the one byte a commit message cannot carry — git's
+    object format ends the header at it and `git commit` rejects it — and no other byte has
+    that property.
+
+    `%x01` did, until it was measured not to. It was chosen for "neither can occur in a commit
+    message"; git stores `\\x01` in a body quite happily (`git commit --cleanup=verbatim -F`
+    writes one), and one such byte split a single commit into two records, sent the rest of the
+    message into the field read as a `sha`, inflated the count from 1 to 2 and left the real
+    trailer in a record nothing judged. That is the same class as the trailing-space bypass
+    this module fixed once already: a gate whose whole argument is that it cannot be bypassed,
+    bypassed by one byte.
+
+    The range is refused when it is shaped like an option (§3) and closed with `--` so it can
+    never be read as a pathspec.
     """
     if rev_range.startswith("-"):
         raise Refusal(f"{rev_range!r} looks like an option, not a revision range")
@@ -355,7 +418,8 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
                 str(root),
                 "log",
                 "--reverse",
-                "--format=%H%x00%B%x01",
+                "-z",
+                "--format=%H%x00%B",
                 rev_range,
                 "--",
             ],
@@ -378,14 +442,15 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
         raise Refusal(f"git could not be run to read {rev_range!r}") from None
     if completed.returncode != 0:
         raise Refusal(f"git could not read {rev_range!r}; run it yourself to see why")
-    commits: list[Commit] = []
-    for raw in completed.stdout.split("\x01"):
-        record = raw.strip("\n")
-        if not record:
-            continue
-        sha, _, message = record.partition("\x00")
-        commits.append(Commit(sha, message))
-    return commits
+    # Positional, not searched: the fields alternate sha, message, sha, message, and `-z` puts a
+    # NUL after the last message too, so the split leaves one empty field at the end. Pairing by
+    # index is what makes a message's own bytes unable to change how the stream is read — the
+    # defect `%x01` had. An odd count cannot happen; if it ever did, the dangling field is a sha
+    # with no message and is dropped rather than paired with nothing.
+    fields = completed.stdout.split("\x00")
+    if fields and not fields[-1]:
+        fields.pop()
+    return [Commit(fields[index], fields[index + 1]) for index in range(0, len(fields) - 1, 2)]
 
 
 def check_range(root: Path, rev_range: str, config: Config) -> Report:

@@ -48,7 +48,8 @@ HOOK_TEXT = f"""#!/usr/bin/env bash
 # prepare-commit-msg rather than commit-msg on purpose: `git commit --no-verify` bypasses
 # pre-commit and commit-msg, but not this hook. It is still only the local convenience layer;
 # the authoritative gate is `keelline commit check` in CI, which sees commits this machine
-# never produced. Installed and removed by `keelline setup --git-hooks`.
+# never produced. Written, and removed again, by keelline's git-hook installer; no `keelline`
+# subcommand offers it yet, so today it is reached from Python as `guards.api.install(root)`.
 #
 # Chains to whatever hook was here before, kept beside this one as `<hook>.local`, so
 # installing this never silently disables husky, pre-commit, or what the repository had.
@@ -114,12 +115,18 @@ def hooks_dir(root: Path) -> Path:
             timeout=GIT_TIMEOUT_SECONDS,
             env=scrubbed_env(),
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise Refusal(f"git could not name the hooks directory of {root}: {exc}") from None
+    # Neither refusal carries a byte this module did not compute, for the reason `commit.commits_in`
+    # states beside its own three: `rev-parse`'s stderr is repository-authored — it quotes the
+    # offending CONFIG VALUE, `core.hooksPath` included — and `TimeoutExpired.__str__` renders the
+    # whole argv. `root` is the caller's own path and is the actionable part; it is all that is
+    # printed. This defect was found and fixed in `commits_in` during this lane's own review and
+    # was still here, which is why the reasoning is repeated rather than pointed at.
+    except (OSError, subprocess.TimeoutExpired):
+        raise Refusal(f"git could not name the hooks directory of {root}") from None
     answer = completed.stdout.strip()
     if completed.returncode != 0 or not answer:
         raise Refusal(
-            f"git could not name the hooks directory of {root}: {completed.stderr.strip()}"
+            f"git could not name the hooks directory of {root}; run it yourself to see why"
         )
     path = Path(answer)
     return path if path.is_absolute() else root / path
