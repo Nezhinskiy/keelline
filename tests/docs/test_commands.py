@@ -171,3 +171,26 @@ def test_plan_check_lints_the_named_plans_and_counts_them(
     data = json.loads(capsys.readouterr().out)
     assert data["findings"][0]["rule"] == "scope-missing"
     assert data["linted"] == ["docs/plans/2026-01-01-x.md"]
+
+
+def test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
+    # permission — so a latin-1 byte in a repository's own document must not produce it. Every
+    # command that reads one is asserted through the real frame. Mutation: drop
+    # `read_document`'s `UnicodeDecodeError` arm — each case becomes exit 2 and reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "roadmap.md").write_bytes(
+        f"# R\n\ncaf\xe9\n\n{MARKER}\n{END_MARKER}\n".encode("latin-1")
+    )
+    assert invoke(["docs", "check", *common]) == 1
+    assert invoke(["docs", "trail", "--check", *common]) == 1
+    assert "is not valid UTF-8" in capsys.readouterr().err
+    (root / "docs" / "roadmap.md").write_text(f"# R\n\n{MARKER}\n{END_MARKER}\n", encoding="utf-8")
+    (root / "docs" / "trail.toml").write_bytes(b'[states]\n"a.md" = "caf\xe9"\n')
+    assert invoke(["docs", "trail", "--check", *common]) == 1
+    (root / "docs" / "trail.toml").unlink()
+    plan = root / "docs" / "plans" / "2026-01-01-x.md"
+    plan.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
+    assert invoke(["plan", "check", str(plan), *common]) == 1

@@ -67,6 +67,7 @@ def run_docs_check(args: argparse.Namespace) -> Result:
 
 def run_docs_trail(args: argparse.Namespace) -> Result:
     from keelline.config.paths import contained
+    from keelline.docs.hygiene import read_document
     from keelline.docs.trail import read_trail, rebuild, trail_path, undeclared_new_documents
 
     root, config = root_and_config(args)
@@ -74,7 +75,7 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     if not roadmap.is_file():
         return Result(f"{config.paths.roadmap} does not exist", {"stale": None}, exit_code=1)
     trail = read_trail(trail_path(root, config))
-    current = roadmap.read_text(encoding="utf-8")
+    current = read_document(roadmap, config.paths.roadmap)
     updated = rebuild(current, root, config, trail)
     if args.check:
         if current != updated:

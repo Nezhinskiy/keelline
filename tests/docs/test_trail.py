@@ -288,3 +288,13 @@ def test_a_tree_git_cannot_answer_for_still_lists_its_documents(tmp_path: Path) 
         git_init=False,
     )
     assert "gizmo.md" in listing(root, config)
+
+
+def test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Path) -> None:
+    # The sibling of the `theme = 1` case, and the one it missed: a repository's malformed file
+    # must read as their file being wrong (1), never as this tool being broken (2). Mutation:
+    # drop `read_document`'s `UnicodeDecodeError` arm — this reddens.
+    root, config = corpus(tmp_path, trail=None)
+    (root / "docs" / "trail.toml").write_bytes(b'[states]\n"a.md" = "caf\xe9"\n')
+    with pytest.raises(Failure, match="is not valid UTF-8"):
+        read_trail(trail_path(root, config))

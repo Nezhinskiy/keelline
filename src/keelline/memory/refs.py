@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from keelline.config.schema import Config
+from keelline.errors import Failure
 from keelline.findings import Finding
 from keelline.gitenv import git_run
 from keelline.guards.api import contained_roots
@@ -95,8 +96,17 @@ def _ignored(root: Path, targets: set[str]) -> set[str]:
 
 
 def _lines(note: Note) -> list[tuple[int, str]]:
-    """Every prose line of the note with its file line number; fenced code is blanked."""
-    text = note.path.read_text(encoding="utf-8")
+    """Every prose line of the note with its file line number; fenced code is blanked.
+
+    The note is re-read here rather than taken from `Note.body`, which drops the frontmatter and
+    with it the line numbers every finding carries — so the decode can fail again even though
+    `read_note` already succeeded, and it must fail as the operator's file being wrong (1) and
+    never as an internal error (2).
+    """
+    try:
+        text = note.path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None
     return list(enumerate(blank_fences(text).splitlines(), start=1))
 
 

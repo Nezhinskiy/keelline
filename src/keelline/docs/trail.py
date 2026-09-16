@@ -19,7 +19,7 @@ from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
 from keelline.config.paths import contained
-from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE
+from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
 from keelline.gitenv import git_run
 
@@ -80,7 +80,7 @@ def read_trail(path: Path) -> Trail:
     if not path.is_file():
         return Trail((), {})
     try:
-        raw: dict[str, Any] = tomllib.loads(path.read_text(encoding="utf-8"))
+        raw: dict[str, Any] = tomllib.loads(read_document(path, path))
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{path} is not valid TOML: {exc}") from None
     themes: list[tuple[str, re.Pattern[str]]] = []

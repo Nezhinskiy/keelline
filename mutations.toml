@@ -1128,3 +1128,46 @@ after = "    # the files as they are AFTER the move, so this is a check and not 
 reddens = [
   "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
 ]
+
+# 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
+# permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
+# as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
+# being broken, with nothing in the message the operator can act on.
+[[mutation]]
+name = "a non-UTF-8 document reads as an internal error again"
+file = "src/keelline/docs/hygiene.py"
+before = '''    except UnicodeDecodeError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None'''
+after = '''    except RecursionError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error})") from None'''
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error",
+  "tests/docs/test_commands.py::test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2",
+  "tests/docs/test_plans.py::test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error",
+  "tests/docs/test_trail.py::test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error",
+]
+
+# The same defect in the memory lane's own reader: `UnicodeDecodeError` is not an `OSError`, so
+# a latin-1 byte in a note escaped the walk instead of being quarantined onto `unreadable`.
+[[mutation]]
+name = "a non-UTF-8 note escapes the walk instead of being quarantined"
+file = "src/keelline/memory/notes.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_that_is_not_utf8_is_quarantined_rather_than_an_internal_error",
+  "tests/memory/test_refs.py::test_a_note_that_is_not_utf8_is_a_finding_not_an_internal_error",
+]
+
+[[mutation]]
+name = "a note that stops decoding after the walk is an internal error"
+file = "src/keelline/memory/refs.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error",
+]

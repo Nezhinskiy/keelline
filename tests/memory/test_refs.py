@@ -10,6 +10,7 @@ import pytest
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.errors import Failure
 from keelline.memory.api import resolve, walk
 from keelline.memory.refs import audience_violations, check_refs, source_roots, unresolved
 
@@ -237,3 +238,34 @@ def test_a_note_that_will_not_parse_is_counted_on_the_command_line_too(
     data = json.loads(capsys.readouterr().out)
     assert data["summary"] == "1 note(s) could not be parsed and were not read"
     assert data["unreadable"] == ["developer/broken.md"]
+
+
+def test_a_note_that_is_not_utf8_is_a_finding_not_an_internal_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Through the real frame: 2 is reserved for a refusal or an internal error, and a caller is
+    # told never to read it as permission, so a latin-1 byte in a note must not produce it.
+    # Mutation: drop `read_note`'s `UnicodeDecodeError` arm — this reddens at exit 2.
+    root, _config = project(tmp_path)
+    (root / "notes" / "developer" / "latin.md").write_bytes(
+        b"---\nname: latin\ndescription: d\n---\n\ncaf\xe9\n"
+    )
+    assert invoke(["memory", "refs", "--json", *flags(root)]) == 1
+    assert json.loads(capsys.readouterr().out)["unreadable"] == ["developer/latin.md"]
+
+
+def test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # `_lines` re-reads the note, because `Note.body` drops the frontmatter and with it the line
+    # numbers every finding carries — so the decode can fail here even though `read_note` had
+    # just succeeded, and it must still read as the operator's file being wrong (1). Mutation:
+    # drop `_lines`' `UnicodeDecodeError` arm — this reddens with the exception escaping.
+    root, config = project(tmp_path)
+    note(root, "developer", "a", "see `src/widget/gone.py`\n")
+    store = resolve(root, config, machine=root.parent / "m.toml")
+    assert store is not None
+    walked = walk(store.path, ["developer"])
+    (root / "notes" / "developer" / "a.md").write_bytes(b"caf\xe9\n")
+    with pytest.raises(Failure, match="not valid UTF-8"):
+        unresolved(root, config, store, walked)

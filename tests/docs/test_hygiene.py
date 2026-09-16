@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.hygiene import TRAIL_MARKER, check_budgets, check_links, roadmap_prose
+from keelline.errors import Failure
 from keelline.findings import Finding
 
 CONFIG = """
@@ -136,3 +139,21 @@ def test_a_roadmap_without_the_marker_is_measured_whole_and_an_absent_one_is_not
     assert check_budgets(root, config) == []
     (root / "docs" / "roadmap.md").write_text("a\nb\nc\n", encoding="utf-8")
     assert rules(check_budgets(root, config)) == ["roadmap-lines"]
+
+
+def test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # `cli.run` maps a `Failure` to 1 and everything else to 2, and 2 is the code a caller is
+    # told never to read as permission. One latin-1 byte in either always-loaded document used
+    # to reach the frame as `internal error: UnicodeDecodeError`. Mutation: drop the
+    # `UnicodeDecodeError` arm of `read_document` — all three cases redden.
+    root, config = project(tmp_path)
+    (root / "docs" / "roadmap.md").write_bytes("# R\n\ncaf\xe9\n".encode("latin-1"))
+    with pytest.raises(Failure, match=r"docs/roadmap\.md: is not valid UTF-8"):
+        check_budgets(root, config)
+    (root / "AGENTS.md").write_bytes(AGENTS.encode("utf-8") + b"caf\xe9\n")
+    with pytest.raises(Failure, match=r"AGENTS\.md: is not valid UTF-8"):
+        check_budgets(root, config)
+    with pytest.raises(Failure, match=r"AGENTS\.md: is not valid UTF-8"):
+        check_links(root, config)

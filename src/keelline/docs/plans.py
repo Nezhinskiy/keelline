@@ -74,6 +74,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import contained
+from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
 from keelline.gitenv import git_run
@@ -290,7 +291,7 @@ def asserted_outcomes(prose: str) -> list[int]:
 def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> list[Finding]:
     """Every finding one plan carries, with the line numbers of the file as it is on disk."""
     # Fenced code is not plan prose: its fixtures name deliberately fake paths.
-    prose = blank_fences(path.read_text(encoding="utf-8"))
+    prose = blank_fences(read_document(path, where))
     found: list[Finding] = []
     # Per plan, not per line: these are properties of the document, not of one line in it.
     if not _SCOPE_LINE.search(prose):

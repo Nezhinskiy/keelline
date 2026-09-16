@@ -15,7 +15,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.plans import asserted_outcomes, lint
-from keelline.errors import Refusal
+from keelline.errors import Failure, Refusal
 
 CONFIG = """
 [keelline]
@@ -293,3 +293,14 @@ def test_a_named_plan_outside_the_project_is_a_failure_not_an_internal_error(
     elsewhere.write_text("**Scope:** iff x.\n", encoding="utf-8")
     with pytest.raises(Failure, match="not inside the project root"):
         lint(root, config, plans=[elsewhere])
+
+
+def test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Path) -> None:
+    # A repository's malformed input must read as their input being wrong (1), never as this
+    # tool being broken (2). Mutation: drop `read_document`'s `UnicodeDecodeError` arm — this
+    # reddens with `UnicodeDecodeError` escaping instead.
+    root, config = project(tmp_path)
+    path = root / "docs" / "plans" / "2026-01-01-x.md"
+    path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
+    with pytest.raises(Failure, match="is not valid UTF-8"):
+        lint(root, config, plans=[path])
