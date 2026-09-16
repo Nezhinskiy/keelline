@@ -26,8 +26,9 @@ def test_reading_the_number_out_of_a_non_identifier_is_refused() -> None:
 
 
 def test_fewer_than_three_digits_is_not_an_identifier() -> None:
-    # `renumber` and every reader enforce this; a two-digit heading was the shape the source's
-    # index guard existed to catch. Mutation: change `{3,}` to `+` in `DIGITS` — reddens this.
+    # `renumber` and every reader enforce this: two digits is a different shape, and a reader
+    # that accepts it counts headings and filenames that were never identifiers at all.
+    # Mutation: change `{3,}` to `+` in `DIGITS` — reddens this.
     assert not Identifiers("BR").is_identifier("BR-42")
 
 

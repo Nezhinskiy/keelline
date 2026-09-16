@@ -14,9 +14,9 @@ def test_a_label_is_the_path_the_line_and_the_rule_and_never_the_detail() -> Non
 
 
 def test_listed_caps_the_tail_and_says_how_many_it_dropped() -> None:
-    # An unmigrated ledger had 134 identifiers and the remediation was one command for the
-    # whole set; the tail is length, not information. Mutation: drop the cap — the first
-    # assertion reddens.
+    # A check over a neglected ledger reports findings by the hundred and the remediation is one
+    # command for the whole set; the tail is length, not information, and printing it pushes that
+    # command off the end of the line. Mutation: drop the cap — the first assertion reddens.
     items = [f"item-{n}" for n in range(LISTED_LIMIT + 3)]
     assert listed(items).endswith(", and 3 more")
     assert listed(items[:LISTED_LIMIT]).count(",") == LISTED_LIMIT - 1
