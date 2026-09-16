@@ -244,9 +244,10 @@ index differs from that rendering and writes nothing. Either form refuses (`2`) 
 would destroy something: a line the index holds that this tool did not generate (a hand-written
 section, an operator's note — recover it into an entry file first), or a generated index whose
 entry directory is gone (restore the files; the index carries nothing of its own). A reworded
-header is a stale index, not foreign content. The first paragraph names the generator, and an
-index written by the generator this one replaced is recognised as generated too. **Writes**
-`<paths.bug_index>`.
+header is a stale index, not foreign content. The first paragraph names the generator, and that
+paragraph is recognised structurally rather than by an exact string, so an index left by an
+older generated format is still read as generated rather than refused as hand-written content.
+**Writes** `<paths.bug_index>`.
 
 ## `keelline bugs check`
 

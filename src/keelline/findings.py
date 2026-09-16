@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Items per summary line, capped. An unmigrated ledger had 134 identifiers and the remediation
-# was one command for the whole set, so the tail is length, not information — and printing it
-# pushes the command that repairs the tree off the end of the line. One cap for every message
-# rather than a per-call knob, and not a config key (D7): a caller free to choose is a caller
-# free to reintroduce the 1,800-character line this exists to prevent.
+# Items per summary line, capped. A check over a neglected ledger reports findings by the
+# hundred and the remediation is one command for the whole set, so the tail is length, not
+# information — and printing it pushes the command that repairs the tree off the end of the
+# line. One cap for every message rather than a per-call knob, and not a config key (D7): a
+# caller free to choose is a caller free to reintroduce the thousands-of-characters summary
+# line this exists to prevent.
 LISTED_LIMIT = 8
 
 

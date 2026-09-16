@@ -87,8 +87,9 @@ def _unquote(raw: str, *, key: str, where: Path) -> str:
     body = raw[1 : len(raw) - 1]
     # The final `"` closes the value only when the backslash run before it is even, since `\\`
     # is itself an escape. Testing the last two characters instead rejects this tool's own
-    # output: `quote` writes a title ending in `\` as `"…\\"`, and one such title in the
-    # source's ledger aborted a whole migration through its renderer and this reader.
+    # output: `quote` writes a title ending in `\` as `"…\\"`, so this reader would refuse the
+    # very file the renderer just wrote, and one such title would break every pass over the
+    # whole ledger until a human found it.
     if (len(body) - len(body.rstrip("\\"))) % 2:
         raise LedgerError(f"{where}: `{key}` has an unterminated quoted value")
     out: list[str] = []

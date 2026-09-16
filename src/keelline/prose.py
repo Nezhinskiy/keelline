@@ -1,11 +1,11 @@
 """The one grammar for "a backticked path in hand-written prose".
 
 The plan lint and the memory reference guard read different documents for different reasons
-and ask them the same question: which backticked spans claim that a path exists. In the
-source they held two copies of that question, and the copies had already drifted — one
-accepted `.ts`/`.tsx` and the other did not, so in a repository whose front end is TypeScript
-a plan naming a dead `.ts` module got no reference check at all, while the newer module's
-docstring asserted it shared a grammar it did not.
+and ask them the same question: which backticked spans claim that a path exists. Two copies of
+that question drift, and they drift silently: let one copy accept `.ts`/`.tsx` and the other
+not, and in a repository whose front end is TypeScript a plan naming a deleted `.ts` module gets
+no reference check at all, while the module that came second goes on saying in its docstring
+that it shares a grammar it does not. One copy, here, is what stops that.
 
 Three rules live here, and each is a decision rather than a default:
 

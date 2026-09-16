@@ -196,8 +196,9 @@ def test_the_writer_quotes_every_yaml_indicator_a_value_can_lead_with() -> None:
 )
 def test_the_reader_accepts_every_value_the_writer_produces(value: str) -> None:
     # `scalar` quotes exactly when `_unquote` would refuse the bare form; the two are one pair.
-    # The `trail\\` case is the title ending in a backslash that aborted the source's whole
-    # migration once. Mutation: test the last two characters in `_unquote` instead of the
+    # The `trail\\` case is the title ending in a backslash: the renderer writes it and this
+    # reader would refuse the file it just wrote, so one such entry breaks every pass over the
+    # whole ledger. Mutation: test the last two characters in `_unquote` instead of the
     # backslash-run parity — that case reddens.
     text = (
         f"---\nid: BR-001\ntitle: {scalar(value)}\nstatus: open\nseverity: low\n"

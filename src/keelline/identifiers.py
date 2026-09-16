@@ -1,8 +1,11 @@
 """One definition of what a ledger identifier looks like, from `[ledger] id_prefix`.
 
-The source spelt `BR-` in eleven regular expressions and three format strings; a configurable
-prefix means one object every reader and writer asks, so a prefix that changes changes all of
-them together. A leaf module: the ledger, the plan lint (`Fixes BR-nnn`) and the memory graph
+A prefix is the kind of string that gets respelled at each point of use — a regular expression
+in one reader, a format string in a writer, a filename glob in a third — until a dozen copies
+disagree about what an identifier is and no one of them can be corrected alone. One object that
+every reader and writer asks is what makes a prefix that changes change all of them together,
+and it is why this grammar exists at all rather than as a constant per module. A leaf module:
+the ledger, the plan lint (`Fixes BR-nnn`) and the memory graph
 (`[[BR-nnn]]`) all read it, and none of them may import another's area. The prefix is
 repository-controlled (§3): it is interpolated into patterns and filenames, so it is held to a
 shape before either happens.

@@ -59,10 +59,11 @@ at the file on disk, not at a commit that does not exist yet; the plans the work
 beyond the diff are reported as `unlinted` rather than linted silently, so the remedy is to name
 the file.
 
-A repository whose BASE will not resolve is a finding and not an OK. It used to print a note and
-exit 0, and that is how the ported gate ran in CI for its whole life: the checkout was made at
-the default depth of 1, the base ref did not exist in that clone, and the lint could not have
-failed whatever a plan contained. A check that cannot answer must say so in its exit code.
+A repository whose BASE will not resolve is a finding and not an OK. Printing a note and exiting
+0 is how a gate like this one runs green for its whole life without ever having linted anything:
+a CI checkout made at the default depth of 1 holds no base ref, so the diff cannot be taken and
+no plan could have failed whatever it contained. A check that cannot answer must say so in its
+exit code.
 """
 
 from __future__ import annotations
