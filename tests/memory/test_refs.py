@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.memory.api import resolve, walk
@@ -171,3 +173,52 @@ def test_audience_violations_are_empty_for_a_store_with_no_cross_project_group(
     store = resolve(root, config, machine=root.parent / "m.toml")
     assert store is not None
     assert audience_violations(store, config, walk(store.path, config.memory.groups)) == []
+
+
+def invoke(argv: list[str]) -> int:
+    return run(argv, parser=build_parser(discover_registrars()))
+
+
+def flags(root: Path) -> list[str]:
+    return ["--root", str(root), "--machine", str(root.parent / "m.toml")]
+
+
+def test_the_command_says_the_store_resolves_and_names_a_stale_reference_on_one_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # C5: one line per command, and the label carries what this lane computed. The target is
+    # repository-authored and belongs in `--json` only.
+    root, _config = project(tmp_path)
+    note(root, "developer", "a", "see `src/widget/boot.py`\n")
+    assert invoke(["memory", "refs", *flags(root)]) == 0
+    assert capsys.readouterr().out == "every backticked path in the store resolves\n"
+    note(root, "developer", "a", "see `src/gone.py`\n")
+    assert invoke(["memory", "refs", "--json", *flags(root)]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["summary"] == "1 stale reference(s): developer/a.md:8 [dead-reference]"
+    assert data["findings"][0]["detail"] == "src/gone.py"
+
+
+def test_a_group_the_resolver_could_not_provide_refuses_rather_than_reporting_a_clean_walk(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Premise 8 keeps the source's "the walk went blind" exit: a walk over a subset that reports
+    # nothing stale is worse than no guard, so this is a refusal (2), never findings (1).
+    # Mutation: return a `Result` instead of raising — the exit code reddens.
+    root, _config = project(tmp_path)
+    (root / "notes" / "project-volatile").rmdir()
+    assert invoke(["memory", "refs", *flags(root)]) == 2
+    assert "project-volatile" in capsys.readouterr().err
+
+
+def test_a_note_that_will_not_parse_is_counted_on_the_command_line_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _config = project(tmp_path)
+    (root / "notes" / "developer" / "broken.md").write_text(
+        "---\nname: broken\n  nested: yes\n---\n", encoding="utf-8"
+    )
+    assert invoke(["memory", "refs", "--json", *flags(root)]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["summary"] == "1 note(s) could not be parsed and were not read"
+    assert data["unreadable"] == ["developer/broken.md"]
