@@ -12,7 +12,13 @@ from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure
 from keelline.memory.api import resolve, walk
-from keelline.memory.refs import audience_violations, check_refs, source_roots, unresolved
+from keelline.memory.refs import (
+    _ignored,
+    audience_violations,
+    check_refs,
+    source_roots,
+    unresolved,
+)
 
 CONFIG = """
 [keelline]
@@ -148,6 +154,27 @@ def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_pat
     (root / ".gitignore").write_text("build/\n", encoding="utf-8")
     note(root, "developer", "a", "see `build/out.py`\n")
     assert findings(root, config) == []
+
+
+def test_the_ignore_query_matches_a_non_ascii_path_it_asked_about(tmp_path: Path) -> None:
+    # `check-ignore` C-quotes a non-ASCII path on output, so without `-z` the answer never
+    # equals the target that was sent: an ignored path reads as not ignored and the note
+    # carries a `dead-reference` its author cannot satisfy, because creating an ignored file
+    # changes nothing. Asked of `_ignored` directly and not through a note, and that is the
+    # honest scope: the shared `prose` grammar admits only `[A-Za-z0-9_./-]`, which git never
+    # quotes, so no note can reach this today. The query is fixed anyway because that class is
+    # the kind that widens — it already widened once, to `.ts`/`.tsx` — and a widened grammar
+    # would arrive with the defect already in place. Mutation: drop `-z` from `_ignored`'s argv
+    # and read the output with `splitlines()` — this reddens.
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    root, _config = project(tmp_path)
+    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
+    (root / ".gitignore").write_text("build/\n", encoding="utf-8")
+    assert _ignored(root, {"build/caf\u00e9.py", "src/widget/boot.py"}) == {"build/caf\u00e9.py"}
 
 
 def test_a_group_the_resolver_could_not_provide_is_named_not_silently_skipped(

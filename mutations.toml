@@ -1171,3 +1171,27 @@ after = '''    except RecursionError as exc:
 reddens = [
   "tests/memory/test_refs.py::test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error",
 ]
+
+# `check-ignore` C-quotes a non-ASCII path on output, so the answer never equals the path that
+# was asked about. In the roadmap listing an ignored document is then listed — the case
+# `--no-index` exists for; in a note a reference to an ignored file carries a `dead-reference`
+# its author cannot satisfy, because creating an ignored file changes nothing.
+[[mutation]]
+name = "the roadmap's ignore check cannot match a non-ASCII path"
+file = "src/keelline/docs/trail.py"
+before = '''    stdin = "\0".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)'''
+after = '''    stdin = "\n".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin=stdin)'''
+reddens = ["tests/docs/test_trail.py::test_an_ignored_document_whose_name_is_not_ascii_is_not_listed"]
+
+# The memory half of this is not reachable through a note today: the shared `prose` grammar
+# admits only `[A-Za-z0-9_./-]`, which git never quotes. The query is fixed and pinned anyway
+# because that class is the kind that widens — it already widened once, to `.ts`/`.tsx` — and a
+# widened grammar would arrive with the defect already in place. The test is at `_ignored`.
+[[mutation]]
+name = "the note reference guard's ignore check cannot match a non-ASCII path"
+file = "src/keelline/memory/refs.py"
+before = '''        root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(targets))'''
+after = '''        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))'''
+reddens = ["tests/memory/test_refs.py::test_the_ignore_query_matches_a_non_ascii_path_it_asked_about"]

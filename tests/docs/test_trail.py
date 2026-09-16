@@ -280,6 +280,19 @@ def test_an_untracked_or_ignored_document_is_not_listed(tmp_path: Path) -> None:
     assert "wip.md" in listing(root, config)
 
 
+@needs_git
+def test_an_ignored_document_whose_name_is_not_ascii_is_not_listed(tmp_path: Path) -> None:
+    # Without `-z`, `check-ignore` C-quotes such a path on output — it comes back wrapped in
+    # quotes with the bytes escaped — so the answer never equals the path
+    # this function asked about, and the ignored document is listed in the roadmap: the exact
+    # case `--no-index` exists for. Mutation: drop `-z` from `_ignored`'s argv and read the
+    # output with `splitlines()` — this reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/2026-04-04-caf\u00e9.md\n", encoding="utf-8")
+    (root / "docs" / "plans" / "2026-04-04-caf\u00e9.md").write_text("# doc\n", encoding="utf-8")
+    assert "caf\u00e9" not in listing(root, config)
+
+
 def test_a_tree_git_cannot_answer_for_still_lists_its_documents(tmp_path: Path) -> None:
     root, config = corpus(
         tmp_path,

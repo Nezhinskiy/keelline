@@ -84,15 +84,22 @@ def _inside_store(root: Path, store: Store, target: str) -> bool:
 def _ignored(root: Path, targets: set[str]) -> set[str]:
     """Paths the repository's own ignore rules cover: whether one exists is a fact about a
     checkout, not about the tree. `--no-index` because a tracked path is never "ignored";
-    exit 1 is "nothing matched", an answer, which is why the runner does not collapse it."""
+    exit 1 is "nothing matched", an answer, which is why the runner does not collapse it.
+
+    `-z`, because the answer is matched back against the path that was asked about. Without it
+    git C-quotes any path holding a non-ASCII byte or a space on OUTPUT, so `build/caf\303\251.py`
+    comes back quoted and escaped and never equals the target this function sent: the ignore
+    rules cover it, this set does not contain it, and the note carries a `dead-reference` its
+    author has no way to satisfy — the file is ignored, so creating it changes nothing. `-z`
+    also makes the INPUT NUL-separated, so a path is never split on a byte of its own name."""
     if not targets:
         return set()
     code, out = git_run(
-        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))
+        root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(targets))
     )
     if code not in (0, 1):
         return set()
-    return {line for line in out.splitlines() if line}
+    return {name for name in out.split("\0") if name}
 
 
 def _lines(note: Note) -> list[tuple[int, str]]:

@@ -129,15 +129,23 @@ def _ignored(root: Path, paths: list[Path]) -> set[Path]:
     """Paths excluded by the repository's ignore rules alone.
 
     `--no-index` matters: `check-ignore` consults the index and answers "not ignored" for
-    anything currently tracked, which would silently list a local-only document."""
+    anything currently tracked, which would silently list a local-only document.
+
+    `-z` matters for the same reason it does in `touched_plans`, and this is the one place the
+    answer is matched back against the path that was asked about. Without it git C-quotes any
+    path holding a non-ASCII byte or a space on OUTPUT — `docs/plans/2026-01-01-caf\303\251.md`
+    comes back wrapped in quotes with the bytes escaped — so the answer never equals the path
+    this function sent, an ignored document is read as "not ignored" and is listed in the
+    roadmap, which is the exact case `--no-index` exists for. `-z` also makes the INPUT
+    NUL-separated, so a path is never split on a byte of its own name either."""
     if not paths:
         return set()
-    stdin = "\n".join(str(p.relative_to(root)) for p in paths)
-    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin=stdin)
+    stdin = "\0".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)
     # 1 simply means "nothing matched"; anything else is a tree git cannot speak for.
     if code not in (0, 1):
         return set()
-    return {root / line for line in out.splitlines() if line}
+    return {root / name for name in out.split("\0") if name}
 
 
 def _untracked(root: Path, paths: list[Path]) -> set[Path]:
