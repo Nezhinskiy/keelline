@@ -27,10 +27,12 @@ if TYPE_CHECKING:
 # what may be interpolated into a regular expression and a filename, and the eight is what a
 # `PREFIX-nnn.md` filename stays readable at.
 PREFIX = re.compile(r"\A[A-Z][A-Z0-9]{0,7}\Z")
-# Three digits or more: `renumber` and every reader enforce it, and the index guard the
-# source grew was built around headings that fell short of it. The plan lint's `Fixes` rule
-# reads the same constant, so the two cannot disagree about the minimum.
-_DIGITS = r"\d{3,}"
+# Three digits or more: `renumber` and every reader enforce it. The plan lint's `Fixes` rule
+# and the allocator's `git log` reader build their patterns from this same constant, so none of
+# them can disagree about the minimum. Public for that reason: a reader that respells the rule
+# inline is a spelling the `mutations.toml` entry over this line cannot reach, and a widened
+# rule would leave it counting by the old one.
+DIGITS = r"\d{3,}"
 
 
 @dataclass(frozen=True)
@@ -46,16 +48,16 @@ class Identifiers:
 
     @cached_property
     def exact(self) -> re.Pattern[str]:
-        return re.compile(rf"\A{re.escape(self.prefix)}-({_DIGITS})\Z")
+        return re.compile(rf"\A{re.escape(self.prefix)}-({DIGITS})\Z")
 
     @cached_property
     def mention(self) -> re.Pattern[str]:
-        return re.compile(rf"\b{re.escape(self.prefix)}-{_DIGITS}\b")
+        return re.compile(rf"\b{re.escape(self.prefix)}-{DIGITS}\b")
 
     @cached_property
     def fixes(self) -> re.Pattern[str]:
         """The claim a plan makes that obliges it to carry a `Premise:` line."""
-        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{_DIGITS}\b")
+        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{DIGITS}\b")
 
     def is_identifier(self, text: str) -> bool:
         return self.exact.match(text) is not None

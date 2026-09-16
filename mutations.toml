@@ -880,7 +880,7 @@ reddens = ["tests/test_identifiers.py::test_a_prefix_outside_the_contract_is_ref
 [[mutation]]
 name = "the Fixes claim stops sharing the identifier digit rule"
 file = "src/keelline/identifiers.py"
-before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{_DIGITS}\b")'
+before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{DIGITS}\b")'
 after = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-\d+\b")'
 reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rule"]
 
@@ -1046,3 +1046,17 @@ file = "src/keelline/docs/commands.py"
 before = '    return Result(verdict, data)'
 after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
 reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]
+
+# One digit rule, and every reader takes it from the constant. The allocator's `git log` source
+# respelled it inline, where widening the rule would have left it counting by the old one and
+# handing out a number some ref already holds — a survivor of the entry above, which is exactly
+# what this entry now proves it is not.
+[[mutation]]
+name = "the identifier digit rule widens and the allocator keeps the old one"
+file = "src/keelline/identifiers.py"
+before = 'DIGITS = r"\d{3,}"'
+after = 'DIGITS = r"\d+"'
+reddens = [
+  "tests/test_identifiers.py::test_fewer_than_three_digits_is_not_an_identifier",
+  "tests/ledger/test_write.py::test_the_allocator_reads_the_git_source_with_the_shared_digit_rule",
+]

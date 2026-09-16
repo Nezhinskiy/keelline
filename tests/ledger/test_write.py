@@ -190,6 +190,26 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
     assert next_identifier(root, config, fetch=False).identifier == "BR-006"
 
 
+@needs_git
+def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
+    # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
+    # taking `DIGITS` from `keelline.identifiers`, which owns it. A third spelling is one the
+    # `mutations.toml` entry over that constant cannot reach, so widening the rule would have
+    # left the allocator counting by the old one and handing out a number some ref already
+    # holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md` becomes an identifier the reader counts
+    # and this reddens (the declared entry over `identifiers.py`).
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / "docs" / "bugs" / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    (root / "docs" / "bugs" / "BR-42.md").write_text("a two-digit name\n", encoding="utf-8")
+    commit_all(root, "five, and a name too short to be an identifier")
+    git(root, "checkout", "-q", "main")
+    assert next_identifier(root, config, fetch=False).identifier == "BR-006"
+
+
 def test_a_failed_fetch_is_reported_not_raised(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

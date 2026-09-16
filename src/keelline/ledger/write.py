@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from keelline import fsops
 from keelline.gitenv import git_run
-from keelline.identifiers import identifiers
+from keelline.identifiers import DIGITS, identifiers
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
 from keelline.ledger.entries import (
     SEVERITIES,
@@ -136,7 +136,7 @@ def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Alloca
     numbers.update(
         int(m)
         for m in re.findall(
-            rf"{re.escape(tracked)}{re.escape(ids.prefix)}-(\d{{3,}})\.md",
+            rf"{re.escape(tracked)}{re.escape(ids.prefix)}-({DIGITS})\.md",
             added,
         )
     )

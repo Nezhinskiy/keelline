@@ -27,7 +27,7 @@ def test_reading_the_number_out_of_a_non_identifier_is_refused() -> None:
 
 def test_fewer_than_three_digits_is_not_an_identifier() -> None:
     # `renumber` and every reader enforce this; a two-digit heading was the shape the source's
-    # index guard existed to catch. Mutation: change `{3,}` to `+` in `_DIGITS` — reddens this.
+    # index guard existed to catch. Mutation: change `{3,}` to `+` in `DIGITS` — reddens this.
     assert not Identifiers("BR").is_identifier("BR-42")
 
 
@@ -37,7 +37,7 @@ def test_a_mention_is_bounded_by_word_edges() -> None:
 
 
 def test_the_fixes_claim_shares_the_digit_rule() -> None:
-    # The plan lint reads this; one `_DIGITS` for the ledger and the lint, so the two cannot
+    # The plan lint reads this; one `DIGITS` for the ledger and the lint, so the two cannot
     # disagree about the minimum. Mutation: build `fixes` with `\d+` — the second assertion reddens.
     ids = Identifiers("BR")
     assert ids.fixes.search("Fixes BR-042.") is not None
