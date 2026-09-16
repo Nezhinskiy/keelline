@@ -908,3 +908,27 @@ file = "src/keelline/ledger/index.py"
 before = '    foreign = foreign_index_lines(current, config)'
 after = '    foreign: list[str] = []'
 reddens = ["tests/ledger/test_index.py::test_index_refuses_to_delete_any_content_it_did_not_generate"]
+
+# A placeholder that satisfies its own check is the failure mode the evidence rule prevents.
+[[mutation]]
+name = "the untouched evidence placeholder satisfies the boundary rule"
+file = "src/keelline/ledger/check.py"
+before = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*(?!{re.escape(EVIDENCE_PLACEHOLDER)})\S", re.MULTILINE'
+after = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*\S", re.MULTILINE'
+reddens = ["tests/ledger/test_check.py::test_the_untouched_scaffold_placeholder_does_not_satisfy_the_rule"]
+
+# The citation pattern is loose by design; the decision is the resolution.
+[[mutation]]
+name = "a citation is accepted without resolving it against the ledger directory"
+file = "src/keelline/ledger/scan.py"
+before = '    return target in (relative, rooted)'
+after = '    return True'
+reddens = ["tests/ledger/test_scan.py::test_a_citation_of_an_entry_file_is_resolved_two_ways"]
+
+# The fixture-holder marker is the one exclusion both the scan and the sweep honour.
+[[mutation]]
+name = "a fixture holder is scanned like any other file"
+file = "src/keelline/ledger/scan.py"
+before = '    return FIXTURE_MARKER.encode("utf-8") in head'
+after = '    return False'
+reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
