@@ -16,6 +16,7 @@ from keelline.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
+AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint (§5.1): a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
 SKILL_MAX_LINES = 80
@@ -132,3 +133,9 @@ def test_every_reference_file_is_linked_from_its_skill(path: Path) -> None:
     body = path.read_text(encoding="utf-8")
     for reference in sorted((path.parent / "references").glob("*.md")):
         assert f"references/{reference.name}" in body, reference
+
+
+def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
+    fields, body = split(AGENTS / "code-navigator.md")
+    assert fields["name"] == "code-navigator" and "tools" in fields
+    assert "if one is installed" in body  # the capability, not the product (Premise 14)
