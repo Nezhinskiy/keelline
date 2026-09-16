@@ -288,6 +288,31 @@ def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
     assert entry_file.read_text(encoding="utf-8") == before
 
 
+def test_renumber_rejects_a_malformed_sibling_before_it_moves_anything(tmp_path: Path) -> None:
+    # The reproduction, from repository-authored input: `_write_index` runs last and parses
+    # every entry file in the directory, so one malformed sibling the operator never touched
+    # failed the command with both endpoints and the whole sweep already on disk — exit 1 naming
+    # someone else's file, a half-completed rename, and a retry refused with "already has an
+    # entry file", so the move could not be finished at all. The docstring promises "every check
+    # that can reject the call runs before any file is touched". Mutation: drop the
+    # `load_entries` call before the first write — the three tree assertions redden.
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    bugs = root / "docs" / "bugs"
+    sibling = bugs / "BR-002.md"
+    sibling.write_text(entry(2).replace("status: open", "status: nonsense"), encoding="utf-8")
+    before = {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()}
+    with pytest.raises(LedgerError, match=r"BR-002\.md"):
+        renumber(root, config, "BR-001", "BR-009")
+    assert not (bugs / "BR-009.md").exists()
+    assert {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()} == before
+    # And the retry, once the sibling is repaired, completes — rather than being refused for a
+    # target the failed run created on its way out.
+    sibling.write_text(entry(2), encoding="utf-8")
+    renumber(root, config, "BR-001", "BR-009")
+    assert (bugs / "BR-009.md").is_file()
+
+
 def test_renumber_normalises_an_id_line_with_nonstandard_spacing(tmp_path: Path) -> None:
     root, config = project(tmp_path)
     seed(root, config, 1)

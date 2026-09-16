@@ -236,6 +236,15 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
         raise LedgerError(f"{bugs}/{old}.md does not exist")
     if target.exists():
         raise LedgerError(f"{new} already has an entry file; pick a free identifier")
+    # Every sibling is parsed here, with the tree still untouched. `_write_index` at the end
+    # renders the index from every entry file in the directory, so one malformed sibling — a
+    # file this call never touches — failed the command AFTER both endpoints and the whole sweep
+    # were on disk: exit 1 naming a file the operator did not edit, a half-completed rename, and
+    # a retry then refused with "already has an entry file", so the move could not be finished
+    # at all. `file_entry` never had it, because `next_identifier` parses the siblings before
+    # anything is written. The result is discarded on purpose: the index has to be rendered from
+    # the files as they are AFTER the move, so this is a check and not a value.
+    load_entries(root, config)
     # The last of the checks that reject with the tree untouched, and the one this command
     # needs most: it regenerates the index at the end, by which time both endpoints and the
     # whole sweep are already on disk, so a refusal that came any later would come after the

@@ -1114,3 +1114,17 @@ reddens = [
   "tests/ledger/test_index.py::test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index",
   "tests/ledger/test_index.py::test_an_injected_section_of_hand_written_rows_is_foreign",
 ]
+
+# `renumber` regenerates the index last, and that parses every entry file in the directory. One
+# malformed sibling the operator never touched therefore failed the command after both endpoints
+# and the whole sweep were on disk — and the retry was refused with "already has an entry file",
+# so the move could not be finished at all, against a docstring promising the opposite.
+[[mutation]]
+name = "renumber parses its siblings only after it has moved both endpoints"
+file = "src/keelline/ledger/write.py"
+before = '''    # the files as they are AFTER the move, so this is a check and not a value.
+    load_entries(root, config)'''
+after = "    # the files as they are AFTER the move, so this is a check and not a value."
+reddens = [
+  "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
+]
