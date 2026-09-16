@@ -48,6 +48,10 @@ module-root = "src"
 source-include = [
   "tests/**",
   "scripts/**",
+  # `tests/skills/test_skills.py` reads these two trees directly, so an sdist without them
+  # ships a test module that cannot pass.
+  "skills/**",
+  "agents/**",
   "CHANGELOG.md",
   "SECURITY.md",
   "docs/**",
@@ -67,6 +71,19 @@ dev = ["pytest>=8", "pytest-cov>=6", "ruff>=0.12", "mypy>=1.16", "towncrier>=26.
 line-length = 100
 target-version = "py311"
 extend-include = ["scripts/keelline"]
+
+[tool.ruff.format]
+# Ruff formats Python code blocks inside Markdown from 0.16 on. This excludes every Markdown
+# file and not only `docs/plans/`, and the breadth is deliberate: each one here is a document,
+# and a Python block in any of them is an illustration — a fragment mid-sentence, a snippet that
+# does not parse alone, an example written to be read. `README.md`, `CONTRIBUTING.md` and
+# `skills/*.md` are as much prose as the plans are, so the rule must not turn on which of them
+# happens to carry a Python fence this week. The plans are where it was felt: they say of
+# themselves that their code blocks are as-planned and unformatted and that reflowing one is the
+# implementer's job at copy time, and without this the `uv run ruff format .` every contributor
+# is told to run before every commit reflowed 1,250 lines of one and invalidated every line
+# reference into it before anyone noticed.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 # `S` (bandit) and `RUF` are here and the other candidates are not, measured rather than

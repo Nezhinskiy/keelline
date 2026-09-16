@@ -1,0 +1,448 @@
+"""`new` and `renumber`: every rejection leaves the tree untouched; every write is enumerated.
+
+keelline:ledger:fixtures — the identifiers below are sample data, not claims about a ledger.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from keelline.config.loader import load
+from keelline.config.schema import Config
+from keelline.errors import Refusal
+from keelline.ledger.check import EVIDENCE_LABEL, problems
+from keelline.ledger.entries import LedgerError, load_entries
+from keelline.ledger.index import render_index
+from keelline.ledger.scan import FIXTURE_MARKER
+from keelline.ledger.write import file_entry, next_identifier, renumber
+
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+"""
+
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def project(tmp_path: Path) -> tuple[Path, Config]:
+    root = tmp_path / "widget"
+    root.mkdir()
+    (root / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    for name in ("src", "tests", "scripts", "docs", "docs/bugs"):
+        (root / name).mkdir()
+    return root, load(root, machine=tmp_path / "m.toml")
+
+
+def entry(number: int, related: str = "") -> str:
+    return (
+        f"---\nid: BR-{number:03d}\ntitle: a title\nstatus: open\nseverity: low\n"
+        f"area: an area\nfound: 2026-01-01\nsource:\nfixed_in:\nrelated: {related}\n---\n\n"
+        f"body mentioning BR-{number:03d}\n"
+    )
+
+
+def seed(root: Path, config: Config, *numbers: int) -> None:
+    for number in numbers:
+        path = root / "docs" / "bugs" / f"BR-{number:03d}.md"
+        path.write_text(entry(number), encoding="utf-8")
+    (root / "docs" / "bug-reports.md").write_text(
+        render_index(load_entries(root, config), config), encoding="utf-8"
+    )
+
+
+def git(root: Path, *args: str) -> str:
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": str(root.parent),
+    }
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    ).stdout
+
+
+def commit_all(root: Path, message: str = "seed") -> None:
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", message)
+
+
+def test_new_writes_a_scaffolded_entry_and_refreshes_the_index(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    filed = file_entry(
+        root,
+        config,
+        title="the reconciler collides with its own id",
+        severity="high",
+        area="delivery",
+        source="audit-2026-08-16",
+        today="2026-08-16",
+        fetch=False,
+    )
+    assert filed.identifier == "BR-001" and filed.warning is None
+    written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+    assert 'title: "the reconciler collides with its own id"' not in written  # no quoting needed
+    assert "title: the reconciler collides with its own id\n" in written
+    assert (
+        "status: open\nseverity: high\narea: delivery\nfound: 2026-08-16\n"
+        "source: audit-2026-08-16\nfixed_in:\nrelated:\n"
+    ) in written
+    assert EVIDENCE_LABEL in written
+    assert "BR-001" in (root / "docs" / "bug-reports.md").read_text(encoding="utf-8")
+    assert [p.rule for p in problems(root, config)] == ["evidence-boundary"]  # scaffolded
+
+
+def test_new_quotes_a_source_value_that_needs_it(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    file_entry(
+        root, config, title="t", severity="low", area="a", source="#412 in the tracker", fetch=False
+    )
+    written = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+    assert 'source: "#412 in the tracker"' in written
+    assert load_entries(root, config)[0].source == "#412 in the tracker"
+
+
+def test_new_rejects_a_malformed_related_identifier_before_writing_anything(
+    tmp_path: Path,
+) -> None:
+    root, config = project(tmp_path)
+    with pytest.raises(LedgerError):
+        file_entry(
+            root, config, title="t", severity="low", area="a", related=("BR-2",), fetch=False
+        )
+    assert list((root / "docs" / "bugs").iterdir()) == []
+    assert not (root / "docs" / "bug-reports.md").exists()
+
+
+def test_new_refuses_over_foreign_index_content_without_writing(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    index = root / "docs" / "bug-reports.md"
+    foreign = "# Bug reports\n\n## BR-009 — hand-written\n"
+    index.write_text(foreign, encoding="utf-8")
+    with pytest.raises(Refusal):
+        file_entry(root, config, title="t", severity="low", area="a", fetch=False)
+    assert list((root / "docs" / "bugs").iterdir()) == []
+    # The refusal exists to stop the regeneration deleting the operator's own lines, so the
+    # bytes are the assertion: an exception raised over a file already rewritten proves nothing.
+    assert index.read_text(encoding="utf-8") == foreign
+
+
+def test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The allocator cannot see a branch this checkout never fetched; the file's existence
+    # decides. Mutation: drop the `path.exists()` refusal — this reddens.
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    from keelline.ledger import write as module
+
+    monkeypatch.setattr(
+        module, "next_identifier", lambda *a, **k: module.Allocation("BR-001", None)
+    )
+    before = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+    with pytest.raises(LedgerError, match="already exists"):
+        file_entry(root, config, title="t", severity="low", area="a", fetch=False)
+    assert (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8") == before
+
+
+def test_next_identifier_counts_void_numbers_and_a_filename_whose_id_disagrees(
+    tmp_path: Path,
+) -> None:
+    root, config = project(tmp_path)
+    (root / "docs" / "bugs" / "BR-003.md").write_text(
+        "---\nid: BR-003\ntitle: v\nstatus: void\nfound: 2026-01-01\n---\n", encoding="utf-8"
+    )
+    # id BR-002 under filename BR-007
+    (root / "docs" / "bugs" / "BR-007.md").write_text(entry(2), encoding="utf-8")
+    assert next_identifier(root, config, fetch=False).identifier == "BR-008"
+
+
+@needs_git
+def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
+    # Mutation: drop the `git log --all` source — this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / "docs" / "bugs" / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    commit_all(root, "five")
+    git(root, "checkout", "-q", "main")
+    assert next_identifier(root, config, fetch=False).identifier == "BR-006"
+
+
+@needs_git
+def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
+    # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
+    # taking `DIGITS` from `keelline.identifiers`, which owns it. A third spelling is one the
+    # `mutations.toml` entry over that constant cannot reach, so widening the rule would have
+    # left the allocator counting by the old one and handing out a number some ref already
+    # holds. Mutation: `DIGITS = r"\d+"` — `BR-42.md` becomes an identifier the reader counts
+    # and this reddens (the declared entry over `identifiers.py`).
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / "docs" / "bugs" / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    (root / "docs" / "bugs" / "BR-42.md").write_text("a two-digit name\n", encoding="utf-8")
+    commit_all(root, "five, and a name too short to be an identifier")
+    git(root, "checkout", "-q", "main")
+    assert next_identifier(root, config, fetch=False).identifier == "BR-006"
+
+
+def test_a_failed_fetch_is_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, config = project(tmp_path)
+    from keelline.ledger import write as module
+
+    def failing(root: Path, *args: str, **kwargs: object) -> tuple[int, str]:
+        assert args[0] == "fetch"
+        return 128, ""
+
+    monkeypatch.setattr(module, "git_run", failing)
+    allocation = next_identifier(root, config, fetch=True)
+    assert allocation.identifier == "BR-001"
+    assert allocation.warning is not None and "fetch" in allocation.warning
+
+
+def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(
+    tmp_path: Path,
+) -> None:
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    (root / "docs" / "bugs" / "BR-002.md").write_text(
+        entry(2, related="[BR-001]"), encoding="utf-8"
+    )
+    (root / "src" / "a.py").write_text("# BR-001 and XBR-001 stays\n", encoding="utf-8")
+    (root / "docs" / "note.md").write_text("see [BR-001](bugs/BR-001.md)\n", encoding="utf-8")
+    result = renumber(root, config, "BR-001", "BR-009", today="2026-01-02")
+    assert result.unswept == []
+    assert result.void == root / "docs" / "bugs" / "BR-001.md"
+    assert (root / "src" / "a.py").read_text(encoding="utf-8") == "# BR-009 and XBR-001 stays\n"
+    assert (root / "docs" / "note.md").read_text(encoding="utf-8") == (
+        "see [BR-009](bugs/BR-009.md)\n"
+    )
+    assert "related: [BR-009]" in (root / "docs" / "bugs" / "BR-002.md").read_text(encoding="utf-8")
+    moved = (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8")
+    # The body is the operator's: the sweep never rewrites the moved entry itself.
+    assert moved.startswith("---\nid: BR-009\n") and "body mentioning BR-001" in moved
+    void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+    assert "status: void" in void and "related: [BR-009]" in void
+    assert "[BR-009](BR-009.md)" in void
+    assert problems(root, config) == []
+
+
+def test_renumber_refuses_an_occupied_target_and_a_missing_source(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    entries = {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()}
+    with pytest.raises(LedgerError, match="pick a free identifier"):
+        renumber(root, config, "BR-001", "BR-002")
+    with pytest.raises(LedgerError, match="does not exist"):
+        renumber(root, config, "BR-005", "BR-006")
+    # Neither rejection wrote: same files, none of them replaced. `renumber` overwrites its
+    # source in place, so a half-run would leave BR-001.md rewritten with its name unchanged.
+    assert {path: path.stat().st_mtime_ns for path in (root / "docs" / "bugs").iterdir()} == entries
+
+
+def test_renumber_refuses_over_foreign_index_content_without_moving_anything(
+    tmp_path: Path,
+) -> None:
+    # `renumber` regenerates the index at the end, so it makes `new`'s refusal before its first
+    # write — and it is the destructive one: both endpoints and the whole sweep are already on
+    # disk by the time the regeneration runs.
+    # Oracle: `mutations.toml`, "renumber regenerates over an index carrying content this tool
+    # did not generate" — measured, and the only test in the suite that reddens under it.
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    index = root / "docs" / "bug-reports.md"
+    foreign = index.read_text(encoding="utf-8") + "\n## Notes an operator keeps here\n"
+    index.write_text(foreign, encoding="utf-8")
+    entry_file = root / "docs" / "bugs" / "BR-001.md"
+    before = entry_file.read_text(encoding="utf-8")
+    with pytest.raises(Refusal):
+        renumber(root, config, "BR-001", "BR-009")
+    assert index.read_text(encoding="utf-8") == foreign
+    assert not (root / "docs" / "bugs" / "BR-009.md").exists()
+    assert entry_file.read_text(encoding="utf-8") == before
+
+
+def test_renumber_rejects_a_malformed_sibling_before_it_moves_anything(tmp_path: Path) -> None:
+    # The reproduction, from repository-authored input: `_write_index` runs last and parses
+    # every entry file in the directory, so one malformed sibling the operator never touched
+    # failed the command with both endpoints and the whole sweep already on disk — exit 1 naming
+    # someone else's file, a half-completed rename, and a retry refused with "already has an
+    # entry file", so the move could not be finished at all. The docstring promises "every check
+    # that can reject the call runs before any file is touched". Mutation: drop the
+    # `load_entries` call before the first write — the three tree assertions redden.
+    root, config = project(tmp_path)
+    seed(root, config, 1, 2)
+    bugs = root / "docs" / "bugs"
+    sibling = bugs / "BR-002.md"
+    sibling.write_text(entry(2).replace("status: open", "status: nonsense"), encoding="utf-8")
+    before = {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()}
+    with pytest.raises(LedgerError, match=r"BR-002\.md"):
+        renumber(root, config, "BR-001", "BR-009")
+    assert not (bugs / "BR-009.md").exists()
+    assert {path: path.read_text(encoding="utf-8") for path in bugs.iterdir()} == before
+    # And the retry, once the sibling is repaired, completes — rather than being refused for a
+    # target the failed run created on its way out.
+    sibling.write_text(entry(2), encoding="utf-8")
+    renumber(root, config, "BR-001", "BR-009")
+    assert (bugs / "BR-009.md").is_file()
+
+
+def test_renumber_normalises_an_id_line_with_nonstandard_spacing(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    path = root / "docs" / "bugs" / "BR-001.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("id: BR-001", "id:   BR-001"), encoding="utf-8"
+    )
+    renumber(root, config, "BR-001", "BR-009")
+    moved = (root / "docs" / "bugs" / "BR-009.md").read_text(encoding="utf-8")
+    assert moved.startswith("---\nid: BR-009\n")
+
+
+def test_renumber_leaves_a_fixture_holder_and_a_binary_alone(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    fixture = root / "tests" / "test_x.py"
+    fixture.write_text(f"# {FIXTURE_MARKER}\nENTRY = 'BR-001'\n", encoding="utf-8")
+    (root / "src" / "img.png").write_bytes(b"BR-001")
+    assert renumber(root, config, "BR-001", "BR-009").unswept == []
+    assert "BR-001" in fixture.read_text(encoding="utf-8")
+    assert (root / "src" / "img.png").read_bytes() == b"BR-001"
+
+
+def test_renumber_does_not_follow_a_symlink_out_of_the_tree(tmp_path: Path) -> None:
+    # Passes by construction of `scannable`, which skips anything that is not `S_ISREG`, and
+    # again by `fsops.write_within`, which refuses to write through a symlinked component.
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    outside = tmp_path / "outside.py"
+    outside.write_text("# BR-001\n", encoding="utf-8")
+    os.symlink(outside, root / "src" / "linked.py")
+    renumber(root, config, "BR-001", "BR-009")
+    assert outside.read_text(encoding="utf-8") == "# BR-001\n"
+
+
+def test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints(
+    tmp_path: Path,
+) -> None:
+    # Once the void pointer exists, `known` makes a stale mention look intentional forever, so
+    # an unreadable file is reported and the command fails rather than claiming a rewrite it
+    # did not deliver. Mutation: `continue` silently on `item.error` — this reddens.
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    locked = root / "src" / "locked.py"
+    locked.write_text("# BR-001\n", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        result = renumber(root, config, "BR-001", "BR-009")
+    finally:
+        locked.chmod(0o644)
+    assert len(result.unswept) == 1 and "src/locked.py" in result.unswept[0]
+    assert (root / "docs" / "bugs" / "BR-009.md").is_file()
+    void = (root / "docs" / "bugs" / "BR-001.md").read_text(encoding="utf-8")
+    assert "status: void" in void
+
+
+def test_renumber_reports_a_file_it_could_not_write_back(tmp_path: Path) -> None:
+    # The other half of `unswept`: the file reads fine and carries the identifier, and the
+    # write through `fsops` is what fails. Reported for the same reason an unreadable file is —
+    # once the void pointer exists the stale mention looks intentional to `check` forever.
+    if os.geteuid() == 0:
+        pytest.skip("root writes everywhere")
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    sealed = root / "src" / "sealed"
+    sealed.mkdir()
+    (sealed / "a.py").write_text("# BR-001\n", encoding="utf-8")
+    sealed.chmod(0o555)
+    try:
+        result = renumber(root, config, "BR-001", "BR-009")
+    finally:
+        sealed.chmod(0o755)
+    assert len(result.unswept) == 1
+    assert "src/sealed/a.py: could not be written" in result.unswept[0]
+    assert (sealed / "a.py").read_text(encoding="utf-8") == "# BR-001\n"
+
+
+def test_a_successful_fetch_leaves_no_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side of `test_a_failed_fetch_is_reported_not_raised`: a fetch that worked says
+    # nothing, so the command line carries a warning only when one is true.
+    root, config = project(tmp_path)
+    from keelline.ledger import write as module
+
+    monkeypatch.setattr(module, "git_run", lambda *a, **k: (0, ""))
+    assert next_identifier(root, config, fetch=True).warning is None
+
+
+def test_the_allocator_starts_at_one_before_the_ledger_directory_exists(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    (root / "docs" / "bugs").rmdir()
+    assert next_identifier(root, config, fetch=False).identifier == "BR-001"
+
+
+def test_a_severity_outside_the_vocabulary_is_rejected_before_anything_is_allocated(
+    tmp_path: Path,
+) -> None:
+    # `argparse` rejects it at the command line; the library says so too, because `file_entry`
+    # is on the import surface and a lane calling it directly gets no `choices=`.
+    root, config = project(tmp_path)
+    with pytest.raises(LedgerError, match="--severity must be one of"):
+        file_entry(root, config, title="t", severity="huge", area="a", fetch=False)
+    assert list((root / "docs" / "bugs").iterdir()) == []
+
+
+def test_renumber_rejects_an_endpoint_that_is_not_an_identifier(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    entry_file = root / "docs" / "bugs" / "BR-001.md"
+    before = entry_file.stat().st_mtime_ns
+    with pytest.raises(LedgerError, match="must look like BR-nnn"):
+        renumber(root, config, "BR-42", "BR-009")
+    # Refused before the shape was ever resolved to a path, so nothing under the ledger moved.
+    assert [p.name for p in (root / "docs" / "bugs").iterdir()] == ["BR-001.md"]
+    assert entry_file.stat().st_mtime_ns == before
+
+
+def test_the_sweep_leaves_a_file_that_only_looks_like_it_carries_the_identifier(
+    tmp_path: Path,
+) -> None:
+    # The substring test finds the file and the word-bounded substitution changes nothing in
+    # it, so it is never written back: rewriting it would bump a file the move did not touch.
+    root, config = project(tmp_path)
+    seed(root, config, 1)
+    near = root / "src" / "near.py"
+    near.write_text("# XBR-001 is a different thing\n", encoding="utf-8")
+    before = near.stat().st_mtime_ns
+    assert renumber(root, config, "BR-001", "BR-009").unswept == []
+    assert near.read_text(encoding="utf-8") == "# XBR-001 is a different thing\n"
+    assert near.stat().st_mtime_ns == before

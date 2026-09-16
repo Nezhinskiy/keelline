@@ -237,6 +237,25 @@ def test_walk_quarantines_a_file_that_will_not_parse(tmp_path: Path) -> None:
     assert [path.name for path, _ in found.unreadable] == ["design.md"]
 
 
+def test_a_note_that_is_not_utf8_is_quarantined_rather_than_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # `UnicodeDecodeError` is not an `OSError`, and without its own arm one latin-1 byte in a
+    # note left this walk as `internal error: UnicodeDecodeError` and exit 2 — a repository's
+    # malformed input reading as this tool being broken. It is a note this reader cannot read,
+    # exactly like the `OSError` beside it. Mutation: drop that arm from `read_note` — this
+    # reddens with the exception escaping the walk.
+    (tmp_path / "specs").mkdir()
+    write(tmp_path, MINIMAL, "specs/a.md")
+    (tmp_path / "specs" / "latin.md").write_bytes(
+        b"---\nname: latin\ndescription: d\n---\n\ncaf\xe9\n"
+    )
+    found = walk(tmp_path, ["specs"])
+    assert [note.name for note in found.notes] == ["bare"]
+    assert [path.name for path, _ in found.unreadable] == ["latin.md"]
+    assert "not valid UTF-8" in found.unreadable[0][1]
+
+
 def test_walk_ignores_a_group_directory_that_does_not_exist(tmp_path: Path) -> None:
     assert walk(tmp_path, ["developer", "specs"]).notes == []
 

@@ -61,7 +61,20 @@ def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None
         "with_index",
         "wrap",
         "write_index",
+        # memory refs (the wave-2 closure plan's Task 11); docs-tooling and the
+        # memory-sweep skill read it
+        "WIKI_LINK",
+        "RefsReport",
+        "unresolved",
+        "audience_violations",
+        "check_refs",
     }
+    # A subset and not an equality: ten names this lane exported before the wave-2 closure
+    # plan — `Entry`, `TrustState`, `UnreadableTrustRecord`, `changed`, `inside_project`,
+    # `main_checkout`, `overlay_root`, `resolved`, `split`, `write_note` — are on `__all__`
+    # and were never added here, and adding ten justifications for exports this plan did not
+    # ship would be this list claiming a review it never had. The derived test below is what
+    # catches a name nobody added to either side.
     assert required <= set(memory.__all__)
 
 

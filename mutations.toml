@@ -867,3 +867,374 @@ after = '        wanted = set()'
 reddens = [
   "tests/guards/test_neutral.py::test_the_gate_discriminates",
 ]
+
+# A repository-controlled prefix reaches a regular expression only after its shape is checked.
+[[mutation]]
+name = "an unchecked ledger prefix reaches the regular expression"
+file = "src/keelline/identifiers.py"
+before = '        if not PREFIX.match(self.prefix):'
+after = '        if False:'
+reddens = ["tests/test_identifiers.py::test_a_prefix_outside_the_contract_is_refused_before_it_meets_a_regex"]
+
+# One digit rule for the ledger and the plan lint.
+[[mutation]]
+name = "the Fixes claim stops sharing the identifier digit rule"
+file = "src/keelline/identifiers.py"
+before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{DIGITS}\b")'
+after = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-\d+\b")'
+reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rule"]
+
+# A non-zero exit is an answer some callers need (`check-ignore` says 1 for "nothing matched").
+[[mutation]]
+name = "the git runner collapses every non-zero exit into could-not-run"
+file = "src/keelline/gitenv.py"
+before = '    return completed.returncode, completed.stdout'
+after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
+reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
+
+# A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
+# the subset stays valid YAML only because the leading class is YAML's whole indicator set.
+[[mutation]]
+name = "the frontmatter reader accepts a bare value a YAML reader would misparse"
+file = "src/keelline/ledger/entries.py"
+before = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")'''
+after = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,]|: | #|:\Z")'''
+reddens = ["tests/ledger/test_entries.py::test_a_value_that_is_not_a_plain_yaml_string_needs_quotes"]
+
+# Regenerating over content the tool did not write deletes it with no diff and exit 0.
+[[mutation]]
+name = "the index overwrite guard stops seeing foreign lines"
+file = "src/keelline/ledger/index.py"
+before = '    foreign = foreign_index_lines(root, current, config)'
+after = '    foreign: list[str] = []'
+reddens = ["tests/ledger/test_index.py::test_index_refuses_to_delete_any_content_it_did_not_generate"]
+
+# A placeholder that satisfies its own check is the failure mode the evidence rule prevents.
+[[mutation]]
+name = "the untouched evidence placeholder satisfies the boundary rule"
+file = "src/keelline/ledger/check.py"
+before = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*(?!{re.escape(EVIDENCE_PLACEHOLDER)})\S", re.MULTILINE'
+after = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*\S", re.MULTILINE'
+reddens = ["tests/ledger/test_check.py::test_the_untouched_scaffold_placeholder_does_not_satisfy_the_rule"]
+
+# The citation pattern is loose by design; the decision is the resolution.
+[[mutation]]
+name = "a citation is accepted without resolving it against the ledger directory"
+file = "src/keelline/ledger/scan.py"
+before = '    return target in (relative, rooted)'
+after = '    return True'
+reddens = ["tests/ledger/test_scan.py::test_a_citation_of_an_entry_file_is_resolved_two_ways"]
+
+# The fixture-holder marker is the one exclusion both the scan and the sweep honour.
+[[mutation]]
+name = "a fixture holder is scanned like any other file"
+file = "src/keelline/ledger/scan.py"
+before = '    return FIXTURE_MARKER.encode("utf-8") in head'
+after = '    return False'
+reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
+
+# A repository condition the operator can fix must reach them as findings (exit 1), never as an
+# internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
+[[mutation]]
+name = "an undecodable ledger file is silently mangled instead of reported"
+file = "src/keelline/ledger/entries.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = '        return path.read_text(encoding="utf-8", errors="replace")'
+reddens = [
+  "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
+  "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
+]
+
+# The allocator can only count what this repository can see; the file's existence decides.
+[[mutation]]
+name = "a freshly allocated identifier overwrites an existing entry file"
+file = "src/keelline/ledger/write.py"
+before = '    if path.exists():'
+after = '    if False:'
+reddens = ["tests/ledger/test_write.py::test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns"]
+
+# A file the sweep could not read is reported, never assumed clean.
+[[mutation]]
+name = "the sweep skips an unreadable file in silence"
+file = "src/keelline/ledger/write.py"
+before = '            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")'
+after = '            pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints"]
+
+# `renumber` regenerates the index after both endpoints and the whole sweep are on disk, so its
+# refusal is the one that has to come first. It is the same call `new` makes, at the call site
+# where dropping it costs the operator their hand-written lines.
+[[mutation]]
+name = "renumber regenerates over an index carrying content this tool did not generate"
+file = "src/keelline/ledger/write.py"
+before = '    refuse_index_overwrite(root, config, committed_index)'
+after = '    pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_refuses_over_foreign_index_content_without_moving_anything"]
+
+# `number` is the identifier grammar's one lossy reader: a caller that did not ask
+# `is_identifier` first must not be handed a number guessed out of a filename that has none.
+[[mutation]]
+name = "reading the number out of a non-identifier answers zero instead of refusing"
+file = "src/keelline/identifiers.py"
+before = '            raise Refusal(f"{identifier!r} is not a {self.shape} identifier")'
+after = '            return 0'
+reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]
+
+# A substring search for the trail marker also matches a deeper heading that contains it.
+[[mutation]]
+name = "the roadmap prose is cut at a heading that merely contains the marker"
+file = "src/keelline/docs/hygiene.py"
+before = '    return TRAIL_MARKER_LINE.split(text, 1)[0]'
+after = '    return text.split(TRAIL_MARKER, 1)[0]'
+reddens = ["tests/docs/test_hygiene.py::test_a_deeper_heading_containing_the_marker_does_not_split_the_prose"]
+
+# The extension list is a decision: a repository storing TypeScript needs `.ts` to be a path claim.
+[[mutation]]
+name = "a TypeScript reference stops being a path claim"
+file = "src/keelline/prose.py"
+before = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")'
+after = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml))(?::\d+|::[\w.]+)?`")'
+reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_this_grammar_stores"]
+
+# A renamed design would otherwise reappear as `delivered` and `--check` would stay green.
+[[mutation]]
+name = "a state naming a vanished document defaults instead of aborting"
+file = "src/keelline/docs/trail.py"
+before = '    stale = sorted(set(trail.states) - listed)'
+after = '    stale: list[str] = []'
+reddens = ["tests/docs/test_trail.py::test_a_state_naming_a_vanished_document_aborts_instead_of_defaulting"]
+
+# `check-ignore` without `--no-index` answers "not ignored" for anything tracked.
+[[mutation]]
+name = "an untracked document is listed as if CI could see it"
+file = "src/keelline/docs/trail.py"
+before = '    skip = _ignored(root, paths) | _untracked(root, paths)'
+after = '    skip = _ignored(root, paths)'
+reddens = ["tests/docs/test_trail.py::test_an_untracked_or_ignored_document_is_not_listed"]
+
+# A gate that cannot answer must say so in its exit code; this one ran green for its whole
+# life on a checkout that had no base ref.
+[[mutation]]
+name = "an unresolvable base reads as a clean run"
+file = "src/keelline/docs/plans.py"
+before = '            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])'
+after = '            return Lint([], [], [])'
+reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_a_finding_not_an_ok"]
+
+# `\s*` crosses newlines under MULTILINE, so an empty marker would be satisfied by any later text.
+[[mutation]]
+name = "an empty Premise marker is satisfied by text anywhere later in the plan"
+file = "src/keelline/docs/plans.py"
+before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)'
+after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
+reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
+
+# The ignore rules cover the whole store, so a note→note reference must be settled on disk.
+[[mutation]]
+name = "a reference into the store is asked of the ignore rules and disappears"
+file = "src/keelline/memory/refs.py"
+before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _inside_store(root, store, t)})'
+after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
+reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]
+
+# Advice must never gate. `--memory-graph` is opt-in precisely because the store is shared by
+# every session on the machine, so a sibling's half-finished sweep is not this tree's fault to
+# fail on — and an exit code is the one part of that promise a caller acts on silently.
+[[mutation]]
+name = "an advisory memory-graph finding gates the exit code"
+file = "src/keelline/docs/commands.py"
+before = '    return Result(verdict, data)'
+after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
+reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]
+
+# One digit rule, and every reader takes it from the constant. The allocator's `git log` source
+# respelled it inline, where widening the rule would have left it counting by the old one and
+# handing out a number some ref already holds — a survivor of the entry above, which is exactly
+# what this entry now proves it is not.
+[[mutation]]
+name = "the identifier digit rule widens and the allocator keeps the old one"
+file = "src/keelline/identifiers.py"
+before = 'DIGITS = r"\d{3,}"'
+after = 'DIGITS = r"\d+"'
+reddens = [
+  "tests/test_identifiers.py::test_fewer_than_three_digits_is_not_an_identifier",
+  "tests/ledger/test_write.py::test_the_allocator_reads_the_git_source_with_the_shared_digit_rule",
+]
+
+# `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
+# `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
+# absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
+# reported OK having linted nothing, which is what `base-unresolvable` exists to prevent.
+[[mutation]]
+name = "an option-shaped base reaches a git argv slot ahead of `--`"
+file = "src/keelline/docs/plans.py"
+before = '''    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+after = '''    if False:
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+reddens = ["tests/docs/test_plans.py::test_an_option_shaped_base_never_reaches_a_git_argv_slot"]
+
+# A `label` or a `state` is written into the listing verbatim, and `rebuild` finds the block's
+# end with `text.find(END_MARKER, …)` — so a marker inside either one splits the block, the
+# roadmap grows by its own height on every run, `--check` is stale forever, and the repository's
+# prose lands in a document agents load with no delimited region behind it.
+[[mutation]]
+name = "a theme label can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''        if not _interpolable(entry["label"]):
+            raise Failure(
+                _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
+            )'''
+after = "        pass"
+reddens = [
+  "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+[[mutation]]
+name = "a declared state can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''    if not all(_interpolable(state) for state in states.values()):
+        raise Failure(_UNINTERPOLABLE.format(path=path, what="[states] value", marker=MARKER))'''
+after = "    pass"
+reddens = [
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+# The classifier, not the call: a line opening with `|` was tool-generated by fiat, so an index
+# row whose entry file no longer exists — the last record of that bug — was clean. `bugs check`
+# then reported `stale-index; run: keelline bugs index`, and that command deleted the record
+# with no diff and exit 0. `ENTRIES_MISSING` cannot see it: the ledger directory is still there.
+[[mutation]]
+name = "an index row is tool-generated by its shape, with no entry file behind it"
+file = "src/keelline/ledger/index.py"
+before = '            if line in _COLUMN_LINES or _row_identifier(line, ids) in present:'
+after = "            if True:"
+reddens = [
+  "tests/ledger/test_index.py::test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index",
+  "tests/ledger/test_index.py::test_an_injected_section_of_hand_written_rows_is_foreign",
+  "tests/ledger/test_index.py::test_an_index_over_an_empty_entry_directory_is_refused_row_by_row",
+]
+
+# `renumber` regenerates the index last, and that parses every entry file in the directory. One
+# malformed sibling the operator never touched therefore failed the command after both endpoints
+# and the whole sweep were on disk — and the retry was refused with "already has an entry file",
+# so the move could not be finished at all, against a docstring promising the opposite.
+[[mutation]]
+name = "renumber parses its siblings only after it has moved both endpoints"
+file = "src/keelline/ledger/write.py"
+before = '''    # the files as they are AFTER the move, so this is a check and not a value.
+    load_entries(root, config)'''
+after = "    # the files as they are AFTER the move, so this is a check and not a value."
+reddens = [
+  "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
+]
+
+# 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
+# permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
+# as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
+# being broken, with nothing in the message the operator can act on.
+[[mutation]]
+name = "a non-UTF-8 document reads as an internal error again"
+file = "src/keelline/docs/hygiene.py"
+before = '''    except UnicodeDecodeError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None'''
+after = '''    except RecursionError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error})") from None'''
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error",
+  "tests/docs/test_commands.py::test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2",
+  "tests/docs/test_plans.py::test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error",
+  "tests/docs/test_trail.py::test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error",
+]
+
+# The same defect in the memory lane's own reader: `UnicodeDecodeError` is not an `OSError`, so
+# a latin-1 byte in a note escaped the walk instead of being quarantined onto `unreadable`.
+[[mutation]]
+name = "a non-UTF-8 note escapes the walk instead of being quarantined"
+file = "src/keelline/memory/notes.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_that_is_not_utf8_is_quarantined_rather_than_an_internal_error",
+  "tests/memory/test_refs.py::test_a_note_that_is_not_utf8_is_a_finding_not_an_internal_error",
+]
+
+[[mutation]]
+name = "a note that stops decoding after the walk is an internal error"
+file = "src/keelline/memory/refs.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error",
+]
+
+# `check-ignore` C-quotes a non-ASCII path on output, so the answer never equals the path that
+# was asked about. In the roadmap listing an ignored document is then listed — the case
+# `--no-index` exists for; in a note a reference to an ignored file carries a `dead-reference`
+# its author cannot satisfy, because creating an ignored file changes nothing.
+[[mutation]]
+name = "the roadmap's ignore check cannot match a non-ASCII path"
+file = "src/keelline/docs/trail.py"
+before = '''    stdin = "\0".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)'''
+after = '''    stdin = "\n".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin=stdin)'''
+reddens = ["tests/docs/test_trail.py::test_an_ignored_document_whose_name_is_not_ascii_is_not_listed"]
+
+# The memory half of this is not reachable through a note today: the shared `prose` grammar
+# admits only `[A-Za-z0-9_./-]`, which git never quotes. The query is fixed and pinned anyway
+# because that class is the kind that widens — it already widened once, to `.ts`/`.tsx` — and a
+# widened grammar would arrive with the defect already in place. The test is at `_ignored`.
+[[mutation]]
+name = "the note reference guard's ignore check cannot match a non-ASCII path"
+file = "src/keelline/memory/refs.py"
+before = '''        root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(targets))'''
+after = '''        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))'''
+reddens = ["tests/memory/test_refs.py::test_the_ignore_query_matches_a_non_ascii_path_it_asked_about"]
+
+# The grammar was shared and the resolution was not. `Path(root) / "/etc/passwd.md"` discards
+# `root` and a `..` walks out of it, so a plan naming an absolute path that happens to exist on
+# the developer's disk passed the dead-reference lint and did not exist in CI — and both readers
+# were an existence oracle for every path outside the root.
+[[mutation]]
+name = "a path claim is settled against the filesystem wherever it lands"
+file = "src/keelline/prose.py"
+before = '    return landed if landed.is_relative_to(os.path.normpath(str(root))) else None'
+after = "    return landed"
+reddens = [
+  "tests/docs/test_prose.py::test_a_claim_that_lands_outside_the_root_resolves_nowhere",
+  "tests/docs/test_plans.py::test_a_path_claim_outside_the_root_is_never_settled_against_this_disk",
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_root_is_never_settled_against_this_disk",
+]
+
+# A markdown link is read from its own document's directory; only the boundary is the root.
+# Containing against the document's directory instead refuses a link from `docs/` into `src/`.
+[[mutation]]
+name = "a link is contained against its own document's directory instead of the root"
+file = "src/keelline/docs/hygiene.py"
+before = '        landed = resolves_within(root, target, base=agents_path.parent)'
+after = '        landed = resolves_within(agents_path.parent, target)'
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_resolves",
+]
+
+# The other half of the same invariant, and the one that guarding the first half left whole: a
+# document's FILENAME becomes both the row and the link off `glob("*.md")`, so a tracked
+# `…-a<!-- end design and plan trail -->b.md` split the block with `docs trail` exiting 0 on
+# every run — the roadmap went 18 -> 22 -> 26 lines, end markers 2 -> 4 -> 6, and `--check` was
+# stale forever with nothing to do about it short of renaming the file.
+[[mutation]]
+name = "a document filename carries the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''        if not (_interpolable(row) and _interpolable(link)):
+            raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))'''
+after = "        pass"
+reddens = [
+  "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]

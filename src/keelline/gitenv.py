@@ -15,22 +15,60 @@ rather than pinned to `/usr/bin/git`, because the machine owner's `git` is the o
 answer — a hardcoded path is what picks the Xcode shim on macOS over the working `git` they
 installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
 session, which is a harness-level exposure this module cannot close and does not pretend to.
+
+`git_run` is the runner the ledger and docs areas call; `memory.store._git` keeps its
+three-valued answer and its usability probe, which are the memory lane's, and is not rewritten
+here (Premise 17).
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
+from pathlib import Path
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
 # Wall-clock bound on one `git` call (D7: a cap, not read from `config.budgets` or
-# `config.native_caps` — no shipped file needs to change with it). Every call either caller makes
-# is a local, argument-free, read-only query (`rev-parse`, `remote get-url`, `--version`) against
-# the environment below, so it never touches the network; this only guards against a `git` binary
-# that hangs outright, and is generous for that without leaving a hook blocked for long.
+# `config.native_caps` — no shipped file needs to change with it). It is the bound for a local,
+# argument-free, read-only query against the environment below (`rev-parse`, `remote get-url`,
+# `--version`), which neither touches the network nor grows with the repository: it guards
+# against a `git` binary that hangs outright, and is generous for that without leaving a hook
+# blocked for long. A caller whose query is not that shape passes its own wider bound instead
+# and says why beside it — `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` for one that reaches
+# the network, `keelline.ledger.git.QUERY_TIMEOUT_SECONDS` for one that is merely slow, since a
+# `log --all` over a long history is not a five-second `rev-parse`. Tune this number for the
+# hang, not for a remote and not for a long history.
 GIT_TIMEOUT_SECONDS = 5
 
 
 def scrubbed_env() -> dict[str, str]:
     return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+
+
+def git_run(
+    root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+) -> tuple[int, str]:
+    """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when git could not be run.
+
+    The one place this project runs `git` outside the memory store's own resolver: every
+    argument list is built from constants by the caller, every pathspec follows `--`, and no
+    configuration value reaches this list without `contained()` having refused the
+    `-`-shaped ones (§3). Resolved through PATH for the reason above: the machine owner's git
+    must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
+    "nothing matched", and that is an answer.
+    """
+    try:
+        completed = subprocess.run(  # noqa: S603 - see the docstring
+            ["git", "-C", str(root), *args],  # noqa: S607 - PATH on purpose, see the module docstring
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+            env=scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return -1, ""
+    return completed.returncode, completed.stdout

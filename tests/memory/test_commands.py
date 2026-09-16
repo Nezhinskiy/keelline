@@ -717,3 +717,27 @@ def test_an_overlay_store_with_no_committed_index_is_still_ungated(
     payload = json.loads(capsys.readouterr().out)
     assert payload["trusted"] is True
     assert "keelline memory trust" not in payload["summary"]
+
+
+# --- `memory refs` refuses a partial resolution with the reasons, not a pointer ------------
+
+
+def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The refusal shipped pointing at `keelline memory index --check` for the reasons. That
+    # command reads `store.unavailable` nowhere — not in its summary, not in either `--json`
+    # object — so the pointer was false in precisely and only the case that produces it:
+    # partial group resolution. (Total failure raises from `_store` and never reaches here.)
+    # `_no_store` is the precedent this follows: the resolver's reason is built out of
+    # `memory.groups` entries, so it reaches a person inside `trust.wrap` and nowhere else.
+    from keelline.memory.trust import DELIMITER
+
+    shutil.rmtree(project / ".keelline" / "local" / "memory" / "project-volatile")
+    assert invoke(["--json", "memory", "refs", *common(project)]) == 2
+    summary = json.loads(capsys.readouterr().out)["summary"]
+    assert "1 configured group(s) could not be resolved (project-volatile)" in summary
+    # The reason itself, where the pointer used to be.
+    assert "project-volatile is not in the store" in summary
+    assert summary.count(DELIMITER) == 2  # inside the region that says the text is data
+    assert "memory index" not in summary  # and no command that cannot answer the question

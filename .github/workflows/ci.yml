@@ -115,7 +115,15 @@ jobs:
           sdist = sorted(glob.glob("dist/*.tar.gz"))[-1]
           names = tarfile.open(sdist).getnames()
           stripped = {"/".join(n.split("/")[1:]) for n in names}
-          for wanted in ("tests/test_fsops.py", "CHANGELOG.md", "scripts/keelline"):
+          # `skills/` and `agents/` are here because `tests/skills/test_skills.py` reads those
+          # trees directly: an sdist without them ships a test module that cannot pass.
+          for wanted in (
+              "tests/test_fsops.py",
+              "CHANGELOG.md",
+              "scripts/keelline",
+              "skills/README.md",
+              "agents/code-navigator.md",
+          ):
               assert wanted in stripped, (wanted, sorted(stripped)[:40])
           print(f"{sdist} carries the tests, the changelog and the launcher")
           PY

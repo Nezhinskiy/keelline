@@ -1,0 +1,195 @@
+"""Budgets and links over the always-loaded documents: the enforced half of `docs check`."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from keelline.config.loader import load
+from keelline.config.schema import Config
+from keelline.docs.hygiene import TRAIL_MARKER, check_budgets, check_links, roadmap_prose
+from keelline.errors import Failure
+from keelline.findings import Finding
+
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+"""
+
+AGENTS = """# AGENTS.md
+
+## Current status
+
+- Current frontier.
+
+## Rules
+
+- Read the [guide](docs/guide.md).
+"""
+
+
+def project(tmp_path: Path, extra: str = "", agents: str = AGENTS) -> tuple[Path, Config]:
+    root = tmp_path / "widget"
+    (root / "docs").mkdir(parents=True)
+    (root / "keelline.toml").write_text(CONFIG + extra, encoding="utf-8")
+    (root / "AGENTS.md").write_text(agents, encoding="utf-8")
+    (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    return root, load(root, machine=tmp_path / "m.toml")
+
+
+def rules(findings: list[Finding]) -> list[str]:
+    return [f.rule for f in findings]
+
+
+def test_a_compliant_project_has_no_findings(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_missing_agents_file_is_a_finding(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    (root / "AGENTS.md").unlink()
+    assert rules(check_budgets(root, config)) == ["missing-document"]
+    assert check_links(root, config) == []
+
+
+def test_the_agents_line_and_word_budgets_are_the_effective_ones(tmp_path: Path) -> None:
+    # Read from the configuration, never spelled here: a raised preset budget would otherwise
+    # leave this test asserting the old number and testing nothing.
+    root, config = project(tmp_path)
+    lines = config.budgets.effective("agents_md_lines")
+    head = "# A\n\n## Current status\n\n- x\n\n## Next\n\n"
+    (root / "AGENTS.md").write_text(head + "line\n" * lines, encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["agents-lines"]
+    words = config.budgets.effective("agents_md_words")
+    (root / "AGENTS.md").write_text(head + ("w " * (words + 1)) + "\n", encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["agents-words"]
+
+
+def test_a_project_may_lower_a_budget_and_the_lower_one_applies(tmp_path: Path) -> None:
+    # Mutation: read `config.budgets.preset[...]` instead of `effective(...)` — this reddens.
+    root, config = project(tmp_path, "\n[budgets]\nagents_md_lines = 4\n")
+    assert rules(check_budgets(root, config)) == ["agents-lines"]  # AGENTS above is 9 lines
+
+
+def test_the_current_status_section_is_required_and_budgeted(tmp_path: Path) -> None:
+    root, config = project(tmp_path, agents="# A\n\n## Rules\n\n- x\n")
+    assert rules(check_budgets(root, config)) == ["status-missing"]
+    root, config = project(tmp_path / "two", "\n[budgets]\nstatus_lines = 2\n")
+    assert rules(check_budgets(root, config)) == ["status-lines"]
+
+
+def test_the_agents_file_path_comes_from_configuration(tmp_path: Path) -> None:
+    root, config = project(tmp_path, '\n[paths]\nagents_md = "CONTEXT.md"\n')
+    (root / "AGENTS.md").rename(root / "CONTEXT.md")
+    assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(
+    tmp_path: Path,
+) -> None:
+    root, config = project(
+        tmp_path,
+        agents=AGENTS
+        + "- [gone](docs/gone.md) [a](#x) [b](/abs) [c](https://e.com/x.md) [d](mailto:a@b.c)\n",
+    )
+    found = check_links(root, config)
+    assert [(f.rule, f.detail) for f in found] == [("missing-link", "docs/gone.md")]
+
+
+def test_a_link_inside_a_fence_is_an_example_not_a_claim(tmp_path: Path) -> None:
+    # Every other reader in this plan blanks fences; this one must too. Mutation: scan the raw
+    # text instead of the blanked one — this reddens.
+    root, config = project(tmp_path, agents=AGENTS + "```\n[x](docs/example.md)\n```\n")
+    assert check_links(root, config) == []
+
+
+def test_the_roadmap_prose_is_budgeted_up_to_the_trail_marker(tmp_path: Path) -> None:
+    root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 3\n")
+    (root / "docs" / "roadmap.md").write_text(
+        "# R\n\nprose\n" + f"{TRAIL_MARKER}\n" + "row\n" * 10, encoding="utf-8"
+    )
+    assert check_budgets(root, config) == []
+    (root / "docs" / "roadmap.md").write_text(
+        "# R\n\nprose\nmore\n" + f"{TRAIL_MARKER}\n", encoding="utf-8"
+    )
+    assert rules(check_budgets(root, config)) == ["roadmap-lines"]
+
+
+def test_a_deeper_heading_containing_the_marker_does_not_split_the_prose(tmp_path: Path) -> None:
+    # Mutation: split on a substring instead of the anchored line — this reddens.
+    text = f"# R\n\n### {TRAIL_MARKER[3:]}\n" + "p\n" * 5 + f"{TRAIL_MARKER}\nrow\n"
+    assert roadmap_prose(text).count("\n") == 8
+
+
+def test_a_roadmap_without_the_marker_is_measured_whole_and_an_absent_one_is_not_a_finding(
+    tmp_path: Path,
+) -> None:
+    root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 2\n")
+    assert check_budgets(root, config) == []
+    (root / "docs" / "roadmap.md").write_text("a\nb\nc\n", encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["roadmap-lines"]
+
+
+def test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # `cli.run` maps a `Failure` to 1 and everything else to 2, and 2 is the code a caller is
+    # told never to read as permission. One latin-1 byte in either always-loaded document used
+    # to reach the frame as `internal error: UnicodeDecodeError`. Mutation: drop the
+    # `UnicodeDecodeError` arm of `read_document` — all three cases redden.
+    root, config = project(tmp_path)
+    (root / "docs" / "roadmap.md").write_bytes("# R\n\ncaf\xe9\n".encode("latin-1"))
+    with pytest.raises(Failure, match=r"docs/roadmap\.md: is not valid UTF-8"):
+        check_budgets(root, config)
+    (root / "AGENTS.md").write_bytes(AGENTS.encode("utf-8") + b"caf\xe9\n")
+    with pytest.raises(Failure, match=r"AGENTS\.md: is not valid UTF-8"):
+        check_budgets(root, config)
+    with pytest.raises(Failure, match=r"AGENTS\.md: is not valid UTF-8"):
+        check_links(root, config)
+
+
+def test_a_link_out_of_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:
+    # `_normalize_target` already drops an absolute link; a `..` one walked out of the project
+    # and was settled against the developer's disk, which is an existence oracle and makes the
+    # verdict depend on the machine. The assertion is that the answer does not change with the
+    # file. Mutation: drop `resolves_within`'s containment — the second call reddens.
+    root, config = project(tmp_path, agents=AGENTS + "\n- [out](../outside/secret.md)\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("", encoding="utf-8")
+    assert check_links(root, config) == []
+    (outside / "secret.md").unlink()
+    assert check_links(root, config) == []
+
+
+def test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_resolves(
+    tmp_path: Path,
+) -> None:
+    # Containment is judged against the project root, not against the document's directory: a
+    # link from `docs/AGENTS.md` into `src/` is inside the project. Mutation: contain against
+    # `agents_path.parent` — the first assertion reddens.
+    root, _config = project(tmp_path)
+    (root / "src").mkdir()
+    (root / "src" / "boot.py").write_text("", encoding="utf-8")
+    (root / "docs" / "AGENTS.md").write_text(
+        AGENTS + "\n- [b](../src/boot.py)\n- [g](../src/gone.py)\n", encoding="utf-8"
+    )
+    (root / "keelline.toml").write_text(
+        CONFIG + '\n[paths]\nagents_md = "docs/AGENTS.md"\n', encoding="utf-8"
+    )
+    config = load(root, machine=tmp_path / "m.toml")
+    # `docs/guide.md` too: from `docs/` that link names `docs/docs/guide.md`, which is the
+    # point — a link is read from its own document's directory, and only the containment
+    # boundary is the root.
+    assert [f.detail for f in check_links(root, config)] == ["docs/guide.md", "../src/gone.py"]

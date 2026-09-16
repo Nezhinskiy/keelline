@@ -298,6 +298,12 @@ def read_note(path: Path) -> Note:
             text = stream.read()
     except OSError as exc:
         raise NoteError(f"{path} cannot be read: {exc}") from exc
+    # `UnicodeDecodeError` is not an `OSError`. Without it one latin-1 byte in a note left this
+    # walk as `internal error: UnicodeDecodeError` and exit 2 — a repository's malformed input
+    # reading as this tool being broken. It is a note this reader cannot read, exactly like the
+    # `OSError` above, so `walk` quarantines it onto `unreadable` and the command reports it.
+    except UnicodeDecodeError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc.reason})") from None
     lines, body, verbatim = _split(text, path)
     top, meta = _parse(lines, path)
     try:

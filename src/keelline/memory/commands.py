@@ -338,6 +338,55 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     )
 
 
+# The refusal carries the resolver's reasons rather than naming a command that would report
+# them, because no command does: `run_index` builds its findings from `_findings` and drift and
+# reads `store.unavailable` nowhere, in either `--json` object or on the summary. The one case a
+# resolver reason does surface elsewhere is total failure — `resolve` returns `None` and
+# `_no_store` raises — and that never reaches here, so a pointer would have been false in
+# precisely and only the case that produces it: partial group resolution. `ledger/index.py` says
+# at length why a refusal pointing away from the fix is worth rewriting a guard to avoid.
+#
+# The reasons are built out of `memory.groups` entries and name paths, so they are
+# repository-authored text and reach a reader the way `_no_store`'s reason does: inside
+# `trust.wrap`, with the region markers that say the text is data.
+_UNAVAILABLE_GROUPS = (
+    "{count} configured group(s) could not be resolved ({names}), so the walk read a subset and "
+    "no answer from it means anything; the reasons below are repository-authored text, shown as "
+    "data"
+)
+
+
+def _unavailable(unavailable: dict[str, str]) -> Refusal:
+    names = sorted(unavailable)
+    reasons = "\n".join(f"{group}: {unavailable[group]}" for group in names)
+    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(names))
+    return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
+
+
+def run_refs(args: argparse.Namespace) -> Result:
+    from dataclasses import asdict
+
+    from keelline.findings import labels
+    from keelline.memory.refs import check_refs
+
+    store, config = _store(args)
+    report = check_refs(Path(args.root).resolve(), config, store)
+    if report.unavailable:
+        raise _unavailable(report.unavailable)
+    data = {
+        "findings": [asdict(f) for f in report.findings],
+        "unreadable": [str(path.relative_to(store.path)) for path, _ in report.unreadable],
+    }
+    parts: list[str] = []
+    if report.findings:
+        parts.append(f"{len(report.findings)} stale reference(s): {labels(report.findings)}")
+    if report.unreadable:
+        parts.append(f"{len(report.unreadable)} note(s) could not be parsed and were not read")
+    if not parts:
+        return Result("every backticked path in the store resolves", data)
+    return Result("; ".join(parts), data, exit_code=1)
+
+
 def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--root", default=".", help="project root (default: current directory)")
     parser.add_argument("--store", default=None, help="resolve the store at this path")
@@ -381,3 +430,8 @@ def register(groups: SubParsers) -> None:
 
     fitting = _with_common(sub.add_parser("fit", help="whether each bundle fits its hook slots"))
     fitting.set_defaults(func=run_doctor_bundles)
+
+    refs = _with_common(
+        sub.add_parser("refs", help="backticked paths in notes that no longer resolve")
+    )
+    refs.set_defaults(func=run_refs)
