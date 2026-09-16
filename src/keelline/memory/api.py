@@ -64,11 +64,13 @@ it. `UnreadableTrustRecord` joins them because `state` and `may_inject` now rais
 that catches `Refusal` broadly is fine, but one that wants to tell "this record is broken" from
 "this store is not approved" — which is the whole point of the class — needs the name.
 
-**What the surface still owes, and to whom.** `docs-tooling` is a consumer of C3 and its row is
-not satisfied: `docs check --memory-graph` needs `refs.check` and `refs.audience_violations`,
-which Task 12 was to add and which are out of this lane's scope. They are absent from the list
-below on purpose and not because the requirement lapsed — this module is the contract document,
-and a requirement with no record here is one the next lane will not know to meet.
+**The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
+paragraph used to hold open — a reference guard this lane planned and never shipped — is now
+`refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
+on the list below. `WIKI_LINK` is here rather than in the docs area because a wiki-link is this
+lane's grammar, and the graph check reads it from this surface instead of spelling a second
+one. The name shipped is `check_refs`, not the `refs.check` the old paragraph promised: `check`
+alone says nothing at the point of import.
 """
 
 from keelline.memory.bundles import SLOTS, Bundle, Fit, blocks, fit, render, split
@@ -94,6 +96,13 @@ from keelline.memory.notes import (
     walk,
     with_index,
     write_note,
+)
+from keelline.memory.refs import (
+    WIKI_LINK,
+    RefsReport,
+    audience_violations,
+    check_refs,
+    unresolved,
 )
 from keelline.memory.store import (
     Store,
@@ -126,6 +135,7 @@ __all__ = [
     "DELIMITER",
     "INDEX_NAME",
     "SLOTS",
+    "WIKI_LINK",
     "Bundle",
     "Entry",
     "Fit",
@@ -137,15 +147,18 @@ __all__ = [
     "PartialLink",
     "Provenance",
     "Reconciliation",
+    "RefsReport",
     "Snapshot",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
     "UnsafeNote",
     "Walk",
+    "audience_violations",
     "blocks",
     "changed",
     "check_index",
+    "check_refs",
     "fit",
     "in_repository",
     "index_source",
@@ -171,6 +184,7 @@ __all__ = [
     "snapshot",
     "split",
     "totals",
+    "unresolved",
     "walk",
     "with_index",
     "wrap",

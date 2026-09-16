@@ -1028,3 +1028,11 @@ file = "src/keelline/docs/plans.py"
 before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)'
 after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
 reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
+
+# The ignore rules cover the whole store, so a note→note reference must be settled on disk.
+[[mutation]]
+name = "a reference into the store is asked of the ignore rules and disappears"
+file = "src/keelline/memory/refs.py"
+before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _inside_store(root, store, t)})'
+after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
+reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]

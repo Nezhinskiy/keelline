@@ -1,0 +1,152 @@
+"""Backticked repository paths in notes that no longer resolve (the memory lane's Task 12), and
+the one grammar for a wiki-link.
+
+Notes are read as authoritative and they age silently: nothing in the tree points back at
+them, so a module they name can be deleted without anything going red, and the next session
+is sent after it. A candidate is dropped whenever the tree can explain it: shorthand under a
+source root, an absolute path outside this repository, a placeholder, or a path the
+repository's own ignore rules cover — except a reference into the store itself, which the
+ignore rules cover wholesale and which is therefore always settled against the filesystem.
+Intent is not inferred: a reference wrapped in prose saying the file is gone is still reported;
+write such a path in *italics*, and the prose says what it said with nothing to report.
+
+What the walk could not read is reported beside what it found: a note that exists and would
+not parse is not a clean note, for the reason the ledger's sweep reports a file it could not
+read. A configured group the resolver could not provide is a refusal, from the resolver's own
+record.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+from keelline.config.schema import Config
+from keelline.findings import Finding
+from keelline.gitenv import git_run
+from keelline.guards.api import contained_roots
+from keelline.memory.notes import Note, Walk, walk
+from keelline.memory.store import Store, overlay_root, permitted_roots
+from keelline.prose import blank_fences, path_references
+
+# `[[name]]` addresses a note by its stem. Owned here because a wiki-link is the memory area's
+# grammar; the docs area's graph check imports it from the C3 surface rather than respelling it.
+WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")
+# Deliberate placeholders a note may write without claiming a file. Not a config key.
+_PLACEHOLDER_STEMS = frozenset({"foo", "bar", "baz", "qux", "xxx"})
+DEAD_REFERENCE = "dead-reference"
+AUDIENCE = "audience"
+
+
+@dataclass(frozen=True)
+class RefsReport:
+    findings: list[Finding]
+    unavailable: dict[str, str]  # group -> the resolver's reason (`Store.unavailable`)
+    unreadable: list[tuple[Path, str]]  # `Walk.unreadable`: notes that exist and would not parse
+
+
+def source_roots(root: Path, config: Config) -> tuple[str, ...]:
+    """Where shorthand resolves: the root, every contained code root, and the parent of every
+    configured document path (`docs` for the defaults) — never one project's list."""
+    names = [""]
+    names.extend(d.relative_to(root).as_posix() for d in contained_roots(root, config))
+    for value in config.paths.as_dict().values():
+        parent = str(PurePosixPath(value).parent)
+        if parent not in (".", "") and parent not in names:
+            names.append(parent)
+    return tuple(names)
+
+
+def _is_placeholder(target: str) -> bool:
+    return PurePosixPath(target).stem in _PLACEHOLDER_STEMS
+
+
+def _resolves(root: Path, target: str, roots: tuple[str, ...]) -> bool:
+    if target.startswith("/"):
+        # A path from another host's filesystem: notes quote deployment layouts verbatim. An
+        # absolute path that does happen to sit in this checkout is still checked.
+        return not Path(target).is_relative_to(root) or Path(target).exists()
+    return any((root / prefix / target).exists() for prefix in roots)
+
+
+def _inside_store(root: Path, store: Store, target: str) -> bool:
+    try:
+        return (root / target).resolve().is_relative_to(store.path.resolve())
+    except OSError:
+        return False
+
+
+def _ignored(root: Path, targets: set[str]) -> set[str]:
+    """Paths the repository's own ignore rules cover: whether one exists is a fact about a
+    checkout, not about the tree. `--no-index` because a tracked path is never "ignored";
+    exit 1 is "nothing matched", an answer, which is why the runner does not collapse it."""
+    if not targets:
+        return set()
+    code, out = git_run(
+        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))
+    )
+    if code not in (0, 1):
+        return set()
+    return {line for line in out.splitlines() if line}
+
+
+def _lines(note: Note) -> list[tuple[int, str]]:
+    """Every prose line of the note with its file line number; fenced code is blanked."""
+    text = note.path.read_text(encoding="utf-8")
+    return list(enumerate(blank_fences(text).splitlines(), start=1))
+
+
+def _where(note: Note, store: Store) -> str:
+    return note.path.relative_to(store.path).as_posix()
+
+
+def unresolved(root: Path, config: Config, store: Store, walked: Walk) -> list[Finding]:
+    roots = source_roots(root, config)
+    candidates: list[tuple[Note, int, str]] = []
+    for note in walked.notes:
+        for number, line in _lines(note):
+            for target in path_references(line):
+                if _is_placeholder(target) or _resolves(root, target, roots):
+                    continue
+                candidates.append((note, number, target))
+    ignored = _ignored(root, {t for _, _, t in candidates if not _inside_store(root, store, t)})
+    return [
+        Finding(DEAD_REFERENCE, _where(note, store), number, target)
+        for note, number, target in candidates
+        if target not in ignored
+    ]
+
+
+def audience_violations(store: Store, config: Config, walked: Walk) -> list[Finding]:
+    """§11: a note in the cross-project group must not `[[link]]` into a project-scoped one,
+    because that link dangles for every other project. Empty for a store with no cross-project
+    group — every non-overlay store."""
+    overlay = overlay_root(store.machine)
+    if overlay is None or store.mode != "overlay":
+        return []
+    common, _project = permitted_roots(overlay, config.project.name)
+    common_groups = {
+        name
+        for name, path in store.groups.items()
+        if path.resolve().is_relative_to(common.resolve())
+    }
+    project_notes = {n.name for n in walked.notes if n.store_group not in common_groups}
+    found: list[Finding] = []
+    for note in walked.notes:
+        if note.store_group not in common_groups:
+            continue
+        for number, line in _lines(note):
+            for target in WIKI_LINK.findall(line):
+                if target in project_notes:
+                    found.append(Finding(AUDIENCE, _where(note, store), number, target))
+    return found
+
+
+def check_refs(root: Path, config: Config, store: Store) -> RefsReport:
+    walked = walk(store.path, [g for g in config.memory.groups if g in store.groups])
+    return RefsReport(
+        unresolved(root, config, store, walked) + audience_violations(store, config, walked),
+        dict(store.unavailable),
+        list(walked.unreadable),
+    )

@@ -338,6 +338,36 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     )
 
 
+def run_refs(args: argparse.Namespace) -> Result:
+    from dataclasses import asdict
+
+    from keelline.findings import labels
+    from keelline.memory.refs import check_refs
+
+    store, config = _store(args)
+    report = check_refs(Path(args.root).resolve(), config, store)
+    if report.unavailable:
+        # Group names are configuration keys this lane read; the resolver's reasons name paths
+        # and stay out of the message — the summary is what a stranger's terminal sees.
+        raise Refusal(
+            f"{len(report.unavailable)} configured group(s) could not be resolved "
+            f"({', '.join(sorted(report.unavailable))}), so the walk read a subset and no answer "
+            "from it means anything; `keelline memory index --check` names why"
+        )
+    data = {
+        "findings": [asdict(f) for f in report.findings],
+        "unreadable": [str(path.relative_to(store.path)) for path, _ in report.unreadable],
+    }
+    parts: list[str] = []
+    if report.findings:
+        parts.append(f"{len(report.findings)} stale reference(s): {labels(report.findings)}")
+    if report.unreadable:
+        parts.append(f"{len(report.unreadable)} note(s) could not be parsed and were not read")
+    if not parts:
+        return Result("every backticked path in the store resolves", data)
+    return Result("; ".join(parts), data, exit_code=1)
+
+
 def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--root", default=".", help="project root (default: current directory)")
     parser.add_argument("--store", default=None, help="resolve the store at this path")
@@ -381,3 +411,8 @@ def register(groups: SubParsers) -> None:
 
     fitting = _with_common(sub.add_parser("fit", help="whether each bundle fits its hook slots"))
     fitting.set_defaults(func=run_doctor_bundles)
+
+    refs = _with_common(
+        sub.add_parser("refs", help="backticked paths in notes that no longer resolve")
+    )
+    refs.set_defaults(func=run_refs)
