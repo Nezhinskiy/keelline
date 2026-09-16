@@ -74,7 +74,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import contained
-from keelline.errors import Failure
+from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
 from keelline.gitenv import git_run
 from keelline.identifiers import identifiers
@@ -173,7 +173,20 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     so `unlinted_plans` does not list it either — it is neither linted nor reported, and
     vanishes from the gate in silence. `-z` NUL-terminates each record instead and never quotes;
     the trailing empty field falls out with everything that does not end in `.md`.
+
+    The base is refused when it is shaped like an option (§3), in the one spelling
+    `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. `--` closes
+    the pathspec but sits behind the slot `base` interpolates into, so a `--base` of
+    `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a
+    caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
+    with empty stdout — so this function answered `[]` rather than None and the gate reported
+    OK having linted nothing. That is the state the `base-unresolvable` finding exists to make
+    impossible, reached by an option-shaped typo instead of by a shallow checkout. The
+    `origin/<base_branch>` composition is safe for its prefix alone, which is a property of
+    that one caller and not of this argument.
     """
+    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
     code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
     if code != 0:

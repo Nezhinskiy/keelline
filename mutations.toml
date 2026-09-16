@@ -1060,3 +1060,16 @@ reddens = [
   "tests/test_identifiers.py::test_fewer_than_three_digits_is_not_an_identifier",
   "tests/ledger/test_write.py::test_the_allocator_reads_the_git_source_with_the_shared_digit_rule",
 ]
+
+# `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
+# `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
+# absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
+# reported OK having linted nothing, which is what `base-unresolvable` exists to prevent.
+[[mutation]]
+name = "an option-shaped base reaches a git argv slot ahead of `--`"
+file = "src/keelline/docs/plans.py"
+before = '''    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+after = '''    if False:
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+reddens = ["tests/docs/test_plans.py::test_an_option_shaped_base_never_reaches_a_git_argv_slot"]

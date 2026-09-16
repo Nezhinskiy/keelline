@@ -15,6 +15,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.plans import asserted_outcomes, lint
+from keelline.errors import Refusal
 
 CONFIG = """
 [keelline]
@@ -231,6 +232,27 @@ def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> 
     git(root, "commit", "-qm", "seed")
     result = lint(root, config, plans=[])
     assert [f.rule for f in result.findings] == ["base-unresolvable"] and result.linted == []
+
+
+@needs_git
+def test_an_option_shaped_base_never_reaches_a_git_argv_slot(tmp_path: Path) -> None:
+    # The reproduction rather than the guard's own vocabulary: `--base=--output=<path>` is an
+    # argv slot ahead of `--`, so `git diff` read it as its own option, wrote the diff to that
+    # absolute path — outside `contained()` and outside `fsops` — and exited 0 with empty
+    # stdout. `touched_plans` then answered `[]` instead of None, so a committed plan was never
+    # linted and the command printed OK: the exact state `base-unresolvable` exists to prevent,
+    # reached by a typo. Mutation: drop the `base.startswith("-")` refusal in `touched_plans` —
+    # this reddens, on the written file first.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    plan(root, "a committed plan with no Scope line, which the gate must not skip\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    with pytest.raises(Refusal):
+        lint(root, config, plans=[], base=f"--output={victim / 'PWNED'}")
+    assert list(victim.iterdir()) == []
 
 
 @needs_git
