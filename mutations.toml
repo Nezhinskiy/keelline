@@ -867,3 +867,27 @@ after = '        wanted = set()'
 reddens = [
   "tests/guards/test_neutral.py::test_the_gate_discriminates",
 ]
+
+# A repository-controlled prefix reaches a regular expression only after its shape is checked.
+[[mutation]]
+name = "an unchecked ledger prefix reaches the regular expression"
+file = "src/keelline/identifiers.py"
+before = '        if not PREFIX.match(self.prefix):'
+after = '        if False:'
+reddens = ["tests/test_identifiers.py::test_a_prefix_outside_the_contract_is_refused_before_it_meets_a_regex"]
+
+# One digit rule for the ledger and the plan lint.
+[[mutation]]
+name = "the Fixes claim stops sharing the identifier digit rule"
+file = "src/keelline/identifiers.py"
+before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{_DIGITS}\b")'
+after = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-\d+\b")'
+reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rule"]
+
+# A non-zero exit is an answer some callers need (`check-ignore` says 1 for "nothing matched").
+[[mutation]]
+name = "the git runner collapses every non-zero exit into could-not-run"
+file = "src/keelline/gitenv.py"
+before = '    return completed.returncode, completed.stdout'
+after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
+reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
