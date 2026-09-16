@@ -386,11 +386,21 @@ def _echo_after_a_semicolon(tokens: list[str]) -> tuple[str, str] | None:
 
 
 def _command_head(segment: list[str]) -> list[str]:
-    """The command and its arguments, without its redirects.
+    """The command and its arguments, without its redirects -- imprecise by one token in a
+    documented case.
 
     `cmd > out.log 2>&1` tokenizes to `['cmd', '>', 'out.log', '2', '>&', '1']`: the head
     stops at the first operator that starts with `>` or `<`, and a lone digit left in front
-    of it is a file descriptor, not an argument.
+    of it is popped as a file descriptor.
+
+    THE POP IS A GUESS THE TOKENIZER CANNOT CHECK: a numbered file descriptor
+    (`cmd 2> err.log`) and an ordinary trailing numeric argument before an unrelated redirect
+    (`sleep 5 > out.log`) tokenize to the identical shape -- `['cmd', '2', '>', 'err.log']`
+    next to `['sleep', '5', '>', 'out.log']` -- because tokenizing drops the whitespace that
+    is the only thing telling them apart. Gating the pop on `>&`/`<&` does not help: neither
+    example has one. So a rendered head can be short by one token (`sleep 5` comes back
+    `sleep`); that is an accepted imprecision in an advisory-only reader, not a defect to
+    chase here.
     """
 
     head: list[str] = []

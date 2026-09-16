@@ -600,3 +600,27 @@ def test_the_same_chain_in_the_foreground_is_silent() -> None:
 )
 def test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about(command: str) -> None:
     assert judge(command, background=True).hint is None
+
+
+def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor() -> None:
+    """PINS A KNOWN LIMITATION, not a desired outcome: `_command_head` cannot tell an ordinary
+    trailing numeric argument from a file descriptor before a redirect, so the masked command
+    this hint names can be short by one token -- here, a duration argument goes missing.
+
+    `cmd 2> err.log` and `sleep 5 > out.log` tokenize to the identical shape --
+    `['cmd', '2', '>', 'err.log']` next to `['sleep', '5', '>', 'out.log']` -- because
+    tokenizing drops the whitespace that is the only thing telling a numbered descriptor from
+    a genuine argument apart, so `_command_head` guesses descriptor and pops it either way.
+    Gating the pop on `>&`/`<&` does not help: measured directly against this module's own
+    `bashscan.tokenize`, neither shape carries one. The imprecision is therefore irreducible
+    at this tokenizer, and this test exists so a later change does not "fix" the heuristic
+    into believing otherwise -- there is nothing here for a sharper heuristic to catch.
+
+    Prefixed with `true;` so the chain's FIRST command is not `sleep`: unprefixed, the
+    unrelated backgrounded-`sleep` rule denies the call outright before this hint is ever
+    computed, and the test would pin that rule instead of `_command_head`.
+    """
+    context = judge("true; sleep 5 > out.log; echo done", background=True).hint
+
+    assert context is not None
+    assert "`sleep`" in context and "sleep 5" not in context
