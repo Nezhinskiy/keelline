@@ -14,6 +14,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
+from keelline.ledger.check import problems
 from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import (
     GENERATED_BY,
@@ -180,17 +181,17 @@ def test_a_generated_index_is_recognised_by_its_first_paragraph(tmp_path: Path) 
 
 
 def test_a_reworded_generated_header_is_a_stale_index_not_foreign_content(tmp_path: Path) -> None:
-    _root, config = project(tmp_path)
+    root, config = project(tmp_path)
     text = render_index([], config).replace(
         "edit the entry\nfiles", "edit the entry files\nand nothing else"
     )
-    assert foreign_index_lines(text, config) == []
+    assert foreign_index_lines(root, text, config) == []
 
 
 def test_a_paragraph_added_under_the_generated_header_is_still_foreign(tmp_path: Path) -> None:
-    _root, config = project(tmp_path)
+    root, config = project(tmp_path)
     text = render_index([], config).replace("\n## Open", "\nAn operator's note.\n\n## Open", 1)
-    assert foreign_index_lines(text, config) == ["An operator's note."]
+    assert foreign_index_lines(root, text, config) == ["An operator's note."]
 
 
 def test_every_line_the_generator_writes_is_inside_the_grammar_it_enforces(tmp_path: Path) -> None:
@@ -204,7 +205,7 @@ def test_every_line_the_generator_writes_is_inside_the_grammar_it_enforces(tmp_p
             4: entry(4, "rejected"),
         },
     )
-    assert foreign_index_lines(render_index(load_entries(root, config), config), config) == []
+    assert foreign_index_lines(root, render_index(load_entries(root, config), config), config) == []
 
 
 @pytest.mark.parametrize(
@@ -224,6 +225,43 @@ def test_index_refuses_to_delete_any_content_it_did_not_generate(tmp_path: Path,
     ledger(root, {1: entry(1)})
     current = render_index(load_entries(root, config), config) + f"\n{line}\n"
     with pytest.raises(Refusal, match="did not generate"):
+        refuse_index_overwrite(root, config, current)
+
+
+def test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index(tmp_path: Path) -> None:
+    # The reproduction: delete one entry file — the shape a merge resolved to the wrong side
+    # leaves behind — and its index row is the last record that bug ever existed. Classified by
+    # the line's leading `|` it read as tool-generated, so `bugs check` reported
+    # `stale-index; run: keelline bugs index` and that command deleted the record, no diff,
+    # exit 0. `ENTRIES_MISSING` never fires here: the ledger directory is still there.
+    # Mutation: allow any `|` line in `foreign_index_lines` — every assertion reddens.
+    root, config = project(tmp_path)
+    ledger(root, {1: entry(1), 2: entry(2, title="the only record of this bug")})
+    current = render_index(load_entries(root, config), config)
+    (root / "docs" / "bug-reports.md").write_text(current, encoding="utf-8")
+    (root / "docs" / "bugs" / "BR-002.md").unlink()
+    foreign = foreign_index_lines(root, current, config)
+    assert len(foreign) == 1 and "the only record of this bug" in foreign[0]
+    with pytest.raises(Refusal, match="recover it before regenerating"):
+        refuse_index_overwrite(root, config, current)
+    rules = [f.rule for f in problems(root, config)]
+    assert "foreign-index-content" in rules and "stale-index" not in rules
+
+
+def test_an_injected_section_of_hand_written_rows_is_foreign(tmp_path: Path) -> None:
+    # A whole `## Open (99)` section of rows nobody generated was classified clean for the same
+    # reason: every one of its lines opens with `|`. Mutation: allow any `|` line — this reddens.
+    root, config = project(tmp_path)
+    ledger(root, {1: entry(1)})
+    injected = (
+        "| [BR-900](bugs/BR-900.md) | high | area | filed by hand | 2026-02-02 |\n"
+        "| [BR-901](bugs/BR-901.md) | high | area | and another | 2026-02-02 |\n"
+    )
+    current = render_index(load_entries(root, config), config).replace(
+        "\n## Partially fixed", f"{injected}\n## Partially fixed", 1
+    )
+    assert len(foreign_index_lines(root, current, config)) == 2
+    with pytest.raises(Refusal, match="recover it before regenerating"):
         refuse_index_overwrite(root, config, current)
 
 

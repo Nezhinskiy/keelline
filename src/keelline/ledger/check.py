@@ -157,7 +157,7 @@ def problems(root: Path, config: Config) -> list[Finding]:
                 )
 
     current = index_text(root, config)
-    foreign = foreign_index_lines(current, config)
+    foreign = foreign_index_lines(root, current, config)
     if foreign:
         found.append(
             Finding(
