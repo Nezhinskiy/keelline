@@ -155,6 +155,13 @@ _SEPARATOR_CHARS = frozenset(";&|")
 # ABSENT: `;;`, `;&`, `;;&` and `|&` -- every piece of those ends a command, so letting them
 # fall through to single characters yields the right number of breaks with no extra table.
 _COMPOUND_OPERATORS = ("&>>", "<<<", "&>", ">&", "<&", ">|", ">>", "<<", "<>")
+# Every redirect operator, spelled as `operator_pieces` hands it back: the compound table
+# above -- all nine of whose members are redirects -- plus the two single characters no table
+# lists because they need no greedy match. Public because a caller that walks pieces looking
+# for where a command's arguments stop cannot get this set from a first-character test:
+# `&>` and `&>>` begin with neither `>` nor `<`, and a head that stopped only on those two
+# characters rendered them as part of the command's own name.
+REDIRECT_OPERATORS = frozenset(_COMPOUND_OPERATORS) | {">", "<"}
 # Four delimiter spellings, and the first three mean the same thing to bash: `<<'TAG'`,
 # `<<"TAG"` and `<<\TAG` all suppress expansion of the body, while a bare `<<TAG` does not.
 # They are one alternation rather than an optional quote group because a backreference to an

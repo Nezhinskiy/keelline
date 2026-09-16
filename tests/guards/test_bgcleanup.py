@@ -612,9 +612,14 @@ def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor()
     tokenizing drops the whitespace that is the only thing telling a numbered descriptor from
     a genuine argument apart, so `_command_head` guesses descriptor and pops it either way.
     Gating the pop on `>&`/`<&` does not help: measured directly against this module's own
-    `bashscan.tokenize`, neither shape carries one. The imprecision is therefore irreducible
-    at this tokenizer, and this test exists so a later change does not "fix" the heuristic
-    into believing otherwise -- there is nothing here for a sharper heuristic to catch.
+    `bashscan.tokenize`, neither shape carries one. There is no fix available from the token
+    list alone, which is all `_command_head` receives, and this test exists so a sharper
+    heuristic over those tokens is not written in the belief that one is there to find.
+
+    NOT AN IMPOSSIBILITY CLAIM. The caller holds the raw command text and does not pass it
+    down; an adjacency test on that text separates `cmd 2> err.log` from `sleep 5 > out.log`
+    at once. A change that supplies the text and updates this expectation is a correct
+    change, and this docstring must not read as an argument against it.
 
     Prefixed with `true;` so the chain's FIRST command is not `sleep`: unprefixed, the
     unrelated backgrounded-`sleep` rule denies the call outright before this hint is ever
@@ -624,3 +629,79 @@ def test_a_numeric_final_argument_before_a_redirect_reads_as_a_file_descriptor()
 
     assert context is not None
     assert "`sleep`" in context and "sleep 5" not in context
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "for f in a b; do cat $f; done; echo done",
+        "if make > out.log; then echo ok; fi; echo finished",
+    ],
+)
+def test_a_compound_statement_terminator_is_never_named_as_the_masked_command(
+    command: str,
+) -> None:
+    """A hint advising "make `done` the last command of the chain" advises a command nobody
+    wrote.
+
+    The last `;` of a compound statement falls after its terminator word, so the segment
+    before it is `done` or `fi` alone -- a keyword, not a program with an exit code of its
+    own. A backgrounded loop closing with a progress echo is ordinary traffic for this rule,
+    so naming its terminator is the cry-wolf failure `_restores_at_the_end` records, reached
+    by the very shape this module's header opens with.
+    """
+    assert judge(command, background=True).hint is None
+
+
+def test_a_second_echo_is_never_named_as_the_masked_command() -> None:
+    """`cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back, and the
+    segment before the last `;` is another echo whose own exit code is never the one anyone
+    wanted. Silence beats naming the wrong command: a hint that says to read the status of an
+    `echo` from its output teaches the reader to distrust the rule."""
+    command = 'python -m pytest > out.log; echo "----"; echo "EXIT=$?"'
+
+    assert judge(command, background=True).hint is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'pytest -q > out.log 2>&1; echo "EXIT=$?" >> out.log;',
+        'pytest -q > out.log 2>&1\necho "EXIT=$?" >> out.log\n',
+    ],
+)
+def test_a_trailing_separator_does_not_silence_the_hint(command: str) -> None:
+    """A chain that ends with a separator it could have ended without is the same chain.
+
+    The tokenizer turns a newline into a `;`, so a command carrying the trailing newline
+    every editor writes reaches this rule with one break more than its author typed, and that
+    last break has nothing after it. Dropping the empty tail is what keeps the commonest
+    authoring of the flagship shape from passing unread.
+    """
+    context = judge(command, background=True).hint
+
+    assert context is not None, "silence is the bug"
+    assert "pytest -q" in context
+
+
+def test_the_rendered_tail_keeps_its_redirect_a_redirect() -> None:
+    """`_as_shell_text` promises text a shell reads as this file read it, and the hint invites
+    the reader to compare that text with what they typed. Quoting `>>` hands back a literal
+    argument to `echo` instead of an append, in the shape this rule most often sees."""
+    context = judge(_MASKING_CHAIN, background=True).hint
+
+    assert context is not None
+    assert "echo 'EXIT=$?' >> out.log" in context
+    assert "'>>'" not in context
+
+
+@pytest.mark.parametrize("operator", ["&>", "&>>"])
+def test_an_ampersand_redirect_is_not_part_of_the_masked_command(operator: str) -> None:
+    """Two redirect operators start with neither `>` nor `<`, so a head that stops on the
+    first character alone walks past them and renders the redirect as part of the command's
+    own name. Cosmetic -- `&>` is not a chain operator, so the right command is still found --
+    but the name handed back is not one the reader typed."""
+    context = judge(f"pytest -q {operator} out.log; echo done", background=True).hint
+
+    assert context is not None
+    assert "`pytest -q`" in context and operator not in context
