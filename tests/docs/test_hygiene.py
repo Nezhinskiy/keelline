@@ -1,0 +1,138 @@
+"""Budgets and links over the always-loaded documents: the enforced half of `docs check`."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from keelline.config.loader import load
+from keelline.config.schema import Config
+from keelline.docs.hygiene import TRAIL_MARKER, check_budgets, check_links, roadmap_prose
+from keelline.findings import Finding
+
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+"""
+
+AGENTS = """# AGENTS.md
+
+## Current status
+
+- Current frontier.
+
+## Rules
+
+- Read the [guide](docs/guide.md).
+"""
+
+
+def project(tmp_path: Path, extra: str = "", agents: str = AGENTS) -> tuple[Path, Config]:
+    root = tmp_path / "widget"
+    (root / "docs").mkdir(parents=True)
+    (root / "keelline.toml").write_text(CONFIG + extra, encoding="utf-8")
+    (root / "AGENTS.md").write_text(agents, encoding="utf-8")
+    (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    return root, load(root, machine=tmp_path / "m.toml")
+
+
+def rules(findings: list[Finding]) -> list[str]:
+    return [f.rule for f in findings]
+
+
+def test_a_compliant_project_has_no_findings(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_missing_agents_file_is_a_finding(tmp_path: Path) -> None:
+    root, config = project(tmp_path)
+    (root / "AGENTS.md").unlink()
+    assert rules(check_budgets(root, config)) == ["missing-document"]
+    assert check_links(root, config) == []
+
+
+def test_the_agents_line_and_word_budgets_are_the_effective_ones(tmp_path: Path) -> None:
+    # Read from the configuration, never spelled here: a raised preset budget would otherwise
+    # leave this test asserting the old number and testing nothing.
+    root, config = project(tmp_path)
+    lines = config.budgets.effective("agents_md_lines")
+    head = "# A\n\n## Current status\n\n- x\n\n## Next\n\n"
+    (root / "AGENTS.md").write_text(head + "line\n" * lines, encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["agents-lines"]
+    words = config.budgets.effective("agents_md_words")
+    (root / "AGENTS.md").write_text(head + ("w " * (words + 1)) + "\n", encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["agents-words"]
+
+
+def test_a_project_may_lower_a_budget_and_the_lower_one_applies(tmp_path: Path) -> None:
+    # Mutation: read `config.budgets.preset[...]` instead of `effective(...)` — this reddens.
+    root, config = project(tmp_path, "\n[budgets]\nagents_md_lines = 4\n")
+    assert rules(check_budgets(root, config)) == ["agents-lines"]  # AGENTS above is 9 lines
+
+
+def test_the_current_status_section_is_required_and_budgeted(tmp_path: Path) -> None:
+    root, config = project(tmp_path, agents="# A\n\n## Rules\n\n- x\n")
+    assert rules(check_budgets(root, config)) == ["status-missing"]
+    root, config = project(tmp_path / "two", "\n[budgets]\nstatus_lines = 2\n")
+    assert rules(check_budgets(root, config)) == ["status-lines"]
+
+
+def test_the_agents_file_path_comes_from_configuration(tmp_path: Path) -> None:
+    root, config = project(tmp_path, '\n[paths]\nagents_md = "CONTEXT.md"\n')
+    (root / "AGENTS.md").rename(root / "CONTEXT.md")
+    assert check_budgets(root, config) == [] and check_links(root, config) == []
+
+
+def test_a_missing_local_link_target_is_a_finding_and_external_links_are_not(
+    tmp_path: Path,
+) -> None:
+    root, config = project(
+        tmp_path,
+        agents=AGENTS
+        + "- [gone](docs/gone.md) [a](#x) [b](/abs) [c](https://e.com/x.md) [d](mailto:a@b.c)\n",
+    )
+    found = check_links(root, config)
+    assert [(f.rule, f.detail) for f in found] == [("missing-link", "docs/gone.md")]
+
+
+def test_a_link_inside_a_fence_is_an_example_not_a_claim(tmp_path: Path) -> None:
+    # Every other reader in this plan blanks fences; this one must too. Mutation: scan the raw
+    # text instead of the blanked one — this reddens.
+    root, config = project(tmp_path, agents=AGENTS + "```\n[x](docs/example.md)\n```\n")
+    assert check_links(root, config) == []
+
+
+def test_the_roadmap_prose_is_budgeted_up_to_the_trail_marker(tmp_path: Path) -> None:
+    root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 3\n")
+    (root / "docs" / "roadmap.md").write_text(
+        "# R\n\nprose\n" + f"{TRAIL_MARKER}\n" + "row\n" * 10, encoding="utf-8"
+    )
+    assert check_budgets(root, config) == []
+    (root / "docs" / "roadmap.md").write_text(
+        "# R\n\nprose\nmore\n" + f"{TRAIL_MARKER}\n", encoding="utf-8"
+    )
+    assert rules(check_budgets(root, config)) == ["roadmap-lines"]
+
+
+def test_a_deeper_heading_containing_the_marker_does_not_split_the_prose(tmp_path: Path) -> None:
+    # Mutation: split on a substring instead of the anchored line — this reddens.
+    text = f"# R\n\n### {TRAIL_MARKER[3:]}\n" + "p\n" * 5 + f"{TRAIL_MARKER}\nrow\n"
+    assert roadmap_prose(text).count("\n") == 8
+
+
+def test_a_roadmap_without_the_marker_is_measured_whole_and_an_absent_one_is_not_a_finding(
+    tmp_path: Path,
+) -> None:
+    root, config = project(tmp_path, "\n[budgets]\nroadmap_prose_lines = 2\n")
+    assert check_budgets(root, config) == []
+    (root / "docs" / "roadmap.md").write_text("a\nb\nc\n", encoding="utf-8")
+    assert rules(check_budgets(root, config)) == ["roadmap-lines"]
