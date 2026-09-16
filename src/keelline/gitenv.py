@@ -32,12 +32,14 @@ GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
 # Wall-clock bound on one `git` call (D7: a cap, not read from `config.budgets` or
 # `config.native_caps` — no shipped file needs to change with it). It is the bound for a local,
-# read-only query against the environment below (`rev-parse`, `remote get-url`, `--version`,
-# `log`), which never touches the network: this only guards against a `git` binary that hangs
-# outright, and is generous for that without leaving a hook blocked for long. A caller whose
-# query *does* reach the network passes its own, wider bound instead and says why beside it —
-# `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` on the allocator's pre-allocation fetch is the
-# one such caller today. Tune this number for the hang, not for a remote.
+# argument-free, read-only query against the environment below (`rev-parse`, `remote get-url`,
+# `--version`), which neither touches the network nor grows with the repository: it guards
+# against a `git` binary that hangs outright, and is generous for that without leaving a hook
+# blocked for long. A caller whose query is not that shape passes its own wider bound instead
+# and says why beside it — `keelline.ledger.write.FETCH_TIMEOUT_SECONDS` for one that reaches
+# the network, `keelline.ledger.git.QUERY_TIMEOUT_SECONDS` for one that is merely slow, since a
+# `log --all` over a long history is not a five-second `rev-parse`. Tune this number for the
+# hang, not for a remote and not for a long history.
 GIT_TIMEOUT_SECONDS = 5
 
 
