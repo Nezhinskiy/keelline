@@ -48,6 +48,10 @@ module-root = "src"
 source-include = [
   "tests/**",
   "scripts/**",
+  # `tests/skills/test_skills.py` reads these two trees directly, so an sdist without them
+  # ships a test module that cannot pass.
+  "skills/**",
+  "agents/**",
   "CHANGELOG.md",
   "SECURITY.md",
   "docs/**",
