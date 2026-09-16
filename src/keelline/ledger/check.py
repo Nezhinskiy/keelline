@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 
 from keelline.findings import Finding
 from keelline.identifiers import identifiers
-from keelline.ledger.entries import Entry, LedgerError, bugs_dir, parse_entry
+from keelline.ledger.entries import (
+    Entry,
+    LedgerError,
+    bugs_dir,
+    parse_entry,
+    read_ledger_text,
+)
 from keelline.ledger.index import (
     ENTRIES_MISSING,
     FOREIGN_CONTENT,
@@ -82,7 +88,11 @@ def problems(root: Path, config: Config) -> list[Finding]:
         # Parsed against the repo-relative path, which is the one every message here names:
         # these are printed by CI, where an absolute path is a runner's scratch directory.
         relative = path.relative_to(root).as_posix()
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = read_ledger_text(path, where=path.relative_to(root))
+        except LedgerError as error:
+            found.append(Finding("unreadable-entry", relative, None, str(error)))
+            continue
         if _CONFLICT_MARKER.search(text):
             found.append(Finding("conflict-marker", relative, None, "unresolved conflict marker"))
             continue

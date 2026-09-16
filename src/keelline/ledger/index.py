@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from keelline.config.paths import contained
 from keelline.errors import Refusal
 from keelline.identifiers import identifiers
-from keelline.ledger.entries import Entry, bugs_dir
+from keelline.ledger.entries import Entry, bugs_dir, read_ledger_text
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -78,9 +78,15 @@ def index_path(root: Path, config: Config) -> Path:
 
 
 def index_text(root: Path, config: Config) -> str:
-    """The committed index's text, or `""` where there is no index yet."""
+    """The committed index's text, or `""` where there is no index yet.
+
+    An index that exists but cannot be read is not the same thing as one that is absent, and
+    answering `""` for it would say the ledger is uninitialised and pass `check` over a tree
+    nobody has looked at. `read_ledger_text` makes it a `LedgerError` naming the file, so it
+    reaches the operator as findings (exit 1) rather than as an internal error (exit 2).
+    """
     path = index_path(root, config)
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+    return read_ledger_text(path, where=Path(config.paths.bug_index)) if path.is_file() else ""
 
 
 def _cell(text: str) -> str:

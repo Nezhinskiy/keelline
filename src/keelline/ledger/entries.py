@@ -206,6 +206,26 @@ def parse_entry(text: str, *, path: Path, ids: Identifiers) -> Entry:
     )
 
 
+def read_ledger_text(path: Path, *, where: Path) -> str:
+    """One ledger file's text, or a `LedgerError` naming it.
+
+    A condition the operator can fix — a permission bit, a stray non-UTF-8 byte in an entry —
+    must not leave this area as a bare `OSError` or `UnicodeDecodeError`. `cli.run` maps a
+    `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a refusal or an
+    internal error (C5): a repository condition reported as an internal error tells the
+    operator the tool is broken rather than that their tree is, and there is nothing in that
+    message for them to act on. `check.problems` has an `unreadable-entry` rule for exactly
+    this file and catches this; `scan.scannable` records the same condition on `Scanned.error`
+    instead of raising, because it has a whole tree to get through where this has one file.
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise LedgerError(f"{where}: is not valid UTF-8 ({error.reason})") from error
+    except OSError as error:
+        raise LedgerError(f"{where}: could not be read ({error.strerror or error})") from error
+
+
 def bugs_dir(root: Path, config: Config) -> Path:
     return contained(root, config.paths.bugs)
 
@@ -221,7 +241,11 @@ def load_entries(root: Path, config: Config) -> list[Entry]:
     ids = identifiers(config)
     directory = bugs_dir(root, config)
     entries = [
-        parse_entry(path.read_text(encoding="utf-8"), path=path.relative_to(root), ids=ids)
+        parse_entry(
+            read_ledger_text(path, where=path.relative_to(root)),
+            path=path.relative_to(root),
+            ids=ids,
+        )
         for path in sorted(directory.glob(f"{ids.prefix}-*.md"))
     ]
     return sorted(entries, key=lambda entry: entry.number)

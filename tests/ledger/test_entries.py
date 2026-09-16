@@ -5,6 +5,7 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from keelline.ledger.entries import (
     field_line,
     parse_entry,
     quote,
+    read_ledger_text,
     related_field,
     scalar,
 )
@@ -241,3 +243,29 @@ def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
         "related",
     }
     assert STATUSES == ("open", "partial", "fixed", "rejected", "void")
+
+
+def test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it(tmp_path: Path) -> None:
+    # `cli.run` maps a `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for
+    # a refusal or an internal error (C5). A stray byte in an entry is a repository condition
+    # the operator can fix, so it must arrive as findings and not as "the tool is broken".
+    # Mutation: read with `errors="replace"` — this reddens.
+    path = tmp_path / "BR-001.md"
+    path.write_bytes(b"---\nid: BR-001\ntitle: \xff\n---\n")
+    with pytest.raises(LedgerError, match="is not valid UTF-8") as raised:
+        read_ledger_text(path, where=PATH)
+    assert str(PATH) in str(raised.value)
+
+
+def test_a_ledger_file_that_cannot_be_read_is_a_ledger_error_naming_it(tmp_path: Path) -> None:
+    # The other half of the same rule: a permission bit is the operator's to fix too.
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    path = tmp_path / "BR-001.md"
+    path.write_text("---\nid: BR-001\n---\n", encoding="utf-8")
+    path.chmod(0)
+    try:
+        with pytest.raises(LedgerError, match="could not be read"):
+            read_ledger_text(path, where=PATH)
+    finally:
+        path.chmod(0o644)

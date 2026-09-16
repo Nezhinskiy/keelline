@@ -244,3 +244,18 @@ def test_every_problem_names_a_repo_relative_path(tmp_path: Path) -> None:
         assert not problem.path.startswith("/"), problem
     labels = [p.label for p in problems(root, config)]
     assert "docs/bugs/BR-002.md [unreadable-entry]" in labels
+
+
+def test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check(
+    tmp_path: Path,
+) -> None:
+    # The `unreadable-entry` rule exists for exactly this file, and an unguarded read meant it
+    # could never fire from the one path that reaches it: the `UnicodeDecodeError` escaped
+    # `problems()` and `cli.run` turned a fixable repository condition into exit 2.
+    root, config = project(tmp_path)
+    ledger(root, config, {"BR-001": entry(1)})
+    (root / "docs" / "bugs" / "BR-002.md").write_bytes(b"---\nid: BR-002\ntitle: \xff\n---\n")
+    found = problems(root, config)
+    assert "docs/bugs/BR-002.md [unreadable-entry]" in [p.label for p in found]
+    unreadable = next(p for p in found if p.rule == "unreadable-entry")
+    assert "is not valid UTF-8" in unreadable.detail

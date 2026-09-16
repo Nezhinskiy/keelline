@@ -14,13 +14,14 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.ledger.entries import load_entries
+from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import (
     GENERATED_BY,
     SECTIONS,
     foreign_index_lines,
     header,
     index_path,
+    index_text,
     is_generated_index,
     refuse_index_overwrite,
     render_index,
@@ -241,3 +242,25 @@ def test_a_stale_but_generated_index_is_not_refused(tmp_path: Path) -> None:
     stale = render_index([], config)
     refuse_index_overwrite(root, config, stale)  # no raise: the remedy is regeneration
     assert index_path(root, config) == root / "docs" / "bug-reports.md"
+
+
+def test_an_index_that_cannot_be_decoded_is_a_ledger_error_not_an_empty_index(
+    tmp_path: Path,
+) -> None:
+    # Answering `""` for an index that exists but cannot be read would say the ledger is
+    # uninitialised and pass the check over a tree nobody has looked at.
+    root, config = project(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "bug-reports.md").write_bytes(b"# Bug reports\n\n\xff\n")
+    with pytest.raises(LedgerError, match="is not valid UTF-8"):
+        index_text(root, config)
+
+
+def test_load_entries_reports_an_undecodable_entry_as_a_ledger_error(tmp_path: Path) -> None:
+    # Wave A2's writing commands call `load_entries`; a bare `UnicodeDecodeError` out of it
+    # would reach the frame as an internal error rather than as findings.
+    root, config = project(tmp_path)
+    ledger(root, {1: entry(1)})
+    (root / "docs" / "bugs" / "BR-002.md").write_bytes(b"---\nid: BR-002\ntitle: \xff\n---\n")
+    with pytest.raises(LedgerError, match="is not valid UTF-8"):
+        load_entries(root, config)

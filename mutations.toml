@@ -932,3 +932,15 @@ file = "src/keelline/ledger/scan.py"
 before = '    return FIXTURE_MARKER.encode("utf-8") in head'
 after = '    return False'
 reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
+
+# A repository condition the operator can fix must reach them as findings (exit 1), never as an
+# internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
+[[mutation]]
+name = "an undecodable ledger file is silently mangled instead of reported"
+file = "src/keelline/ledger/entries.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = '        return path.read_text(encoding="utf-8", errors="replace")'
+reddens = [
+  "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
+  "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
+]
