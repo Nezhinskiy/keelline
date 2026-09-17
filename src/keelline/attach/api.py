@@ -14,7 +14,15 @@ from keelline.attach.permissions import (
     diff_permissions,
     overlay_entries,
 )
-from keelline.attach.write import LEDGER, Attached, AttachLedger, attach, ledger
+from keelline.attach.write import (
+    LEDGER,
+    Attached,
+    AttachLedger,
+    Detached,
+    attach,
+    detach,
+    ledger,
+)
 
 __all__ = [
     "BOUND",
@@ -26,9 +34,11 @@ __all__ = [
     "AttachLedger",
     "Attached",
     "Binding",
+    "Detached",
     "PermissionDiff",
     "attach",
     "check",
+    "detach",
     "diff_permissions",
     "ledger",
     "overlay_entries",

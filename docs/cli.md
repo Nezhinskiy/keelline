@@ -489,6 +489,84 @@ trusted, or when a write is refused by the containment walk.
 
 ---
 
+## `keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`
+
+Binds this repository to your private overlay and links its note store in. After it, a session
+in this repository reads your cross-project notes and this project's own notes, and the
+permissions and hook entries you keep in the overlay are merged into
+`.claude/settings.local.json`.
+
+**`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
+where `<project name>` is the `[project] name` in this repository's `keelline.toml`. The overlay
+root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
+configuration records, which `keelline setup` writes. A `--store` anywhere else is refused (`2`),
+including a directory elsewhere under the same overlay: the session-start path holds every linked
+group to this project's own share, so attaching to a sibling would produce a store every session
+then refuses.
+
+**`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
+and the permission diff: which allow rules and which hook entries would be added, and how many
+of the overlay's rules this repository already has. Read it before the real run.
+
+**A write that grants a capability needs `--yes`.** If the diff would add an allow rule or a hook
+entry, `attach` refuses (`2`) without it. That is a refusal and not a prompt on purpose: the
+command line here is usually written by a model that has read this repository, so a gate whose
+only enforcement is a step in a procedure is no gate at all. An overlay that grants nothing needs
+no flag, because the gate is on the capability and not on the command.
+
+**A mismatch needs `--trust-remote`.** The overlay records the remote it bound under this project
+name; if this repository's `origin` is a different one, it is not the repository that was bound,
+and `attach` refuses (`2`) unless you say otherwise. A clone chooses its own `project.name`; it
+does not choose what the overlay recorded under that name.
+
+**Reads** the overlay's `common/claude/permissions.json` and `common/claude/hooks.json`, this
+project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and
+`projects/<name>/codex/` rules, and this repository's existing `.claude/settings.local.json`.
+`.claude/settings.json` — the committed one — is read for **nothing**: it is repository-controlled,
+and the repository never grants a capability.
+
+**Writes** the `keelline:ignore` region in `.gitignore` (which is what keeps
+`.keelline/local/` untracked, and is written first), `.claude/settings.local.json`,
+`.codex/rules/`, the ledger `.keelline/local/attach.json`, the link tree under `paths.memory` in
+this checkout and in every existing worktree, the harness memory link, and — in the overlay —
+`projects/<name>/project.toml` and this project's note directories. The ledger is the only record
+of which allow rules are Keelline's, because an allow rule cannot carry a marker the way a hook
+entry can; `detach` reads it and nothing else.
+
+It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
+configuration and no hook is installed — the machine that cloned an overlay someone else created
+never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
+
+Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
+recorded overlay, a mismatch without `--trust-remote`, or a widening without `--yes`.
+
+---
+
+## `keelline detach [--root PATH] [--machine PATH]`
+
+Removes exactly what `attach` added, and leaves the binding alone.
+
+It reads `.keelline/local/attach.json` and acts on that and on nothing else. A repository with no
+ledger fails (`1`) naming the missing file rather than guessing which allow rules were Keelline's
+from their content — that guess is the reason the ledger exists, and getting it wrong removes a
+rule you wrote by hand.
+
+**Writes**: it takes the recorded allow rules and the fallback key back out of
+`.claude/settings.local.json`, drops the hook entries marked `# keelline:…` there (a group that
+mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
+files it wrote, withdraws the link tree from this checkout and every worktree together with the
+harness memory link, removes the `keelline:ignore` region, and deletes the ledger. A file left
+holding nothing is removed rather than left empty, so an attach and a detach leave the tree
+byte-for-byte as it was.
+
+**It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
+not local state: deleting it would turn every later re-attach into a first attach and re-ask a
+question you have already answered.
+
+Exits `0`; `1` when there is no ledger to read.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is

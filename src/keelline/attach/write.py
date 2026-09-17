@@ -68,6 +68,7 @@ from keelline.memory.api import (
     PROJECTS,
     Links,
     attach_main,
+    detach_main,
     harness_link_needed,
     harness_memory_path,
     link,
@@ -75,7 +76,15 @@ from keelline.memory.api import (
     resolve,
 )
 from keelline.overlay.api import COMMON_CODEX, Runner
-from keelline.scaffold import EntriesError, Style, apply_entries, marker_id, upsert
+from keelline.scaffold import (
+    EntriesError,
+    Style,
+    apply_entries,
+    drop,
+    marker_id,
+    owned_ids,
+    upsert,
+)
 
 LEDGER = ".keelline/local/attach.json"
 LEDGER_FORMAT = 1
@@ -496,3 +505,112 @@ def attach(
             f"{LOCAL_SETTINGS} instead; `keelline detach` removes it"
         )
     return Attached(written or bool(keys), rules, recorded, True, tuple(notes), links)
+
+
+@dataclass(frozen=True)
+class Detached:
+    """What one `detach` withdrew. The binding record is not on this list, on purpose."""
+
+    allow_removed: tuple[str, ...]
+    entries_removed: tuple[str, ...]
+    rules_removed: tuple[str, ...]
+    settings_keys_removed: tuple[str, ...]
+    ignore_region_removed: bool
+    links: Links
+
+
+def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
+    """The settings document with the containers `detach` just emptied taken out again.
+
+    An empty `permissions.allow` is not what the file looked like before `attach`, and the round
+    trip this command promises is measured in bytes: `tests/attach/test_detach.py` snapshots
+    every file under the root and compares. `apply_entries` already does the same for `hooks`.
+    """
+    permissions = raw.get("permissions")
+    if isinstance(permissions, dict):
+        if permissions.get("allow") == []:
+            permissions.pop("allow")
+        if not permissions:
+            raw.pop("permissions")
+    return raw
+
+
+def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[tuple[str, ...], bool]:
+    """Take exactly the recorded rules, the marked entries and the fallback key back out.
+
+    The allow rules come from the ledger and never from a guess at their content: that is the
+    whole reason the ledger exists. The hook entries come out through `scaffold.apply_entries`
+    with nothing wanted, which is the engine's own removal path — foreign entries keep their
+    matcher and their position, and a group that mixes the two is split rather than dropped.
+    """
+    document = local_document(root)
+    if not document.strip():
+        return (), False
+    raw = settings_document(document)
+    permissions, allow = _allow_list(raw)
+    removed = tuple(rule for rule in recorded.allow if rule in allow)
+    if permissions:
+        permissions["allow"] = [rule for rule in allow if rule not in recorded.allow]
+        raw["permissions"] = permissions
+    for key in recorded.settings_keys:
+        raw.pop(key, None)
+    remaining = json.loads(apply_entries(json.dumps(_emptied(raw), indent=2) + "\n", {}))
+    if remaining:
+        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(remaining, indent=2) + "\n")
+    else:
+        # `{}` is not what the file looked like before `attach`; a file holding nothing is one
+        # this command created and is the last thing it takes away.
+        fsops.remove_within(root, LOCAL_SETTINGS)
+    return removed, True
+
+
+def _withdraw_ignore_region(root: Path) -> bool:
+    path = root / GITIGNORE
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    remaining = drop(text, IGNORE_REGION, Style.HASH)
+    if remaining == text:
+        return False
+    if remaining.strip():
+        fsops.write_within(root, GITIGNORE, remaining)
+    else:
+        fsops.remove_within(root, GITIGNORE)
+    return True
+
+
+def detach(root: Path, *, machine: Path | None = None, home: Path | None = None) -> Detached:
+    """Remove exactly what `attach` added, reading the ledger for what that was.
+
+    It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent
+    (§6.2), not a piece of local state: deleting it would turn every later re-attach into a
+    first attach, and re-ask a question that was already answered.
+
+    `machine` and `home` are here for the reason every function in this wave takes them — a
+    resolver without a machine file reads the developer's real `~/.config/keelline/`, and the
+    harness link is under their real home.
+    """
+    recorded = ledger(root)
+    config = load(root, machine=machine)
+    entries = tuple(sorted(owned_ids(local_document(root))))
+    allow_removed, _ = _withdraw_settings(root, recorded)
+    rules_removed = []
+    for rule in recorded.rules:
+        if (root / rule).is_file():
+            fsops.remove_within(root, rule)
+            rules_removed.append(rule)
+    revoked = list(detach_main(root, config, home=home).revoked)
+    owner = main_checkout(root).resolve()
+    for tree in _worktrees(root):
+        if tree.resolve() != owner:
+            revoked += detach_main(tree, config, home=home).revoked
+    region = _withdraw_ignore_region(root)
+    fsops.remove_within(root, LEDGER)
+    return Detached(
+        allow_removed,
+        entries,
+        tuple(rules_removed),
+        recorded.settings_keys,
+        region,
+        Links([], revoked),
+    )

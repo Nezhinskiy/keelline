@@ -374,3 +374,35 @@ def attach_main(
     except OSError as exc:
         raise PartialLink(created, exc) from exc
     return Links(created, revoked)
+
+
+def detach_main(root: Path, config: Config, *, home: Path | None = None) -> Links:
+    """Withdraw the link tree a checkout holds, and the harness link with it (§6.3).
+
+    The mirror of `attach_main`, and here for the same reason: `_unlink` is deliberately
+    narrower than `_link` — only a symlink whose own target is this store is removed, because a
+    real directory at one of these names is unmerged work or a store the harness made, and
+    withdrawing a link is not licence to delete a directory. A second copy of that rule in the
+    attach area is the duplication this module's own history argues against.
+
+    The harness link goes first, because it is the one hop that leaves this lane's gate, and it
+    is compared against the store directory rather than against what it happens to point at.
+
+    Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
+    longer resolve — that is half of what detaching means — so the tree is found where the
+    configuration says it is and each name is removed only if it is one of ours.
+    """
+    base = contained(root, config.paths.memory, allow_final_symlink=True)
+    revoked: list[Path] = []
+    harness = harness_memory_path(root, home)
+    if _unlink(base.resolve(), harness):
+        revoked.append(harness)
+    for name in linked_names(config):
+        target = contained(base, name, allow_final_symlink=True)
+        if not target.is_symlink():
+            continue
+        # Through the `O_NOFOLLOW` walk, so a component that became a symlink after
+        # `contained()` passed cannot redirect the removal out of the checkout.
+        fsops.remove_within(root, f"{config.paths.memory}/{name}")
+        revoked.append(target)
+    return Links([], revoked)

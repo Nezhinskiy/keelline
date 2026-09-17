@@ -91,3 +91,23 @@ def test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero(tmp_pat
     assert not (root / SETTINGS).exists()
     assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
     assert (root / LEDGER).is_file()
+
+
+def test_detach_undoes_an_attach_through_the_command_surface(tmp_path: Path) -> None:
+    # The round trip at the surface a person actually uses, and the exit codes C5 states: 0 for
+    # both halves, because neither is a finding.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store, allow=(RULE,))
+    (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
+    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
+    assert not (root / LEDGER).exists()
+    assert not (root / SETTINGS).exists()
+
+
+def test_detach_on_a_repository_that_was_never_attached_is_a_finding(tmp_path: Path) -> None:
+    # Exit 1 and not 2: nothing crossed a boundary, there is simply nothing recorded — and the
+    # answer is to say so rather than to guess which rules were Keelline's.
+    root, _ = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    assert invoke(["detach", "--root", str(root)]) == 1

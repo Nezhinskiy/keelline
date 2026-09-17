@@ -85,10 +85,13 @@ module's own comparison is trustworthy — would be the thing it re-derived.
 and `doctor`.** `link` is documented as "a no-op for the main checkout itself: it already holds
 the real store, not a link to it", which is true in `local-only` and `in-repo` and false in
 overlay mode — so the owning checkout has an entry point of its own, and the lane that calls it
-has to be able to name it. `harness_memory_path` comes with it because §6.3's fallback is taken
-only when that path cannot be linked, so `attach` has to ask where it is and `doctor` has to
-report on it. The routing pair is here because the link tree `attach` builds and the provenance
-`doctor` prints are two readings of one rule, and the rule is this lane's.
+has to be able to name it. `detach_main` is its mirror and is here for the same reason, one
+function over: `_unlink` is deliberately narrower than `_link`, and a second copy of that rule in
+the attach area is the duplication this lane's own history argues against. `harness_memory_path`
+comes with them because §6.3's fallback is taken only when that path cannot be linked, so
+`attach` has to ask where it is and `doctor` has to report on it. The routing pair is here
+because the link tree `attach` builds and the provenance `doctor` prints are two readings of one
+rule, and the rule is this lane's.
 
 **The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
 paragraph used to hold open — a reference guard this lane planned and never shipped — is now
@@ -165,6 +168,7 @@ from keelline.memory.worktree import (
     Links,
     PartialLink,
     attach_main,
+    detach_main,
     harness_link_needed,
     harness_memory_path,
     link,
@@ -204,6 +208,7 @@ __all__ = [
     "changed",
     "check_index",
     "check_refs",
+    "detach_main",
     "fit",
     "harness_link_needed",
     "harness_memory_path",

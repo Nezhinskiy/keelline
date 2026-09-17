@@ -65,8 +65,25 @@ def run_attach(args: argparse.Namespace) -> Result:
 
 
 def run_detach(args: argparse.Namespace) -> Result:
-    del args
-    raise Refusal("`keelline detach` is not wired up yet")
+    from keelline.attach.write import detach
+
+    machine = Path(args.machine) if args.machine else None
+    removed = detach(Path(args.root).resolve(), machine=machine)
+    data = {
+        "allow_removed": list(removed.allow_removed),
+        "entries_removed": list(removed.entries_removed),
+        "rules_removed": list(removed.rules_removed),
+        "settings_keys_removed": list(removed.settings_keys_removed),
+        "ignore_region_removed": removed.ignore_region_removed,
+        "revoked": [str(path) for path in removed.links.revoked],
+    }
+    return Result(
+        f"detached: {len(removed.allow_removed)} allow rule(s), "
+        f"{len(removed.entries_removed)} hook entr(ies), "
+        f"{len(removed.rules_removed)} Codex rule file(s), "
+        f"{len(removed.links.revoked)} link(s); the binding record was left in place",
+        data,
+    )
 
 
 def register(groups: SubParsers) -> None:

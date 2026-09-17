@@ -60,12 +60,14 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, own, _machine(tmp_path, overlay=overlay)
 
 
-def _attach(root: Path, store: Path, machine: Path, home: Path) -> Attached:
+def _attach(
+    root: Path, store: Path, machine: Path, home: Path, *, confirmed: bool = False
+) -> Attached:
     return attach(
         root,
         store=store,
         machine=machine,
-        confirmed=False,
+        confirmed=confirmed,
         trust_remote=False,
         runner=FakeRunner(),
         home=home,
