@@ -1546,3 +1546,14 @@ reddens = [
   "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
   "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
 ]
+
+# DP3's anchor is only as good as the file that carries it surviving a second `setup` run. With
+# this guard gone, a rewrite that only sets the personal languages silently drops whatever
+# overlay root an earlier `setup --overlay` recorded, and every later `attach` reads "not
+# recorded" about a machine that was already set up.
+[[mutation]]
+name = "write_machine stops reading back an overlay root it was not given"
+file = "src/keelline/setup/machine.py"
+before = "    if root is None:"
+after = "    if False:"
+reddens = ["tests/setup/test_machine.py::test_a_rewrite_preserves_a_value_this_run_did_not_set"]

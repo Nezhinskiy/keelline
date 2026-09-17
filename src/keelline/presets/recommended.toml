@@ -125,3 +125,20 @@ Data stays in its own language: a quoted user message, a fixture, product copy. 
 committing or opening a pull request, scan for prose in the reply language that is yours
 rather than quoted, and move it.
 """
+
+[plugins]
+# Installed by `setup --preset recommended`, through each harness's own plugin command.
+# Third-party skills are listed as recommendations in the README, never vendored (§5.6).
+#
+# Unpinned, and that is a gap worth naming rather than hiding: whatever these selectors resolve
+# to at install time runs in every session, and a third-party plugin can ship its own hooks and
+# allow rules — a wider grant than the allow rule §3 forbids Keelline's own author from
+# shipping. The owner runs `setup` deliberately and can decline, and the deny-only invariant
+# over `templates/` has a test while this has none. A pin belongs here when the marketplaces
+# expose a version selector to pin to.
+install = ["superpowers@obra", "context7@upstash"]
+
+[deny]
+# Machine-level deny rules, written into the user-scope settings. Deny only, always: the
+# plugin author may never ship an allow rule (§3), and a preset is a template by another name.
+global = ["Read(.env*)", "Read(**/.env*)", "Read(**/.env)"]
