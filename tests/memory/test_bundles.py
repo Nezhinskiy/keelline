@@ -193,14 +193,66 @@ def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:
     assert len(split(produced, cap=config.native_caps.hook_output_chars - CAP_MARGIN)) == 1
 
 
+def test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The join shape, which nothing pinned. A TOML `"""…"""` body keeps the newline before its
+    # closing quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three
+    # consecutive newlines in front of the next `### ` heading — in the text a session-start
+    # hook injects, where nobody sees it until they read the rendered bundle. The fixture is
+    # deliberately padded at both ends, because a body written in TOML is padded at one.
+    monkeypatch.setattr(
+        bundles_module, "load_preset", lambda name: {"rules": {"spaced": "\n  A body.\n\n"}}
+    )
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == ["### spaced\n\nA body."]
+
+
+def test_no_shipped_rule_renders_with_padding(tmp_path: Path) -> None:
+    # The same claim against the real preset, which is where the stray line was found: the
+    # fixture above proves the code strips, this proves the thing it ships strips to something.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert produced != []
+    assert all(block == block.strip() and "\n\n\n" not in block for block in produced)
+
+
 def test_preset_rules_emit_nothing_when_a_preset_has_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The silent case the shipped preset no longer exercises, kept on a fixture: a preset
-    # without the table renders nothing rather than a heading over nothing.
+    # without the table renders nothing rather than a heading over nothing. This fixture does
+    # *not* redden the guard it sits beside — `.get("rules", {})` returns `{}` here, which the
+    # comprehension renders as nothing on its own — which is why the two tests below exist.
     monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"budgets": {}})
     store, config = a_store(tmp_path)
     assert blocks(Bundle.PRESET_RULES, store, config) == []
+
+
+def test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The `isinstance(rules, dict)` arm, which had no test at all. A preset is data read at run
+    # time, and this bundle runs inside a session-start handler whose policy is `open`: a
+    # malformed `rules` key must render nothing, not raise `AttributeError` out of a hook.
+    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"rules": "oops"})
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == []
+
+
+def test_a_rule_whose_body_is_not_a_string_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The `isinstance(body, str)` filter, likewise untested. A nested table under `[rules]` —
+    # the easiest thing to write by accident in TOML — is a malformed rule, and a malformed
+    # rule is dropped rather than rendered as a heading over a repr.
+    monkeypatch.setattr(
+        bundles_module,
+        "load_preset",
+        lambda name: {"rules": {"good": "A body.", "bad": {"nested": "table"}}},
+    )
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == ["### good\n\nA body."]
 
 
 def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:

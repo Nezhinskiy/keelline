@@ -187,9 +187,16 @@ def _preset_rules(config: Config) -> list[str]:
     # defaults. When the configured preset carries no `[rules]` table, this bundle is
     # silent by design.
     rules = load_preset(config.keelline.preset).get("rules", {})
-    if not isinstance(rules, dict) or not rules:
+    if not isinstance(rules, dict):
         return []
-    return [f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)]
+    # `.strip()` is not cosmetic: a TOML `"""…"""` body keeps the newline before its closing
+    # quotes, and `split` joins blocks on `"\n\n"`, so an unstripped body puts three
+    # consecutive newlines in front of the next `### ` heading in the text the model reads.
+    # The `or not rules` that used to stand in the guard above is gone with it: an empty table
+    # renders nothing through this comprehension anyway, so nothing could ever redden it.
+    return [
+        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)
+    ]
 
 
 # Where `_index` is allowed to break the index into blocks: the start of a `## ` section, which

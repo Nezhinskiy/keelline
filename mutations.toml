@@ -185,6 +185,42 @@ reddens = [
   "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
 ]
 
+# The preset's `[rules]` bundle. A TOML `"""…"""` body keeps the newline before its closing
+# quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three consecutive
+# newlines in front of the next `### ` heading — in text nobody reads until a session-start
+# hook has injected it, which is why it shipped.
+[[mutation]]
+name = "a rule body keeps the padding TOML gave it"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body",
+  "tests/memory/test_bundles.py::test_no_shipped_rule_renders_with_padding",
+]
+
+# A preset is data read at run time and this bundle runs inside a handler whose policy is
+# `open`, so a malformed `rules` key renders nothing rather than raising out of a hook. Both
+# arms shipped with no test: the fixture beside them makes `.get("rules", {})` return `{}`,
+# which the comprehension renders as nothing whether the guards are there or not.
+[[mutation]]
+name = "a rules key that is not a table reaches .items()"
+file = "src/keelline/memory/bundles.py"
+before = '    if not isinstance(rules, dict):'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising",
+]
+
+[[mutation]]
+name = "a rule body that is not a string is rendered rather than skipped"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items()'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_whose_body_is_not_a_string_is_skipped",
+]
+
 [[mutation]]
 name = "a nested group is keyed on its folder rather than its configured name"
 file = "src/keelline/memory/notes.py"
