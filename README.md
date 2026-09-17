@@ -6,12 +6,14 @@ the platform lets them, and — designed, not yet shipped — an adoption state 
 runs gates advisory until a repository has earned them. One plugin for Claude Code and
 Codex, one Python package with **no runtime dependencies**.
 
-> **Pre-1.0.** Five areas ship: the memory store and its trust gate, the scaffolding engine
-> that writes files into a repository, the guards over a shell call, a commit message and a
-> test run, the bug ledger, the documentation and plan lints, and the first skills. Not yet:
-> the hooks file that wires the guards into a session, `init`, the overlay, and the adoption
-> state machine. [docs/cli.md](docs/cli.md) is the reference; the command list below is held
-> to the parser by a test, so it is complete for what ships.
+> **Pre-1.0.** Five areas ship: the memory store and its trust gate; the scaffolding engine
+> that writes files into a repository; the guards over a shell call, a commit message and a
+> test run; the bug ledger; and the documentation and plan lints. The first skills ship with
+> them, and so do two command groups meant for a machine rather than for you — `hook`, which
+> dispatches one harness event, and `release check`. Not yet: the hooks file that wires the
+> guards into a session, `init`, the overlay, and the adoption state machine.
+> [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
+> by a test, so it is complete for what ships.
 
 ## What this is, and what it is not
 
@@ -21,8 +23,11 @@ layer such as spec-kit tells it *what* to build. Neither remembers what went wro
 time, and neither has a way to introduce rules into a repository that does not yet follow
 them.
 
-Keelline adds three things a search of the community plugin marketplace (about 2,300
-plugins on 2026-09-05) found nowhere else:
+This project looked through the community plugin marketplace on 2026-09-05 and counted about
+2,300 plugins listed that day. That is one project's dated count rather than a survey with a
+method — no row in [sources.md](docs/methodology/sources.md) backs it, and it says what that
+look found, not what exists. What it did not find anywhere else is the three things Keelline
+adds:
 
 - **A bug ledger as a first-class repository artifact** — one file per bug, a generated
   index, a "what this evidence does not establish" line the tooling insists on, and skills
@@ -38,8 +43,10 @@ mutation that reddens it, and working memory is a routing table of hand-written 
 a summary. The principles behind all of it, with dated sources and an honest note where the
 backing is thin, are in [docs/methodology/README.md](docs/methodology/README.md).
 
-**This is not a replacement for superpowers.** The recommended preset installs it, and the
-adoption skill delegates to it when it is present.
+**This is not a replacement for superpowers.** The recommended preset will list it among the
+plugins it installs, and the adoption skill will delegate to it where it is present. Designed;
+the preset's plugin list belongs to the `setup` package and the adoption skill to the one that
+ships the state machine, so nothing in this tree references superpowers today.
 
 ## Install
 
@@ -151,10 +158,14 @@ prints one machine-readable object instead of one line; a list of findings is un
 `findings` whatever the summary calls them.
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
-internal error. A caller must never read 2 as permission. One command is deliberately outside
-that rule: `keelline test audit-entrypoints` exits **0** even when it has findings, and lists
-them under `--json`, because its candidates are for triage and gating on them belongs to a
-lane that has not shipped.
+internal error. A caller must never read 2 as permission. Two commands are deliberately
+outside that rule. `keelline test audit-entrypoints` exits **0** even when it has findings,
+and lists them under `--json`, because its candidates are for triage and gating on them
+belongs to a lane that has not shipped. And `keelline hook` refuses with **2** on an internal
+error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
+open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
+Keelline must not cost you that. A handler's own deny is a decision, not a breakage, and
+refuses on every event. [docs/cli.md](docs/cli.md) states it per event.
 
 ### `keelline memory trust`
 

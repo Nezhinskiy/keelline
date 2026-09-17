@@ -136,17 +136,18 @@ platform blocks on a non-zero exit — before a tool call — and never on sessi
 exit codes are ignored, or on prompt submission, where a blocking exit erases the prompt.
 A guard that cannot fail closed must say so rather than pretend.
 
-**What Keelline does.** Every handler declares its policy, `open` or `closed`; the guards
-over a shell call, a commit message and a test run are closed, the memory handlers open.
-The guarantee lives in a shell wrapper, not in Python: a Python process cannot fail closed
-about its own absence, so the wrapper probes for an interpreter at or above the floor,
-refuses with the blocking exit when none is found, and maps every other exit code to it
-with a printed reason.
+**What Keelline does today.** Every handler declares its policy, `open` or `closed`; the
+guards over a shell call, a commit message and a test run are closed, the memory handlers
+open. Not this, yet: the guarantee belongs in a shell wrapper rather than in Python, because
+a Python process cannot fail closed about its own absence — the wrapper is designed to probe
+for an interpreter at or above the floor, refuse with the blocking exit when none is found,
+and map every other exit code to it with a printed reason. It ships with the hooks file that
+calls it, in the `hooks-core` package; neither is in the tree today.
 
 **Why.** The exit-code semantics differ per event and are documented per event [S3]; Codex
 runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hook whose
 binary is missing exits 127, which the harness treats as a non-blocking error — so the
-guard silently becomes permission, which is why the wrapper exists.
+guard silently becomes permission, which is why the wrapper is specified at all.
 
 **Backing:** sourced. The per-event semantics are the platforms' [S3] [S7], and that is the
 claim the label is about: where fail-closed is expressible at all is a platform fact, not a
@@ -210,10 +211,10 @@ SHA written by the tool that installed it and bumped by the tool that upgrades i
 floating alias is a documented opt-in.
 
 **What Keelline does.** `release check` cross-checks the version across `pyproject.toml`,
-the lockfile, the package and both plugin manifests; the marketplace entries carry no
-version because the plugin's own overrides it silently [S6]. Changelog entries are
-fragments assembled at release [S12]. The CLI installs from a git tag with no resolver at
-hook time [S13].
+the lockfile, the package, both plugin manifests and `CHANGELOG.md`; the marketplace
+entries carry no version because the plugin's own overrides it silently [S6]. Changelog
+entries are fragments assembled at release [S12]. The CLI installs from a git tag with no
+resolver at hook time [S13].
 
 **Why.** `plugin.json`'s `version` is what update delivery reads [S2]; a full-length SHA is
 the only immutable reference to a reusable workflow [S25].
@@ -234,8 +235,8 @@ beside the reply language, so the split is configured once per person rather tha
 per project. The four "harness" sources in the [README](README.md) are the freshness rule's
 own worked example: the term moved from a company blog [S27] to a discipline [S28] to an
 open-sourced platform [S30] and a research framing [S29] in nine months, with the pattern
-essay it all descends from [S31] two years older and still the clearest statement of why
-simple composable pieces beat a framework.
+essay it all descends from [S31] published eleven months before the earliest of the four
+and still the clearest statement of why simple composable pieces beat a framework.
 
 **Backing:** thin. Both are working rules stated by the person whose harness this is, kept
 because each was adopted after a concrete cost — a citation to a tool that had changed its
