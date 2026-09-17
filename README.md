@@ -147,6 +147,11 @@ keelline commit strip .git/COMMIT_EDITMSG             # take the attribution blo
 keelline test hygiene                                 # the faults that make a red run unattributable
 keelline test audit-entrypoints                       # tests that never exercise what they name
 
+# The private overlay
+keelline overlay create --owner you --name keelline-private --local   # render one here, no network
+keelline overlay create --owner you --name keelline-private --template  # generate it on GitHub, private
+keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
+
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)
@@ -154,7 +159,9 @@ keelline release check                                # one version everywhere (
 
 Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current
 directory) and `--machine` (read a machine configuration file other than the default);
-`memory` commands and `docs check` take `--store` as well. `--json` is accepted anywhere and
+`memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
+exception: its `--root` names the directory an overlay is created in or the overlay itself,
+not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and
 prints one machine-readable object instead of one line; a list of findings is under
 `findings` whatever the summary calls them.
 

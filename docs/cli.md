@@ -407,6 +407,64 @@ deliberately does not resolve in *italics*. **Writes** nothing.
 
 ---
 
+## `keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
+
+Creates the private overlay: the repository that holds your standing rules, your cross-project
+notes, and one record per repository bound to them. Nothing in it is any project's, which is why
+it is a repository of its own and why it is private.
+
+`--owner` is the account it belongs to and `--name` the repository name (default
+`keelline-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
+each becomes a directory name, half a remote path and later a marketplace selector; a value
+shaped like an option is refused rather than quoted. `--root` is the directory the instance is
+created *in*, not a project root, and defaults to the current directory.
+
+**Neither source is a default.** `--template` asks GitHub to generate a private repository from
+your template repository and clone it; `--local` renders the shipped template here and makes no
+network call. An invocation with neither is refused (`2`) naming both, so that creating a
+repository on an account is never something an omitted flag does.
+
+A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
+made private, which is the one outcome this command exists to prevent.
+
+The `--template` path is idempotent, because `gh` can give up on the clone with the repository
+already created: a directory that already carries `.claude-plugin/` is left alone and reported.
+When the clone brings nothing down, `gh repo view` is asked whether the repository exists at all
+— the answer tells "not created" from "created, and the clone raced its generation" — and the
+clone is retried once, after a ten-second wait when it was the second. **That retry is carried
+on the strength of the design rather than of a measurement:** Findings → S6 did not reproduce
+the race in the one trial it ran, and one clean run cannot rule out an asynchronous generation
+step that sometimes outlasts a clone. If the second attempt is still empty, the command fails
+(`1`) naming both attempts and what GitHub said in between.
+
+**Writes** the instance directory and, on `--local`, every file of the template plus
+`.keelline/manifest.json`. Exits `0` on success, `1` when no tree arrived, `2` on a refused name
+or a missing `--root`.
+
+---
+
+## `keelline overlay init --owner OWNER [--root PATH]`
+
+Makes a created overlay yours. It rewrites the plugin and marketplace manifests so their names
+carry your account — `keelline-overlay-octocat`, `keelline-overlay-marketplace-octocat` — because
+a harness installs a plugin by the name in its manifest, and two owners' overlays under one
+configuration directory would otherwise be one plugin fighting itself. The marketplace's own
+plugin entries are suffixed with it, so the listing still names a manifest that answers.
+
+It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
+template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
+last word. `pre-commit` is optional: a missing or failing one is a reported note and never a
+traceback.
+
+Both halves are idempotent. A manifest that already carries the suffix is not rewritten, so a
+second run reports nothing renamed.
+
+**Writes** `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, through the same
+contained walk every other write in this project goes through. Exits `0`; `2` on a manifest that
+is not readable JSON or an owner that is not one path segment.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is
