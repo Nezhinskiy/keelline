@@ -535,7 +535,7 @@ def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
-def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[tuple[str, ...], bool]:
+def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
     """Take exactly the recorded rules, the marked entries and the fallback key back out.
 
     The allow rules come from the ledger and never from a guess at their content: that is the
@@ -545,7 +545,7 @@ def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[tuple[str, .
     """
     document = local_document(root)
     if not document.strip():
-        return (), False
+        return ()
     raw = settings_document(document)
     permissions, allow = _allow_list(raw)
     removed = tuple(rule for rule in recorded.allow if rule in allow)
@@ -561,7 +561,7 @@ def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[tuple[str, .
         # `{}` is not what the file looked like before `attach`; a file holding nothing is one
         # this command created and is the last thing it takes away.
         fsops.remove_within(root, LOCAL_SETTINGS)
-    return removed, True
+    return removed
 
 
 def _withdraw_ignore_region(root: Path) -> bool:
@@ -593,8 +593,8 @@ def detach(root: Path, *, machine: Path | None = None, home: Path | None = None)
     recorded = ledger(root)
     config = load(root, machine=machine)
     entries = tuple(sorted(owned_ids(local_document(root))))
-    allow_removed, _ = _withdraw_settings(root, recorded)
-    rules_removed = []
+    allow_removed = _withdraw_settings(root, recorded)
+    rules_removed: list[str] = []
     for rule in recorded.rules:
         if (root / rule).is_file():
             fsops.remove_within(root, rule)
