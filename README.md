@@ -10,8 +10,9 @@ Codex, one Python package with **no runtime dependencies**.
 > that writes files into a repository; the guards over a shell call, a commit message and a
 > test run; the bug ledger; and the documentation and plan lints. The first skills ship with
 > them, and so do two command groups meant for a machine rather than for you — `hook`, which
-> dispatches one harness event, and `release check`. Not yet: the hooks file that wires the
-> guards into a session, `init`, the overlay, and the adoption state machine.
+> dispatches one harness event, and `release check`. The hooks file that wires all of it into
+> a session ships too, so installing the plugin is enough to make the guards fire and the
+> memory bundles arrive. Not yet: `init`, the overlay, and the adoption state machine.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
