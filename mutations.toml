@@ -868,6 +868,62 @@ reddens = [
   "tests/guards/test_neutral.py::test_the_gate_discriminates",
 ]
 
+# The public-document half of the same gate, which had no entry here until two rounds of review
+# found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths the
+# preset itself ships, so that a README may say where the note store lives by default. Written
+# by hand as the full table instead, the exemption disappears and every public document that
+# names a default path reddens; written as the full table is also the shape a well-meaning
+# "simplification" takes, and the derivation fails silently either way.
+[[mutation]]
+name = "the public document table is written by hand instead of derived from the preset"
+file = "tests/test_neutral_wave2.py"
+before = 'PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())'
+after = 'PUBLIC_FORBIDDEN = FORBIDDEN'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_exemption_is_exactly_the_presets_default_paths",
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# The vendor-branch arm, whose failure mode is silence and whose history is a hole per round of
+# review: first a bare name only, then a bare name plus three hardcoded remote names. The
+# replacement accepts any path or remote prefix; drop that and every prefixed form — a remote
+# nobody listed, a `refs/` ref, this repository's own branch prefix, a worktree path — walks
+# straight through a gate that reports nothing.
+[[mutation]]
+name = "the vendor-branch arm stops seeing a prefixed branch name"
+file = "tests/test_neutral_wave2.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+]
+
+# The other half of the same replacement: the shape scan reads the text with its URLs blanked
+# out, which is the only thing between the gate and a documentation URL whose path segment after
+# a vendor name happens to be dashed — the commonest shape a documentation URL has. Without it
+# the gate cries wolf on every public document that cites one, which is how an arm gets loosened.
+[[mutation]]
+name = "the shape scan reads a URL as if it were prose"
+file = "tests/test_neutral_wave2.py"
+before = '    lowered = _URL.sub(" ", text.lower())'
+after = '    lowered = text.lower()'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# The two gates are hand-synced copies, which is a documented decision and was a false claim for
+# one commit: `SHAPES` was edited in one and not the other, in the direction of weakening.
+# Diverge them again — here by restoring the sibling's pre-review arm — and the test that reads
+# both must say so.
+[[mutation]]
+name = "the two copies of the neutrality gate diverge again"
+file = "tests/guards/test_neutral.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_two_copies_of_the_gate_agree",
+]
+
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.
 [[mutation]]
 name = "an unchecked ledger prefix reaches the regular expression"

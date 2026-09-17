@@ -65,14 +65,28 @@ FORBIDDEN = (
     (4, "188937a5982a"),
     (8, "4d1fd41cacbb"),
 )
+# A documentation URL can carry a vendor name as a path segment, and none of the shapes below
+# is a leak when it is part of one, so the shape scan reads the text with its URLs blanked out.
+# The denylist scan does not: a forbidden token inside a URL is still that token.
+_URL = re.compile(r"https?://\S+")
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
-# vendor-prefixed branch name. Each arm is named so a hit says what it is.
+# vendor-prefixed branch name at any depth. Each arm is named so a hit says what it is.
 SHAPES = (
     # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id.
     ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
-    ("vendor branch", re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
+    # One arm for every form of the name, in three parts. The lookbehind keeps a dotted harness
+    # directory out — a public document has to be able to name the one it configures. The
+    # optional path prefix lets any depth in, so a remote-qualified name, a `refs/heads/` name,
+    # a worktree path and a remote nobody thought to list are one shape rather than a list to
+    # keep up with. And requiring a `-` or `_` in the branch segment is what tells a branch
+    # name from the slashed prose pair of the two harness names, which this project's own
+    # one-line pitch invites: real branch names are dashed by convention.
+    (
+        "vendor branch",
+        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),
+    ),
 )
 
 
@@ -91,7 +105,7 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
         wanted = {digest for length, digest in forbidden if length == width}
         seen = {_digest(raw[start : start + width]) for start in range(len(raw) - width + 1)}
         found.extend(f"token {digest}" for digest in sorted(wanted & seen))
-    lowered = text.lower()
+    lowered = _URL.sub(" ", text.lower())
     found.extend(name for name, shape in SHAPES if shape.search(lowered))
     return found
 

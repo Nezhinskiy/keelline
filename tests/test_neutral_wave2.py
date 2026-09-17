@@ -13,9 +13,10 @@ useless. The lane walk is unchanged and still refuses those three: a module has 
 spell a default path.
 
 **A deliberate second copy.** `tests/guards/test_neutral.py` carries the same denylist and
-the same `offending()`; a twenty-first token has to be added to both tables by hand. Both
-gates are deleted the day the `workflows` lane ships the whole-tree gate — do not extend
-either into a third.
+the same `offending()`; a twenty-first token has to be added to both tables by hand, and
+`test_the_two_copies_of_the_gate_agree` below is what says so out loud when one of them is
+not. Both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
+extend either into a third.
 
 The denylist is stored as digests, not tokens — see tests/guards/test_neutral.py for why, and
 do not "simplify" them back into literals.
@@ -24,12 +25,15 @@ do not "simplify" them back into literals.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import re
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+SIBLING_GATE = ROOT / "tests" / "guards" / "test_neutral.py"
 LANE = (
     ROOT / "src" / "keelline" / "ledger",
     ROOT / "src" / "keelline" / "docs",
@@ -113,24 +117,27 @@ FORBIDDEN = (
     (4, "188937a5982a"),
     (8, "4d1fd41cacbb"),
 )
+# A documentation URL can carry a vendor name as a path segment, and none of the shapes below
+# is a leak when it is part of one, so the shape scan reads the text with its URLs blanked out.
+# The denylist scan does not: a forbidden token inside a URL is still that token.
+_URL = re.compile(r"https?://\S+")
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
-# vendor-prefixed branch name bare and remote-qualified. Each arm is named so a hit says what
-# it is, and the two branch arms are disjoint, so a hit names which form it was.
+# vendor-prefixed branch name at any depth. Each arm is named so a hit says what it is.
 SHAPES = (
     # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id.
     ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
-    # `(?<![.\w/])`: `.claude/settings.json` and `.codex/hooks.json` are harness directories a
-    # public document has to be able to name, and a documentation URL can carry `/codex/` as a
-    # path segment; a bare branch name is never preceded by a dot or a slash.
-    ("vendor branch", re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
-    # The remote-qualified form the arm above cannot see, because excluding a preceding slash
-    # is what lets it ignore a URL path segment: `origin/codex/…` is how a commit message or a
-    # plan cites a vendor branch, and the remote name in front of it is not a dot or a slash.
+    # One arm for every form of the name, in three parts. The lookbehind keeps a dotted harness
+    # directory out — a public document has to be able to name the one it configures. The
+    # optional path prefix lets any depth in, so a remote-qualified name, a `refs/heads/` name,
+    # a worktree path and a remote nobody thought to list are one shape rather than a list to
+    # keep up with. And requiring a `-` or `_` in the branch segment is what tells a branch
+    # name from the slashed prose pair of the two harness names, which this project's own
+    # one-line pitch invites: real branch names are dashed by convention.
     (
-        "remote-qualified vendor branch",
-        re.compile(r"(?<![.\w/])(?:origin|upstream|fork)/(?:codex|claude|cursor)/[a-z0-9][\w-]*"),
+        "vendor branch",
+        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),
     ),
 )
 
@@ -150,7 +157,7 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
         wanted = {digest for length, digest in forbidden if length == width}
         seen = {_digest(raw[start : start + width]) for start in range(len(raw) - width + 1)}
         found.extend(f"token {digest}" for digest in sorted(wanted & seen))
-    lowered = text.lower()
+    lowered = _URL.sub(" ", text.lower())
     found.extend(name for name, shape in SHAPES if shape.search(lowered))
     return found
 
@@ -253,15 +260,51 @@ def test_the_gate_discriminates() -> None:
     assert offending("Co-authored-by: Someone <someone@gmail.com>") == ["personal email"]
     assert offending("fixed in 1b279648") == ["bare commit id"]
     assert offending("cut from codex/inbound-remediation") == ["vendor branch"]
-    # The remote-qualified form, which is how a commit message or a plan cites such a branch.
-    # The bare arm cannot see it — excluding a preceding slash is what makes that arm ignore a
-    # URL path segment — so it has an arm of its own, and each hit says which form it was.
-    qualified = ["remote-qualified vendor branch"]
-    assert offending("cut from origin/codex/inbound-remediation") == qualified
-    assert offending("upstream/claude/some-branch") == qualified
-    assert offending("merged fork/cursor/spike-one") == qualified
+    # Every prefixed form, on one arm rather than on a list of remote names: this is how a
+    # commit message, `git branch -a`, a `refs/` ref and a worktree path each write the same
+    # branch. `wp/` is this repository's own branch prefix and `myremote` is a remote nobody
+    # thought to list, which is the point — two rounds of review found this arm short by
+    # exactly the prefixes no one had enumerated.
+    branch = ["vendor branch"]
+    assert offending("cut from origin/codex/inbound-remediation") == branch
+    assert offending("remotes/origin/codex/inbound-remediation") == branch
+    assert offending("refs/heads/codex/inbound-remediation") == branch
+    assert offending("wp/codex/inbound-remediation") == branch
+    assert offending("myremote/codex/inbound-remediation") == branch
+    assert offending("../wt/codex/foo-bar") == branch
+    assert offending("upstream/claude/some-branch") == branch
+    assert offending("merged fork/cursor/spike-one") == branch
     assert offending("cat secrets/.env; person@example.com; 0x1234; deadbeef") == []
     assert offending("Co-authored-by: Someone <someone@users.noreply.github.com>") == []
+
+
+def _sibling_gate() -> ModuleType:
+    """`tests/guards/test_neutral.py` as a module, loaded by path.
+
+    `tests/` is not a package, so there is no import statement to write. This is the only
+    place that needs the sibling as an object rather than as a file, which is why the loader
+    lives here rather than in a shared helper neither gate is allowed to grow.
+    """
+    spec = importlib.util.spec_from_file_location("_sibling_neutral_gate", SIBLING_GATE)
+    assert spec is not None and spec.loader is not None, SIBLING_GATE
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_two_copies_of_the_gate_agree() -> None:
+    # The docstring above says the sibling carries the same denylist and the same `offending()`,
+    # and that a twenty-first token has to go into both by hand. That claim went false the last
+    # time `SHAPES` was edited in one copy and not the other — in the direction of weakening,
+    # in the same commit that edited them — and nothing noticed. This is what notices. It is
+    # here and not in the sibling because this is the copy whose docstring makes the claim, and
+    # because a second copy of this test would be one more thing to hand-sync.
+    sibling = _sibling_gate()
+    assert sibling.FORBIDDEN == FORBIDDEN
+    assert [(name, shape.pattern) for name, shape in sibling.SHAPES] == [
+        (name, shape.pattern) for name, shape in SHAPES
+    ]
+    assert sibling._URL.pattern == _URL.pattern
 
 
 def test_mutations_toml_carries_no_source_repository_string() -> None:
@@ -306,11 +349,12 @@ def test_the_public_document_walk_is_not_empty() -> None:
 
 def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
     # Reddens if the preset stops shipping a default path (the exemption shrinks and a public
-    # document that names it reddens too), or if someone widens `PUBLIC_FORBIDDEN` by hand:
-    # the difference between the two tables must be preset values and nothing else.
+    # document that names it reddens too), or if someone rewrites `PUBLIC_FORBIDDEN` by hand.
     exempt = set(FORBIDDEN) - set(PUBLIC_FORBIDDEN)
-    assert exempt <= set(_preset_paths())
     assert len(exempt) == PRESET_PATHS_IN_TABLE
+    # `exempt <= set(_preset_paths())` used to stand here and was dropped: `PUBLIC_FORBIDDEN`
+    # is *defined* as that difference, so the subset held for any derivation and reddened for
+    # none. The size is the claim with teeth — it is the one a hand-written table breaks.
     # The full table's size is pinned by `test_the_denylist_is_stored_as_digests`; the lane
     # walk still refuses those three, which `test_the_public_table_still_discriminates` shows.
 
@@ -320,24 +364,39 @@ def test_the_public_table_still_discriminates() -> None:
     # token is refused by both; the dotted harness directory is not a vendor branch.
     from keelline.presets import load_preset
 
-    a_default = next(iter(load_preset("recommended")["defaults"]["paths"].values()))
+    defaults = load_preset("recommended")["defaults"]["paths"].values()
     exempt_value = next(
-        value
-        for value in load_preset("recommended")["defaults"]["paths"].values()
-        if (len(value), digest_of(value)) in set(FORBIDDEN)
+        value for value in defaults if (len(value), digest_of(value)) in set(FORBIDDEN)
     )
     assert offending(exempt_value, PUBLIC_FORBIDDEN) == []
     assert offending(exempt_value) != []
-    assert offending(a_default, PUBLIC_FORBIDDEN) == []
+    # Over every default, not over `next(iter(...))`: which value that picked depended on TOML
+    # key order, and it landed on one in neither table, where the assertion held for any
+    # derivation at all. Over the whole set, `PUBLIC_FORBIDDEN = FORBIDDEN` reddens it.
+    assert all(offending(value, PUBLIC_FORBIDDEN) == [] for value in defaults)
     probe = "quernstone"
     planted = ((len(probe), digest_of(probe)),)
     assert offending("see quernstone", planted) == [f"token {digest_of(probe)}"]
     assert offending("edit .claude/settings.json and .codex/hooks.json") == []
+    assert offending("~/.claude/settings.json") == []
+    # The dot in the lookbehind, which the dash requirement does not make redundant: those two
+    # files are cleared by having no dash in the segment after the slash, but a *dashed* name
+    # directly under a dotted harness directory would read as a branch without it.
+    assert offending("the .codex/hook-config.toml file") == []
     assert offending("see https://example.test/codex/plugins/build") == []
-    # The negatives the remote-qualified arm must keep: a remote name inside a URL path is
-    # still a path segment, and a remote name on its own is not a branch.
+    # And the URL blanking, which is likewise the only thing standing between the gate and a
+    # documentation URL whose path segment happens to be dashed — the commonest shape there is.
+    assert offending("see https://example.test/codex/quick-start") == []
+    # A remote name inside a URL path is still a path segment, and a remote name on its own is
+    # not a branch.
     assert offending("see https://example.test/origin/codex/plugins/build") == []
     assert offending("push to origin/main and upstream/dev") == []
+    # The slashed prose pair. This project's own one-line pitch names the two harnesses that
+    # way, so the pair is the natural phrasing in every document this table walks; an arm that
+    # forbade it would be a trap laid for the next writer rather than a gate.
+    assert offending("the Claude/Codex split") == []
+    assert offending("claude/codex parity") == []
+    assert offending("a claude/agents directory") == []
     # The positive case — a bare vendor-prefixed branch name — is `test_the_gate_discriminates`'s
     # existing assertion, which this change must leave green; it is not repeated here because
     # this plan is walked by the gate and would trip on its own example.
