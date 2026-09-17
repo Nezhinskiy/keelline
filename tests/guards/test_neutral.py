@@ -65,14 +65,35 @@ FORBIDDEN = (
     (4, "188937a5982a"),
     (8, "4d1fd41cacbb"),
 )
+_URL = re.compile(r"https?://\S+")
+# The arms that read the text with its URLs blanked out, and it is exactly one. A documentation
+# URL can carry a vendor name as a path segment, so `/codex/quick-start` in a link is a path and
+# not a branch. The other two arms read the original text, and that distinction is the whole
+# point of naming them here rather than blanking once for everybody: a personal address inside a
+# `mailto:`, a profile URL or a query parameter is still a personal address, and a commit id in
+# a query parameter is still a commit id. Blanking the lot took both of those out of every URL
+# in the tree — the same shape of defect as the arm this replacement was written for.
+# The denylist scan is never blanked: a forbidden token inside a URL is still that token.
+URL_BLIND = frozenset({"vendor branch"})
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
-# vendor-prefixed branch name. Each arm is named so a hit says what it is.
+# vendor-prefixed branch name at any depth. Each arm is named so a hit says what it is.
 SHAPES = (
     # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id.
     ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
-    ("vendor branch", re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
+    # One arm for every form of the name, in three parts, and the only one in `URL_BLIND`
+    # above. The lookbehind keeps a dotted harness directory out — a public document has to be
+    # able to name the one it configures. The optional path prefix lets any depth in, so a
+    # remote-qualified name, a `refs/heads/` name, a worktree path and a remote nobody thought
+    # to list are one shape rather than a list to keep up with. And requiring a `-` or `_` in
+    # the branch segment is what tells a branch name from the slashed prose pair of the two
+    # harness names, which this project's own one-line pitch invites: real branch names are
+    # dashed by convention.
+    (
+        "vendor branch",
+        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),
+    ),
 )
 
 
@@ -92,7 +113,10 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
         seen = {_digest(raw[start : start + width]) for start in range(len(raw) - width + 1)}
         found.extend(f"token {digest}" for digest in sorted(wanted & seen))
     lowered = text.lower()
-    found.extend(name for name, shape in SHAPES if shape.search(lowered))
+    blanked = _URL.sub(" ", lowered)
+    found.extend(
+        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)
+    )
     return found
 
 

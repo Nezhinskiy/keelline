@@ -185,6 +185,42 @@ reddens = [
   "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
 ]
 
+# The preset's `[rules]` bundle. A TOML `"""…"""` body keeps the newline before its closing
+# quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three consecutive
+# newlines in front of the next `### ` heading — in text nobody reads until a session-start
+# hook has injected it, which is why it shipped.
+[[mutation]]
+name = "a rule body keeps the padding TOML gave it"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body",
+  "tests/memory/test_bundles.py::test_no_shipped_rule_renders_with_padding",
+]
+
+# A preset is data read at run time and this bundle runs inside a handler whose policy is
+# `open`, so a malformed `rules` key renders nothing rather than raising out of a hook. Both
+# arms shipped with no test: the fixture beside them makes `.get("rules", {})` return `{}`,
+# which the comprehension renders as nothing whether the guards are there or not.
+[[mutation]]
+name = "a rules key that is not a table reaches .items()"
+file = "src/keelline/memory/bundles.py"
+before = '    if not isinstance(rules, dict):'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising",
+]
+
+[[mutation]]
+name = "a rule body that is not a string is rendered rather than skipped"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items()'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_whose_body_is_not_a_string_is_skipped",
+]
+
 [[mutation]]
 name = "a nested group is keyed on its folder rather than its configured name"
 file = "src/keelline/memory/notes.py"
@@ -866,6 +902,76 @@ before = '        wanted = {digest for length, digest in forbidden if length == 
 after = '        wanted = set()'
 reddens = [
   "tests/guards/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The public-document half of the same gate, which had no entry here until two rounds of review
+# found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths the
+# preset itself ships, so that a README may say where the note store lives by default. Written
+# by hand as the full table instead, the exemption disappears and every public document that
+# names a default path reddens; written as the full table is also the shape a well-meaning
+# "simplification" takes, and the derivation fails silently either way.
+[[mutation]]
+name = "the public document table is written by hand instead of derived from the preset"
+file = "tests/test_neutral_wave2.py"
+before = 'PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())'
+after = 'PUBLIC_FORBIDDEN = FORBIDDEN'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_exemption_is_exactly_the_presets_default_paths",
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# The vendor-branch arm, whose failure mode is silence and whose history is a hole per round of
+# review: first a bare name only, then a bare name plus three hardcoded remote names. The
+# replacement accepts any path or remote prefix; drop that and every prefixed form — a remote
+# nobody listed, a `refs/` ref, this repository's own branch prefix, a worktree path — walks
+# straight through a gate that reports nothing.
+[[mutation]]
+name = "the vendor-branch arm stops seeing a prefixed branch name"
+file = "tests/test_neutral_wave2.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+]
+
+# The other half of the same replacement, and it cuts both ways, so it is two entries. The
+# vendor arm reads the text with its URLs blanked out, which is the only thing between the gate
+# and a documentation URL whose path segment after a vendor name happens to be dashed — the
+# commonest shape one has. Without it the gate cries wolf on every public document that cites
+# one, which is how an arm gets loosened in the first place.
+[[mutation]]
+name = "the vendor arm reads a URL as if it were prose"
+file = "tests/test_neutral_wave2.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(lowered)'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# And the other direction, which is the one that shipped for three commits: blanking for *every*
+# arm takes the personal address and the commit id out of every URL in the tree — a `mailto:`, a
+# profile link, a `?sha=` parameter — which is the gate's whole subject matter. Only the vendor
+# arm has a legitimate reason to meet its own shape inside a URL path.
+[[mutation]]
+name = "every arm goes blind inside a URL"
+file = "tests/test_neutral_wave2.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(blanked)'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+]
+
+# The two gates are hand-synced copies, which is a documented decision and was a false claim for
+# one commit: `SHAPES` was edited in one and not the other, in the direction of weakening.
+# Diverge them again — here by restoring the sibling's pre-review arm — and the test that reads
+# both must say so.
+[[mutation]]
+name = "the two copies of the neutrality gate diverge again"
+file = "tests/guards/test_neutral.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_two_copies_of_the_gate_agree",
 ]
 
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.

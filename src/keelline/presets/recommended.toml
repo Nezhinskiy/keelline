@@ -1,5 +1,5 @@
-# Owned by the foundation lane: [budgets], [native_caps], [defaults.*]. The setup lane adds
-# every other section.
+# Owned by the foundation lane: [budgets], [native_caps], [defaults.*]; by the notes lane:
+# [rules]. The setup lane adds every other section.
 
 [budgets]
 agents_md_lines = 300
@@ -66,3 +66,62 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 reply_language = ""
 artifact_language = "en"
 preset = "recommended"
+
+# Standing rules the `preset-rules` bundle injects at session start, in this order (§5.6).
+# Each is a rule a session cannot look up in time — by the time it would, the fork is already
+# picked or the reply is already in the wrong language — so each arrives whole. Neutral by
+# construction: nothing here names a project, a person or a harness tool. Personal values
+# (which languages, which base branch) come from the machine configuration and the project's
+# own file, never from this table.
+
+[rules]
+decision-forks = """
+At a genuine fork — competing designs, an ambiguous requirement, a trade-off with no obvious
+default — stop and ask rather than silently picking. Routine choices with a sensible default
+are not forks: pick, say which, proceed. Write the analysis first, as a message: one concrete
+scenario walked through each branch, what each costs, a recommendation with its reason; then
+offer the options with short labels pointing back at it, recommended first. A scope change
+arriving mid-task is a fork too — judge it against what the branch was cut to deliver, out
+loud, before admitting it. Before a two-way fork, look for the third framing: when every
+option carries the same cost, the cost itself was not questioned. If declining an offer
+destroys it, say so while it still exists.
+"""
+
+worktree-by-default = """
+Feature and fix work goes into an isolated git worktree cut from the base branch, not into
+the primary checkout, unless the request says otherwise in so many words. Set the worktree up
+first — base verified, branch named after the work — and remember it carries source and
+nothing else: no virtual environment, no installed dependencies, no private files, and a
+memory store reached only through links the session made. The primary checkout stays clean,
+and parallel sessions cannot collide on it.
+"""
+
+research-freshness = """
+When researching best practices, tooling or the state of a fast-moving field, evidence must
+be from within the last two months. Older material may be cited as background only if it is
+dated explicitly, labelled as older, and confirmed still current by a fresh source. Put a
+month and year beside every source; prefer official documentation, release pages and dated
+papers over undated posts; check a date a fetch tool computed from a timestamp against the
+page itself. When a claim rests only on an older source, say so and look for recent
+confirmation before building on it.
+"""
+
+ci-after-push = """
+After a push or a pull-request update, read the continuous-integration result before calling
+the change ready; local verification can miss checks only the pipeline runs. Read the checks
+attached to the pull request, not a query by the branch's head commit — a pull request's runs
+attach to its merge reference and a head-commit query can report nothing for a healthy one.
+To wait, watch the specific run by its identifier with an exit status, not a command that
+returns as soon as nothing is running: a queued job satisfies "nothing running".
+"""
+
+language-by-audience = """
+Language splits by audience, not by the language the request was written in. Everything
+durable or collaborative — documents, code comments and docstrings, commit messages, branch
+names, pull-request titles and bodies, issue and review comments — is written in the artifact
+language; only what the person reads in the conversation — the reply, and any question asked
+there — is written in the reply language. Both are set once in the machine configuration.
+Data stays in its own language: a quoted user message, a fixture, product copy. Before
+committing or opening a pull request, scan for prose in the reply language that is yours
+rather than quoted, and move it.
+"""
