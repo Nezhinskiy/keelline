@@ -1499,3 +1499,35 @@ file = "src/keelline/overlay/commands.py"
 before = "create.set_defaults(func=run_overlay_create, source=None)"
 after = 'create.set_defaults(func=run_overlay_create, source="template")'
 reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_source_for_you"]
+
+# DP3's first rule, and the one whose failure hands the choice of overlay to whoever wrote the
+# command line -- which in this harness is a model that has read the repository. The machine
+# file is unselectable by a repository by construction; `--store`'s own parent is not.
+[[mutation]]
+name = "attach takes the overlay root from its argument instead of the machine file"
+file = "src/keelline/attach/binding.py"
+before = '    overlay = overlay_root(machine)'
+after = '    overlay = store.parents[2]'
+reddens = [
+  "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
+]
+
+# §12's hostile-clone row: the clone chooses `project.name`, it does not choose which remote the
+# overlay recorded under that name. Stop comparing and every clone declaring a real project's
+# name reads as bound.
+[[mutation]]
+name = "attach stops comparing the recorded remote"
+file = "src/keelline/attach/binding.py"
+before = '    if recorded != origin:'
+after = '    if False:'
+reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind"]
+
+# §3's last row, in one line: committed settings widen permissions -> never merged. The mutation
+# is toward a plausible implementation rather than an obviously broken one, which is the
+# difference between an oracle and a smoke test.
+[[mutation]]
+name = "the permission diff starts reading the committed settings file"
+file = "src/keelline/attach/permissions.py"
+before = '    sources = (overlay_common, overlay_project)'
+after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
+reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]

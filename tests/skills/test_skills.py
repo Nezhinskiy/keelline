@@ -45,8 +45,6 @@ NOT_YET_SHIPPED = {
     "init": "onboarding",
     "upgrade": "upgrade",
     "uninstall": "upgrade",
-    "attach": "attach",
-    "detach": "attach",
     "setup": "setup",
     "doctor": "hooks-core",
 }

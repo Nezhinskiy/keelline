@@ -305,6 +305,32 @@ def overlay_root(machine: Path | None) -> Path | None:
     return Path(str(value)).expanduser() if isinstance(value, str) and value else None
 
 
+def origin_remote(root: Path) -> str | None:
+    """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
+
+    Public because `attach` compares it against the overlay's record and must not reach for a
+    `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
+    one would make the comparison answer for a different repository than the session is in.
+    Two lanes asking one question two ways is how they stop agreeing.
+
+    Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
+    The distinction is the whole of `GitAnswer`: "no origin remote" is a fact about the
+    repository and reads as *not this one*, while "could not ask" is a fault on this machine,
+    and collapsing them tells the user to run `keelline attach` about their own `git`.
+
+    The value is repository-authored — a remote URL is on the Global Constraints' own list —
+    so a caller that shows it wraps it first.
+    """
+    origin = _git(root, "remote", "get-url", "origin")
+    if origin.unavailable:
+        raise GitUnavailable(
+            "`git` could not read this repository's origin remote, so the overlay binding "
+            "cannot be checked — the fault is on this machine rather than in the binding; "
+            "check that `git` runs here"
+        )
+    return origin.value
+
+
 def _bound(overlay: Path, project: str, root: Path) -> bool:
     record = overlay / PROJECTS / project / PROJECT_RECORD
     if not record.is_file():
@@ -316,14 +342,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:
         return False
-    origin = _git(root, "remote", "get-url", "origin")
-    if origin.unavailable:
-        raise GitUnavailable(
-            "`git` could not read this repository's origin remote, so the overlay binding "
-            "cannot be checked — the fault is on this machine rather than in the binding; "
-            "check that `git` runs here"
-        )
-    return origin.value == recorded
+    return origin_remote(root) == recorded
 
 
 def _inside(candidate: Path, parent: Path) -> bool:

@@ -72,6 +72,15 @@ would spell `projects/` and `project.toml` again — three spellings of one layo
 areas, which is the drift `store._inside` names. The direction is memory → overlay and never
 the reverse: memory is the lower layer and resolves this layout for the hook path.
 
+**`GitUnavailable` and `origin_remote`, for `attach`.** This lane already tells "git ran and
+said no" from "git could not be asked" — that is the whole of `GitAnswer` — and `attach` is the
+first consumer that has to act on the difference: an unreadable `origin` must not read as "never
+bound", which is the state that invites a rebind of somebody else's project. A consumer that
+cannot import the exception by name has to catch `Failure` whole, which is the same as not
+telling them apart. `origin_remote` comes with it rather than after it: without it the lane has
+to run its own `git`, and `_git`'s scrubbing of `GIT_DIR` and `GIT_WORK_TREE` — the reason this
+module's own comparison is trustworthy — would be the thing it re-derived.
+
 **The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
 paragraph used to hold open — a reference guard this lane planned and never shipped — is now
 `refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
@@ -115,10 +124,12 @@ from keelline.memory.refs import (
 from keelline.memory.store import (
     PROJECT_RECORD,
     PROJECTS,
+    GitUnavailable,
     Store,
     in_repository,
     inside_project,
     main_checkout,
+    origin_remote,
     overlay_root,
     permitted_roots,
     refusal_reason,
@@ -151,6 +162,7 @@ __all__ = [
     "Bundle",
     "Entry",
     "Fit",
+    "GitUnavailable",
     "IndexCheck",
     "Links",
     "Note",
@@ -182,6 +194,7 @@ __all__ = [
     "markers",
     "may_inject",
     "new_nonce",
+    "origin_remote",
     "overlay_root",
     "permitted_roots",
     "read_note",

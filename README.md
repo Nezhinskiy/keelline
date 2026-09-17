@@ -153,6 +153,12 @@ keelline overlay create --owner you --name keelline-private --template  # genera
 keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
 keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
 
+# Binding a repository to the overlay
+keelline attach --store ../keelline-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
+keelline attach --store ../keelline-private/projects/widget/memory --yes     # merge the diff you just read, and link the notes in
+keelline attach --store ../keelline-private/projects/widget/memory --trust-remote  # record this remote although the overlay recorded another
+keelline detach                                       # remove what attach added; the binding record stays
+
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)
