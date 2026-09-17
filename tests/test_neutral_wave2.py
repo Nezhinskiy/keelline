@@ -4,7 +4,13 @@ The design's whole-tree gate belongs to the `workflows` lane; this is the same r
 what the three wave-2 closure ports can carry in, checked from the first task so a ported
 docstring, a ported skill or a ported theme list cannot land the state §11 requires it to
 shed. It walks three areas, two document trees and four shared leaf modules because one plan
-delivers them, and it lives at the top level of `tests/` for that reason.
+delivers them, and it lives at the top level of `tests/` for that reason. It now holds two
+tables: `FORBIDDEN` over the lane's source, tests and skills, and `PUBLIC_FORBIDDEN` over the
+public documents the second closure plan writes. The public table is the full one minus the
+digests of the default `[paths]` values the preset itself ships, read off the preset at import
+time, because a README that could not say where the note store lives by default would be
+useless. The lane walk is unchanged and still refuses those three: a module has no reason to
+spell a default path.
 
 **A deliberate second copy.** `tests/guards/test_neutral.py` carries the same denylist and
 the same `offending()`; a twenty-first token has to be added to both tables by hand. Both
@@ -33,8 +39,21 @@ LANE = (
     ROOT / "skills",
     ROOT / "agents",
 )
-PLAN = "docs/plans/2026-09-16-wave-2-closure-ledger-docs-skills.md"
-FRAGMENTS = ("ledger", "docs-tooling", "skills-port", "memory-refs")
+PLANS = (
+    "docs/plans/2026-09-16-wave-2-closure-ledger-docs-skills.md",
+    "docs/plans/2026-09-16-wave-2-closure-readme-notes.md",
+)
+FRAGMENTS = ("ledger", "docs-tooling", "skills-port", "memory-refs", "readme-methodology", "notes")
+# The public documents the second closure plan writes or rewrites, walked with
+# `PUBLIC_FORBIDDEN` rather than the full table (see it). `docs/methodology/` is a glob so a
+# fourth file there is gated the day it is added; the preset is here because that plan
+# writes its `[rules]` table and a rule body is prose.
+DOCUMENTS = (
+    ROOT / "README.md",
+    ROOT / "src" / "keelline" / "presets" / "recommended.toml",
+    ROOT / "docs" / "plans" / "README.md",
+)
+METHODOLOGY = ROOT / "docs" / "methodology"
 # The leaf modules this plan adds beside the areas (Task 2), the one memory module it adds
 # to a merged lane (Premise 8), and their tests.
 EXTRA_FILES = (
@@ -96,7 +115,10 @@ SHAPES = (
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id.
     ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
-    ("vendor branch", re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
+    # `(?<![.\w/])`: `.claude/settings.json` and `.codex/hooks.json` are harness directories a
+    # public document has to be able to name, and a documentation URL can carry `/codex/` as a
+    # path segment; a branch name is never preceded by a dot or a slash.
+    ("vendor branch", re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
 )
 
 
@@ -120,6 +142,35 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
     return found
 
 
+def _preset_paths() -> tuple[tuple[int, str], ...]:
+    """The digests of the default `[paths]` values the preset ships.
+
+    Three of them are in `FORBIDDEN`, because they were the source repository's paths before
+    they were Keelline's defaults. A public document that could not say where the note store
+    lives by default would be useless, so the public-document walk exempts exactly the values
+    the plugin itself ships — read off the preset at import time, never written here. Source
+    code keeps the full table: a module has no reason to spell a default path.
+    """
+    from keelline.presets import load_preset
+
+    values = load_preset("recommended")["defaults"]["paths"].values()
+    return tuple((len(value), digest_of(value)) for value in values)
+
+
+PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())
+
+
+def document_files() -> list[Path]:
+    found = [*DOCUMENTS, *sorted(METHODOLOGY.glob("*.md"))]
+    # Both plans, without an existence guard, for the reason `lane_files` gives.
+    found.extend(ROOT / plan for plan in PLANS)
+    for slug in ("readme-methodology", "notes"):
+        fragment = ROOT / "changelog.d" / f"{slug}.feature.md"
+        if fragment.is_file():
+            found.append(fragment)
+    return sorted(found)
+
+
 def lane_files() -> list[Path]:
     found: list[Path] = []
     for directory in LANE:
@@ -128,7 +179,7 @@ def lane_files() -> list[Path]:
     found.extend(path for path in EXTRA_FILES if path.is_file())
     # The plan is named without an existence guard on purpose — a skipped file would hide
     # exactly the drift this walk exists to catch.
-    found.append(ROOT / PLAN)
+    found.append(ROOT / PLANS[0])
     for slug in FRAGMENTS:
         fragment = ROOT / "changelog.d" / f"{slug}.feature.md"
         if fragment.is_file():
@@ -148,7 +199,7 @@ def test_the_gate_reads_something() -> None:
     files = lane_files()
     assert ROOT / "src" / "keelline" / "ledger" / "__init__.py" in files
     assert ROOT / "src" / "keelline" / "docs" / "__init__.py" in files
-    assert ROOT / PLAN in files
+    assert ROOT / PLANS[0] in files
     assert ROOT / "src" / "keelline" / "identifiers.py" in files
     assert ROOT / "src" / "keelline" / "findings.py" in files
     assert ROOT / "skills" / "close-bug" / "SKILL.md" in files
@@ -207,3 +258,60 @@ def test_mutations_toml_carries_no_source_repository_string() -> None:
 @pytest.mark.parametrize("path", lane_files(), ids=lambda p: str(p.relative_to(ROOT)))
 def test_no_lane_file_carries_a_source_repository_string(path: Path) -> None:
     assert offending(path.read_text(encoding="utf-8")) == [], path
+
+
+# Three of the preset's eleven default `[paths]` values are also digest-table entries — the
+# ones that were the source repository's paths before they were Keelline's defaults. Pinned so
+# the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
+# path the plugin itself ships, which is a contradiction to resolve, not to exempt.
+PRESET_PATHS_IN_TABLE = 3
+
+
+def test_the_public_document_walk_is_not_empty() -> None:
+    # The vacuity guard for the parametrised public walk below, the same shape as
+    # `test_the_gate_reads_something` for the lane walk; named apart from it so `-k` can pick
+    # one. Wave B adds `docs/methodology/README.md` here when it creates the directory.
+    files = document_files()
+    assert ROOT / "README.md" in files
+    assert ROOT / PLANS[1] in files
+    assert ROOT / "src" / "keelline" / "presets" / "recommended.toml" in files
+
+
+def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
+    # Reddens if the preset stops shipping a default path (the exemption shrinks and a public
+    # document that names it reddens too), or if someone widens `PUBLIC_FORBIDDEN` by hand:
+    # the difference between the two tables must be preset values and nothing else.
+    exempt = set(FORBIDDEN) - set(PUBLIC_FORBIDDEN)
+    assert exempt <= set(_preset_paths())
+    assert len(exempt) == PRESET_PATHS_IN_TABLE
+    # The full table's size is pinned by `test_the_denylist_is_stored_as_digests`; the lane
+    # walk still refuses those three, which `test_the_public_table_still_discriminates` shows.
+
+
+def test_the_public_table_still_discriminates() -> None:
+    # A preset path is allowed by the public table and refused by the full one; a planted
+    # token is refused by both; the dotted harness directory is not a vendor branch.
+    from keelline.presets import load_preset
+
+    a_default = next(iter(load_preset("recommended")["defaults"]["paths"].values()))
+    exempt_value = next(
+        value
+        for value in load_preset("recommended")["defaults"]["paths"].values()
+        if (len(value), digest_of(value)) in set(FORBIDDEN)
+    )
+    assert offending(exempt_value, PUBLIC_FORBIDDEN) == []
+    assert offending(exempt_value) != []
+    assert offending(a_default, PUBLIC_FORBIDDEN) == []
+    probe = "quernstone"
+    planted = ((len(probe), digest_of(probe)),)
+    assert offending("see quernstone", planted) == [f"token {digest_of(probe)}"]
+    assert offending("edit .claude/settings.json and .codex/hooks.json") == []
+    assert offending("see https://example.test/codex/plugins/build") == []
+    # The positive case — a bare vendor-prefixed branch name — is `test_the_gate_discriminates`'s
+    # existing assertion, which this change must leave green; it is not repeated here because
+    # this plan is walked by the gate and would trip on its own example.
+
+
+@pytest.mark.parametrize("path", document_files(), ids=lambda p: str(p.relative_to(ROOT)))
+def test_no_public_document_carries_a_source_repository_string(path: Path) -> None:
+    assert offending(path.read_text(encoding="utf-8"), PUBLIC_FORBIDDEN) == [], path
