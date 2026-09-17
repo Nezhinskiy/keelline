@@ -159,6 +159,10 @@ keelline attach --store ../keelline-private/projects/widget/memory --yes     # m
 keelline attach --store ../keelline-private/projects/widget/memory --trust-remote  # record this remote although the overlay recorded another
 keelline detach                                       # remove what attach added; the binding record stays
 
+# Machine setup
+keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
+keelline setup --preset recommended --yes --overlay ../keelline-private  # take the defaults; record an existing overlay
+
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)

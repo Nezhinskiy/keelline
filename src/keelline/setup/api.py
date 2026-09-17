@@ -6,10 +6,13 @@ that says which lane and why — it does not import a private module of this are
 """
 
 from keelline.setup.machine import USER_SETTINGS, Written, read_machine, write_machine
+from keelline.setup.run import SetupReport, setup
 
 __all__ = [
     "USER_SETTINGS",
+    "SetupReport",
     "Written",
     "read_machine",
+    "setup",
     "write_machine",
 ]

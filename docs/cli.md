@@ -586,6 +586,43 @@ shell, for the reason `keelline attach` gives above.
 
 ---
 
+## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE]`
+
+Configures this machine from a preset (§5.6, §8.1): the machine configuration file's
+`[personal]` and `[machine]` tables, the deny rules and personal values in
+`<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per configured
+harness. `--home` and `--machine` default to the real home directory and the usual machine
+configuration path; both exist so this command — the only one in the plugin that writes outside
+a repository — can be pointed at scratch paths for a dry run, the same way every other command
+here takes `--root`.
+
+`setup` is the only writer of the machine configuration file, and the two existing readers do
+not change: `[personal]` is `config.loader`'s, `[overlay] root` is `memory.store`'s, and both
+still resolve the file `--machine` names or the default one. A second run merges rather than
+replaces: a value this run does not set is read back off what is already there, so setting the
+languages again does not un-record an overlay a previous run recorded.
+
+**Plugins are installed per configured harness**, from `[defaults.keelline] agents` (`claude`
+and `codex` by default). Claude Code installs a plugin (`claude plugin install
+<name>@<marketplace> --scope user -y`); Codex adds one (`codex plugin add <name>@<marketplace>`)
+— the spike record measured that the two CLIs use different verbs. A missing binary or a failed
+install is a reported note, never a failure: refusing to set up a machine because one harness is
+absent would refuse most machines.
+
+**The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
+one. `--overlay <path>` records an existing overlay's root and creates nothing; `--overlay
+create:<owner>/<name>` asks GitHub for a private repository from the template (§6.1) and
+initialises it, the same as `keelline overlay create --template` followed by `overlay init`.
+Naming either is this command's own confirmation — nothing here still needs `--yes` on top of
+it — which the CLI reference notes as a design point the wave that added this command flagged
+for review rather than deciding unilaterally.
+
+**Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
+new or recorded overlay itself. Exits `0` on success; a plugin that fails to install or a
+harness that is absent is a note in the report, not a nonzero exit.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is

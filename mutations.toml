@@ -1557,3 +1557,26 @@ file = "src/keelline/setup/machine.py"
 before = "    if root is None:"
 after = "    if False:"
 reddens = ["tests/setup/test_machine.py::test_a_rewrite_preserves_a_value_this_run_did_not_set"]
+
+# The owner's own `~/.claude/settings.json` predates Keelline on most machines. Without this
+# guard, the first `setup` run on a real machine silently drops every deny rule the owner wrote
+# by hand and replaces it with only the preset's own.
+[[mutation]]
+name = "setup's settings merge stops reading the existing deny list"
+file = "src/keelline/setup/run.py"
+before = "        [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []"
+after = "        []"
+reddens = [
+  "tests/setup/test_setup.py::test_an_existing_user_settings_file_keeps_the_owners_own_rules",
+]
+
+# Measured while this task was written: with `root=Path.cwd()`, the overlay-create branch put a
+# real `keelline-private/` inside whatever directory `setup` happened to be run from — this
+# checkout, the first time a test exercised it. `setup` is a machine command; nothing about
+# where it is invoked from may decide where it writes.
+[[mutation]]
+name = "setup creates a new overlay under the caller's cwd instead of --home"
+file = "src/keelline/setup/run.py"
+before = 'created = create(owner, name, source="template", root=home, runner=runner)'
+after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
+reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
