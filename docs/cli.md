@@ -460,8 +460,8 @@ Both halves are idempotent. A manifest that already carries the suffix is not re
 second run reports nothing renamed.
 
 **Writes** `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, through the same
-contained walk every other write in this project goes through. Exits `0`; `2` on a manifest that
-is not readable JSON or an owner that is not one path segment.
+contained walk every other write in this project goes through. Exits `0`; `1` on a manifest that
+cannot be read or is not JSON; `2` on an owner that is not one path segment.
 
 ---
 
@@ -483,8 +483,9 @@ and under `decisions` in `--json`.
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.keelline/manifest.json`. Exits `0`; `2` when a path refuses containment or the manifest cannot
-be trusted.
+`.keelline/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
+nothing would be written while one of those stands; `2` when the manifest itself cannot be
+trusted, or when a write is refused by the containment walk.
 
 ---
 

@@ -67,7 +67,10 @@ def run_overlay_upgrade(args: argparse.Namespace) -> Result:
         "decisions": list(result.decisions),
         "dry_run": args.dry_run,
     }
-    return Result(report, data)
+    # A refused artifact is a finding, not a success: `apply` would raise on the whole plan, and
+    # a dry run that printed a REFUSED section under exit 0 would say "nothing to do" about a
+    # report that says the opposite.
+    return Result(report, data, exit_code=1 if result.plan.refusals else 0)
 
 
 def register(groups: SubParsers) -> None:

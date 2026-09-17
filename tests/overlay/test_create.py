@@ -9,6 +9,7 @@ import pytest
 
 from keelline.errors import Failure, Refusal
 from keelline.overlay.api import Completed, create, init_instance
+from keelline.overlay.create import RETRY_WAIT_SECONDS
 
 
 @dataclass
@@ -133,3 +134,35 @@ def test_the_cli_never_picks_the_github_source_for_you() -> None:
         run_overlay_create(args)
     assert "--template" in str(refused.value)
     assert "--local" in str(refused.value)
+
+
+def test_the_wait_before_the_retry_is_spent_only_on_the_race(tmp_path: Path) -> None:
+    # "on the second, wait and retry once": the pause exists for an asynchronous generation step
+    # that may still be running, so it is spent only when `gh repo view` names the repository
+    # back. Spending it when nothing was created is ten seconds bought with nothing, and it is
+    # the branch the retry test above never reaches. Mutation: make the wait unconditional and
+    # the second half reddens; drop it entirely and the first half does.
+    named: list[float] = []
+    answering = FakeRunner(answers={"gh": Completed(0, "keelline-private\n", "")})
+    with pytest.raises(Failure):
+        create(
+            "octo",
+            "keelline-private",
+            source="template",
+            root=tmp_path,
+            runner=answering,
+            wait=named.append,
+        )
+    assert named == [RETRY_WAIT_SECONDS]
+
+    silent: list[float] = []
+    with pytest.raises(Failure):
+        create(
+            "octo",
+            "keelline-private",
+            source="template",
+            root=tmp_path,
+            runner=FakeRunner(),
+            wait=silent.append,
+        )
+    assert silent == []

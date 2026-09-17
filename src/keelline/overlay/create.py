@@ -191,7 +191,7 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
     else:
         notes.append(f"both manifests already name {suffix}; nothing was renamed")
-    notes.append(_install_hooks(root, runner))
+    notes.append(_install_secret_scan(root, runner))
     return Initialised(tuple(renamed), tuple(notes))
 
 
@@ -223,7 +223,7 @@ def _rename(root: Path, relative: str, suffix: str) -> bool:
     return True
 
 
-def _install_hooks(root: Path, runner: Runner) -> str:
+def _install_secret_scan(root: Path, runner: Runner) -> str:
     """Install the commit-time secret scan, or say why it is not installed.
 
     §6.4 runs gitleaks twice and this is one of the two; the other is the push workflow the
