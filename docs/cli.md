@@ -146,6 +146,43 @@ error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere els
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
 your prompt.
 
+## Hooks
+
+The two harnesses do not run `keelline` directly. Every entry in `hooks/hooks.json` invokes
+`hooks/run-hook.sh`, and its argv is:
+
+```
+run-hook.sh <policy> <keelline args…>
+```
+
+`<policy>` is `open` or `closed`, and it is the only argument the wrapper itself reads; the rest
+is handed to `keelline` untouched. The wrapper exists because a Python process cannot fail
+closed about its own absence: a missing script exits `2` by CPython accident, a missing
+interpreter `127`, an `ImportError` `1`, a lost executable bit `126` — and Claude Code reads
+every exit that is not `2` as a non-blocking error, which is permission. So the wrapper owns
+three things Python cannot: it probes for a `python3` of 3.11 or newer by running code rather
+than by matching a path, it resolves the project root (`CLAUDE_PROJECT_DIR`, else `git`) and
+changes into it so every command's `--root` default is correct, and it maps exit codes.
+
+`0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
+handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
+before `keelline` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
+continues with exit `0`. Either way the reason is written to stderr with a token, so an exit `2`
+is attributed rather than inferred — Codex downgrades an exit `2` with empty stderr to a plain
+failure, so the reason is part of the contract.
+
+| Token | What it means |
+|---|---|
+| `KL_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
+| `KL_NO_PY` | No candidate interpreter is 3.11 or newer. `KEELLINE_PYTHON_CANDIDATES` overrides the built-in list, space-separated; it exists for the tests and for nothing else. |
+| `KL_NO_LAUNCHER` | `CLAUDE_PLUGIN_ROOT` is unset, or `scripts/keelline` is not there. |
+| `KL_RC` | `keelline` exited with something other than `0` or `2`; the code is printed. |
+
+**The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
+never executed by the harness at all, so no code of ours runs and no policy applies — the guard
+is silent rather than closed. The wrapper cannot defend its own mode. `keelline doctor` probes
+it, and is the only thing that catches it.
+
 ## `keelline guard bg-cleanup`
 
 Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook

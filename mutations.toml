@@ -1435,3 +1435,24 @@ after = '        if piece[:1] in {">", "<"}:'
 reddens = [
   "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
 ]
+
+# The wrapper is the whole of D11's fail-closed guarantee: Claude Code reads every exit that is
+# not 2 as a non-blocking error, so a `closed` entry that stops refusing is a guard that permits.
+[[mutation]]
+name = "the wrapper stops refusing under a closed policy"
+file = "hooks/run-hook.sh"
+before = '  if [ "$policy" = closed ]; then refuse "$1"; fi'
+after = '  :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_interpreter_of_the_floor_version_refuses_under_closed_only",
+  "tests/hooks/test_wrapper.py::test_any_other_exit_code_becomes_a_refusal_under_closed",
+]
+
+# The one failure the wrapper can cause itself. `set -u` alone exits 1 with the shell's own
+# message and no token, which reads as permission -- so the disarmed guard would be silent.
+[[mutation]]
+name = "the wrapper stops noticing that it has no policy argument"
+file = "hooks/run-hook.sh"
+before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
+after = 'policy=open'
+reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
