@@ -183,7 +183,9 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
     assert overlay_root(machine) == existing
 
 
-def test_overlay_create_asks_github_and_records_the_new_root(tmp_path: Path) -> None:
+def test_overlay_create_asks_github_and_records_the_new_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The first of §8.1's three answers: nothing exists yet, so `setup` both creates the
     # repository and records what it created — the same probe `overlay.create` uses
     # (`.claude-plugin`) is what tells this test the create branch, and not a no-op, ran.
@@ -193,6 +195,12 @@ def test_overlay_create_asks_github_and_records_the_new_root(tmp_path: Path) -> 
     # this checkout the first time this branch ran under a test, because `tmp_path` was never
     # in that call at all. Mutation: change `_apply_overlay`'s `root=home` back to
     # `root=Path.cwd()` → reddens on this line without touching the `.name` check alone.
+    #
+    # `monkeypatch.chdir(tmp_path)` is not decoration: it is what keeps that exact mutation's
+    # own oracle run from recreating the real directory a second time — under the mutation,
+    # the create call falls back to `Path.cwd()`, and this way that lands inside `tmp_path`
+    # instead of wherever the process happened to be running from.
+    monkeypatch.chdir(tmp_path)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     runner = FakeRunner(on_call=_populate_overlay)
@@ -248,3 +256,38 @@ def test_a_second_run_is_idempotent(tmp_path: Path) -> None:
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
     preset = load_preset("recommended")
     assert len(settings["permissions"]["deny"]) == len(preset["deny"]["global"])
+
+
+def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
+    # `--overlay create:` with no slash, or a missing owner or name, is a typo — not a path to
+    # try to interpret and not a repository to create somewhere unexpected.
+    with pytest.raises(Refusal):
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay="create:no-slash-here",
+        )
+
+
+def test_a_missing_keelline_on_path_is_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D2: `uv tool install` has no `--from`, so the positional git URL form is what the note
+    # must name; asserted here rather than left to eyeballing, since it is the one line a typo
+    # in the URL or the tag would hide from every other test in this module.
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=FakeRunner(),
+        yes=True,
+        overlay=None,
+    )
+    assert report.cli_on_path is False
+    assert any(
+        "uv tool install git+https://github.com/Nezhinskiy/keelline@v" in n for n in report.notes
+    )

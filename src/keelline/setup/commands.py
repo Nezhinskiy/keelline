@@ -22,12 +22,59 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from keelline.areas import SubParsers
+from keelline.errors import Refusal
 from keelline.result import Result
+
+_BOTH_MODES = (
+    "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
+    "A single run has one exit code to report, so it does only one of the two — run them "
+    "separately"
+)
+
+
+def run_git_hooks(args: argparse.Namespace) -> Result:
+    from keelline.guards.api import install, uninstall
+
+    root = Path(args.root).resolve()
+    if args.uninstall:
+        removed = uninstall(root)
+        if removed.restored is not None:
+            summary = f"removed {removed.path}; restored the foreign hook chained to it"
+        else:
+            summary = f"removed {removed.path}; there was no foreign hook to restore"
+        data: dict[str, Any] = {
+            "path": str(removed.path),
+            "restored": str(removed.restored) if removed.restored is not None else None,
+        }
+        return Result(summary, data)
+
+    installed = install(root)
+    if installed.preserved is not None:
+        summary = (
+            f"installed the commit-message hook at {installed.path}; the hook that was there "
+            f"is kept at {installed.preserved} and chained to"
+        )
+    elif installed.replaced:
+        summary = f"reinstalled the commit-message hook at {installed.path}"
+    else:
+        summary = f"installed the commit-message hook at {installed.path}"
+    install_data = {
+        "path": str(installed.path),
+        "preserved": str(installed.preserved) if installed.preserved is not None else None,
+        "replaced": installed.replaced,
+    }
+    return Result(summary, install_data)
 
 
 def run_setup(args: argparse.Namespace) -> Result:
+    if args.git_hooks:
+        if args.preset is not None:
+            raise Refusal(_BOTH_MODES)
+        return run_git_hooks(args)
+
     from keelline.overlay.api import subprocess_runner
     from keelline.setup.run import setup
 
@@ -92,5 +139,18 @@ def register(groups: SubParsers) -> None:
             "record an existing overlay by path, or create one with "
             "create:<owner>/<name> (asks GitHub for a private repository from the template)"
         ),
+    )
+    setup.add_argument(
+        "--git-hooks",
+        action="store_true",
+        help="install the commit-message hook into this repository instead of machine setup",
+    )
+    setup.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="with --git-hooks, remove the hook and restore what it chained to",
+    )
+    setup.add_argument(
+        "--root", default=".", help="the repository --git-hooks installs into (default: .)"
     )
     setup.set_defaults(func=run_setup)

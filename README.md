@@ -162,6 +162,8 @@ keelline detach                                       # remove what attach added
 # Machine setup
 keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 keelline setup --preset recommended --yes --overlay ../keelline-private  # take the defaults; record an existing overlay
+keelline setup --git-hooks                             # install the commit-message hook into this repository
+keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)

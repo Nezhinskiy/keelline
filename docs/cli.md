@@ -623,6 +623,27 @@ harness that is absent is a note in the report, not a nonzero exit.
 
 ---
 
+## `keelline setup --git-hooks [--uninstall] [--root PATH]`
+
+Installs the commit-message hook (§7.2) into this repository's own hooks directory — `git
+rev-parse --git-path hooks`, never `core.hooksPath`, which is global state this command has no
+business owning and which a repository-wide install would silently compete with husky or
+`pre-commit` elsewhere on the machine.
+
+A foreign hook of the same name is kept as `prepare-commit-msg.local` and the installed hook
+`exec`s it last, so nothing that was already running there stops running; `--uninstall` puts it
+back under its original name, byte for byte. The report names exactly what moved — a `.local`
+file nobody was told about is indistinguishable from a lost one.
+
+**Refuses (`2`) together with `--preset`.** The two write to different scopes — one repository,
+one machine-wide — and a single invocation has only one exit code to report, so it does one of
+the two.
+
+**Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only
+when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is also given.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is

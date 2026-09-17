@@ -5,10 +5,6 @@ description: Configure the machine for Keelline — the preset, the personal par
 
 # Machine setup
 
-`keelline setup` is written against the CLI contract and ships with the `setup` lane; it is
-not available yet. If it is rejected as an unknown command, say so and stop — do not
-improvise a substitute. The `keelline overlay` commands in step 4 have shipped.
-
 1. Run `keelline setup --preset recommended` and relay what it writes to the machine
    configuration file and which plugins and standing rules the preset enables; use
    `keelline setup --preset recommended --yes` only when the user asked for no prompts.
