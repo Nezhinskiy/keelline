@@ -157,7 +157,43 @@ def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> 
     assert blocks(Bundle.INDEX, store, config) == []
 
 
-def test_preset_rules_emit_nothing_while_the_preset_has_none(tmp_path: Path) -> None:
+RULES = (
+    "decision-forks",
+    "worktree-by-default",
+    "research-freshness",
+    "ci-after-push",
+    "language-by-audience",
+)
+# A rule body with fewer words than this is a stub rather than a rule.
+MIN_RULE_BODY_WORDS = 20
+
+
+def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
+    # The preset is the plugin's, so this reads the real one: a rule dropped from the table,
+    # renamed, or reordered reddens here. Mutation: swap the first two tables in
+    # `recommended.toml` → reddens on order; delete `ci-after-push` → reddens on length.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert [block.split("\n", 1)[0] for block in produced] == [f"### {name}" for name in RULES]
+    # Every rule has a body of at least one sentence; a heading with nothing under it is a
+    # rule nobody wrote.
+    assert all(len(block.split("\n\n", 1)[1].split()) >= MIN_RULE_BODY_WORDS for block in produced)
+
+
+def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:
+    # A bundle that needs two parts is not wrong, but it is a change the hooks file has to
+    # know about (`SLOTS`), so a growing table reddens here before it silently spills.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert len(split(produced, cap=config.native_caps.hook_output_chars - CAP_MARGIN)) == 1
+
+
+def test_preset_rules_emit_nothing_when_a_preset_has_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The silent case the shipped preset no longer exercises, kept on a fixture: a preset
+    # without the table renders nothing rather than a heading over nothing.
+    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"budgets": {}})
     store, config = a_store(tmp_path)
     assert blocks(Bundle.PRESET_RULES, store, config) == []
 
@@ -175,11 +211,9 @@ def test_the_owners_own_preset_rules_need_no_trust(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A preset ships with the plugin; it is never repository content, so gating it on a
-    # repository's trust record would make the owner's own rules hostage to a clone. The
-    # shipped preset has no `[rules]` table yet, which would make this vacuous either way
-    # (gated or not, the answer is empty) -- so a preset that actually carries rules is
-    # substituted here. That is supplying a fixture for the `load_preset` collaborator the
-    # `setup` lane owns, not mocking the unit under test.
+    # repository's trust record would make the owner's own rules hostage to a clone. That is
+    # supplying a fixture for the `load_preset` collaborator the `setup` lane owns, not
+    # mocking the unit under test.
     monkeypatch.setattr(
         bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
     )
