@@ -934,17 +934,31 @@ reddens = [
   "tests/test_neutral_wave2.py::test_the_gate_discriminates",
 ]
 
-# The other half of the same replacement: the shape scan reads the text with its URLs blanked
-# out, which is the only thing between the gate and a documentation URL whose path segment after
-# a vendor name happens to be dashed — the commonest shape a documentation URL has. Without it
-# the gate cries wolf on every public document that cites one, which is how an arm gets loosened.
+# The other half of the same replacement, and it cuts both ways, so it is two entries. The
+# vendor arm reads the text with its URLs blanked out, which is the only thing between the gate
+# and a documentation URL whose path segment after a vendor name happens to be dashed — the
+# commonest shape one has. Without it the gate cries wolf on every public document that cites
+# one, which is how an arm gets loosened in the first place.
 [[mutation]]
-name = "the shape scan reads a URL as if it were prose"
+name = "the vendor arm reads a URL as if it were prose"
 file = "tests/test_neutral_wave2.py"
-before = '    lowered = _URL.sub(" ", text.lower())'
-after = '    lowered = text.lower()'
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(lowered)'
 reddens = [
   "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# And the other direction, which is the one that shipped for three commits: blanking for *every*
+# arm takes the personal address and the commit id out of every URL in the tree — a `mailto:`, a
+# profile link, a `?sha=` parameter — which is the gate's whole subject matter. Only the vendor
+# arm has a legitimate reason to meet its own shape inside a URL path.
+[[mutation]]
+name = "every arm goes blind inside a URL"
+file = "tests/test_neutral_wave2.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(blanked)'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
 ]
 
 # The two gates are hand-synced copies, which is a documented decision and was a false claim for
