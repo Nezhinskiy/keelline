@@ -6,7 +6,7 @@ the platform lets them, and — designed, not yet shipped — an adoption state 
 runs gates advisory until a repository has earned them. One plugin for Claude Code and
 Codex, one Python package with **no runtime dependencies**.
 
-> **Pre-1.0.** Five areas and the first skills ship: the memory store and its trust gate, the scaffolding engine
+> **Pre-1.0.** Five areas ship: the memory store and its trust gate, the scaffolding engine
 > that writes files into a repository, the guards over a shell call, a commit message and a
 > test run, the bug ledger, the documentation and plan lints, and the first skills. Not yet:
 > the hooks file that wires the guards into a session, `init`, the overlay, and the adoption
@@ -43,6 +43,10 @@ adoption skill delegates to it when it is present.
 
 ## Install
 
+**Nothing is released yet.** There is no version tag, so nothing is on PyPI and both commands
+below install the repository's default branch as it stands rather than a release. `uv tool
+install keelline` does not resolve today; the form that does is here.
+
 As a Claude Code plugin:
 
 ```
@@ -53,8 +57,13 @@ As a Claude Code plugin:
 As a command-line tool:
 
 ```bash
-uv tool install keelline
+uv tool install git+https://github.com/Nezhinskiy/keelline
 ```
+
+From the first release on, the same command takes the tag —
+`uv tool install git+https://github.com/Nezhinskiy/keelline@<tag>` — which is the pinned form
+with no resolver to run at hook time that [principle 9](docs/methodology/principles.md)
+describes, and the published package makes the bare name work.
 
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with

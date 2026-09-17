@@ -72,9 +72,12 @@ standard for coding-agent memory to adopt instead [S16]; the published shapes cl
 this one keep linked notes with generated descriptions [S18] or a separate indexed store
 [S19], and the second is exactly the second source of truth this design refuses.
 
-**Backing:** sourced. The budget and the absence of a standard are the sources'; the
-rule-plus-pointer form is this project's practice and would be *measured* once a before/after
-over sessions exists.
+**Backing:** sourced. The label is about the constraint this principle answers — the budget
+every session pays [S5] [S17] and the absence of a standard to adopt instead [S16] — and that
+constraint is the sources'. The rule-plus-pointer form built on top of it is this project's
+practice, *thin* on its own, and would be *measured* once a before/after over sessions
+exists; the label follows the constraint, because the constraint is what makes a routing
+table rather than a summary the only affordable shape.
 
 ## 4. Standing rules arrive whole; everything else is routed
 
@@ -145,8 +148,11 @@ runs some hooks asynchronously and an asynchronous hook cannot block [S7]. A hoo
 binary is missing exits 127, which the harness treats as a non-blocking error — so the
 guard silently becomes permission, which is why the wrapper exists.
 
-**Backing:** sourced. The per-event semantics are the platforms'; the fail-open matrix was
-also measured by this project's own spikes and kept as a test.
+**Backing:** sourced. The per-event semantics are the platforms' [S3] [S7], and that is the
+claim the label is about: where fail-closed is expressible at all is a platform fact, not a
+finding. This project's spikes measured the fail-open matrix and kept it as a test, but they
+confirm the documented semantics rather than establish them — unlike principle 4, where the
+measurement *is* the claim and the label is *measured* for that reason.
 
 ## 7. Enforcement is earned, not declared
 
