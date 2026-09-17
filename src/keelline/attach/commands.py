@@ -2,6 +2,27 @@
 
 Two top-level commands and not one group with two subcommands, because that is the contract
 row §5.2 states and the shape the skills already invoke.
+
+**`--machine` is honoured here only from an interactive shell, and refused otherwise.**
+`config/machine.py` gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` behind the same question, and
+its docstring already generalises past the variables it was written for: "Gating one of a pair
+of equivalent inputs is not a partial defence, it is a redirect with a longer name, so the rule
+is now the variable-independent one: in a non-interactive session this file is
+`~/.config/keelline/config.toml` and nothing else." A flag is a third member of that
+equivalence class — it reaches the same file for the price of a different spelling — and this
+is the command that turns that file into capability: the overlay root comes from it (DP3), and
+from the overlay come allow rules, hook entries and Codex standing rules. A repository that
+tells the agent to run `keelline attach --machine ./vendored.toml --store
+./vendored/projects/p/memory` supplies both sides of `read_binding`'s containment check out of
+its own tree, and the check passes.
+
+**It refuses rather than ignoring.** A silent fallback would read the owner's real file while
+the caller believed it was reading the one it named, which is the worse of the two failures.
+
+Scoped to these two commands and deliberately not to `command.common_flags`: the other readers
+of that flag take personal parameters, and rewriting a shared flag's semantics for three areas
+is not this lane's to do. The agent-driven path is unaffected — the `attach` skill passes
+`--store` and no `--machine`, so it resolves the default path exactly as before.
 """
 
 from __future__ import annotations
@@ -11,6 +32,7 @@ from pathlib import Path
 
 from keelline.areas import SubParsers
 from keelline.command import common_flags
+from keelline.config.machine import override_is_honoured
 from keelline.errors import Refusal
 from keelline.result import Result
 
@@ -18,13 +40,31 @@ _NO_STORE = (
     "`keelline attach` needs --store, naming this project's own directory inside the overlay "
     "this machine records: <overlay>/projects/<project name>/memory"
 )
+_NO_MACHINE_OVERRIDE = (
+    "--machine names the file that decides which overlay this command trusts, and here it is "
+    "honoured only from an interactive shell — the same rule `KEELLINE_CONFIG` and "
+    "`XDG_CONFIG_HOME` already follow, for the same reason. Run this from a terminal, or drop "
+    "the flag and let it read the machine configuration this machine records"
+)
+
+
+def _machine_argument(value: str | None, *, interactive: bool | None = None) -> Path | None:
+    """The machine file this invocation may read, or a refusal that it may not name one.
+
+    `interactive` is the seam `override_is_honoured` already offers: `None` asks the terminal,
+    and a test says which answer it wants instead of arranging a tty.
+    """
+    if value is None:
+        return None
+    if not override_is_honoured(interactive):
+        raise Refusal(_NO_MACHINE_OVERRIDE)
+    return Path(value)
 
 
 def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     if args.store is None:
         raise Refusal(_NO_STORE)
-    machine = Path(args.machine) if args.machine else None
-    return Path(args.root).resolve(), Path(args.store), machine
+    return Path(args.root).resolve(), Path(args.store), _machine_argument(args.machine)
 
 
 def run_attach(args: argparse.Namespace) -> Result:
@@ -42,6 +82,10 @@ def run_attach(args: argparse.Namespace) -> Result:
         confirmed=args.yes,
         trust_remote=args.trust_remote,
         runner=subprocess_runner(),
+        # Explicit, as `runner` is: both parameters are keyword-required so that a caller has
+        # to say which home and which runner it means, and the real command's answer is the
+        # machine owner's own.
+        home=None,
     )
     data = {
         # Counts and not paths, which is the rule rather than a preference: every one of these
@@ -71,8 +115,7 @@ def run_attach(args: argparse.Namespace) -> Result:
 def run_detach(args: argparse.Namespace) -> Result:
     from keelline.attach.write import detach
 
-    machine = Path(args.machine) if args.machine else None
-    removed = detach(Path(args.root).resolve(), machine=machine)
+    removed = detach(Path(args.root).resolve(), machine=_machine_argument(args.machine), home=None)
     data = {
         "allow_removed": list(removed.allow_removed),
         "entries_removed": list(removed.entries_removed),

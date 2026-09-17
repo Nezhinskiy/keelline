@@ -50,8 +50,8 @@ from keelline import fsops, tomlout
 from keelline.attach.binding import MISMATCH, Binding, read_binding
 from keelline.attach.permissions import (
     LOCAL_SETTINGS,
-    PROJECT_CODEX,
     PermissionDiff,
+    codex_rules,
     diff_permissions,
     local_document,
     overlay_entries,
@@ -75,7 +75,7 @@ from keelline.memory.api import (
     main_checkout,
     resolve,
 )
-from keelline.overlay.api import COMMON_CODEX, Runner
+from keelline.overlay.api import Runner
 from keelline.scaffold import (
     EntriesError,
     Style,
@@ -93,7 +93,6 @@ IGNORE_REGION = "ignore"
 # §7.1 lists both: the ledger's directory, and the assessment file `assess` will write.
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
-CODEX_RULES = ".codex/rules"
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = Path(".git") / "hooks" / "pre-commit"
 # §6.3's fallback for the one link that leaves Keelline's own channel: "a settings-file value is
@@ -232,23 +231,14 @@ def _codex_rules(root: Path, binding: Binding) -> tuple[str, ...]:
     """Copy the overlay's standing rules to where Codex reads them (§6.3).
 
     Kept apart from the Claude settings merge because the two harnesses fail differently and a
-    shared path would hide which. This project's own directory is read second, so a file it
-    shares a name with in `common/` is the one that lands.
+    shared path would hide which. The list itself is `permissions.codex_rules`, so that
+    `attach --check` reports exactly the files `attach` then writes rather than a second
+    enumeration that could disagree with this one.
     """
-    written: dict[str, None] = {}
-    sources = (
-        binding.overlay / COMMON_CODEX,
-        binding.overlay / PROJECTS / binding.project / PROJECT_CODEX,
-    )
-    for source in sources:
-        if not source.is_dir():
-            continue
-        for rule in sorted(source.iterdir()):
-            if not rule.is_file() or rule.name.startswith("."):
-                continue
-            target = f"{CODEX_RULES}/{rule.name}"
-            fsops.write_within(root, target, rule.read_text(encoding="utf-8"))
-            written[target] = None
+    written: list[str] = []
+    for target, source in codex_rules(binding):
+        fsops.write_within(root, target, source.read_text(encoding="utf-8"))
+        written.append(target)
     return tuple(written)
 
 
@@ -329,6 +319,14 @@ def _write_ledger(
     previous = _existing_ledger(root)
     allow = list(previous.allow) if previous is not None else []
     allow += [rule for rule in diff.added_allow if rule not in allow]
+    # The same union for the rule files, and for a sharper reason than the one above. A file
+    # deleted from the overlay between two attaches is not written this time and so drops out of
+    # a ledger built from this run alone — while the copy from the first attach is still sitting
+    # in `.codex/rules/`, where Codex reads it as a standing instruction. `detach` would then
+    # leave an agent-steering file behind, and §6.3 asks for "idempotent and reversible by
+    # `detach`".
+    placed = list(previous.rules) if previous is not None else []
+    placed += [rule for rule in rules if rule not in placed]
     # `scaffold.marker_id` and not a second parser for the marker: the ledger's keys have to be
     # the keys `owned_ids` answers in, or `doctor`'s provenance row compares two spellings.
     # A named helper and not a walrus in the comprehension: a walrus binds in the *enclosing*
@@ -347,7 +345,7 @@ def _write_ledger(
         "store": str(binding.store),
         "allow": allow,
         "entries": entries,
-        "rules": list(rules),
+        "rules": placed,
         "settings_keys": list(settings_keys),
     }
     fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
@@ -453,7 +451,7 @@ def attach(
     confirmed: bool,
     trust_remote: bool,
     runner: Runner,
-    home: Path | None = None,
+    home: Path | None,
 ) -> Attached:
     """Bind this repository to the overlay, merge what the overlay grants, and link the notes in.
 
@@ -467,8 +465,10 @@ def attach(
     step. The ledger is written before the links too, so a `PartialLink` half way through leaves
     behind a repository `detach` can still clean up.
 
-    `runner` and `home` are parameters rather than defaults so that no test can reach a real
-    `pre-commit` or the developer's own `~/.claude/`.
+    `runner` and `home` are keyword-**required** rather than defaulted so that no test can reach
+    a real `pre-commit` or the developer's own `~/.claude/`. A default here would leave that as
+    a convention, which is the thing the rule exists to replace: while this wave was being
+    written, every call that omitted `home` computed a path under the real home directory.
     """
     binding = read_binding(root, store=store, machine=machine)
     diff = diff_permissions(root, binding)
@@ -579,16 +579,17 @@ def _withdraw_ignore_region(root: Path) -> bool:
     return True
 
 
-def detach(root: Path, *, machine: Path | None = None, home: Path | None = None) -> Detached:
+def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent
     (§6.2), not a piece of local state: deleting it would turn every later re-attach into a
     first attach, and re-ask a question that was already answered.
 
-    `machine` and `home` are here for the reason every function in this wave takes them — a
-    resolver without a machine file reads the developer's real `~/.config/keelline/`, and the
-    harness link is under their real home.
+    `machine` and `home` are keyword-required for the reason every function in this wave takes
+    them, and required rather than defaulted for the reason `attach` gives: a resolver without a
+    machine file reads the developer's real `~/.config/keelline/`, and the harness link is under
+    their real home. A caller that means "the machine owner's own" says `None` out loud.
     """
     recorded = ledger(root)
     config = load(root, machine=machine)

@@ -33,7 +33,7 @@ from typing import Any
 from keelline.attach.binding import MISMATCH, Binding, read_binding
 from keelline.errors import Failure
 from keelline.memory.api import PROJECTS
-from keelline.overlay.api import COMMON_CLAUDE
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from keelline.result import Result
 from keelline.scaffold import EntriesError, mark
 
@@ -47,6 +47,8 @@ PROJECT_CLAUDE = "claude"
 PROJECT_CODEX = "codex"
 # `keelline:overlay-<event>-<n>`: one id per entry, for the reason in the module docstring.
 ENTRY_PREFIX = "overlay"
+# Where Codex reads standing instructions (§6.3).
+CODEX_RULES = ".codex/rules"
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,36 @@ def _hook_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
             raise EntriesError(f"{path}: 'hooks.{event}' is not a list of entry groups")
         found[str(event)] = [dict(g) for g in groups]
     return found
+
+
+def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
+    """Every standing-rule file `attach` would place under `.codex/rules/`, as (target, source).
+
+    Enumeration here, copying in `write.py`, because `--check`'s whole promise is "read it
+    before the real run" and `docs/cli.md` lists `.codex/rules/` under **Writes**: half a write
+    that never appears in the report makes that promise false. A file Codex reads as standing
+    instruction is exactly the kind of thing an owner wants named before it lands.
+
+    This is **reporting and not gating**, and the distinction is deliberate. The `--yes` gate is
+    about widening a *permission* (D15, DP3), §3's trust table grants the machine owner "add
+    standing rules", and the overlay is the machine owner's own artifact — so a rule file does
+    not make `widens` true, and `widens` keeps meaning what its name says.
+
+    This project's own `codex/` is read second, so a file it shares a name with in `common/` is
+    the one that lands; the pair is returned rather than two lists so the caller cannot pair
+    them up differently from the way the write does.
+    """
+    found: dict[str, Path] = {}
+    for source in (
+        binding.overlay / COMMON_CODEX,
+        binding.overlay / PROJECTS / binding.project / PROJECT_CODEX,
+    ):
+        if not source.is_dir():
+            continue
+        for rule in sorted(source.iterdir()):
+            if rule.is_file() and not rule.name.startswith("."):
+                found[f"{CODEX_RULES}/{rule.name}"] = rule
+    return tuple(found.items())
 
 
 def _claude_sources(binding: Binding, name: str) -> tuple[Path, Path]:
@@ -226,11 +258,19 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     """
     binding = read_binding(root, store=store, machine=machine)
     diff = diff_permissions(root, binding)
+    # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
+    # diff's three fields are fixed by the plan's Interfaces block, and a fourth would blur what
+    # `widens` means. These names come out of the overlay, so they are the owner's own and may
+    # be printed.
+    rules = tuple(target for target, _ in codex_rules(binding))
     summary = (
         f"{binding.project}: {binding.state}; "
         f"{len(diff.added_allow)} allow rule(s) and {len(diff.added_hooks)} hook entr(ies) "
-        f"would be added, {len(diff.already_present)} already present"
+        f"would be added, {len(diff.already_present)} already present; "
+        f"{len(rules)} Codex standing-rule file(s) would be placed"
     )
+    if rules:
+        summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
         "project": binding.project,
         "state": binding.state,
@@ -239,6 +279,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         # A count and not the strings: this list comes out of the project's own
         # `settings.local.json`, which a clone can commit, so it is repository-authored.
         "already_present": len(diff.already_present),
+        "rules_to_write": list(rules),
         "widens": diff.widens,
     }
     return Result(summary, data, exit_code=1 if binding.state == MISMATCH else 0)

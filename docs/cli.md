@@ -496,6 +496,16 @@ in this repository reads your cross-project notes and this project's own notes, 
 permissions and hook entries you keep in the overlay are merged into
 `.claude/settings.local.json`.
 
+**`--machine` is honoured only from an interactive shell.** This is the command that turns the
+machine configuration into capability: the overlay root comes from that file, and from the
+overlay come allow rules, hook entries and standing rules. `KEELLINE_CONFIG` and
+`XDG_CONFIG_HOME` are already gated the same way and for the same reason — a repository can set
+an environment variable through a committed settings file, and it can just as easily tell an
+agent to pass a flag. In a non-interactive session the flag is **refused** (`2`) rather than
+ignored, because silently falling back would read your real configuration while the caller
+believed it was reading the file it named. Omit it and the default file is read exactly as
+before; `keelline detach` follows the same rule.
+
 **`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
 where `<project name>` is the `[project] name` in this repository's `keelline.toml`. The overlay
 root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
@@ -505,8 +515,15 @@ group to this project's own share, so attaching to a sibling would produce a sto
 then refuses.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
-and the permission diff: which allow rules and which hook entries would be added, and how many
-of the overlay's rules this repository already has. Read it before the real run.
+the permission diff (which allow rules and which hook entries would be added, and how many of
+the overlay's rules this repository already has), and the Codex standing-rule files it would
+place under `.codex/rules/`. Read it before the real run: everything under **Writes** below that
+carries content from the overlay is named here first.
+
+Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
+a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
+to do — which is exactly what the overlay is. `widens` in the `--json` output therefore answers
+about permissions alone, and `rules_to_write` lists the files.
 
 **A write that grants a capability needs `--yes`.** If the diff would add an allow rule or a hook
 entry, `attach` refuses (`2`) without it. That is a refusal and not a prompt on purpose: the
@@ -538,7 +555,8 @@ configuration and no hook is installed — the machine that cloned an overlay so
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
 Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
-recorded overlay, a mismatch without `--trust-remote`, or a widening without `--yes`.
+recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, or a
+`--machine` outside an interactive shell.
 
 ---
 
@@ -563,7 +581,8 @@ byte-for-byte as it was.
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a
 question you have already answered.
 
-Exits `0`; `1` when there is no ledger to read.
+Exits `0`; `1` when there is no ledger to read; `2` on a `--machine` outside an interactive
+shell, for the reason `keelline attach` gives above.
 
 ---
 

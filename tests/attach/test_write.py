@@ -106,6 +106,10 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
     # expect `Refusal`, and compare the snapshot after. Not one byte changed.
     root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
     before = _snapshot(root)
+    # The mutation guard for the assertion below, and the Global Constraint that asks for it:
+    # `_snapshot` is an `rglob` loop, so `_snapshot(root) == before` passes vacuously the day
+    # the walk stops finding files — and this is a test standing behind a refusal.
+    assert before
     with pytest.raises(Refusal):
         attach(
             root,

@@ -11,3 +11,9 @@ directory for this project, because the overlay root comes from your machine con
 never from the path you type. And a run that would grant a new permission refuses without `--yes`:
 in a session driven by an agent, a step in a procedure is not a control, so the control is the
 flag.
+
+`--machine` is accepted by both commands only from an interactive shell, and refused otherwise.
+It names the file that decides which overlay `attach` trusts, so it follows the rule
+`KEELLINE_CONFIG` and `XDG_CONFIG_HOME` already follow: in a session nobody is sitting in front
+of, the machine configuration is the one this machine records and nothing else. Omit the flag and
+nothing changes.
