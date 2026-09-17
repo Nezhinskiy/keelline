@@ -157,9 +157,102 @@ def test_the_index_bundle_is_empty_when_no_index_file_exists(tmp_path: Path) -> 
     assert blocks(Bundle.INDEX, store, config) == []
 
 
-def test_preset_rules_emit_nothing_while_the_preset_has_none(tmp_path: Path) -> None:
+RULES = (
+    "decision-forks",
+    "worktree-by-default",
+    "research-freshness",
+    "ci-after-push",
+    "language-by-audience",
+)
+# A rule body with fewer words than this is a stub rather than a rule.
+MIN_RULE_BODY_WORDS = 20
+
+
+def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
+    # The preset is the plugin's, so this reads the real one: a rule dropped from the table,
+    # renamed, or reordered reddens here. Mutation: swap the first two tables in
+    # `recommended.toml` → reddens on order; delete `ci-after-push` → reddens on length.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert [block.split("\n", 1)[0] for block in produced] == [f"### {name}" for name in RULES]
+    # Every rule has a body of at least one sentence; a heading with nothing under it is a
+    # rule nobody wrote.
+    assert all(len(block.split("\n\n", 1)[1].split()) >= MIN_RULE_BODY_WORDS for block in produced)
+
+
+def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:
+    # A bundle that needs two parts is not wrong, but it is a change the hooks file has to
+    # know about (`SLOTS`), so a growing table reddens here before it silently spills.
+    # Mutation, run 2026-09-17: pad one rule body in the shipped preset with 8,940 characters
+    # of prose. The bundle spilled and this reddened with `assert 2 == 1`, then went green
+    # again when the padding came out. The five rules render from about 3.1 KB of body today
+    # against a slot of `hook_output_chars - CAP_MARGIN`, so this is a tripwire with room in
+    # front of it, not a bound anything sits against.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert len(split(produced, cap=config.native_caps.hook_output_chars - CAP_MARGIN)) == 1
+
+
+def test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The join shape, which nothing pinned. A TOML `"""…"""` body keeps the newline before its
+    # closing quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three
+    # consecutive newlines in front of the next `### ` heading — in the text a session-start
+    # hook injects, where nobody sees it until they read the rendered bundle. The fixture is
+    # deliberately padded at both ends, because a body written in TOML is padded at one.
+    monkeypatch.setattr(
+        bundles_module, "load_preset", lambda name: {"rules": {"spaced": "\n  A body.\n\n"}}
+    )
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == ["### spaced\n\nA body."]
+
+
+def test_no_shipped_rule_renders_with_padding(tmp_path: Path) -> None:
+    # The same claim against the real preset, which is where the stray line was found: the
+    # fixture above proves the code strips, this proves the thing it ships strips to something.
+    store, config = a_store(tmp_path)
+    produced = blocks(Bundle.PRESET_RULES, store, config)
+    assert produced != []
+    assert all(block == block.strip() and "\n\n\n" not in block for block in produced)
+
+
+def test_preset_rules_emit_nothing_when_a_preset_has_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The silent case the shipped preset no longer exercises, kept on a fixture: a preset
+    # without the table renders nothing rather than a heading over nothing. This fixture does
+    # *not* redden the guard it sits beside — `.get("rules", {})` returns `{}` here, which the
+    # comprehension renders as nothing on its own — which is why the two tests below exist.
+    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"budgets": {}})
     store, config = a_store(tmp_path)
     assert blocks(Bundle.PRESET_RULES, store, config) == []
+
+
+def test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The `isinstance(rules, dict)` arm, which had no test at all. A preset is data read at run
+    # time, and this bundle runs inside a session-start handler whose policy is `open`: a
+    # malformed `rules` key must render nothing, not raise `AttributeError` out of a hook.
+    monkeypatch.setattr(bundles_module, "load_preset", lambda name: {"rules": "oops"})
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == []
+
+
+def test_a_rule_whose_body_is_not_a_string_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The `isinstance(body, str)` filter, likewise untested. A nested table under `[rules]` —
+    # the easiest thing to write by accident in TOML — is a malformed rule, and a malformed
+    # rule is dropped rather than rendered as a heading over a repr.
+    monkeypatch.setattr(
+        bundles_module,
+        "load_preset",
+        lambda name: {"rules": {"good": "A body.", "bad": {"nested": "table"}}},
+    )
+    store, config = a_store(tmp_path)
+    assert blocks(Bundle.PRESET_RULES, store, config) == ["### good\n\nA body."]
 
 
 def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:
@@ -175,11 +268,9 @@ def test_the_owners_own_preset_rules_need_no_trust(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A preset ships with the plugin; it is never repository content, so gating it on a
-    # repository's trust record would make the owner's own rules hostage to a clone. The
-    # shipped preset has no `[rules]` table yet, which would make this vacuous either way
-    # (gated or not, the answer is empty) -- so a preset that actually carries rules is
-    # substituted here. That is supplying a fixture for the `load_preset` collaborator the
-    # `setup` lane owns, not mocking the unit under test.
+    # repository's trust record would make the owner's own rules hostage to a clone. That is
+    # supplying a fixture for the `load_preset` collaborator the `setup` lane owns, not
+    # mocking the unit under test.
     monkeypatch.setattr(
         bundles_module, "load_preset", lambda name: {"rules": {"greeting": "Hello."}}
     )

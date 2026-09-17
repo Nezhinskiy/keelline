@@ -57,6 +57,14 @@ name — there is no shared registry to edit.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
   namespace package, so one without it is invisible to both discovery paths.
 
+Two top-level trees are documents rather than areas. `skills/` holds the Agent Skills this
+plugin ships and `agents/` the agent files; [skills/README.md](skills/README.md) is their
+contract — a skill body is **action language** and never names a harness tool, a `SKILL.md` is
+capped at 80 lines with the detail in `<skill>/references/`, and every `keelline …` invocation
+in a skill must parse against the real parser or be listed in `NOT_YET_SHIPPED` against the
+package that will ship it. `tests/skills/test_skills.py` holds all three, and the lane that
+ships a command deletes its `NOT_YET_SHIPPED` entry.
+
 ## Tests
 
 **Every new assertion ships with the mutation that reddens it, or a sentence saying why none

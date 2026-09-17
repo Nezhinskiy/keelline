@@ -1,0 +1,59 @@
+"""`ledger.code_roots`, contained. `config.paths` guards `[paths]` and names this field as one
+the consuming lane must check itself; two commands here consume it."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from keelline.config.paths import PathEscape, contained
+
+if TYPE_CHECKING:
+    from keelline.config.schema import Config
+
+
+def contained_roots(root: Path, config: Config) -> list[Path]:
+    """`ledger.code_roots` that pass `contained()` and exist as directories, in config order.
+
+    `config.paths` says the four path-shaped fields it does not guard and names
+    `ledger.code_roots` first; this is the call it asks the consuming lane to make.
+
+    NO DIRECTORY IS RETURNED TWICE, and no directory under another returned one is returned
+    beside it. Every consumer of this list walks each entry with `rglob` and adds up what it
+    finds, so `code_roots = ["src", "src"]` doubled every stale `.pyc` in the count the
+    hygiene notice prints, and `["src", "src/keelline"]` doubled the part of the tree they
+    share -- a wrong number in a notice whose whole job is to be believed about a number, and
+    in an audit's "N test file(s)" total.
+
+    Comparing the paths `contained()` returns is enough to collapse two spellings of one
+    directory, not just two copies of one spelling: `Path` has already folded `./` and
+    repeated separators, and `contained()` refuses a `..` component, an absolute path and a
+    symlink anywhere from the root to the target inclusive -- so no two surviving entries can
+    name the same directory by different routes. Order is the config's. Between an ancestor
+    and a descendant the ANCESTOR wins whichever way round they are written, because it is the
+    wider walk and dropping it would lose files; between two entries naming the same
+    directory, the first keeps its place.
+    """
+    found: list[Path] = []
+    resolved_root = root.resolve()
+    for entry in config.ledger.code_roots:
+        try:
+            candidate = contained(root, entry, resolved_root=resolved_root)
+        except PathEscape:
+            continue
+        if not candidate.is_dir():
+            continue
+        if any(_covers(kept, candidate) for kept in found):
+            continue
+        found = [kept for kept in found if not _covers(candidate, kept)]
+        found.append(candidate)
+    return found
+
+
+def _covers(directory: Path, other: Path) -> bool:
+    """Whether walking ``directory`` already walks everything under ``other``.
+
+    `is_relative_to`, never a string prefix: `src` would otherwise be read as covering
+    `src-vendor`, which shares its first three characters and none of its files.
+    """
+    return other == directory or other.is_relative_to(directory)

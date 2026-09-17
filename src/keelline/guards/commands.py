@@ -1,0 +1,300 @@
+"""The `guard`, `commit` and `test` groups (§5.2).
+
+`guard bg-cleanup` is the fail-closed row: it reads one JSON object on stdin — a whole hook
+payload, or a bare `tool_input` — and refuses anything it cannot read with exit 2, because a
+guard that guessed at plain text would be guessing. A deny is a `Refusal` (2); the restore
+advisory is a finding (1); a clean command is 0.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from keelline import fsops
+from keelline.areas import SubParsers
+from keelline.config.loader import load
+from keelline.errors import Failure, Refusal
+from keelline.result import Result
+
+if TYPE_CHECKING:
+    from keelline.config.schema import Config
+
+_UNREADABLE = "guard bg-cleanup reads one JSON object on stdin: a hook payload or a tool_input"
+_CLEAN = "no background leak and no trailing restore"
+
+
+_NOT_BASH = "not a Bash call; nothing to judge"
+
+
+def _tool_input(raw: str) -> dict[str, Any] | None:
+    """The Bash input to judge, or None for a whole payload naming another tool."""
+    try:
+        payload = json.loads(raw or "")
+    except ValueError as exc:
+        raise Refusal(f"{_UNREADABLE}; {exc}") from None
+    if not isinstance(payload, dict):
+        raise Refusal(_UNREADABLE)
+    if "tool_name" in payload and payload["tool_name"] != "Bash":
+        return None  # the handler is silent here too (`hooks.bash_command`)
+    tool_input = payload.get("tool_input", payload)
+    if not isinstance(tool_input, dict) or not isinstance(tool_input.get("command"), str):
+        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")
+    return tool_input
+
+
+def run_bg_cleanup(args: argparse.Namespace) -> Result:
+    from keelline.guards.bgcleanup import judge
+
+    tool_input = _tool_input(sys.stdin.read())
+    if tool_input is None:
+        return Result(_NOT_BASH, {"hint": None})
+    background = tool_input.get("run_in_background") is True
+    verdict = judge(str(tool_input["command"]), background=background)
+    if verdict.deny is not None:
+        raise Refusal(verdict.deny)
+    if verdict.hint is not None:
+        return Result(verdict.hint, {"hint": verdict.hint}, exit_code=1)
+    return Result(_CLEAN, {"hint": None})
+
+
+# Printed on every `commit check` failure, which is inside the CI gate's own output, so it may
+# only name commands that exist. It named `keelline setup --git-hooks`, which does not: the hook
+# installer ships as a library this lane owns and `setup` is the lane that will offer it from the
+# command line. A remedy that sends a person to an unknown subcommand costs more than the missing
+# clause does.
+_STRIP_REMEDY = (
+    "Rewrite the messages without the trailer (`git rebase -i --exec 'git commit --amend "
+    "--no-edit' <base>`, or `git commit --amend` for the last one). `keelline commit strip "
+    "FILE` does the same to one message file."
+)
+
+# git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read
+# from the repository's config: a value this module would feed straight into a line-prefix
+# comparison is exactly the kind of config value §3 calls untrusted, and there is no subprocess
+# guard to put around a plain string compare. A repository that changed the default gets no
+# split and therefore no strip on that file — a no-op, not a corruption.
+_COMMENT_CHAR = "#"
+
+# git's scissors line, matched on `>8` alone and not on the sentence around it. The line git
+# writes is `# ------------------------ >8 ------------------------`, and the two lines under it
+# ("Do not modify or remove the line above.") go through gettext — a German or Japanese checkout
+# writes them translated, and a rule keyed on the English wording would silently stop splitting
+# there. The ruler and its `>8` are not translated.
+_SCISSORS_MARKER = ">8"
+
+
+def _split_trailing_comment_block(text: str) -> tuple[str, str]:
+    """Split a `prepare-commit-msg` file into `(message region, everything git will discard)`.
+
+    Two things are discarded, and the first of them was missed. **`commit.verbose = true` puts
+    the staged diff in this file**, below a scissors line, and a diff's lines start with `diff`,
+    `+`, `-`, `@@` or a space — so the walk back over comment and blank lines stopped at the
+    very first one it saw, the whole file read as "message", the attribution block was no longer
+    trailing and the hook became a silent no-op. Measured: with `commit.verbose` set, the same
+    commit that reports `stripped 2 attribution line(s)` without it stored the trailer intact.
+    One config key disabling the whole local layer is worth the extra rule.
+
+    So the scissors line is found first and everything from it down is discarded region; then
+    the run of comment and blank lines at the end of what is left is discarded too. The second
+    part is the ordinary interactive commit: git's `# Please enter the commit message…` block is
+    the file's last paragraph, and `offending_lines`/`strip_message` judge only a message's
+    *trailing attribution block* (see `commit.py`'s docstring), which a comment line is not — so
+    stripping the file's text whole would no-op on exactly the file the hook is handed.
+
+    `commit.py` must never learn about `#` or about scissors: in a message read from `git log` a
+    `#` line is real content, so this split lives here, on the file-reading side. Both rules fail
+    the same way, which is the safe way: a message that itself carries a `#` line with `>8` in it
+    loses the strip below that point and keeps every byte, a no-op rather than a corruption.
+    """
+    lines = text.splitlines(keepends=True)
+    cut = len(lines)
+    for index, line in enumerate(lines):
+        # The FIRST scissors line: git truncates the message there, so anything below it —
+        # including a second one — is already not part of the message.
+        if line.startswith(_COMMENT_CHAR) and _SCISSORS_MARKER in line:
+            cut = index
+            break
+    above, below = lines[:cut], lines[cut:]
+    index = len(above)
+    while index > 0 and (
+        above[index - 1].strip() == "" or above[index - 1].startswith(_COMMENT_CHAR)
+    ):
+        index -= 1
+    if not any(line.startswith(_COMMENT_CHAR) for line in above[index:]):
+        index = len(above)  # no comment line back there; nothing to split off
+    return "".join(above[:index]), "".join(above[index:] + below)
+
+
+def _root_and_config(args: argparse.Namespace) -> tuple[Path, Config]:
+    root = Path(args.root).resolve()
+    machine = Path(args.machine) if getattr(args, "machine", None) else None
+    return root, load(root, machine=machine)
+
+
+def run_commit_check(args: argparse.Namespace) -> Result:
+    from keelline.guards.commit import check_range
+
+    root, config = _root_and_config(args)
+    report = check_range(root, str(args.rev_range), config)
+    data = {
+        "commits": report.commits,
+        "violations": [
+            {"sha": v.sha, "offences": [{"line": o.line, "label": o.label} for o in v.offences]}
+            for v in report.violations
+        ],
+    }
+    if not report.violations:
+        return Result(f"OK: {report.commits} commit message(s) checked", data)
+    items = "; ".join(
+        f"{v.sha[:12]} line {o.line} [{o.label}]" for v in report.violations for o in v.offences
+    )
+    return Result(
+        f"FAIL: {len(report.violations)} of {report.commits} commit message(s) carry an "
+        f"attribution trailer: {items}. {_STRIP_REMEDY}",
+        data,
+        exit_code=1,
+    )
+
+
+def run_commit_strip(args: argparse.Namespace) -> Result:
+    from keelline.guards.commit import offending_lines, strip_message
+
+    raw = str(args.file)
+    if raw.startswith("-"):
+        raise Refusal(f"{raw!r} looks like an option, not a file")
+    path = Path(raw)
+    if path.is_symlink():
+        raise Refusal(f"{path} is a symlink; refusing to write through it")
+    # `--root` elsewhere is never `-`-checked and is safe only because `Path(...).resolve()`
+    # makes it absolute before any `git -C` sees it; this argument is not resolved, so it is.
+    try:
+        original = path.read_text(encoding="utf-8")
+    # `UnicodeDecodeError` is not an `OSError`, and without it a message file in a non-UTF-8
+    # encoding — `i18n.commitEncoding` is a real git setting — reached the CLI frame as
+    # `internal error: UnicodeDecodeError` and exit 2, the code a caller is told never to read
+    # as permission. It is a file this command cannot read, exactly like the `OSError` beside
+    # it, so it is the same `Failure`. `audit.py` and `githooks.py` both catch it explicitly;
+    # this was the one place that did not. It does not render the exception: that one names the
+    # offending byte, and the byte came out of the file.
+    except OSError as exc:
+        raise Failure(f"cannot read {path}: {exc}") from None
+    except UnicodeDecodeError:
+        raise Failure(f"cannot read {path}: it is not valid UTF-8") from None
+    message, comment_block = _split_trailing_comment_block(original)
+    stripped_message = strip_message(message)
+    # A message that is *only* attribution would be emptied, which aborts the commit with a
+    # confusing "empty message" error. Leave it alone and let CI explain.
+    if not stripped_message.strip() or stripped_message == message:
+        return Result("nothing to strip", {"stripped": 0})
+    count = len(offending_lines(message))
+    fsops.write_atomically(path, stripped_message + comment_block)
+    return Result(f"stripped {count} attribution line(s) from {path}", {"stripped": count})
+
+
+# A tree git could not report on is not a clean tree. Exit 2 (refusal), never exit 0: the whole
+# value of this command is that it answers "can this red run be trusted", and "I do not know"
+# reported as "yes" is the one wrong answer.
+_NO_GIT = "git could not report the tree's status, so this tree cannot be judged"
+
+
+def run_test_hygiene(args: argparse.Namespace) -> Result:
+    from keelline.guards.hygiene import inspect
+
+    root, config = _root_and_config(args)
+    found = inspect(root, config)
+    if found.dirty is None:
+        raise Refusal(_NO_GIT)
+    findings: list[str] = []
+    if found.dirty:
+        findings.append(f"{found.dirty} uncommitted change(s) in the tree")
+    if found.stale:
+        findings.append(f"{found.stale} stale .pyc file(s) under {found.roots} code root(s)")
+    # Counts and labels only: a `ledger.code_roots` entry is a repository-authored string and
+    # never reaches the summary. `data` is the documented exception and carries none either.
+    summary = (
+        "; ".join(findings)
+        or f"tree is clean and bytecode under {found.roots} code root(s) is fresh"
+    )
+    data = {"dirty": found.dirty, "stale": found.stale, "roots": found.roots}
+    return Result(summary, data, exit_code=1 if findings else 0)
+
+
+def run_test_audit(args: argparse.Namespace) -> Result:
+    from keelline.guards.audit import SHAPES, import_roots, run_self_test, scan_paths, suite_files
+    from keelline.guards.roots import contained_roots
+
+    problems = run_self_test()
+    if problems:
+        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))
+    root, config = _root_and_config(args)
+    roots = contained_roots(root, config)
+    names = import_roots(roots)
+    files = suite_files(roots)
+    findings = scan_paths(files, SHAPES, names)
+    # `data` is the documented exception to "repository bytes are data": the JSON object is
+    # read by the person or the CI job that owns the repository, so it carries the test paths
+    # and the derived import names. The summary below is counts only.
+    # Spelled out rather than `f.__dict__`: the dataclass is an internal shape and the JSON is a
+    # documented contract (`docs/cli.md`), so reflecting one into the other made every attribute
+    # rename a silent wire break and every attribute added a key nobody documented. These five
+    # keys are the contract; a sixth arrives by being written here.
+    data = {
+        "findings": [
+            {
+                "path": finding.path,
+                "line": finding.line,
+                "test": finding.test,
+                "shape": finding.shape,
+                "detail": finding.detail,
+            }
+            for finding in sorted(findings, key=lambda f: (f.path, f.line))
+        ],
+        "files": len(files),
+        "import_roots": sorted(names),
+    }
+    # Exit 0 with findings, on purpose: candidates are for triage, not a build failure. Run
+    # over Keelline's own tests with Keelline's own code roots this command reports six
+    # candidates across 43 test files (measured), and every one of them is a name collision
+    # rather than a defect -- a test that states one imported symbol's tokens in its name and
+    # exercises a neighbouring one, `override_is_honoured` inside
+    # `test_the_override_is_honoured_from_an_interactive_shell`. So exit 1 would be red on its
+    # own repository from the first run, and the schema has no per-command enable switch to
+    # turn it off with. Gating belongs to a lane that has triaged these to zero.
+    if findings:
+        return Result(f"{len(findings)} candidate(s) in {len(files)} test file(s)", data)
+    return Result(f"no candidates in {len(files)} test file(s)", data)
+
+
+def register(groups: SubParsers) -> None:
+    guard = groups.add_parser("guard", help="fail-closed guards over a tool call")
+    guard_sub = guard.add_subparsers(dest="command", metavar="<command>")
+    bg = guard_sub.add_parser("bg-cleanup", help="judge a Bash call for a background leak")
+    bg.set_defaults(func=run_bg_cleanup)
+
+    commit = groups.add_parser("commit", help="commit-message rules")
+    commit_sub = commit.add_subparsers(dest="command", metavar="<command>")
+    check = commit_sub.add_parser("check", help="check every message in a revision range")
+    check.add_argument("--range", dest="rev_range", required=True, help="e.g. main..HEAD")
+    check.add_argument("--root", default=".", help="project root (default: current directory)")
+    check.add_argument("--machine", default=None, help="machine configuration file to read")
+    check.set_defaults(func=run_commit_check)
+    strip = commit_sub.add_parser("strip", help="strip attribution lines from a message file")
+    strip.add_argument("file", help="the commit-message file git handed the hook")
+    strip.set_defaults(func=run_commit_strip)
+
+    test = groups.add_parser("test", help="test-suite hygiene")
+    test_sub = test.add_subparsers(dest="command", metavar="<command>")
+    hygiene = test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
+    hygiene.add_argument("--root", default=".", help="project root (default: current directory)")
+    hygiene.add_argument("--machine", default=None, help="machine configuration file to read")
+    hygiene.set_defaults(func=run_test_hygiene)
+    audit = test_sub.add_parser(
+        "audit-entrypoints", help="tests that never exercise what they name"
+    )
+    audit.add_argument("--root", default=".", help="project root (default: current directory)")
+    audit.add_argument("--machine", default=None, help="machine configuration file to read")
+    audit.set_defaults(func=run_test_audit)

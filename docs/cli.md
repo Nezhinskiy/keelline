@@ -6,12 +6,17 @@ gives you the one-line version; this is the rest.
 Three things hold everywhere:
 
 - **`--json` is accepted anywhere** and prints one machine-readable object instead of one line.
-  It is not declared per command — the frame strips it from `argv` before parsing.
+  It is not declared per command — the frame strips it from `argv` before parsing. A command
+  whose result is a list of findings carries it under **`findings`**, named after what the
+  values are and spelled the same way by every command, whatever its summary line calls them.
+  A list that is not findings keeps its own key: `docs check`'s advisory `notices`, and
+  `docs trail`'s `written`, `undeclared` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result.
 - **Every `memory` command takes the same three options**, described once here rather than five
-  times below.
+  times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
+  command takes them with the same meaning, and `docs check` takes `--store` as well.
 
 | Option | Meaning |
 |---|---|
@@ -141,6 +146,227 @@ error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere els
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
 your prompt.
 
+## `keelline guard bg-cleanup`
+
+Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
+payload, or a bare `tool_input` with `command` and `run_in_background` — and answers `2` when
+the call would be refused (a `&`-backgrounded job with no `trap … EXIT`, or a backgrounded
+command that begins with `sleep`), `1` when it carries a trailing restore no trap protects or,
+for a backgrounded call, ends in a `; echo …` that hides the exit code the completion
+notification will report, and `0` otherwise. Both refusals need `run_in_background` to be
+`true` in the object you send —
+the leak and the `sleep` are only faults for a job the harness will not reap, so a CI smoke
+test written without that key measures `0` on a command that is refused in a session.
+Anything it cannot read is `2`: this is the fail-closed row of the CLI table, and a guard that
+guessed would be guessing. That is about the JSON, not about the command inside it: a command
+longer than the 64 KiB cap is not read either, and is allowed (`0`) rather than refused,
+because tokenizing an unbounded string in front of every Bash call is the larger fault.
+
+This is the same judgement the `PreToolUse` `Bash` hook makes; the command exists so a CI
+smoke test and a person can ask it without a harness. **Writes** nothing.
+
+## `keelline commit check --range RANGE`
+
+Every message in `RANGE` (a `git log` revision range, e.g. `main..HEAD`), for lines in its
+trailing attribution block that are an AI/tool attribution trailer or footer: a `-by:` trailer
+whose address is at a vendor's domain or whose name is a product, a `Generated with <tool>`
+footer, or a line that is only `AI-generated`. The block is the message's last paragraph plus
+every paragraph above it that is attribution to the last line — the canonical harness block is
+two paragraphs — and it ends at the first paragraph holding any body line. Body prose is never
+judged, and a person whose name happens to be a vendor word is not a violation.
+`[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
+a violation, but the range must still be readable, because the report says how many messages it
+read. Exits `1` naming each offence as `sha line N [label]` — never the text, which is the
+repository's — and `2` when git cannot read the range or the range looks like an option.
+**Writes** nothing. This is what the reusable workflow runs.
+
+Exit `1` has two meanings here and a gate should know both: messages were read and some carry a
+trailer (`FAIL: …`), and *no `keelline.toml` was found under `--root`*, which the configuration
+loader reports as a failure — `keelline: failed: …/keelline.toml does not exist` — and not as a
+refusal. A workflow that must tell them apart reads the first word of the output, or checks the
+file is there before it runs the gate.
+
+## `keelline commit strip FILE`
+
+Rewrite a commit-message file in place with the attribution lines of its trailing attribution
+block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
+says which; a message that is *only* attribution is left alone, because emptying it aborts the
+commit with a confusing error and CI explains better. Refuses a symlink, and fails (`1`) on a
+file it cannot read, a file that is not UTF-8 included.
+
+Git's own trailing comment block is kept, and so is everything below the scissors line that
+`commit.verbose = true` puts the staged diff under — the message is what lies above both.
+
+This is what the chained `prepare-commit-msg` hook runs, so the trailer is gone before the
+commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. Installing the
+hook is a library call today (`keelline.guards.api.install`) — no `keelline` subcommand offers
+it yet. **Writes** `FILE`.
+
+## `keelline test hygiene`
+
+The two environment faults that make a red test run unattributable: uncommitted changes in
+the tree, and `.pyc` files whose recorded source mtime no longer matches their source. Counts
+the bytecode under `[ledger] code_roots` and the uncommitted changes across the whole
+repository — a dirty tree anywhere makes a red run unattributable — and exits `1` when either
+is present, `2` when git cannot report the tree. The `PostToolUse` `Bash` hook delivers the
+same note once per context after a red pytest run. **Writes** nothing.
+
+## `keelline test audit-entrypoints`
+
+Tests that never exercise what they name, in two shapes: an assertion whose value is produced
+by invoking a test double, and a test whose name states an entry point it imports but never
+mentions again, in its own body or in the local helpers it reaches. Scans every `test_*.py`
+under `[ledger] code_roots`, treating the packages and modules found directly under those
+roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
+`--json`, **with findings and no way to fail on them** — that is deliberate, not an oversight,
+and nothing here gates. Run over a repository's own suite the scanner names name-collision
+candidates that are not defects, so an exit `1` would be red from the first run, and the
+configuration has no per-command switch to turn it off with. Gating belongs to a lane that has
+triaged them to zero, and that lane has not shipped. Refuses (`2`) if its own self-test no
+longer discriminates. **Writes** nothing.
+
+The `--json` object carries `summary` (the line the command would have printed), `files` (how
+many test files were scanned), `import_roots` (the
+top-level names treated as the code under test) and `findings`, sorted by path then line. Each
+finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-on-double` or
+`names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
+`detail` are repository-authored strings, which is why they are in `--json` and not in the
+summary line.
+
+## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
+
+File a bug: allocate the next free identifier (`1 + max` over every entry in the working tree
+and every entry ever added on any ref, after a bounded `git fetch origin` unless `--no-fetch`),
+write `<paths.bugs>/<PREFIX>-nnn.md` from the template, and regenerate the index. Every
+rejection happens before the first write: a title or source the flat frontmatter subset cannot
+hold is quoted for you; a `--related` value that is not an identifier, an index carrying content
+this tool did not generate (`2`), and an allocated identifier whose file already exists (`1`,
+naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
+result line, not hidden. **Writes** the entry file and `<paths.bug_index>`.
+
+## `keelline bugs index [--check]`
+
+Render `<paths.bug_index>` from the entry files alone. `--check` exits `1` when the committed
+index differs from that rendering and writes nothing. Either form refuses (`2`) while the write
+would destroy something: a line the index holds that this tool did not generate (a hand-written
+section, an operator's note, or a table row with no entry file behind it — recover it into an
+entry file first), or a generated index whose entry directory is gone (restore the files; the
+index carries nothing of its own). A row is judged by the entry it links and not by its shape,
+so a row whose entry file went missing in a merge — the last record that bug existed — is not
+something regenerating may delete. A reworded
+header is a stale index, not foreign content. The first paragraph names the generator, and that
+paragraph is recognised structurally rather than by an exact string, so an index left by an
+older generated format is still read as generated rather than refused as hand-written content.
+**Writes** `<paths.bug_index>`.
+
+## `keelline bugs check`
+
+Every rule the ledger holds, in one pass: each entry parses under the flat frontmatter subset
+and its `id:` matches its filename; no entry restates `**Status:**`/`**Severity:**` in its
+body; every severity in `[ledger] evidence_boundary_required_for` carries a filled `**What this
+evidence does not establish:**` line (the template's placeholder does not count); no identifier
+is claimed by two files; every `related:` identifier has an entry; the index carries nothing
+this tool did not generate, and is current; every `<PREFIX>-nnn` mentioned under the top-level
+files and `[ledger] code_roots` has an entry (a `void` entry counts); every citation of an entry
+*file* — from those roots and from the directories the `[paths]` values live under — names a
+file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
+line; `--json` carries every finding with its `detail`, which may quote the repository and is
+why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
+generated index — prints `nothing to check` and exits `0`; a generated index with no directory
+behind it is a deleted ledger and exits `1`. Git enumerates the files where the root is the top
+of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A file whose
+first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither scanned nor
+swept. **Writes** nothing.
+
+## `keelline bugs renumber OLD NEW`
+
+Move an entry to a free identifier: `NEW` gets the entry with its `id:` rewritten, `OLD` becomes
+a `void` pointer at the new number, every scanned file that mentions `OLD` is rewritten, and the
+index is regenerated — both endpoints first, then the sweep, so an interruption leaves `OLD`
+resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a missing `OLD`
+(`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
+could not read or write is listed and the command exits `1` naming it, because once the pointer
+exists a stale mention in that file looks intentional to `bugs check` forever. The moved entry's
+own body is the operator's to rewrite and is not swept. **Writes** the two entry files, every
+rewritten file, and `<paths.bug_index>`.
+
+## `keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`
+
+Two kinds of check, and the difference is the whole design; no flag runs the enforced
+two, and `--memory-graph` is opt-in. **Enforced** (exit `1`, `FAIL:`):
+the always-loaded document at `[paths] agents_md` exists, is within `agents_md_lines` and
+`agents_md_words`, and has a `## Current status` section within `status_lines`; the roadmap at
+`[paths] roadmap`, up to the line `## Design and plan trail`, is within `roadmap_prose_lines`
+and `roadmap_prose_words` (a roadmap with no marker is budgeted whole; an absent one is not a
+finding); every relative local link in the agents file resolves to a file — read from that
+document's own directory, and only when it lands inside the project root, since a link that
+walks out through `..` would be settled against the machine rather than the repository (an
+absolute link is not read at all, nor is an anchor, a URL or a `mailto:`). Budgets are the
+effective ones — the preset's, lowered by `[budgets]` if the project chose to. **Advisory**
+(`--memory-graph`; exit `0` always): over the resolved memory store, every `[[wiki-link]]`
+names a document in the store, no link is immediately repeated, and no ledger identifier is
+bracketed; reported as `notices` in `--json` and counted on the line, which never vouches for
+the store. Silent where no store resolves. **Writes** nothing.
+
+## `keelline docs trail [--check]`
+
+Rewrite the listing between `## Design and plan trail` and `<!-- end design and plan trail -->`
+in the roadmap: every `*.md` under `[paths] specs` and `[paths] plans` that git tracks and does
+not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap) whose
+`pattern` matches its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
+`delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
+the listing unable to lie by silence: a state naming a document that no longer exists fails
+(`1`) before anything is written, and a document that enters the listing without a declared
+state is written as `delivered` and then reported (`1`) — a design is written before the thing
+is built. That second guard fires on the writing path only: a row enters the listing through
+`docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
+against, so a defaulted `delivered` that was committed over that report is invisible to CI.
+A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern that does not
+compile, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+line or that carries either marker — both are written into the listing verbatim, so one could
+otherwise split the block and push repository prose into the roadmap. **Writes**
+`[paths] roadmap`.
+
+## `keelline plan check [--base REF] [PATH …]`
+
+With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
+`REF...HEAD` touches, `REF` defaulting to `origin/<project.base_branch>`. Four rules, each from a
+retrospective: every backticked path resolves unless the line says `(create)` or declares it
+on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
+nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
+present; a plan claiming `Fixes <PREFIX>-nnn` carries a `**Premise:**` line with content; and a
+mutation's outcome stated as fact in the present tense (`-> the test reddens`, `watch it go
+red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an expectation.
+Fenced code is fixture text, and so is a path claim that lands outside the project root —
+an absolute one, or one that walks out through `..` — which is never settled against the
+filesystem, because that answer would be about the machine rather than about the repository. A
+base that does not resolve is a finding (`1`), never an OK: in CI the cause is a checkout too
+shallow to hold the ref (`fetch-depth: 0`). A `REF` shaped like an option is refused (`2`)
+before git sees it. Uncommitted plans
+are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
+lints it. **Writes** nothing.
+
+## `keelline memory refs`
+
+Every backticked repository path a note names still exists. Notes are read as authoritative and
+age silently, so a path to a deleted module sends the next session after it. A candidate is
+dropped when the tree explains it: shorthand that resolves under the root, a code root or the
+directory a `[paths]` value lives in; an absolute path outside the repository; a placeholder
+(`scripts/foo.py`); a path the repository's ignore rules cover — except a path into the store
+itself, which those rules cover wholesale and which is settled on disk. Fenced code and bare
+filenames are skipped. In an overlay store, a note in a cross-project group that `[[links]]`
+into a project-scoped note is an `audience` finding. Exits `1` listing `note:line [rule]`; the
+targets are in `--json`. A note that exists and would not parse is counted on the line and
+named in `--json`, and is exit `1` too: an unread note is not a clean note. Refuses (`2`) when a
+configured group could not be resolved, naming each group and carrying the resolver's own reason
+for it inside the delimited region that marks repository-authored text as data — because a walk
+over a subset that reports nothing stale is worse than no guard. Where *no* store resolves at
+all, the exit is `1`: that comes from the resolver every `memory` command shares, so part of the
+store being unreadable is a refusal while the whole of it being unreadable is findings. That is
+the wrong way round by the ordering above, it is a known issue the memory lane owns, and until
+it is fixed a caller should gate on a non-zero exit rather than on the number. Write a path that
+deliberately does not resolve in *italics*. **Writes** nothing.
+
 ---
 
 ## Configuration
@@ -150,8 +376,8 @@ why so few of them are trusted with anything.
 
 ```toml
 [keelline]
-version = "0.1.0"
-state = "installed"
+version = "0.1.0"        # required; there is no default
+state = "installed"      # initialised | adopting | installed — default: initialised
 preset = "recommended"
 profile = ""
 agents = ["claude", "codex"]
@@ -161,20 +387,90 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]
-memory = "docs/memory"   # and the other document paths; each must stay inside the root
+[paths]                  # each must stay inside the root
+agents_md = "AGENTS.md"
+architecture = "docs/architecture"
+runbooks = "docs/runbooks"
+adr = "docs/adr"
+specs = "docs/specs"
+plans = "docs/plans"
+bugs = "docs/bugs"
+bug_index = "docs/bug-reports.md"
+roadmap = "docs/roadmap.md"
+roadmap_history = "docs/roadmap-history.md"
+memory = "docs/memory"
 
 [memory]
 mode = "local-only"      # local-only | in-repo | overlay
 groups = ["developer", "project-stable", "project-volatile", "specs"]
 index_extra = []         # extra pointers rendered into MEMORY.md
 
+[ledger]
+id_prefix = "BR"         # a capital letter, then up to seven more capitals or digits
+code_roots = ["src", "tests", "scripts"]
+evidence_boundary_required_for = ["high"]
+
 [budgets]                # a project may lower a preset's budget, never raise it
+agents_md_lines = 300
+agents_md_words = 3000
+status_lines = 50
+roadmap_prose_lines = 350
+roadmap_prose_words = 3500
 memory_index_words = 1200
 startup_rules_words = 1600
 volatile_notes_words = 2500
 volatile_ttl_days = 30
 ```
+
+Every value above is what a key you leave out takes, from the `recommended` preset — with two
+exceptions, and one line that is an example rather than a default. `[keelline] version` and
+`[project] name` have no default at all and are yours to write: a file without `version` does
+not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
+defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
+`installed` above shows a set value, not what an omitted key takes. Everything from
+`[project] base_branch` down, `[paths]`, `[memory]`, `[ledger]` and `[budgets]` included, is the
+preset's default exactly as written.
+
+**Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
+budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two
+trees `docs trail` lists, and `plans` is where `plan check` looks for the plans a diff touched.
+`bugs` is the ledger's entry directory and `bug_index` its generated index — `bugs new`,
+`bugs index`, `bugs check` and `bugs renumber` all read both — and `runbooks` supplies the
+`<runbooks>/bug-reports.md` link that index's generated header writes. `memory` is the note
+store, which `memory refs` walks. The remaining three are read for their location alone, and so
+is every one of the others: `bugs check` treats the first component of every `[paths]` value
+that has more than one — `docs`, for the defaults — as a directory documents live in, and
+therefore as a place a citation of an entry file may be written and must resolve. Pointing a
+path key somewhere unusual widens that sweep; it cannot take a document outside it, because a
+value that leaves the root is refused before any command runs.
+
+**`[ledger]`.** `id_prefix` is the one definition of what an identifier looks like: `BR-001`,
+and `BR-nnn` in every message. It is interpolated into patterns and filenames, so it is held to
+a shape — a capital letter followed by up to seven more capitals or digits — and a prefix
+outside it is a refusal (`2`), not a finding. The number is three digits or more. `code_roots`
+are the trees `bugs check` sweeps for mentions of an identifier, each of which must have an
+entry behind it; `evidence_boundary_required_for` names the severities whose entries must carry
+a filled `**What this evidence does not establish:**` line, the template's placeholder not
+counting. Widening it is how a project asks the same of `medium`.
+
+**The two ledger vocabularies**, neither of them configurable — they are the entry contract, and
+a value outside either is a finding (`1`) naming the file:
+
+| Field | Values |
+|---|---|
+| `status:` | `open`, `partial`, `fixed`, `rejected`, `void` |
+| `severity:` | `high`, `medium`, `low` |
+
+`void` is the one that is not a state of a bug: it records a number that was allocated and never
+carried one — what `bugs renumber` leaves behind at the old identifier — and it is the only
+status that needs neither `severity:` nor `area:`. `severity` is `bugs new`'s required
+`--severity`, and `--area` beside it is free text that becomes the entry's Area column.
+
+**`[budgets]`.** The first five are the documentation budgets `docs check` enforces:
+`agents_md_lines`, `agents_md_words` and `status_lines` over the always-loaded document and its
+`## Current status` section, `roadmap_prose_lines` and `roadmap_prose_words` over the roadmap
+above its trail marker. The last four bound the memory store. A budget is only ever lowered: a
+value above the preset's is ignored rather than refused, so raising one is not an escape.
 
 `~/.config/keelline/config.toml` is yours, not the project's:
 

@@ -1,0 +1,1 @@
+`keelline memory refs` reports every backticked repository path in your memory notes that no longer exists, so a note cannot keep sending a session after a module that was deleted weeks ago, and refuses rather than answer when part of the store could not be read.

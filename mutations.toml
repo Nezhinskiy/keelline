@@ -185,6 +185,42 @@ reddens = [
   "tests/memory/test_bundles.py::test_an_oversized_part_is_withheld_rather_than_delivered_unterminated",
 ]
 
+# The preset's `[rules]` bundle. A TOML `"""…"""` body keeps the newline before its closing
+# quotes and `split` joins blocks on `"\n\n"`, so an unstripped body puts three consecutive
+# newlines in front of the next `### ` heading — in text nobody reads until a session-start
+# hook has injected it, which is why it shipped.
+[[mutation]]
+name = "a rule body keeps the padding TOML gave it"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body}" for name, body in rules.items() if isinstance(body, str)'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_renders_as_one_heading_one_blank_line_and_a_stripped_body",
+  "tests/memory/test_bundles.py::test_no_shipped_rule_renders_with_padding",
+]
+
+# A preset is data read at run time and this bundle runs inside a handler whose policy is
+# `open`, so a malformed `rules` key renders nothing rather than raising out of a hook. Both
+# arms shipped with no test: the fixture beside them makes `.get("rules", {})` return `{}`,
+# which the comprehension renders as nothing whether the guards are there or not.
+[[mutation]]
+name = "a rules key that is not a table reaches .items()"
+file = "src/keelline/memory/bundles.py"
+before = '    if not isinstance(rules, dict):'
+after = '    if False:'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rules_key_that_is_not_a_table_renders_nothing_rather_than_raising",
+]
+
+[[mutation]]
+name = "a rule body that is not a string is rendered rather than skipped"
+file = "src/keelline/memory/bundles.py"
+before = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items() if isinstance(body, str)'
+after = '        f"### {name}\n\n{body.strip()}" for name, body in rules.items()'
+reddens = [
+  "tests/memory/test_bundles.py::test_a_rule_whose_body_is_not_a_string_is_skipped",
+]
+
 [[mutation]]
 name = "a nested group is keyed on its folder rather than its configured name"
 file = "src/keelline/memory/notes.py"
@@ -257,3 +293,1145 @@ file = "src/keelline/fsops.py"
 before = '            os.fsync(stream.fileno())'
 after = ''
 reddens = ["tests/test_fsops.py::test_the_bytes_are_fsynced_before_the_rename"]
+
+# Two other tests redden with this one — `required` names `Links` and the export list is
+# compared against the imports — and that is the point rather than a weakness: those two are
+# the ones that *missed* the original omission, because both are the surface restating itself.
+# What no mutation of this file can express is the change that actually happened: a signature
+# in `worktree.py` growing a type this list does not carry. The derived test is what covers
+# that direction, and this entry is what proves the derived test is load-bearing at all.
+[[mutation]]
+name = "a type the surface names in a signature drops off the surface"
+file = "src/keelline/memory/api.py"
+before = '    "Links",'
+after = ''
+reddens = [
+  "tests/memory/test_surface.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface",
+]
+
+# A `#` opens a comment only at the start of a word. `shlex`'s own `commenters` ends a token
+# at ANY unquoted `#`, which truncated `echo a#b && cat secrets/.env` to `['echo', 'a']` and
+# dropped a real command on the floor.
+[[mutation]]
+name = "a mid-word hash opens a comment again"
+file = "src/keelline/guards/bashscan.py"
+before = '        elif character == "#" and _starts_a_word(previous):'
+after = '        elif character == "#":'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_mid_word_hash_does_not_truncate_the_command",
+  "tests/guards/test_bashscan.py::test_a_hash_inside_a_path_argument_survives",
+]
+
+# The newline's separator is space-padded so it can never weld onto a typed `;` and become a
+# `;;` token that `segments` does not split on. `operator_pieces` decomposes such a run as
+# well, so the segment split survives the unpadded form — what reddens is the token-level
+# assertion, which is the one that pins the padding itself rather than the second guard.
+[[mutation]]
+name = "the newline separator welds onto a typed semicolon again"
+file = "src/keelline/guards/bashscan.py"
+before = '            out.append(" ; ")'
+after = '            out.append(";")'
+reddens = [
+  "tests/guards/test_bashscan.py::test_a_newline_after_a_separator_arrives_as_its_own_token",
+]
+
+# `uv run pytest` is an exact two-token wrapper pair, and stripping it is what lets an
+# argv0-keyed caller see the program instead of the launcher. Dropping the branch reddens the
+# unwrapped case and the documented under-report alike: the latter's expected value is what
+# the pair-strip leaves behind, so it pins that the pair IS stripped and that nothing past it
+# is.
+[[mutation]]
+name = "the two-token wrapper pair stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '            name == _DOUBLE_WRAPPER[0]'
+after = '            False'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_the_two_token_uv_run_prefix",
+  "tests/guards/test_bashscan.py::test_command_words_does_not_unwrap_a_launcher_it_does_not_recognise",
+]
+
+# The other two branches `command_words` implements, one entry each: a single mutation cannot
+# pin both, since each branch strips a different prefix and the entry above pins only the
+# `uv run` pair. Leaving the assignment on the front is what made an argv0 test read `FOO=1`
+# as the program.
+[[mutation]]
+name = "a leading environment assignment stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '        if _ASSIGNMENT.match(token):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# The `env` half of the same resolution: a bare wrapper token left on the front makes an
+# argv0 test judge the launcher instead of the program it launches.
+[[mutation]]
+name = "a bare wrapper token stops being stripped off a segment"
+file = "src/keelline/guards/bashscan.py"
+before = '        if name in _SINGLE_WRAPPERS:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_bashscan.py::test_command_words_strips_a_leading_assignment_and_wrapper",
+]
+
+# `|&`, `;&` and `;;&` decompose to single characters by design, and each `&` there belongs to
+# a pipe or a case fall-through, never to the async operator.
+[[mutation]]
+name = "a pipe-both operator reads as backgrounding again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '            if index and pieces[index - 1] in _COMMAND_ENDING_PIECES:'
+after = '            if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_pipe_both_operator_is_not_backgrounding",
+  "tests/guards/test_bgcleanup.py::test_a_case_fallthrough_terminator_is_not_backgrounding",
+]
+
+# `(cmd &)` arrives as `['(', 'cmd', '&)']` — no bare `&` anywhere — and the deliberate-detach
+# idiom was allowed until the welded run was decomposed. The measured note on the tests named:
+# the idiom's own `(sleep 300 &)` can no longer prove this, because the ported `_begins_with_sleep`
+# skips a leading `(` and refuses that command on the `sleep` rule before the `&` scan runs. A
+# non-sleep weld is what reddens, so that is what is named here.
+[[mutation]]
+name = "a background welded to a closing paren is invisible again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        pieces = bashscan.operator_pieces(token)'
+after = '        pieces = [token]'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_non_sleep_background_welded_to_a_closing_paren_is_denied",
+  "tests/guards/test_bgcleanup.py::test_the_incident_command_denies_without_the_space_before_the_ampersand",
+]
+
+# D7's cap on the same judge. Above it the command is not read at all, because tokenizing is
+# quadratic in token length and every Bash call pays it; removing the cap makes the over-cap
+# half of the test judge a 64 KiB command and refuse it.
+[[mutation]]
+name = "the background judge reads a command past its size cap again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if len(command) > MAX_COMMAND_CHARS:'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_command_past_the_size_cap_is_allowed_unread",
+]
+
+# The leading-`(` skip must drop a leading RUN, not every `(` in the segment: filtering the
+# whole segment pulls a `sleep` out of a command substitution and refuses `X=$(sleep 5) pytest`,
+# a false refusal of ordinary work from the one handler that fails closed.
+[[mutation]]
+name = "a sleep inside a command substitution reads as a leading sleep again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(list(dropwhile(lambda t: t == "(", commands[0])))'
+after = '    words = bashscan.command_words([t for t in commands[0] if t != "("])'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_sleep_inside_a_command_substitution_is_not_a_leading_sleep",
+]
+
+# The one CLOSED handler. Under OPEN an exception inside the judge is swallowed and the
+# call proceeds — "could not judge" read as "permitted", which is exactly what D11 forbids.
+[[mutation]]
+name = "the background guard fails open again"
+file = "src/keelline/guards/hooks.py"
+before = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.CLOSED, run=_bg_cleanup),'
+after = '        Handler(name="bg-cleanup", event="PreToolUse", policy=Policy.OPEN, run=_bg_cleanup),'
+reddens = [
+  "tests/guards/test_hooks.py::test_the_background_guard_is_the_closed_pre_tool_use_handler",
+  "tests/guards/test_hooks.py::test_a_guard_that_cannot_judge_refuses_rather_than_permits",
+]
+
+[[mutation]]
+name = "a verdict's refusal never becomes a deny"
+file = "src/keelline/guards/hooks.py"
+before = '    if verdict.deny is not None:'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied",
+  "tests/guards/test_hooks.py::test_a_leaking_background_call_is_denied_through_the_real_dispatcher",
+]
+
+# §3: a value that reaches a subprocess is untrusted. Without the check a range shaped like an
+# option is handed to `git log`, where `--output=FILE` writes wherever the caller pointed it.
+[[mutation]]
+name = "a range shaped like an option reaches git"
+file = "src/keelline/guards/commit.py"
+before = '    if rev_range.startswith("-"):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_range_shaped_like_an_option_is_refused_before_git_sees_it",
+]
+
+# The name rule (Premise 12): a product phrase as the WHOLE name. Measured, not predicted:
+# `search` instead of `fullmatch` reddens exactly one negative, the `Helped-by:` line naming a
+# person after a single-word product. The plan predicted a second; that one survives either
+# way, because `_PRODUCTS` carries no bare vendor word, only whole product phrases.
+[[mutation]]
+name = "a person whose name contains a product word is a bot again"
+file = "src/keelline/guards/commit.py"
+before = '    return _PRODUCTS.fullmatch(name.strip()) is not None'
+after = '    return _PRODUCTS.search(name.strip()) is not None'
+reddens = ["tests/guards/test_commit.py::test_negative_samples_are_untouched"]
+
+# The paragraph rule (Premise 12): only the final paragraph is judged, so a strip can never
+# amputate a body sentence.
+[[mutation]]
+name = "the whole message is judged again, body included"
+file = "src/keelline/guards/commit.py"
+before = '            return index + 1'
+after = '            return 0'
+reddens = [
+  "tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged",
+  "tests/guards/test_commit.py::test_strip_never_touches_the_body",
+]
+
+# The bypass review found in the first cut of this module, and the reason it is declared
+# rather than merely covered: with the scan starting at the last line instead of the last
+# non-blank one, a message ending in a single space has an empty final paragraph and NOTHING
+# is ever flagged. A gate whose whole argument is that it cannot be bypassed was bypassable by
+# one invisible character, and no assertion in the file noticed.
+# Re-measured after the attribution-block walk was added: the same substitution now also
+# reddens `test_strip_removes_a_whole_two_paragraph_attribution_block`,
+# `test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk` and
+# `test_the_hook_leaves_nothing_for_the_range_check_to_find`, because the walk asks
+# `_final_paragraph_start` about the text above a paragraph and without the trim it answers
+# with the blank separator's own index, so the walk never steps. Collateral recorded rather
+# than declared: the two entries below it own that behaviour, and this one still says what it
+# was written to say.
+[[mutation]]
+name = "a trailing blank line empties the final paragraph again"
+file = "src/keelline/guards/commit.py"
+before = '    while end > 0 and not lines[end - 1].strip():'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_commit.py::test_a_blank_tail_neither_hides_an_offence_nor_moves_its_line_number",
+  "tests/guards/test_commit.py::test_positive_samples_are_flagged",
+]
+
+# `commit strip` is the local half of the trailer gate (`commit check` is the CI half, already
+# covered above): without this guard a `COMMIT_EDITMSG` reached through a symlink would be
+# rewritten through it rather than refused. No mutation is declared for the `-`-prefixed-path
+# guard: it is a one-line refusal identical in shape to `commits_in`'s own leading-`-` refusal,
+# a few entries above. The area's other refusals — the two in `_tool_input`, `run_test_hygiene`'s
+# `_NO_GIT`, `run_test_audit`'s self-test raise and the unreadable-file `Failure` — were left
+# undeclared on the same "one entry per task" reasoning and are declared at the end of this file
+# instead: review pointed out that the word `Refusal` occurred nowhere here, and a fail-closed
+# row whose refusals are undeclared is exactly what CONTRIBUTING names as belonging in this file.
+[[mutation]]
+name = "commit strip writes through a symlink"
+file = "src/keelline/guards/commands.py"
+before = '    if path.is_symlink():'
+after = '    if False:'
+reddens = ["tests/guards/test_commands.py::test_commit_strip_never_writes_through_a_symlink"]
+
+# The chain. Without it, installing this hook silently disables whatever husky, pre-commit or
+# the repository had under the same name — the one failure mode the whole `.local` dance
+# exists to prevent, and the one nothing about the installed hook's own behaviour would show.
+[[mutation]]
+name = "the hook stops chaining to the hook it displaced"
+file = "src/keelline/guards/githooks.py"
+before = '    exec "$previous" "$@"'
+after = '    :'
+reddens = [
+  "tests/guards/test_githooks.py::test_a_pre_existing_hook_is_preserved_and_still_runs",
+  # And from a linked worktree, where `$0.local` is a sibling of the *common* directory's copy
+  # — the reason the chain is spelled off `$0` rather than computed from `--git-common-dir`.
+  "tests/guards/test_githooks.py::test_a_worktree_shares_the_main_checkouts_hook",
+]
+
+# The quiet outcome, declared rather than only covered because the first cut of this hook got
+# it backwards and nothing about the code looked wrong. `grep -v` exits 1 when it selects no
+# lines, which is exactly the "nothing to strip" case, so hanging the failure report off the
+# pipe's status announced a broken strip on every clean commit. `after` below is that exact
+# spelling: a false alarm on the ordinary path, on a tool whose whole job is to be trusted
+# about what it rewrote.
+[[mutation]]
+name = "a clean commit is told the strip failed"
+file = "src/keelline/guards/githooks.py"
+before = '| grep -v "$quiet" >&2 || true'
+after = '| grep -v "$quiet" >&2 || echo "$failed" >&2'
+reddens = [
+  "tests/guards/test_githooks.py::test_the_hook_says_nothing_when_there_was_nothing_to_strip",
+]
+
+# The stale-bytecode predicate, both directions: `!=` against the header's recorded mtime is
+# the comparison CPython makes; a naive `pyc mtime > source mtime` reported the healthy case
+# as stale and missed the real one.
+[[mutation]]
+name = "stale bytecode is never counted"
+file = "src/keelline/guards/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if False:'
+reddens = ["tests/guards/test_hygiene.py::test_stale_bytecode_is_counted"]
+
+[[mutation]]
+name = "fresh bytecode is counted as stale"
+file = "src/keelline/guards/hygiene.py"
+before = '                if recorded != int(source.stat().st_mtime) & _PYC_MTIME_MASK:'
+after = '                if True:'
+reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_stale"]
+
+# The containment check on `ledger.code_roots`. `config.paths` guards `[paths]` and leaves this
+# field to whoever consumes it, so this call is the only thing between a committed
+# `code_roots = ["../.."]` and a walk of the tree above the project root. Declared rather than
+# only covered because the fixture had to be built for it: an escaping entry that names nothing
+# on disk is dropped by the `is_dir()` filter, and the containment call could then be deleted
+# with every test still green — the test creates the escaping directory so it cannot.
+[[mutation]]
+name = "an escaping code root is followed"
+file = "src/keelline/guards/roots.py"
+before = '            candidate = contained(root, entry, resolved_root=resolved_root)'
+after = '            candidate = root / entry'
+reddens = ["tests/guards/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
+
+# The other half of the stale-bytecode predicate, and the direction that costs a person time
+# rather than only missing a warning. PEP 552 bytes 8-12 hold the source mtime only while bit 0
+# of the flags word is clear; in a hash-based `.pyc` they hold half the source hash, and
+# comparing that fragment to an mtime reports a perfectly current cache as stale on every run.
+# `SOURCE_DATE_EPOCH` alone flips `py_compile` into that mode, so a reproducible build turns the
+# notice into a permanent false alarm and `test hygiene` into a permanent exit 1.
+[[mutation]]
+name = "a hash-based .pyc is read as if it carried an mtime"
+file = "src/keelline/guards/hygiene.py"
+before = '    if int(struct.unpack("<I", header[_PYC_FLAGS])[0]) & _PYC_HASH_BASED:'
+after = '    if False:'
+reddens = ["tests/guards/test_hygiene.py::test_a_hash_based_pyc_is_not_judged"]
+
+# Counting every imported entry point as reached marks the whole suite exercised, and the
+# scanner reports a clean suite whatever the tests do. (An earlier draft mutated
+# `_referenced_names` to count `ImportFrom` nodes; that walk covers a *test function*, where
+# no import sits, so the mutation was inert -- measured byte-identical output.) Measured here:
+# it also reddens `test_self_test_proves_the_scanner_still_discriminates` and the CLI test,
+# because the module's known-bad corpus carries this shape and the command refuses on a
+# self-test problem. The two named below are the ones that say what was lost.
+[[mutation]]
+name = "an imported entry point counts as invoked"
+file = "src/keelline/guards/audit.py"
+before = '        reached = _reachable_names(node, facts)'
+after = '        reached = _reachable_names(node, facts) | facts.root_symbols'
+reddens = [
+  "tests/guards/test_audit.py::test_an_import_alone_does_not_count_as_invoking_the_entry_point",
+  "tests/guards/test_audit.py::test_flags_a_test_that_names_an_entry_point_it_never_invokes",
+]
+
+# The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
+# than a wider net. The canonical harness attribution is a `Generated with` footer, a blank
+# line, then a `Co-Authored-By:` trailer; judging the final paragraph alone removed the trailer
+# and left the footer, so the hook reported a successful strip and `commit check` failed the
+# same commit in CI. This mutation stops the walk after one paragraph, which is exactly that
+# defect. Measured over `tests/guards`: exactly these three redden and nothing else does -- the
+# unit answer, the same block through the real installed hook (which is the pair the defect was
+# reported as: the hook claimed success, the range check then failed the commit), and the test
+# that pins what the walk costs, which asserts the block is removed whole.
+[[mutation]]
+name = "only the final paragraph of an attribution block is judged again"
+file = "src/keelline/guards/commit.py"
+before = '        if not _paragraph_is_all_attribution(lines, earlier, start):'
+after = '        if True:'
+reddens = [
+  "tests/guards/test_commit.py::test_strip_removes_a_whole_two_paragraph_attribution_block",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+  "tests/guards/test_githooks.py::test_the_hook_leaves_nothing_for_the_range_check_to_find",
+]
+
+# The other half of the same walk, and the one that protects Premise 12: the walk starts only
+# when the LAST paragraph is attribution to the last line. Without that test it steps over a
+# body paragraph into whatever attribution sits above it, and `strip` rewrites the body around
+# it -- the failure the paragraph rule exists to prevent. Its target carries a fixture written
+# for it: once a trailer value had to end at its address, the test's original body sentence
+# stopped being an attribution and this mutation SURVIVED, green everywhere. The assertion was
+# redesigned rather than the entry reworded, and the shape that discriminates is an
+# attribution-only paragraph standing above a body one.
+[[mutation]]
+name = "the attribution walk starts above a body paragraph"
+file = "src/keelline/guards/commit.py"
+before = '    if not _paragraph_is_all_attribution(lines, start, len(lines)):'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_only_the_final_paragraph_is_judged"]
+
+# A trailer's value ends at its address; a value that continues INTO A WORD past it is a
+# sentence. Without that test everything past the `>` is discarded as part of the address, so
+# `Reviewed-by: Copilot <x@y.z> said nothing useful.` reads as a bare `Copilot` trailer -- and
+# under the attribution walk above, one standing alone over the harness block was STRIPPED with
+# it. Four entries, because three tempting spellings of this rule each MISS A REAL TRAILER and
+# each was measured doing so; this class of mistake has now been made twice and the entries are
+# what stop a third.
+[[mutation]]
+name = "a trailer value may run on past its address again"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if False:'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_trailer_shaped_prose_above_the_block_is_not_swallowed_by_the_walk",
+]
+
+# Spelling 1: "the value must END at `>`". An unterminated trailer (`<noreply@anthropic.com`,
+# closing bracket knocked off) carries no `>` at all, so dropping the `bracket and` guard reads
+# its whole address as a prose tail and a real attribution walks through the gate.
+[[mutation]]
+name = "a trailer with no closing bracket stops being read"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if _WORD.search(tail):'
+reddens = [
+  "tests/guards/test_commit.py::test_a_trailer_whose_closing_bracket_is_missing_is_still_caught",
+]
+
+# Spelling 2: "anything after `>` is prose". THIS ONE SHIPPED FOR A ROUND and was caught in
+# review, not by a test: it silently missed the canonical harness trailer with a full stop typed
+# after it -- `Co-Authored-By: Claude <noreply@anthropic.com>.` -- on the domain rule and the
+# product-name rule alike. A gate that one keystroke bypasses is not a gate. Punctuation is not
+# a word; that is the whole distinction, and this entry is the one that holds it.
+[[mutation]]
+name = "trailing punctuation after the address reads as prose again"
+file = "src/keelline/guards/commit.py"
+before = '    if bracket and _WORD.search(tail):'
+after = '    if bracket and tail:'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# Spelling 3: split at the FIRST `>` rather than the last. A display name carrying brackets of
+# its own (`Claude <bot> <noreply@anthropic.com>`) then puts the real address after an inner
+# `>`, and the trailer reads as prose -- missed. The last `>` is the address's own closing
+# bracket in every shape measured.
+[[mutation]]
+name = "the prose tail is taken from the first closing bracket, not the last"
+file = "src/keelline/guards/commit.py"
+before = '    _, bracket, tail = address.rpartition(">")'
+after = '    _, bracket, tail = address.partition(">")'
+reddens = [
+  "tests/guards/test_commit.py::test_punctuation_after_the_address_does_not_disarm_the_trailer_rule",
+]
+
+# The heredoc body read as GRAMMAR rather than as the data it is. `prepare` re-inserts an
+# unquoted body into the scanned text -- right for a caller matching paths, because the shell
+# expands such a body, and wrong for the one question this guard asks. Both directions were
+# measured through `judge(..., background=True)` before the flag was keyed off: a
+# `cat > README.md <<EOF` whose body carried `a=1&b=2` was DENIED by the plugin's only
+# `Policy.CLOSED` handler, and an apostrophe in a body ("don't") left `tokenize` returning
+# `None`, which degrades to ALLOW and let a real `sleep 5 &` after the heredoc through.
+[[mutation]]
+name = "a heredoc body is read as shell grammar again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    tokens = bashscan.tokenize(command, keep_unquoted_bodies=False)'
+after = '    tokens = bashscan.tokenize(command)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_heredoc_written_to_a_file_is_data_not_a_program",
+  "tests/guards/test_bgcleanup.py::test_an_apostrophe_in_a_heredoc_body_does_not_hide_a_real_leak",
+]
+
+# The third half of the stale-bytecode header read, and the same class as the hash-based entry
+# above: PEP 552 bytes 8-12 are this interpreter's recorded source mtime only when bytes 0-4 are
+# this interpreter's magic. A `__pycache__` keeps one `.pyc` per interpreter tag and nothing
+# removes the old ones, so a `mod.cpython-311.pyc` records the mtime as of a run whose bytecode
+# will never be imported again -- and any edit since makes it mismatch. Measured on a tree whose
+# current bytecode had just been compiled and was fresh: `_stale_bytecode` -> 1, so the notice
+# fires on every red run of a healthy tree and `test hygiene` exits 1 forever.
+[[mutation]]
+name = "a .pyc from another interpreter is read as this one's"
+file = "src/keelline/guards/hygiene.py"
+before = '    if header[_PYC_MAGIC] != importlib.util.MAGIC_NUMBER:'
+after = '    if False:'
+reddens = ["tests/guards/test_hygiene.py::test_a_pyc_from_another_interpreter_is_not_judged"]
+
+# `contained_roots` is what every consumer of `ledger.code_roots` walks, one `rglob` per entry
+# with the results added up, so a repeated or nested entry multiplies a count rather than
+# widening a scan. Measured with `code_roots = ["src", "src", "src/pkg"]` over two stale `.pyc`
+# files: `stale == 5` with no pruning at all, `stale == 3` with the mutation below, `2` as
+# shipped. A wrong number in a notice whose entire purpose is to be believed about a number.
+[[mutation]]
+name = "a code root listed twice is walked twice"
+file = "src/keelline/guards/roots.py"
+before = '        if any(_covers(kept, candidate) for kept in found):'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_repeated_or_nested_code_root_is_walked_once",
+]
+
+# An advisory command's exit code is part of its contract. `suite_files` lists a `test_*.py`
+# symlink by name without following it, so a dangling one -- routine after a bad merge -- raised
+# `FileNotFoundError` out of `scan_file` and turned `test audit-entrypoints`, which exits 0 by
+# design, into `internal error: FileNotFoundError` and exit 2 -- the code callers are told never
+# to read as permission. Skipping the file under-reports, which is the direction the two parse
+# errors beside it already chose.
+[[mutation]]
+name = "an unreadable test file aborts the scan"
+file = "src/keelline/guards/audit.py"
+before = '    except (OSError, SyntaxError, UnicodeDecodeError):'
+after = '    except (SyntaxError, UnicodeDecodeError):'
+reddens = [
+  "tests/guards/test_audit.py::test_a_dangling_test_symlink_is_skipped_rather_than_aborting_the_scan",
+]
+
+# ---------------------------------------------------------------------------------------------
+# Wave B of the guards review. The first six are defects review measured on the shipped modules;
+# the last four are the area's fail-closed refusals, which were described in comments and in
+# tests but declared nowhere — the word `Refusal` did not occur in this file at all.
+
+# A footer had no bounded tail, so ANY line beginning with the words was one whatever followed:
+# `Generated with Claude Code and then reviewed by a human.` was an offence, and `commit strip`
+# deleted that sentence from the message before the commit existed, reporting only a count. The
+# worse of the two failure directions by the module's own docstring — the range check still
+# catches a trailer the hook left behind, and nothing puts a deleted sentence back. The
+# replacement is the pre-fix pattern exactly: an empty tail is "the line may go on forever".
+[[mutation]]
+name = "a generated-with footer may run on into a sentence again"
+file = "src/keelline/guards/commit.py"
+before = '_FOOTER_TAIL = r"(?:[ \t]+(?:(?-i:[A-Z0-9])[\w.]*|\S*[\d/]\S*))*(?:\]\([^)\s]*\))?\]?[^\w]*$"'
+after = '_FOOTER_TAIL = r""'
+reddens = [
+  "tests/guards/test_commit.py::test_negative_samples_are_untouched",
+  "tests/guards/test_commit.py::test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words",
+]
+
+# The record separator was `%x01`, chosen for "neither can occur in a commit message". NUL
+# cannot; `\x01` can, and git stores it. One such byte in a body split one commit into two
+# records, sent the rest of the message into the field read as a `sha`, inflated the count 1 -> 2
+# and left the trailer in a record nothing judged — the CI gate voided for that commit by one
+# byte, the same class as the trailing-space bypass this branch already fixed once.
+[[mutation]]
+name = "the commit stream is split on a byte a message can carry"
+file = "src/keelline/guards/commit.py"
+before = '    fields = completed.stdout.split("\x00")'
+after = '    fields = completed.stdout.split("\x01")'
+reddens = [
+  "tests/guards/test_commit.py::test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records",
+]
+
+# The other half of the same guard, and the reason NUL can be the only delimiter: `-z` is what
+# terminates each record with NUL instead of a newline. Without it the records run together and
+# the pairing reads one commit where there are two. Declared separately because the `\x01`
+# fixture above does NOT redden on this one — a two-part guard needs two entries or half of it
+# is unproven.
+[[mutation]]
+name = "the log stops being NUL-terminated"
+file = "src/keelline/guards/commit.py"
+before = '                "-z",'
+after = '                "--reverse",'
+reddens = [
+  "tests/guards/test_commit.py::test_check_range_reports_each_offending_commit_once",
+]
+
+# `commit.verbose = true` puts the staged diff in the message file below a scissors line, and a
+# diff's lines start with `diff`, `+`, `-`, `@@` or a space. Without the scissors rule the walk
+# back over comment and blank lines stopped at the first of them, the whole file read as
+# "message", the attribution block was no longer trailing and the hook became a silent no-op —
+# one config key disabling the entire local layer.
+[[mutation]]
+name = "the verbose diff is read as part of the commit message again"
+file = "src/keelline/guards/commands.py"
+before = '        if line.startswith(_COMMENT_CHAR) and _SCISSORS_MARKER in line:'
+after = '        if False:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_still_strips_when_commit_verbose_appends_the_diff",
+  "tests/guards/test_commands.py::test_a_scissors_line_is_found_by_its_marker_not_by_gits_english_sentence",
+]
+
+# A trailer whose value is a bare address (`Co-Authored-By: noreply@anthropic.com`, brackets left
+# off) has no display name to split at, so `address` was empty and `_VENDOR_DOMAINS` could never
+# fire — while the identical address in brackets was caught. The third way past the trailer's
+# value rule, after the unterminated one and the punctuated one already declared above.
+[[mutation]]
+name = "a bare address is no longer read as the trailer's address"
+file = "src/keelline/guards/commit.py"
+before = '    if not bracket and len(name.split()) == 1:'
+after = '    if False:'
+reddens = ["tests/guards/test_commit.py::test_positive_samples_are_flagged"]
+
+# `UnicodeDecodeError` is not an `OSError`. Without its own arm a message file in a non-UTF-8
+# encoding — `i18n.commitEncoding` is a real git setting — left `commit strip` as
+# `internal error: UnicodeDecodeError` and exit 2, the code callers are told never to read as
+# permission, for a file the command simply cannot read. Same shape as the audit's dangling
+# symlink entry above.
+[[mutation]]
+name = "a non-UTF-8 message file is an internal error again"
+file = "src/keelline/guards/commands.py"
+before = '    except UnicodeDecodeError:'
+after = '    except KeyError:'
+reddens = [
+  "tests/guards/test_commands.py::test_commit_strip_reports_a_message_file_that_is_not_utf_8_as_a_failure",
+]
+
+# `guard bg-cleanup` is the CLI table's fail-closed row and `_tool_input` is where it closes.
+# Both of its refusals are replaced here with the answer a guard must never give for input it
+# could not read: `None`, which the command reports as "not a Bash call" and exit 0 — a refusal
+# that everything downstream reads as permission, which is the category CONTRIBUTING names.
+[[mutation]]
+name = "a payload that is not JSON is allowed instead of refused"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}; {exc}") from None'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+[[mutation]]
+name = "a payload carrying no command string is allowed instead of refused"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(f"{_UNREADABLE}, and the object must carry a string `command`")'
+after = '        return None'
+reddens = ["tests/guards/test_commands.py::test_guard_bg_cleanup_refuses_what_it_cannot_read"]
+
+# "A tree git could not report on is not a clean tree." The whole value of `test hygiene` is that
+# it answers "can this red run be trusted", and "I do not know" reported as "yes" is the one
+# wrong answer. The replacement is the shape that makes it green and silent.
+[[mutation]]
+name = "a tree git cannot report on is reported as clean"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal(_NO_GIT)'
+after = '        found = found._replace(dirty=0)'
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_git_cannot_report_on",
+]
+
+# A scanner that cannot go red is not evidence. Without this raise, `test audit-entrypoints`
+# exits 0 over a suite nothing actually graded, which reads exactly like a clean audit.
+[[mutation]]
+name = "a scanner that stopped discriminating still reports an audit"
+file = "src/keelline/guards/commands.py"
+before = '        raise Refusal("the scanner no longer discriminates: " + "; ".join(problems))'
+after = '        problems = []'
+reddens = [
+  "tests/guards/test_commands.py::test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating",
+]
+
+# §5.8's gate stores its denylist as digests so the file that hides a name does not publish it,
+# which means the match is a windowed hash comparison rather than a substring test — an
+# invisible mechanism whose failure mode is silence. Empty the per-width digest set and every
+# scan comes back clean: the whole-lane walk goes green over a tree that could name anything.
+[[mutation]]
+name = "the hashed neutrality denylist stops matching a planted token"
+file = "tests/guards/test_neutral.py"
+before = '        wanted = {digest for length, digest in forbidden if length == width}'
+after = '        wanted = set()'
+reddens = [
+  "tests/guards/test_neutral.py::test_the_gate_discriminates",
+]
+
+# The public-document half of the same gate, which had no entry here until two rounds of review
+# found two holes in it. `PUBLIC_FORBIDDEN` is the full table minus the digests of the paths the
+# preset itself ships, so that a README may say where the note store lives by default. Written
+# by hand as the full table instead, the exemption disappears and every public document that
+# names a default path reddens; written as the full table is also the shape a well-meaning
+# "simplification" takes, and the derivation fails silently either way.
+[[mutation]]
+name = "the public document table is written by hand instead of derived from the preset"
+file = "tests/test_neutral_wave2.py"
+before = 'PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())'
+after = 'PUBLIC_FORBIDDEN = FORBIDDEN'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_exemption_is_exactly_the_presets_default_paths",
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# The vendor-branch arm, whose failure mode is silence and whose history is a hole per round of
+# review: first a bare name only, then a bare name plus three hardcoded remote names. The
+# replacement accepts any path or remote prefix; drop that and every prefixed form — a remote
+# nobody listed, a `refs/` ref, this repository's own branch prefix, a worktree path — walks
+# straight through a gate that reports nothing.
+[[mutation]]
+name = "the vendor-branch arm stops seeing a prefixed branch name"
+file = "tests/test_neutral_wave2.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+]
+
+# The other half of the same replacement, and it cuts both ways, so it is two entries. The
+# vendor arm reads the text with its URLs blanked out, which is the only thing between the gate
+# and a documentation URL whose path segment after a vendor name happens to be dashed — the
+# commonest shape one has. Without it the gate cries wolf on every public document that cites
+# one, which is how an arm gets loosened in the first place.
+[[mutation]]
+name = "the vendor arm reads a URL as if it were prose"
+file = "tests/test_neutral_wave2.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(lowered)'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+]
+
+# And the other direction, which is the one that shipped for three commits: blanking for *every*
+# arm takes the personal address and the commit id out of every URL in the tree — a `mailto:`, a
+# profile link, a `?sha=` parameter — which is the gate's whole subject matter. Only the vendor
+# arm has a legitimate reason to meet its own shape inside a URL path.
+[[mutation]]
+name = "every arm goes blind inside a URL"
+file = "tests/test_neutral_wave2.py"
+before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
+after = '        name for name, shape in SHAPES if shape.search(blanked)'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+]
+
+# The two gates are hand-synced copies, which is a documented decision and was a false claim for
+# one commit: `SHAPES` was edited in one and not the other, in the direction of weakening.
+# Diverge them again — here by restoring the sibling's pre-review arm — and the test that reads
+# both must say so.
+[[mutation]]
+name = "the two copies of the neutrality gate diverge again"
+file = "tests/guards/test_neutral.py"
+before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
+after = '        re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+reddens = [
+  "tests/test_neutral_wave2.py::test_the_two_copies_of_the_gate_agree",
+]
+
+# A repository-controlled prefix reaches a regular expression only after its shape is checked.
+[[mutation]]
+name = "an unchecked ledger prefix reaches the regular expression"
+file = "src/keelline/identifiers.py"
+before = '        if not PREFIX.match(self.prefix):'
+after = '        if False:'
+reddens = ["tests/test_identifiers.py::test_a_prefix_outside_the_contract_is_refused_before_it_meets_a_regex"]
+
+# One digit rule for the ledger and the plan lint.
+[[mutation]]
+name = "the Fixes claim stops sharing the identifier digit rule"
+file = "src/keelline/identifiers.py"
+before = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-{DIGITS}\b")'
+after = '        return re.compile(rf"\bFixes\s+{re.escape(self.prefix)}-\d+\b")'
+reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rule"]
+
+# A non-zero exit is an answer some callers need (`check-ignore` says 1 for "nothing matched").
+[[mutation]]
+name = "the git runner collapses every non-zero exit into could-not-run"
+file = "src/keelline/gitenv.py"
+before = '    return completed.returncode, completed.stdout'
+after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
+reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
+
+# A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
+# the subset stays valid YAML only because the leading class is YAML's whole indicator set.
+[[mutation]]
+name = "the frontmatter reader accepts a bare value a YAML reader would misparse"
+file = "src/keelline/ledger/entries.py"
+before = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,\[\]{}#&*!|>'\"%@`]|: | #|:\Z")'''
+after = '''_NEEDS_QUOTING = re.compile(r"\A[-?:,]|: | #|:\Z")'''
+reddens = ["tests/ledger/test_entries.py::test_a_value_that_is_not_a_plain_yaml_string_needs_quotes"]
+
+# Regenerating over content the tool did not write deletes it with no diff and exit 0.
+[[mutation]]
+name = "the index overwrite guard stops seeing foreign lines"
+file = "src/keelline/ledger/index.py"
+before = '    foreign = foreign_index_lines(root, current, config)'
+after = '    foreign: list[str] = []'
+reddens = ["tests/ledger/test_index.py::test_index_refuses_to_delete_any_content_it_did_not_generate"]
+
+# A placeholder that satisfies its own check is the failure mode the evidence rule prevents.
+[[mutation]]
+name = "the untouched evidence placeholder satisfies the boundary rule"
+file = "src/keelline/ledger/check.py"
+before = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*(?!{re.escape(EVIDENCE_PLACEHOLDER)})\S", re.MULTILINE'
+after = '    rf"^{re.escape(EVIDENCE_LABEL)}[^\S\n]*\S", re.MULTILINE'
+reddens = ["tests/ledger/test_check.py::test_the_untouched_scaffold_placeholder_does_not_satisfy_the_rule"]
+
+# The citation pattern is loose by design; the decision is the resolution.
+[[mutation]]
+name = "a citation is accepted without resolving it against the ledger directory"
+file = "src/keelline/ledger/scan.py"
+before = '    return target in (relative, rooted)'
+after = '    return True'
+reddens = ["tests/ledger/test_scan.py::test_a_citation_of_an_entry_file_is_resolved_two_ways"]
+
+# The fixture-holder marker is the one exclusion both the scan and the sweep honour.
+[[mutation]]
+name = "a fixture holder is scanned like any other file"
+file = "src/keelline/ledger/scan.py"
+before = '    return FIXTURE_MARKER.encode("utf-8") in head'
+after = '    return False'
+reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
+
+# A repository condition the operator can fix must reach them as findings (exit 1), never as an
+# internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
+[[mutation]]
+name = "an undecodable ledger file is silently mangled instead of reported"
+file = "src/keelline/ledger/entries.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = '        return path.read_text(encoding="utf-8", errors="replace")'
+reddens = [
+  "tests/ledger/test_entries.py::test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it",
+  "tests/ledger/test_check.py::test_an_entry_that_is_not_utf8_is_reported_rather_than_crashing_the_check",
+]
+
+# The allocator can only count what this repository can see; the file's existence decides.
+[[mutation]]
+name = "a freshly allocated identifier overwrites an existing entry file"
+file = "src/keelline/ledger/write.py"
+before = '    if path.exists():'
+after = '    if False:'
+reddens = ["tests/ledger/test_write.py::test_new_never_writes_over_an_entry_file_whatever_the_allocator_returns"]
+
+# A file the sweep could not read is reported, never assumed clean.
+[[mutation]]
+name = "the sweep skips an unreadable file in silence"
+file = "src/keelline/ledger/write.py"
+before = '            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")'
+after = '            pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints"]
+
+# `renumber` regenerates the index after both endpoints and the whole sweep are on disk, so its
+# refusal is the one that has to come first. It is the same call `new` makes, at the call site
+# where dropping it costs the operator their hand-written lines.
+[[mutation]]
+name = "renumber regenerates over an index carrying content this tool did not generate"
+file = "src/keelline/ledger/write.py"
+before = '    refuse_index_overwrite(root, config, committed_index)'
+after = '    pass'
+reddens = ["tests/ledger/test_write.py::test_renumber_refuses_over_foreign_index_content_without_moving_anything"]
+
+# `number` is the identifier grammar's one lossy reader: a caller that did not ask
+# `is_identifier` first must not be handed a number guessed out of a filename that has none.
+[[mutation]]
+name = "reading the number out of a non-identifier answers zero instead of refusing"
+file = "src/keelline/identifiers.py"
+before = '            raise Refusal(f"{identifier!r} is not a {self.shape} identifier")'
+after = '            return 0'
+reddens = ["tests/test_identifiers.py::test_reading_the_number_out_of_a_non_identifier_is_refused"]
+
+# A substring search for the trail marker also matches a deeper heading that contains it.
+[[mutation]]
+name = "the roadmap prose is cut at a heading that merely contains the marker"
+file = "src/keelline/docs/hygiene.py"
+before = '    return TRAIL_MARKER_LINE.split(text, 1)[0]'
+after = '    return text.split(TRAIL_MARKER, 1)[0]'
+reddens = ["tests/docs/test_hygiene.py::test_a_deeper_heading_containing_the_marker_does_not_split_the_prose"]
+
+# The extension list is a decision: a repository storing TypeScript needs `.ts` to be a path claim.
+[[mutation]]
+name = "a TypeScript reference stops being a path claim"
+file = "src/keelline/prose.py"
+before = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml|tsx?))(?::\d+|::[\w.]+)?`")'
+after = 'REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|md|json|ya?ml|toml))(?::\d+|::[\w.]+)?`")'
+reddens = ["tests/docs/test_prose.py::test_typescript_and_toml_count_as_files_this_grammar_stores"]
+
+# A renamed design would otherwise reappear as `delivered` and `--check` would stay green.
+[[mutation]]
+name = "a state naming a vanished document defaults instead of aborting"
+file = "src/keelline/docs/trail.py"
+before = '    stale = sorted(set(trail.states) - listed)'
+after = '    stale: list[str] = []'
+reddens = ["tests/docs/test_trail.py::test_a_state_naming_a_vanished_document_aborts_instead_of_defaulting"]
+
+# `check-ignore` without `--no-index` answers "not ignored" for anything tracked.
+[[mutation]]
+name = "an untracked document is listed as if CI could see it"
+file = "src/keelline/docs/trail.py"
+before = '    skip = _ignored(root, paths) | _untracked(root, paths)'
+after = '    skip = _ignored(root, paths)'
+reddens = ["tests/docs/test_trail.py::test_an_untracked_or_ignored_document_is_not_listed"]
+
+# A gate that cannot answer must say so in its exit code; this one ran green for its whole
+# life on a checkout that had no base ref.
+[[mutation]]
+name = "an unresolvable base reads as a clean run"
+file = "src/keelline/docs/plans.py"
+before = '            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])'
+after = '            return Lint([], [], [])'
+reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_a_finding_not_an_ok"]
+
+# `\s*` crosses newlines under MULTILINE, so an empty marker would be satisfied by any later text.
+[[mutation]]
+name = "an empty Premise marker is satisfied by text anywhere later in the plan"
+file = "src/keelline/docs/plans.py"
+before = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*[^\S\n]*\S", re.MULTILINE)'
+after = '_PREMISE_LINE = re.compile(r"^\*\*Premise[^:]*:\*\*\s*\S", re.MULTILINE)'
+reddens = ["tests/docs/test_plans.py::test_a_fixes_claim_needs_a_premise_line_with_content"]
+
+# The ignore rules cover the whole store, so a note→note reference must be settled on disk.
+[[mutation]]
+name = "a reference into the store is asked of the ignore rules and disappears"
+file = "src/keelline/memory/refs.py"
+before = '    ignored = _ignored(root, {t for _, _, t in candidates if not _inside_store(root, store, t)})'
+after = '    ignored = _ignored(root, {t for _, _, t in candidates})'
+reddens = ["tests/memory/test_refs.py::test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ignore_rules"]
+
+# Advice must never gate. `--memory-graph` is opt-in precisely because the store is shared by
+# every session on the machine, so a sibling's half-finished sweep is not this tree's fault to
+# fail on — and an exit code is the one part of that promise a caller acts on silently.
+[[mutation]]
+name = "an advisory memory-graph finding gates the exit code"
+file = "src/keelline/docs/commands.py"
+before = '    return Result(verdict, data)'
+after = '    return Result(verdict, data, exit_code=1 if notices else 0)'
+reddens = ["tests/docs/test_commands.py::test_docs_check_memory_graph_notes_never_fail_and_the_success_line_does_not_vouch_for_the_store"]
+
+# One digit rule, and every reader takes it from the constant. The allocator's `git log` source
+# respelled it inline, where widening the rule would have left it counting by the old one and
+# handing out a number some ref already holds — a survivor of the entry above, which is exactly
+# what this entry now proves it is not.
+[[mutation]]
+name = "the identifier digit rule widens and the allocator keeps the old one"
+file = "src/keelline/identifiers.py"
+before = 'DIGITS = r"\d{3,}"'
+after = 'DIGITS = r"\d+"'
+reddens = [
+  "tests/test_identifiers.py::test_fewer_than_three_digits_is_not_an_identifier",
+  "tests/ledger/test_write.py::test_the_allocator_reads_the_git_source_with_the_shared_digit_rule",
+]
+
+# `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
+# `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
+# absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
+# reported OK having linted nothing, which is what `base-unresolvable` exists to prevent.
+[[mutation]]
+name = "an option-shaped base reaches a git argv slot ahead of `--`"
+file = "src/keelline/docs/plans.py"
+before = '''    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+after = '''    if False:
+        raise Refusal(f"{base!r} looks like an option, not a base ref")'''
+reddens = ["tests/docs/test_plans.py::test_an_option_shaped_base_never_reaches_a_git_argv_slot"]
+
+# A `label` or a `state` is written into the listing verbatim, and `rebuild` finds the block's
+# end with `text.find(END_MARKER, …)` — so a marker inside either one splits the block, the
+# roadmap grows by its own height on every run, `--check` is stale forever, and the repository's
+# prose lands in a document agents load with no delimited region behind it.
+[[mutation]]
+name = "a theme label can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''        if not _interpolable(entry["label"]):
+            raise Failure(
+                _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
+            )'''
+after = "        pass"
+reddens = [
+  "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+[[mutation]]
+name = "a declared state can carry the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''    if not all(_interpolable(state) for state in states.values()):
+        raise Failure(_UNINTERPOLABLE.format(path=path, what="[states] value", marker=MARKER))'''
+after = "    pass"
+reddens = [
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+# The classifier, not the call: a line opening with `|` was tool-generated by fiat, so an index
+# row whose entry file no longer exists — the last record of that bug — was clean. `bugs check`
+# then reported `stale-index; run: keelline bugs index`, and that command deleted the record
+# with no diff and exit 0. `ENTRIES_MISSING` cannot see it: the ledger directory is still there.
+[[mutation]]
+name = "an index row is tool-generated by its shape, with no entry file behind it"
+file = "src/keelline/ledger/index.py"
+before = '            if line in _COLUMN_LINES or _row_identifier(line, ids) in present:'
+after = "            if True:"
+reddens = [
+  "tests/ledger/test_index.py::test_a_row_whose_entry_file_is_gone_is_foreign_and_not_a_stale_index",
+  "tests/ledger/test_index.py::test_an_injected_section_of_hand_written_rows_is_foreign",
+  "tests/ledger/test_index.py::test_an_index_over_an_empty_entry_directory_is_refused_row_by_row",
+]
+
+# `renumber` regenerates the index last, and that parses every entry file in the directory. One
+# malformed sibling the operator never touched therefore failed the command after both endpoints
+# and the whole sweep were on disk — and the retry was refused with "already has an entry file",
+# so the move could not be finished at all, against a docstring promising the opposite.
+[[mutation]]
+name = "renumber parses its siblings only after it has moved both endpoints"
+file = "src/keelline/ledger/write.py"
+before = '''    # the files as they are AFTER the move, so this is a check and not a value.
+    load_entries(root, config)'''
+after = "    # the files as they are AFTER the move, so this is a check and not a value."
+reddens = [
+  "tests/ledger/test_write.py::test_renumber_rejects_a_malformed_sibling_before_it_moves_anything",
+]
+
+# 2 is reserved for a refusal or an internal error, and a caller is told never to read it as
+# permission. One latin-1 byte in AGENTS.md, the roadmap, a plan or trail.toml reached the frame
+# as `internal error: UnicodeDecodeError` — a repository's malformed input reading as this tool
+# being broken, with nothing in the message the operator can act on.
+[[mutation]]
+name = "a non-UTF-8 document reads as an internal error again"
+file = "src/keelline/docs/hygiene.py"
+before = '''    except UnicodeDecodeError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None'''
+after = '''    except RecursionError as error:
+        raise Failure(f"{where}: is not valid UTF-8 ({error})") from None'''
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_error",
+  "tests/docs/test_commands.py::test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2",
+  "tests/docs/test_plans.py::test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error",
+  "tests/docs/test_trail.py::test_a_trail_file_that_is_not_utf8_is_a_failure_not_an_internal_error",
+]
+
+# The same defect in the memory lane's own reader: `UnicodeDecodeError` is not an `OSError`, so
+# a latin-1 byte in a note escaped the walk instead of being quarantined onto `unreadable`.
+[[mutation]]
+name = "a non-UTF-8 note escapes the walk instead of being quarantined"
+file = "src/keelline/memory/notes.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise NoteError(f"{path} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_that_is_not_utf8_is_quarantined_rather_than_an_internal_error",
+  "tests/memory/test_refs.py::test_a_note_that_is_not_utf8_is_a_finding_not_an_internal_error",
+]
+
+[[mutation]]
+name = "a note that stops decoding after the walk is an internal error"
+file = "src/keelline/memory/refs.py"
+before = '''    except UnicodeDecodeError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None'''
+after = '''    except RecursionError as exc:
+        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc})") from None'''
+reddens = [
+  "tests/memory/test_refs.py::test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error",
+]
+
+# `check-ignore` C-quotes a non-ASCII path on output, so the answer never equals the path that
+# was asked about. In the roadmap listing an ignored document is then listed — the case
+# `--no-index` exists for; in a note a reference to an ignored file carries a `dead-reference`
+# its author cannot satisfy, because creating an ignored file changes nothing.
+[[mutation]]
+name = "the roadmap's ignore check cannot match a non-ASCII path"
+file = "src/keelline/docs/trail.py"
+before = '''    stdin = "\0".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)'''
+after = '''    stdin = "\n".join(p.relative_to(root).as_posix() for p in paths)
+    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", stdin=stdin)'''
+reddens = ["tests/docs/test_trail.py::test_an_ignored_document_whose_name_is_not_ascii_is_not_listed"]
+
+# The memory half of this is not reachable through a note today: the shared `prose` grammar
+# admits only `[A-Za-z0-9_./-]`, which git never quotes. The query is fixed and pinned anyway
+# because that class is the kind that widens — it already widened once, to `.ts`/`.tsx` — and a
+# widened grammar would arrive with the defect already in place. The test is at `_ignored`.
+[[mutation]]
+name = "the note reference guard's ignore check cannot match a non-ASCII path"
+file = "src/keelline/memory/refs.py"
+before = '''        root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(targets))'''
+after = '''        root, "check-ignore", "--no-index", "--stdin", stdin="\n".join(sorted(targets))'''
+reddens = ["tests/memory/test_refs.py::test_the_ignore_query_matches_a_non_ascii_path_it_asked_about"]
+
+# The grammar was shared and the resolution was not. `Path(root) / "/etc/passwd.md"` discards
+# `root` and a `..` walks out of it, so a plan naming an absolute path that happens to exist on
+# the developer's disk passed the dead-reference lint and did not exist in CI — and both readers
+# were an existence oracle for every path outside the root.
+[[mutation]]
+name = "a path claim is settled against the filesystem wherever it lands"
+file = "src/keelline/prose.py"
+before = '    return landed if landed.is_relative_to(os.path.normpath(str(root))) else None'
+after = "    return landed"
+reddens = [
+  "tests/docs/test_prose.py::test_a_claim_that_lands_outside_the_root_resolves_nowhere",
+  "tests/docs/test_plans.py::test_a_path_claim_outside_the_root_is_never_settled_against_this_disk",
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_root_is_never_settled_against_this_disk",
+]
+
+# A markdown link is read from its own document's directory; only the boundary is the root.
+# Containing against the document's directory instead refuses a link from `docs/` into `src/`.
+[[mutation]]
+name = "a link is contained against its own document's directory instead of the root"
+file = "src/keelline/docs/hygiene.py"
+before = '        landed = resolves_within(root, target, base=agents_path.parent)'
+after = '        landed = resolves_within(agents_path.parent, target)'
+reddens = [
+  "tests/docs/test_hygiene.py::test_a_link_out_of_the_documents_own_directory_but_inside_the_root_still_resolves",
+]
+
+# The other half of the same invariant, and the one that guarding the first half left whole: a
+# document's FILENAME becomes both the row and the link off `glob("*.md")`, so a tracked
+# `…-a<!-- end design and plan trail -->b.md` split the block with `docs trail` exiting 0 on
+# every run — the roadmap went 18 -> 22 -> 26 lines, end markers 2 -> 4 -> 6, and `--check` was
+# stale forever with nothing to do about it short of renaming the file.
+[[mutation]]
+name = "a document filename carries the end marker into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '''        if not (_interpolable(row) and _interpolable(link)):
+            raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))'''
+after = "        pass"
+reddens = [
+  "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+# A trailing `; echo` hides the exit code the harness notification reports, but only after a
+# `;`: after `&&` a failing command skips the echo and the chain carries its code. Accepting
+# any chain operator turns every ordinary `cmd && echo done` into a false hint.
+[[mutation]]
+name = "the exit-code hint fires after && as well as after ;"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if not breaks or pieces[breaks[-1]] != ";":'
+after = '    if not breaks:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_chains_whose_last_exit_code_is_the_real_one_are_not_warned_about",
+]
+
+# The hint is a fact about NOTIFICATIONS, which only a backgrounded call gets; unkeyed, it
+# fires on every foreground `cmd; echo done` a session types.
+[[mutation]]
+name = "the exit-code hint stops being keyed on the background flag"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        for hint in (_restore_hint(command), _exit_echo_hint(command) if background else None)'
+after = '        for hint in (_restore_hint(command), _exit_echo_hint(command))'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_same_chain_in_the_foreground_is_silent",
+]
+
+# `command_words` is what lets `FOO=1 echo done` be read as an echo; `tail[0]` alone reads
+# the assignment and stays silent.
+[[mutation]]
+name = "the exit-code hint reads the echo's program from the raw first token"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    words = bashscan.command_words(tail)'
+after = '    words = tail'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_env_prefixed_echo_is_still_an_echo",
+]
+
+# The last `;` of a compound statement falls after its terminator, so the masked segment is
+# `done` or `fi` alone and the hint advises making a keyword the last command of the chain.
+# A backgrounded loop ending in a progress echo is the traffic this rule sits in front of.
+[[mutation]]
+name = "the exit-code hint names a statement terminator as the masked command"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _ECHO_COMMANDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_compound_statement_terminator_is_never_named_as_the_masked_command",
+]
+
+# `cmd > out.log; echo "----"; echo "EXIT=$?"` masks `cmd`, two breaks back. Naming the second
+# echo tells the reader to read the status of an `echo` from the output it wrote.
+[[mutation]]
+name = "the exit-code hint names a second echo as the masked command"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    if program in _STATEMENT_KEYWORDS or program in _ECHO_COMMANDS:'
+after = '    if program in _STATEMENT_KEYWORDS:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_second_echo_is_never_named_as_the_masked_command",
+]
+
+# A trailing `;` -- or the trailing newline every editor writes, which the tokenizer turns
+# into one -- leaves the last break with an empty tail, and the whole rule falls silent on the
+# commonest authoring of the shape it exists for.
+[[mutation]]
+name = "a trailing separator silences the exit-code hint again"
+file = "src/keelline/guards/bgcleanup.py"
+before = '    while pieces and pieces[-1] in _CHAIN_OPERATORS:'
+after = '    while False:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_a_trailing_separator_does_not_silence_the_hint",
+]
+
+# Quoting every piece alike renders `>>` as a literal argument to `echo`, so the text offered
+# as "what you typed" is a different command -- in the shape this rule most often sees.
+[[mutation]]
+name = "the rendered tail quotes its redirect operators into arguments"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        token if token in bashscan.REDIRECT_OPERATORS else shlex.quote(token)'
+after = '        shlex.quote(token)'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_the_rendered_tail_keeps_its_redirect_a_redirect",
+]
+
+# `&>` and `&>>` are redirects beginning with neither `>` nor `<`, so a first-character test
+# walks past them and renders the redirect as part of the masked command's own name.
+[[mutation]]
+name = "the command head stops on a redirect's first character instead of the table"
+file = "src/keelline/guards/bgcleanup.py"
+before = '        if piece in bashscan.REDIRECT_OPERATORS:'
+after = '        if piece[:1] in {">", "<"}:'
+reddens = [
+  "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
+]

@@ -29,6 +29,13 @@ make; a consumer can catch it as the `OSError` it is without this export, but re
 `.created` — the whole reason it exists rather than a bare `OSError` — would otherwise mean
 importing `keelline.memory.worktree`, which this docstring forbids.
 
+`Links` is the same rule again, and it arrived late because `link` used to return
+`list[Path]`: the call that withdraws the harness link when trust lapses gave it
+`Links(created, revoked)` instead, and a return type absent from this list is a value `attach`
+can hold and cannot declare. The list below is now checked against the signatures rather than
+only against itself — see `tests/memory/test_surface.py`, whose hand-written `required` set
+could not notice a name nobody had added to either side.
+
 **A name this list points at must be on it.** Three were not, and each is a place an exported
 docstring sends the reader by name — which is the same failure the `wrap`/`new_nonce` addition
 above closed, one function over:
@@ -57,11 +64,13 @@ it. `UnreadableTrustRecord` joins them because `state` and `may_inject` now rais
 that catches `Refusal` broadly is fine, but one that wants to tell "this record is broken" from
 "this store is not approved" — which is the whole point of the class — needs the name.
 
-**What the surface still owes, and to whom.** `docs-tooling` is a consumer of C3 and its row is
-not satisfied: `docs check --memory-graph` needs `refs.check` and `refs.audience_violations`,
-which Task 12 was to add and which are out of this lane's scope. They are absent from the list
-below on purpose and not because the requirement lapsed — this module is the contract document,
-and a requirement with no record here is one the next lane will not know to meet.
+**The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
+paragraph used to hold open — a reference guard this lane planned and never shipped — is now
+`refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
+on the list below. `WIKI_LINK` is here rather than in the docs area because a wiki-link is this
+lane's grammar, and the graph check reads it from this surface instead of spelling a second
+one. The name shipped is `check_refs`, not the `refs.check` the old paragraph promised: `check`
+alone says nothing at the point of import.
 """
 
 from keelline.memory.bundles import SLOTS, Bundle, Fit, blocks, fit, render, split
@@ -88,6 +97,13 @@ from keelline.memory.notes import (
     with_index,
     write_note,
 )
+from keelline.memory.refs import (
+    WIKI_LINK,
+    RefsReport,
+    audience_violations,
+    check_refs,
+    unresolved,
+)
 from keelline.memory.store import (
     Store,
     in_repository,
@@ -113,31 +129,36 @@ from keelline.memory.trust import (
     snapshot,
     wrap,
 )
-from keelline.memory.worktree import PartialLink, link, linked_names
+from keelline.memory.worktree import Links, PartialLink, link, linked_names
 
 __all__ = [
     "DELIMITER",
     "INDEX_NAME",
     "SLOTS",
+    "WIKI_LINK",
     "Bundle",
     "Entry",
     "Fit",
     "IndexCheck",
+    "Links",
     "Note",
     "NoteError",
     "NoteType",
     "PartialLink",
     "Provenance",
     "Reconciliation",
+    "RefsReport",
     "Snapshot",
     "Store",
     "TrustState",
     "UnreadableTrustRecord",
     "UnsafeNote",
     "Walk",
+    "audience_violations",
     "blocks",
     "changed",
     "check_index",
+    "check_refs",
     "fit",
     "in_repository",
     "index_source",
@@ -163,6 +184,7 @@ __all__ = [
     "snapshot",
     "split",
     "totals",
+    "unresolved",
     "walk",
     "with_index",
     "wrap",
