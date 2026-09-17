@@ -14,7 +14,10 @@ Two files:
 ## How to read a Backing line
 
 A principle says one of three things about its evidence, and the word is chosen by the
-weakest link in the chain, not the strongest:
+weakest link in the chain behind the claim the label is about, not the strongest. Where a
+principle's mechanism is sourced and a comparative claim built on top of it is not, the
+label follows the mechanism — that is the claim it is about — and the prose says in as many
+words what the sources do not reach:
 
 - **sourced** — a dated primary source outside this project states the claim, or states the
   platform fact the claim rests on. The sources are listed and the principle says what each

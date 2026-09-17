@@ -217,13 +217,20 @@ def registered_commands() -> set[str]:
     return found
 
 
+# A vacuity floor, not a count of the commands this CLI ships: the parser registered twenty
+# when this test was written, and the number is here so that a walk which found nothing — or
+# half of them — cannot satisfy the subset check above it. A lane that ships a command raises
+# the parser's count and leaves this alone.
+REGISTERED_COMMANDS_FLOOR = 20
+
+
 def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
     # The mutation guard for the two tests below, and a pin on the walk's own mechanism:
     # `_SubParsersAction` is a private name, so the day argparse renames it this reddens
     # instead of `registered_commands()` returning an empty set that satisfies `<=`.
     found = registered_commands()
     assert {"memory index", "bugs check", "docs check", "plan check", "hook"} <= found
-    assert len(found) >= 20
+    assert len(found) >= REGISTERED_COMMANDS_FLOOR
 
 
 def test_every_registered_command_has_a_readme_row() -> None:

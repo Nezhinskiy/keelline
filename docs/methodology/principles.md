@@ -225,7 +225,7 @@ read by tools, by later contributors and by a possible public extraction.
 **What Keelline does.** The freshness rule is the row grammar of [sources.md](sources.md)
 and a test over it; the artifact language is a machine-level setting (`artifact_language`)
 beside the reply language, so the split is configured once per person rather than restated
-per project. The five "harness" sources in the [README](README.md) are the freshness rule's
+per project. The four "harness" sources in the [README](README.md) are the freshness rule's
 own worked example: the term moved from a company blog [S27] to a discipline [S28] to an
 open-sourced platform [S30] and a research framing [S29] in nine months, with the pattern
 essay it all descends from [S31] two years older and still the clearest statement of why
