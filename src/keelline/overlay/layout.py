@@ -45,3 +45,14 @@ OVERLAY_FILES = (
     ".gitignore",
     "README.md",
 )
+
+# The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
+# has a decision list at all: §6.1 diffs these and asks about them "regardless of hash", because
+# a hash match is not consent for a permission or a hook entry. Derived from `OVERLAY_FILES` and
+# not spelled twice, so a file renamed there and forgotten here empties the list rather than
+# quietly agreeing with it — which is what `tests/overlay/test_upgrade.py` asserts against.
+CAPABILITY_FILES = tuple(
+    relative
+    for relative in OVERLAY_FILES
+    if relative in (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
+)

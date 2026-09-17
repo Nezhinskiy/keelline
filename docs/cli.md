@@ -465,6 +465,29 @@ is not readable JSON or an owner that is not one path segment.
 
 ---
 
+## `keelline overlay upgrade [--root PATH] [--dry-run]`
+
+Brings an overlay up to date with the template a newer Keelline ships. It is the project rule
+and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
+edited is skipped and named, and the oracle is the digest `.keelline/manifest.json` recorded when
+the file was written. An overlay is where your own rules live, so a silent overwrite here would
+destroy the only copy of something.
+
+**Two files are always asked about, however their hashes compare.**
+`common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
+that can grant a capability — a permission rule, a command that runs on an event — and a hash
+that matches is not your consent to either. They are listed under `ASK FIRST` beneath the report,
+and under `decisions` in `--json`.
+
+`--dry-run` prints the same report and writes nothing; the report you approve is produced by the
+code path that then runs, which is what makes the dry run worth reading.
+
+**Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
+`.keelline/manifest.json`. Exits `0`; `2` when a path refuses containment or the manifest cannot
+be trusted.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is

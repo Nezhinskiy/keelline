@@ -8,6 +8,7 @@ in a commit that says which lane and why — it does not import a private module
 
 from keelline.overlay.create import Created, Initialised, create, init_instance
 from keelline.overlay.layout import (
+    CAPABILITY_FILES,
     COMMON,
     COMMON_CLAUDE,
     COMMON_CODEX,
@@ -19,8 +20,10 @@ from keelline.overlay.layout import (
 )
 from keelline.overlay.runner import Completed, Runner, subprocess_runner
 from keelline.overlay.template import template_root, templates
+from keelline.overlay.upgrade import OverlayUpgrade, upgrade
 
 __all__ = [
+    "CAPABILITY_FILES",
     "COMMON",
     "COMMON_CLAUDE",
     "COMMON_CODEX",
@@ -32,10 +35,12 @@ __all__ = [
     "Completed",
     "Created",
     "Initialised",
+    "OverlayUpgrade",
     "Runner",
     "create",
     "init_instance",
     "subprocess_runner",
     "template_root",
     "templates",
+    "upgrade",
 ]

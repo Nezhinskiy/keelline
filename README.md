@@ -151,6 +151,7 @@ keelline test audit-entrypoints                       # tests that never exercis
 keelline overlay create --owner you --name keelline-private --local   # render one here, no network
 keelline overlay create --owner you --name keelline-private --template  # generate it on GitHub, private
 keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
+keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
 
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)

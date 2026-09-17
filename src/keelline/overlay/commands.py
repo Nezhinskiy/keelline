@@ -8,6 +8,7 @@ from pathlib import Path
 from keelline.areas import SubParsers
 from keelline.errors import Refusal
 from keelline.result import Result
+from keelline.scaffold import render_report
 
 # Neither source is a default, and that is the point. §6.1 permits the GitHub path only after
 # explicit confirmation, and a non-interactive caller — which in this harness is the usual one —
@@ -46,6 +47,29 @@ def run_overlay_init(args: argparse.Namespace) -> Result:
     return Result("; ".join(result.notes), data)
 
 
+def run_overlay_upgrade(args: argparse.Namespace) -> Result:
+    from keelline.overlay.upgrade import upgrade
+
+    result = upgrade(Path(args.root).resolve(), dry_run=args.dry_run)
+    # `scaffold.render_report` and not a second renderer: the report a user approves has to be
+    # the one the same code path then acts on, which is the whole reason C2 splits plan from
+    # apply. The decision list is appended to it rather than folded into it, because it is the
+    # one thing the engine has no verb for.
+    report = render_report(result.plan)
+    if result.decisions:
+        report += (
+            "\n\nASK FIRST — these can grant a capability, so a matching hash is not consent:\n"
+            + "\n".join(f"  {artifact}" for artifact in result.decisions)
+        )
+    data = {
+        "report": report,
+        "writes": result.plan.writes,
+        "decisions": list(result.decisions),
+        "dry_run": args.dry_run,
+    }
+    return Result(report, data)
+
+
 def register(groups: SubParsers) -> None:
     overlay = groups.add_parser("overlay", help="the owner's private overlay")
     sub = overlay.add_subparsers(dest="command", metavar="<command>")
@@ -81,3 +105,12 @@ def register(groups: SubParsers) -> None:
     init.add_argument("--owner", required=True, help="the account to name this overlay after")
     init.add_argument("--root", default=".", help="the overlay root (default: current directory)")
     init.set_defaults(func=run_overlay_init)
+
+    upgrade = sub.add_parser("upgrade", help="refresh the files in an overlay nobody has edited")
+    upgrade.add_argument(
+        "--root", default=".", help="the overlay root (default: current directory)"
+    )
+    upgrade.add_argument(
+        "--dry-run", action="store_true", help="report what would change and write nothing"
+    )
+    upgrade.set_defaults(func=run_overlay_upgrade)
