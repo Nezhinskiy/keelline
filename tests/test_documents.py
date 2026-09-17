@@ -12,10 +12,16 @@ same three `tests/skills/test_skills.py` has, on purpose.
 
 from __future__ import annotations
 
+import argparse
+import io
 import re
+import shlex
+from contextlib import redirect_stderr
 from pathlib import Path
 
 import pytest
+
+from keelline.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
@@ -181,3 +187,74 @@ def test_principles_are_numbered_consecutively_from_one() -> None:
     # month. Mutation: renumber section 3 as 5 → reddens.
     numbers = [int(n) for n, _, _ in principle_sections()]
     assert numbers == list(range(1, len(numbers) + 1))
+
+
+_COMMANDS_BLOCK = re.compile(r"^## Commands\n.*?^```text\n(.*?)^```", re.MULTILINE | re.DOTALL)
+
+
+def readme_invocations() -> list[str]:
+    """Every `keelline …` line in the README's Commands block, comments stripped."""
+    match = _COMMANDS_BLOCK.search(README.read_text(encoding="utf-8"))
+    assert match is not None, "README has no `## Commands` section with a ```text block"
+    lines = (line.split("#", 1)[0].strip() for line in match.group(1).splitlines())
+    return [line for line in lines if line.startswith("keelline ")]
+
+
+def registered_commands() -> set[str]:
+    """`group command` for every subcommand the real parser registers; a group with no
+    subcommands (`hook <event>`) counts as its bare name."""
+    parser = build_parser(discover_registrars())
+    found: set[str] = set()
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for group, sub in action.choices.items():
+            inner = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
+            if not inner:
+                found.add(group)
+            for nested in inner:
+                found.update(f"{group} {command}" for command in nested.choices)
+    return found
+
+
+def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
+    # The mutation guard for the two tests below, and a pin on the walk's own mechanism:
+    # `_SubParsersAction` is a private name, so the day argparse renames it this reddens
+    # instead of `registered_commands()` returning an empty set that satisfies `<=`.
+    found = registered_commands()
+    assert {"memory index", "bugs check", "docs check", "plan check", "hook"} <= found
+    assert len(found) >= 20
+
+
+def test_every_registered_command_has_a_readme_row() -> None:
+    # Mutation: delete the `keelline docs trail` line from the README → reddens naming it.
+    # This is the test that makes the README a shared file every lane owes a line to.
+    named = {" ".join(line.split()[1:3]) for line in readme_invocations()}
+    named |= {line.split()[1] for line in readme_invocations()}
+    missing = sorted(command for command in registered_commands() if command not in named)
+    assert missing == [], missing
+
+
+def test_every_readme_row_parses() -> None:
+    # Mutation: change the `bugs new` row's `--severity high` to `--severity critical` →
+    # reddens naming the line. Not `--sev high`, which parses: argparse accepts any
+    # unambiguous prefix of a long option, so an abbreviated flag is the one mistake in a
+    # row this test cannot catch.
+    parser = build_parser(discover_registrars())
+    failed: list[str] = []
+    for line in readme_invocations():
+        argv, _ = split_json_flag(shlex.split(line)[1:])
+        with redirect_stderr(io.StringIO()):
+            try:
+                parser.parse_args(argv)
+            except SystemExit:
+                failed.append(line)
+    assert failed == [], failed
+
+
+def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
+    # The two documents a reader is sent to; a README that lost either link would still pass
+    # the link walk (it checks the links that exist). Mutation: remove the methodology link.
+    text = prose(README)
+    assert "docs/methodology/README.md" in text
+    assert "docs/cli.md" in text
