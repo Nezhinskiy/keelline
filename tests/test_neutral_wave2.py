@@ -275,6 +275,7 @@ def test_the_public_document_walk_is_not_empty() -> None:
     assert ROOT / "README.md" in files
     assert ROOT / PLANS[1] in files
     assert ROOT / "src" / "keelline" / "presets" / "recommended.toml" in files
+    assert METHODOLOGY / "README.md" in files
 
 
 def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
