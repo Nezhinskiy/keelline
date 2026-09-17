@@ -44,8 +44,12 @@ def run_attach(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
     )
     data = {
-        "created": [str(path) for path in attached.links.created],
-        "revoked": [str(path) for path in attached.links.revoked],
+        # Counts and not paths, which is the rule rather than a preference: every one of these
+        # paths is built out of `paths.memory` and a `memory.groups` entry, both
+        # repository-authored and neither schema-constrained, and `--json` puts `data` in front
+        # of the model. `keelline.memory.hooks` reports the same value the same way.
+        "links_created": len(attached.links.created),
+        "links_revoked": len(attached.links.revoked),
         "settings_written": attached.settings_written,
         "rules_written": list(attached.rules_written),
         "binding_recorded": attached.binding_recorded,
@@ -75,7 +79,8 @@ def run_detach(args: argparse.Namespace) -> Result:
         "rules_removed": list(removed.rules_removed),
         "settings_keys_removed": list(removed.settings_keys_removed),
         "ignore_region_removed": removed.ignore_region_removed,
-        "revoked": [str(path) for path in removed.links.revoked],
+        # A count, for the reason `run_attach` gives above.
+        "links_revoked": len(removed.links.revoked),
     }
     return Result(
         f"detached: {len(removed.allow_removed)} allow rule(s), "

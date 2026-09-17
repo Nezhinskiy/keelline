@@ -111,3 +111,20 @@ def test_detach_on_a_repository_that_was_never_attached_is_a_finding(tmp_path: P
     # answer is to say so rather than to guess which rules were Keelline's.
     root, _ = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     assert invoke(["detach", "--root", str(root)]) == 1
+
+
+def test_no_command_prints_a_path_a_repository_chose(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Every link path is built out of `paths.memory` and a `memory.groups` entry, both
+    # repository-authored and neither schema-constrained, and `--json` puts `data` in front of
+    # the model. `keelline.memory.hooks` already reports this value as a count and this lane
+    # must too — the first draft of it shipped the paths.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    assert invoke(["attach", *_flags(root, store, machine), "--json"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["links_created"] >= 1
+    assert "docs/memory" not in json.dumps(printed)
