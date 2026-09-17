@@ -180,8 +180,9 @@ failure, so the reason is part of the contract.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and no policy applies — the guard
-is silent rather than closed. The wrapper cannot defend its own mode. `keelline doctor` probes
-it, and is the only thing that catches it.
+is silent rather than closed. The wrapper cannot defend its own mode, and nothing in this
+build catches it: `keelline doctor`, whose wrapper probe is the answer to it, does not ship
+yet. Until it does, `ls -l` on the file is the whole of the check.
 
 ## `keelline guard bg-cleanup`
 

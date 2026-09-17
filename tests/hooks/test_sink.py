@@ -6,6 +6,7 @@ from pathlib import Path
 
 from keelline.hooks.api import NullSink
 from keelline.hooks.sink import (
+    DIAGNOSTIC_FIELD_CHARS,
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
     MARKERS,
@@ -73,6 +74,19 @@ def test_a_diagnostic_never_carries_a_payload_verbatim(tmp_path: Path) -> None:
     record = json.loads(line)
     assert record["handler"] == "bg-cleanup"
     assert len(record["error"]) < 50_000
+
+
+def test_the_session_a_record_is_filed_under_is_capped_like_any_other_field(
+    tmp_path: Path,
+) -> None:
+    # The session id is off the hook's stdin, type-checked by `parse_event` as `str` and no
+    # more, so it is payload-controlled exactly as a handler's reason string is. Merged into the
+    # record after the cap — which is where it started — it was the one field a repository could
+    # write to this log at any length it liked.
+    sink = sink_for("S" * 50_000, {"CLAUDE_PLUGIN_DATA": str(tmp_path)})
+    sink.diagnostic({"event": "PreToolUse", "handler": "bg-cleanup", "error": "boom"})
+    line = (tmp_path / "keelline" / DIAGNOSTICS).read_text(encoding="utf-8").splitlines()[0]
+    assert len(json.loads(line)["session"]) == DIAGNOSTIC_FIELD_CHARS
 
 
 def test_the_log_is_rotated_rather_than_grown(tmp_path: Path) -> None:

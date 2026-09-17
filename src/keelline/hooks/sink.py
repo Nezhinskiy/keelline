@@ -113,11 +113,15 @@ class DataSink:
             _rmdir_within(self.root, f"{MARKERS}/{stale.name}")
 
     def diagnostic(self, record: dict[str, object]) -> None:
+        # The session is capped with everything else, and not merged in past the cap. It comes
+        # off the hook's stdin and `parse_event` type-checks it as `str` and nothing more, so it
+        # is as payload-controlled as any field a handler supplies — "never raw stdin" (§5.3)
+        # covers the key this record is filed under as much as it covers the reason string.
         capped = {
             key: value[:DIAGNOSTIC_FIELD_CHARS] if isinstance(value, str) else value
-            for key, value in record.items()
+            for key, value in {"session": self.session, **record}.items()
         }
-        line = json.dumps({"session": self.session, **capped}, default=str, sort_keys=True)
+        line = json.dumps(capped, default=str, sort_keys=True)
         payload = (line + "\n").encode("utf-8")
         try:
             with open_within(self.root, DIAGNOSTICS) as (dir_fd, name):
