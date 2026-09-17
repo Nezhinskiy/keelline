@@ -164,6 +164,8 @@ RULES = (
     "ci-after-push",
     "language-by-audience",
 )
+# A rule body with fewer words than this is a stub rather than a rule.
+MIN_RULE_BODY_WORDS = 20
 
 
 def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
@@ -175,7 +177,7 @@ def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
     assert [block.split("\n", 1)[0] for block in produced] == [f"### {name}" for name in RULES]
     # Every rule has a body of at least one sentence; a heading with nothing under it is a
     # rule nobody wrote.
-    assert all(len(block.split("\n\n", 1)[1].split()) >= 20 for block in produced)
+    assert all(len(block.split("\n\n", 1)[1].split()) >= MIN_RULE_BODY_WORDS for block in produced)
 
 
 def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:

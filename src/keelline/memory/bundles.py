@@ -184,7 +184,8 @@ def _volatile(store: Store, config: Config) -> list[str]:
 
 def _preset_rules(config: Config) -> list[str]:
     # `presets/` belongs to the `setup` lane; foundation wrote only budgets, caps and
-    # defaults. Until a `[rules]` table ships, this bundle is silent by design.
+    # defaults. When the configured preset carries no `[rules]` table, this bundle is
+    # silent by design.
     rules = load_preset(config.keelline.preset).get("rules", {})
     if not isinstance(rules, dict) or not rules:
         return []
