@@ -60,6 +60,12 @@ from keelline.errors import Failure
 from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
+# The overlay's per-project directory, named once. It was a bare literal at the two call
+# sites below and the `overlay` area was about to spell it a third time, in a second area —
+# which is the drift `_inside` names: "two spellings of a containment rule is one more place
+# for them to stop agreeing". It lives here, with `COMMON`, because this module is the one
+# that resolves the overlay layout for the hook path; `overlay` imports it from the surface.
+PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
 # `keelline.gitenv` and not a copy: `hooks.dispatch` runs `git` too, and the reason this module
@@ -300,7 +306,7 @@ def overlay_root(machine: Path | None) -> Path | None:
 
 
 def _bound(overlay: Path, project: str, root: Path) -> bool:
-    record = overlay / "projects" / project / PROJECT_RECORD
+    record = overlay / PROJECTS / project / PROJECT_RECORD
     if not record.is_file():
         return False
     try:
@@ -333,7 +339,7 @@ def _inside(candidate: Path, parent: Path) -> bool:
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
     """This project's whole share of the overlay: the common notes and its own (§6.2)."""
-    return overlay / COMMON, overlay / "projects" / project / "memory"
+    return overlay / COMMON, overlay / PROJECTS / project / "memory"
 
 
 def _declared(root: Path, config: Config) -> Path | None:

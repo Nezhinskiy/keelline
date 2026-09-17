@@ -64,6 +64,14 @@ it. `UnreadableTrustRecord` joins them because `state` and `may_inject` now rais
 that catches `Refusal` broadly is fine, but one that wants to tell "this record is broken" from
 "this store is not approved" — which is the whole point of the class — needs the name.
 
+**`PROJECTS` and `PROJECT_RECORD`, for `overlay` and then for `attach`.** The overlay's
+per-project directory and the record inside it are this lane's layout: `store._bound` reads the
+record and `permitted_roots` bounds a link by the directory. The `overlay` lane renders the
+template that creates both, and `attach` writes the record, so without these two names each
+would spell `projects/` and `project.toml` again — three spellings of one layout, in three
+areas, which is the drift `store._inside` names. The direction is memory → overlay and never
+the reverse: memory is the lower layer and resolves this layout for the hook path.
+
 **The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
 paragraph used to hold open — a reference guard this lane planned and never shipped — is now
 `refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
@@ -105,6 +113,8 @@ from keelline.memory.refs import (
     unresolved,
 )
 from keelline.memory.store import (
+    PROJECT_RECORD,
+    PROJECTS,
     Store,
     in_repository,
     inside_project,
@@ -134,6 +144,8 @@ from keelline.memory.worktree import Links, PartialLink, link, linked_names
 __all__ = [
     "DELIMITER",
     "INDEX_NAME",
+    "PROJECTS",
+    "PROJECT_RECORD",
     "SLOTS",
     "WIKI_LINK",
     "Bundle",

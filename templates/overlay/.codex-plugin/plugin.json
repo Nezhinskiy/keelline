@@ -1,0 +1,10 @@
+{
+  "name": "keelline-overlay",
+  "version": "0.0.0",
+  "description": "A private overlay for Keelline: personal standing rules, cross-project notes, and the per-project records that bind a repository to them.",
+  "interface": {
+    "displayName": "Keelline overlay",
+    "shortDescription": "Personal standing rules, cross-project notes and per-project bindings",
+    "category": "Developer Tools"
+  }
+}
