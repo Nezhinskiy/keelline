@@ -89,8 +89,8 @@ reddens = [
 [[mutation]]
 name = "the harness link asks the gate about the notes rather than the directory"
 file = "src/keelline/memory/worktree.py"
-before = '        if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):'
-after = '        if trust.may_inject(store, config):'
+before = '    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))'
+after = '    return trust.may_inject(store, config)'
 reddens = [
   "tests/memory/test_worktree.py::test_a_committed_index_reaches_no_harness_link_before_trust",
   "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
@@ -103,8 +103,8 @@ reddens = [
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
 file = "src/keelline/memory/worktree.py"
-before = '        elif _unlink(store.path.resolve(), harness):'
-after = '        elif False:'
+before = '    elif _unlink(store.path.resolve(), harness):'
+after = '    elif False:'
 reddens = [
   "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
   "tests/memory/test_worktree.py::test_a_dangling_harness_link_of_ours_is_still_withdrawn",

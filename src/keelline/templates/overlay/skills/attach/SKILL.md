@@ -8,10 +8,12 @@ description: Bind a repository to this private overlay and link its note store i
 1. Find the project's name — the `[project] name` in its `keelline.toml` — and check that
    `projects/<name>/` exists here. If it does not, this repository has not been bound yet and
    the directory is created by the command below.
-2. Run `keelline attach --store <this overlay>/projects/<name> --check` first. It reports
-   whether the record binds this repository's remote and what permissions would change, and
-   writes nothing.
-3. Relay that diff. Only after the user agrees, run the same command without `--check`, and
-   relay what it wrote.
+2. Run `keelline attach --store <this overlay>/projects/<name>/memory --check` first. It
+   reports whether the record binds this repository's remote and what permissions would
+   change, and writes nothing. That path is the only one accepted; anything else is refused.
+3. Relay that diff and wait for an answer. The command refuses to widen a permission without
+   `--yes`, so this step is how a person comes to give it rather than what stands in for it.
+   Once they agree, run the same command with `--yes` instead of `--check`, and relay what it
+   wrote.
 4. Personal rules, notes and permissions live here and nowhere else. Never copy one into the
    project repository, and never widen a permission on the user's behalf.

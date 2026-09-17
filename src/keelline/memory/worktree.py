@@ -184,6 +184,49 @@ def _tree_base(worktree: Path, store: Store) -> Path | None:
     return contained(worktree, str(relative))
 
 
+def harness_link_needed(store: Store, config: Config) -> bool:
+    """Whether `~/.claude/projects/<slug>/memory` may point at this store — asked in one place.
+
+    `link` asks it for a worktree, `attach_main` asks it for the owning checkout, and `attach`
+    asks it again before taking §6.3's settings-file fallback. Three callers and one spelling,
+    because the question is easy to ask slightly wrong and asking it wrong costs everything the
+    gate was for: `repository_data=in_repository(store, store.path)` is what makes it a question
+    about *the directory this link exposes* rather than about the notes behind it. Asked without
+    that argument it falls through `inside_project(store)`, which is False in overlay mode by
+    design while `store.path` is a real directory inside the repository — and a clone shipping a
+    committed store then gets the link created for it on no trust record at all.
+    """
+    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
+
+
+def _apply_harness_link(
+    where: Path, store: Store, config: Config, home: Path | None
+) -> tuple[list[Path], list[Path]]:
+    """Create or withdraw the harness memory link for one checkout; report which it did.
+
+    One definition for `link` and `attach_main` both, and it earns its name three times over.
+    This is the one hop that leaves this lane's own channel, so it is the one place where asking
+    the gate a slightly wrong question costs everything the gate was for. **The gate runs in
+    both directions in the same call**, because a gate evaluated once over state that persists
+    is not a gate: a `git pull` that adds a note lapses the record, every channel this lane
+    controls shuts, and an ungated withdrawal would leave the one it does not control pointing
+    at the new bytes. And `_unlink` is deliberately narrower than `_link` — refusing to expose a
+    directory is not licence to delete one.
+
+    Three rules written down once and then copied is exactly how a pair stops agreeing, which is
+    why they are not copied.
+    """
+    harness = harness_memory_path(where, home)
+    created: list[Path] = []
+    revoked: list[Path] = []
+    if harness_link_needed(store, config):
+        if _link(store.path.resolve(), harness):
+            created.append(harness)
+    elif _unlink(store.path.resolve(), harness):
+        revoked.append(harness)
+    return created, revoked
+
+
 def link(worktree: Path, store: Store, config: Config, *, home: Path | None = None) -> Links:
     """Create what is missing, withdraw what is no longer authorised, and report both.
 
@@ -268,30 +311,12 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
                 target = contained(base, name, allow_final_symlink=True)
                 if _link(source.resolve(), target):
                     created.append(target)
-        harness = harness_memory_path(worktree, home)
-        if harness_link_needed(store, config):
-            if _link(store.path.resolve(), harness):
-                created.append(harness)
-        elif _unlink(store.path.resolve(), harness):
-            revoked.append(harness)
+        made, withdrawn = _apply_harness_link(worktree, store, config, home)
+        created += made
+        revoked += withdrawn
     except OSError as exc:
         raise PartialLink(created, exc) from exc
     return Links(created, revoked)
-
-
-def harness_link_needed(store: Store, config: Config) -> bool:
-    """Whether `~/.claude/projects/<slug>/memory` may point at this store — asked in one place.
-
-    `link` asks it for a worktree, `attach_main` asks it for the owning checkout, and `attach`
-    asks it again before taking §6.3's settings-file fallback. Three callers and one spelling,
-    because the question is easy to ask slightly wrong and asking it wrong costs everything the
-    gate was for: `repository_data=in_repository(store, store.path)` is what makes it a question
-    about *the directory this link exposes* rather than about the notes behind it. Asked without
-    that argument it falls through `inside_project(store)`, which is False in overlay mode by
-    design while `store.path` is a real directory inside the repository — and a clone shipping a
-    committed store then gets the link created for it on no trust record at all.
-    """
-    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
 
 
 def attach_main(
@@ -365,12 +390,9 @@ def attach_main(
                 "the link tree was created and the store still does not resolve; "
                 "`keelline memory index --check` reports why"
             )
-        harness = harness_memory_path(root, home)
-        if harness_link_needed(store, config):
-            if _link(store.path.resolve(), harness):
-                created.append(harness)
-        elif _unlink(store.path.resolve(), harness):
-            revoked.append(harness)
+        made, withdrawn = _apply_harness_link(root, store, config, home)
+        created += made
+        revoked += withdrawn
     except OSError as exc:
         raise PartialLink(created, exc) from exc
     return Links(created, revoked)
