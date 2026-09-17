@@ -270,11 +270,13 @@ PRESET_PATHS_IN_TABLE = 3
 def test_the_public_document_walk_is_not_empty() -> None:
     # The vacuity guard for the parametrised public walk below, the same shape as
     # `test_the_gate_reads_something` for the lane walk; named apart from it so `-k` can pick
-    # one. Wave B adds `docs/methodology/README.md` here when it creates the directory.
+    # one. `docs/methodology/README.md` is named because the wave that created that tree is
+    # the wave that proves the gate reads it.
     files = document_files()
     assert ROOT / "README.md" in files
     assert ROOT / PLANS[1] in files
     assert ROOT / "src" / "keelline" / "presets" / "recommended.toml" in files
+    assert METHODOLOGY / "README.md" in files
 
 
 def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
