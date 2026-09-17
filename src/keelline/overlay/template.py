@@ -1,17 +1,25 @@
 """Where the shipped overlay tree is, and what `plan()` is handed for it.
 
-`template_root()` is a function rather than a constant because `templates/` is read at
-*runtime* — `overlay create --local` renders it — so the answer depends on how this Keelline
-was installed. It resolves the way `scaffold.shipped_profiles()` already resolves `profiles/`:
-the installed package first, a checkout second, and never a bare `Path(__file__).parents[n]`,
-which answers for a source tree an installed Keelline does not have. The checkout fallback is
-taken only when the directory three levels up actually looks like one, so a package sitting
-beside somebody else's `templates/` cannot pick it up.
+`templates/overlay/` lives **under the module root**, beside `presets/`, and for the same
+reason: it is read at *runtime* — `overlay create --local` renders it — so the copy that has to
+answer is the one an installed Keelline carries. §5.1 draws the tree at the plugin root, and
+this repository has already departed from that drawing once, for `presets/recommended.toml`,
+which `load_preset` reads out of the package. Two facts settle it here. `uv_build` has no wheel
+includes at all: "all data files must either be under the module root or in the appropriate data
+directory", so `source-include` reaches the sdist and nothing else. And §6.1 makes `--local` the
+fallback for an unreachable template repository, while the skills reference the CLI by name — so
+the copy that runs is the one on `PATH`, and a fallback absent from the wheel is not a fallback.
+`hooks/` stays at the plugin root, because the *harness* reads it from there and Python never
+does.
 
-The package probe finds nothing today: `templates/` lives at the repository root, `pyproject`'s
-`source-include` puts it in the sdist, and the wheel carries `src/` alone. It is asked first
-anyway, because it is the only answer that will hold the day the tree moves inside the package,
-and because a probe added later is a probe nobody remembers to add.
+`template_root()` is still a function rather than a constant, because `resources.files` is what
+answers for an installed package and a checkout alike. **There is no checkout fallback**, and
+that is the point of the move: an earlier revision carried one, copying
+`scaffold.engine`'s `_in_a_checkout` probe and its `parents[3]` arithmetic into this area — a
+second spelling of one rule, across two areas, and after the move an unreachable one. A source
+checkout is an `src/` layout, so `resources.files("keelline")` answers `src/keelline` there and
+the tree is under it; there is no arrangement left in which the package probe misses and a
+repository-root walk would have found it.
 """
 
 from __future__ import annotations
@@ -26,33 +34,21 @@ from keelline.scaffold import Kind, Template
 
 TEMPLATES = "templates"
 OVERLAY = "overlay"
-# `src/keelline/overlay/template.py` → three parents up is the repository root, when this file
-# is in a checkout at all. The same arithmetic and the same markers `scaffold.engine` uses.
-_REPOSITORY_ROOT = 3
-_CHECKOUT_MARKERS = ("pyproject.toml", ".git")
-
-
-def _in_a_checkout(root: Path) -> bool:
-    return any((root / marker).exists() for marker in _CHECKOUT_MARKERS)
 
 
 def template_root() -> Path:
-    """The directory `templates/overlay/` resolves to for this installation.
+    """The directory `keelline/templates/overlay/` resolves to for this installation.
 
     A path is always returned, existing or not, so a caller that cannot find the tree can name
-    where it looked instead of handling a `None`. `templates()` is where that becomes a refusal
-    a user can act on.
+    where it looked instead of handling a `None`. `templates()` is the one place that becomes a
+    refusal a user can act on.
     """
     package = resources.files("keelline").joinpath(TEMPLATES, OVERLAY)
-    if isinstance(package, Path) and package.is_dir():
-        return package
-    checkout = Path(__file__).resolve().parents[_REPOSITORY_ROOT]
-    if _in_a_checkout(checkout):
-        return checkout / TEMPLATES / OVERLAY
-    # Neither answer exists. The package candidate is what an installed Keelline should have
-    # carried, so that is the path the refusal names: a `templates/` three levels above an
-    # installed package belongs to whoever put it there and must not be read as this one.
-    return Path(str(package))
+    # `resources.files` answers a `Path` for every filesystem install, which is every install
+    # this project supports — `fsops` contains writes with `dir_fd=` and `O_NOFOLLOW`, so a
+    # zip-imported Keelline could not write an overlay in any case. Anything else is named
+    # rather than guessed at: the result will not be a directory, and `templates()` says so.
+    return package if isinstance(package, Path) else Path(str(package))
 
 
 def _render(path: Path) -> str:

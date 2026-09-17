@@ -1485,7 +1485,7 @@ reddens = [
 # machine owner may, on their own instance.
 [[mutation]]
 name = "the overlay template starts granting a permission"
-file = "templates/overlay/common/claude/permissions.json"
+file = "src/keelline/templates/overlay/common/claude/permissions.json"
 before = '    "deny": ['
 after = '    "allow": ['
 reddens = ["tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere"]

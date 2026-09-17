@@ -76,13 +76,24 @@ def _populated(target: Path) -> bool:
 
 def _render_locally(root: Path, name: str) -> Path:
     target = root / name
+    # **Everything that can refuse runs before anything is created**, and the order is
+    # load-bearing rather than tidy. `mkdirs_within` below creates `<name>/.claude-plugin`,
+    # which is exactly `PROBE` — so a render that failed after it (`templates()` on a Keelline
+    # installed without the tree, a manifest that will not parse, a refused path) would leave
+    # behind the one directory that makes a later `overlay create --template` answer "already
+    # exists and was left alone" and never create the repository at all. The idempotence rule
+    # would silently swallow the real command. A refusal has to cost nothing on disk.
+    #
+    # `plan` reads and decides and writes nothing, and it is happy with a root that does not
+    # exist yet: `Manifest.read` finds no file and every artifact reads as absent.
+    planned = plan(target, preset_defaults(name), templates())
     # The engine writes through `fsops` and walks every component with `O_NOFOLLOW`, but it
     # cannot open a root that is not there yet. `mkdirs_within` creates a target's *parents*, so
     # the instance directory is asked for as the parent of the first file that goes into it —
     # through the same walk, rather than with the `Path.mkdir(parents=True)` this project does
     # not allow into a lane that puts files into a repository.
     fsops.mkdirs_within(root, f"{name}/{OVERLAY_FILES[0]}")
-    apply(target, plan(target, preset_defaults(name), templates()))
+    apply(target, planned)
     return target
 
 
@@ -96,7 +107,13 @@ def create(
     wait: Callable[[float], None] = time.sleep,
 ) -> Created:
     """Create `root/<name>`, from the template repository or from the shipped tree."""
-    _segment("owner", owner)
+    # Folded before it is validated, and `init_instance` folds the same way, because `SEGMENT`
+    # has a lowercase leading class and a mixed-case GitHub login is ordinary. Validating the
+    # raw value here refused `--owner OctoCat` from this command while the other accepted it —
+    # one owner string with two answers, and the refusal said "is not one path segment" about a
+    # value that plainly is one. Folding is safe: GitHub logins are case-insensitive, and the
+    # folded value is what reaches the slug, the remote and the manifest suffix alike.
+    account = _segment("owner", owner.strip().lower())
     _segment("name", name)
     if source not in SOURCES:
         raise Refusal(f"source {source!r} is not one of {', '.join(SOURCES)}")
@@ -111,7 +128,7 @@ def create(
             source,
             ("rendered from the shipped template; no network call was made",),
         )
-    return _from_template(owner, name, root=root, runner=runner, wait=wait)
+    return _from_template(account, name, root=root, runner=runner, wait=wait)
 
 
 def _from_template(

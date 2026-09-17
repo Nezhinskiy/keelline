@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -166,3 +167,45 @@ def test_the_wait_before_the_retry_is_spent_only_on_the_race(tmp_path: Path) -> 
             wait=silent.append,
         )
     assert silent == []
+
+
+def test_a_render_that_cannot_start_leaves_no_probe_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The directory `--local` has to create first is `<name>/.claude-plugin`, which is exactly
+    # the probe `--template` reads as "this was already created". So a `--local` that refused
+    # after creating it would leave the owner in the one state where the honest recovery —
+    # `overlay create --template` — reports "already exists and was left alone" and never
+    # creates the repository at all. Everything that can refuse therefore runs first. Mutation:
+    # move the `plan(...)` call back below `mkdirs_within` and this reddens on the second
+    # assertion, with a directory on disk and no repository anywhere.
+    def _unavailable() -> NoReturn:
+        raise Failure("this Keelline was installed without the template tree")
+
+    monkeypatch.setattr("keelline.overlay.create.templates", _unavailable)
+    with pytest.raises(Failure):
+        create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    assert not (tmp_path / "keelline-private").exists()
+
+
+def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -> None:
+    # `SEGMENT` has a lowercase leading class and a mixed-case GitHub login is ordinary, so the
+    # two commands have to fold alike. `create` validated the raw value while `init_instance`
+    # folded first, which refused `--owner OctoCat` from the wave's headline command and
+    # accepted it from the other — one owner string, two answers, and a refusal saying "is not
+    # one path segment" about a value that is one. Mutation: validate `owner` rather than
+    # `account` in `create` and the first half reddens with a `Refusal`.
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    runner = FakeRunner(on_call=_populate)
+    create("OctoCat", "keelline-private", source="template", root=remote, runner=runner)
+    # And the fold reaches the argv, not just the validator: GitHub is case-insensitive about a
+    # login, but the value is also a directory name and a manifest suffix, and those are not.
+    assert "octocat/keelline-private" in runner.calls[0]
+
+    local = tmp_path / "local"
+    local.mkdir()
+    created = create("OctoCat", "keelline-private", source="local", root=local, runner=FakeRunner())
+    init_instance(created.root, "OctoCat", runner=FakeRunner())
+    plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
+    assert plugin["name"] == "keelline-overlay-octocat"
