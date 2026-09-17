@@ -18,7 +18,7 @@ import pytest
 
 from keelline.attach.api import Binding, diff_permissions, read_binding
 from keelline.config.loader import CONFIG_FILE, ConfigError
-from keelline.errors import Refusal
+from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD, PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 
@@ -243,3 +243,38 @@ def test_a_committed_settings_file_can_never_contribute_a_rule(tmp_path: Path) -
     diff = diff_permissions(root, _read(tmp_path, recorded=None, origin="x"))
     assert "Bash(curl:*)" not in diff.already_present
     assert "Bash(curl:*)" not in diff.added_allow
+
+
+def test_a_machine_that_records_no_overlay_is_refused_naming_what_records_one(
+    tmp_path: Path,
+) -> None:
+    # `overlay_root` answers `None` for exactly three shapes, all of them "not recorded", and
+    # the only useful thing to say about them is which command records it. Reading `None` as
+    # "attach anyway" would put the store wherever the argument pointed, which is DP3's whole
+    # subject.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="x")
+    blank = tmp_path / "blank.toml"
+    blank.write_text("[personal]\n", encoding="utf-8")
+    with pytest.raises(Refusal) as refused:
+        read_binding(root, store=store, machine=blank)
+    assert "keelline setup" in str(refused.value)
+
+
+def test_a_binding_record_that_cannot_be_read_stops_the_run(tmp_path: Path) -> None:
+    # `memory.store._bound` answers False for this file, which is right for the hook path: it
+    # degrades closed and says "run `keelline attach`". Here that advice *is* the command, and
+    # "no record" is the state that invites a rebind — so a broken record has to stop the run
+    # rather than quietly become a first attach.
+    root, store = _project_and_store(tmp_path, recorded="u", origin="u")
+    (store.parent / PROJECT_RECORD).write_text("remote = 'u\n", encoding="utf-8")
+    with pytest.raises(Failure):
+        read_binding(root, store=store, machine=_machine(tmp_path, overlay=store.parents[2]))
+
+
+def test_a_record_with_no_remote_key_reads_as_unbound(tmp_path: Path) -> None:
+    # Valid TOML that records nothing is the ordinary state of a `projects/<name>/` directory
+    # the overlay template created, so it is a first attach and not a fault.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="x")
+    (store.parent / PROJECT_RECORD).write_text("first_attach = '2026-09-17'\n", encoding="utf-8")
+    binding = read_binding(root, store=store, machine=_machine(tmp_path, overlay=store.parents[2]))
+    assert binding.state == "unbound"

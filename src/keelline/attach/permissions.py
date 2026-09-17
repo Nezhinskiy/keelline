@@ -85,6 +85,17 @@ def _object(text: str, label: str) -> dict[str, Any]:
     return raw
 
 
+def settings_document(text: str) -> dict[str, Any]:
+    """The local settings file as an object, refusing a shape the merge could not read back.
+
+    `write.py` adds allow rules to this document and `scaffold.apply_entries` rewrites the hook
+    table in it, so both halves have to agree about what a readable document is — and a shape
+    this cannot read is refused rather than filtered, because what a filter drops here is
+    somebody's own setting and nothing would say it went.
+    """
+    return _object(text, LOCAL_SETTINGS)
+
+
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")

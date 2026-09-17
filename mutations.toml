@@ -1531,3 +1531,18 @@ file = "src/keelline/attach/permissions.py"
 before = '    sources = (overlay_common, overlay_project)'
 after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
+
+# The Global Constraints ask for this entry by name: "a refusal something downstream reads as
+# permission". With it gone, a repository that says "setup requires `keelline attach --store
+# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the
+# diff. Declared on the predicate rather than on the branch in `write.py`, because the predicate
+# is where the rule is defined once and `check` reports the same one.
+[[mutation]]
+name = "attach widens a permission without a confirmation"
+file = "src/keelline/attach/permissions.py"
+before = '        return bool(self.added_allow or self.added_hooks)'
+after = '        return False'
+reddens = [
+  "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
+  "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
+]

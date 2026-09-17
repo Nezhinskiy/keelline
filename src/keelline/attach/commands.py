@@ -29,14 +29,36 @@ def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
 
 def run_attach(args: argparse.Namespace) -> Result:
     from keelline.attach.permissions import check
+    from keelline.attach.write import attach
+    from keelline.overlay.api import subprocess_runner
 
     root, store, machine = _target(args)
     if args.check:
         return check(root, store=store, machine=machine)
-    raise Refusal(
-        "`keelline attach` writes nothing yet; run it with --check, which reports the binding "
-        "and the permission diff"
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=args.yes,
+        trust_remote=args.trust_remote,
+        runner=subprocess_runner(),
     )
+    data = {
+        "settings_written": attached.settings_written,
+        "rules_written": list(attached.rules_written),
+        "binding_recorded": attached.binding_recorded,
+        "ignored": attached.ignored,
+        "notes": list(attached.notes),
+    }
+    summary = "; ".join(
+        (
+            f"attached: {len(attached.rules_written)} Codex rule file(s)",
+            "settings merged" if attached.settings_written else "settings unchanged",
+            "binding recorded" if attached.binding_recorded else "binding already recorded",
+            *attached.notes,
+        )
+    )
+    return Result(summary, data)
 
 
 def run_detach(args: argparse.Namespace) -> Result:
