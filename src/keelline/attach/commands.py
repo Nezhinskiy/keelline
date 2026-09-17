@@ -44,6 +44,8 @@ def run_attach(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
     )
     data = {
+        "created": [str(path) for path in attached.links.created],
+        "revoked": [str(path) for path in attached.links.revoked],
         "settings_written": attached.settings_written,
         "rules_written": list(attached.rules_written),
         "binding_recorded": attached.binding_recorded,
@@ -52,7 +54,8 @@ def run_attach(args: argparse.Namespace) -> Result:
     }
     summary = "; ".join(
         (
-            f"attached: {len(attached.rules_written)} Codex rule file(s)",
+            f"attached: {len(attached.links.created)} link(s), "
+            f"{len(attached.rules_written)} Codex rule file(s)",
             "settings merged" if attached.settings_written else "settings unchanged",
             "binding recorded" if attached.binding_recorded else "binding already recorded",
             *attached.notes,

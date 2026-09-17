@@ -57,11 +57,23 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from keelline import fsops
 from keelline.config.paths import contained
 from keelline.config.schema import Config
+from keelline.errors import Failure, Refusal
 from keelline.memory import trust
 from keelline.memory.index import INDEX_NAME, index_source
-from keelline.memory.store import Store, in_repository, main_checkout
+from keelline.memory.store import (
+    Store,
+    in_repository,
+    main_checkout,
+    overlay_group_target,
+    overlay_root,
+    permitted_roots,
+    resolve,
+)
+
+OVERLAY_MODE = "overlay"
 
 
 class PartialLink(OSError):
@@ -257,7 +269,104 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
                 if _link(source.resolve(), target):
                     created.append(target)
         harness = harness_memory_path(worktree, home)
-        if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):
+        if harness_link_needed(store, config):
+            if _link(store.path.resolve(), harness):
+                created.append(harness)
+        elif _unlink(store.path.resolve(), harness):
+            revoked.append(harness)
+    except OSError as exc:
+        raise PartialLink(created, exc) from exc
+    return Links(created, revoked)
+
+
+def harness_link_needed(store: Store, config: Config) -> bool:
+    """Whether `~/.claude/projects/<slug>/memory` may point at this store — asked in one place.
+
+    `link` asks it for a worktree, `attach_main` asks it for the owning checkout, and `attach`
+    asks it again before taking §6.3's settings-file fallback. Three callers and one spelling,
+    because the question is easy to ask slightly wrong and asking it wrong costs everything the
+    gate was for: `repository_data=in_repository(store, store.path)` is what makes it a question
+    about *the directory this link exposes* rather than about the notes behind it. Asked without
+    that argument it falls through `inside_project(store)`, which is False in overlay mode by
+    design while `store.path` is a real directory inside the repository — and a clone shipping a
+    committed store then gets the link created for it on no trust record at all.
+    """
+    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))
+
+
+def attach_main(
+    root: Path,
+    store_path: Path,
+    config: Config,
+    *,
+    machine: Path | None = None,
+    home: Path | None = None,
+) -> Links:
+    """Build the link tree in the checkout that owns the store, in overlay mode (§6.3).
+
+    The case `link` excludes. `link` is right that the main checkout "already holds the real
+    store, not a link to it" in `local-only` and `in-repo`; in `overlay` mode §6.2 puts the real
+    store in the overlay and the checkout holds a tree of links, so the owning checkout needs an
+    entry point of its own. It lives here rather than in `attach` because the two share `_link`,
+    `_unlink` and the gate above, and a second copy of that gate in another area is the most
+    expensive duplication this plan could make.
+
+    **It takes a `store_path` and not a resolved `Store`, because there is nothing to resolve
+    yet:** in overlay mode `resolve()` reads the link tree, and the link tree is what this
+    function creates. So the links come first and `resolve()` second, which is also why the
+    harness link is last.
+
+    The overlay root comes from `overlay_root(machine)` and never from `store_path` (DP3), and
+    `store_path` is checked against `permitted_roots` rather than trusted — `attach` refuses the
+    same store one layer up, and this is the floor under that.
+
+    Raises `PathEscape` rather than skipping when a group name leaves the tree, for the reason
+    `link` gives: `memory.groups` is repository-controlled and skipping one escaping name leaves
+    the next free to try the same thing.
+    """
+    if config.memory.mode != OVERLAY_MODE:
+        raise Refusal(
+            f"memory.mode is {config.memory.mode!r}, so this repository holds its own store and "
+            f"there is no tree of links to build; only an overlay-mode repository is attached"
+        )
+    overlay = overlay_root(machine)
+    if overlay is None:
+        raise Refusal(
+            "no overlay root is recorded in the machine configuration, so there is nothing to "
+            "link into; run `keelline setup` first"
+        )
+    if store_path.resolve() != permitted_roots(overlay, config.project.name)[1].resolve():
+        raise Refusal(
+            f"{store_path} is not this project's own share of the recorded overlay "
+            f"({permitted_roots(overlay, config.project.name)[1]}); linking there would put "
+            f"another project's notes into this session"
+        )
+    base = contained(root, config.paths.memory)
+    created: list[Path] = []
+    revoked: list[Path] = []
+    try:
+        # `mkdirs_within` creates a target's *parents* through the `O_NOFOLLOW` walk, so the
+        # store directory is asked for as the parent of the index link that goes into it.
+        fsops.mkdirs_within(root, f"{config.paths.memory}/{INDEX_NAME}")
+        for name in linked_names(config):
+            source = (
+                store_path / INDEX_NAME
+                if name == INDEX_NAME
+                else overlay_group_target(overlay, config.project.name, name)
+            )
+            # `allow_final_symlink`, because replacing a wrong or dangling symlink already
+            # sitting at the target is this function's job; every level above it is not.
+            target = contained(base, name, allow_final_symlink=True)
+            if _link(source, target):
+                created.append(target)
+        store = resolve(root, config, machine=machine)
+        if store is None:
+            raise Failure(
+                "the link tree was created and the store still does not resolve; "
+                "`keelline memory index --check` reports why"
+            )
+        harness = harness_memory_path(root, home)
+        if harness_link_needed(store, config):
             if _link(store.path.resolve(), harness):
                 created.append(harness)
         elif _unlink(store.path.resolve(), harness):

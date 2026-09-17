@@ -114,6 +114,7 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
             confirmed=True,
             trust_remote=False,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
     assert _snapshot(root) == before
 
@@ -134,6 +135,7 @@ def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: P
             confirmed=False,
             trust_remote=False,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
     assert not (root / SETTINGS).exists()
 
@@ -144,7 +146,13 @@ def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> 
     # flag becomes something people pass reflexively.
     root, store, machine = _attachable(tmp_path)
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     assert attached.ignored and attached.binding_recorded
     assert not attached.settings_written
@@ -163,7 +171,13 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
     }
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
     attach(
-        root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     document = (root / SETTINGS).read_text(encoding="utf-8")
     claimed = owned_ids(document)
@@ -201,7 +215,13 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
         encoding="utf-8",
     )
     attach(
-        root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     document = (root / SETTINGS).read_text(encoding="utf-8")
     commands = [
@@ -221,7 +241,13 @@ def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
 
     root, store, machine = _attachable(tmp_path)
     attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
     assert record["remote"] == "git@example.com:o/p.git"
@@ -236,13 +262,29 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
 
     root, store, machine = _attachable(tmp_path)
     runner = FakeRunner()
-    attach(root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=runner)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
     record = store.parent / "project.toml"
     first = tomllib.loads(record.read_text(encoding="utf-8"))["first_attach"]
     record.write_text(
         record.read_text(encoding="utf-8").replace(str(first), "2000-01-01"), encoding="utf-8"
     )
-    attach(root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=runner)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
     assert tomllib.loads(record.read_text(encoding="utf-8"))["first_attach"] == "2000-01-01"
 
 
@@ -252,7 +294,13 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
     attach(
-        root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     recorded = ledger(root)
     assert recorded.allow == (RULE,)
@@ -269,7 +317,13 @@ def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_pat
     root, store, machine = _attachable(tmp_path)
     assert not _check_ignore(root, LEDGER)
     attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     body = extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
     assert body is not None and ".keelline/local/" in body
@@ -282,7 +336,13 @@ def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path:
     root, store, machine = _attachable(tmp_path)
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
     attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     assert "node_modules/\n" in (root / ".gitignore").read_text(encoding="utf-8")
 
@@ -300,6 +360,7 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
             confirmed=False,
             trust_remote=False,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
     assert not (root / LEDGER).exists()
 
@@ -310,8 +371,24 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
     runner = FakeRunner()
-    attach(root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=runner)
-    attach(root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=runner)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert document["permissions"]["allow"] == [RULE]
     assert len(document["hooks"]["SessionStart"]) == 1
@@ -324,8 +401,24 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
     # alone would forget it, leaving `detach` nothing to remove.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     runner = FakeRunner()
-    attach(root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=runner)
-    attach(root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=runner)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
     assert ledger(root).allow == (RULE,)
 
 
@@ -334,7 +427,13 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
     # merge because the two harnesses fail differently and a shared path would hide which.
     root, store, machine = _attachable(tmp_path, codex="# standing rule\n")
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     landed = root / ".codex" / "rules" / "common.rules"
     assert landed.read_text(encoding="utf-8") == "# standing rule\n"
@@ -351,7 +450,13 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
         json.dumps({"permissions": {"allow": ["Bash(rm:*)"]}}), encoding="utf-8"
     )
     attach(
-        root, store=store, machine=machine, confirmed=True, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     allow = json.loads((root / SETTINGS).read_text(encoding="utf-8"))["permissions"]["allow"]
     assert allow == ["Bash(rm:*)", RULE]
@@ -369,7 +474,13 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     runner = FakeRunner()
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=runner
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
     )
     assert ["pre-commit", "install"] in runner.calls
     assert any("pre-commit" in note for note in attached.notes)
@@ -386,7 +497,13 @@ def test_trust_remote_rebinds_and_keeps_the_original_first_attach_date(tmp_path:
         'remote = "git@example.com:o/real.git"\nfirst_attach = "2020-02-02"\n', encoding="utf-8"
     )
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=True, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=True,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     assert attached.binding_recorded
     record = tomllib.loads((store.parent / "project.toml").read_text(encoding="utf-8"))
@@ -407,6 +524,7 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
             confirmed=False,
             trust_remote=True,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
 
 
@@ -426,6 +544,7 @@ def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
             confirmed=True,
             trust_remote=False,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
 
 
@@ -445,6 +564,7 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
             confirmed=True,
             trust_remote=False,
             runner=FakeRunner(),
+            home=tmp_path / "home",
         )
 
 
@@ -454,7 +574,13 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
     # the only witness to.
     root, store, machine = _attachable(tmp_path)
     attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=FakeRunner()
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
     )
     (root / LEDGER).write_text("{", encoding="utf-8")
     with pytest.raises(Failure):
@@ -469,7 +595,13 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
     (overlay / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
     runner = FakeRunner()
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=runner
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
     )
     assert runner.calls == []
     assert attached.notes == ()
@@ -482,6 +614,12 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     runner = FakeRunner(answer=Completed(127, "", "pre-commit could not be run"))
     attached = attach(
-        root, store=store, machine=machine, confirmed=False, trust_remote=False, runner=runner
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
     )
     assert any("did not run" in note for note in attached.notes)

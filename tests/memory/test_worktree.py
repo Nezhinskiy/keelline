@@ -10,9 +10,16 @@ import pytest
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
+from keelline.errors import Refusal
 from keelline.memory.store import LOCAL_STORE, Store, resolve
 from keelline.memory.trust import record
-from keelline.memory.worktree import PartialLink, harness_memory_path, link, linked_names
+from keelline.memory.worktree import (
+    PartialLink,
+    attach_main,
+    harness_memory_path,
+    link,
+    linked_names,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -732,3 +739,122 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
     assert [p.name for p in excinfo.value.created] == ["MEMORY.md", "developer"]
     assert (base / "developer").is_symlink()
     assert not (base / "sub" / "nested").exists()
+
+
+# --- the main checkout in overlay mode, which is the case `link` excludes -----------------
+#
+# `link` is "a no-op for the main checkout itself: it already holds the real store, not a link
+# to it". That is true in `local-only` and `in-repo` and false in `overlay` mode, where §6.2
+# puts the real store in the overlay and the checkout holds a link tree. `attach_main` is that
+# case, and it lives here beside `link` rather than in `attach` because the two share `_link`,
+# `_unlink` and — above all — the `trust.may_inject` gate on the harness link, which is forty
+# lines of reasoning about a channel Keelline does not control.
+
+
+def an_overlay_to_attach(
+    tmp_path: Path, *, groups: tuple[str, ...] = ("developer", "project-stable")
+) -> tuple[Path, Path, Path, Config]:
+    """A repository in overlay mode whose link tree does not exist yet, and its overlay."""
+    root = _a_repo(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    (overlay / "common" / "memory" / "shared.md").write_text("x", encoding="utf-8")
+    own = overlay / "projects" / "widget" / "memory"
+    for group in groups:
+        if group != "developer":
+            (own / group).mkdir(parents=True)
+    own.mkdir(parents=True, exist_ok=True)
+    (own.parent / "project.toml").write_text(
+        'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
+    )
+    listed = "[" + ", ".join(f'"{g}"' for g in groups) + "]"
+    (root / CONFIG_FILE).write_text(CONFIG.format(mode="overlay", groups=listed), encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    _commit_checkout(root)
+    return root, overlay, machine, load(root, machine=machine)
+
+
+def test_the_main_checkout_gets_the_link_tree_in_overlay_mode(tmp_path: Path) -> None:
+    # The case `link`'s own docstring excludes: `resolve()` reads the link tree, and the link
+    # tree is what this function creates, so it cannot take a resolved `Store`.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    assert resolve(root, config, machine=machine) is None
+    links = attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    assert {p.name for p in links.created} >= {"MEMORY.md", "developer", "project-stable"}
+    assert (base / "developer").readlink() == (overlay / "common" / "memory").resolve()
+    assert (base / "project-stable").readlink() == (own / "project-stable").resolve()
+    assert resolve(root, config, machine=machine) is not None
+
+
+def test_the_harness_link_is_gated_by_the_same_predicate_as_in_a_worktree(tmp_path: Path) -> None:
+    # The gate is `trust.may_inject(store, config, repository_data=in_repository(store,
+    # store.path))`. Asked any other way it answers the wrong question — the worktree docstring
+    # records a clone that got the harness link created for it on no trust record at all, after
+    # which the harness's own native reader injected repository bytes with no delimiter and no
+    # nonce. In overlay mode `store.path` is a real directory *in the repository*, so the
+    # answer is the trust record's, exactly as it is for a worktree of an in-repo store.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    home = tmp_path / "home"
+    attach_main(root, own, config, machine=machine, home=home)
+    assert not harness_memory_path(root, home).is_symlink()
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+    attach_main(root, own, config, machine=machine, home=home)
+    assert harness_memory_path(root, home).is_symlink()
+
+
+def test_a_group_name_that_escapes_the_tree_raises_rather_than_skipping(tmp_path: Path) -> None:
+    # `memory.groups` is an ordinary keelline.toml list and reaches no guard of its own (§7.4).
+    # Skipping one escaping name leaves the next free to try the same thing, which is why
+    # `link` raises `PathEscape` rather than continuing — and `attach_main` must match it.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path, groups=("../escape",))
+    with pytest.raises(PathEscape):
+        attach_main(
+            root,
+            overlay / "projects" / "widget" / "memory",
+            config,
+            machine=machine,
+            home=tmp_path / "home",
+        )
+
+
+def test_a_store_that_is_not_this_projects_share_of_the_overlay_is_refused(tmp_path: Path) -> None:
+    # DP3's containment rule, restated at the boundary that acts on it. `attach` refuses the
+    # same store one layer up; this is the floor under that, so a later caller cannot point the
+    # link tree at another project's notes by handing this function a different path.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    sideways = overlay / "projects" / "other" / "memory"
+    sideways.mkdir(parents=True)
+    with pytest.raises(Refusal):
+        attach_main(root, sideways, config, machine=machine, home=tmp_path / "home")
+
+
+def test_a_repository_that_is_not_in_overlay_mode_is_refused(tmp_path: Path) -> None:
+    # `local-only` and `in-repo` hold the real store in the checkout, so a link tree there would
+    # replace notes with links to nothing. The mode is the repository's own statement that its
+    # store is the overlay, and it can only make this refuse.
+    root, store, config = a_checkout(tmp_path)
+    machine = a_machine_file(tmp_path)
+    with pytest.raises(Refusal):
+        attach_main(root, store.path, config, machine=machine, home=tmp_path / "home")
+
+
+def test_a_machine_that_records_no_overlay_is_refused(tmp_path: Path) -> None:
+    # DP3 again: the overlay root comes from the machine file, so a machine that records none
+    # has no overlay to link into and the answer is not "link into whatever was passed".
+    root, overlay, _, config = an_overlay_to_attach(tmp_path)
+    blank = tmp_path / "blank.toml"
+    blank.write_text("[personal]\n", encoding="utf-8")
+    with pytest.raises(Refusal):
+        attach_main(
+            root,
+            overlay / "projects" / "widget" / "memory",
+            config,
+            machine=blank,
+            home=tmp_path / "home",
+        )

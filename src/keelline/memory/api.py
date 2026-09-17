@@ -81,6 +81,15 @@ telling them apart. `origin_remote` comes with it rather than after it: without 
 to run its own `git`, and `_git`'s scrubbing of `GIT_DIR` and `GIT_WORK_TREE` — the reason this
 module's own comparison is trustworthy — would be the thing it re-derived.
 
+**`attach_main`, `harness_memory_path`, `COMMON_GROUP` and `overlay_group_target`, for `attach`
+and `doctor`.** `link` is documented as "a no-op for the main checkout itself: it already holds
+the real store, not a link to it", which is true in `local-only` and `in-repo` and false in
+overlay mode — so the owning checkout has an entry point of its own, and the lane that calls it
+has to be able to name it. `harness_memory_path` comes with it because §6.3's fallback is taken
+only when that path cannot be linked, so `attach` has to ask where it is and `doctor` has to
+report on it. The routing pair is here because the link tree `attach` builds and the provenance
+`doctor` prints are two readings of one rule, and the rule is this lane's.
+
 **The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
 paragraph used to hold open — a reference guard this lane planned and never shipped — is now
 `refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
@@ -122,6 +131,7 @@ from keelline.memory.refs import (
     unresolved,
 )
 from keelline.memory.store import (
+    COMMON_GROUP,
     PROJECT_RECORD,
     PROJECTS,
     GitUnavailable,
@@ -130,6 +140,7 @@ from keelline.memory.store import (
     inside_project,
     main_checkout,
     origin_remote,
+    overlay_group_target,
     overlay_root,
     permitted_roots,
     refusal_reason,
@@ -150,9 +161,18 @@ from keelline.memory.trust import (
     snapshot,
     wrap,
 )
-from keelline.memory.worktree import Links, PartialLink, link, linked_names
+from keelline.memory.worktree import (
+    Links,
+    PartialLink,
+    attach_main,
+    harness_link_needed,
+    harness_memory_path,
+    link,
+    linked_names,
+)
 
 __all__ = [
+    "COMMON_GROUP",
     "DELIMITER",
     "INDEX_NAME",
     "PROJECTS",
@@ -178,12 +198,15 @@ __all__ = [
     "UnreadableTrustRecord",
     "UnsafeNote",
     "Walk",
+    "attach_main",
     "audience_violations",
     "blocks",
     "changed",
     "check_index",
     "check_refs",
     "fit",
+    "harness_link_needed",
+    "harness_memory_path",
     "in_repository",
     "index_source",
     "inside_project",
@@ -195,6 +218,7 @@ __all__ = [
     "may_inject",
     "new_nonce",
     "origin_remote",
+    "overlay_group_target",
     "overlay_root",
     "permitted_roots",
     "read_note",

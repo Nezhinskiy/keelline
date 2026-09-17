@@ -361,6 +361,26 @@ def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
     return overlay / COMMON, overlay / PROJECTS / project / "memory"
 
 
+# The one group whose notes are not this project's, and `common/memory` *is* its store rather
+# than its parent: this module's own docstring says so — "`developer` points into the overlay's
+# `common/memory`, which is shared across projects and cannot live under `projects/<name>/`" —
+# and the overlay template's README says it to the owner. Named here beside `COMMON` and
+# `permitted_roots` because `attach` builds the link tree from this routing and `doctor` reports
+# on it; a third spelling is one more place for them to stop agreeing.
+COMMON_GROUP = "developer"
+
+
+def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
+    """Where one group's notes live inside the overlay (§6.2).
+
+    A rule and deliberately not a probe over what happens to exist: a group directory that is
+    not there yet is a first attach, not a reason to link somewhere else. The answer is always
+    inside `permitted_roots`, which is what the resolver then checks the link against.
+    """
+    common, own = permitted_roots(overlay, project)
+    return common if group == COMMON_GROUP else own / group
+
+
 def _declared(root: Path, config: Config) -> Path | None:
     try:
         return contained(root, config.paths.memory, allow_final_symlink=True)

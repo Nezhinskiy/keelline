@@ -57,8 +57,23 @@ from keelline.attach.permissions import (
     overlay_entries,
     settings_document,
 )
+from keelline.config.loader import load
+from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
-from keelline.memory.api import PROJECT_RECORD, PROJECTS
+from keelline.fsops import UnsafePath
+from keelline.gitenv import git_run
+from keelline.memory.api import (
+    COMMON_GROUP,
+    PROJECT_RECORD,
+    PROJECTS,
+    Links,
+    attach_main,
+    harness_link_needed,
+    harness_memory_path,
+    link,
+    main_checkout,
+    resolve,
+)
 from keelline.overlay.api import COMMON_CODEX, Runner
 from keelline.scaffold import EntriesError, Style, apply_entries, marker_id, upsert
 
@@ -72,6 +87,13 @@ IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
 CODEX_RULES = ".codex/rules"
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = Path(".git") / "hooks" / "pre-commit"
+# §6.3's fallback for the one link that leaves Keelline's own channel: "a settings-file value is
+# subject to workspace trust and a link is not", so the symlink is preferred and this is taken
+# only when it cannot be made.
+FALLBACK_KEY = "autoMemoryDirectory"
+# `fsops.mkdirs_within` creates a target's *parents*, so a directory is asked for as the parent
+# of a name inside it. Nothing is ever written at this name; `overlay.create` asks the same way.
+_INSIDE = ".keep"
 
 
 @dataclass(frozen=True)
@@ -83,6 +105,7 @@ class Attached:
     binding_recorded: bool
     ignored: bool
     notes: tuple[str, ...]
+    links: Links
 
 
 @dataclass(frozen=True)
@@ -97,6 +120,7 @@ class AttachLedger:
     allow: tuple[str, ...]
     entries: dict[str, str]
     rules: tuple[str, ...]
+    settings_keys: tuple[str, ...]
 
 
 def ledger(root: Path) -> AttachLedger:
@@ -126,6 +150,7 @@ def ledger(root: Path) -> AttachLedger:
         allow=tuple(r for r in raw.get("allow", []) if isinstance(r, str)),
         entries={k: str(v) for k, v in entries.items()} if isinstance(entries, dict) else {},
         rules=tuple(r for r in raw.get("rules", []) if isinstance(r, str)),
+        settings_keys=tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str)),
     )
 
 
@@ -280,7 +305,11 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
 
 
 def _write_ledger(
-    root: Path, binding: Binding, diff: PermissionDiff, rules: tuple[str, ...]
+    root: Path,
+    binding: Binding,
+    diff: PermissionDiff,
+    rules: tuple[str, ...],
+    settings_keys: tuple[str, ...],
 ) -> None:
     """Record what this attach may remove again — the union with what an earlier one claimed.
 
@@ -310,8 +339,101 @@ def _write_ledger(
         "allow": allow,
         "entries": entries,
         "rules": list(rules),
+        "settings_keys": list(settings_keys),
     }
     fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+
+def _prepare_store(binding: Binding, config: Config) -> None:
+    """Create this project's own group directories in the overlay.
+
+    The link tree has to land on something: `memory.store` drops a group whose target does not
+    exist, and a store with no groups does not resolve at all. `common/memory` is not created
+    here — it is shared across projects and `overlay create` ships it.
+    """
+    for group in config.memory.groups:
+        if group == COMMON_GROUP:
+            continue
+        try:
+            fsops.mkdirs_within(
+                binding.overlay, f"{PROJECTS}/{binding.project}/memory/{group}/{_INSIDE}"
+            )
+        except UnsafePath as exc:
+            # The entry itself is repository-authored (§7.4: `memory.groups` reaches no guard of
+            # its own), so it is refused rather than quoted back.
+            raise Refusal(
+                "a memory.groups entry does not stay inside this project's share of the "
+                "overlay, so it is refused rather than created"
+            ) from exc
+
+
+def _worktrees(root: Path) -> list[Path]:
+    """Every checkout of this repository, from `git worktree list --porcelain`.
+
+    Through `gitenv.git_run`, which scrubs `GIT_DIR` and `GIT_WORK_TREE`: an inherited one would
+    list the worktrees of a different repository altogether, and this lane then writes into each
+    one of them.
+    """
+    code, out = git_run(root, "worktree", "list", "--porcelain")
+    if code != 0:
+        raise Failure(
+            "`git` could not list this repository's worktrees, so memory cannot be linked into "
+            "them; the fault is on this machine — check that `git` runs here"
+        )
+    prefix = "worktree "
+    return [Path(line[len(prefix) :]) for line in out.splitlines() if line.startswith(prefix)]
+
+
+def _link_everywhere(
+    root: Path, binding: Binding, config: Config, *, machine: Path | None, home: Path | None
+) -> Links:
+    """The owning checkout first, then every other worktree (§6.3).
+
+    `attach_main` handles the checkout that holds the store — the case `worktree.link` excludes
+    — and `link` handles the rest unchanged. A `PartialLink` is left to propagate with its
+    `.created` intact: a half-built tree is repairable, and swallowing it into a generic failure
+    is what made one mysterious.
+    """
+    links = attach_main(root, binding.store, config, machine=machine, home=home)
+    created, revoked = list(links.created), list(links.revoked)
+    store = resolve(root, config, machine=machine)
+    if store is None:
+        raise Failure(
+            "the link tree was created and the store still does not resolve; "
+            "`keelline memory index --check` reports why"
+        )
+    owner = main_checkout(root).resolve()
+    for tree in _worktrees(root):
+        if tree.resolve() == owner:
+            continue
+        more = link(tree, store, config, home=home)
+        created += more.created
+        revoked += more.revoked
+    return Links(created, revoked)
+
+
+def _harness_fallback(
+    root: Path, config: Config, *, machine: Path | None, home: Path | None
+) -> tuple[str, ...]:
+    """§6.3's fallback, taken only when the symlink could not be made, and always recorded.
+
+    The link is preferred "because a settings-file value is subject to workspace trust and a
+    link is not". It cannot be made on a filesystem that refuses symlinks, or where a real
+    directory already sits at the path — the case `worktree._link` refuses to clobber. The gate
+    is asked first and with the same predicate, so a store the owner has not approved gets
+    neither channel; and the key goes into the ledger, because a fallback nothing records is a
+    setting that outlives its reason.
+    """
+    store = resolve(root, config, machine=machine)
+    if store is None or not harness_link_needed(store, config):
+        return ()
+    harness = harness_memory_path(root, home)
+    if harness.is_symlink() and harness.readlink() == store.path.resolve():
+        return ()
+    document = settings_document(local_document(root))
+    document[FALLBACK_KEY] = str(store.path.resolve())
+    fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
+    return (FALLBACK_KEY,)
 
 
 def attach(
@@ -322,16 +444,22 @@ def attach(
     confirmed: bool,
     trust_remote: bool,
     runner: Runner,
+    home: Path | None = None,
 ) -> Attached:
-    """Bind this repository to the overlay and merge what the overlay grants.
+    """Bind this repository to the overlay, merge what the overlay grants, and link the notes in.
 
     The order is the order the refusals have to happen in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
     without `confirmed`; refuse a mismatch without `trust_remote`; then write, `.gitignore`
-    first.
+    first, so the ledger is never in a tracked path even for an instant.
 
-    `runner` is the seam the `overlay` lane introduced, and it is a parameter rather than a
-    default so that no test can reach a real `pre-commit`.
+    The binding record is written before the links, because `memory.store` checks it and a
+    store whose record is missing does not resolve — and `attach_main` resolves as its last
+    step. The ledger is written before the links too, so a `PartialLink` half way through leaves
+    behind a repository `detach` can still clean up.
+
+    `runner` and `home` are parameters rather than defaults so that no test can reach a real
+    `pre-commit` or the developer's own `~/.claude/`.
     """
     binding = read_binding(root, store=store, machine=machine)
     diff = diff_permissions(root, binding)
@@ -354,7 +482,17 @@ def attach(
     written = merged != document
     if written:
         fsops.write_within(root, LOCAL_SETTINGS, merged)
-    _write_ledger(root, binding, diff, rules)
+    _write_ledger(root, binding, diff, rules, ())
     recorded = _record_binding(binding)
-    note = _secret_scan(binding, runner)
-    return Attached(written, rules, recorded, True, () if note is None else (note,))
+    config = load(root, machine=machine)
+    _prepare_store(binding, config)
+    links = _link_everywhere(root, binding, config, machine=machine, home=home)
+    notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
+    keys = _harness_fallback(root, config, machine=machine, home=home)
+    if keys:
+        _write_ledger(root, binding, diff, rules, keys)
+        notes.append(
+            f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
+            f"{LOCAL_SETTINGS} instead; `keelline detach` removes it"
+        )
+    return Attached(written or bool(keys), rules, recorded, True, tuple(notes), links)

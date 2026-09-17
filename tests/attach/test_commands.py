@@ -20,6 +20,17 @@ from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
+@pytest.fixture(autouse=True)
+def _never_the_developers_own_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test here may reach the real `~/.claude/`.
+
+    `attach` takes a `home` for exactly this reason and the CLI passes none, because in
+    production the answer is the machine owner's own home directory — so the seam a command
+    test has to close is `Path.home` itself.
+    """
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+
+
 def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
 
