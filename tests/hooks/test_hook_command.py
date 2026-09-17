@@ -18,6 +18,17 @@ from keelline.hooks.commands import _output_cap, run_hook
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# The tree's `needs_git` idiom (`tests/test_git_run.py`, `tests/ledger/test_scan.py`,
+# `tests/ledger/test_write.py`), with the one change this module needs: the guard asks about
+# `/usr/bin/git` rather than `shutil.which("git")`, because the hook runs in a subprocess whose
+# PATH `hook()` pins to `/usr/bin:/bin`. A `git` the parent can find elsewhere is a `git` the
+# hygiene handler's `git status` still cannot reach, so `which` would answer for the wrong
+# process and turn a skip into a failure nobody could read.
+needs_git = pytest.mark.skipif(
+    not Path("/usr/bin/git").exists(),
+    reason="git is not at /usr/bin/git, which the hook's PATH pins",
+)
+
 CONFIG = """
 [keelline]
 version = "0.1.0"
@@ -180,6 +191,7 @@ def _failing_test_run() -> str:
     )
 
 
+@needs_git
 def test_a_once_per_context_handler_really_runs_once(tmp_path: Path) -> None:
     # Before the sink, `NullSink.seen()` was always False and `once_key` meant "every
     # invocation" — a once-per-context notice on every single tool call.

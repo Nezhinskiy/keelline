@@ -13,7 +13,6 @@ the degradation `NullSink`'s own docstring already promises, reached here by ret
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
@@ -21,7 +20,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from keelline.fsops import UnsafePath, open_within, remove_within, write_within
+from keelline.fsops import (
+    UnsafePath,
+    open_within,
+    remove_within,
+    rmdir_within,
+    write_within,
+)
 from keelline.hooks.api import NullSink, Sink
 
 # The one directory Keelline owns inside the data root the harness handed it.
@@ -53,19 +58,6 @@ def _segment(value: str) -> str:
     permits. The hash also fixes the length, so a value of any size costs one short name.
     """
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
-
-
-def _rmdir_within(root: Path, target: str) -> None:
-    """`remove_within` for a directory, which unlinks and therefore cannot remove one.
-
-    Not a second writer and not a widening of `fsops`: it is `remove_within`'s own body with
-    `os.rmdir` in place of `os.unlink`, reached through the same `open_within` walk, so the
-    removal happens relative to a descriptor no symlink can redirect. It lives here rather than
-    in `fsops` because this is the only directory anything removes — D14 permits a removal loop
-    in exactly one place, and that place is the marker tree below.
-    """
-    with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
-        os.rmdir(name, dir_fd=dir_fd)
 
 
 @dataclass(frozen=True)
@@ -110,7 +102,7 @@ class DataSink:
         for stale in sessions[MARKER_SESSIONS_KEPT:]:
             for child in stale.iterdir():
                 remove_within(self.root, f"{MARKERS}/{stale.name}/{child.name}")
-            _rmdir_within(self.root, f"{MARKERS}/{stale.name}")
+            rmdir_within(self.root, f"{MARKERS}/{stale.name}")
 
     def diagnostic(self, record: dict[str, object]) -> None:
         # The session is capped with everything else, and not merged in past the cap. It comes

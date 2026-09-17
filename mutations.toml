@@ -1467,3 +1467,15 @@ after = '    return value'
 reddens = [
   "tests/hooks/test_sink.py::test_a_marker_lands_at_two_hashed_segments_and_nowhere_else",
 ]
+
+# Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA` (S1). With the
+# fallback gone the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades
+# back to "every invocation" -- the defect the sink exists to remove, on one harness only.
+[[mutation]]
+name = "the sink stops recognising Codex's name for the data directory"
+file = "src/keelline/hooks/sink.py"
+before = '    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")'
+after = '    data = env.get("CLAUDE_PLUGIN_DATA")'
+reddens = [
+  "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
+]

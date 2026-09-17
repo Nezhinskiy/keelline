@@ -252,3 +252,22 @@ def remove_within(root: Path, target: str) -> None:
     """
     with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
         os.unlink(name, dir_fd=dir_fd)
+
+
+def rmdir_within(root: Path, target: str) -> None:
+    """Remove the empty directory `root/target` through the same walk; an absent one is not
+    an error.
+
+    `remove_within` cannot do this job and cannot be made to: `unlink` on a directory is EPERM
+    on macOS and EISDIR on Linux, so a caller that reached for it got an `OSError` it was most
+    likely already swallowing, and a tree that quietly never shrank.
+
+    Public, and here rather than private to its caller, for the reason `mkdirs_within` gives
+    one function above: "a private helper leaves each of them to re-derive this, and the
+    failure mode of getting it wrong is silent". `hooks-core` asked for it — the dispatcher's
+    marker tree is keyed by session and must be pruned, which is the one removal loop D14
+    permits — and it is the whole of the difference from `remove_within`, so a later hardening
+    of that walk reaches this too instead of leaving a copy behind.
+    """
+    with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
+        os.rmdir(name, dir_fd=dir_fd)

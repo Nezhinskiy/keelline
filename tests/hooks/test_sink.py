@@ -33,6 +33,21 @@ def test_a_marker_is_remembered_across_processes(tmp_path: Path) -> None:
     assert second.seen("ledger-notes") is True
 
 
+def test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink(
+    tmp_path: Path,
+) -> None:
+    # `PLUGIN_DATA` is Codex's name for `CLAUDE_PLUGIN_DATA` (S1), and it was the arm nothing
+    # asserted: every other row here passes the Claude Code name, so deleting the fallback
+    # reddened nothing. Coverage could not see it either — the row above evaluates both operands
+    # with `{}`, so the line and both its branch arms were already exercised. The consequence is
+    # silent and is exactly the defect this module exists to fix: on Codex every `once_key`
+    # handler would degrade back to "every invocation".
+    first = sink_for("s1", {"PLUGIN_DATA": str(tmp_path)})
+    assert not isinstance(first, NullSink)
+    first.mark("ledger-notes")
+    assert sink_for("s1", {"PLUGIN_DATA": str(tmp_path)}).seen("ledger-notes") is True
+
+
 def test_a_different_session_does_not_inherit_markers(tmp_path: Path) -> None:
     sink_for("s1", {"CLAUDE_PLUGIN_DATA": str(tmp_path)}).mark("ledger-notes")
     assert sink_for("s2", {"CLAUDE_PLUGIN_DATA": str(tmp_path)}).seen("ledger-notes") is False
