@@ -1456,3 +1456,14 @@ file = "hooks/run-hook.sh"
 before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
+
+# The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
+# is a write -- and a `remove_within` loop -- outside the one directory D14 permits.
+[[mutation]]
+name = "the sink stops hashing a payload-controlled path segment"
+file = "src/keelline/hooks/sink.py"
+before = '    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]'
+after = '    return value'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_lands_at_two_hashed_segments_and_nowhere_else",
+]
