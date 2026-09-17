@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.memory.api import DELIMITER
 
 CONFIG = """
 [keelline]
@@ -198,7 +200,7 @@ NOTE_WITHOUT_INDEX = (
 
 
 def test_indexing_a_trusted_store_does_not_revoke_its_own_trust(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `store_digest` hashes every note *and* `MEMORY.md`, and `memory index` rewrites both — a
     # note without an `index:` line gains one, and the index is re-rendered. The routine command
@@ -209,6 +211,10 @@ def test_indexing_a_trusted_store_does_not_revoke_its_own_trust(
     (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     assert invoke(["memory", "index", *common(project)]) == 0
+    # The index bundle renders only under Codex, which has no native auto-memory (§9.5), so the
+    # harness has to be named for it to be one of the three bundles this walks. The other two
+    # are harness-neutral, which is its own assertion below.
+    monkeypatch.setenv("PLUGIN_ROOT", "/p")
     capsys.readouterr()
     for bundle in ("standing-rules", "volatile-notes", "index"):
         assert invoke(["memory", "session-context", "--bundle", bundle, *common(project)]) == 0
@@ -323,7 +329,7 @@ def overlay_project(tmp_path: Path) -> Path:
 
 @needs_git
 def test_indexing_writes_through_the_symlinked_index_every_reader_sources(
-    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+    overlay_project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `write_atomically` ends in `os.replace`, which replaces the *link*, not its target. Every
     # reader — the index bundle, the harvest, the worktree tree — routes through
@@ -340,6 +346,8 @@ def test_indexing_writes_through_the_symlinked_index_every_reader_sources(
 
     assert link.is_symlink(), "the link every reader sources was replaced by a real file"
     assert "# Memory Index" in shared.read_text(encoding="utf-8"), "the overlay copy went stale"
+    # As above: the index bundle is Codex's alone, so the harness is named to read it back.
+    monkeypatch.setenv("PLUGIN_ROOT", "/p")
     capsys.readouterr()
     argv = ["memory", "session-context", "--bundle", "index"]
     assert invoke([*argv, *common(overlay_project)]) == 0
@@ -741,3 +749,76 @@ def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
     assert "project-volatile is not in the store" in summary
     assert summary.count(DELIMITER) == 2  # inside the region that says the text is data
     assert "memory index" not in summary  # and no command that cannot answer the question
+
+
+# The three names `hooks.dispatch.detect_harness` reads, cleared before each arm so the answer
+# comes from the arm and not from whatever the developer's shell happens to export.
+HARNESS_NAMES = ("PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR")
+
+
+def _session_context(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    bundle: str,
+    env: dict[str, str],
+) -> str:
+    for name in HARNESS_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    capsys.readouterr()
+    assert invoke(["memory", "session-context", "--bundle", bundle, *common(project)]) == 0
+    return capsys.readouterr().out.strip()
+
+
+# `trust.wrap` mints a fresh nonce for every render, so two renders of one repository-data
+# bundle differ in exactly these two markers and nowhere else. Blanking the nonce is what lets
+# the two harness arms be compared for their content; the marker shape itself, and the refusal
+# that a forged one earns, are `tests/memory/test_trust.py`'s subject. Anchored on the delimiter
+# rather than on a bare hex run, so a note body that happened to contain one is left alone.
+_WRAPPED_NONCE = re.compile(rf"({re.escape(DELIMITER)}(?::end)?):[0-9a-f]+>>>")
+
+
+def _without_nonces(text: str) -> str:
+    return _WRAPPED_NONCE.sub(r"\1>>>", text)
+
+
+def _a_trusted_store_with_an_index(project: Path) -> Path:
+    assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
+    assert invoke(["memory", "index", *common(project)]) == 0
+    return project
+
+
+def test_the_index_bundle_emits_only_under_codex(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Claude Code reads MEMORY.md natively; injecting it again would spend three of the ten
+    # capped SessionStart entries on something the harness already has. Codex has no native
+    # auto-memory (§9.5), so it is the one that needs it.
+    store = _a_trusted_store_with_an_index(project)
+    codex = _session_context(store, monkeypatch, capsys, bundle="index", env={"PLUGIN_ROOT": "/p"})
+    claude = _session_context(
+        store, monkeypatch, capsys, bundle="index", env={"CLAUDE_PLUGIN_ROOT": "/p"}
+    )
+    assert codex != ""
+    assert claude == ""
+
+
+def test_every_other_bundle_is_harness_neutral(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The branch must be one bundle wide. A harness check that swallowed standing rules on
+    # Claude Code would empty the channel the whole store exists for, and the smoke check at
+    # the end of this wave would still pass because it runs under Claude Code.
+    store = _a_trusted_store_with_an_index(project)
+    for bundle in ("preset-rules", "standing-rules", "volatile-notes"):
+        claude = _session_context(
+            store, monkeypatch, capsys, bundle=bundle, env={"CLAUDE_PLUGIN_ROOT": "/p"}
+        )
+        codex = _session_context(
+            store, monkeypatch, capsys, bundle=bundle, env={"PLUGIN_ROOT": "/p"}
+        )
+        assert claude != "", bundle
+        assert _without_nonces(claude) == _without_nonces(codex), bundle

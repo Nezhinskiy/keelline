@@ -12,26 +12,52 @@ from typing import cast
 
 import pytest
 
+from keelline.guards.hygiene import LEAD
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from keelline.hooks.commands import _output_cap, run_hook
 
 ROOT = Path(__file__).resolve().parents[2]
 
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
 
-def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+"""
+
+
+def hook(
+    event: str, stdin: str, cwd: Path, *args: str, data: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Spawn `keelline hook <event> [args…]` with a fixed environment.
+
+    `data` sets `CLAUDE_PLUGIN_DATA`, which is what makes the dispatcher's sink durable. The
+    parameters are widened in place rather than a second spawner added beside this one, so
+    every existing caller keeps its meaning.
+    """
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "PYTHONPATH": str(ROOT / "src"),
+        "CLAUDE_PROJECT_DIR": str(cwd),
+        "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
+    }
+    if data is not None:
+        env["CLAUDE_PLUGIN_DATA"] = str(data)
     return subprocess.run(
-        [sys.executable, "-m", "keelline", "hook", event],
+        [sys.executable, "-m", "keelline", "hook", event, *args],
         input=stdin,
         capture_output=True,
         text=True,
         check=False,
         cwd=cwd,
-        env={
-            "PATH": "/usr/bin:/bin",
-            "PYTHONPATH": str(ROOT / "src"),
-            "CLAUDE_PROJECT_DIR": str(cwd),
-            "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
-        },
+        env=env,
     )
 
 
@@ -125,3 +151,48 @@ def test_a_deny_with_a_malformed_context_still_refuses_through_the_wrapper(
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": event})))
     assert run_hook(argparse.Namespace(event=event)) == 2
     assert "refused: probe: rm -rf / is refused" in capsys.readouterr().err
+
+
+def _initialised_project(tmp_path: Path) -> Path:
+    """Every condition `test-hygiene` needs to fire, and nothing more.
+
+    A `keelline.toml`, because both handlers are silent without a configuration; a git
+    repository, because the notice's one reportable fault here is `hygiene.DIRTY`'s — and
+    `keelline.toml` itself is the uncommitted change that produces it.
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(project)], check=True, capture_output=True)
+    return project
+
+
+def _failing_test_run() -> str:
+    """A PostToolUse payload `test-hygiene` answers: a red pytest run reported by exit code."""
+    return json.dumps(
+        {
+            "hook_event_name": "PostToolUse",
+            "session_id": "a-session",
+            "tool_name": "Bash",
+            "tool_input": {"command": "uv run pytest -q"},
+            "tool_response": {"exit_code": 1},
+        }
+    )
+
+
+def test_a_once_per_context_handler_really_runs_once(tmp_path: Path) -> None:
+    # Before the sink, `NullSink.seen()` was always False and `once_key` meant "every
+    # invocation" — a once-per-context notice on every single tool call.
+    #
+    # The notice's own text is asserted, not the word "hygiene": `guards.hygiene` builds it from
+    # `LEAD` and the two fault sentences, and none of them carries the handler's name. Asserting
+    # only that both runs differ would pass with the sink deleted and the handler silent.
+    data = tmp_path / "data"
+    data.mkdir()
+    project = _initialised_project(tmp_path)
+    payload = _failing_test_run()
+    first = hook("PostToolUse", payload, project, data=data)
+    second = hook("PostToolUse", payload, project, data=data)
+    assert first.returncode == 0, first.stderr
+    assert json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"].startswith(LEAD)
+    assert json.loads(second.stdout)["hookSpecificOutput"].get("additionalContext") is None
