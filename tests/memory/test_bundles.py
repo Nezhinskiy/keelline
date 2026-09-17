@@ -183,6 +183,11 @@ def test_the_shipped_preset_rules_render_in_table_order(tmp_path: Path) -> None:
 def test_the_shipped_preset_rules_fit_one_hook_slot(tmp_path: Path) -> None:
     # A bundle that needs two parts is not wrong, but it is a change the hooks file has to
     # know about (`SLOTS`), so a growing table reddens here before it silently spills.
+    # Mutation, run 2026-09-17: pad one rule body in the shipped preset with 8,940 characters
+    # of prose. The bundle spilled and this reddened with `assert 2 == 1`, then went green
+    # again when the padding came out. The five rules render from about 3.1 KB of body today
+    # against a slot of `hook_output_chars - CAP_MARGIN`, so this is a tripwire with room in
+    # front of it, not a bound anything sits against.
     store, config = a_store(tmp_path)
     produced = blocks(Bundle.PRESET_RULES, store, config)
     assert len(split(produced, cap=config.native_caps.hook_output_chars - CAP_MARGIN)) == 1

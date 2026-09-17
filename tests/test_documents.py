@@ -164,7 +164,7 @@ def test_a_fresh_source_is_not_labelled_older() -> None:
     assert wrong == [], wrong
 
 
-def test_every_principle_states_its_backing_and_cites_or_measures() -> None:
+def test_every_principle_states_its_backing_and_cites_a_source() -> None:
     # Mutation: remove one `**Backing:**` line → that section is named. A `thin` principle
     # must still cite something or say why nothing exists; the citation rule here is that
     # every section carries at least one `[S<n>]`, and `thin` ones say in prose what the
@@ -180,6 +180,42 @@ def test_every_principle_states_its_backing_and_cites_or_measures() -> None:
     assert bad_label == [], bad_label
     uncited = [n for n, _, body in sections if not _CITATION.search(body)]
     assert uncited == [], uncited
+
+
+# `docs/methodology/README.md` states the thin count in prose and in words — `Three of the ten
+# are thin` — because it is prose a person reads, not a table. The count is read off that
+# sentence rather than written here, so an honest relabelling is one edit in the document it
+# describes and none in this file; the test holds only that the two agree.
+_THIN_CLAIM = re.compile(r"(\w+) of the (\w+) are thin", re.IGNORECASE)
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+
+def test_the_stated_thin_count_matches_the_labels() -> None:
+    # A prose count in a tree that tests everything else it could: a fourth `thin` label, or a
+    # third one relabelled, falsifies the sentence silently. Mutation: relabel one `sourced`
+    # principle `thin` → reddens on the count.
+    text = (METHODOLOGY / "README.md").read_text(encoding="utf-8")
+    claim = _THIN_CLAIM.search(text)
+    assert claim is not None, "docs/methodology/README.md no longer says how many are thin"
+    stated_thin = _NUMBER_WORDS[claim.group(1).lower()]
+    stated_total = _NUMBER_WORDS[claim.group(2).lower()]
+    labels = [m.group(1) for _, _, body in principle_sections() if (m := _BACKING.search(body))]
+    assert labels.count("thin") == stated_thin, labels
+    # The other half of the sentence: `of the ten` is a count of principles, not of labels.
+    assert len(principle_sections()) == stated_total
 
 
 def test_principles_are_numbered_consecutively_from_one() -> None:

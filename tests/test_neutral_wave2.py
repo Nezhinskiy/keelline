@@ -55,7 +55,10 @@ DOCUMENTS = (
 )
 METHODOLOGY = ROOT / "docs" / "methodology"
 # The leaf modules this plan adds beside the areas (Task 2), the one memory module it adds
-# to a merged lane (Premise 8), and their tests.
+# to a merged lane (Premise 8), and their tests. The last two are the second closure plan's
+# own tests — the document contract and the bundle tests it grew for the preset's `[rules]`
+# table — walked here rather than with `PUBLIC_FORBIDDEN`, because a test module has no more
+# reason to spell a default path than any other module does.
 EXTRA_FILES = (
     ROOT / "src" / "keelline" / "identifiers.py",
     ROOT / "src" / "keelline" / "findings.py",
@@ -67,6 +70,8 @@ EXTRA_FILES = (
     ROOT / "tests" / "test_command.py",
     ROOT / "tests" / "test_git_run.py",
     ROOT / "tests" / "memory" / "test_refs.py",
+    ROOT / "tests" / "test_documents.py",
+    ROOT / "tests" / "memory" / "test_bundles.py",
 )
 
 
@@ -109,7 +114,8 @@ FORBIDDEN = (
     (8, "4d1fd41cacbb"),
 )
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
-# vendor-prefixed branch name. Each arm is named so a hit says what it is.
+# vendor-prefixed branch name bare and remote-qualified. Each arm is named so a hit says what
+# it is, and the two branch arms are disjoint, so a hit names which form it was.
 SHAPES = (
     # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
@@ -117,8 +123,15 @@ SHAPES = (
     ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
     # `(?<![.\w/])`: `.claude/settings.json` and `.codex/hooks.json` are harness directories a
     # public document has to be able to name, and a documentation URL can carry `/codex/` as a
-    # path segment; a branch name is never preceded by a dot or a slash.
+    # path segment; a bare branch name is never preceded by a dot or a slash.
     ("vendor branch", re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*")),
+    # The remote-qualified form the arm above cannot see, because excluding a preceding slash
+    # is what lets it ignore a URL path segment: `origin/codex/…` is how a commit message or a
+    # plan cites a vendor branch, and the remote name in front of it is not a dot or a slash.
+    (
+        "remote-qualified vendor branch",
+        re.compile(r"(?<![.\w/])(?:origin|upstream|fork)/(?:codex|claude|cursor)/[a-z0-9][\w-]*"),
+    ),
 )
 
 
@@ -204,6 +217,11 @@ def test_the_gate_reads_something() -> None:
     assert ROOT / "src" / "keelline" / "findings.py" in files
     assert ROOT / "skills" / "close-bug" / "SKILL.md" in files
     assert ROOT / "agents" / "code-navigator.md" in files
+    # The two test modules the second closure plan writes and rewrites. They are `EXTRA_FILES`
+    # entries, which `lane_files` filters by `is_file()`, so a rename would drop them from the
+    # walk silently; this is the assertion that notices.
+    assert ROOT / "tests" / "test_documents.py" in files
+    assert ROOT / "tests" / "memory" / "test_bundles.py" in files
 
 
 def test_the_denylist_is_stored_as_digests() -> None:
@@ -235,6 +253,13 @@ def test_the_gate_discriminates() -> None:
     assert offending("Co-authored-by: Someone <someone@gmail.com>") == ["personal email"]
     assert offending("fixed in 1b279648") == ["bare commit id"]
     assert offending("cut from codex/inbound-remediation") == ["vendor branch"]
+    # The remote-qualified form, which is how a commit message or a plan cites such a branch.
+    # The bare arm cannot see it — excluding a preceding slash is what makes that arm ignore a
+    # URL path segment — so it has an arm of its own, and each hit says which form it was.
+    qualified = ["remote-qualified vendor branch"]
+    assert offending("cut from origin/codex/inbound-remediation") == qualified
+    assert offending("upstream/claude/some-branch") == qualified
+    assert offending("merged fork/cursor/spike-one") == qualified
     assert offending("cat secrets/.env; person@example.com; 0x1234; deadbeef") == []
     assert offending("Co-authored-by: Someone <someone@users.noreply.github.com>") == []
 
@@ -309,6 +334,10 @@ def test_the_public_table_still_discriminates() -> None:
     assert offending("see quernstone", planted) == [f"token {digest_of(probe)}"]
     assert offending("edit .claude/settings.json and .codex/hooks.json") == []
     assert offending("see https://example.test/codex/plugins/build") == []
+    # The negatives the remote-qualified arm must keep: a remote name inside a URL path is
+    # still a path segment, and a remote name on its own is not a branch.
+    assert offending("see https://example.test/origin/codex/plugins/build") == []
+    assert offending("push to origin/main and upstream/dev") == []
     # The positive case — a bare vendor-prefixed branch name — is `test_the_gate_discriminates`'s
     # existing assertion, which this change must leave green; it is not repeated here because
     # this plan is walked by the gate and would trip on its own example.
