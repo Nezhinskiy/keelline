@@ -845,9 +845,21 @@ def _bundles(context: Context) -> Check:
 
 
 def _cli_path(context: Context) -> Check:
-    # §5.1 and Findings → S2: Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill
-    # content, so a skill that says `keelline …` needs the name to resolve on PATH there.
-    found = shutil.which("keelline")
+    """§5.1 and Findings → S2: whether `keelline` resolves by name on this machine.
+
+    Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content, so a skill that
+    says `keelline …` needs the name to resolve on PATH there.
+
+    **Asked of `context.env`, like every other check that reads the environment.** It used to
+    call `shutil.which("keelline")`, which reads `os.environ["PATH"]` directly — the one check
+    in this module that ignored the mapping `run_checks` was handed. `run_checks` defaults that
+    mapping to `os.environ`, so nothing changes for a real run; what changes is that the answer
+    is now a function of the context rather than of whichever shell the caller happens to be in.
+    Before this, no test could state an expected answer at all: the row said `ok` on a developer
+    machine with the tool installed and `warn` in a container without it, and a body hardcoded
+    to `WARN` would have passed the whole suite.
+    """
+    found = shutil.which("keelline", path=context.env.get("PATH"))
     if found is None:
         return Check(
             "cli-path",

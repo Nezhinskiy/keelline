@@ -623,6 +623,100 @@ def test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound(tmp_path
     assert len(check.detail) < 500
 
 
+def test_an_entry_carrying_no_marker_is_counted_as_foreign_and_never_as_keellines(
+    tmp_path: Path,
+) -> None:
+    # The `foreign` half of this row's count, which no case incremented: every fixture's entries
+    # claimed the marker, so the number after the comma was 0 in every assertion in this file
+    # and a walk that counted everything as Keelline's would have read the same. A foreign entry
+    # is one this project's merges leave alone, and the report's job is to say it is there.
+    root = _attached(tmp_path)
+    settings = root / LOCAL_SETTINGS
+    document = json.loads(settings.read_text(encoding="utf-8"))
+    document["hooks"]["PreToolUse"][0]["hooks"].append(
+        {"type": "command", "command": "echo somebody elses hook"}
+    )
+    settings.write_text(json.dumps(document), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check.detail == "1 keelline entr(ies), 1 foreign; all accounted for"
+    assert check.status == "ok"
+
+
+def test_a_settings_file_this_process_cannot_open_is_named_and_never_absolved(
+    tmp_path: Path,
+) -> None:
+    # The sibling of the unparseable-file case above, and the arm nothing ran: a file that is
+    # *there* and cannot be opened. Both used to be swallowed, and this check may never answer
+    # "all accounted for" about a file it could not look inside — a settings file whose mode
+    # this process cannot read is exactly where an entry would hide.
+    root = _attached(tmp_path)
+    codex = root / ".codex" / "hooks.json"
+    codex.parent.mkdir(parents=True, exist_ok=True)
+    codex.write_text('{"hooks": {}}', encoding="utf-8")
+    os.chmod(codex, 0o000)
+    try:
+        checks_run = _checks(tmp_path, root, machine=_machine(tmp_path))
+    finally:
+        os.chmod(codex, 0o644)
+    check = _by_name(checks_run, "hook-entries")
+    assert check.status == "warn"
+    assert ".codex/hooks.json" in check.detail
+    assert "all accounted for" not in check.detail
+
+
+def test_a_hook_sink_log_holding_no_records_is_not_a_finding(tmp_path: Path) -> None:
+    # The log exists and holds nothing this check recognises as a record. Distinct from "no log
+    # at all", which the case below covers, and from the warn arm: a file the sink created and
+    # never appended a failure to must not read as a failure. `_is_record` is the whole of what
+    # is asked of a line, and a line that is not a JSON object is not one.
+    root = _attached(tmp_path)
+    data = tmp_path / "data"
+    (data / DIRECTORY).mkdir(parents=True)
+    (data / DIRECTORY / DIAGNOSTICS).write_text("not json\n[1, 2]\n", encoding="utf-8")
+    check = _by_name(
+        _checks(
+            tmp_path,
+            root,
+            machine=_machine(tmp_path),
+            env=_env(tmp_path, CLAUDE_PLUGIN_DATA=str(data)),
+        ),
+        "diagnostics",
+    )
+    assert check.status == "ok"
+    assert "no hook failures are recorded" in check.detail
+
+
+def test_a_hook_sink_log_this_process_cannot_read_is_a_warning_and_never_a_red_row(
+    tmp_path: Path,
+) -> None:
+    # The same rule as the session-markers case: `${CLAUDE_PLUGIN_DATA}` is somebody else's
+    # directory on somebody else's filesystem, and a file there this process cannot open is a
+    # fact about the machine. Unguarded it would reach `_guarded` and make `doctor` exit 1 on
+    # an installation with nothing wrong with it. The arm existed and nothing ran it.
+    root = _attached(tmp_path)
+    data = tmp_path / "data"
+    (data / DIRECTORY).mkdir(parents=True)
+    log = data / DIRECTORY / DIAGNOSTICS
+    log.write_text('{"event": "x"}\n', encoding="utf-8")
+    os.chmod(log, 0o000)
+    try:
+        checks_run = _checks(
+            tmp_path,
+            root,
+            machine=_machine(tmp_path),
+            env=_env(tmp_path, CLAUDE_PLUGIN_DATA=str(data)),
+        )
+    finally:
+        os.chmod(log, 0o644)
+    check = _by_name(checks_run, "diagnostics")
+    assert check.status == "warn"
+    assert not any(row.status == "red" for row in checks_run)
+    # This row's own sentence and not `_guarded`'s, for the reason the session-markers case
+    # gives: the floor renders an OSError as a warning too, so without this the two are
+    # indistinguishable and breaking the near one is invisible.
+    assert "could not be read" in check.detail
+
+
 def test_a_data_root_with_no_log_is_not_a_finding(tmp_path: Path) -> None:
     # The vacuity guard for both cases above: a check that warned whenever a data root was set
     # would pass them. `sessions` is a count of directories, which is this lane's own answer.
@@ -704,6 +798,67 @@ def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
         "bundles",
     )
     assert check.status == "ok"
+
+
+def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_path: Path) -> None:
+    # `NEARLY_FULL` appeared in no test at all: the constant, the fraction and the whole `full`
+    # arm were dead. It is the warning *before* the red row above — one more sentence in one
+    # note and the bundle needs a slot that does not exist, and raising a slot count edits
+    # `hooks/hooks.json`, which is a shipped file and a change somebody has to make deliberately.
+    #
+    # One standing note sized into the band between the threshold and the cap, so this is
+    # neither the `over` arm (which would be red) nor the green one. Both are asserted, because
+    # "warn" alone would also be produced by a `full` list built from the wrong predicate.
+    root = _attached(tmp_path)
+    store = tmp_path / "overlay" / PROJECTS / "p" / "memory" / "developer"
+    cap = load(root, machine=_machine(tmp_path)).native_caps.hook_output_chars
+    body = "word " * ((int(cap * checks.NEARLY_FULL) + 600) // 5)
+    (store / "big.md").write_text(_note(body, name="big", startup=1), encoding="utf-8")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "bundles")
+    assert check.status == "warn", check.detail
+    assert "standing-rules" in check.detail
+    assert "at the platform cap" in check.detail
+
+
+def test_an_overlay_recording_another_remote_is_red_and_never_merely_attached(
+    tmp_path: Path,
+) -> None:
+    # §6.3's mismatch, seen from `doctor` rather than from `attach`: the ledger says this
+    # checkout is attached and the overlay's own project record names a different remote, so
+    # the notes on the other side of that binding are another repository's. The arm existed and
+    # no case reached it — an installation in this state read as ordinarily attached.
+    root = _attached(tmp_path)
+    (tmp_path / "overlay" / PROJECTS / "p" / PROJECT_RECORD).write_text(
+        'remote = "git@github.com:somebody/else.git"\nfirst_attach = "2026-09-18"\n',
+        encoding="utf-8",
+    )
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert check.status == "red"
+    assert "a different remote" in check.detail
+    # The other repository's remote is overlay-authored, not repository-authored — but it is
+    # still somebody's private URL, and this row has no reason to print one.
+    assert "somebody/else" not in check.detail and "somebody/else" not in check.remedy
+
+
+def test_a_project_with_no_overlay_to_bind_to_is_green_and_says_which_mode(tmp_path: Path) -> None:
+    # The arm every `local-only` fixture in this file runs through and none of them asserts on.
+    # It is the row's one green-without-an-overlay answer, and it is what keeps the three red
+    # and warn arms below from being reachable by an ordinary un-attached project.
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "attached")
+    assert check.status == "ok"
+    assert "local-only" in check.detail
+
+
+def test_an_overlay_project_with_no_ledger_is_a_warning_naming_the_file(tmp_path: Path) -> None:
+    # `memory.mode = "overlay"` and nothing recording an attach. Not red: a project may be
+    # configured for an overlay before anyone has run `keelline attach` in this checkout, which
+    # is the ordinary state of a fresh clone. The remedy is the command that ends it.
+    root = _attached(tmp_path)
+    (root / LEDGER).unlink()
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert check.status == "warn"
+    assert LEDGER in check.detail
+    assert "keelline attach" in check.remedy
 
 
 def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: Path) -> None:
@@ -903,6 +1058,89 @@ def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
     check = _by_name(_checks(tmp_path, root), "budgets")
     assert check.status == "warn"
     assert "status_lines" in check.detail
+
+
+def _bin(tmp_path: Path, *, with_cli: bool) -> str:
+    """A `PATH` with exactly one directory on it, holding `keelline` or holding nothing.
+
+    A directory this test made and never the developer's own: `cli-path` is the row whose answer
+    used to depend on whether the person running the suite happened to have the tool installed.
+    """
+    where = tmp_path / ("bin-with" if with_cli else "bin-without")
+    where.mkdir(parents=True, exist_ok=True)
+    if with_cli:
+        found = where / "keelline"
+        found.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        found.chmod(0o755)
+    return str(where)
+
+
+def test_the_cli_resolving_by_name_is_green_and_names_where(tmp_path: Path) -> None:
+    # §5.1/S2: Codex substitutes no plugin root in skill content, so every `keelline …` a skill
+    # names has to resolve by name there. This row had no test of either arm, and it read
+    # `os.environ["PATH"]` rather than the `env` it was handed — so its answer was a fact about
+    # the developer's shell, and a body hardcoded to `WARN` passed the whole suite.
+    #
+    # Mutation: `shutil.which("keelline", path=context.env.get("PATH"))` -> `None` → reddens
+    # here; the same line -> `"/anything"` → reddens the warn case below.
+    root = _initialised(tmp_path)
+    check = _by_name(
+        _checks(tmp_path, root, env=_env(tmp_path, PATH=_bin(tmp_path, with_cli=True))),
+        "cli-path",
+    )
+    assert check.status == "ok"
+    assert str(tmp_path / "bin-with" / "keelline") in check.detail
+
+
+def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command(
+    tmp_path: Path,
+) -> None:
+    # The other arm, and the reason the row exists: not a failure of this installation — the
+    # plugin path works without it — but the thing that makes every skill's `keelline …`
+    # silently unrunnable under Codex. A warning with the command that fixes it.
+    root = _initialised(tmp_path)
+    check = _by_name(
+        _checks(tmp_path, root, env=_env(tmp_path, PATH=_bin(tmp_path, with_cli=False))),
+        "cli-path",
+    )
+    assert check.status == "warn"
+    assert "uv tool install" in check.remedy
+
+
+def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path) -> None:
+    # The other side of the clamp, and the arm no case reached: lowering is the one direction D7
+    # allows, so it is `ok` — but it is still a number that is not the preset's, and a reader of
+    # this report is entitled to know which. The `every budget is the preset's` arm below is
+    # what keeps this one from passing for a fixture that configured nothing.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        LOCAL_ONLY.format(version=keelline.__version__) + "\n[budgets]\nstatus_lines = 1\n",
+        encoding="utf-8",
+    )
+    check = _by_name(_checks(tmp_path, root), "budgets")
+    assert check.status == "ok"
+    assert "status_lines" in check.detail
+    assert _by_name(_checks(tmp_path, _initialised(tmp_path)), "budgets").detail == (
+        "every budget is the preset's"
+    )
+
+
+def test_a_ci_ref_git_could_not_be_asked_about_is_a_warning_and_never_a_red_row(
+    tmp_path: Path,
+) -> None:
+    # `git ls-remote --exit-code` answers 2 for "the ref is not there" and 0 for "it is". Every
+    # other exit code is `git` itself having failed — no network, no binary, a credential prompt
+    # that timed out — which is a fact about this machine and not about `[ci] ref`. Calling it
+    # red makes `doctor` exit 1 on an aeroplane. The arm existed and nothing ran it.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        LOCAL_ONLY.format(version=keelline.__version__) + '\n[ci]\nref = "o/r/.github/w.yml@v1"\n',
+        encoding="utf-8",
+    )
+    check = _by_name(_checks(tmp_path, root, runner=_stub(code=128)), "ci-ref")
+    assert check.status == "warn"
+    assert "128" in check.detail
+    assert "o/r" not in check.detail
 
 
 def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
