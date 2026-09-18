@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -1135,4 +1136,65 @@ def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
     assert len(rows) == 15
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"
+    ]
+
+
+def test_the_wrapper_probe_never_inherits_this_process_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Defence in depth, asserted as such. The `KEELLINE_*` strip in `_wrapper` is what closes
+    # the seam — with the variable gone from the child's environment, a terminal has nothing to
+    # reopen — so this flag's job is to be the *second*, independent guard: a later edit that
+    # narrows the strip, or a second variable gated on a terminal the way the wrapper gates
+    # `KEELLINE_PYTHON_CANDIDATES`, still meets a closed stdin. It was the only guard in its
+    # commit with no entry in `mutations.toml`, which is how it stayed a claim rather than a
+    # fact. It also bounds the row: a wrapper that reads stdin cannot hold the report open.
+    saw = tmp_path / "wrapper-saw-stdin"
+    planted = tmp_path / "plugin-root"
+    (planted / "hooks").mkdir(parents=True)
+    wrapper = planted / "hooks" / "run-hook.sh"
+    wrapper.write_text(
+        f'#!/bin/sh\nif [ -t 0 ]; then echo tty > "{saw}"; else echo closed > "{saw}"; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setattr(checks, "_own_root", lambda: planted)
+    # A real terminal on this process's own file descriptor 0, because `stdin=None` inherits the
+    # *descriptor* and not `sys.stdin`; under pytest's capture fd 0 is already closed or
+    # /dev/null, so without this the mutation would be invisible and the assertion vacuous.
+    master, slave = pty.openpty()
+    saved = os.dup(0)
+    try:
+        os.dup2(slave, 0)
+        _checks(tmp_path, _initialised(tmp_path))
+    finally:
+        os.dup2(saved, 0)
+        for descriptor in (saved, master, slave):
+            os.close(descriptor)
+    assert saw.read_text(encoding="utf-8").strip() == "closed"
+
+
+def test_an_ipv6_literal_in_a_ci_ref_is_not_a_transport_helper(tmp_path: Path) -> None:
+    # `TRANSPORT_HELPER` was `"::"`, asked with `in` — and `::` is also how a legal IPv6 literal
+    # is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red as "names a git
+    # transport helper" and the remedy told the machine owner to replace a URL that was already
+    # correct. A false finding is more expensive in this command than anywhere else: `doctor`'s
+    # entire value is that what it reports is true. git decides this in `transport_get` by
+    # taking a helper only when `::` follows the leading run of URL-scheme characters, which is
+    # the parse now matched.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        LOCAL_ONLY.format(version=keelline.__version__)
+        + '\n[ci]\nref = "ssh://user@[2001:db8::1]/repo.git"\n',
+        encoding="utf-8",
+    )
+    runner = _stub()
+    check = _by_name(_checks(tmp_path, root, runner=runner), "ci-ref")
+    # Which arm answered, not merely that it is not red: the ref must have reached the runner,
+    # because "refused before the runner sees it" is the behaviour being denied here.
+    assert check.status != "red"
+    assert runner.calls, "the ref never reached `git ls-remote`, so it was refused after all"
+    assert runner.calls == [
+        ["git", "ls-remote", "--exit-code", "--", "ssh://user@[2001:db8::1]/repo.git"]
     ]

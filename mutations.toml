@@ -1549,8 +1549,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper runs an interpreter the project itself ships"
 file = "hooks/run-hook.sh"
-before = '  if in_project "$resolved"; then continue; fi'
-after = '  if false; then continue; fi'
+before = '  if in_project "$resolved"; then'
+after = '  if false; then'
 reddens = [
   "tests/hooks/test_wrapper.py::test_an_interpreter_inside_the_project_root_is_never_used",
   "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a PATH entry naming the tree]",
@@ -1586,8 +1586,8 @@ reddens = [
 [[mutation]]
 name = "an unresolvable project root refuses every interpreter instead of none"
 file = "hooks/run-hook.sh"
-before = '  [ -n "$project" ] || return 1'
-after = '  [ -n "$project" ] || return 0'
+before = '  [ -n "$2" ] || return 1'
+after = '  [ -n "$2" ] || return 0'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
 ]
@@ -1600,8 +1600,8 @@ reddens = [
 [[mutation]]
 name = "the wrapper's git inherits the session's GIT_DIR again"
 file = "hooks/run-hook.sh"
-before = '[ -n "$root" ] || root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
-after = '[ -n "$root" ] || root=$(git rev-parse --show-toplevel 2>/dev/null || true)'
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
 reddens = [
   "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
 ]
@@ -1626,8 +1626,8 @@ reddens = [
 [[mutation]]
 name = "an unenterable project root leaves the hook in the harness's directory in silence"
 file = "hooks/run-hook.sh"
-before = '  cd "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
-after = '  cd "$root" 2>/dev/null || true'
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd -- "$root" 2>/dev/null || true'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[closed-2]",
   "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[open-0]",
@@ -1959,7 +1959,7 @@ reddens = [
 [[mutation]]
 name = "a ci-ref naming a git transport helper reaches git again"
 file = "src/keelline/doctor/checks.py"
-before = "    if TRANSPORT_HELPER in ref:"
+before = "    if TRANSPORT_HELPER.match(ref):"
 after = "    if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_ci_ref_naming_a_transport_helper_never_reaches_git",
@@ -2277,4 +2277,101 @@ after = '''    except (Failure, Refusal, OSError):
         entry["command"]'''
 reddens = [
   "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+]
+
+# S8, and the anchor half of it. `git` is a program this file CHOOSES, resolved through the same
+# `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex hot path, where
+# `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a `git` had that
+# binary EXECUTED on every hook invocation, before any guard of ours, and its stdout became the
+# root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor was
+# itself environment-chosen is "a redirect with a longer name" for the third time in one file.
+[[mutation]]
+name = "the wrapper resolves git through PATH again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
+]
+
+# A machine with no git at any absolute path has no anchor this process can trust. Degrading in
+# silence would keep the shape of the containment and none of its strength -- and `doctor`'s
+# wrapper row keys on a token, so a silent loss is a green row over a guard that is not there.
+[[mutation]]
+name = "no trustworthy git degrades in silence instead of printing a token"
+file = "hooks/run-hook.sh"
+before = '[ -n "$git_bin" ] || fail "KL_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[open-0]",
+]
+
+# The other half of S8: the containment was measured against `CLAUDE_PROJECT_DIR` alone, which
+# reaches this process from the very `env` block it exists to defeat. Measured on the shipped
+# wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
+# `python3` "outside the project root" and it ran the launcher. Dropping this arm leaves exactly
+# that hole, with every other line of the guard still in place.
+[[mutation]]
+name = "the interpreter containment stops measuring against git's answer"
+file = "hooks/run-hook.sh"
+before = '  under_root "$dir" "$git_project" && return 0'
+after = '  :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# The one `cd` in the file that was neither `CDPATH=`-cleared nor `--`-terminated, while the two
+# others took both cares. With `CDPATH` set and a relative root, `cd` writes the destination it
+# chose to STDOUT -- ahead of anything the launcher prints, and a hook's stdout is a contract --
+# and lands in a `CDPATH`-chosen directory, so the `pwd -P` that anchors the containment then
+# measures the wrong tree.
+[[mutation]]
+name = "the project-root cd consults CDPATH again"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_cdpath_never_chooses_the_directory_the_hook_runs_in",
+]
+
+# The same line's other care. Without the `--`, a root whose name begins with `-` is parsed as
+# options and the entry refuses a directory that is on disk and perfectly enterable.
+[[mutation]]
+name = "the project-root cd parses a root beginning with a dash as options"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option",
+]
+
+# Not a containment, but the message a containment leaves behind, and the only one a vendored
+# in-tree toolchain ever sees. It was byte-identical for "a candidate was found inside the tree
+# and skipped" and "there was no candidate at all" while the comment beside it claimed it "says
+# what happened rather than only that nothing was found". Break the record of WHY nothing was
+# found and both states print the second sentence again -- which is false in the first case, and
+# names no remedy in the one case where a remedy exists.
+[[mutation]]
+name = "the two no-interpreter states print one message again"
+file = "hooks/run-hook.sh"
+before = '    skipped_in_project=1'
+after = '    :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_two_states_with_no_interpreter_are_told_apart",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# Defence in depth, and the only guard in its commit with no entry here -- which is how it stayed
+# a claim rather than a fact. The `KEELLINE_*` strip two lines above is what closes the seam; this
+# flag is the second, independent guard, so that a later edit narrowing the strip, or a second
+# variable gated on a terminal the way the wrapper gates `KEELLINE_PYTHON_CANDIDATES`, still meets
+# a closed stdin. It also stops a wrapper that reads stdin holding the report open.
+[[mutation]]
+name = "doctor's wrapper probe inherits this process's stdin"
+file = "src/keelline/doctor/checks.py"
+before = "            stdin=subprocess.DEVNULL,"
+after = "            stdin=None,"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_wrapper_probe_never_inherits_this_process_stdin",
 ]

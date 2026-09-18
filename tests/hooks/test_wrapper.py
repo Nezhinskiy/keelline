@@ -17,7 +17,12 @@ WRAPPER = ROOT / "hooks" / "run-hook.sh"
 
 
 def _plugin_root(
-    base: Path, exit_code: int, *, echo_cwd: bool = False, with_launcher: bool = True
+    base: Path,
+    exit_code: int,
+    *,
+    echo_cwd: bool = False,
+    with_launcher: bool = True,
+    git_candidates: str | None = None,
 ) -> Path:
     """A plugin root: a copy of the shipped wrapper, and a launcher beside it.
 
@@ -40,6 +45,21 @@ def _plugin_root(
     (root / "scripts").mkdir(parents=True)
     (root / "hooks").mkdir(parents=True)
     shutil.copy(WRAPPER, root / "hooks" / WRAPPER.name)
+    if git_candidates is not None:
+        # The one thing a test may rewrite, and only because it cannot be reached any other way:
+        # the git candidate list is deliberately not environment-settable — that is the whole of
+        # the change it belongs to — so the "no git at any absolute path" arm has no seam but
+        # this. Only the list is rewritten; every guard around it is the shipped one.
+        copied = root / "hooks" / WRAPPER.name
+        lines = copied.read_text(encoding="utf-8").splitlines(keepends=True)
+        first = next(i for i, line in enumerate(lines) if line.startswith("for g in /"))
+        # The list is spelled across two physical lines with a trailing backslash, so the
+        # continuation goes with it; anything else would leave half a list behind.
+        last = first
+        while lines[last].rstrip("\n").endswith("\\"):
+            last += 1
+        lines[first : last + 1] = [f"for g in {git_candidates}; do\n"]
+        copied.write_text("".join(lines), encoding="utf-8")
     (root / "hooks" / WRAPPER.name).chmod(0o755)
     if not with_launcher:
         return root
@@ -75,6 +95,7 @@ def _run(
     cwd: Path | None = None,
     project: Path | None = None,
     path: str | None = None,
+    extra: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run the wrapper **inside** `plugin_root`, the way an installed plugin's entry does.
 
@@ -102,6 +123,7 @@ def _run(
         env["CLAUDE_PROJECT_DIR"] = str(project)
     if path is not None:
         env["PATH"] = path
+    env.update(extra or {})
     master, slave = pty.openpty() if candidates is not None else (-1, -1)
     try:
         return subprocess.run(
@@ -500,3 +522,203 @@ def test_the_wrapper_is_committed_executable() -> None:
     # no code of ours runs and no policy applies. The wrapper cannot defend its own mode; this
     # assertion and `doctor`'s wrapper probe (Task 15) are the whole defence.
     assert stat.S_IMODE(WRAPPER.stat().st_mode) & 0o111, "run-hook.sh must ship executable"
+
+
+def _clone_shipping_a_git(tmp_path: Path, answer: Path) -> tuple[Path, Path]:
+    """A checkout that commits its own `git`, and the file it appends to when one runs.
+
+    `answer` is what the planted git prints for `rev-parse --show-toplevel`. Its stdout is what
+    the wrapper anchors on, so a decoy tree is the visible consequence of having run it — which
+    is what makes the assertion below about the rule rather than about a marker file.
+    """
+    clone = tmp_path / "clone"
+    clone.mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    ran = tmp_path / "planted-git-ran"
+    planted = clone / "git"
+    planted.write_text(
+        f'#!/bin/sh\necho "$*" >> "{ran}"\necho "{answer}"\nexit 0\n', encoding="utf-8"
+    )
+    planted.chmod(0o755)
+    return clone, ran
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_the_wrapper_never_runs_a_git_the_environment_put_on_path(tmp_path: Path) -> None:
+    # `git` is a program this file chooses, and it was chosen by `PATH` — which a committed
+    # `.claude/settings.json` `env` block sets. Measured on the shipped wrapper, on the Codex
+    # hot path where `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor: a clone that
+    # ships a `git` had that binary EXECUTED on every hook invocation, before any guard of ours,
+    # and its stdout became the root every `--root`-defaulting entry then ran against. Gating
+    # `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor itself was
+    # an environment-chosen program is the "pair of equivalent inputs" defect a third time.
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    clone, ran = _clone_shipping_a_git(tmp_path, decoy)
+    result = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True),
+        path=f"{clone}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        cwd=clone,
+    )
+    assert not ran.exists(), "the clone's own git was executed to resolve the project root"
+    # WHICH git answered, not merely that nothing crashed: the real one names the clone and the
+    # planted one names the decoy, so the directory the launcher reports says which ran. An arm
+    # that broke and fell through to some other refusal cannot satisfy this.
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [str(clone.resolve())]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root(
+    tmp_path: Path,
+) -> None:
+    # The containment was anchored on `CLAUDE_PROJECT_DIR`, which reaches this process from the
+    # same committed `env` block it exists to defeat. Measured on the shipped wrapper: setting
+    # `PATH=<clone>` AND `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own `python3`
+    # "outside the project root", and it ran the launcher on a machine where no absolute
+    # candidate answers — which is the only machine the containment exists for. So the candidate
+    # is measured against the UNION of both anchors, and after the pinning above one of them is
+    # the answer of a binary the clone does not choose.
+    clone, _shipped, ran = _clone_shipping_an_interpreter(tmp_path)
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    plugin = _plugin_root(tmp_path, 0, echo_cwd=True)
+    path = f"{clone}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    # `python3` and not the shipped path: the candidate list is pinned to its own last entry,
+    # which is the `PATH` fall-through a pyenv, nix or asdf machine actually reaches. A run that
+    # let an absolute candidate answer first would never reach the planted one and prove nothing.
+    result = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        project=outside,
+        candidates="python3",
+        path=path,
+        cwd=clone,
+    )
+    assert not ran.exists(), "the tree's own interpreter ran while the environment moved the anchor"
+    assert result.returncode == 2
+    # WHICH refusal fired. A later `elif` that let this arm fall through to the generic message
+    # would still exit 2 with a KL_NO_PY token, so the token alone proves nothing here.
+    assert "inside the project root" in result.stderr
+    # Non-vacuous, and it names the member doing the work: take the git anchor away — the same
+    # tree, from a directory that is not a repository — and the remaining anchor is the variable
+    # the clone controls, which is exactly the state this change is about.
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        project=outside,
+        candidates="python3",
+        path=path,
+        cwd=plain,
+    )
+    assert ran.exists()
+
+
+def test_the_two_states_with_no_interpreter_are_told_apart(tmp_path: Path) -> None:
+    # The message was byte-identical for "a candidate was found inside the tree and skipped" and
+    # "there was no candidate at all", while the comment beside it claimed it "says what happened
+    # rather than only that nothing was found". A developer with an in-tree `.venv` and no system
+    # 3.11 therefore read "none among the candidates", which is false, and the one remedy that
+    # exists was named only in `docs/cli.md` and the changelog — neither of them where they are
+    # standing when the hook refuses.
+    clone, shipped, ran = _clone_shipping_an_interpreter(tmp_path)
+    plugin = _plugin_root(tmp_path, 0)
+    in_tree = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        project=clone,
+        candidates=str(shipped),
+    )
+    assert in_tree.returncode == 2
+    assert "KL_NO_PY" in in_tree.stderr
+    assert "inside the project root" in in_tree.stderr
+    assert "outside the checkout" in in_tree.stderr, "the remedy is not named where it is needed"
+    assert not ran.exists()
+
+    nothing = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        candidates="/nonexistent/python3",
+    )
+    assert nothing.returncode == 2
+    assert "KL_NO_PY" in nothing.stderr
+    # The assertion the old message could not pass: the two states must not print one string.
+    assert "inside the project root" not in nothing.stderr
+
+
+def test_a_cdpath_never_chooses_the_directory_the_hook_runs_in(tmp_path: Path) -> None:
+    # The one `cd` in this file that was neither `CDPATH=`-cleared nor `--`-terminated, while
+    # the two others took both cares. Measured: with `CDPATH` set and a relative root, `cd`
+    # WRITES THE DESTINATION IT CHOSE TO STDOUT — ahead of anything the launcher prints, and a
+    # hook's stdout is a contract the harness parses — and lands in a `CDPATH`-chosen directory,
+    # so the `pwd -P` that anchors the interpreter containment then measures the wrong tree.
+    decoy = tmp_path / "decoy-parent" / "target"
+    decoy.mkdir(parents=True)
+    real = tmp_path / "real-parent" / "target"
+    real.mkdir(parents=True)
+    result = _run(
+        "open",
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True),
+        project=Path("target"),
+        cwd=real.parent,
+        extra={"CDPATH": str(decoy.parent)},
+    )
+    # Both halves in one assertion: exactly one line, so nothing was written ahead of the
+    # launcher, and it is the real tree, so `CDPATH` did not choose the directory.
+    assert result.stdout.splitlines() == [str(real.resolve())]
+
+
+def test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option(
+    tmp_path: Path,
+) -> None:
+    # The other half of the same line. Without the `--`, `cd` parses `-dashed` as options and
+    # the entry refuses a root that is on disk and perfectly enterable.
+    dashed = tmp_path / "parent" / "-dashed"
+    dashed.mkdir(parents=True)
+    result = _run(
+        "open",
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True),
+        project=Path("-dashed"),
+        cwd=dashed.parent,
+    )
+    assert "KL_NO_ROOT" not in result.stderr
+    assert result.stdout.splitlines() == [str(dashed.resolve())]
+
+
+@pytest.mark.parametrize(("policy", "code"), [("closed", 2), ("open", 0)])
+def test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run(
+    tmp_path: Path, policy: str, code: int
+) -> None:
+    # `git`'s answer is one of the two anchors the interpreter containment is measured against,
+    # so a machine with no `git` at any absolute path has no anchor this process can trust — and
+    # the honest outcome is the one the code already gives for a root it cannot trust, rather
+    # than a silent run that keeps the shape of the guard and none of its strength.
+    result = _run(
+        policy,
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True, git_candidates="/nonexistent/git"),
+    )
+    assert result.returncode == code
+    assert "KL_NO_GIT" in result.stderr
+    # Non-vacuous: the launcher was never reached, so this is the wrapper's own decision and not
+    # something that happened further down.
+    assert result.stdout == ""

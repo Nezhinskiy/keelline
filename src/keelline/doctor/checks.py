@@ -109,7 +109,10 @@ SETTINGS_FILES = (
 # at the plugin root — `overlay/template.py` says why — so it is found by environment or by
 # checkout probe and never through `importlib.resources`.
 WRAPPER = "hooks/run-hook.sh"
-# A refusal token the wrapper prints: `KL_ARGV`, `KL_NO_PY`, `KL_NO_LAUNCHER`, `KL_RC`. The
+# A refusal token the wrapper prints: `KL_ARGV`, `KL_NO_GIT`, `KL_NO_PY`, `KL_NO_ROOT`,
+# `KL_NO_LAUNCHER`, `KL_RC` — the pattern matches the shape rather than the list, so a new one
+# is reported without an edit here, but the list is kept true because it is what a reader
+# checks against. The
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
 _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
@@ -342,10 +345,16 @@ def _wrapper(context: Context) -> Check:
             check=False,
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
-            # Closed, not inherited. The wrapper honours `KEELLINE_PYTHON_CANDIDATES` only from
-            # an interactive terminal, so a `doctor` run from a shell would otherwise hand its
-            # own tty to the probe and reopen the seam this environment was scrubbed to close;
-            # a child that decides to read stdin also cannot block the report behind the cap.
+            # Closed, not inherited — and defence in depth rather than the half that carries
+            # the weight. The comment here used to claim this flag stops the probe reopening
+            # "the seam this environment was scrubbed to close", which overstates it: the `env`
+            # dict above drops every `KEELLINE_*` key, so `KEELLINE_PYTHON_CANDIDATES` is not in
+            # the child's environment at all and a tty on its own has nothing left to reopen.
+            #
+            # What it does buy is that the two guards fail independently — a later edit that
+            # narrowed the strip, or a second variable gated on a terminal the same way, still
+            # meets a closed stdin — and that a child which decides to read stdin cannot hold
+            # the report open behind `WRAPPER_TIMEOUT_SECONDS`.
             stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -907,7 +916,18 @@ def _pre_commit(context: Context) -> Check:
 # git's guard rather than this project's: it does not hold on an older git and it is off
 # entirely under `protocol.ext.allow=always`. Refused here so the answer does not depend on
 # which git the machine owner installed.
-TRANSPORT_HELPER = "::"
+#
+# **git's parse and not a substring test.** This was `"::"`, asked with `in` — and `::` is also
+# how a legal IPv6 literal is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red
+# as naming a transport helper. A false finding is expensive here in a way it is not elsewhere:
+# `doctor`'s whole value is that what it reports is true, and the remedy it printed told the
+# machine owner to replace a URL that was already correct.
+#
+# git decides this in `transport_get`: it walks the leading run of URL-scheme characters and
+# takes a helper only when `::` comes *immediately* after it. So the helper name is anchored at
+# the start and is scheme-shaped, which `ssh://…[…::1]/…` is not — its run stops at `:/`. The
+# empty name (`::address`) is matched too, because git takes that as a helper as well.
+TRANSPORT_HELPER = re.compile(r"\A(?:[A-Za-z][A-Za-z0-9+.\-]*)?::")
 
 
 def _ci_ref(context: Context) -> Check:
@@ -927,7 +947,7 @@ def _ci_ref(context: Context) -> Check:
     ref = context.config.ci.ref
     if not ref:
         return Check("ci-ref", SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
-    if TRANSPORT_HELPER in ref:
+    if TRANSPORT_HELPER.match(ref):
         return Check(
             "ci-ref",
             RED,
