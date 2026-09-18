@@ -47,17 +47,47 @@ would round-trip through nothing Claude Code itself reads. `PLUGIN_ID` matches t
 own shipped manifest and marketplace names (`tests/test_manifests.py`), which is the pair this
 plugin is actually installed under everywhere the preset's own `setup` runs.
 
-**The overlay root is validated before it is ever trusted, and the create branch is gated on
+**The overlay root is validated before anything is written, and the create branch is gated on
 `--yes`.** The coordinator's ruling on the named risk this wave's first report raised: `--yes`
 on `--overlay <path>` would be theatre in a harness where the command line is written by a
-model, so it is not added there. What bounds the exposure instead is that a recorded root must
-exist, must carry the overlay's own published layout (`keelline.overlay.api`'s two manifests —
-the same probe `overlay.create` already trusts), and must not lie inside the project root the
-agent is working in — which removes the one case a hostile clone can actually stage: a tree it
-ships alongside itself. `--yes` gets the one real control the ruling does give it: `setup`
-refuses `--overlay create:<owner>/<name>` without it, because §6.1 asks for "explicit
-confirmation" before `gh repo create` runs, and creating a repository on GitHub is the one
-irreversible, outward-facing act this command performs.
+model, so it is not added there. What bounds the exposure instead is `_requested_overlay`, and
+it runs **above the first write** — above the machine file, the settings merge and the plugin
+installs, and for `create:` above `gh repo create` itself. Two controls:
+
+* **it must be an overlay**, which is `overlay.api.require_overlay` and not a pair of `is_file`
+  calls. The old probe was the two manifests *existing*, which the Keelline checkout satisfies
+  and any Claude Code plugin repository satisfies; the probe now reads them and requires them to
+  name the tree `keelline-overlay[-<owner>]` and `keelline-overlay-marketplace[-<owner>]`, the
+  names `overlay init` writes and a harness installs an overlay by. `identity`'s own docstring
+  is honest that a repository can still *claim* those names: it stops the accidents, and it
+  stops this half from standing for nothing.
+* **it must lie outside the repository the agent works in**, which now means outside *every*
+  checkout of it. The old check refused `candidate == project` or `project in candidate.parents`
+  and nothing else, so a parent directory and a sibling worktree both passed — and this
+  project's own `worktree-by-default` preset rule makes `--root` a worktree, which is exactly
+  the shape that passed. It now also refuses a candidate that *holds* the project root, and a
+  candidate whose `git rev-parse --git-common-dir` is the project root's: a clone cannot stage a
+  tree outside its own repository, and every checkout of that repository is inside it. When
+  `git` cannot answer for the project root — it is not a repository, or `git` is not installed —
+  only the path arms stand, and that is stated rather than assumed.
+
+For `create:`, the destination is `home/<name>` and is knowable from the arguments
+(`overlay.api.target_root`), so it is checked before the call rather than after it: the first
+draft ran `gh repo create`, cloned, renamed both manifests and installed the secret scan, and
+*then* refused — leaving a private repository on somebody's GitHub account that nothing in the
+report mentioned. `--yes` gets the one real control the ruling does give it: `setup` refuses
+`--overlay create:<owner>/<name>` without it, because §6.1 asks for "explicit confirmation"
+before `gh repo create` runs, and creating a repository on GitHub is the one irreversible,
+outward-facing act this command performs.
+
+**A symlinked `~/.claude` is a refusal with a remedy, not an internal error.** `home` is the
+machine owner's own directory and a home managed by stow, chezmoi or a synced directory is the
+most common non-default layout there is, but the settings file still goes through the
+`O_NOFOLLOW` walk — so the containment rule's two stages both apply here: `config.paths
+.contained` gives the user-facing refusal above the first write, and `fsops.write_within` is the
+floor under it for a component that becomes a symlink afterwards. Before, only the second stage
+existed, and it surfaced as `keelline: internal error: UnsafePath` after the machine file had
+already been written.
 """
 
 from __future__ import annotations
@@ -71,13 +101,17 @@ from pathlib import Path
 from typing import Any
 
 from keelline import __version__, fsops
+from keelline.config.paths import PathEscape, contained
 from keelline.errors import Failure, Refusal
+from keelline.fsops import UnsafePath
+from keelline.gitenv import git_run
 from keelline.overlay.api import (
-    MARKETPLACE_MANIFEST,
-    PLUGIN_MANIFEST,
     Runner,
     create,
     init_instance,
+    overlay_fault,
+    require_overlay,
+    target_root,
 )
 from keelline.presets import load_preset
 from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
@@ -100,6 +134,24 @@ _PLUGIN_INSTALL = {
     "claude": lambda full: ["claude", "plugin", "install", full],
     "codex": lambda full: ["codex", "plugin", "add", full],
 }
+# What `--overlay <path>` and `--overlay create:` are each about to do, for the refusal the
+# overlay probe raises. One sentence each, so the two commands that ask "is this an overlay"
+# differ in what they were doing and not in what the answer means.
+_RECORDING = (
+    "--overlay must name a real overlay's root — the tree `keelline overlay create` renders "
+    "and `keelline overlay init` names after you — because this path becomes the machine's "
+    "trust anchor: every `keelline attach` on this machine reads rules and notes out of it"
+)
+_CREATED = (
+    "the repository was created and cloned, and nothing was recorded in the machine "
+    "configuration; look at what arrived, then record it with `keelline setup --overlay <path>`"
+)
+# Both halves of the containment rule for the settings file, said once. The refusal above the
+# first write names the link and the way out; the walk at write time is the floor under it.
+_SYMLINKED_SETTINGS = (
+    f"keelline writes {USER_SETTINGS} through a walk that never follows a symlink, so it will "
+    f"not write through this one"
+)
 
 
 @dataclass(frozen=True)
@@ -251,55 +303,150 @@ def _write_user_settings(
     new_text = json.dumps(document, indent=2, sort_keys=True) + "\n"
     if new_text == text:
         return False
-    fsops.write_within(home, USER_SETTINGS, new_text)
+    try:
+        fsops.write_within(home, USER_SETTINGS, new_text)
+    except UnsafePath as exc:
+        # The floor under `_check_settings_path`, and not dead: a component that became a
+        # symlink, or stopped being a directory, between that check and this write can only be
+        # refused here. `UnsafePath` is an `OSError`, and reaching `cli.run`'s final handler is
+        # what made the ordinary symlinked `~/.claude` an `internal error`.
+        raise Refusal(
+            f"{home / USER_SETTINGS} cannot be written: {exc}; {_SYMLINKED_SETTINGS}"
+        ) from exc
     return True
 
 
-def _validate_overlay_root(candidate: Path, *, project_root: Path) -> None:
-    """Refuse a root that is not really an overlay, or that sits where a clone could reach it.
+def _settings_symlink(home: Path) -> Path | None:
+    """The first symlink between `home` and the settings file, or `None`."""
+    target = home / USER_SETTINGS
+    for ancestor in [target, *target.parents]:
+        if ancestor == home:
+            return None
+        if ancestor.is_symlink():
+            return ancestor
+    return None
 
-    This is the wave's actual control over `--overlay <path>` (the coordinator's ruling on the
-    named risk in the first report: `--yes` here would be theatre, since a model-written command
-    line reaches `--overlay X --yes` exactly as easily as `--overlay X`). Two checks, both aimed
-    at the one thing a hostile repository can actually stage:
 
-    * **it must carry the overlay's own published layout** — the two manifests
-      `keelline.overlay.api` names, the same pair `overlay.create`'s own probe and
-      `overlay.init_instance`'s rename both already trust as "this is really an overlay". An
-      empty directory, or one a clone shipped that merely *looks* plausible, fails this.
-    * **it must not lie inside the project root** — equal to it, or nested under it. A path
-      outside the repository that already carries a real overlay layout is not something a
-      clone can create; a path inside it is exactly the shape of tree a clone can ship.
+def _check_settings_path(home: Path) -> None:
+    """Refuse a `~/.claude` this command cannot write through — above the first write.
+
+    `home` is the machine owner's own directory rather than an untrusted root, but the write
+    goes through the `O_NOFOLLOW` walk all the same, and the walk had no user-facing half: a
+    home managed by stow, chezmoi or a synced directory raised `UnsafePath` out of
+    `fsops.write_within`, which `cli.run` rendered as `keelline: internal error: UnsafePath:
+    '.claude/settings.json': '.claude' is a symlink or not a directory`, exit 2 — after the
+    machine file had been written. `config.paths.contained` is the missing half, and this
+    translates its verdict into a refusal that names the link and the way out.
     """
-    if not candidate.is_dir():
-        raise Refusal(
-            f"{candidate} is not a directory; --overlay must name an existing overlay's root"
+    try:
+        contained(home, USER_SETTINGS)
+    except PathEscape as exc:
+        link = _settings_symlink(home)
+        if link is None:
+            raise
+        real = link.resolve()
+        remedy = (
+            f"run `keelline setup --home {real.parent}`, which writes where the link leads"
+            if real.name == link.name
+            else f"point --home at a directory whose {link.name} is a real directory"
         )
-    missing = [f for f in (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST) if not (candidate / f).is_file()]
-    if missing:
         raise Refusal(
-            f"{candidate} does not carry the overlay layout ({', '.join(missing)} missing); "
-            f"--overlay must name a real overlay's root, not an arbitrary directory"
-        )
+            f"{link} is a symlink to {real}; {_SYMLINKED_SETTINGS}. A dotfiles manager or a "
+            f"synced home is the usual reason — {remedy}, or replace the link with a real "
+            f"directory"
+        ) from exc
+
+
+def _repository_of(path: Path) -> Path | None:
+    """The git common directory `path` sits in, or `None` when `git` cannot say it is in one.
+
+    Asked from the nearest directory that exists, because the create branch asks this about a
+    destination that has not been created yet. `gitenv.git_run` scrubs `GIT_DIR` and
+    `GIT_WORK_TREE`, so an inherited one cannot make two unrelated trees answer alike.
+    """
+    start = path if path.is_dir() else path.parent
+    if not start.is_dir():
+        return None
+    code, out = git_run(start, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if code != 0 or not out.strip():
+        return None
+    return Path(out.strip()).resolve()
+
+
+def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
+    """Refuse an overlay root that sits where the repository an agent works in could reach it.
+
+    Three path arms and one `git` arm. The path arms are equality, nesting either way round —
+    a candidate *under* the project, and a candidate that *holds* it, which is the shape
+    `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arm
+    is the sibling case the paths cannot see: `keelline.worktrees/wave-1` is not under
+    `keelline/`, so a clone committing its own manifests at its own root passed both path arms
+    whenever `--root` was one of its worktrees — and this project's own preset rule makes
+    `--root` a worktree by default.
+
+    **What it does not cover, stated rather than implied.** When `git` cannot answer for the
+    project root — `--root` is not a repository, or `git` is not installed — the `git` arm is
+    silent and only the paths stand. And the whole check bounds a *clone*: a tree outside every
+    checkout of that repository is one the owner put there, which is the case this command
+    exists to record.
+    """
+    resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()
-    if candidate == resolved_project or resolved_project in candidate.parents:
+    if (
+        resolved_candidate == resolved_project
+        or resolved_project in resolved_candidate.parents
+        or resolved_candidate in resolved_project.parents
+    ):
         raise Refusal(
-            f"{candidate} is inside {project_root}, the project this command was run from; "
-            f"the overlay root is the machine's trust anchor and must live outside any "
-            f"repository an agent works in — a repository could otherwise ship its own tree "
-            f"and have this command record it"
+            f"{candidate} is inside {project_root}, holds it, or is it — and {project_root} is "
+            f"the project this command was run from. The overlay root is the machine's trust "
+            f"anchor and must live outside any repository an agent works in: a repository could "
+            f"otherwise ship its own tree and have this command record it"
+        )
+    project_repository = _repository_of(resolved_project)
+    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:
+        raise Refusal(
+            f"{candidate} is a checkout of the same repository as {project_root}, the project "
+            f"this command was run from. The overlay root is the machine's trust anchor and "
+            f"must live outside every checkout of a repository an agent works in — a worktree "
+            f"is not a different repository, and a clone ships its own tree into all of them"
         )
 
 
-def _apply_overlay(
-    overlay: str, *, home: Path, project_root: Path, yes: bool, runner: Runner
-) -> tuple[Path, str]:
-    """`home`, never `Path.cwd()`, for a *created* overlay: this is a machine command, run from
-    wherever the owner happened to be sitting, and a created overlay must not depend on that.
-    Measured while writing this: `root=Path.cwd()` created a real `keelline-private/` inside
-    this very checkout the first time a test exercised this branch, because the test's
-    `tmp_path` was never in the call at all.
+@dataclass(frozen=True)
+class _Overlay:
+    """What `--overlay` asked for, once everything knowable before the first write is known.
+
+    `create` is `(owner, name)` when this run has to create the repository, and `None` when the
+    root already exists and is only being recorded. `root` is where the overlay is or will be:
+    for the create branch it is `overlay.api.target_root`'s answer, computed from the arguments
+    alone so the destination can be refused before `gh repo create` runs.
     """
+
+    root: Path
+    create: tuple[str, str] | None
+
+
+def _requested_overlay(
+    overlay: str | None, *, home: Path, project_root: Path, yes: bool
+) -> _Overlay | None:
+    """Every refusal `--overlay` can raise that does not need a tree to exist first.
+
+    Called above the first write. The first draft called the equivalent of this from the bottom
+    of `setup`, so `--overlay /typo` had already written the machine file, merged the settings
+    file and installed two plugins before it refused, and `--overlay create:` had already
+    created a private repository on GitHub.
+
+    `home`, never `Path.cwd()`, is what a *created* overlay is created in: this is a machine
+    command, run from wherever the owner happened to be sitting, and a created overlay must not
+    depend on that. Measured while that was written: `root=Path.cwd()` created a real
+    `keelline-private/` inside this very checkout the first time a test exercised the branch.
+    """
+    if overlay is None:
+        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
+        # only way to reach the overlay at all, and `--yes` does not imply one: a default here
+        # would turn an omitted flag into a repository created on somebody's account.
+        return None
     if overlay.startswith("create:"):
         if not yes:
             raise Refusal(
@@ -314,13 +461,46 @@ def _apply_overlay(
                 f"--overlay create:<owner>/<name> needs both a GitHub owner and a repository "
                 f"name; got {overlay!r}"
             )
-        created = create(owner, name, source="template", root=home, runner=runner)
-        init_instance(created.root, owner, runner=runner)
-        _validate_overlay_root(created.root, project_root=project_root)
-        return created.root, f"created the overlay at {created.root}"
+        # Refuses a name that is not one path segment, and answers where the tree would land —
+        # both without creating anything, which is the whole point of asking here.
+        destination, account = target_root(home, owner, name)
+        _outside_the_project(destination, project_root=project_root)
+        return _Overlay(root=destination, create=(account, name))
     candidate = Path(overlay).expanduser().resolve()
-    _validate_overlay_root(candidate, project_root=project_root)
-    return candidate, f"recorded the existing overlay at {candidate}"
+    require_overlay(candidate, because=_RECORDING)
+    _outside_the_project(candidate, project_root=project_root)
+    return _Overlay(root=candidate, create=None)
+
+
+def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> tuple[Path, str]:
+    """Create the overlay if this run has to, record what there is, and say what happened.
+
+    Everything here that can refuse is a **floor** under `_requested_overlay` rather than a
+    second copy of it, in the sense the `attach` lane settled the same shape: the checks above
+    the first write are what a person acts on, and these are what catches a tree that changed in
+    between — or, for the create branch, one that did not exist to be checked at all. What this
+    function returns is written into the machine file, and every later `attach` on this machine
+    derives `permitted_roots` from that record, so the last thing to touch the tree before it
+    becomes the trust anchor asks again.
+
+    The created branch's refusal says the repository exists. It has to: the owner now has a
+    private repository on GitHub that this run made, and the report is discarded on a refusal,
+    so nothing else would ever tell them.
+    """
+    if planned.create is None:
+        require_overlay(planned.root, because=_RECORDING)
+        _outside_the_project(planned.root, project_root=project_root)
+        return planned.root, f"recorded the existing overlay at {planned.root}"
+    owner, name = planned.create
+    created = create(owner, name, source="template", root=planned.root.parent, runner=runner)
+    init_instance(created.root, owner, runner=runner)
+    _outside_the_project(created.root, project_root=project_root)
+    fault = overlay_fault(created.root)
+    if fault is not None:
+        raise Refusal(
+            f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
+        )
+    return created.root, f"created the overlay at {created.root}"
 
 
 def setup(
@@ -336,10 +516,19 @@ def setup(
     """Configure this machine from `preset`.
 
     `project_root` is the repository this invocation was run from (the CLI's `--root`, default
-    `.`), and it exists for exactly one reason: `_validate_overlay_root` refuses an `--overlay`
-    that lies inside it. `yes` takes the detected defaults for everything except creating an
-    overlay, which needs it explicitly (see the module docstring).
+    `.`), and it exists for exactly one reason: `_outside_the_project` refuses an `--overlay`
+    that any checkout of it could reach. `yes` takes the detected defaults for everything except
+    creating an overlay, which needs it explicitly (see the module docstring).
+
+    **Everything structural is asked before the first write**, and the order below is
+    load-bearing rather than tidy: `--overlay` is parsed, probed and contained, and the settings
+    path is checked, while nothing is on disk and no repository exists on anyone's GitHub
+    account. What is left after that is the work, and the one refusal that follows a write is
+    the post-condition on a tree this run created.
     """
+    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
+    _check_settings_path(home)
+
     # `home` is the root every write in this function lands under — the settings file through
     # `fsops.write_within` below, and a created overlay through `overlay.create` further down —
     # and it is not one this process was handed already existing, the way a project root or the
@@ -353,7 +542,18 @@ def setup(
     write_machine(machine, personal=personal, overlay_root=None, machine=machine_table)
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
-    deny_written = _write_user_settings(home, deny_rules, personal)
+    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
+    # new keys.** `personal` above is empty on every run after the first, so the mirror was
+    # write-once: an owner who edited `reply_language` in the machine file — the documented way,
+    # `README.md`'s own "Written by: you, or `keelline setup`" — kept `""` in
+    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop
+    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code
+    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares
+    # them, so dropping it would leave the harness reading nothing. The cost of this direction
+    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
+    # overwritten by the machine file on the next `setup`, because one file has to win and the
+    # machine file is the one every Keelline reader reads.
+    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))
 
     installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
     notes = list(install_notes)
@@ -366,9 +566,9 @@ def setup(
         )
 
     overlay_root: Path | None = None
-    if overlay is not None:
+    if planned_overlay is not None:
         overlay_root, note = _apply_overlay(
-            overlay, home=home, project_root=project_root, yes=yes, runner=runner
+            planned_overlay, project_root=project_root, runner=runner
         )
         notes.append(note)
         write_machine(machine, personal={}, overlay_root=overlay_root, machine={})
