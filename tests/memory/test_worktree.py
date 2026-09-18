@@ -16,6 +16,7 @@ from keelline.memory.trust import record
 from keelline.memory.worktree import (
     PartialLink,
     attach_main,
+    detach_main,
     harness_memory_path,
     link,
     linked_names,
@@ -858,3 +859,74 @@ def test_a_machine_that_records_no_overlay_is_refused(tmp_path: Path) -> None:
             machine=blank,
             home=tmp_path / "home",
         )
+
+
+def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else(
+    tmp_path: Path,
+) -> None:
+    # `detach_main`'s docstring is explicit — "only a symlink whose own target is this store is
+    # removed" — and it calls the second copy of that rule in the attach area "the duplication
+    # this module's own history argues against". The loop applied only the directory half: it
+    # tested `is_symlink()` and removed whatever stood at a configured group name, with no
+    # comparison against `overlay_group_target(...)`. `attach_main` two functions above has
+    # always compared, so the asymmetry was inside one module, one screen apart.
+    #
+    # An owner who adds a group and points `docs/memory/project-stable` at a directory of their
+    # own loses it — reported under `revoked`, on a command that promises to remove exactly what
+    # `attach` added.
+    #
+    # Mutation: `mutations.toml`'s "the main checkout's withdrawal stops checking what it
+    # removes points at".
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    mine = tmp_path / "my-own-notes"
+    mine.mkdir()
+    (mine / "keep.md").write_text("mine\n", encoding="utf-8")
+    (base / "project-stable").unlink()
+    (base / "project-stable").symlink_to(mine)
+
+    links = detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert (base / "project-stable").is_symlink()
+    assert (base / "project-stable" / "keep.md").is_file()
+    assert base / "project-stable" not in links.revoked
+    # Non-vacuous twice over: the withdrawal did run, and it did withdraw the links that really
+    # are this module's own. A `detach_main` that removed nothing at all would pass the three
+    # assertions above and break the command.
+    assert not (base / "developer").is_symlink()
+    assert base / "developer" in links.revoked
+
+
+def test_a_withdrawal_leaves_a_real_directory_standing_at_a_group_name(tmp_path: Path) -> None:
+    # The other shape `_link` refuses to clobber, asserted on the way out as well: a real
+    # directory at one of these names is unmerged work or a store the harness made, and
+    # withdrawing a link is not licence to delete a directory.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    (base / "project-stable").unlink()
+    (base / "project-stable").mkdir()
+    (base / "project-stable" / "note.md").write_text("mine\n", encoding="utf-8")
+
+    detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert (base / "project-stable" / "note.md").is_file()
+    assert not (base / "developer").is_symlink()
+
+
+def test_a_withdrawal_still_removes_a_link_of_ours_whose_target_has_gone(tmp_path: Path) -> None:
+    # `_unlink`'s rule for the harness link, applied to the tree: "what the gate refuses is the
+    # name, not the bytes behind it". A group directory deleted from the overlay leaves a
+    # dangling link that is still this module's own, and a comparison done through `exists()`
+    # rather than through the link's target would strand it.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    shutil.rmtree(own / "project-stable")
+    assert (base / "project-stable").is_symlink() and not (base / "project-stable").exists()
+
+    links = detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert not (base / "project-stable").is_symlink()
+    assert base / "project-stable" in links.revoked

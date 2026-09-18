@@ -137,3 +137,141 @@ def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path)
     assert settings["autoMemoryDirectory"] == str(resolved.path.resolve())
     assert ledger(root).settings_keys == ("autoMemoryDirectory",)
     assert any("autoMemoryDirectory" in note for note in attached.notes)
+
+
+def _settings(root: Path) -> dict[str, object]:
+    import json
+
+    path = root / ".claude" / "settings.local.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def _trusted(root: Path, machine: Path) -> None:
+    from keelline.memory.api import resolve
+    from keelline.memory.trust import record
+
+    config = _config(root, machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+
+
+def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason(
+    tmp_path: Path,
+) -> None:
+    # `memory/worktree.py`'s own rule, one function over: "a gate evaluated once, at creation,
+    # over state that persists is not a gate". A settings value is exactly such state, and this
+    # is the channel that module calls "the one hop that leaves this lane's gate" — read by the
+    # harness's native reader, outside every delimiter and trust record this lane controls.
+    #
+    # The sequence measured: attach with a real directory where the link belongs, so the
+    # fallback is taken and recorded; then a `git pull` adds a note, which lapses the trust
+    # record. `_apply_harness_link` correctly revokes the *symlink* channel — and the key used
+    # to survive, with `_write_ledger` handed `()` on every run so the ledger forgot it too. The
+    # harness went on reading the new bytes through a setting nothing recorded and `detach`
+    # could no longer remove.
+    #
+    # Mutation: `mutations.toml`'s "the settings fallback outlives the gate that allowed it" —
+    # make `_harness_fallback` return early when the link is no longer needed.
+    from keelline.attach.api import ledger
+
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness_memory_path(root, home).mkdir(parents=True)
+    _attach(root, store, machine, home)
+    # Non-vacuous: the rest of this is only about a lapse if the fallback was taken at all.
+    assert "autoMemoryDirectory" in _settings(root)
+    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
+
+    (tmp_path / "overlay" / "common" / "memory" / "pulled.md").write_text("# n\n", "utf-8")
+    _attach(root, store, machine, home)
+    assert "autoMemoryDirectory" not in _settings(root)
+    assert ledger(root).settings_keys == ()
+
+
+def test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made(tmp_path: Path) -> None:
+    # The other arm of the same gate, and the one that needs no trust record to lapse. The
+    # fallback exists only "when the link cannot be made"; once the real directory in the way is
+    # gone the link is made and the setting has no reason left. It used to be left in the file
+    # while the ledger was reset to `[]` around it, so `detach` left it behind for good — two
+    # readers pointed at the store, one of them recorded nowhere.
+    from keelline.attach.api import ledger
+
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness = harness_memory_path(root, home)
+    harness.mkdir(parents=True)
+    _attach(root, store, machine, home)
+    assert "autoMemoryDirectory" in _settings(root)
+
+    harness.rmdir()
+    _attach(root, store, machine, home)
+    assert harness.is_symlink()
+    assert "autoMemoryDirectory" not in _settings(root)
+    assert ledger(root).settings_keys == ()
+
+
+def test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the two cases above: a `_harness_fallback` that simply never
+    # recorded the key would pass both. While the real directory is still in the way, every
+    # later attach must go on recording the key that is still in the file — which is the defect
+    # in its original direction, since the ledger is what `detach` reads.
+    from keelline.attach.api import ledger
+
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness_memory_path(root, home).mkdir(parents=True)
+    _attach(root, store, machine, home)
+    _attach(root, store, machine, home)
+    assert "autoMemoryDirectory" in _settings(root)
+    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
+
+
+def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: Path) -> None:
+    # §6.3 asks for every checkout, and `--root` is allowed to name any of them. `attach_main`
+    # used to be applied to whatever `--root` named and the loop then skipped
+    # `main_checkout(root)` unconditionally — and `worktree.link` is documented as a no-op for
+    # the main checkout, so nothing downstream caught it. Attaching from a worktree built that
+    # worktree's tree and left the owning checkout with none: every session there saw no
+    # memory, silently, and the command exited 0.
+    #
+    # Mutation: `mutations.toml`'s "attach applies the owning-checkout entry point to --root".
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    _attach(side, store, machine, tmp_path / "home")
+    assert (root / "docs" / "memory" / "developer").is_symlink()
+    assert (root / "docs" / "memory" / "project-stable").is_symlink()
+    assert (side / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
+    tmp_path: Path,
+) -> None:
+    # The mirror shape, and it had the mirror defect: `detach_main` was applied to `--root` and
+    # the loop skipped the owner, so a detach run from a worktree withdrew that worktree's tree
+    # twice and left the owning checkout's — and its harness link — in place.
+    from keelline.attach.api import detach
+
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    # Attached from the worktree as well, because the ledger `detach` reads lives under
+    # `.keelline/local/` in the checkout the attach was run from, and that directory is
+    # untracked — a sibling worktree does not have one.
+    _attach(side, store, machine, home)
+    # Non-vacuous: there is nothing to withdraw unless both trees were built.
+    assert (root / "docs" / "memory" / "developer").is_symlink()
+    assert (side / "docs" / "memory" / "developer").is_symlink()
+    detach(side, machine=machine, home=home)
+    assert not (root / "docs" / "memory" / "developer").is_symlink()
+    assert not (side / "docs" / "memory" / "developer").is_symlink()

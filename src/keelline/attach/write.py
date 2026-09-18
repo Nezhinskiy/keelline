@@ -49,6 +49,7 @@ from typing import Any
 from keelline import fsops, tomlout
 from keelline.attach.binding import MISMATCH, Binding, read_binding
 from keelline.attach.permissions import (
+    CODEX_RULES,
     LOCAL_SETTINGS,
     PermissionDiff,
     codex_rules,
@@ -82,6 +83,7 @@ from keelline.scaffold import (
     Style,
     apply_entries,
     drop,
+    mark,
     marker_id,
     owned_ids,
     upsert,
@@ -106,6 +108,15 @@ PRE_COMMIT_HOOK = "pre-commit"
 # subject to workspace trust and a link is not", so the symlink is preferred and this is taken
 # only when it cannot be made.
 FALLBACK_KEY = "autoMemoryDirectory"
+# The third refusal `attach` owes before it writes anything, kept beside the other two rather
+# than inside `_record_binding` where it used to live. `_record_binding` runs after the ignore
+# region, the Codex rules, the settings merge and the ledger, so a checkout with no `origin`
+# exited 2 having left four artifacts behind — and `doctor._attached`, which keys on the
+# ledger's existence, then reported the repository attached.
+NO_ORIGIN = (
+    "this repository has no `origin` remote, so there is nothing for the overlay to record; "
+    "add one, or bind the clone that has it"
+)
 # `fsops.mkdirs_within` creates a target's *parents*, so a directory is asked for as the parent
 # of a name inside it. Nothing is ever written at this name; `overlay.create` asks the same way.
 _INSIDE = ".keep"
@@ -125,7 +136,33 @@ class Attached:
 
 @dataclass(frozen=True)
 class AttachLedger:
-    """The only witness an allow rule has (DP4), and the authority `detach` reads.
+    """The only witness an allow rule has (DP4), and the record `detach` acts from.
+
+    Not *authority*, and the difference is the whole of this docstring. `.gitignore` does not
+    untrack a file a clone committed, so this path can arrive in a fresh checkout with contents
+    nobody on this machine wrote — and `detach` then deletes files by the strings in `rules` and
+    drops settings keys by the strings in `settings_keys`. A ledger claiming
+    `settings_keys = ["permissions"]` deleted the owner's whole `permissions` block, **deny rules
+    included**: a widening driven by repository-authored bytes, out of a file this module used to
+    call an authority.
+
+    So `ledger()` answers one question about every field before `detach` sees it — *what could
+    `attach` possibly have written here?* — and refuses anything outside that answer rather than
+    obeying it. The two fields that name things to destroy are bounded exactly:
+
+    - `rules` may only be `.codex/rules/<file>`, the one place `permissions.codex_rules`
+      enumerates, one path segment deep and never a dotfile; and
+    - `settings_keys` may only be `autoMemoryDirectory`, the one key `_harness_fallback` writes.
+
+    `entries` keys must parse as marker ids, because `_write_ledger` builds them with
+    `scaffold.marker_id` and nothing else can appear there.
+
+    `allow` and `store` are not bounded here, and saying why is part of the rule rather than an
+    omission. An allow rule has no grammar this lane owns — the ledger exists *because* a rule
+    cannot be told from the owner's own by its content — and `_withdraw_settings` only ever
+    removes a rule the settings file already holds, so the worst a committed `allow` achieves is
+    taking a permission away. `store` reaches `read_binding`, which refuses any path that is not
+    this project's own share of the recorded overlay.
 
     `entries` maps each marker id to its event, which is the shape `scaffold.owned_ids` answers
     in, so `doctor` can compare the two without a translation in between.
@@ -138,12 +175,52 @@ class AttachLedger:
     settings_keys: tuple[str, ...]
 
 
+def _rule_is_writable(rule: str) -> bool:
+    """Whether `attach` could have written this path: `.codex/rules/<file>` and nothing else.
+
+    `permissions.codex_rules` composes every target as `f"{CODEX_RULES}/{rule.name}"` over a
+    directory listing, so the answer is one path segment under that prefix, never a dotfile and
+    never a nested path. `.github/workflows/ci.yml` and `src/keelline/__init__.py` are all
+    inside the root `fsops.remove_within` contains the removal to, which is why containment is
+    not the guard that matters here.
+    """
+    prefix = f"{CODEX_RULES}/"
+    if not rule.startswith(prefix):
+        return False
+    name = rule[len(prefix) :]
+    return bool(name) and "/" not in name and not name.startswith(".")
+
+
+def _checked(raw: dict[str, Any], path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`rules` and `settings_keys`, or a `Refusal` counting the members `attach` never wrote.
+
+    Counted and never quoted: these strings are repository-authored by the Global Constraints'
+    own list, and a refusal built out of one is still one.
+    """
+    rules = tuple(r for r in raw.get("rules", []) if isinstance(r, str))
+    keys = tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str))
+    foreign = sum(1 for rule in rules if not _rule_is_writable(rule))
+    foreign += sum(1 for key in keys if key != FALLBACK_KEY)
+    if foreign:
+        raise Refusal(
+            f"{path} names {foreign} file(s) or settings key(s) that `keelline attach` could "
+            f"never have written, so it is not a record of an attach on this machine; nothing "
+            f"was removed. Delete it, or take it out of the clone that committed it"
+        )
+    return rules, keys
+
+
 def ledger(root: Path) -> AttachLedger:
     """The ledger this repository's last `attach` wrote, or a `Failure` naming the missing file.
 
     Never a best effort. Guessing which allow rules were Keelline's from their content is the
     heuristic this file exists to replace, and a `detach` built on a guess removes a rule the
     owner wrote by hand — which is worse than removing none.
+
+    A ledger whose `rules` or `settings_keys` name something `attach` could not have written is
+    a `Refusal` rather than a filtered list: see `AttachLedger`. Filtering would let a committed
+    ledger keep the members it is entitled to and lose only the hostile ones, which is a partial
+    defence reported as a success.
     """
     path = root / LEDGER
     try:
@@ -159,13 +236,23 @@ def ledger(root: Path) -> AttachLedger:
         raise Failure(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
+    rules, keys = _checked(raw, path)
     entries = raw.get("entries")
     return AttachLedger(
         store=str(raw.get("store", "")),
         allow=tuple(r for r in raw.get("allow", []) if isinstance(r, str)),
-        entries={k: str(v) for k, v in entries.items()} if isinstance(entries, dict) else {},
-        rules=tuple(r for r in raw.get("rules", []) if isinstance(r, str)),
-        settings_keys=tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str)),
+        entries=(
+            # `mark`/`marker_id` and not a second copy of the marker grammar: `_write_ledger`
+            # builds these keys with `marker_id`, so a key that does not round-trip through the
+            # engine's own pair is one no attach could have recorded. Dropped rather than
+            # refused, because a key names nothing to destroy: what it costs is a provenance
+            # row, and `doctor` reporting an entry as unrecorded is the conservative answer.
+            {k: str(v) for k, v in entries.items() if marker_id(mark("", k)) == k}
+            if isinstance(entries, dict)
+            else {}
+        ),
+        rules=rules,
+        settings_keys=keys,
     )
 
 
@@ -268,10 +355,11 @@ def _record_binding(binding: Binding) -> bool:
     if binding.state != MISMATCH and binding.recorded is not None:
         return False
     if binding.remote is None:
-        raise Refusal(
-            "this repository has no `origin` remote, so there is nothing for the overlay to "
-            "record; add one, or bind the clone that has it"
-        )
+        # The floor under `attach`'s own hoisted copy, never the first place this is asked. A
+        # `Refusal` reaching here means the hoist above drifted — and by then the ignore region,
+        # `.codex/rules/`, the settings merge and the ledger have all been written, which is
+        # exactly the state the hoist exists to prevent.
+        raise Refusal(NO_ORIGIN)
     relative = f"{PROJECTS}/{binding.project}/{PROJECT_RECORD}"
     first = _first_attach(binding.overlay / relative) or datetime.date.today().isoformat()
     # `tomlout` and not an f-string: the value is a git remote URL, which is repository-authored
@@ -426,47 +514,99 @@ def _link_everywhere(
     — and `link` handles the rest unchanged. A `PartialLink` is left to propagate with its
     `.created` intact: a half-built tree is repairable, and swallowing it into a generic failure
     is what made one mysterious.
+
+    **`attach_main` is applied to the owning checkout and never to `--root`.** It used to be
+    applied to whatever `--root` named, and the loop below then skipped `main_checkout(root)`
+    unconditionally — so `keelline attach` run from a linked worktree built that worktree's tree
+    twice and the main checkout's not at all. `worktree.link` is documented as a no-op for the
+    main checkout, so nothing downstream would have caught it: every session in the owning
+    checkout saw no memory, silently, and the command exited 0. The code already computed
+    `owner`; it simply handed the owning-checkout entry point the wrong root.
+
+    The skip is by resolved path and accumulates, so `root` — which `_worktrees` lists like any
+    other — is linked exactly once whether or not it is the owner.
     """
-    links = attach_main(root, binding.store, config, machine=machine, home=home)
+    owner = main_checkout(root).resolve()
+    links = attach_main(owner, binding.store, config, machine=machine, home=home)
     created, revoked = list(links.created), list(links.revoked)
-    store = resolve(root, config, machine=machine)
+    # Resolved against the owner and not against `root`: in overlay mode `resolve` reads the
+    # link tree, and the tree that exists at this point is the one `attach_main` just built.
+    store = resolve(owner, config, machine=machine)
     if store is None:
         raise Failure(
             "the link tree was created and the store still does not resolve; "
             "`keelline memory index --check` reports why"
         )
-    owner = main_checkout(root).resolve()
+    linked = {owner}
     for tree in _worktrees(root):
-        if tree.resolve() == owner:
+        if tree.resolve() in linked:
             continue
+        linked.add(tree.resolve())
         more = link(tree, store, config, home=home)
         created += more.created
         revoked += more.revoked
     return Links(created, revoked)
 
 
+def _recorded_keys(root: Path) -> tuple[str, ...]:
+    """The settings keys `attach` owns that `.claude/settings.local.json` holds *right now*.
+
+    Read back from the file rather than carried out of the run that wrote it, because
+    `settings_keys` is a claim about state that persists. `_write_ledger` used to be handed `()`
+    on every run and the fallback's own return value only when it had just written the key — so
+    the second attach after a fallback reset the record to `[]` while the key was still in the
+    file, and `detach` then left it there for good.
+    """
+    return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(local_document(root)) else ()
+
+
 def _harness_fallback(
     root: Path, config: Config, *, machine: Path | None, home: Path | None
 ) -> tuple[str, ...]:
-    """§6.3's fallback, taken only when the symlink could not be made, and always recorded.
+    """§6.3's fallback, taken only when the symlink could not be made — and withdrawn again here.
 
     The link is preferred "because a settings-file value is subject to workspace trust and a
     link is not". It cannot be made on a filesystem that refuses symlinks, or where a real
     directory already sits at the path — the case `worktree._link` refuses to clobber. The gate
-    is asked first and with the same predicate, so a store the owner has not approved gets
-    neither channel; and the key goes into the ledger, because a fallback nothing records is a
-    setting that outlives its reason.
+    is asked with the same predicate `worktree.harness_link_needed` answers for the link itself,
+    so a store the owner has not approved gets neither channel.
+
+    **And it is asked in both directions, in the same call**, which is `memory/worktree`'s rule
+    one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
+    A settings value is exactly such state, and this is the same channel that module calls "the
+    one hop that leaves this lane's gate" — the harness's own native reader, outside every
+    delimiter and every trust record this lane controls. `_apply_harness_link` already revokes
+    the *symlink* when the record lapses; this key outlived it, so a `git pull` that added one
+    note shut every channel except the one pointing the harness straight at the new bytes.
+
+    The two arms that return without writing are the two that used to leak: the link is no
+    longer needed, and the symlink now exists so the fallback is no longer warranted. Both now
+    take the key back out. The answer is what the file holds afterwards, so the caller's ledger
+    is the file's own state rather than a memory of this run.
     """
     store = resolve(root, config, machine=machine)
-    if store is None or not harness_link_needed(store, config):
-        return ()
-    harness = harness_memory_path(root, home)
-    if harness.is_symlink() and harness.readlink() == store.path.resolve():
-        return ()
+    wanted: str | None = None
+    if store is not None and harness_link_needed(store, config):
+        harness = harness_memory_path(root, home)
+        if not (harness.is_symlink() and harness.readlink() == store.path.resolve()):
+            wanted = str(store.path.resolve())
     document = settings_document(local_document(root))
-    document[FALLBACK_KEY] = str(store.path.resolve())
-    fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
-    return (FALLBACK_KEY,)
+    if document.get(FALLBACK_KEY) == wanted:
+        # Includes the ordinary case where the key is absent and is not wanted: nothing to do,
+        # and rewriting a file the owner owns on a run that changed nothing is a write.
+        return _recorded_keys(root)
+    if wanted is None:
+        document.pop(FALLBACK_KEY, None)
+    else:
+        document[FALLBACK_KEY] = wanted
+    if document:
+        fsops.write_within(root, LOCAL_SETTINGS, json.dumps(document, indent=2) + "\n")
+    else:
+        # `{}` is not what the file looked like before the fallback was taken, and a document
+        # holding only this key is one `attach` created — the same rule `_withdraw_settings`
+        # applies when `detach` empties it.
+        fsops.remove_within(root, LOCAL_SETTINGS)
+    return () if wanted is None else (FALLBACK_KEY,)
 
 
 def attach(
@@ -483,8 +623,16 @@ def attach(
 
     The order is the order the refusals have to happen in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
-    without `confirmed`; refuse a mismatch without `trust_remote`; then write, `.gitignore`
-    first, so the ledger is never in a tracked path even for an instant.
+    without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
+    `origin`; then write, `.gitignore` first, so the ledger is never in a tracked path even for
+    an instant.
+
+    **All four refusals are above every write, and the fourth was not.** It lived in
+    `_record_binding`, which runs after the ignore region, the Codex rule files, the settings
+    merge and the ledger — so attaching in a checkout with no `origin` exited 2 having written
+    all four, and `doctor._attached`, which keys on the ledger existing, then reported the
+    repository attached with an unbound binding. A refusal that leaves a repository looking
+    attached is not a refusal.
 
     The binding record is written before the links, because `memory.store` checks it and a
     store whose record is missing does not resolve — and `attach_main` resolves as its last
@@ -513,6 +661,8 @@ def attach(
             "the overlay records a different remote under this project's name, so this is not "
             "the repository it was bound to; pass --trust-remote only if it should be"
         )
+    if binding.remote is None:
+        raise Refusal(NO_ORIGIN)
     _write_ignore_region(root)
     rules = _codex_rules(root, binding)
     document = local_document(root)
@@ -520,20 +670,26 @@ def attach(
     written = merged != document
     if written:
         fsops.write_within(root, LOCAL_SETTINGS, merged)
-    _write_ledger(root, binding, diff, rules, ())
+    # What an earlier attach left in the settings file, carried into the ledger written before
+    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
+    # it. The real answer is taken again below, after the only function that can change it.
+    carried = _recorded_keys(root)
+    _write_ledger(root, binding, diff, rules, carried)
     recorded = _record_binding(binding)
     config = load(root, machine=machine)
     _prepare_store(binding, config)
     links = _link_everywhere(root, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
     keys = _harness_fallback(root, config, machine=machine, home=home)
-    if keys:
+    if keys != carried:
         _write_ledger(root, binding, diff, rules, keys)
+        written = True
+    if keys:
         notes.append(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `keelline detach` removes it"
         )
-    return Attached(written or bool(keys), rules, recorded, True, tuple(notes), links)
+    return Attached(written, rules, recorded, True, tuple(notes), links)
 
 
 @dataclass(frozen=True)
@@ -629,11 +785,19 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         if (root / rule).is_file():
             fsops.remove_within(root, rule)
             rules_removed.append(rule)
-    revoked = list(detach_main(root, config, home=home).revoked)
+    # The mirror of `_link_everywhere`, and it had the mirror defect: `detach_main` was applied
+    # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
+    # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
+    # link tree — and its harness link — in place. Every checkout is visited exactly once, by
+    # resolved path, starting with the one that owns the store.
     owner = main_checkout(root).resolve()
+    revoked = list(detach_main(owner, config, machine=machine, home=home).revoked)
+    visited = {owner}
     for tree in _worktrees(root):
-        if tree.resolve() != owner:
-            revoked += detach_main(tree, config, home=home).revoked
+        if tree.resolve() in visited:
+            continue
+        visited.add(tree.resolve())
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked
     region = _withdraw_ignore_region(root)
     fsops.remove_within(root, LEDGER)
     return Detached(

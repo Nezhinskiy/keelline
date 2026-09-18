@@ -72,6 +72,7 @@ from keelline.memory.api import (
     GitUnavailable,
     Store,
     fit,
+    harness_link_needed,
     harness_memory_path,
     overlay_root,
     render,
@@ -366,11 +367,23 @@ def _wrapper(context: Context) -> Check:
     return Check("wrapper", OK, f"{WRAPPER} reached Keelline and exited 0", "")
 
 
-def _attach_ledger_entries(root: Path) -> dict[str, str]:
-    """The marker ids this repository's last `attach` claims, or none when it never ran."""
+def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
+    """The marker ids this repository's last `attach` claims, `{}` when it never ran, `None`
+    when the file is there and cannot be read as a ledger.
+
+    Three answers and not two. `ledger()` raises on a file that is not JSON, is not an object,
+    or names something `attach` could not have written — and `.keelline/local/attach.json` is a
+    path a clone can commit, because `.gitignore` does not untrack a committed file. Letting
+    that reach `_guarded` made a repository able to force `hook-entries` red with the detail
+    "this check could not run: Failure" and a remedy that cannot help, on an installation with
+    nothing wrong with it. The caller reports the file instead.
+    """
     if not (root / LEDGER).is_file():
         return {}
-    return dict(ledger(root).entries)
+    try:
+        return dict(ledger(root).entries)
+    except (Failure, Refusal):
+        return None
 
 
 def _attached(context: Context) -> Check:
@@ -384,7 +397,18 @@ def _attached(context: Context) -> Check:
 
     A path that is simply absent is not that. `worktree.harness_link_needed` gates the link on
     the same trust record every other channel is gated on, so an unapproved store correctly has
-    no link, and calling that red would make `doctor` red on a correct fresh install.
+    no link, and calling that red would make `doctor` red on a correct fresh install. So this
+    check *asks that function* rather than assuming: absent-and-not-wanted is green and says
+    which of the two it is, absent-and-wanted is a warning, because a store the record approves
+    and a harness that cannot see it is an attach that did not finish.
+
+    **The link's target is compared, and the sentence about it is only ever printed when it is
+    true.** The shape used to be computed into `detail` and then dropped for the status, and
+    "the harness memory path is a link to the store" was printed for *any* symlink — a dangling
+    one, or one pointing at an unrelated directory — with the row green underneath it. On the
+    one channel §6.3 uses to reach the model, that is a false statement about where the model's
+    memory comes from, and the two states it hid are the same failure §12 gives the real
+    directory its own row for: one reads nothing, the other reads somebody else's notes.
     """
     config = context.config
     if config.memory.mode != "overlay":
@@ -414,7 +438,6 @@ def _attached(context: Context) -> Check:
             f"memory.mode is overlay and {LEDGER} does not exist, so nothing records an attach",
             "run `keelline attach --store <overlay>/projects/<project>/memory --check`",
         )
-    shape = "a link to the store" if harness.is_symlink() else "not in place"
     state = _binding_state(context)
     if state == MISMATCH:
         return Check(
@@ -424,10 +447,57 @@ def _attached(context: Context) -> Check:
             "repository it was bound to",
             "run `keelline attach --check`, and `--trust-remote` only if it should be",
         )
+    status, shape, remedy = _harness_shape(context, harness)
     detail = f"attached; the harness memory path is {shape}"
     if state is not None:
         detail = f"{detail}; the binding is {state}"
-    return Check("attached", OK, detail)
+    return Check("attached", status, detail, remedy)
+
+
+# The remedy every harness-memory-path row but the green one carries: one command puts the link
+# where §6.3 asks for it, whatever the wrong shape was. `<overlay>` and `<project>` and never
+# `config.project.name`, for the reason the real-directory row above gives.
+_RELINK = f"run `keelline attach --store <overlay>/{PROJECTS}/<project>/memory`"
+
+
+def _harness_shape(context: Context, harness: Path) -> tuple[str, str, str]:
+    """The status, the sentence and the remedy for the harness memory path, as one answer.
+
+    One function because the status and the sentence must not be able to disagree — computing
+    the shape and then discarding it for the status is the defect this replaces.
+
+    The comparison is against `context.store.path`, which is what `worktree._apply_harness_link`
+    links to, resolved on both sides so that two spellings of one directory are one answer. A
+    store that does not resolve means the comparison cannot be made at all, which is a warning
+    naming what could not be asked rather than a green sentence asserting what was not checked.
+    """
+    store = context.store
+    if harness.is_symlink():
+        if store is None:
+            return (
+                WARN,
+                "a link, and the note store does not resolve, so what it points at could not "
+                "be checked",
+                "run `keelline memory index --check`, then `keelline doctor` again",
+            )
+        if harness.resolve() == store.path.resolve():
+            return OK, "a link to the store", ""
+        if not harness.exists():
+            return RED, "a dangling link, so the harness reads nothing through it", _RELINK
+        return (
+            RED,
+            "a link to a directory that is not this project's note store, so the harness "
+            "reads notes this repository is not bound to",
+            _RELINK,
+        )
+    if store is not None and harness_link_needed(store, context.config):
+        return (
+            WARN,
+            "not in place, although this store's trust record allows it, so the harness sees "
+            "no memory here",
+            _RELINK,
+        )
+    return OK, "not in place, which is what this store's trust record asks for", ""
 
 
 def _binding_state(context: Context) -> str | None:
@@ -498,8 +568,21 @@ def _hook_entries(context: Context) -> Check:
     *strictness* rather than for its answer: it shares `_load` and `_hooks_table` with
     `apply_entries`, so a shape the merge would refuse is exactly the shape this walk must
     admit it cannot account for. The report names the file and never its contents.
+
+    **And the ledger is one of those files.** `.keelline/local/attach.json` is a path a clone
+    can commit — `.gitignore` does not untrack a committed file — so a repository could make
+    `ledger()` raise and turn this row red through `_guarded`, with the detail "this check could
+    not run" and a remedy that cannot help: a false red, on the one check whose docstring
+    insists a file it could not read is named rather than dropped, forced by the bytes it is
+    supposed to be reporting on. It is now a `warn` that names the ledger, and the provenance
+    column is withheld rather than computed against an empty record.
     """
-    recorded = _attach_ledger_entries(context.root)
+    found = _attach_ledger_entries(context.root)
+    # An unreadable ledger is not an empty one. With `{}` every entry claiming the marker would
+    # be reported as recorded nowhere — a red row with a remedy telling the owner to remove the
+    # entries Keelline installed — so the provenance column is not computed at all and the file
+    # is named instead.
+    recorded = {} if found is None else found
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
@@ -531,11 +614,18 @@ def _hook_entries(context: Context) -> Check:
                 foreign += 1
                 continue
             claimed += 1
-            if entry_id not in recorded:
+            if found is not None and entry_id not in recorded:
                 unrecorded.append(f"{label} entry {position} of {len(commands)}")
     parts = [f"{claimed} keelline entr(ies), {foreign} foreign"]
     status = OK
     remedy = ""
+    if found is None:
+        status = WARN
+        parts.append(
+            f"{LEDGER} is there and cannot be read as a ledger, so which of those entries "
+            f"`keelline attach` installed could not be established"
+        )
+        remedy = f"check that {LEDGER} is readable and is the file your last attach wrote"
     if unrecorded:
         status = RED
         parts.append(
@@ -839,7 +929,21 @@ def _diagnostics(context: Context) -> Check:
             "",
         )
     base = Path(data) / DIRECTORY
-    sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    try:
+        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    except OSError as exc:
+        # The harness data root is somebody else's directory on somebody else's filesystem, and
+        # an unreadable one is a fact about this machine rather than a fault in the
+        # installation. Unguarded it reached `_guarded`, which renders any exception red — so a
+        # directory this process happens not to be able to list produced `diagnostics: red` and
+        # exit 1 on an installation with nothing wrong with it.
+        return Check(
+            "diagnostics",
+            WARN,
+            f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
+            f"neither the session count nor the failure count below can be given",
+            DIAGNOSTICS_REMEDY,
+        )
     log = base / DIAGNOSTICS
     if not log.is_file():
         return Check(
@@ -922,9 +1026,24 @@ def _guarded(name: str, check: Callable[[Context], Check], context: Context) -> 
     `Exception` and not `BaseException`: what was asked for is that a check which *raises*
     becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
     one `Ctrl-C` into fifteen red rows and a report, instead of stopping.
+
+    **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
+    `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it too, so a
+    red row is a statement that this installation is wrong. A file that could not be opened is
+    not that: the directories these checks read live on the machine, not in the installation —
+    an unreadable `${CLAUDE_PLUGIN_DATA}` was measured producing `diagnostics: red` and exit 1
+    with nothing wrong anywhere. Every other exception is a defect in this module and keeps its
+    red, because that is what the row is for.
     """
     try:
         return check(context)
+    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            WARN,
+            f"this check could not read something it needed: {type(exc).__name__}",
+            "check that the files and directories this check reads are readable here",
+        )
     except Exception as exc:  # a broken check must cost one row, never the whole report
         return Check(
             name,

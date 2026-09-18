@@ -635,8 +635,22 @@ def test_trust_remote_rebinds_and_keeps_the_original_first_attach_date(tmp_path:
 def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path) -> None:
     # An empty `remote` in the overlay's record would read as bound to nothing, and
     # `memory.store._bound` would then refuse every session with advice to run this command.
-    root, store, machine = _attachable(tmp_path)
+    #
+    # **The snapshot is the half that was missing**, and it is the same snapshot
+    # `test_a_mismatched_remote_refuses_and_writes_nothing` takes for the same reason. Asserting
+    # only that `Refusal` is raised passed while the refusal lived in `_record_binding` — after
+    # the ignore region, the `.codex/rules/` copies, the settings merge and the ledger. So a
+    # checkout with no `origin` exited 2 having written four artifacts, and `doctor._attached`,
+    # which keys on the ledger existing, then reported it attached. A refusal that leaves a
+    # repository looking attached is not a refusal, and only a snapshot says so.
+    #
+    # Mutation: move the `if binding.remote is None` guard in `attach` back below
+    # `_write_ignore_region`, and this reddens on the snapshot while `pytest.raises` stays green.
+    root, store, machine = _attachable(tmp_path, codex="# a standing rule\n")
     subprocess.run(["git", "remote", "remove", "origin"], cwd=root, capture_output=True)
+    before = _snapshot(root)
+    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
     with pytest.raises(Refusal):
         attach(
             root,
@@ -647,6 +661,33 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
+    _assert_snapshot_unchanged(root, before)
+
+
+def test_the_no_origin_refusal_is_reached_with_a_diff_that_would_have_written(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the case above: a refusal that writes nothing proves nothing if the
+    # run had nothing to write. The same overlay, with an allow rule, a hook entry and a Codex
+    # rule file, attaches and writes all of them when `origin` is there — so the snapshot above
+    # is measuring a run that would otherwise have left four artifacts behind.
+    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
+    root, store, machine = _attachable(
+        tmp_path, allow=(RULE,), hooks=hooks, codex="# a standing rule\n"
+    )
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=True,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert attached.settings_written
+    assert attached.rules_written == (".codex/rules/common.rules",)
+    assert (root / LEDGER).is_file()
+    assert (root / ".gitignore").is_file()
 
 
 def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(

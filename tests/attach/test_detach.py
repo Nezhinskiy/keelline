@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from keelline.attach.api import LEDGER, detach
-from keelline.errors import Failure
+from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
 from tests.attach.test_links import _attach, _bound, _config
@@ -202,3 +202,94 @@ def test_detach_removes_a_rule_file_the_overlay_has_since_deleted(tmp_path: Path
     assert landed.is_file(), "the copy the first attach made is still here"
     _detach(root, machine, home)
     assert not landed.exists()
+
+
+def _rewrite_ledger(root: Path, **fields: object) -> None:
+    """The ledger a clone committed: `attach`'s own, with fields replaced.
+
+    Built from a real one rather than by hand so that the case differs from a working detach in
+    exactly the field under test. `.gitignore` does not untrack a file a clone committed, which
+    is what makes this a state a fresh checkout can be in rather than a contrivance.
+    """
+    document = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    document.update(fields)
+    (root / LEDGER).write_text(json.dumps(document), encoding="utf-8")
+
+
+def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
+    tmp_path: Path,
+) -> None:
+    # The ledger is a record, not an authority. `fsops.remove_within` contains the removal to
+    # the root — and `.github/workflows/`, `.pre-commit-config.yaml` and every source file are
+    # inside it, so containment is not the guard that matters. The guard is that `attach` only
+    # ever writes `.codex/rules/<file>`, so anything else in `rules` is a repository asking for
+    # a deletion no attach could have earned.
+    #
+    # Mutation: `mutations.toml`'s "detach deletes whatever the ledger names" — make
+    # `_rule_is_writable` answer True unconditionally and the workflow file goes.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    workflow = root / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("on: push\n", encoding="utf-8")
+    _rewrite_ledger(root, rules=[".github/workflows/ci.yml", ".codex/rules/common.rules"])
+    before = _snapshot(root)
+    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
+    with pytest.raises(Refusal):
+        _detach(root, machine, home)
+    _assert_snapshot_unchanged(root, before)
+    assert workflow.is_file()
+
+
+def test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules(
+    tmp_path: Path,
+) -> None:
+    # The measured widening, and the reason this refusal is not a nicety. `_withdraw_settings`
+    # assigns `raw["permissions"] = permissions` and *then* pops every string in
+    # `settings_keys`, so a committed `settings_keys = ["permissions"]` took the owner's whole
+    # permissions block out — deny rules included. A repository cannot be allowed to remove a
+    # deny rule by committing a JSON file, whatever it calls that file.
+    #
+    # Mutation: the same entry as above, on the `settings_keys` half — let `_checked` accept a
+    # key other than `autoMemoryDirectory` and the deny rule below is gone.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / SETTINGS).write_text(
+        json.dumps({"permissions": {"allow": ["Bash(ls:*)"], "deny": ["Bash(curl:*)"]}}),
+        encoding="utf-8",
+    )
+    _rewrite_ledger(root, settings_keys=["permissions"])
+    with pytest.raises(Refusal):
+        _detach(root, machine, home)
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document["permissions"]["deny"] == ["Bash(curl:*)"]
+    assert document["permissions"]["allow"] == ["Bash(ls:*)"]
+
+
+def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) -> None:
+    # The vacuity guard for both refusals above: a validator that refused everything would pass
+    # them and break the command. A ledger holding exactly what `attach` wrote — one
+    # `.codex/rules/` file and the one fallback key — detaches, and both are withdrawn.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    harness_memory_path(root, home).mkdir(parents=True)
+    _attach(root, store, machine, home)
+    from keelline.attach.api import ledger as read_ledger
+
+    recorded = read_ledger(root)
+    assert recorded.rules == (".codex/rules/common.rules",)
+    assert recorded.settings_keys == ("autoMemoryDirectory",)
+    _detach(root, machine, home)
+    assert not (root / ".codex" / "rules" / "common.rules").exists()
+    assert not (root / SETTINGS).exists()

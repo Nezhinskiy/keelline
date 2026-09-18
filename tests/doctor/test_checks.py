@@ -22,12 +22,13 @@ import pytest
 
 import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
-from keelline.config.loader import CONFIG_FILE
+from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
 from keelline.doctor.api import SETTINGS_FILES, Check, run_checks
 from keelline.doctor.checks import plugin_root
 from keelline.hooks.sink import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
-from keelline.memory.api import PROJECT_RECORD, PROJECTS
+from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
+from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, Completed
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -685,16 +686,86 @@ def test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok(tmp_path: 
     assert "real directory" in check.detail
 
 
-def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
-    # The vacuity guard for the test above. The same fixture, with the shape §6.3 asks for.
-    root = _attached(tmp_path)
-    home = tmp_path / "home"
+def _harness(tmp_path: Path, root: Path) -> Path:
+    """Where `~/.claude/projects/<slug>/memory` is for this root, with its parent made."""
     slug = str(root.resolve()).replace("/", "-").replace(".", "-")
-    harness = home / ".claude" / "projects" / slug / "memory"
+    harness = tmp_path / "home" / ".claude" / "projects" / slug / "memory"
     harness.parent.mkdir(parents=True)
+    return harness
+
+
+def test_a_harness_link_pointing_at_the_store_is_green(tmp_path: Path) -> None:
+    # The vacuity guard for the test above, and for the three below it. The same fixture, with
+    # the shape §6.3 asks for: a symlink whose target really is the store this checkout
+    # resolves, which in overlay mode is the link tree at `paths.memory`.
+    #
+    # This assertion used to be the *only* one on this row's green path, and the check never
+    # compared the link's target — so it passed for a symlink to anything at all and the three
+    # cases below were green with it. It is kept because a fix that reddened the correct shape
+    # would be worse than the defect.
+    root = _attached(tmp_path)
+    harness = _harness(tmp_path, root)
     harness.symlink_to(root / "docs" / "memory")
-    check = _by_name(_checks(tmp_path, root, home=home, machine=_machine(tmp_path)), "attached")
+    check = _by_name(
+        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
+    )
     assert check.status == "ok"
+    assert "a link to the store" in check.detail
+
+
+def test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green(tmp_path: Path) -> None:
+    # The state the row used to print "the harness memory path is a link to the store" for, in
+    # green, while the harness's native reader was reading somebody else's notes. This is the
+    # one channel §6.3 uses to reach the model, so a false sentence about where that memory
+    # comes from is the most expensive thing this check could say.
+    #
+    # Mutation: `mutations.toml`'s "doctor stops asking what the harness memory path points at".
+    root = _attached(tmp_path)
+    elsewhere = tmp_path / "somebody-elses-notes"
+    elsewhere.mkdir()
+    _harness(tmp_path, root).symlink_to(elsewhere)
+    check = _by_name(
+        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
+    )
+    assert check.status == "red"
+    assert "a link to the store" not in check.detail
+    assert check.remedy
+
+
+def test_a_dangling_harness_link_is_never_green(tmp_path: Path) -> None:
+    # The same defect's quieter half: the harness reads nothing through a link to a directory
+    # that is not there, which is §12's "looks attached and behaves like nothing" one shape
+    # over from the real directory the row above it already reddens.
+    root = _attached(tmp_path)
+    _harness(tmp_path, root).symlink_to(tmp_path / "never-existed")
+    check = _by_name(
+        _checks(tmp_path, root, home=tmp_path / "home", machine=_machine(tmp_path)), "attached"
+    )
+    assert check.status == "red"
+    assert "dangling" in check.detail
+
+
+def test_an_absent_harness_path_is_green_only_while_the_trust_record_asks_for_that(
+    tmp_path: Path,
+) -> None:
+    # The row's own docstring is right that absent is not a fault by itself: the link is gated
+    # on the same trust record every other channel is, so an unapproved store correctly has
+    # none and reddening that would redden a correct fresh install. But the check has to *ask*
+    # rather than assume — an approved store with no link is an attach that did not finish, and
+    # the harness sees no memory at all. Both arms of `harness_link_needed`, one test.
+    root = _attached(tmp_path)
+    machine = _machine(tmp_path)
+    before = _by_name(_checks(tmp_path, root, machine=machine), "attached")
+    assert before.status == "ok"
+    assert "trust record" in before.detail
+
+    config = load(root, machine=machine)
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+    after = _by_name(_checks(tmp_path, root, machine=machine), "attached")
+    assert after.status == "warn"
+    assert after.remedy
 
 
 def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path: Path) -> None:
@@ -825,3 +896,96 @@ def test_a_project_declaring_another_keelline_version_is_named_without_quoting_i
     assert check.status == "warn"
     assert keelline.__version__ in check.detail
     assert "9.9.9-PROJECT" not in check.detail
+
+
+def test_a_committed_attach_ledger_cannot_force_a_red_row(tmp_path: Path) -> None:
+    # `.gitignore` does not untrack a file a clone committed, so `.keelline/local/attach.json`
+    # is a path a repository can put whatever it likes at. `ledger()` raises on it, and that
+    # exception used to reach `_guarded` — which renders any exception red — so a repository
+    # could force `hook-entries: red`, exit 1, and the remedy "report this, with the command you
+    # ran", on an installation with nothing wrong with it. It also blinded the one check whose
+    # docstring insists "a file this walk could not read is `blind`, never silently absent".
+    #
+    # `warn` and named, which is what the row owes: the provenance column is withheld rather
+    # than computed against an empty record, because computing it would report every entry
+    # `attach` installed as one it did not.
+    #
+    # Mutation: `mutations.toml`'s "doctor reports an unreadable attach ledger as an empty one".
+    root = _attached(tmp_path)
+    (root / LEDGER).write_text("this is not json", encoding="utf-8")
+    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
+    check = _by_name(checks, "hook-entries")
+    assert check.status == "warn"
+    assert LEDGER in check.detail
+    assert "could not run" not in check.detail
+    # The reason the status matters rather than only the sentence: `red` is what gates the exit
+    # code, and wave 5's `assess` is planned to gate on it too.
+    assert not any(row.status == "red" for row in checks), [
+        (row.name, row.detail) for row in checks if row.status == "red"
+    ]
+
+
+def test_a_readable_ledger_still_tells_a_recorded_entry_from_an_unrecorded_one(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the case above: withholding the provenance column whenever the
+    # ledger cannot be read must not become withholding it always. The fixture's one entry is
+    # recorded, so the row is green and says so; the unrecorded case is
+    # `test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name` above.
+    root = _attached(tmp_path)
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "hook-entries")
+    assert check.status == "ok"
+    assert "all accounted for" in check.detail
+
+
+def test_a_harness_data_root_this_process_cannot_read_is_a_warning(tmp_path: Path) -> None:
+    # `${CLAUDE_PLUGIN_DATA}` names a directory on this machine, and one this process happens
+    # not to be able to list is a fact about the machine rather than a fault in the
+    # installation. Unguarded, `iterdir()` raised straight into `_guarded` and produced
+    # `diagnostics: red` and exit 1 with nothing wrong anywhere.
+    #
+    # Mutation: `mutations.toml`'s "doctor renders an unreadable harness data root as a red row".
+    root = _attached(tmp_path)
+    data = tmp_path / "data"
+    markers = data / DIRECTORY / MARKERS
+    markers.mkdir(parents=True)
+    os.chmod(markers, 0o000)
+    try:
+        checks = _checks(
+            tmp_path,
+            root,
+            machine=_machine(tmp_path),
+            env=_env(tmp_path, CLAUDE_PLUGIN_DATA=str(data)),
+        )
+    finally:
+        os.chmod(markers, 0o755)
+    check = _by_name(checks, "diagnostics")
+    assert check.status == "warn"
+    assert not any(row.status == "red" for row in checks)
+    # The row's own sentence and not `_guarded`'s, which is what makes this case about this
+    # guard. `_guarded` renders an `OSError` as a warning too — that is the floor under every
+    # check — so without this the two guards are indistinguishable and breaking the near one
+    # is invisible. A reader is told what could not be listed, not that something could not be.
+    assert "session markers" in check.detail
+
+
+def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red(
+    tmp_path: Path,
+) -> None:
+    # The split `_guarded` makes, asserted directly, because it is what decides the exit code
+    # for every row at once. An `OSError` is the machine; anything else is a defect in this
+    # module and keeps the red the row exists for.
+    #
+    # Mutation: `mutations.toml`'s "doctor renders an unreadable file as a broken check".
+    context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
+
+    def cannot_read(_: checks.Context) -> Check:
+        raise PermissionError(13, "Permission denied")
+
+    def is_broken(_: checks.Context) -> Check:
+        raise ValueError("this check has a bug in it")
+
+    warned = checks._guarded("files", cannot_read, context)
+    assert warned.status == "warn"
+    assert "PermissionError" in warned.detail
+    assert checks._guarded("files", is_broken, context).status == "red"

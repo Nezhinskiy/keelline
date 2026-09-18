@@ -398,7 +398,29 @@ def attach_main(
     return Links(created, revoked)
 
 
-def detach_main(root: Path, config: Config, *, home: Path | None = None) -> Links:
+def _detach_source(config: Config, machine: Path | None, name: str) -> Path | None:
+    """The one directory a link at `name` must point at to be this module's own, or `None`.
+
+    `attach_main`'s own answer, read back: the index links to `store_path / INDEX_NAME` and a
+    group links to `overlay_group_target(...)`, both inside `permitted_roots`. Deriving the
+    expected target from the same two rules is what makes `detach_main` narrow — and it is also
+    the whole of the mode check. Outside overlay mode, and on a machine that records no overlay
+    root, there is no such rule, so there is no name in the tree this function may claim and
+    `None` is the honest answer rather than a separate gate that could disagree with this one.
+    """
+    if config.memory.mode != OVERLAY_MODE:
+        return None
+    overlay = overlay_root(machine)
+    if overlay is None:
+        return None
+    if name == INDEX_NAME:
+        return permitted_roots(overlay, config.project.name)[1] / INDEX_NAME
+    return overlay_group_target(overlay, config.project.name, name)
+
+
+def detach_main(
+    root: Path, config: Config, *, machine: Path | None = None, home: Path | None = None
+) -> Links:
     """Withdraw the link tree a checkout holds, and the harness link with it (§6.3).
 
     The mirror of `attach_main`, and here for the same reason: `_unlink` is deliberately
@@ -407,12 +429,27 @@ def detach_main(root: Path, config: Config, *, home: Path | None = None) -> Link
     withdrawing a link is not licence to delete a directory. A second copy of that rule in the
     attach area is the duplication this module's own history argues against.
 
+    **The loop applies that rule and not half of it.** It used to test `is_symlink()` alone and
+    remove whatever stood at a configured group name, with no comparison against
+    `overlay_group_target(...)` — so an owner who added a group and pointed `docs/memory/scratch`
+    at a directory of their own lost that link, reported under `revoked`, on a command that
+    promises to remove exactly what `attach` added. `attach_main` two functions above has always
+    compared; the asymmetry was inside one module, one screen apart, under a docstring that
+    states the rule it was not applying.
+
+    The comparison is between *resolved* paths, because the two functions that build these trees
+    spell the same directory differently: `attach_main` links `overlay_group_target`'s answer as
+    written, and `link` links `source.resolve()`. A dangling link still matches, which is right
+    — `_unlink` says so for the harness link, and what the withdrawal is about is the name, not
+    the bytes behind it.
+
     The harness link goes first, because it is the one hop that leaves this lane's gate, and it
     is compared against the store directory rather than against what it happens to point at.
 
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
     longer resolve — that is half of what detaching means — so the tree is found where the
-    configuration says it is and each name is removed only if it is one of ours.
+    configuration says it is and each name is removed only if it is one of ours. `machine` is
+    what names the overlay (DP3), for the same reason `attach_main` takes it.
     """
     base = contained(root, config.paths.memory, allow_final_symlink=True)
     revoked: list[Path] = []
@@ -422,6 +459,18 @@ def detach_main(root: Path, config: Config, *, home: Path | None = None) -> Link
     for name in linked_names(config):
         target = contained(base, name, allow_final_symlink=True)
         if not target.is_symlink():
+            continue
+        source = _detach_source(config, machine, name)
+        if source is None:
+            continue
+        # Resolved against the link's own directory when it is relative: `Path.resolve()` on a
+        # relative `readlink()` would answer against the process's working directory, which is
+        # nothing to do with where the link stands. Nothing this module writes is relative; a
+        # link somebody else wrote may be, and it is exactly the case that must not match.
+        pointed = target.readlink()
+        if not pointed.is_absolute():
+            pointed = target.parent / pointed
+        if pointed.resolve() != source.resolve():
             continue
         # Through the `O_NOFOLLOW` walk, so a component that became a symlink after
         # `contained()` passed cannot redirect the removal out of the checkout.

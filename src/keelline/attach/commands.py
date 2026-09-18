@@ -117,10 +117,19 @@ def run_detach(args: argparse.Namespace) -> Result:
 
     removed = detach(Path(args.root).resolve(), machine=_machine_argument(args.machine), home=None)
     data = {
-        "allow_removed": list(removed.allow_removed),
-        "entries_removed": list(removed.entries_removed),
-        "rules_removed": list(removed.rules_removed),
-        "settings_keys_removed": list(removed.settings_keys_removed),
+        # Counts and not the strings, which is the same ruling `permissions.check` makes about
+        # `already_present` and this module makes about `project.name` two functions up — and it
+        # has to be, or the three are inconsistent again. Every one of these four lists is read
+        # out of `.keelline/local/attach.json` or out of `.claude/settings.local.json`, and both
+        # are paths a clone can commit: `.gitignore` does not untrack a committed file. So they
+        # are repository-authored, `--json` is what `skills/attach/SKILL.md` relays to the user,
+        # and a marker id **bounded by a grammar** was already refused here on exactly this
+        # reasoning. An allow rule and a settings key are less bounded than that, not more.
+        "allow_removed": len(removed.allow_removed),
+        "entries_removed": len(removed.entries_removed),
+        "rules_removed": len(removed.rules_removed),
+        "settings_keys_removed": len(removed.settings_keys_removed),
+        # A boolean this lane computed, so it prints.
         "ignore_region_removed": removed.ignore_region_removed,
         # A count, for the reason `run_attach` gives above.
         "links_revoked": len(removed.links.revoked),

@@ -604,8 +604,9 @@ configuration and no hook is installed — the machine that cloned an overlay so
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
 Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
-recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, or a
-`--machine` outside an interactive shell.
+recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
+with no `origin` remote, or a `--machine` outside an interactive shell. Every one of those
+refusals happens before the first write, so a refused attach leaves the repository as it was.
 
 ---
 
@@ -613,10 +614,16 @@ recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes
 
 Removes exactly what `attach` added, and leaves the binding alone.
 
-It reads `.keelline/local/attach.json` and acts on that and on nothing else. A repository with no
-ledger fails (`1`) naming the missing file rather than guessing which allow rules were Keelline's
-from their content — that guess is the reason the ledger exists, and getting it wrong removes a
-rule you wrote by hand.
+It reads `.keelline/local/attach.json` and acts on that and on nothing else *that it is willing
+to believe*. A repository with no ledger fails (`1`) naming the missing file rather than guessing
+which allow rules were Keelline's from their content — that guess is the reason the ledger
+exists, and getting it wrong removes a rule you wrote by hand. And the ledger is not an
+authority: `.gitignore` does not untrack a file a clone committed, so this path can arrive in a
+fresh checkout with contents nobody on your machine wrote. Every field is held to what `attach`
+could have put there — `rules` to a single file under `.codex/rules/`, `settings_keys` to
+`autoMemoryDirectory` — and a ledger naming anything else is refused (`2`) with nothing removed,
+rather than obeyed. A ledger claiming `settings_keys = ["permissions"]` would otherwise have
+deleted your whole `permissions` block, deny rules included.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# keelline:…` there (a group that
@@ -630,8 +637,9 @@ byte-for-byte as it was.
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a
 question you have already answered.
 
-Exits `0`; `1` when there is no ledger to read; `2` on a `--machine` outside an interactive
-shell, for the reason `keelline attach` gives above.
+Exits `0`; `1` when there is no ledger to read; `2` on a ledger naming files or settings keys
+`attach` could not have written, or on a `--machine` outside an interactive shell, for the
+reason `keelline attach` gives above.
 
 ---
 

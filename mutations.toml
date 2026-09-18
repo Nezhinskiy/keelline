@@ -1903,7 +1903,7 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_i
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/keelline/doctor/checks.py"
-before = "            if entry_id not in recorded:"
+before = "            if found is not None and entry_id not in recorded:"
 after = "            if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
@@ -2046,4 +2046,197 @@ after = '''    hooks = git / "hooks"
     if False:'''
 reddens = [
   "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# --- wave 3 install path: the review's eight attach/doctor findings ----------------------
+#
+# `attach` owes four refusals before its first write, and the fourth was not where the other
+# three are: it lived in `_record_binding`, which runs after the ignore region, the Codex rule
+# files, the settings merge and the ledger. A checkout with no `origin` therefore exited 2
+# having written all four, and `doctor._attached` — which keys on the ledger existing — then
+# reported the repository attached. The mutation puts the refusal back where it was.
+[[mutation]]
+name = "the no-origin refusal moves back below attach's first write"
+file = "src/keelline/attach/write.py"
+before = '''    if binding.remote is None:
+        raise Refusal(NO_ORIGIN)
+    _write_ignore_region(root)'''
+after = '''    _write_ignore_region(root)'''
+reddens = [
+  "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
+]
+
+# `.keelline/local/attach.json` is a path a clone can commit — `.gitignore` does not untrack a
+# committed file — and `detach` deletes by the strings in `rules` and pops settings keys by the
+# strings in `settings_keys`. `fsops.remove_within` contains the deletion to the root, and
+# `.github/workflows/`, `.pre-commit-config.yaml` and every source file are inside it, so
+# containment is not the guard. The guard is what `attach` could have written.
+[[mutation]]
+name = "detach deletes whatever file the ledger names"
+file = "src/keelline/attach/write.py"
+before = '''    prefix = f"{CODEX_RULES}/"
+    if not rule.startswith(prefix):
+        return False'''
+after = '''    prefix = f"{CODEX_RULES}/"
+    if True:
+        return True'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing",
+]
+
+# The measured widening, and the other half of the same guard. `_withdraw_settings` assigns
+# `raw["permissions"] = permissions` and then pops every string in `settings_keys`, so a
+# committed `settings_keys = ["permissions"]` took the owner's whole permissions block out —
+# deny rules included. A repository may not remove a deny rule by committing a JSON file.
+[[mutation]]
+name = "detach drops whatever settings key the ledger names"
+file = "src/keelline/attach/write.py"
+before = '    foreign += sum(1 for key in keys if key != FALLBACK_KEY)'
+after = '    foreign += 0'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules",
+]
+
+# §6.3's settings-file fallback is state that persists, on the one channel `memory/worktree`
+# calls "the one hop that leaves this lane's gate". A gate evaluated once at creation over such
+# state is not a gate: the key outlived the trust record that allowed it, while the ledger that
+# `detach` reads was reset to `[]` around it.
+[[mutation]]
+name = "the settings fallback outlives the gate that allowed it"
+file = "src/keelline/attach/write.py"
+before = '''    document = settings_document(local_document(root))
+    if document.get(FALLBACK_KEY) == wanted:'''
+after = '''    document = settings_document(local_document(root))
+    if wanted is None or document.get(FALLBACK_KEY) == wanted:'''
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason",
+  "tests/attach/test_links.py::test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made",
+]
+
+# And the record of it, which is the half `detach` reads. `settings_keys` was written from the
+# run's own memory rather than from the file, so a second attach reset it to `[]` while the key
+# was still in `.claude/settings.local.json` — and `detach` then left it there for good.
+[[mutation]]
+name = "the ledger records the fallback from the run rather than from the file"
+file = "src/keelline/attach/write.py"
+before = '    return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(local_document(root)) else ()'
+after = '    return ()'
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback",
+  "tests/attach/test_detach.py::test_the_two_values_attach_really_writes_are_still_acted_on",
+]
+
+# `worktree.link` is documented as a no-op for the main checkout, so applying the owning-checkout
+# entry point to whatever `--root` names and then skipping `main_checkout(root)` in the loop left
+# the owning checkout with no link tree at all when `--root` was a worktree: every session there
+# saw no memory, silently, and the command exited 0.
+[[mutation]]
+name = "attach applies the owning-checkout entry point to --root"
+file = "src/keelline/attach/write.py"
+before = '''    owner = main_checkout(root).resolve()
+    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
+after = '''    owner = main_checkout(root).resolve()
+    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
+]
+
+# The mirror, on the withdrawal side.
+[[mutation]]
+name = "detach applies the owning-checkout withdrawal to --root"
+file = "src/keelline/attach/write.py"
+before = '    revoked = list(detach_main(owner, config, machine=machine, home=home).revoked)'
+after = '    revoked = list(detach_main(root, config, machine=machine, home=home).revoked)'
+reddens = [
+  "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# `detach_main`'s own docstring: "only a symlink whose own target is this store is removed,
+# because a real directory at one of these names is unmerged work or a store the harness made,
+# and withdrawing a link is not licence to delete a directory". The loop applied the directory
+# half of that rule and not the target half, one screen below the docstring that states it and
+# two functions below an `attach_main` that has always compared.
+[[mutation]]
+name = "the main checkout's withdrawal stops checking what it removes points at"
+file = "src/keelline/memory/worktree.py"
+before = '''        if pointed.resolve() != source.resolve():
+            continue'''
+after = '''        if False:
+            continue'''
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else",
+]
+
+# The harness memory path is the one channel §6.3 uses to reach the model, and this row is the
+# only thing that reports on it. The shape was computed into `detail` and then discarded for the
+# status, and the link's target was never compared — so "the harness memory path is a link to
+# the store" was printed, in green, for a dangling link and for a link to anybody's directory.
+[[mutation]]
+name = "doctor stops asking what the harness memory path points at"
+file = "src/keelline/doctor/checks.py"
+before = '        if harness.resolve() == store.path.resolve():'
+after = '        if True:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
+  "tests/doctor/test_checks.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
+# raised, `_guarded` rendered it red, and the remedy was "report this". Reading it as an empty
+# ledger instead is the other wrong answer — every entry `attach` installed would then be
+# reported as one it did not, which is a red row with actively wrong advice.
+[[mutation]]
+name = "doctor reports an unreadable attach ledger as an empty one"
+file = "src/keelline/doctor/checks.py"
+before = '''    except (Failure, Refusal):
+        return None'''
+after = '''    except (Failure, Refusal):
+        return {}'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+]
+
+# `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it. A directory
+# this process cannot list is a fact about the machine, not about the installation.
+[[mutation]]
+name = "doctor renders an unreadable harness data root as a red row"
+file = "src/keelline/doctor/checks.py"
+before = '''    try:
+        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    except OSError as exc:'''
+after = '''    sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    if False:
+        exc = OSError()'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning",
+]
+
+# The floor under the row above, for every check at once.
+[[mutation]]
+name = "doctor renders an unreadable file as a broken check"
+file = "src/keelline/doctor/checks.py"
+before = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            WARN,'''
+after = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            RED,'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red",
+]
+
+# `permissions.check` reduces `already_present` to a count because that list "comes out of the
+# project's own `settings.local.json`, which a clone can commit". Everything `detach` reports
+# comes out of that file or out of the ledger beside it, and `skills/attach/SKILL.md` tells the
+# model to relay it. This branch removed a marker id bounded by a grammar from `doctor`'s output
+# on the same reasoning; an allow rule is less bounded than that, not more.
+[[mutation]]
+name = "detach prints the ledger's own strings"
+file = "src/keelline/attach/commands.py"
+before = '        "allow_removed": len(removed.allow_removed),'
+after = '        "allow_removed": list(removed.allow_removed),'
+reddens = [
+  "tests/attach/test_commands.py::test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json",
 ]
