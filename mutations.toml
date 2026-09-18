@@ -2748,3 +2748,22 @@ file = "src/keelline/setup/run.py"
 before = "    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))"
 after = "    deny_written = _write_user_settings(home, deny_rules, personal)"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
+
+# A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
+# as it can, so with `~/.claude` already created by Claude Code it links the *file*, and the first
+# draft's arm — comparing the link's basename to its target's, trivially true for a per-file link
+# — printed `--home <dotfiles>/claude`. Under that command `setup` writes
+# `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
+# untouched: the same "a file no reader reads" defect as the `--machine` default, arriving through
+# the advice instead. Without this check the guard prints a command for a layout no `--home` can
+# express.
+[[mutation]]
+name = "the symlink remedy prints a --home that writes somewhere else"
+file = "src/keelline/setup/run.py"
+before = """    if leads_to.parts[-len(wanted) :] != wanted:
+        return None"""
+after = """    if False:
+        return None"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command",
+]

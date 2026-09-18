@@ -60,8 +60,10 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
 
     **`root` is checked to be an overlay before anything is planned, let alone written.** It was
     checked nowhere: in a directory holding a `README.md` and a `src/main.py`, `overlay upgrade
-    --root .` created fourteen files — both manifests, `hooks/hooks.json`, `common/**`,
-    `.gitignore` and `.github/workflows/scan.yml` — printed `14 to create` and exited 0. Writing
+    --root .` created fourteen of the overlay's fifteen files — both manifests,
+    `hooks/hooks.json`, `common/**`, `.gitignore` and `.github/workflows/scan.yml`; the
+    fifteenth, `README.md`, was skipped only because that directory had one — printed
+    `14 to create` and exited 0. Writing
     a workflow file into a repository the owner may then commit is the concrete harm, and
     `--root` defaulting to `.` is what made it a plausible typo rather than an exotic one. The
     probe is `identity.require_overlay`, the same one `setup --overlay` records a root through:

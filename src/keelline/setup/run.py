@@ -66,10 +66,12 @@ installs, and for `create:` above `gh repo create` itself. Two controls:
   and nothing else, so a parent directory and a sibling worktree both passed — and this
   project's own `worktree-by-default` preset rule makes `--root` a worktree, which is exactly
   the shape that passed. It now also refuses a candidate that *holds* the project root, and a
-  candidate whose `git rev-parse --git-common-dir` is the project root's: a clone cannot stage a
-  tree outside its own repository, and every checkout of that repository is inside it. When
-  `git` cannot answer for the project root — it is not a repository, or `git` is not installed —
-  only the path arms stand, and that is stated rather than assumed.
+  candidate whose `git rev-parse --git-common-dir` is the project root's: what a repository
+  ships reaches its own checkouts and nowhere else, so refusing every checkout of it removes the
+  tree a clone can stage. It is not a claim that the same bytes cannot be somewhere else on the
+  machine — a separate clone of the same remote passes — only that the owner put them there.
+  When `git` cannot answer for the project root — it is not a repository, or `git` is not
+  installed — only the path arms stand, and that is stated rather than assumed.
 
 For `create:`, the destination is `home/<name>` and is knowable from the arguments
 (`overlay.api.target_root`), so it is checked before the call rather than after it: the first
@@ -80,14 +82,18 @@ report mentioned. `--yes` gets the one real control the ruling does give it: `se
 before `gh repo create` runs, and creating a repository on GitHub is the one irreversible,
 outward-facing act this command performs.
 
-**A symlinked `~/.claude` is a refusal with a remedy, not an internal error.** `home` is the
-machine owner's own directory and a home managed by stow, chezmoi or a synced directory is the
+**A symlinked settings file is a refusal with a remedy that works, not an internal error.**
+`home` is the machine owner's own directory and a home managed by stow, chezmoi or a synced
+directory is the
 most common non-default layout there is, but the settings file still goes through the
 `O_NOFOLLOW` walk — so the containment rule's two stages both apply here: `config.paths
 .contained` gives the user-facing refusal above the first write, and `fsops.write_within` is the
 floor under it for a component that becomes a symlink afterwards. Before, only the second stage
 existed, and it surfaced as `keelline: internal error: UnsafePath` after the machine file had
-already been written.
+already been written. What the refusal prints is held to the same standard as the refusal
+itself: `_home_that_leads_there` offers a `--home` only when that `--home` really writes the file
+the link leads to, and says plainly that no such value exists when none does — a remedy that
+exits 0 into a file no reader reads is the defect one door over.
 """
 
 from __future__ import annotations
@@ -327,6 +333,32 @@ def _settings_symlink(home: Path) -> Path | None:
     return None
 
 
+def _home_that_leads_there(home: Path, link: Path) -> Path | None:
+    """The `--home` whose own walk writes the file this link leads to, or `None` for a layout no
+    `--home` can express.
+
+    One computation for both shapes of the same accident, because the first draft had one arm
+    written for the directory shape and it misfired on the other. `stow` folds a package as far
+    as it can: with `~/.claude` already created by Claude Code it links the *file*, so the link
+    is `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. The old remedy compared the
+    link's basename to its target's, which is trivially true for a per-file link, and printed
+    `--home <dotfiles>/claude` — under which this command writes
+    `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
+    untouched and every reader reading nothing. That is finding 14's shape arriving through the
+    remedy instead of through the default.
+
+    What `--home H` actually writes is `H/<USER_SETTINGS>` and nothing else, so a remedy exists
+    exactly when what the link leads to *is* a `<USER_SETTINGS>` inside some directory — and
+    that directory is the answer. Whatever of `USER_SETTINGS` lies below the link still follows
+    it, which is what puts the directory and the file shapes into one expression.
+    """
+    wanted = Path(USER_SETTINGS).parts
+    leads_to = link.resolve() / (home / USER_SETTINGS).relative_to(link)
+    if leads_to.parts[-len(wanted) :] != wanted:
+        return None
+    return leads_to.parents[len(wanted) - 1]
+
+
 def _check_settings_path(home: Path) -> None:
     """Refuse a `~/.claude` this command cannot write through — above the first write.
 
@@ -345,15 +377,27 @@ def _check_settings_path(home: Path) -> None:
         if link is None:
             raise
         real = link.resolve()
-        remedy = (
-            f"run `keelline setup --home {real.parent}`, which writes where the link leads"
-            if real.name == link.name
-            else f"point --home at a directory whose {link.name} is a real directory"
-        )
+        instead = _home_that_leads_there(home, link)
+        kind = "file" if link == home / USER_SETTINGS else "directory"
+        if instead is not None:
+            remedy = (
+                f"run `keelline setup --home {instead}`, which writes the file this link leads "
+                f"to, or replace the link with a real {kind}"
+            )
+        else:
+            # An honest "this cannot be expressed" beats a command that writes somewhere else
+            # and exits 0. The two ways out are named because both are ordinary dotfiles work:
+            # `stow` can package the directory as `.claude`, and `stow --adopt` (and its
+            # equivalents) take a real file back afterwards.
+            remedy = (
+                f"no --home can name it: this command writes <home>/{USER_SETTINGS} and nothing "
+                f"else, and {real} is not a {USER_SETTINGS} inside any directory. Either point "
+                f"the link at a path ending in {USER_SETTINGS}, or take the link away, let this "
+                f"command write a real {kind}, and have your dotfiles manager adopt it"
+            )
         raise Refusal(
             f"{link} is a symlink to {real}; {_SYMLINKED_SETTINGS}. A dotfiles manager or a "
-            f"synced home is the usual reason — {remedy}, or replace the link with a real "
-            f"directory"
+            f"synced home is the usual reason — {remedy}"
         ) from exc
 
 
@@ -386,9 +430,11 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
 
     **What it does not cover, stated rather than implied.** When `git` cannot answer for the
     project root — `--root` is not a repository, or `git` is not installed — the `git` arm is
-    silent and only the paths stand. And the whole check bounds a *clone*: a tree outside every
-    checkout of that repository is one the owner put there, which is the case this command
-    exists to record.
+    silent and only the paths stand. And what the whole check bounds is a repository *shipping* a
+    tree: committed contents reach that repository's own checkouts and nowhere else, so refusing
+    all of them removes the case a clone can stage. It is not a claim that no other directory on
+    the machine can hold the same bytes — a separate `git clone` of the same remote has its own
+    common directory and passes — only that the owner, and not the clone, put it there.
     """
     resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()

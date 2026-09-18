@@ -38,10 +38,15 @@ to prevent stops happening on Codex, and it re-stamps what it rewrites into
 `.keelline/manifest.json` — without which both manifests read as hand-edited from that moment on,
 and no release could refresh the file carrying the version-compatibility declaration.
 
-**A `~/.claude` that is a symlink is a refusal with a remedy.** A home managed by stow, chezmoi or
-a synced directory aborted `keelline setup` with `internal error: UnsafePath`, after the machine
-file had been written. The refusal now names the link, where it leads, and the `--home` that
-writes where it leads.
+**A symlink between your home directory and `.claude/settings.json` is a refusal with a remedy
+that works.** A home managed by stow, chezmoi or a synced directory aborted `keelline setup` with
+`internal error: UnsafePath`, after the machine file had been written. The refusal now names the
+link, where it leads, and a `--home` that really writes the file the link leads to — and where no
+`--home` can express the layout, it says so rather than printing a command. `stow` linking the
+file rather than the directory (`~/.claude/settings.json -> <dotfiles>/claude/settings.json`) is
+that case, since `--home H` writes `H/.claude/settings.json` and nothing else: point the link at
+a path ending in `.claude/settings.json`, or let `keelline setup` write a real file and have your
+dotfiles manager adopt it.
 
 **The machine configuration file is no longer flattened by the command that shares it.**
 `keelline setup` kept three tables and replaced the rest, so a `[trust]` table or a key you wrote

@@ -16,15 +16,22 @@ rather than being mangled. Silently dropping an unexpected type, or `str()`-ing 
 capability record acquires a value nobody wrote. Keys are held to the bare-key grammar for the
 same reason — quoting an unexpected key would let `[project]` hold a name nobody chose to write.
 
-**Anything `tomllib` can parse, this can emit.** That is a wider contract than the first draft's
-("two callers and both know their own types"), and a third input made it necessary: `setup`
-rewrites `~/.config/keelline/config.toml`, a file `README.md` documents the owner as writing by
-hand. The document read back off that file is not a caller's own dict — it is whatever a person
-wrote — and refusing a type merely because no caller of ours produces it wedged the command
-permanently: `[personal] scale = 1.5` or `[personal.editor] name = "nvim"` made every future
-`keelline setup` exit 2 naming a serialiser the owner has never heard of. So floats, the four
-TOML date and time types, and nested tables are emitted; what is left refused is what no TOML
-document could have held, which is a caller bug and still worth refusing.
+**Every value `tomllib` can parse, this can emit, at any depth.** That is a wider contract than
+the first draft's ("two callers and both know their own types"), and a third input made it
+necessary: `setup` rewrites `~/.config/keelline/config.toml`, a file `README.md` documents the
+owner as writing by hand. The document read back off that file is not a caller's own dict — it is
+whatever a person wrote — and refusing a type merely because no caller of ours produces it wedged
+the command permanently: `[personal] scale = 1.5` or `[personal.editor] name = "nvim"` made every
+future `keelline setup` exit 2 naming a serialiser the owner has never heard of. So floats, the
+four TOML date and time types, and tables nested to any depth are emitted, inside arrays as well
+as outside them — "at any depth" is the part the first attempt got wrong, and a table inside an
+inline table inside an array was the same permanent wedge one level further in. What is left
+refused is what no TOML document could have held, which is a caller bug and still worth refusing.
+
+**One exception, and it is about keys rather than values.** `BARE_KEY` is untouched: a key this
+cannot write bare is still refused, because quoting one here would record a name nobody chose to
+write. `setup.machine` catches that refusal and re-raises it naming the file, the key and the
+remedy, so it cannot wedge a command silently either.
 
 `dumps` takes `{table: {key: value}}`, and a dict in a value position becomes a sub-table
 header (`[personal.editor]`, after the parent's own keys, which is the order TOML requires). A
@@ -111,7 +118,7 @@ def _inline(table: dict[str, object], where: str) -> str:
     nested inside a value, so the inline spelling is the one shape that round-trips.
     """
     body = ", ".join(
-        f"{_key(key, 'key')} = {_value(value, f'{where}.{key}')}" for key, value in table.items()
+        f"{_key(key, 'key')} = {_element(value, f'{where}.{key}')}" for key, value in table.items()
     )
     return "{" + body + "}"
 

@@ -85,8 +85,9 @@ def _populate_overlay(argv: list[str], cwd: Path) -> None:
 
 
 def _seed_overlay(path: Path) -> None:
-    """Give `path` the two manifests `_validate_overlay_root` checks for, without rendering the
-    whole template — enough for a fixture to read as a real overlay's root."""
+    """Give `path` the two manifests `overlay.identity.overlay_fault` checks, named the way the
+    shipped template names them, without rendering the whole template — enough for a fixture to
+    read as a real overlay's root."""
     (path / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (path / PLUGIN_MANIFEST).write_text(json.dumps({"name": "keelline-overlay"}), encoding="utf-8")
     (path / MARKETPLACE_MANIFEST).write_text(
@@ -324,8 +325,9 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
     # `.claude-plugin/plugin.json`, no `marketplace.json` — which is exactly the shape a
     # careless `--overlay /tmp/whatever` would have.
     #
-    # Mutation: `_validate_overlay_root`'s `missing = [...]` line changed to `missing = []` →
-    # reddens (an empty directory would then be accepted as an overlay root).
+    # Mutation (`mutations.toml`, "the overlay probe stops looking for the manifests at all"):
+    # `overlay.identity.overlay_fault` stops iterating the manifests → an empty directory is
+    # accepted as an overlay root and this reddens.
     empty = tmp_path / "not-an-overlay"
     empty.mkdir()
     with pytest.raises(Refusal, match="does not carry the overlay layout"):
@@ -347,8 +349,9 @@ def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
     # shape of tree a clone can ship — so recording one there is refused regardless of how
     # convincing its layout is.
     #
-    # Mutation: the `if candidate == resolved_project or resolved_project in candidate.parents:`
-    # line changed to `if False:` → reddens (a nested overlay would then be recorded).
+    # Mutation (`mutations.toml`, "setup stops refusing an overlay root inside the project"):
+    # `_outside_the_project`'s path condition becomes `if False:` → a nested overlay is recorded
+    # and this reddens.
     project = tmp_path / "project"
     project.mkdir()
     nested = project / "vendored-overlay"
@@ -928,3 +931,86 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
     assert "octo/keelline-private was created and cloned" in message
     assert "nothing was recorded in the machine configuration" in message
     assert overlay_root(tmp_path / "config.toml") is None
+
+
+@pytest.mark.parametrize("per_file", [False, True])
+def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
+    tmp_path: Path, per_file: bool
+) -> None:
+    # The remedy is only worth printing if following it does what it says. `stow` folds a package
+    # as far as it can, so with `~/.claude` already created by Claude Code it links the *file* and
+    # not the directory — and the first draft's arm compared the link's basename to its target's,
+    # which is trivially true for a per-file link. It printed `--home <dotfiles>/claude`, under
+    # which this command writes `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the
+    # file the link leads to untouched: finding 14's shape arriving through the remedy. So the
+    # test follows the advice rather than matching a string, in both shapes of the accident.
+    #
+    # Mutation (`mutations.toml`, "the symlink remedy prints a --home that writes somewhere
+    # else"): `_home_that_leads_there` stops checking that the link leads to a
+    # `.claude/settings.json` at all → the per-file case below gets a command, and the
+    # companion test's "no --home can name it" never fires.
+    home = tmp_path / "home"
+    home.mkdir()
+    leads_to = tmp_path / "dotfiles" / ".claude" / "settings.json"
+    leads_to.parent.mkdir(parents=True)
+    if per_file:
+        leads_to.write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+        (home / ".claude").mkdir()
+        (home / USER_SETTINGS).symlink_to(leads_to)
+    else:
+        (home / ".claude").symlink_to(leads_to.parent)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    advised = str(refused.value).partition("--home ")[2].partition("`")[0]
+    assert advised, "the refusal printed no command at all"
+    setup(
+        "recommended",
+        home=Path(advised),
+        machine=tmp_path / "second.toml",
+        runner=FakeRunner(),
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    # The advised run wrote the file the link leads to, and not a second one beside it.
+    assert "permissions" in json.loads(leads_to.read_text(encoding="utf-8"))
+    assert not (Path(advised) / USER_SETTINGS).is_symlink()
+    assert (Path(advised) / USER_SETTINGS).resolve() == leads_to.resolve()
+
+
+def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command(
+    tmp_path: Path,
+) -> None:
+    # What `stow` actually produces for a package named `claude`:
+    # `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. `--home H` writes
+    # `H/.claude/settings.json` and nothing else, so no value of `H` names that target — and an
+    # honest "this layout cannot be expressed, here are the two ways out" beats a command that
+    # silently writes somewhere no reader reads.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    leads_to = tmp_path / "dotfiles" / "claude" / "settings.json"
+    leads_to.parent.mkdir(parents=True)
+    leads_to.write_text("{}\n", encoding="utf-8")
+    (home / USER_SETTINGS).symlink_to(leads_to)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    message = str(refused.value)
+    assert "no --home can name it" in message
+    assert "keelline setup --home" not in message, "a command that cannot work is worse than none"
+    assert "adopt it" in message, "the way out has to be named, not just the refusal"

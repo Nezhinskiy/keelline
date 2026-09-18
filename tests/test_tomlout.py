@@ -68,6 +68,22 @@ def test_every_value_a_toml_document_can_hold_round_trips() -> None:
     assert tomllib.loads(dumps(document)) == document
 
 
+def test_a_table_nested_inside_an_array_of_tables_round_trips_too() -> None:
+    # The first attempt at the widening stopped one level short: an inline table's own values
+    # went through `_value`, which refuses a dict, so `[[trust.rows]]` with a sub-table under it
+    # parsed fine and could never be written back — the same permanent wedge `setup` had for a
+    # float, one level further in, and in a file the owner is invited to hand-edit. "Every value
+    # `tomllib` can parse" has to mean at any depth or it means very little.
+    #
+    # Mutation: `_inline` calls `_value` instead of `_element` for its values and this reddens
+    # with the refusal. No `mutations.toml` entry, for the reason the test above gives.
+    document: dict[str, dict[str, object]] = {
+        "trust": {"rows": [{"host": "a", "opts": {"deep": True, "tags": ["x"]}}]},
+        "personal": {"editor": {"options": {"deep": {"deeper": 1}}}},
+    }
+    assert tomllib.loads(dumps(document)) == document
+
+
 def test_a_control_character_survives_the_round_trip() -> None:
     # A tab and a carriage return are legal in a TOML basic string only as escapes, and a raw
     # one is a parse error rather than a mangled value — which is the failure this would be if

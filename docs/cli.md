@@ -765,11 +765,26 @@ alone.
 
 **Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
 new or recorded overlay itself. Exits `0` on success, `2` on a refused `--overlay` (missing,
-not an overlay, reachable from the project root, or `create:` without `--yes`), and `2` on a
-`<home>/.claude` that is a symlink: the settings file is written through a walk that never
-follows one, and the refusal names the link and the `--home` that writes where it leads. Every
-one of those refusals happens before the first write. A plugin that fails to install or a
-harness that is absent is a note in the report, not a nonzero exit.
+not an overlay, reachable from the project root, or `create:` without `--yes`), and `2` when a
+symlink stands between `<home>` and the settings file: that file is written through a walk that
+never follows one. Every one of those refusals happens before the first write, **with one
+exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that
+arrived, so it runs after the repository has been created on GitHub and cloned — along with the
+machine file, the settings merge and the plugin installs. That refusal says so, and names the
+repository and where it was cloned to, because nothing else would. Everything else `create:` can
+be refused for — the missing `--yes`, a malformed spec, a name that is not one path segment, a
+destination the project root could reach — still happens before `gh` is run at all.
+
+The symlink refusal names the link, where it leads, and a `keelline setup --home …` that writes
+the file the link leads to — and where no `--home` can express the layout, it says that instead
+of printing a command. `stow` folding a package to per-file links
+(`~/.claude/settings.json -> <dotfiles>/claude/settings.json`) is that case: `--home H` writes
+`H/.claude/settings.json` and nothing else, so no `H` names that target. Point the link at a
+path ending in `.claude/settings.json`, or let this command write a real file and have your
+dotfiles manager adopt it.
+
+A plugin that fails to install or a harness that is absent is a note in the report, not a
+nonzero exit.
 
 ---
 
