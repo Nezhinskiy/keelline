@@ -16,35 +16,54 @@ ordinary case rather than the exception.
 from __future__ import annotations
 
 import json
-import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from keelline import fsops
 from keelline.config.loader import preset_defaults
 from keelline.errors import Failure, Refusal
-from keelline.overlay.layout import MARKETPLACE_MANIFEST, OVERLAY_FILES, PLUGIN_MANIFEST
-from keelline.overlay.runner import Completed, Runner
+from keelline.overlay.identity import segment
+from keelline.overlay.layout import (
+    CODEX_PLUGIN_MANIFEST,
+    MARKETPLACE_MANIFEST,
+    OVERLAY_FILES,
+    PLUGIN_MANIFEST,
+)
+from keelline.overlay.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from keelline.overlay.template import templates
-from keelline.scaffold import apply, plan
+from keelline.scaffold import Manifest, apply, digest, plan
 
 SOURCES = ("template", "local")
 TEMPLATE_REPOSITORY = "keelline-overlay-template"
 # The directory whose presence says a generated repository actually arrived — the exact probe
 # Findings → S6 used, and the one thing a repository created from this template always carries.
+# Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says why:
+# this one answers "did a tree arrive here", which is the question idempotence asks of a clone
+# `gh` gave up on half way through.
 PROBE = ".claude-plugin"
 # How long to wait before the one retry, when `gh` says the repository exists and the clone
 # brought nothing down. Findings → S6 did not reproduce that race in the one trial it ran, so
 # this is carried on the strength of the design rather than of a measurement: generation is
 # asynchronous on GitHub's side and one clean run cannot rule out a slow one.
 RETRY_WAIT_SECONDS = 10
-# One path segment, and the same grammar `scaffold.engine.SOURCE_NAME` holds a profile to. A
-# name becomes a directory, half a remote path and later a marketplace selector, so it is
-# checked once here rather than at each of those; the leading class is what keeps a value shaped
-# like an option (`-flag`) out of an option's position in an argv (§3).
-SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# The precondition `docs/cli.md` names and the command itself never did. `--template` generates
+# from a repository on the owner's own account, and the maintainer action that would publish it
+# has not shipped, so on nearly every account this source cannot work at all today. A failure
+# here that does not say so sends the owner to `gh auth status` for a repository that was never
+# there.
+UNSHIPPED_TEMPLATE = (
+    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY}, and nothing publishes that "
+    f"repository yet — the maintainer action that will has not shipped — so this source works "
+    f"only for an owner who created it by hand. `keelline overlay create --local` renders the "
+    f"same tree here and makes no network call"
+)
+# The three manifests `init_instance` names after the owner. The Codex one was left out of the
+# first draft, so the collision the suffix exists to prevent still happened on Codex: two
+# owners' overlays under one Codex configuration were one plugin fighting itself, which is the
+# exact wording `init_instance`'s own docstring gives as the rationale.
+MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
 
 
 @dataclass(frozen=True)
@@ -60,14 +79,25 @@ class Initialised:
     notes: tuple[str, ...]
 
 
-def _segment(label: str, value: str) -> str:
-    if not SEGMENT.match(value):
-        raise Refusal(
-            f"{label} {value!r} is not one path segment matching {SEGMENT.pattern}; it becomes a "
-            "directory name, half a remote path and a marketplace selector, so it is refused "
-            "rather than quoted"
-        )
-    return value
+def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
+    """Where `create(owner, name, root=root)` would put the overlay, and the folded owner.
+
+    Nothing is created and nothing is asked of the network, which is the point: `setup
+    --overlay create:<owner>/<name>` has to be able to refuse the *destination* — for lying
+    inside the project root, say — before it runs `gh repo create` on somebody's account. The
+    destination is knowable from the arguments alone, and it used to be computed only by the
+    call that had already created the repository.
+
+    Folded before it is validated, and `init_instance` folds the same way, because `SEGMENT` has
+    a lowercase leading class and a mixed-case GitHub login is ordinary. Validating the raw
+    value refused `--owner OctoCat` from this command while the other accepted it — one owner
+    string with two answers, and the refusal said "is not one path segment" about a value that
+    plainly is one. Folding is safe: GitHub logins are case-insensitive, and the folded value is
+    what reaches the slug, the remote and the manifest suffix alike.
+    """
+    account = segment("owner", owner.strip().lower())
+    segment("name", name)
+    return root / name, account
 
 
 def _populated(target: Path) -> bool:
@@ -107,14 +137,9 @@ def create(
     wait: Callable[[float], None] = time.sleep,
 ) -> Created:
     """Create `root/<name>`, from the template repository or from the shipped tree."""
-    # Folded before it is validated, and `init_instance` folds the same way, because `SEGMENT`
-    # has a lowercase leading class and a mixed-case GitHub login is ordinary. Validating the
-    # raw value here refused `--owner OctoCat` from this command while the other accepted it —
-    # one owner string with two answers, and the refusal said "is not one path segment" about a
-    # value that plainly is one. Folding is safe: GitHub logins are case-insensitive, and the
-    # folded value is what reaches the slug, the remote and the manifest suffix alike.
-    account = _segment("owner", owner.strip().lower())
-    _segment("name", name)
+    # One spelling of "where this lands and what the owner is called", shared with the caller
+    # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
+    _, account = target_root(root, owner, name)
     if source not in SOURCES:
         raise Refusal(f"source {source!r} is not one of {', '.join(SOURCES)}")
     if not root.is_dir():
@@ -131,6 +156,18 @@ def create(
     return _from_template(account, name, root=root, runner=runner, wait=wait)
 
 
+def _detail(done: Completed) -> str:
+    """What a subprocess said about itself, in the order a reader wants it.
+
+    `Completed` has carried `code` and `stderr` since this seam was written and this lane threw
+    both away: with `gh` absent from `PATH`, every call answered `Completed(127, "", "gh could
+    not be run: …")` and the failure below still said "GitHub did not confirm the repository
+    exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
+    not there. The same idiom `setup.run` uses for its notes.
+    """
+    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+
+
 def _from_template(
     owner: str, name: str, *, root: Path, runner: Runner, wait: Callable[[float], None]
 ) -> Created:
@@ -140,7 +177,7 @@ def _from_template(
         # repository already created, so the second run finds a tree and must not re-create.
         return Created(target, "template", (f"{target} already exists and was left alone",))
     slug = f"{owner}/{name}"
-    runner.run(
+    created = runner.run(
         [
             "gh",
             "repo",
@@ -155,30 +192,51 @@ def _from_template(
     )
     if _populated(target):
         return Created(target, "template", (f"created {slug} from {TEMPLATE_REPOSITORY}",))
+    if created.code in (NOT_FOUND, TIMED_OUT):
+        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state
+        # two further subprocesses and a ten-second wait can learn anything about: `gh repo
+        # view` would ask the same absent binary a second question, get the same answer, and the
+        # failure would then name GitHub for a fault that is this machine's. The global
+        # constraints make `gh` optional — so this is a reported finding that names it.
+        raise Failure(
+            f"`gh repo create {slug} …` could not be run ({_detail(created)}), so nothing was "
+            f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
+            f"overlay locally: {UNSHIPPED_TEMPLATE}"
+        )
+    if created.code != 0:
+        # `gh` ran and declined. Its own stderr is the cause — a missing template repository, an
+        # expired token, a name already taken — and it is quoted rather than replaced by a
+        # guess. The clone is still retried below only when `gh` *succeeded* and nothing
+        # arrived, which is the one shape the race can take.
+        raise Failure(
+            f"`gh repo create {slug} …` exited {created.code} ({_detail(created)}), so no tree "
+            f"arrived at {target}. {UNSHIPPED_TEMPLATE}"
+        )
 
-    # Nothing arrived. Which of the two failures it was decides whether waiting can help, so ask
-    # before retrying: `gh repo view` printing the name back is the evidence the repository
-    # exists and the clone raced its generation.
+    # `gh` reported success and nothing arrived. Which of the two failures it was decides whether
+    # waiting can help, so ask before retrying: `gh repo view` printing the name back is the
+    # evidence the repository exists and the clone raced its generation.
     view = runner.run(["gh", "repo", "view", slug, "--json", "name", "--jq", ".name"], root)
     raced = view.code == 0 and bool(view.stdout.strip())
     if raced:
         wait(RETRY_WAIT_SECONDS)
     # The clone is retried either way, and that is deliberate: `gh repo view` answering nothing
-    # is not proof of absence — a rate limit, an expired token or a `gh` that is not installed
-    # answers the same — and one fast failure is cheaper than refusing to try.
-    runner.run(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
+    # is not proof of absence — a rate limit or an expired token answers the same — and one fast
+    # failure is cheaper than refusing to try.
+    cloned = runner.run(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
     if _populated(target):
         return Created(target, "template", (f"cloned {slug} on the second attempt",))
     raise Failure(
-        f"{slug} produced no tree at {target}: `gh repo create --clone` left nothing, and the "
+        f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
+        f"left nothing, and the "
         + ("retried" if raced else "one further")
-        + " `git clone` brought nothing down either. "
+        + f" `git clone` exited {cloned.code} ({_detail(cloned)}). "
         + (
             "GitHub reports the repository exists, so generation may still be running — wait and "
             "clone it by hand"
             if raced
-            else f"GitHub did not confirm the repository exists; check `gh auth status` and that "
-            f"{owner}/{TEMPLATE_REPOSITORY} is reachable"
+            else f"`gh repo view` did not confirm the repository exists ({_detail(view)}); "
+            f"check `gh auth status`. {UNSHIPPED_TEMPLATE}"
         )
     )
 
@@ -195,24 +253,67 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
 
     §6.1 wants the suffix "so two overlays never collide" — a harness installs a plugin by the
     name in its manifest, so two owners' overlays under one configuration directory would be one
-    plugin fighting itself. Both manifests are rewritten through `fsops.write_within`: the
-    overlay root *is* a root, so the contained walk applies and there is no carve-out to take.
+    plugin fighting itself. **All three manifests**, because the project ships a Codex half of
+    everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision still
+    happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
+    root *is* a root, so the contained walk applies and there is no carve-out to take.
+
+    **Every rewrite is re-stamped into the scaffold ledger.** `create --local` renders these
+    files through the engine, which records each one's digest; a rewrite behind the ledger's
+    back makes the file read as hand-edited for ever after, so `overlay upgrade` reported
+    `skip_modified .claude-plugin/plugin.json (hand-edited)` and never refreshed it again — for
+    the one file carrying `keelline.requires`, the version-compatibility declaration the README
+    advertises, and attributing to the owner an edit Keelline itself made. Re-stamping is the
+    narrow answer of the two the review offered; rendering the suffix through the `Template`
+    instead would put an owner-dependent value into the shipped tree, which every *other*
+    consumer of that tree (`upgrade`'s hash rule, the release lane) would then have to know
+    about. A `--template` clone carries no ledger at all, and gets no record written for it.
+
+    A manifest that is *absent* is a note rather than a failure. An overlay generated before the
+    Codex half shipped carries two of the three, and refusing to name the other two over it
+    would make this command unusable on exactly the overlays that most need it; one that exists
+    and cannot be read is still a failure, because that is a file saying something this command
+    cannot act on.
     """
-    suffix = _segment("owner", owner.strip().lower())
+    suffix = segment("owner", owner.strip().lower())
+    ledger = Manifest.read(root)
     renamed: list[str] = []
+    absent: list[str] = []
     notes: list[str] = []
-    for relative in (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST):
-        if _rename(root, relative, suffix):
-            renamed.append(relative)
+    restamped = False
+    for relative in MANIFESTS:
+        if not (root / relative).is_file():
+            absent.append(relative)
+            continue
+        written = _rename(root, relative, suffix)
+        if written is None:
+            continue
+        renamed.append(relative)
+        record = ledger.get(relative)
+        if record is not None:
+            ledger = ledger.with_record(replace(record, sha256=digest(written)))
+            restamped = True
+    if restamped:
+        ledger.write(root)
     if renamed:
         notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
     else:
-        notes.append(f"both manifests already name {suffix}; nothing was renamed")
+        notes.append(f"the manifests already name {suffix}; nothing was renamed")
+    if absent:
+        notes.append(
+            f"this overlay carries no {', '.join(absent)}, so there was nothing to name there; "
+            f"`keelline overlay upgrade` adds what a newer template ships"
+        )
     notes.append(_install_secret_scan(root, runner))
     return Initialised(tuple(renamed), tuple(notes))
 
 
-def _rename(root: Path, relative: str, suffix: str) -> bool:
+def _rename(root: Path, relative: str, suffix: str) -> str | None:
+    """The bytes written, or `None` when this manifest already named the owner.
+
+    The text and not a boolean, because the caller re-stamps the scaffold ledger with exactly
+    what went to disk — reading the file back to hash it would hash whatever is there now.
+    """
     path = root / relative
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -235,9 +336,10 @@ def _rename(root: Path, relative: str, suffix: str) -> bool:
                 entry["name"] = name
                 changed = True
     if not changed:
-        return False
-    fsops.write_within(root, relative, json.dumps(document, indent=2) + "\n")
-    return True
+        return None
+    body = json.dumps(document, indent=2) + "\n"
+    fsops.write_within(root, relative, body)
+    return body
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:

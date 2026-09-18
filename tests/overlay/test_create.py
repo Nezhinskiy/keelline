@@ -209,3 +209,88 @@ def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -
     init_instance(created.root, "OctoCat", runner=FakeRunner())
     plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["name"] == "keelline-overlay-octocat"
+
+
+def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess(
+    tmp_path: Path,
+) -> None:
+    # Review finding 4. `Completed` has carried `code` and `stderr` since this seam was written
+    # and this lane threw both away: with `gh` absent from `PATH`, the command launched three
+    # subprocesses and then exited 1 saying "GitHub did not confirm the repository exists; check
+    # `gh auth status`" — a cause that was not the cause, about a binary that was not there.
+    # A missing optional binary is a reported finding, and never a misattributed one.
+    #
+    # Mutation (`mutations.toml`, "overlay create --template asks GitHub about a `gh` that
+    # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more
+    # subprocesses run and the message names `gh auth status` instead of the launch failure.
+    absent = FakeRunner(answers={"gh": Completed(127, "", "gh could not be run: [Errno 2] gh")})
+    waited: list[float] = []
+    with pytest.raises(Failure) as failed:
+        create(
+            "octo",
+            "keelline-private",
+            source="template",
+            root=tmp_path,
+            runner=absent,
+            wait=waited.append,
+        )
+    message = str(failed.value)
+    assert "gh could not be run" in message, "the real cause is in Completed.stderr"
+    assert "gh auth status" not in message, "a binary that never ran cannot have a bad token"
+    assert "--local" in message, "the source that works today has to be named"
+    assert [argv[:3] for argv in absent.calls] == [["gh", "repo", "create"]]
+    assert waited == [], "nothing was waiting to finish generating"
+
+
+def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> None:
+    # The other arm of the same finding, and the one `docs/cli.md` names as the actual reason
+    # `--template` cannot work today: `<owner>/keelline-overlay-template` does not exist,
+    # because the maintainer action that would publish it has not shipped. `gh`'s own stderr
+    # says so, and is quoted rather than replaced by a guess about authentication.
+    declined = FakeRunner(
+        answers={"gh": Completed(1, "", "GraphQL: Could not resolve to a Repository")}
+    )
+    with pytest.raises(Failure) as failed:
+        create("octo", "keelline-private", source="template", root=tmp_path, runner=declined)
+    message = str(failed.value)
+    assert "Could not resolve to a Repository" in message
+    assert "nothing publishes that repository yet" in message
+    assert [argv[:3] for argv in declined.calls] == [["gh", "repo", "create"]]
+
+
+def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> None:
+    # Review finding 16. `init_instance`'s own docstring gives the rationale — a harness
+    # installs a plugin by the name in its manifest, so two owners' overlays under one
+    # configuration directory are one plugin fighting itself — and the project ships a Codex
+    # half of everything else, but `.codex-plugin/plugin.json` was left unsuffixed, so the
+    # collision the suffix exists to prevent still happened on Codex.
+    #
+    # Mutation (`mutations.toml`, "overlay init leaves the Codex manifest unsuffixed"):
+    # `CODEX_PLUGIN_MANIFEST` is dropped from `MANIFESTS` → this reddens on the third name.
+    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    init_instance(created.root, "OctoCat", runner=FakeRunner())
+    names = {
+        relative: json.loads((created.root / relative).read_text(encoding="utf-8"))["name"]
+        for relative in (
+            ".claude-plugin/plugin.json",
+            ".claude-plugin/marketplace.json",
+            ".codex-plugin/plugin.json",
+        )
+    }
+    assert names == {
+        ".claude-plugin/plugin.json": "keelline-overlay-octocat",
+        ".claude-plugin/marketplace.json": "keelline-overlay-marketplace-octocat",
+        ".codex-plugin/plugin.json": "keelline-overlay-octocat",
+    }
+
+
+def test_a_manifest_this_overlay_does_not_carry_is_a_note_not_a_failure(tmp_path: Path) -> None:
+    # An overlay generated before the Codex half shipped carries two of the three manifests,
+    # and refusing to name the other two over it would make `init` unusable on exactly the
+    # overlays that most need running it. A manifest that *exists* and cannot be read is still
+    # a failure — that is a file saying something this command cannot act on.
+    created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
+    (created.root / ".codex-plugin" / "plugin.json").unlink()
+    result = init_instance(created.root, "octo", runner=FakeRunner())
+    assert ".codex-plugin/plugin.json" not in result.renamed
+    assert any(".codex-plugin/plugin.json" in note for note in result.notes)

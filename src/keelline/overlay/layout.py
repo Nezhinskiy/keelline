@@ -23,6 +23,11 @@ COMMON_CLAUDE = f"{COMMON}/claude"
 COMMON_CODEX = f"{COMMON}/codex"
 PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
 MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
+# The Codex half of `PLUGIN_MANIFEST`, named here rather than spelled as a literal inside
+# `OVERLAY_FILES`: `overlay init` has to suffix it for the same reason it suffixes the other
+# two — a harness installs a plugin by the name in its manifest, and this project ships a Codex
+# half of everything else.
+CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 
 # Every file `templates/overlay/` ships, in the order the plan's table lists them. The list and
 # the tree are two statements of one thing: `tests/overlay/test_template.py` asserts each way
@@ -31,7 +36,7 @@ MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
 OVERLAY_FILES = (
     PLUGIN_MANIFEST,
     MARKETPLACE_MANIFEST,
-    ".codex-plugin/plugin.json",
+    CODEX_PLUGIN_MANIFEST,
     "hooks/hooks.json",
     "skills/attach/SKILL.md",
     f"{COMMON_RULES}/README.md",

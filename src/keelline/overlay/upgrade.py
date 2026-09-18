@@ -35,9 +35,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.config.loader import preset_defaults
+from keelline.overlay.identity import require_overlay
 from keelline.overlay.layout import CAPABILITY_FILES
 from keelline.overlay.template import templates
 from keelline.scaffold import Plan, apply, plan
+
+# What `--root` has to name, said once. `--root` defaults to `.`, so the directory this command
+# is pointed at is ordinarily the one the agent happens to be sitting in.
+NOT_AN_OVERLAY = (
+    "`keelline overlay upgrade --root` must name an overlay. It refreshes an overlay's own "
+    "fifteen files — both plugin manifests, the hooks file and a GitHub Actions workflow among "
+    "them — so pointed at anything else it creates them there instead"
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +58,15 @@ class OverlayUpgrade:
 def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     """What a release would change in this overlay, and which files the caller is told to read.
 
+    **`root` is checked to be an overlay before anything is planned, let alone written.** It was
+    checked nowhere: in a directory holding a `README.md` and a `src/main.py`, `overlay upgrade
+    --root .` created fourteen files — both manifests, `hooks/hooks.json`, `common/**`,
+    `.gitignore` and `.github/workflows/scan.yml` — printed `14 to create` and exited 0. Writing
+    a workflow file into a repository the owner may then commit is the concrete harm, and
+    `--root` defaulting to `.` is what made it a plausible typo rather than an exotic one. The
+    probe is `identity.require_overlay`, the same one `setup --overlay` records a root through:
+    one question, asked one way, in the one module that knows what an overlay is.
+
     `decisions` is computed after `apply()` and names the two capability files unconditionally;
     it is a notice, not a gate. The module docstring says why that is safe here and what would
     make it unsafe.
@@ -57,6 +75,7 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     `keelline.profile` and `artifacts.local` out of a `Config` and nothing else. It is passed
     because a `Config` has to be complete, not because an overlay is a project.
     """
+    require_overlay(root, because=NOT_AN_OVERLAY)
     shipped = templates()
     planned = plan(root, preset_defaults(root.name), shipped)
     if not dry_run:

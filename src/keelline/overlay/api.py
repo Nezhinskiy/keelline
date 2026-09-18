@@ -6,9 +6,11 @@ need the template tree. A lane that needs something absent from this list grows 
 in a commit that says which lane and why — it does not import a private module of this area.
 """
 
-from keelline.overlay.create import Created, Initialised, create, init_instance
+from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
+from keelline.overlay.identity import overlay_fault, require_overlay
 from keelline.overlay.layout import (
     CAPABILITY_FILES,
+    CODEX_PLUGIN_MANIFEST,
     COMMON,
     COMMON_CLAUDE,
     COMMON_CODEX,
@@ -24,6 +26,7 @@ from keelline.overlay.upgrade import OverlayUpgrade, upgrade
 
 __all__ = [
     "CAPABILITY_FILES",
+    "CODEX_PLUGIN_MANIFEST",
     "COMMON",
     "COMMON_CLAUDE",
     "COMMON_CODEX",
@@ -39,7 +42,10 @@ __all__ = [
     "Runner",
     "create",
     "init_instance",
+    "overlay_fault",
+    "require_overlay",
     "subprocess_runner",
+    "target_root",
     "template_root",
     "templates",
     "upgrade",
