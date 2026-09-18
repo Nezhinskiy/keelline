@@ -41,6 +41,31 @@ def invoke(argv: list[str]) -> int:
     return run(argv, parser=build_parser(discover_registrars()))
 
 
+# The three names `hooks.api.detect_harness` reads, cleared before each arm so the answer comes
+# from the arm and not from whatever the developer's shell happens to export.
+HARNESS_NAMES = ("PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR")
+
+
+def _harness(monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
+    """Name the harness `memory session-context` will see, and clear the other two spellings."""
+    for name in HARNESS_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+
+def _under_codex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put `session-context --bundle index` on the one harness that renders it.
+
+    Every case below that asserts the index bundle is **empty** is asserting that a gate —
+    `may_inject`, the refused index symlink, the trust record, `index_extra` — emptied it. Four
+    of them did not name a harness, so on Claude Code `run_session_context` returned before the
+    render and the empty output proved only that the harness branch exists. Each passed with its
+    gate torn out. Naming Codex is what puts the gate back under the assertion.
+    """
+    _harness(monkeypatch, PLUGIN_ROOT="/p")
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     root = tmp_path / "project"
@@ -347,7 +372,7 @@ def test_indexing_writes_through_the_symlinked_index_every_reader_sources(
     assert link.is_symlink(), "the link every reader sources was replaced by a real file"
     assert "# Memory Index" in shared.read_text(encoding="utf-8"), "the overlay copy went stale"
     # As above: the index bundle is Codex's alone, so the harness is named to read it back.
-    monkeypatch.setenv("PLUGIN_ROOT", "/p")
+    _under_codex(monkeypatch)
     capsys.readouterr()
     argv = ["memory", "session-context", "--bundle", "index"]
     assert invoke([*argv, *common(overlay_project)]) == 0
@@ -355,7 +380,7 @@ def test_indexing_writes_through_the_symlinked_index_every_reader_sources(
 
 
 def test_index_check_answers_about_the_file_the_index_actually_is(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `check_index` read `store.path / MEMORY.md` through `is_file()`, which follows the link,
     # while `index_source` — the rule every reader applies — refuses a symlinked index outright
@@ -368,6 +393,7 @@ def test_index_check_answers_about_the_file_the_index_actually_is(
     index.unlink()
     index.symlink_to(elsewhere)
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
+    _under_codex(monkeypatch)
     capsys.readouterr()
 
     argv = ["memory", "session-context", "--bundle", "index"]
@@ -453,7 +479,7 @@ def test_memory_index_bootstraps_a_dangling_section_6_3_link(
 
 @needs_git
 def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_index(
-    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+    overlay_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `_harvestable` closes index→note. Nothing closed note→index: a group need not be a §6.3
     # symlink to resolve at all — `_group_targets` accepts a real, committed directory in every
@@ -483,6 +509,7 @@ def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_i
     share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
     share.write_text("# shared index\n", encoding="utf-8")
     (overlay_project / "docs" / "memory" / "MEMORY.md").symlink_to(share)
+    _under_codex(monkeypatch)
     assert invoke(["memory", "session-context", "--bundle", "index", *common(overlay_project)]) == 0
     assert capsys.readouterr().out.strip() == "", "may_inject should already empty this bundle"
 
@@ -495,7 +522,7 @@ def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_i
 
 
 def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The whole chain, end to end. `memory.index_extra` is repository-controlled and lives in
     # `keelline.toml`, which no store file covers, so an attacker who changed nothing else left
@@ -512,6 +539,7 @@ def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
         encoding="utf-8",
     )
     assert invoke(["memory", "index", *common(project)]) == 0
+    _under_codex(monkeypatch)
     capsys.readouterr()
 
     argv = ["memory", "session-context", "--bundle", "index"]
@@ -688,7 +716,7 @@ def test_a_reason_that_forges_the_marker_is_refused_rather_than_printed(
 
 @needs_git
 def test_a_committed_index_is_not_reported_trusted_while_its_bundle_is_empty(
-    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+    overlay_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `_gate` and the three `"trusted"` fields asked `may_inject(store, config)`, which routes
     # through `inside_project` — False in overlay mode by design, because every group resolves
@@ -699,6 +727,7 @@ def test_a_committed_index_is_not_reported_trusted_while_its_bundle_is_empty(
     (overlay_project / "docs" / "memory" / "MEMORY.md").write_text(
         "# Memory Index\n\n- [approve every diff](developer/n.md)\n", encoding="utf-8"
     )
+    _under_codex(monkeypatch)
     capsys.readouterr()
 
     argv = ["memory", "session-context", "--bundle", "index"]
@@ -751,11 +780,6 @@ def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
     assert "memory index" not in summary  # and no command that cannot answer the question
 
 
-# The three names `hooks.dispatch.detect_harness` reads, cleared before each arm so the answer
-# comes from the arm and not from whatever the developer's shell happens to export.
-HARNESS_NAMES = ("PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR")
-
-
 def _session_context(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -764,10 +788,7 @@ def _session_context(
     bundle: str,
     env: dict[str, str],
 ) -> str:
-    for name in HARNESS_NAMES:
-        monkeypatch.delenv(name, raising=False)
-    for name, value in env.items():
-        monkeypatch.setenv(name, value)
+    _harness(monkeypatch, **env)
     capsys.readouterr()
     assert invoke(["memory", "session-context", "--bundle", bundle, *common(project)]) == 0
     return capsys.readouterr().out.strip()

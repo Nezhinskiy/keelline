@@ -10,6 +10,15 @@ ref` that `init` has not shipped a writer for — so an exit code that counted s
 findings), and `warn` does not reach it either: a budget lowered below the preset and a harness
 link the trust gate has not opened are both correct states somebody should still see.
 
+**Three is the floor and not the count.** Five more rows have a skip arm that fires on a state
+of the machine rather than on this build — `wrapper` and a second arm of `files` when no plugin
+root can be vouched for, `pre-commit` with no overlay root recorded, `bundles` and
+`store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
+`run_checks` skips fourteen at once when `keelline.toml` is missing or will not load. The
+plugin-root pair is the one that matters: it is the state in which every hook entry on the
+machine is silent, and it reports as two `skip` rows, so both carry `checks.PLUGIN_ROOT_REMEDY`
+rather than the empty remedy a "this build cannot answer" skip is entitled to.
+
 **The remedies live in `--json` and never in the summary.** §5.2 gives every command one line,
 and fifteen remedies do not fit in one; the skill relays each remedy verbatim from the report,
 so a remedy absent from `--json` is a remedy the user never sees. The summary renders through

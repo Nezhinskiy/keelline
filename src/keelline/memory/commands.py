@@ -293,9 +293,21 @@ def run_session_context(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     # §9.5: "On Codex the handler also injects the index, because Codex has no native
     # auto-memory." Here rather than in `bundles.render`, which is a library function with no
-    # environment to read; `detect_harness` is the hook area's own answer to the same question
-    # and keys on the stdin pair `model`/`permission_mode` and on `PLUGIN_ROOT` (S1), never on
-    # `CLAUDE_PLUGIN_ROOT`, which Codex also sets.
+    # environment to read; `detect_harness` is the hook area's own answer to the same question.
+    #
+    # **No payload is passed, so only the environment half of that answer is in play here.**
+    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
+    # which the dispatcher does and this call site does not: there is no stdin payload at a
+    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and also
+    # sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing (S1) and neither
+    # "claude" nor "unknown" reaches the render.
+    #
+    # **This is the one shipped command whose output depends on the ambient environment**, and
+    # it is deliberate rather than incidental: the bundle exists for the harness that has no
+    # native auto-memory, and the only thing that knows which harness this is, is the process's
+    # own environment. The cost is that a test asserting this bundle is empty proves nothing
+    # about the gate it was written for unless it names the harness first — see
+    # `tests/memory/test_commands.py::_under_codex`, which every such case now goes through.
     #
     # After `_store` and not before it, so every refusal this command already makes — a store
     # that will not resolve, a `--store` outside the overlay — is still made for this bundle on

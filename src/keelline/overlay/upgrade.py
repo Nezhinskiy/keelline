@@ -17,11 +17,19 @@ at which a decision could be taken and nothing here waits on one. `decisions` is
 notice* — these two files were refreshed, go and look at them — and not a gate.
 
 That is safe for exactly one reason, and it is a property of the shipped template rather than of
-this function: the template cannot grant anything. `common/claude/permissions.json` is deny-only
-and `common/claude/hooks.json` is `{"hooks": {}}`, held by
-`tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere` and
+this function: the template cannot grant anything. `common/claude/permissions.json` ships a
+`permissions` table with no rule in it at all and `common/claude/hooks.json` is `{"hooks": {}}`,
+held by `tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere`,
+`::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended` and
 `::test_the_template_ships_no_hook_entry`, the first with a mutation behind it. So refreshing
 either file can widen nothing, and a notice is enough.
+
+The permissions file used to ship two `deny` rules, and this paragraph used to call it
+"deny-only" as though that were the reason it was inert. It was not: `attach.permissions`
+reads `permissions.allow` and never `permissions.deny`, so those two rules reached nothing, and
+the live copy of that protection is `presets/recommended.toml`'s `[deny] global`, which `setup`
+merges into `<home>/.claude/settings.json`. The file is inert because it grants nothing, which
+is the property this argument actually needs.
 
 **It stops being enough the day a third capability file lands** — or the day one of those two
 ships a non-empty body. A lane that adds one has to move the ask in front of `apply()`, or give

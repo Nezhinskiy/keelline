@@ -3,6 +3,6 @@
   "version": "0.0.0",
   "description": "A private overlay for Keelline: personal standing rules, cross-project notes, and the per-project records that bind a repository to them.",
   "keelline": {
-    "requires": ">=1.0.0"
+    "requires": ">=0.1.0"
   }
 }

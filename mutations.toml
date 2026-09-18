@@ -1732,9 +1732,12 @@ reddens = [
 [[mutation]]
 name = "the overlay template starts granting a permission"
 file = "src/keelline/templates/overlay/common/claude/permissions.json"
-before = '    "deny": ['
-after = '    "allow": ['
-reddens = ["tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere"]
+before = '  "permissions": {}'
+after = '  "permissions": {"allow": ["Bash(:*)"]}'
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere",
+  "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
+]
 
 # §6.1 permits creating a repository on an account only after explicit confirmation, and in this
 # harness the caller is non-interactive: naming the source IS the confirmation. A default turns
@@ -2790,24 +2793,19 @@ reddens = [
   "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
 ]
 
-# The template's only actual *protection*, as opposed to its several refusals to grant. Emptying
-# the file left the whole overlay suite green, because the file was held to `is_file()` and to the
-# absence of an allow rule -- and `{}` satisfies both, so the absence test passed *because* the
-# content was gone. The deny rules are asserted by value now, and this is that assertion's proof.
+# The `.env` deny rules, where they actually fire. The overlay template used to carry a second,
+# smaller copy of them, asserted by value over there -- dead, because `attach.permissions` reads
+# `permissions.allow` and never `permissions.deny`, and already one rule behind this list. That
+# copy is gone; this is the proof that the live one is asserted by value and not by substring,
+# which `["Read(.env)"]` would satisfy while leaving every nested `.env` readable.
 [[mutation]]
-name = "the overlay template ships no protection at all"
-file = "src/keelline/templates/overlay/common/claude/permissions.json"
-before = '''{
-  "permissions": {
-    "deny": [
-      "Read(.env*)",
-      "Read(**/.env*)"
-    ]
-  }
-}'''
-after = "{}"
+name = "the preset stops denying the env files"
+file = "src/keelline/presets/recommended.toml"
+before = 'global = ["Read(.env*)", "Read(**/.env*)", "Read(**/.env)"]'
+after = 'global = ["Read(.env)"]'
 reddens = [
-  "tests/overlay/test_template.py::test_the_template_denies_reading_env_files",
+  "tests/setup/test_machine.py::test_the_preset_denies_reading_env_files_by_value",
+  "tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules",
 ]
 
 # The cheap half of §6.4's promise that the overlay never holds a credential. The assertion was

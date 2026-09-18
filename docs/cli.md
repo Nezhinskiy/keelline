@@ -93,7 +93,7 @@ run it by hand except to see what a session actually receives.
 | `preset-rules` | Rules from your own preset. Never repository content, so never gated. |
 | `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
 | `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
-| `index` | `MEMORY.md` itself, so the model can route. |
+| `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only** (§9.5): Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -712,9 +712,16 @@ Configures this machine from a preset (§5.6, §8.1): the machine configuration 
 harness. `--home` and `--machine` default to the home directory and to
 `~/.config/keelline/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `KEELLINE_CONFIG` names, because a machine file half the installation
-cannot find is not a machine file. Both flags exist so this command — the only one in the plugin
-that writes outside a repository — can be pointed at scratch paths for a dry run, the same way
-every other command here takes `--root`. `--root` (default `.`) is the project this invocation
+cannot find is not a machine file. Both flags exist so this command can be pointed at a
+scratch destination instead of your real one, the same way every other command here takes
+`--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
+these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
+writes inside a repository and ignores both.
+
+`setup` is not the only command that writes outside a repository, and two others say so in their
+own sections: `keelline memory trust` records approval in `~/.config/keelline/trust.json`, and
+`keelline attach` places the harness memory link under `<home>/.claude/projects/`. It is the only
+one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
 was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
 reach (below).
 
@@ -845,12 +852,31 @@ nobody sees, so that is where they all are.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Three checks skip on a healthy installation, and each says which measurement it is missing.** `files`
-compares the installed plugin against the release's recorded hashes, which the release lane
-ships — until then it reports the wrapper's executable bit and skips the rest, because a check
-that compared a file against itself would be worse than one that says it cannot. `codex-trust`
-needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`,
-which `init` writes. A `skip` is **not** a finding and never reaches the exit code.
+**Eight of the fifteen have a `skip` arm: three always, and five more on a state of this
+machine.** A `skip` is **not** a finding and never reaches the exit code, so read the detail —
+each one says which measurement it is missing.
+
+The three that skip on every correct installation are the ones this build cannot answer. `files` compares the installed
+plugin against the release's recorded hashes, which the release lane ships — until then it
+reports the wrapper's executable bit and skips the rest, because a check that compared a file
+against itself would be worse than one that says it cannot. `codex-trust` needs the hash Codex
+keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`, which `init` writes.
+
+The five that skip on a state are `wrapper`, when there is no plugin root this process can
+vouch for; `pre-commit`, when no overlay root is recorded on this machine; `bundles` and
+`store-debris`, when the note store does not resolve; and `diagnostics`, when no harness data
+root is set in the environment. `files` has a second skip arm for the same reason `wrapper` does.
+
+**The one to read first is the plugin root**, because it is the quietest and the worst. When
+this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
+and every hook entry on this machine silent. Both carry a remedy: run `keelline doctor` from the
+plugin's own Keelline so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
+plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
+run it.
+
+One more case is not a skip but produces fourteen of them: with no `keelline.toml` in `--root`,
+or one that does not load, `not-initialised` goes **red** and every other check skips against it.
+The red row is the one to act on.
 
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
 project chose and Keelline's own vocabulary print freely; a repository-authored string does not.

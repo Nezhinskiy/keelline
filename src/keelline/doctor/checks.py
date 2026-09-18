@@ -117,7 +117,11 @@ WRAPPER = "hooks/run-hook.sh"
 # wrapper's own vocabulary, which is the whole reason it prints one — an exit 2 is attributed
 # rather than inferred, and under `open` policy the exit code is 0 and the token is all there is.
 _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
-# Wall-clock bound on the one subprocess this area runs. D7 asks a cap to name the shipped file
+# Wall-clock bound on the one subprocess this *module* launches. The area's total is four on a
+# green attached installation — `keelline.doctor.__init__` counts them and names the one that
+# leaves the machine — because three more are launched inside the areas the rows below call.
+#
+# D7 asks a cap to name the shipped file
 # that must change with it; there is none, because this bounds `keelline --version` behind an
 # interpreter probe and nothing about it is a project's to tune. Wide enough for a cold
 # interpreter start on a loaded machine, narrow enough that a hung probe does not hang `doctor`.
@@ -125,6 +129,17 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # Said by `files` about a wrapper it measured under a root the environment named, so nobody
 # reads "executable" as "this installation is sound". The sentence is a constant because both
 # of that check's rows carry it and a lane that changes one must change the other.
+# The remedy both plugin-root skips carry. Two quiet `skip` rows are what a machine with no
+# findable plugin root looks like from here, and a `skip` with an empty remedy is what
+# `skills/doctor/SKILL.md` tells the model not to treat as red — so the two together said
+# nothing about the loudest fault `doctor` can meet. One constant because both rows must say
+# the same thing, and because the two halves of it are not interchangeable: only the first
+# gives a root `wrapper` will execute.
+PLUGIN_ROOT_REMEDY = (
+    "run `keelline doctor` from the plugin's own Keelline so its root answers for itself, or "
+    "set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which lets `files` read the "
+    "wrapper without making it runnable here"
+)
 NAMED_ROOT_CAVEAT = (
     "; this is the plugin root the environment names, whose files are read here and run nowhere"
 )
@@ -267,8 +282,9 @@ def _files(context: Context) -> Check:
         return Check(
             "files",
             SKIP,
-            "the plugin root is not readable from here, so its shipped files cannot be checked",
-            "",
+            "the plugin root is not readable from here, so its shipped files cannot be checked "
+            "— and if nothing else finds it either, every hook entry on this machine is silent",
+            PLUGIN_ROOT_REMEDY,
         )
     # Said in the row rather than left to the reader, because the two roots answer different
     # questions. A root the environment named is read here and run nowhere, so "executable"
@@ -321,7 +337,13 @@ def _wrapper(context: Context) -> Check:
     root = context.own_root
     if root is None:
         if context.plugin_root is None:
-            return Check("wrapper", SKIP, "the plugin root is not readable from here", "")
+            return Check(
+                "wrapper",
+                SKIP,
+                "the plugin root is not readable from here, so there is nothing to run and "
+                "nothing here can say whether a hook entry would reach Keelline at all",
+                PLUGIN_ROOT_REMEDY,
+            )
         return Check(
             "wrapper",
             SKIP,

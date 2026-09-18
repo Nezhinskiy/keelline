@@ -13,6 +13,16 @@ description: Diagnose a Keelline installation — hooks, memory store, budgets, 
    variable that is set and ignored.
 2. Relay each finding with the remedy the report names, verbatim. Do not change settings or
    hook entries on the user's behalf — name the command that would.
-3. A `skip` is not a fault. Three checks cannot be answered by this build — the release's
-   recorded file hashes, whether a hook is trusted on Codex, and a `[ci]` reference nothing
-   writes yet — and each says so in its own detail. Say so rather than treating it as red.
+3. A `skip` is not a fault, and it is not always harmless either. Three checks cannot be
+   answered by this build at all — the release's recorded file hashes, whether a hook is
+   trusted on Codex, and a `[ci]` reference nothing writes yet. Five more skip on a state of
+   the machine: `wrapper` and `files` when no plugin root can be vouched for, `pre-commit` with
+   no overlay root recorded, `bundles` and `store-debris` when the note store does not resolve,
+   and `diagnostics` with no harness data root set. Each says which of the two it is in its own
+   detail. Report the three as "nothing to answer here"; report the five as the state they name.
+4. **`files` and `wrapper` skipping together is the report's loudest finding, and it is not
+   red.** It means this process could not find the plugin — so no hook entry reaches Keelline
+   on this machine, and nothing else in the report can say so. Lead with it, and relay the
+   remedy both rows carry.
+5. When `not-initialised` is red, every other row skips against it. Relay the red row and stop;
+   the fourteen skips below it are not fourteen problems.

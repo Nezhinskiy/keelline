@@ -41,9 +41,10 @@ adds:
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
   earned them. Designed; the assessment engine is a later work package.
-- **A personal overlay that is itself a versioned plugin** with a declared dependency and
-  its own upgrade manifest, rather than a dotfiles sync. `keelline overlay create` renders
-  one and `keelline attach` binds a repository to it.
+- **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
+  rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
+  binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
+  nothing reads that declaration yet, so it is a record and not a precondition.
 
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not

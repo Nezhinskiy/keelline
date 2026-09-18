@@ -100,6 +100,25 @@ def test_the_preset_names_the_plugins_and_the_deny_rules() -> None:
     assert any(".env" in rule for rule in preset["deny"]["global"])
 
 
+def test_the_preset_denies_reading_env_files_by_value() -> None:
+    # This preset table is where the `.env` deny rules actually fire: `setup._write_user_settings`
+    # merges `[deny] global` into `<home>/.claude/settings.json`, which the harness reads for
+    # every project on the machine. The overlay template used to ship a second, smaller copy of
+    # the same idea in `common/claude/permissions.json`, asserted by value over there — dead,
+    # because `attach.permissions` reads only `permissions.allow`, and already one rule behind
+    # this list. That copy is gone and its by-value assertion is here, on the live one.
+    #
+    # By value and not `any(".env" in rule)`, which the case above already does: `["Read(.env)"]`
+    # satisfies a substring test and leaves `.env.local` and every nested `.env` readable.
+    #
+    # Mutation: `mutations.toml`'s "the preset stops denying the env files".
+    assert load_preset("recommended")["deny"]["global"] == [
+        "Read(.env*)",
+        "Read(**/.env*)",
+        "Read(**/.env)",
+    ]
+
+
 # --- the file this writer shares with a human (review finding 12) ---
 
 

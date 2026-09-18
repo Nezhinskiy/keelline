@@ -2792,9 +2792,17 @@ git commit -m "feat(setup): the preset's machine sections and the writer both re
 **Interfaces:**
 - Consumes: `write_machine`, `USER_SETTINGS` (Task 12),
   `keelline.overlay.api.{Runner, subprocess_runner, create, init_instance}`.
-- Produces: `setup(preset, *, home, machine, runner, yes, overlay) -> SetupReport` with fields
-  `machine_written`, `plugins_installed`, `deny_written`, `cli_on_path`, `overlay`, `notes`;
-  the `keelline setup` CLI group with `--preset`, `--yes`, `--home`, `--machine`, `--overlay`.
+- Produces: `setup(preset, *, home, machine, runner, yes, overlay, project_root) -> SetupReport`
+  with fields `machine_written`, `plugins_installed`, `deny_written`, `cli_on_path`, `overlay`,
+  `notes`; the `keelline setup` command with `--preset`, `--yes`, `--home`, `--machine`,
+  `--overlay`, `--root`, `--git-hooks` and `--uninstall`.
+- `project_root` is the CLI's `--root` (default `.`) and exists for one refusal: an `--overlay`
+  that any checkout of that repository could reach is refused above the first write. It is
+  keyword-required, so no caller can silently take the process's working directory.
+- `--git-hooks` is the command's *other* mode, added by Task 14 and named here because a later
+  lane reading this block has to know it exists: it installs the commit-message hook into
+  `--root`'s own hooks directory, takes `--uninstall`, refuses a run that also passes
+  `--preset`, and ignores `--home` and `--machine` entirely.
 
 This is the walkthrough's step 3 and step 4 (§4). `--home` and `--machine` are not test
 affordances bolted on: the Global Constraints forbid a test from touching the developer's real

@@ -15,5 +15,7 @@ directory (never `core.hooksPath`, which is global state this command has no bus
 hook already there is kept as `prepare-commit-msg.local` and chained to, never overwritten;
 `--git-hooks --uninstall` puts it back exactly as it was.
 
-`--home` and `--machine` let you point either command at a scratch location instead of your real
-one, the same way every other command here takes `--root`.
+`--home` and `--machine` point the `--preset` run at a scratch destination instead of your real
+home directory and `~/.config/keelline/config.toml`, the same way every other command here takes
+`--root`. They are a different destination and not a dry run: the same files are written, at the
+paths you name. `--git-hooks` writes inside a repository and ignores both.

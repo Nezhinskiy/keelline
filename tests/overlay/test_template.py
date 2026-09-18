@@ -99,26 +99,28 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
         assert _PINNED_REV.match(revision), revision
 
 
-def test_the_template_denies_reading_env_files() -> None:
-    # §3: the plugin author may never grant a permission, and the template's only actual
-    # *protection* is this one deny table. Replacing `permissions.json` with `{}` left the
-    # whole overlay suite green, because the file was held to `is_file()` and to the absence of
-    # an allow rule -- both of which an empty object satisfies.
+def test_the_template_ships_permissions_that_are_neither_granted_nor_pretended() -> None:
+    # This file used to ship `deny: ["Read(.env*)", "Read(**/.env*)"]`, asserted here by value
+    # and called "the template's only actual protection". It was not protection at all:
+    # `attach.permissions._allow_rules` reads `permissions.allow` and nothing else, so no deny
+    # rule in this file has ever reached a bound repository, a harness, or any other reader in
+    # the tree. Meanwhile `presets/recommended.toml`'s `[deny] global` — which `setup` merges
+    # into `<home>/.claude/settings.json`, where it does fire for every project on the machine —
+    # had grown a third rule this copy never got. A dead duplicate, one rule behind the live
+    # one, documented as live.
     #
-    # The rules are asserted by value because they are the artifact: a deny list that no longer
-    # names `.env` is a machine whose agent may read the credentials §6.4 promises never enter
-    # the overlay.
+    # So the rules went, and the assertion moved to where they fire:
+    # `tests/setup/test_machine.py::test_the_preset_denies_reading_env_files_by_value` and
+    # `tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules`.
+    # What is left here is the shape: a `permissions` table with no rule of any kind in it.
     #
-    # Mutation: `mutations.toml`'s "the overlay template ships no protection at all".
+    # Mutation: `mutations.toml`'s "the overlay template starts granting a permission".
     payload = json.loads(
         (template_root() / "common" / "claude" / "permissions.json").read_text(encoding="utf-8")
     )
-    # `.get`, not `[...]`: the two mutations this case is written against -- `{}` for the whole
-    # file, and `"deny"` renamed to `"allow"` -- would otherwise raise `KeyError`, and a crash is
-    # a worse proof than an assertion. A mutation that reddens for an accidental reason reads as
-    # coverage.
-    deny = payload.get("permissions", {}).get("deny")
-    assert deny == ["Read(.env*)", "Read(**/.env*)"], deny
+    # `.get` and an explicit `{} ==`, not `[...]`: a mutation that emptied the whole file would
+    # otherwise raise `KeyError`, and a crash is a worse proof than an assertion.
+    assert payload.get("permissions") == {}, payload
 
 
 # A write permission, in every spelling a workflow can grant one. `write-all` is the one that
