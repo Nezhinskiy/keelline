@@ -59,7 +59,17 @@ def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Pat
     """
     _git(overlay, "init", "-q", "-b", "main")
     if hooks_path is None:
-        return overlay / ".git" / "hooks"
+        # Pinned LOCALLY, and this is not belt-and-braces. `hooks_dir` runs `git` under
+        # `gitenv.scrubbed_env()`, which keeps `HOME` deliberately — honouring the machine
+        # owner's global `core.hooksPath` is exactly what this lane now asks for — so a
+        # developer whose own `~/.gitconfig` sets one would have this fixture answer *their*
+        # directory and the case fail for a reason that is nothing to do with the code. `_git`
+        # pins only `GIT_CONFIG_GLOBAL`, which the separate `hooks_dir` subprocess never sees.
+        # Local config outranks global, so the fixture says what it means and production is
+        # untouched.
+        own = overlay / ".git" / "hooks"
+        _git(overlay, "config", "core.hooksPath", str(own))
+        return own
     hooks_path.mkdir(parents=True, exist_ok=True)
     _git(overlay, "config", "core.hooksPath", str(hooks_path))
     return hooks_path

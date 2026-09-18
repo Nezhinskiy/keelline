@@ -156,6 +156,11 @@ def _overlay(tmp_path: Path) -> Path:
     # no answer to that question, so the layout says here what it is.
     if not (overlay / ".git").exists():
         _git(overlay, "init", "-q", "-b", "main")
+        # Pinned LOCALLY, for the reason `tests/attach/test_write.py::_overlay_repository`
+        # gives at length: `hooks_dir` asks a `git` that keeps `HOME`, so a developer whose own
+        # `~/.gitconfig` sets `core.hooksPath` would otherwise have this fixture answer their
+        # directory. Local config outranks global; production still honours the owner's.
+        _git(overlay, "config", "core.hooksPath", str(overlay / ".git" / "hooks"))
     (overlay / PROJECTS / "p" / "memory" / "developer").mkdir(parents=True, exist_ok=True)
     (overlay / PROJECTS / "p" / PROJECT_RECORD).write_text(
         f'remote = "{ORIGIN}"\nfirst_attach = "2026-09-18"\n', encoding="utf-8"
