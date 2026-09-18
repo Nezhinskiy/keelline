@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,9 +47,17 @@ DIAGNOSTIC_FIELD_CHARS = 2_000
 DIAGNOSTICS_MAX_BYTES = 256 * 1024
 MARKER_SESSIONS_KEPT = 50
 # A session id the payload did not carry. `parse_event` types `session_id` as `str | None`, and
-# every such invocation shares this one segment: markers stop being per-session, which is a
-# weaker guarantee than the harness gives and the honest name for it.
-UNKEYED_SESSION = ""
+# every such invocation used to share one constant segment -- `sha256("")`, a hex pair anything
+# can precompute. That made the unkeyed lane the one direction a *read* out of this tree could
+# be used in: a data root the environment names, plus a payload with no session id, is enough
+# to **plant** a marker at a known path and silence a `once_key` handler before it ever runs.
+#
+# Per process instead, so nothing can be laid down in advance. The cost is that `once_key`
+# degrades from "once per context" to "every invocation" for a payload with no session id --
+# which is exactly `NullSink`'s own documented degradation, is the abnormal path on both
+# harnesses (each names the session in its payload), and loses a notice rather than a guard.
+# Erring the other way would mean trusting a name a repository can write.
+UNKEYED_SESSION = f"unkeyed:{os.getpid()}:{os.urandom(16).hex()}"
 
 
 def _segment(value: str) -> str:
@@ -69,7 +78,18 @@ class DataSink:
         return f"{MARKERS}/{_segment(self.session)}/{_segment(key)}"
 
     def seen(self, key: str) -> bool:
-        return (self.root / self._target(key)).exists()
+        """A marker `mark()` could have written, not merely a name that exists.
+
+        `Path.exists()` followed a symlink and counted a directory, so anything able to write
+        the data root could silence a `once_key` handler with one `mkdir` -- no content, no
+        permissions, no race. A marker is the regular file `write_within` creates and nothing
+        else is one, and `lstat` asks without following the last component.
+        """
+        try:
+            info = os.lstat(self.root / self._target(key))
+        except OSError:
+            return False
+        return stat.S_ISREG(info.st_mode)
 
     def mark(self, key: str) -> None:
         try:

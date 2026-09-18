@@ -27,6 +27,18 @@ names the entry a reader has to open without reproducing one byte the repository
 strictly more actionable besides: the reader opens the file either way, and a position survives
 two entries claiming one id where a name does not.
 
+**`diagnostics` is the same ruling applied to the other direction.** That row used to print
+three fields of the sink's log on the ground that they are Keelline's own vocabulary — which
+they are, *for a log Keelline wrote*. The log is found through `${CLAUDE_PLUGIN_DATA}`, so this
+process never establishes that, and `error` is free text with no grammar and no cap on the read
+side at all. Refusing a bounded, grammar-constrained marker id and printing an unbounded
+free-text field in the same command is not a policy, so `diagnostics` prints a count and the
+reader opens the file. `_diagnostics` has the measurement.
+
+**A value the environment names is not the same as a value this process chose**, and the two
+checks that touch a plugin root now say which they have: `plugin_root` finds the file, `own_root`
+is the only root anything executes.
+
 **`keelline.hooks.sink` is imported directly, and the Global Constraints' "import an area
 through its published surface" is departed from here rather than satisfied.** `hooks/api.py` is
 the handler protocol, imported at module scope by every area's `hooks.py`, and `sink.py` imports
@@ -53,7 +65,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.findings import listed
 from keelline.guards.api import hooks_dir
-from keelline.hooks.sink import DIAGNOSTICS, DIRECTORY, MARKERS
+from keelline.hooks.sink import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import (
     PROJECTS,
     SLOTS,
@@ -98,13 +110,24 @@ _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
 # interpreter probe and nothing about it is a project's to tune. Wide enough for a cold
 # interpreter start on a loaded machine, narrow enough that a hung probe does not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
-# Diagnostic records read back from the sink, newest last. The file is capped at
-# `DIAGNOSTICS_MAX_BYTES` and rotated, so this bounds the report rather than the file.
-DIAGNOSTICS_SHOWN = 5
-# The three fields of a diagnostic record that are Keelline's own vocabulary. `context` and
-# `decision` are not on this list on purpose: `dispatch._failure` fills them from a handler's
-# own return value, which is the one part of that record a repository can reach.
-DIAGNOSTIC_FIELDS = ("event", "handler", "error")
+# Said by `files` about a wrapper it measured under a root the environment named, so nobody
+# reads "executable" as "this installation is sound". The sentence is a constant because both
+# of that check's rows carry it and a lane that changes one must change the other.
+NAMED_ROOT_CAVEAT = (
+    "; this is the plugin root the environment names, whose files are read here and run nowhere"
+)
+# Why `diagnostics` prints a count and no content. One constant because the reason is the row's
+# whole substance, and a lane that starts quoting the file has to delete this sentence to do it.
+UNVOUCHED_LOG = (
+    "the environment names where this file is, so nothing here can establish that Keelline "
+    "wrote it, and its fields are Keelline's vocabulary only for a log Keelline wrote"
+)
+# The variable, never its value: `${CLAUDE_PLUGIN_DATA}` is repository-reachable, so the path it
+# expands to is as repository-authored as the file's contents.
+DIAGNOSTICS_REMEDY = (
+    "read ${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl yourself; each line is one hook "
+    "failure, with its event, handler and error type"
+)
 
 
 @dataclass(frozen=True)
@@ -134,12 +157,16 @@ class Context:
     home: Path | None
     machine: Path | None
     runner: Runner
-    candidates: str | None
     env: Mapping[str, str]
     config: Config
     store: Store | None = None
     store_refusal: str | None = None
     plugin_root: Path | None = None
+    # The plugin root this process can vouch for, which is the only one anything here executes.
+    # `plugin_root` may be a root the environment named; this is `None` unless self-derivation
+    # answered. Two fields and not a flag, because the check that runs the wrapper should not be
+    # able to reach the other answer at all.
+    own_root: Path | None = None
     overlay: Path | None = None
 
 
@@ -154,9 +181,16 @@ def _own_root() -> Path | None:
     return own if (own / WRAPPER).is_file() else None
 
 
+# Both names, because both reach this process. §5.1/S1: Codex exports `PLUGIN_ROOT` and also
+# `CLAUDE_PLUGIN_ROOT`, so a rule written against one of them is `config/machine.py`'s own
+# finding again — "gating one of a pair of equivalent inputs is not a partial defence, it is a
+# redirect with a longer name". Neither is ever executed; see `plugin_root`.
+NAMED_ROOTS = ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
+
+
 def _named_root(env: Mapping[str, str]) -> Path | None:
-    """The plugin root the environment names, when it carries a wrapper."""
-    for name in ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"):
+    """The plugin root either of `NAMED_ROOTS` names, when it carries a wrapper."""
+    for name in NAMED_ROOTS:
         named = env.get(name)
         if named and (Path(named) / WRAPPER).is_file():
             return Path(named)
@@ -166,18 +200,22 @@ def _named_root(env: Mapping[str, str]) -> Path | None:
 def plugin_root(env: Mapping[str, str]) -> Path | None:
     """Where `hooks/run-hook.sh` is on this machine, or `None` when it cannot be found.
 
-    **This Keelline's own root first, and the named variable only after it.** The two checks
-    that read this answer *execute* what they find there — `_wrapper` launches it as a
-    subprocess — and a plugin-root variable is the same class of input `config/machine.py`
-    gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on: a committed `.claude/settings.json` `env`
-    block reaches this process. `hooks/run-hook.sh` derives its launcher from its own path for
-    that reason, and this is the same rule one layer up.
+    **This answer says where the file is. It does not say that the file may be run.** The two
+    checks that read it want different things: `files` reads the wrapper's mode, which needs
+    only the path, while `wrapper` *executes* it, which needs to know who chose the path. So
+    `Context` carries both this and `own_root`, and the executing check takes the second.
+
+    **This Keelline's own root first, and the named variable only after it.** A plugin-root
+    variable is the same class of input `config/machine.py` gates `KEELLINE_CONFIG` and
+    `XDG_CONFIG_HOME` on: a committed `.claude/settings.json` `env` block reaches this process
+    without a trust prompt. `hooks/run-hook.sh` derives its launcher from its own path for that
+    reason, and this is the same rule one layer up.
 
     The variable is still consulted, because there is one arrangement self-derivation cannot
-    answer for: a Keelline installed as a wheel beside a separately installed plugin. There the
-    alternative is skipping both checks forever, and `doctor` is a report a person asks for
-    rather than a hook that fires on every tool call. A wheel with no plugin anywhere carries
-    neither, so `None` is an ordinary answer here and the two checks that need it skip.
+    answer for: a Keelline installed as a wheel beside a separately installed plugin — which is
+    what `uv tool install` gives, and what `cli-path`'s own remedy and the README tell people to
+    do. A wheel with no plugin anywhere carries neither, so `None` is an ordinary answer here
+    and the checks that need it skip.
     """
     # One expression rather than an early return, so the order itself is the single line a
     # mutation inverts.
@@ -220,20 +258,24 @@ def _files(context: Context) -> Check:
             "the plugin root is not readable from here, so its shipped files cannot be checked",
             "",
         )
+    # Said in the row rather than left to the reader, because the two roots answer different
+    # questions. A root the environment named is read here and run nowhere, so "executable"
+    # from this row is a statement about a file, never a clean bill of health for a plugin.
+    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT
     wrapper = root / WRAPPER
     if not os.access(wrapper, os.X_OK):
         return Check(
             "files",
             RED,
             f"{WRAPPER} is not executable, so every hook entry exits 126 and the harness reads "
-            f"that as a non-blocking error",
+            f"that as a non-blocking error{whose}",
             f"chmod +x {wrapper}",
         )
     return Check(
         "files",
         SKIP,
         f"{WRAPPER} is executable; no release hashes are recorded in this build, so the "
-        f"installed files cannot be compared against a release",
+        f"installed files cannot be compared against a release{whose}",
         "",
     )
 
@@ -250,10 +292,32 @@ def _wrapper(context: Context) -> Check:
 
     `--version` and not a hook event: the point is whether the wrapper can reach Keelline at
     all, and the cheapest question that proves it is the one that changes nothing.
+
+    **Only a root this process derived for itself is ever executed.** `context.own_root` and
+    not `context.plugin_root`: with a wheel install `_own_root()` answers `None`, and a project
+    that commits `hooks/run-hook.sh` mode 100755 plus an `env` block naming its own tree was
+    measured getting that script *run* by `keelline doctor`, which then reported `wrapper: ok`
+    — code execution and a false clean bill of health in one row. Requiring the named root to
+    lie outside the project root is the weaker containment: it needs both sides resolved to
+    survive a committed symlink, and it still admits a second attacker-controlled checkout on
+    the same machine. A `skip` that names what it could not vouch for is the honest answer for
+    a root this process did not choose, and `files` still reads the file.
     """
-    root = context.plugin_root
+    # `own_root` and not `plugin_root`, on one line, so the whole rule is the single thing a
+    # mutation flips: what is launched here is a root this process derived, never one a
+    # variable named.
+    root = context.own_root
     if root is None:
-        return Check("wrapper", SKIP, "the plugin root is not readable from here", "")
+        if context.plugin_root is None:
+            return Check("wrapper", SKIP, "the plugin root is not readable from here", "")
+        return Check(
+            "wrapper",
+            SKIP,
+            "the only plugin root here is one the environment names, and a root this process "
+            "cannot vouch for is never executed: its wrapper would run before any Keelline "
+            "guard does",
+            "run `keelline doctor` from the plugin's own Keelline, so its root answers for itself",
+        )
     env = {
         key: value
         for key, value in context.env.items()
@@ -261,8 +325,6 @@ def _wrapper(context: Context) -> Check:
     }
     env["CLAUDE_PLUGIN_ROOT"] = str(root)
     env["CLAUDE_PROJECT_DIR"] = str(context.root)
-    if context.candidates is not None:
-        env["KEELLINE_PYTHON_CANDIDATES"] = context.candidates
     try:
         done = subprocess.run(  # noqa: S603 - list form, never a shell; Keelline's own wrapper
             [str(root / WRAPPER), "open", "--version"],
@@ -272,6 +334,11 @@ def _wrapper(context: Context) -> Check:
             check=False,
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,
+            # Closed, not inherited. The wrapper honours `KEELLINE_PYTHON_CANDIDATES` only from
+            # an interactive terminal, so a `doctor` run from a shell would otherwise hand its
+            # own tty to the probe and reopen the seam this environment was scrubbed to close;
+            # a child that decides to read stdin also cannot block the report behind the cap.
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return Check(
@@ -646,6 +713,16 @@ def _pre_commit(context: Context) -> Check:
     return Check("pre-commit", OK, "the overlay's commit-time secret scan is installed")
 
 
+# git's own spelling for "run this program and talk to it": `ext::<command>` and, generally,
+# `<helper>::<address>`. `--` stops an argument becoming an *option*; it does not stop it
+# becoming a *transport*, and `[ci] ref` is the one variable argument this area hands `git`.
+# git 2.54 refuses `ext::` under its default `protocol.ext.allow` (verified locally), which is
+# git's guard rather than this project's: it does not hold on an older git and it is off
+# entirely under `protocol.ext.allow=always`. Refused here so the answer does not depend on
+# which git the machine owner installed.
+TRANSPORT_HELPER = "::"
+
+
 def _ci_ref(context: Context) -> Check:
     """§8.4: whether `[ci] ref` resolves, asked with `git ls-remote --exit-code`.
 
@@ -653,10 +730,24 @@ def _ci_ref(context: Context) -> Check:
     printed — not in the detail, not in the remedy. `init` is the lane that writes it (wave 5),
     so an empty value is `skip` rather than red: nothing in this build has had a chance to set
     one, and calling that a fault would make `doctor` red on every correct installation.
+
+    **It is also the one value in this area that chooses a program rather than a destination**,
+    which is why `TRANSPORT_HELPER` is refused before the runner sees it, and why
+    `overlay.Runner` closes stdin and sets `GIT_TERMINAL_PROMPT=0`: without those a
+    repository-chosen URL could hold this read-only diagnostic on a credential prompt for the
+    whole of `NETWORK_TIMEOUT_SECONDS`.
     """
     ref = context.config.ci.ref
     if not ref:
         return Check("ci-ref", SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
+    if TRANSPORT_HELPER in ref:
+        return Check(
+            "ci-ref",
+            RED,
+            "[ci] ref names a git transport helper, which would hand `git ls-remote` a program "
+            "this repository chose; it was not resolved",
+            f"set [ci] ref in {CONFIG_FILE} to a plain remote URL",
+        )
     done = context.runner.run(["git", "ls-remote", "--exit-code", "--", ref], context.root)
     if done.code == 0:
         return Check("ci-ref", OK, "[ci] ref resolves")
@@ -700,14 +791,44 @@ def _store_debris(context: Context) -> Check:
     return Check("store-debris", OK, "the note store holds notes and nothing else")
 
 
-def _diagnostics(context: Context) -> Check:
-    """The last reasons the hook sink recorded — reasons, never payloads (§5.3).
+def _is_record(line: bytes) -> bool:
+    """Whether one line of the sink's log is a JSON object, which is all this check asks of it.
 
-    Three fields are printed and the rest of the record is dropped: `event`, `handler` and
-    `error` are Keelline's own vocabulary, while `context` and `decision` are filled from a
-    handler's own return value by `dispatch._failure` and are the one part of this record a
-    repository can reach. The sink already caps every field; printing the whole record would
-    undo that cap rather than inherit it.
+    Bytes and not text: the file may be anything, and `json.loads` raising `UnicodeDecodeError`
+    on a line that is not UTF-8 is the same answer as raising `JSONDecodeError` on one that is
+    not JSON — this is not a record.
+    """
+    try:
+        record = json.loads(line)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return isinstance(record, dict)
+
+
+def _diagnostics(context: Context) -> Check:
+    """How many reasons the hook sink recorded. A count, and not one byte of the file (§5.3).
+
+    **Nothing in this file is quoted, because nothing here can establish who wrote it.** The log
+    is `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl`, and that variable is the same class
+    `plugin_root`'s docstring and `hooks/run-hook.sh` both name: a committed
+    `.claude/settings.json` `env` block reaches this process without a trust prompt. `event`,
+    `handler` and `error` are Keelline's own vocabulary *for a log Keelline wrote*; for a log a
+    repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
+    model to relay this detail verbatim. Measured: a committed log whose `handler` was an
+    instruction-shaped string and whose `error` was 5,000 characters produced a 5,114-character
+    `warn` detail carrying both.
+
+    The rule this follows is the one this module already applied to `hook-entries`, one
+    paragraph up: a marker id **bounded by a grammar and capped** was still refused, because
+    bounded is not inert. An unbounded free-text field cannot be held to a weaker rule than a
+    bounded one, so the allowlist is gone rather than narrowed. What is left is a count, which
+    is this lane's own answer, and a remedy that names the file by the variable rather than by
+    its value — the value is repository-authored too.
+
+    **The read is bounded here, because the cap the sink documents is enforced on write.**
+    `DIAGNOSTICS_MAX_BYTES` bounds what `DataSink.diagnostic` appends; a file this process did
+    not write has no cap at all, and one byte past it is itself an answer — this is not a file
+    the sink produced, and the count below is a floor rather than a total.
     """
     data = context.env.get("CLAUDE_PLUGIN_DATA") or context.env.get("PLUGIN_DATA")
     if not data:
@@ -724,25 +845,28 @@ def _diagnostics(context: Context) -> Check:
         return Check(
             "diagnostics", OK, f"no hook failures are recorded; {sessions} session(s) seen"
         )
-    reasons: list[str] = []
-    for line in log.read_text(encoding="utf-8").splitlines():
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict):
-            reasons.append(" ".join(str(record.get(field_, "-")) for field_ in DIAGNOSTIC_FIELDS))
-    if not reasons:
+    try:
+        with log.open("rb") as handle:
+            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)
+    except OSError as exc:
+        return Check(
+            "diagnostics",
+            WARN,
+            f"the hook sink's log is there and could not be read ({type(exc).__name__})",
+            DIAGNOSTICS_REMEDY,
+        )
+    over = len(raw) > DIAGNOSTICS_MAX_BYTES
+    count = sum(1 for line in raw.splitlines() if _is_record(line))
+    if not count and not over:
         return Check(
             "diagnostics", OK, f"no hook failures are recorded; {sessions} session(s) seen"
         )
+    counted = f"{'at least ' if over else ''}{count} hook failure(s) recorded"
     return Check(
         "diagnostics",
         WARN,
-        f"{len(reasons)} hook failure(s) recorded; the last "
-        f"{min(len(reasons), DIAGNOSTICS_SHOWN)}: {listed(reasons[-DIAGNOSTICS_SHOWN:])}",
-        "each line above is event, handler and error type; run the named command by hand to "
-        "see the failure in full",
+        f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",
+        DIAGNOSTICS_REMEDY,
     )
 
 
@@ -816,11 +940,11 @@ def _context(
     home: Path | None,
     machine: Path | None,
     runner: Runner,
-    candidates: str | None,
     env: Mapping[str, str],
     config: Config,
 ) -> Context:
-    context = Context(root, home, machine, runner, candidates, env, config)
+    context = Context(root, home, machine, runner, env, config)
+    context.own_root = _own_root()
     context.plugin_root = plugin_root(env)
     try:
         context.overlay = overlay_root(machine)
@@ -839,16 +963,16 @@ def run_checks(
     home: Path | None,
     machine: Path | None,
     runner: Runner,
-    candidates: str | None = None,
     env: Mapping[str, str] | None = None,
 ) -> list[Check]:
     """The fifteen rows, always fifteen, whatever state the machine is in.
 
-    `candidates` is the wrapper's `KEELLINE_PYTHON_CANDIDATES` list, threaded so that a test can
-    ask what happens when the interpreter probe fails without arranging a machine with no
-    Python. The plan's `Interfaces:` block names four keyword parameters and its own test for
-    the `wrapper` check passes a fifth; this is that fifth, defaulted so the four-parameter form
-    in the block is the real signature.
+    Four keyword parameters, which is what the plan's `Interfaces:` block names. A fifth,
+    `candidates`, used to thread `KEELLINE_PYTHON_CANDIDATES` into the `wrapper` check's
+    subprocess so a test could fail the interpreter probe; the wrapper now honours that variable
+    only from an interactive terminal and this probe is handed `/dev/null`, so the parameter
+    could only ever have been a no-op here and is gone. The covering test fails the probe the
+    way a machine does instead — with a plugin root whose launcher is not there.
 
     `env` defaults to the process environment because two checks are *about* the environment —
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
@@ -888,7 +1012,6 @@ def run_checks(
         home=home,
         machine=machine,
         runner=runner,
-        candidates=candidates,
         env=env,
         config=config,
     )

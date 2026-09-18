@@ -1477,21 +1477,160 @@ reddens = [
 [[mutation]]
 name = "the wrapper stops noticing that its launcher is missing"
 file = "hooks/run-hook.sh"
-before = '[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing at ${launcher}"'
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
 after = ':'
 reddens = [
   "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
 ]
 
-# C1 one layer up: `doctor`'s `wrapper` check launches whatever `plugin_root` resolves, so the
-# root this Keelline is part of has to outrank the one a variable names.
+# C2, first half. This ordering no longer decides what is *executed* -- `_wrapper` takes
+# `own_root` and nothing else -- so what it pins now is which wrapper `files` reads its mode
+# from. A plugin's own and one a repository committed are different files with different
+# meanings, and the row would otherwise report on the wrong one.
 [[mutation]]
-name = "doctor lets a named plugin root outrank its own"
+name = "doctor reads a named plugin root's files in preference to its own"
 file = "src/keelline/doctor/checks.py"
 before = "    return _own_root() or _named_root(env)"
 after = "    return _named_root(env) or _own_root()"
 reddens = [
   "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of",
+]
+
+# C2, and the entry that matters: `doctor` runs a subprocess out of this answer. With
+# `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and which `cli-path`'s
+# own remedy and the README tell people to install -- a project that commits `hooks/run-hook.sh`
+# mode 100755 plus an `env` block naming its tree got that script RUN, and the report then read
+# `wrapper: ok`. Code execution and a false clean bill of health from a read-only command.
+[[mutation]]
+name = "doctor executes the plugin root the environment named"
+file = "src/keelline/doctor/checks.py"
+before = "    root = context.own_root"
+after = "    root = context.plugin_root"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# The other half of the same containment: `files` keeps reading the wrapper's mode, because that
+# needs only a path -- and must say whose root it measured, so nobody reads "executable" off a
+# repository-planted file as a clean bill of health for the installation.
+[[mutation]]
+name = "doctor reports on a named plugin root's files without saying whose they are"
+file = "src/keelline/doctor/checks.py"
+before = '    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT'
+after = '    whose = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# C1. The headline hardening closed WHICH FILE the wrapper hands Python and left WHICH PYTHON
+# one line below it: the probe asks a candidate only to exit 0 for a trivial `-c`, so a
+# repository-planted `evil-python` ran `<plugin>/scripts/keelline hook PreToolUse` on every
+# PreToolUse, before any Keelline guard. `config/machine.py`'s ruling -- "gating one of a pair of
+# equivalent inputs is not a partial defence, it is a redirect with a longer name" -- is
+# followed by putting that module's own gate on it: an interactive terminal, which a hook's
+# stdin (the harness's payload, on a pipe) never is.
+[[mutation]]
+name = "the wrapper lets the environment choose its interpreter off a terminal"
+file = "hooks/run-hook.sh"
+before = 'if [ -t 0 ] && [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi'
+after = 'if [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
+]
+
+# C1's other chooser, and the one the tty gate moved rather than closed: with
+# `KEELLINE_PYTHON_CANDIDATES` gated, the hook path always uses the built-in list, whose last
+# entry is a `PATH` lookup -- and `PATH` reaches this process from the same committed `env`
+# block. Dropping the entry is not available (it is the S8 row 2 fall-through, and a pyenv, nix
+# or asdf machine has nothing at the four absolute paths), so what a clone can actually stage is
+# refused instead: an interpreter inside its own tree. Measured with the entry disabled -- a
+# shipped `python3` plus a `PATH` entry naming the tree ran
+# `<plugin>/scripts/keelline hook PreToolUse`.
+[[mutation]]
+name = "the wrapper runs an interpreter the project itself ships"
+file = "hooks/run-hook.sh"
+before = '  if in_project "$resolved"; then continue; fi'
+after = '  if false; then continue; fi'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_inside_the_project_root_is_never_used",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a PATH entry naming the tree]",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a . in PATH]",
+]
+
+# Both sides resolved, or the comparison is a string game. `command -v` answers a `PATH` entry's
+# own spelling, so a symlinked entry names a directory outside the tree that IS the tree.
+[[mutation]]
+name = "the interpreter containment compares a candidate's spelling instead of its resolved path"
+file = "hooks/run-hook.sh"
+before = '  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1'
+after = '  dir=$(dirname -- "$1") || return 1'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked PATH entry]",
+]
+
+# The same, for the other side. A project reached through a symlink is one spelling in
+# `CLAUDE_PROJECT_DIR` and another on disk, and the containment then reads "outside" for every
+# candidate in the tree.
+[[mutation]]
+name = "the interpreter containment compares against the project root's spelling"
+file = "hooks/run-hook.sh"
+before = '  project=$(pwd -P)'
+after = '  project="$root"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked project root]",
+]
+
+# The half a blunt containment gets wrong. No `CLAUDE_PROJECT_DIR` and no `git` answer is not a
+# project this process can name, and refusing every candidate on a question it could not ask
+# would turn an unresolvable root -- the ordinary state outside a repository -- into no hooks.
+[[mutation]]
+name = "an unresolvable project root refuses every interpreter instead of none"
+file = "hooks/run-hook.sh"
+before = '  [ -n "$project" ] || return 1'
+after = '  [ -n "$project" ] || return 0'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
+]
+
+# The wrapper's other half. `hooks/dispatch._git_toplevel` scrubs this identical call one layer
+# down and names the failure verbatim; the wrapper inherited whatever the session had, so
+# `GIT_DIR`/`GIT_WORK_TREE` chose the project -- and every entry but the dispatcher's relies on
+# `--root` defaulting to `.`, so the whole hook then read another repository's configuration,
+# budgets and note store. The Codex hot path, where `CLAUDE_PROJECT_DIR` is unset.
+[[mutation]]
+name = "the wrapper's git inherits the session's GIT_DIR again"
+file = "hooks/run-hook.sh"
+before = '[ -n "$root" ] || root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+after = '[ -n "$root" ] || root=$(git rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
+# "Permission denied" and exited 2 with no KL_ token, passed through by `case "$rc" in 0|2)` --
+# the unattributed exit 2 D11 exists to make impossible, and a state `doctor`'s wrapper row
+# called green because it keys on finding a token.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher cannot be read"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = '[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
+]
+
+# A root that cannot be RESOLVED is a correct silent degradation; a root that was named and
+# cannot be entered is not. The process stayed in the harness's working directory, and if that
+# happened to be another Keelline project every `--root`-defaulting entry read its
+# configuration -- with no token, and nothing in the sink.
+[[mutation]]
+name = "an unenterable project root leaves the hook in the harness's directory in silence"
+file = "hooks/run-hook.sh"
+before = '  cd "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  cd "$root" 2>/dev/null || true'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[closed-2]",
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[open-0]",
 ]
 
 # The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
@@ -1515,6 +1654,76 @@ before = '    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")'
 after = '    data = env.get("CLAUDE_PLUGIN_DATA")'
 reddens = [
   "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
+]
+
+# `seen()` was a plain `Path.exists()`, which follows a symlink and counts a directory -- so
+# anything able to write the data root could silence a `once_key` handler with one `mkdir`. A
+# marker is the regular file `mark()` writes and nothing else is one.
+[[mutation]]
+name = "a marker is any name that exists again, not a file the sink wrote"
+file = "src/keelline/hooks/sink.py"
+before = "        return stat.S_ISREG(info.st_mode)"
+after = "        return True"
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_is_a_regular_file_and_not_merely_a_name_that_exists",
+]
+
+# `UNKEYED_SESSION` was `""`, so an invocation whose payload carried no session id filed its
+# markers under `sha256("")` -- a hex pair anything can precompute. With a data root the
+# environment names, that is the one direction a read out of this tree can be used in: plant a
+# file at the known pair and a `once_key` handler never runs.
+[[mutation]]
+name = "an unkeyed session's marker path is predictable again"
+file = "src/keelline/hooks/sink.py"
+before = 'UNKEYED_SESSION = f"unkeyed:{os.getpid()}:{os.urandom(16).hex()}"'
+after = 'UNKEYED_SESSION = ""'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute",
+]
+
+# Every call through this seam captures its output, so a `git` or `gh` that asks for a
+# credential on an inherited stdin is invisible and blocks for the whole of
+# NETWORK_TIMEOUT_SECONDS. `doctor`'s `ci-ref` row is what makes it a finding: the URL it
+# resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+[[mutation]]
+name = "a launched command gets this process's stdin again"
+file = "src/keelline/overlay/runner.py"
+before = "                stdin=subprocess.DEVNULL,"
+after = ""
+reddens = [
+  "tests/overlay/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+]
+
+[[mutation]]
+name = "a launched git may prompt for a credential again"
+file = "src/keelline/overlay/runner.py"
+before = '_ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}'
+after = "_ENV_FORCE = {}"
+reddens = [
+  "tests/overlay/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+  "tests/overlay/test_runner.py::test_the_variables_that_redirect_git_are_dropped",
+]
+
+# The comment beside this list used to claim `GIT_DIR` and `GIT_WORK_TREE` were "the two" that
+# redirect git. They are not: this is one of several counterexamples, and a clone into a fresh
+# directory must not inherit an index from elsewhere either.
+[[mutation]]
+name = "the runner stops dropping a variable that redirects git's index"
+file = "src/keelline/overlay/runner.py"
+before = '    "GIT_INDEX_FILE",'
+after = ""
+reddens = ["tests/overlay/test_runner.py::test_the_variables_that_redirect_git_are_dropped"]
+
+# `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
+# arrived as NOT_FOUND -- which every caller reads as "gh is not installed". A wrong finding is
+# worse than a slow one, and the two have different remedies.
+[[mutation]]
+name = "a command that hangs is reported as one that is not installed"
+file = "src/keelline/overlay/runner.py"
+before = '                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+after = '                NOT_FOUND, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+reddens = [
+  "tests/overlay/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
 ]
 
 # The one invariant in this wave whose failure ships a permission to every machine that ever
@@ -1720,12 +1929,38 @@ reddens = [
 # repository's bytes could reach a terminal — and the model reading it — unwrapped. The
 # allowlist is the guard; without it the check prints everything the record holds.
 [[mutation]]
-name = "doctor prints a whole diagnostic record instead of its three Keelline-owned fields"
+name = "doctor quotes a diagnostics log whose provenance it cannot establish"
 file = "src/keelline/doctor/checks.py"
-before = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error")'
-after = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error", "context", "decision")'
+before = '        f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",'
+after = '        f"{counted}; {sessions} session(s) seen: " + raw.decode("utf-8", "replace"),'
 reddens = [
-  "tests/doctor/test_checks.py::test_diagnostics_are_reported_as_reasons_and_never_as_payloads",
+  "tests/doctor/test_checks.py::test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted",
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# The cap the sink documents is enforced on WRITE, by `DataSink.diagnostic`. A file this process
+# did not write has no cap at all, and `${CLAUDE_PLUGIN_DATA}` is what decides which file that
+# is -- so the bound has to be applied again on the read or it is not a bound.
+[[mutation]]
+name = "doctor reads an environment-named log with no bound of its own"
+file = "src/keelline/doctor/checks.py"
+before = "            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)"
+after = "            raw = handle.read()"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# `[ci] ref` is the sole variable argument this area hands `git`, and `--` stops it becoming an
+# option, not a transport. `ext::<command>` makes `git ls-remote` run a program the repository
+# chose; git 2.54's default `protocol.ext.allow` refuses it, which is git's guard and not this
+# project's -- absent on an older git, off under `protocol.ext.allow=always`.
+[[mutation]]
+name = "a ci-ref naming a git transport helper reaches git again"
+file = "src/keelline/doctor/checks.py"
+before = "    if TRANSPORT_HELPER in ref:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ci_ref_naming_a_transport_helper_never_reaches_git",
 ]
 
 # I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's

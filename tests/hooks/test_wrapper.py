@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pty
 import shutil
 import stat
 import subprocess
@@ -54,33 +55,68 @@ def _plugin_root(
     return root
 
 
+def _env(plugin_root: Path, env_root: Path | None, candidates: str | None) -> dict[str, str]:
+    env = dict(os.environ)
+    env.pop("CLAUDE_PLUGIN_ROOT", None)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    env.pop("KEELLINE_PYTHON_CANDIDATES", None)
+    if env_root is not None:
+        env["CLAUDE_PLUGIN_ROOT"] = str(env_root)
+    if candidates is not None:
+        env["KEELLINE_PYTHON_CANDIDATES"] = candidates
+    return env
+
+
 def _run(
     *argv: str,
     plugin_root: Path,
     env_root: Path | None = None,
     candidates: str | None = None,
     cwd: Path | None = None,
+    project: Path | None = None,
+    path: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run the wrapper **inside** `plugin_root`, the way an installed plugin's entry does.
 
     `CLAUDE_PLUGIN_ROOT` is removed from the environment unless `env_root` names one, and
     `env_root` is deliberately a *different* root: nothing below may change because of it.
+
+    **`cwd` defaults to `plugin_root`, which is under `tmp_path` and is not a repository.** It
+    used to inherit pytest's own, which is this checkout — so the wrapper's `git rev-parse`
+    named *Keelline's own tree* as the project root, and `sys.executable` under `uv run` is
+    `<checkout>/.venv/bin/python3`, inside it. Every case passing `candidates=sys.executable`
+    was therefore one edit away from being about the interpreter containment instead of what it
+    says it is about. The same hermeticity `tests/doctor/test_checks.py::_env` enforces, for the
+    same reason: a case must not read the machine it happens to run on.
+
+    **`candidates` arrives over a pty, because the wrapper honours that variable only from an
+    interactive terminal.** It names the *program* the wrapper executes, so it is gated where
+    `config/machine.py` gates `KEELLINE_CONFIG` — and a hook's stdin is the harness's JSON
+    payload on a pipe, never a terminal. Every case below that passes one is therefore about
+    the probe itself and says nothing about what an `env` block can reach;
+    `test_an_interpreter_the_environment_names_is_ignored_off_a_terminal` is that case, and it
+    drives both sides of the same gate.
     """
-    env = dict(os.environ)
-    env.pop("CLAUDE_PLUGIN_ROOT", None)
-    env.pop("CLAUDE_PROJECT_DIR", None)
-    if env_root is not None:
-        env["CLAUDE_PLUGIN_ROOT"] = str(env_root)
-    if candidates is not None:
-        env["KEELLINE_PYTHON_CANDIDATES"] = candidates
-    return subprocess.run(
-        [str(plugin_root / "hooks" / WRAPPER.name), *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-        cwd=str(cwd) if cwd else None,
-    )
+    env = _env(plugin_root, env_root, candidates)
+    if project is not None:
+        env["CLAUDE_PROJECT_DIR"] = str(project)
+    if path is not None:
+        env["PATH"] = path
+    master, slave = pty.openpty() if candidates is not None else (-1, -1)
+    try:
+        return subprocess.run(
+            [str(plugin_root / "hooks" / WRAPPER.name), *argv],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=str(cwd if cwd is not None else plugin_root),
+            stdin=slave if candidates is not None else subprocess.DEVNULL,
+        )
+    finally:
+        for descriptor in (master, slave):
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 def test_no_policy_argument_refuses_with_a_token(tmp_path: Path) -> None:
@@ -159,6 +195,244 @@ def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path:
     result = _run("closed", "hook", "PreToolUse", plugin_root=ours, env_root=theirs)
     assert result.returncode == 0
     assert "KL_RC" not in result.stderr
+
+
+def _planted_interpreter(tmp_path: Path) -> tuple[Path, Path]:
+    """An `evil-python` of the shape a repository can commit, and the file it writes when run.
+
+    The probe asks a candidate only to exit 0 for a trivial `-c`, so this is the whole cost of
+    passing it: three lines and an executable bit.
+    """
+    ran = tmp_path / "planted-interpreter-ran"
+    planted = tmp_path / "evil-python"
+    planted.write_text(
+        f'#!/bin/sh\ncase "$1" in\n  -c) exit 0 ;;\nesac\necho "$*" > "{ran}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    planted.chmod(0o755)
+    return planted, ran
+
+
+def test_an_interpreter_the_environment_names_is_ignored_off_a_terminal(tmp_path: Path) -> None:
+    # C1, and the half `test_a_plugin_root_in_the_environment_does_not_choose_the_launcher` left
+    # open one line below itself: closing *which file* the wrapper hands Python, while the
+    # environment still chose *which Python*, is the same class of hole with a different name.
+    # Measured on the shipped wrapper: with the `env`-block equivalent of
+    # KEELLINE_PYTHON_CANDIDATES=<repo>/evil-python, the wrapper ran
+    # `<repo>/evil-python <plugin>/scripts/keelline hook PreToolUse` and exited 0 — arbitrary
+    # code on every PreToolUse, before any Keelline guard. `config/machine.py`'s ruling is the
+    # one followed here: "Gating one of a pair of equivalent inputs is not a partial defence, it
+    # is a redirect with a longer name", so the gate is that module's own — an interactive
+    # terminal — and a hook's stdin is the harness's payload on a pipe.
+    planted, ran = _planted_interpreter(tmp_path)
+    root = _plugin_root(tmp_path, 0, echo_cwd=True)
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), "closed", "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env(root, None, str(planted)),
+        stdin=subprocess.DEVNULL,
+        cwd=str(tmp_path),
+    )
+    assert not ran.exists(), "the planted interpreter chose the program the wrapper ran"
+    # Non-vacuous twice over: a real interpreter did run the launcher (it printed its cwd), and
+    # the same list IS honoured over a terminal, so the gate is a gate and not a deletion — a
+    # machine owner debugging the probe by hand keeps their override.
+    assert result.returncode == 0 and result.stdout.strip()
+    _run("closed", "hook", "PreToolUse", plugin_root=root, candidates=str(planted))
+    assert ran.exists()
+
+
+def _clone_shipping_an_interpreter(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A checkout that commits its own `python3`, and the file it writes if anything runs it.
+
+    This is the whole of what a hostile clone has to stage for the `PATH` arm: one executable in
+    its own tree, and a `PATH` entry naming that tree in a committed `env` block.
+    """
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    ran = tmp_path / "shipped-interpreter-ran"
+    shipped = clone / "python3"
+    shipped.write_text(
+        f'#!/bin/sh\ncase "$1" in\n  -c) exit 0 ;;\nesac\necho "$*" > "{ran}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    shipped.chmod(0o755)
+    return clone, shipped, ran
+
+
+def test_an_interpreter_inside_the_project_root_is_never_used(tmp_path: Path) -> None:
+    # Gating `KEELLINE_PYTHON_CANDIDATES` on a terminal moved the program chooser from one
+    # variable to another: the hook path then always uses the built-in list, whose last entry is
+    # a `PATH` lookup, and `PATH` reaches this process from the same committed `env` block. The
+    # entry is not droppable -- it is the fall-through S8 row 2 measured, and a pyenv, nix or
+    # asdf machine has no interpreter at any of the four absolute paths -- so what is refused is
+    # the narrower thing a clone can actually stage: a candidate resolving inside its own tree.
+    #
+    # The containment is asked BEFORE the version probe, because that probe is itself an
+    # execution: `"$c" -c ...` runs the candidate, and a check made afterwards would be made on
+    # a program that had already run.
+    clone, shipped, ran = _clone_shipping_an_interpreter(tmp_path)
+    root = _plugin_root(tmp_path, 0, echo_cwd=True)
+    result = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=root,
+        project=clone,
+        candidates=f"{shipped} {sys.executable}",
+    )
+    assert not ran.exists(), "the tree's own interpreter was executed"
+    # Non-vacuous: one candidate is dropped and the probe goes on, so a real interpreter still
+    # answers and the launcher still runs in the project.
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(clone.resolve())
+    # With nothing outside the tree to fall back to it is a refusal carrying a token -- the cost
+    # the ruling accepts for a genuinely vendored in-tree toolchain, and `doctor`'s wrapper row
+    # names it rather than the hook silently running the tree's own program.
+    only = _run(
+        "closed", "hook", "PreToolUse", plugin_root=root, project=clone, candidates=str(shipped)
+    )
+    assert only.returncode == 2
+    assert "KL_NO_PY" in only.stderr
+    assert not ran.exists()
+
+
+# Every spelling a `PATH` entry can take that `command -v` turns into a path inside the tree.
+# The candidate string is `python3` throughout, because the resolution is the subject: on the
+# machine this is about, the built-in list has already fallen through to exactly that entry.
+_PATH_SPELLINGS = (
+    "a PATH entry naming the tree",
+    "a . in PATH",
+    "a .. spelling of the tree",
+    "a symlinked PATH entry",
+    "a symlinked project root",
+)
+
+
+@pytest.mark.parametrize("spelling", _PATH_SPELLINGS)
+def test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path(
+    tmp_path: Path, spelling: str
+) -> None:
+    # Both sides are resolved before they are compared, and each of these is a way past a
+    # comparison that resolved neither or only one. The last two are why `project` is `pwd -P`
+    # and not `$CLAUDE_PROJECT_DIR`: one spelling on one side and another on the other reads as
+    # "outside" for every candidate in the tree.
+    clone, _, ran = _clone_shipping_an_interpreter(tmp_path)
+    linked_bin = tmp_path / "linked-bin"
+    linked_bin.symlink_to(clone)
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(clone)
+    rest = "/usr/bin:/bin"
+    path, project = {
+        _PATH_SPELLINGS[0]: (f"{clone}:{rest}", clone),
+        _PATH_SPELLINGS[1]: (f".:{rest}", clone),
+        _PATH_SPELLINGS[2]: (f"{clone.parent}/{clone.name}/../{clone.name}:{rest}", clone),
+        _PATH_SPELLINGS[3]: (f"{linked_bin}:{rest}", clone),
+        _PATH_SPELLINGS[4]: (f"{clone}:{rest}", linked_root),
+    }[spelling]
+    result = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0),
+        candidates="python3",
+        project=project,
+        path=path,
+        cwd=clone,
+    )
+    assert not ran.exists(), f"the tree's own interpreter ran, reached through {spelling}"
+    assert result.returncode == 2
+    assert "KL_NO_PY" in result.stderr
+
+
+def test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against(
+    tmp_path: Path,
+) -> None:
+    # The other half of the rule, and the one a blunt containment gets wrong. No
+    # `CLAUDE_PROJECT_DIR` and no `git` answer is not a project this process can name, and
+    # refusing every candidate on the strength of a question it could not ask would turn an
+    # unresolvable root -- the ordinary state outside a repository -- into no hooks at all.
+    planted, ran = _planted_interpreter(tmp_path)
+    _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=_plugin_root(tmp_path, 0),
+        candidates=str(planted),
+    )
+    assert ran.exists()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_path: Path) -> None:
+    # `hooks/dispatch._git_toplevel` scrubs this exact call one layer down and names the failure
+    # verbatim; the wrapper did not. Measured: `cd repoA` with GIT_DIR/GIT_WORK_TREE naming
+    # repoB put the launcher in repoB, and every entry but the dispatcher's relies on `--root`
+    # defaulting to `.` — so the whole hook then read another repository's keelline.toml,
+    # budgets and note store. This is the Codex hot path, where CLAUDE_PROJECT_DIR is unset.
+    here, there = tmp_path / "here", tmp_path / "there"
+    for repository in (here, there):
+        repository.mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True, capture_output=True)
+    root = _plugin_root(tmp_path, 0, echo_cwd=True)
+    env = _env(root, None, None)
+    env["GIT_DIR"] = str(there / ".git")
+    env["GIT_WORK_TREE"] = str(there)
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), "open", "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(here),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.stdout.strip() == str(here.resolve())
+
+
+def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
+    # `[ -f ]` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
+    # CPython's own "Permission denied" and exited 2 with no KL_ token, passed straight through
+    # by `case "$rc" in 0|2)` — the unattributed exit 2 D11 exists to make impossible, and a
+    # state `doctor`'s wrapper row reported green for, because it keys on finding a token.
+    root = _plugin_root(tmp_path, 0)
+    (root / "scripts" / "keelline").chmod(0o000)
+    try:
+        result = _run("closed", "hook", "PreToolUse", plugin_root=root)
+    finally:
+        (root / "scripts" / "keelline").chmod(0o755)
+    assert result.returncode == 2
+    assert "KL_NO_LAUNCHER" in result.stderr
+
+
+@pytest.mark.parametrize(("policy", "code"), [("closed", 2), ("open", 0)])
+def test_a_project_root_that_cannot_be_entered_says_so(
+    tmp_path: Path, policy: str, code: int
+) -> None:
+    # The silent half of the same line. A root that cannot be *resolved* is a correct open
+    # degradation — nothing is configured, nothing is emitted. A root that WAS named and cannot
+    # be entered is not: the process stayed in the harness's cwd, and if that happened to be
+    # another Keelline project every `--root`-defaulting entry read *that* project's
+    # configuration, with no token and nothing in the sink.
+    root = _plugin_root(tmp_path, 0, echo_cwd=True)
+    env = _env(root, None, None)
+    env["CLAUDE_PROJECT_DIR"] = str(tmp_path / "not-on-disk")
+    result = subprocess.run(
+        [str(root / "hooks" / WRAPPER.name), policy, "hook", "PreToolUse"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(tmp_path),
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == code
+    assert "KL_NO_ROOT" in result.stderr
+    # Non-vacuous: the launcher was not reached at all, which is what "cannot be entered" has
+    # to mean — a run that continued in the harness's cwd would have printed one.
+    assert result.stdout == ""
 
 
 def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path: Path) -> None:

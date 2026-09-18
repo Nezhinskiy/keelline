@@ -167,16 +167,55 @@ changes into it so every command's `--root` default is correct, and it maps exit
 `0` and `2` are the dispatcher's own and pass through untouched — a `2` it produced is a
 handler's deny, not a wrapper failure. Every other exit code, and every fault the wrapper finds
 before `keelline` runs at all, is judged by `<policy>`: `closed` refuses with exit `2`, `open`
-continues with exit `0`. Either way the reason is written to stderr with a token, so an exit `2`
-is attributed rather than inferred — Codex downgrades an exit `2` with empty stderr to a plain
-failure, so the reason is part of the contract.
+continues with exit `0`. Either way the reason is written to stderr with a token — Codex
+downgrades an exit `2` with empty stderr to a plain failure, so the reason is part of the
+contract.
+
+**Exit `2` is shared with the platform, and the wrapper does not pretend otherwise.** Because a
+`2` the dispatcher produced is a deny that must pass through, a `2` CPython produced underneath
+is indistinguishable from it and no token accompanies it. What the wrapper owns is the set of
+faults it can reach *first* — a lost policy argument, no interpreter, a launcher it cannot read,
+a project root it cannot enter — and each of those prints its token. So an exit `2` **carrying a
+token** is attributed; an exit `2` carrying none is a handler's deny or a fault beneath the
+wrapper, and `keelline doctor`'s `wrapper` row reports on the same basis.
 
 | Token | What it means |
 |---|---|
 | `KL_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
-| `KL_NO_PY` | No candidate interpreter is 3.11 or newer. `KEELLINE_PYTHON_CANDIDATES` overrides the built-in list, space-separated; it exists for the tests and for nothing else. |
-| `KL_NO_LAUNCHER` | There is no `scripts/keelline` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any Keelline guard runs. |
+| `KL_NO_PY` | No candidate interpreter is 3.11 or newer **and outside the project root**. `KEELLINE_PYTHON_CANDIDATES` replaces the built-in list, space-separated — and is honoured **only when the wrapper's stdin is a terminal**, because it names the program the wrapper executes. See below. |
+| `KL_NO_LAUNCHER` | There is no readable `scripts/keelline` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any Keelline guard runs. Readability and not merely existence: a launcher at mode `000` otherwise reached CPython, which printed its own error and exited `2` with no token. |
+| `KL_NO_ROOT` | `CLAUDE_PROJECT_DIR`, or `git`, named a project root the wrapper could not enter. A root that cannot be *resolved* is silent and correct — nothing is configured, so nothing is emitted — but a root that was named and cannot be entered used to leave the process in the harness's working directory, where every `--root`-defaulting entry would read whatever project happened to be there. |
 | `KL_RC` | `keelline` exited with something other than `0` or `2`; the code is printed. |
+
+**Which values may choose what.** The wrapper asks one question of everything it reads: is this
+a *destination*, or does it choose a program, or the provenance of what runs? `CLAUDE_PROJECT_DIR`
+is a destination and is honoured. `KEELLINE_PYTHON_CANDIDATES` is not — the probe asks a
+candidate only to exit `0` for a trivial `-c`, so an unguarded list picks the interpreter that
+runs on every tool call — and it is therefore gated where `keelline`'s machine configuration
+gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME`: honoured from an interactive terminal, ignored
+everywhere else. A hook's stdin is the harness's JSON payload on a pipe and `keelline doctor`
+hands its own probe `/dev/null`, so a committed `.claude/settings.json` `env` block — which
+applies without a trust prompt in a non-interactive session — cannot reach it, while a machine
+owner debugging the probe by hand still can. The `git` that resolves the project root is asked
+with an allowlisted environment for the same reason: an inherited `GIT_DIR` or `GIT_WORK_TREE`
+otherwise made it answer for a different repository.
+
+**`PATH` is contained rather than trusted or dropped.** The last built-in candidate is bare
+`python3`, resolved through `PATH`, and an `env` block can set `PATH` — so gating
+`KEELLINE_PYTHON_CANDIDATES` alone would have moved the choice of program from one variable to
+another. The entry cannot simply go: it is the fall-through the built-in list exists for, and a
+machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
+paths. So the rule is narrower and matches what a hostile clone can actually stage — **no
+candidate whose resolved path lies inside the project root is used**, whatever spelling reached
+it. Both sides are resolved before they are compared, so a relative entry, a `.` in `PATH`, a
+`..` spelling and a symlink on either side all answer the same question. Where there is no
+project root to compare against, the candidate stands.
+
+A machine whose interpreter really is inside the checkout — a vendored toolchain, or an in-tree
+virtual environment that is the only `python3` on `PATH` — gets `KL_NO_PY` rather than a silent
+run of the tree's own program: a refusal under `closed`, a degradation under `open`, and a red
+`wrapper` row in `keelline doctor` either way. That is the accepted cost of the rule, and it is
+reached only when none of the four absolute candidates answers first.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and no policy applies — the guard
@@ -670,10 +709,13 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 ## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
 Fifteen checks over one installation (§8.4). It **reports and never repairs**: every finding
-carries the command that would fix it, and not one of them is run for you. Nothing is written,
-and exactly two subprocesses are run, both of which only ask: Keelline's own
-`hooks/run-hook.sh` with `--version`, and — only when `[ci] ref` is set — `git ls-remote
---exit-code` against the remote it names, which is the one call that leaves this machine.
+carries the command that would fix it, and not one of them is run for you. Nothing is written.
+
+**Several subprocesses are run and every one of them only asks.** Keelline's own
+`hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the remote `[ci] ref`
+names, only when one is set; and the `git` queries the other rows need — where the overlay keeps
+its hooks, what its `origin` is, and where the note store resolves to. Four launches on a green
+attached installation, measured. Exactly one of them, `ci-ref`, leaves this machine.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
@@ -687,7 +729,7 @@ nobody sees, so that is where they all are.
 | `not-initialised` | whether there is a `keelline.toml` here, and whether it loads | `keelline.toml` |
 | `versions` | whether the project's `[keelline] version` is the Keelline running | `keelline.toml`, the package |
 | `files` | the hook wrapper's executable bit, and the shipped files against the release's hashes | `hooks/run-hook.sh` |
-| `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version` |
+| `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version`, and only under the plugin root this Keelline is part of |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the Keelline marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `codex-trust` | whether any Keelline hook is untrusted on Codex | — |
@@ -697,10 +739,10 @@ nobody sees, so that is where they all are.
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `ci-ref` | whether `[ci] ref` resolves | `git ls-remote --exit-code` |
 | `store-debris` | files in the note store that are not notes | the note store |
-| `diagnostics` | the last reasons the hook sink recorded | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
+| `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Three checks skip in this build, and each says which measurement it is missing.** `files`
+**Three checks skip on a healthy installation, and each says which measurement it is missing.** `files`
 compares the installed plugin against the release's recorded hashes, which the release lane
 ships — until then it reports the wrapper's executable bit and skips the rest, because a check
 that compared a file against itself would be worse than one that says it cannot. `codex-trust`
@@ -710,9 +752,10 @@ which `init` writes. A `skip` is **not** a finding and never reaches the exit co
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
 project chose and Keelline's own vocabulary print freely; a repository-authored string does not.
 `[keelline] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
-entry claims and the reason the store would not resolve are all read and none is quoted back —
-`keelline doctor --json` is relayed to a model verbatim by the `doctor` skill, so a byte a
-repository wrote reaching this report is a byte reaching the model outside `trust.wrap`.
+entry claims, every field of the hook sink's diagnostics log and the reason the store would not
+resolve are all read and none is quoted back — `keelline doctor --json` is relayed to a model
+verbatim by the `doctor` skill, so a byte a repository wrote reaching this report is a byte
+reaching the model outside `trust.wrap`.
 
 `hook-entries` is where that bites, because §12 asks it to list "every entry with provenance".
 It identifies an entry **by position** — `.claude/settings.local.json entry 3 of 5` — which is
@@ -720,6 +763,22 @@ what a reader needs in order to open it, survives two entries claiming one id, a
 nothing. A settings file that exists and cannot be read as hook entries is reported by path as
 `warn`, never skipped: this is the one check whose whole purpose is that nobody's entries go
 unlisted, so "all accounted for" must never mean "could not look".
+
+`diagnostics` is the same ruling in the other direction, and is why that row counts rather than
+quotes. Its three fields are Keelline's own vocabulary *for a log Keelline wrote*, and the log
+is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
+reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
+a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
+would not be a policy. The row reports how many failures are recorded and how many sessions were
+seen, and the remedy names the file by its variable; you open it yourself.
+
+**A plugin root the environment named is read and never run.** `wrapper` launches
+`hooks/run-hook.sh` only under the root this Keelline derived from its own module path. With a
+wheel installation there is no such root — which is what `uv tool install` gives, and what
+`cli-path`'s own remedy suggests — and `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT` may then name one:
+that root's wrapper is still read by `files`, for its executable bit, and `wrapper` reports
+`skip` saying why. A report that ran a script the inspected repository could commit, and then
+called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.
 

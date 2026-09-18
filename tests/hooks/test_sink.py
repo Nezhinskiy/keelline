@@ -11,6 +11,8 @@ from keelline.hooks.sink import (
     DIAGNOSTICS_MAX_BYTES,
     MARKERS,
     ROTATED,
+    UNKEYED_SESSION,
+    _segment,
     sink_for,
 )
 
@@ -46,6 +48,45 @@ def test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sin
     assert not isinstance(first, NullSink)
     first.mark("ledger-notes")
     assert sink_for("s1", {"PLUGIN_DATA": str(tmp_path)}).seen("ledger-notes") is True
+
+
+def test_a_marker_is_a_regular_file_and_not_merely_a_name_that_exists(tmp_path: Path) -> None:
+    # `seen()` was `Path.exists()`, which follows a symlink and counts a directory — so anything
+    # able to write the data root could silence a `once_key` handler with one `mkdir`: no
+    # content, no permissions, no race. A marker is the regular file `mark()` writes.
+    sink = sink_for("s1", {"CLAUDE_PLUGIN_DATA": str(tmp_path)})
+    planted = tmp_path / "keelline" / MARKERS / _segment("s1") / _segment("ledger-notes")
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.mkdir()
+    assert sink.seen("ledger-notes") is False
+    # Non-vacuous: the real thing still reads as seen, so this is a narrowing and not a break.
+    planted.rmdir()
+    sink.mark("ledger-notes")
+    assert sink.seen("ledger-notes") is True
+
+
+def test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute(
+    tmp_path: Path,
+) -> None:
+    # `UNKEYED_SESSION` was `""`, so the session segment was `sha256("")` — a hex pair anything
+    # can work out in advance. With a data root the environment names, that made the unkeyed
+    # lane the one direction a read out of this tree could be used in: plant a file at the known
+    # pair and a `once_key` handler is silenced before it ever runs.
+    #
+    # Per process now, so `once_key` degrades to "every invocation" for a payload with no
+    # session id — `NullSink`'s own documented degradation, on the abnormal path, losing a
+    # notice rather than a guard.
+    data = {"CLAUDE_PLUGIN_DATA": str(tmp_path)}
+    predictable = tmp_path / "keelline" / MARKERS / _segment("") / _segment("test-hygiene")
+    predictable.parent.mkdir(parents=True, exist_ok=True)
+    predictable.write_text("", encoding="utf-8")
+    assert sink_for(None, data).seen("test-hygiene") is False
+    # Non-vacuous: the unkeyed sink is a real one that still remembers within its own process,
+    # which is the invocation `once_key` is about.
+    unkeyed = sink_for(None, data)
+    unkeyed.mark("test-hygiene")
+    assert unkeyed.seen("test-hygiene") is True
+    assert UNKEYED_SESSION != ""
 
 
 def test_a_different_session_does_not_inherit_markers(tmp_path: Path) -> None:
