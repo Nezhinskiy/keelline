@@ -2155,10 +2155,8 @@ reddens = [
 [[mutation]]
 name = "attach applies the owning-checkout entry point to --root"
 file = "src/keelline/attach/write.py"
-before = '''    owner = main_checkout(root).resolve()
-    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
-after = '''    owner = main_checkout(root).resolve()
-    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
+before = '''    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
+after = '''    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
 reddens = [
   "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
 ]
@@ -2167,8 +2165,10 @@ reddens = [
 [[mutation]]
 name = "detach applies the owning-checkout withdrawal to --root"
 file = "src/keelline/attach/write.py"
-before = '    revoked = list(detach_main(owner, config, machine=machine, home=home).revoked)'
-after = '    revoked = list(detach_main(root, config, machine=machine, home=home).revoked)'
+before = '''    for tree in checkouts:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+after = '''    for tree in [root]:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
 reddens = [
   "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
 ]
@@ -2413,4 +2413,21 @@ after = '''    _write_ignore_region(root)
     previous = _existing_ledger(root)'''
 reddens = [
   "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
+]
+
+# `detach` cannot refuse once it has begun — by the time it reaches the link tree the settings
+# and the `.codex/rules/` copies are gone, and refusing there strands a half-detached repository.
+# So everything structural it *can* know beforehand has to be asked beforehand. `main_checkout`
+# and `_worktrees` are the only things here that need `git`, they are pure reads, and they sat
+# between the settings withdrawal and the link trees: a machine whose `git` was gone got exit 1
+# with two artifacts already removed and every link still in place.
+[[mutation]]
+name = "detach asks git where the checkouts are after it has already withdrawn"
+file = "src/keelline/attach/write.py"
+before = '''    checkouts = _checkouts(root)
+    allow_removed = _withdraw_settings(root, recorded)'''
+after = '''    allow_removed = _withdraw_settings(root, recorded)
+    checkouts = _checkouts(root)'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]

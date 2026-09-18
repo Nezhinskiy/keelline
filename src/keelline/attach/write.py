@@ -569,6 +569,32 @@ def _worktrees(root: Path) -> list[Path]:
     return [Path(line[len(prefix) :]) for line in out.splitlines() if line.startswith(prefix)]
 
 
+def _checkouts(root: Path) -> list[Path]:
+    """Every checkout of this repository, the one that owns the store first, each exactly once.
+
+    Both halves need `git` — `main_checkout` asks it which checkout owns this worktree, and
+    `_worktrees` asks it for the rest — which is the whole reason this is a function rather than
+    four lines in each caller. `detach` calls it **before its first withdrawal** for that reason:
+    a `git` that cannot run is a fact about the machine, knowable at the start, and asking it
+    after the settings file and the `.codex/rules/` copies were already taken away left the
+    repository half-detached over something nothing had yet touched.
+
+    Owner first because `attach` has to build the owning checkout's tree before `resolve()` can
+    answer, and `detach` mirrors the order so the two read the same way. Deduplicated by resolved
+    path, so `--root` is visited exactly once whether or not it is the owner.
+    """
+    owner = main_checkout(root).resolve()
+    found = [owner]
+    seen = {owner}
+    for tree in _worktrees(root):
+        resolved = tree.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        found.append(resolved)
+    return found
+
+
 def _link_everywhere(
     root: Path, binding: Binding, config: Config, *, machine: Path | None, home: Path | None
 ) -> Links:
@@ -590,7 +616,8 @@ def _link_everywhere(
     The skip is by resolved path and accumulates, so `root` — which `_worktrees` lists like any
     other — is linked exactly once whether or not it is the owner.
     """
-    owner = main_checkout(root).resolve()
+    checkouts = _checkouts(root)
+    owner = checkouts[0]
     links = attach_main(owner, binding.store, config, machine=machine, home=home)
     created, revoked = list(links.created), list(links.revoked)
     # Resolved against the owner and not against `root`: in overlay mode `resolve` reads the
@@ -601,11 +628,7 @@ def _link_everywhere(
             "the link tree was created and the store still does not resolve; "
             "`keelline memory index --check` reports why"
         )
-    linked = {owner}
-    for tree in _worktrees(root):
-        if tree.resolve() in linked:
-            continue
-        linked.add(tree.resolve())
+    for tree in checkouts[1:]:
         more = link(tree, store, config, home=home)
         created += more.created
         revoked += more.revoked
@@ -864,6 +887,20 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     machine file reads the developer's real `~/.config/keelline/`, and the harness link is under
     their real home. A caller that means "the machine owner's own" says `None` out loud.
 
+    **What it may refuse on, and when.** `detach` cannot refuse the way `attach` does once it has
+    begun: by the time it reaches the link tree the recorded allow rules, the marked hook entries
+    and the `.codex/rules/` copies are already withdrawn, so a refusal there strands a
+    half-detached repository. That is why `worktree.detach_main` makes `memory.mode` load-bearing
+    through the target it derives rather than refusing on it.
+
+    That is not licence to *discover* a precondition late. Everything structural this function
+    can know before its first withdrawal is asked before it: the ledger (which refuses one no
+    attach could have written), the configuration (whose loader validates `paths.*`), the
+    settings document's own shape through `owned_ids`, and `_checkouts`, which is the only thing
+    here that needs `git`. What is left after the first withdrawal is exactly what cannot precede
+    it — a write that fails, and a component of the tree that changed between the check and the
+    removal.
+
     **It needs the ledger in the checkout it is run from, and that is a limitation rather than a
     defect.** `.keelline/local/` is untracked and per-checkout, so a sibling worktree does not
     carry the ledger of the checkout an attach was run from and `detach --root <that worktree>`
@@ -875,6 +912,11 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     recorded = ledger(root)
     config = load(root, machine=machine)
     entries = tuple(sorted(owned_ids(local_document(root))))
+    # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
+    # `git` that cannot run is knowable at the start. It used to be asked between the settings
+    # withdrawal and the link trees, so a machine whose `git` was gone got exit 1 with the
+    # settings file and the `.codex/rules/` copies already removed and every link still in place.
+    checkouts = _checkouts(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -884,15 +926,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # The mirror of `_link_everywhere`, and it had the mirror defect: `detach_main` was applied
     # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
     # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
-    # link tree — and its harness link — in place. Every checkout is visited exactly once, by
-    # resolved path, starting with the one that owns the store.
-    owner = main_checkout(root).resolve()
-    revoked = list(detach_main(owner, config, machine=machine, home=home).revoked)
-    visited = {owner}
-    for tree in _worktrees(root):
-        if tree.resolve() in visited:
-            continue
-        visited.add(tree.resolve())
+    # link tree — and its harness link — in place. `_checkouts` is the one spelling of "every
+    # checkout, owner first, each exactly once" that both halves now read.
+    revoked: list[Path] = []
+    for tree in checkouts:
         revoked += detach_main(tree, config, machine=machine, home=home).revoked
     region = _withdraw_ignore_region(root)
     fsops.remove_within(root, LEDGER)

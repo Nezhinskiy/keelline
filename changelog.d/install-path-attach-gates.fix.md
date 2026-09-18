@@ -67,6 +67,12 @@ fallback empties `.claude/settings.local.json`, the file itself is removed, beca
 what that file looked like before `attach` created it. It can only happen when Keelline's own key
 was the file's entire contents.
 
+`keelline detach` asks `git` where this repository's checkouts are *before* it withdraws
+anything, rather than between the settings file and the link trees. On a machine where `git`
+cannot run, it used to exit `1` with your `.claude/settings.local.json` rules and your
+`.codex/rules/` files already removed and every note link still in place; now it stops with
+nothing touched.
+
 And one limitation worth knowing rather than discovering: `keelline detach` reads the ledger from
 the checkout it is run from, and `.keelline/local/` is untracked and per-checkout. Run it from the
 checkout you attached from; once it starts, it reaches every checkout of the repository.

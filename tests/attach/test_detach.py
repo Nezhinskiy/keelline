@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.api import LEDGER, detach
+from keelline.attach.api import LEDGER, Detached, detach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
@@ -41,7 +41,7 @@ def _grant(overlay: Path, *, allow: tuple[str, ...] = (), hooks: bool = False) -
     (overlay / "common" / "codex" / "common.rules").write_text("# rule\n", encoding="utf-8")
 
 
-def _detach(root: Path, machine: Path, home: Path) -> object:
+def _detach(root: Path, machine: Path, home: Path) -> Detached:
     return detach(root, machine=machine, home=home)
 
 
@@ -293,3 +293,65 @@ def test_the_two_values_attach_really_writes_are_still_acted_on(tmp_path: Path) 
     _detach(root, machine, home)
     assert not (root / ".codex" / "rules" / "common.rules").exists()
     assert not (root / SETTINGS).exists()
+
+
+def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `git` that cannot be launched at all, at the seam `memory.store` runs it through.
+
+    The state `GitUnavailable` exists for, and its own docstring says a review machine hit it.
+    Patched rather than arranged, because the alternative is removing `git` from `PATH` for the
+    whole process.
+    """
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("git: command not found")
+
+    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+
+
+def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` cannot refuse the way `attach` does once it has started — by the time it reaches
+    # the link tree the settings and the rule files are gone, and refusing there strands a
+    # half-detached repository. That is why `detach_main` checks `memory.mode` through the
+    # target it derives rather than by refusing. It is not licence to *discover* a precondition
+    # late: this one is a fact about the machine, true before the run began.
+    #
+    # `main_checkout` and `_worktrees` are the only things here that need `git`, and they sat
+    # between the settings withdrawal and the link trees — so a machine whose `git` was gone got
+    # exit 1 with `.claude/settings.local.json` and `.codex/rules/common.rules` already removed
+    # and every link, the ignore region and the ledger still in place. Both are pure reads.
+    #
+    # Mutation: `mutations.toml`'s "detach asks git where the checkouts are after it has already
+    # withdrawn".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    before = _snapshot(root)
+    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
+    _a_git_that_cannot_run(monkeypatch)
+    with pytest.raises(Failure):
+        _detach(root, machine, home)
+    _assert_snapshot_unchanged(root, before)
+    assert (root / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path: Path) -> None:
+    # The vacuity guard for the snapshot above: a refusal that withdraws nothing proves nothing
+    # if the run had nothing to withdraw. The identical fixture, with a `git` that works,
+    # withdraws every artifact the case above has to leave standing.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    before = _snapshot(root)
+    assert before
+    removed = _detach(root, machine, home)
+    after = _snapshot(root)
+    gone = set(before) - set(after)
+    assert {SETTINGS, ".codex/rules/common.rules", LEDGER} <= gone
+    assert removed.allow_removed == (RULE,)
+    assert not (root / "docs" / "memory" / "developer").is_symlink()
