@@ -133,12 +133,19 @@ def run_detach(args: argparse.Namespace) -> Result:
         "ignore_region_removed": removed.ignore_region_removed,
         # A count, for the reason `run_attach` gives above.
         "links_revoked": len(removed.links.revoked),
+        # A count too, though this one could have been the strings: `CREATED_DIRS` is Keelline's
+        # own closed vocabulary and `_withdraw_directories` intersects the ledger with it, so
+        # nothing repository-authored can reach this field. A count, so that the six numbers in
+        # this object are read the same way.
+        "directories_removed": len(removed.directories_removed),
     }
     return Result(
         f"detached: {len(removed.allow_removed)} allow rule(s), "
         f"{len(removed.entries_removed)} hook entr(ies), "
         f"{len(removed.rules_removed)} Codex rule file(s), "
-        f"{len(removed.links.revoked)} link(s); the binding record was left in place",
+        f"{len(removed.links.revoked)} link(s), "
+        f"{len(removed.directories_removed)} directory(ies); "
+        f"the binding record was left in place",
         data,
     )
 

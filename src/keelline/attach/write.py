@@ -130,6 +130,21 @@ GROUP_ESCAPES = (
 # `fsops.mkdirs_within` creates a target's *parents*, so a directory is asked for as the parent
 # of a name inside it. Nothing is ever written at this name; `overlay.create` asks the same way.
 _INSIDE = ".keep"
+# Every directory `attach` can bring into existence in the project root, as a *closed* list,
+# deepest first — which is also the order `detach` has to remove them in.
+#
+# There are exactly three writes that create a directory here, and each one's parents are on
+# this list: `LEDGER` under `.keelline/local/`, the rule copies under `.codex/rules/`, and
+# `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, ordinarily
+# `docs/memory/`) is deliberately **not** here: it is repository-configured, may be a directory
+# the project already keeps for its own reasons, and `worktree.detach_main` settled that
+# question the other way — "withdrawing a link is not licence to delete a directory".
+#
+# Closed because a ledger is a file a clone can commit. `detach` iterates this tuple and keeps
+# only the members the ledger names, so the ledger can shorten the list and never extend it,
+# and a committed `["src"]` names nothing this loop will act on. `ledger()` refuses one anyway,
+# on the same standard `rules` and `settings_keys` are held to.
+CREATED_DIRS = (".keelline/local", ".keelline", ".codex/rules", ".codex", ".claude")
 
 
 @dataclass(frozen=True)
@@ -164,6 +179,11 @@ class AttachLedger:
       enumerates, one path segment deep and never a dotfile; and
     - `settings_keys` may only be `autoMemoryDirectory`, the one key `_harness_fallback` writes.
 
+    `directories` is the third, and is bounded by membership in `CREATED_DIRS`. It records which
+    of those directories this repository did **not** have before the attach, so `detach` can put
+    the tree back as it found it; `rmdir` is the only removal it drives, so a directory holding
+    anything at all survives regardless of what the ledger claims.
+
     `entries` keys must parse as marker ids, because `_write_ledger` builds them with
     `scaffold.marker_id` and nothing else can appear there.
 
@@ -183,6 +203,7 @@ class AttachLedger:
     entries: dict[str, str]
     rules: tuple[str, ...]
     settings_keys: tuple[str, ...]
+    directories: tuple[str, ...] = ()
 
 
 def _rule_is_writable(rule: str) -> bool:
@@ -201,23 +222,31 @@ def _rule_is_writable(rule: str) -> bool:
     return bool(name) and "/" not in name and not name.startswith(".")
 
 
-def _checked(raw: dict[str, Any], path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """`rules` and `settings_keys`, or a `Refusal` counting the members `attach` never wrote.
+def _checked(
+    raw: dict[str, Any], path: Path
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """`rules`, `settings_keys` and `directories`, or a `Refusal` counting what was never written.
 
     Counted and never quoted: these strings are repository-authored by the Global Constraints'
     own list, and a refusal built out of one is still one.
     """
     rules = tuple(r for r in raw.get("rules", []) if isinstance(r, str))
     keys = tuple(k for k in raw.get("settings_keys", []) if isinstance(k, str))
+    # Held to the same standard as the two above rather than merely filtered at the removal
+    # site, so the answer to "is this a record of an attach on this machine?" is one answer.
+    # `detach` also intersects with `CREATED_DIRS` when it walks them, which is the floor under
+    # this; a name outside the list is a ledger no attach wrote, and that is a refusal.
+    directories = tuple(d for d in raw.get("directories", []) if isinstance(d, str))
     foreign = sum(1 for rule in rules if not _rule_is_writable(rule))
     foreign += sum(1 for key in keys if key != FALLBACK_KEY)
+    foreign += sum(1 for name in directories if name not in CREATED_DIRS)
     if foreign:
         raise Refusal(
             f"{path} names {foreign} file(s) or settings key(s) that `keelline attach` could "
             f"never have written, so it is not a record of an attach on this machine; nothing "
             f"was removed. Delete it, or take it out of the clone that committed it"
         )
-    return rules, keys
+    return rules, keys, directories
 
 
 def ledger(root: Path) -> AttachLedger:
@@ -246,7 +275,7 @@ def ledger(root: Path) -> AttachLedger:
         raise Failure(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise Failure(f"{path} is not a JSON object")
-    rules, keys = _checked(raw, path)
+    rules, keys, directories = _checked(raw, path)
     entries = raw.get("entries")
     return AttachLedger(
         store=str(raw.get("store", "")),
@@ -263,6 +292,7 @@ def ledger(root: Path) -> AttachLedger:
         ),
         rules=rules,
         settings_keys=keys,
+        directories=directories,
     )
 
 
@@ -427,6 +457,20 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     )
 
 
+def _absent_directories(root: Path) -> tuple[str, ...]:
+    """Which of `CREATED_DIRS` this repository does not have, asked before the first write.
+
+    Asked *before*, because after the ledger is written `.keelline/local/` exists and the answer
+    is no longer the one `detach` needs. `attach` therefore takes it at the top of the run and
+    hands it down, the same way it hands down `previous`.
+
+    `is_dir()` and not `exists()`: a path of this name that is a file, or a symlink to one, is
+    not a directory this run created and `rmdir` would refuse it anyway — recording it would
+    only put a name in the ledger that nothing can act on.
+    """
+    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())
+
+
 def _write_ledger(
     root: Path,
     binding: Binding,
@@ -434,6 +478,7 @@ def _write_ledger(
     rules: tuple[str, ...],
     settings_keys: tuple[str, ...],
     previous: AttachLedger | None,
+    directories: tuple[str, ...],
 ) -> None:
     """Record what this attach may remove again — the union with what an earlier one claimed.
 
@@ -475,6 +520,12 @@ def _write_ledger(
         for found in (marker_id(entry["command"]),)
         if found is not None
     }
+    # The same union as `allow` and `rules`, for the same reason sharpened once more: the second
+    # attach in a repository finds every one of these directories already there and would record
+    # none, so a ledger built from this run alone would leave `detach` unable to remove what the
+    # first attach created. Ordered by `CREATED_DIRS` rather than by either input, so the written
+    # list is deepest-first whatever order it was unioned in.
+    made = set(previous.directories if previous is not None else ()) | set(directories)
     document = {
         "format": LEDGER_FORMAT,
         "store": str(binding.store),
@@ -482,6 +533,7 @@ def _write_ledger(
         "entries": entries,
         "rules": placed,
         "settings_keys": list(settings_keys),
+        "directories": [name for name in CREATED_DIRS if name in made],
     }
     fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
@@ -787,6 +839,9 @@ def attach(
     config = load(root, machine=machine)
     _check_groups(binding, config)
     previous = _existing_ledger(root)
+    # Above every write, because the first of them creates `.keelline/local/` and the answer
+    # would then be wrong by exactly the directory this run brought into existence.
+    absent = _absent_directories(root)
     _write_ignore_region(root)
     rules = _codex_rules(root, binding)
     document = local_document(root)
@@ -798,14 +853,14 @@ def attach(
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried, previous)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent)
     recorded = _record_binding(binding)
     _prepare_store(binding, config)
     links = _link_everywhere(root, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
     keys = _harness_fallback(root, config, machine=machine, home=home)
     if keys != carried:
-        _write_ledger(root, binding, diff, rules, keys, previous)
+        _write_ledger(root, binding, diff, rules, keys, previous, absent)
         written = True
     if keys:
         notes.append(
@@ -825,6 +880,7 @@ class Detached:
     settings_keys_removed: tuple[str, ...]
     ignore_region_removed: bool
     links: Links
+    directories_removed: tuple[str, ...] = ()
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -887,6 +943,42 @@ def _withdraw_ignore_region(root: Path) -> bool:
     return True
 
 
+def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
+    """Remove the directories this repository did not have before the attach, and only those.
+
+    The last step of a detach, after the ledger itself is gone, because `.keelline/local/` holds
+    it. `docs/cli.md` promises "an attach and a detach leave the tree byte-for-byte as it was";
+    that was false for directories and the test that backed it could not see it, because
+    `_snapshot` filters on `is_file()`. Four directories survived every round trip.
+
+    **Three things keep this from deleting somebody's directory.** It walks `CREATED_DIRS`, a
+    closed list, and keeps only what the ledger named — so a committed ledger can shorten the
+    list, never extend it. The ledger names only what `_absent_directories` found missing before
+    the first write, so a directory that was already there is never on it. And the removal is
+    `rmdir`: a directory holding anything else at all — the owner's own `.claude/settings.json`,
+    a `.codex/rules/` file they wrote by hand, a file some other tool left — survives, and its
+    parents then survive with it because they are no longer empty either.
+
+    `ENOTEMPTY` is therefore an ordinary outcome and not a failure, and it is the only `OSError`
+    swallowed here by design: `fsops.rmdir_within` already contains the walk to `root` and
+    tolerates an absent target, so what is left is "not empty" and "not permitted", and neither
+    is a reason to fail a detach that has already put everything it recorded back.
+    """
+    removed: list[str] = []
+    for name in CREATED_DIRS:
+        # `is_dir()` before the call and not only the ledger's say-so: `rmdir_within` tolerates
+        # an absent target, so without this a directory the run never created — `.claude/`, when
+        # the overlay grants nothing to merge — would be reported as one this detach removed.
+        if name not in recorded.directories or not (root / name).is_dir():
+            continue
+        try:
+            fsops.rmdir_within(root, name)
+        except OSError:
+            continue
+        removed.append(name)
+    return tuple(removed)
+
+
 def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     """Remove exactly what `attach` added, reading the ledger for what that was.
 
@@ -945,6 +1037,8 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         revoked += detach_main(tree, config, machine=machine, home=home).revoked
     region = _withdraw_ignore_region(root)
     fsops.remove_within(root, LEDGER)
+    # Last, because the ledger lives in one of them.
+    directories = _withdraw_directories(root, recorded)
     return Detached(
         allow_removed,
         entries,
@@ -952,4 +1046,5 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
         recorded.settings_keys,
         region,
         Links([], revoked),
+        directories,
     )

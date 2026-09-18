@@ -355,3 +355,113 @@ def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path:
     assert {SETTINGS, ".codex/rules/common.rules", LEDGER} <= gone
     assert removed.allow_removed == (RULE,)
     assert not (root / "docs" / "memory" / "developer").is_symlink()
+
+
+# --- the directories, which the file snapshot could not see -----------------------------------
+
+
+def _directories(root: Path) -> set[str]:
+    """Every directory under the root but `.git`, as `_snapshot` would if it saw directories."""
+    found: set[str] = set()
+    for path in root.rglob("*"):
+        if path.is_dir() and not path.is_symlink() and ".git" not in path.relative_to(root).parts:
+            found.add(str(path.relative_to(root)))
+    return found
+
+
+def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> None:
+    # `docs/cli.md` promised "an attach and a detach leave the tree byte-for-byte as it was" and
+    # it was false for directories: `.keelline/local/`, `.keelline/`, `.codex/rules/` and
+    # `.codex/` survived every round trip. `_snapshot` filters on `is_file()`, so the round-trip
+    # test above passed while four directories accumulated.
+    #
+    # The set is asserted by value and not by `not any(...)`: a `_withdraw_directories` that
+    # removed only the leaves, or only `.keelline/`, satisfies "something was removed" and
+    # leaves the tree changed. `.claude/` is on the list too — the overlay here grants a rule,
+    # so the attach creates it.
+    #
+    # Mutation: `mutations.toml`'s "detach leaves behind the directories the attach created".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    before = _directories(root)
+    _attach(root, store, machine, home, confirmed=True)
+    # The walk the comparison below rests on, asserted non-empty before it is trusted: an
+    # `rglob` that finds nothing would satisfy every equality in this case on its own.
+    assert _directories(root) > before
+    removed = _detach(root, machine, home)
+    assert set(removed.directories_removed) == {
+        ".keelline/local",
+        ".keelline",
+        ".codex/rules",
+        ".codex",
+        ".claude",
+    }
+    # `paths.memory` is the documented exception and is named here so a lane that changes it has
+    # to change this line: `worktree.detach_main` withdraws the links and not the directory that
+    # held them, because that directory is repository-configured and may be one the project
+    # keeps for its own reasons.
+    assert _directories(root) - before == {"docs", "docs/memory"}
+
+
+def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
+    _attach(root, store, machine, home, confirmed=True)
+    return _detach(root, machine, home)
+
+
+def test_detach_keeps_a_directory_that_still_holds_something(tmp_path: Path) -> None:
+    # The floor under the ledger: the removal is `rmdir`, so a directory holding anything the
+    # attach did not put there survives — and its parent survives with it, because a parent that
+    # still holds a child is not empty either. A `shutil.rmtree` here would delete the owner's
+    # own `.codex/rules/` file on a detach that promised to remove only what it added.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    mine = root / ".codex" / "rules" / "zz-my-own.md"
+    mine.write_text("# mine\n", encoding="utf-8")
+    removed = _detach(root, machine, home)
+    assert mine.is_file(), "a detach deleted a rule file the owner wrote by hand"
+    assert ".codex/rules" not in removed.directories_removed
+    assert ".codex" not in removed.directories_removed
+    # And the ones that had nothing of the owner's in them still went.
+    assert ".keelline" in removed.directories_removed
+
+
+def test_detach_leaves_a_directory_that_was_there_before_the_attach(tmp_path: Path) -> None:
+    # The other half, and the one the ledger answers rather than `rmdir`: an **empty** `.codex/`
+    # the owner made themselves is indistinguishable from one this attach created, once the run
+    # is over. `_absent_directories` is asked above the first write, so it is not on the ledger
+    # and `detach` does not touch it — a detach must not remove a directory it did not create.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    (root / ".codex").mkdir()
+    removed = _detach_after_attach(root, store, machine, home)
+    assert (root / ".codex").is_dir(), "a detach removed a directory that predated the attach"
+    assert ".codex" not in removed.directories_removed
+    # `.codex/rules/` inside it was this attach's, and still goes.
+    assert ".codex/rules" in removed.directories_removed
+    assert not (root / ".codex" / "rules").exists()
+
+
+def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path) -> None:
+    # `.keelline/local/attach.json` is a path a clone can commit, and `directories` drives
+    # `rmdir`. It is held to the same closed list `rules` and `settings_keys` are held to, so a
+    # ledger naming `src` is refused with nothing removed rather than obeyed — even though
+    # `rmdir` would have spared a non-empty `src/` anyway. A partial defence reported as a
+    # success is the shape this refusal exists to avoid.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    recorded["directories"] = ["src"]
+    (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    (root / "src").mkdir()
+    before = _snapshot(root)
+    assert before
+    with pytest.raises(Refusal):
+        _detach(root, machine, home)
+    assert (root / "src").is_dir()
+    _assert_snapshot_unchanged(root, before)

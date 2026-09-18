@@ -691,8 +691,19 @@ only the *starting* point that has to be the one holding the record.
 mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
 harness memory link, removes the `keelline:ignore` region, and deletes the ledger. A file left
-holding nothing is removed rather than left empty, so an attach and a detach leave the tree
-byte-for-byte as it was.
+holding nothing is removed rather than left empty.
+
+**Directories come back too, with one exception.** `attach` records which of `.keelline/local/`,
+`.keelline/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
+ran, and `detach` removes exactly those, last, once everything inside them is gone. The removal
+is `rmdir`: a directory still holding anything — your own `.codex/rules/` file, your
+`.claude/settings.json` — survives, and so does its parent. A directory that was already there
+before the attach is not on the record and is never touched.
+
+The exception is the note link tree, ordinarily `docs/memory/`. That path is
+repository-configured and may be one the project keeps for its own reasons, so the links are
+withdrawn and the directory that held them is left — empty, where there was nothing else in it.
+Everything else about the round trip is byte-for-byte.
 
 **It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a
