@@ -125,10 +125,11 @@ def test_a_partial_link_failure_leaves_attach_main_s_tree_on_disk_and_out_of_cre
     # The owning checkout's tree exists — `attach_main` made it before the failing call.
     made_by_attach_main = root / "docs" / "memory" / "developer"
     assert made_by_attach_main.is_symlink()
-    # And is absent from the list the exception carries. The `== []` is deliberate and is the
-    # whole finding: a caller repairing from `.created` would be told nothing was made.
+    # And the list the exception carries is empty. That is the whole finding, and the `== []` is
+    # the whole of it: a caller repairing from `.created` would be told nothing was made, while
+    # the line above says something was. A second `made_by_attach_main not in created` used to
+    # sit here and could not fail once this line holds -- a restatement reading as a check.
     assert failed.value.created == []
-    assert made_by_attach_main not in failed.value.created
 
 
 def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path) -> None:

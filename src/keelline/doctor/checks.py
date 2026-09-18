@@ -858,8 +858,14 @@ def _cli_path(context: Context) -> Check:
     Before this, no test could state an expected answer at all: the row said `ok` on a developer
     machine with the tool installed and `warn` in a container without it, and a body hardcoded
     to `WARN` would have passed the whole suite.
+
+    The default is `""` and not `None`, which is the difference between the sentence above being
+    true and being true of every environment but one: `shutil.which(path=None)` falls back to
+    `os.environ["PATH"]`, so an `env` carrying no `PATH` reached the process environment through
+    the very call that was supposed to stop doing that. An environment with no `PATH` resolves
+    nothing, which is the honest answer and the one the row's own remedy addresses.
     """
-    found = shutil.which("keelline", path=context.env.get("PATH"))
+    found = shutil.which("keelline", path=context.env.get("PATH", ""))
     if found is None:
         return Check(
             "cli-path",

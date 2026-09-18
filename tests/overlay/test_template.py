@@ -89,8 +89,7 @@ def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # possible pre-commit configuration, including one pinned at `main`, which is exactly the
     # state it is named for refusing.
     #
-    # Mutation: `rev: v8.21.2` -> `rev: main` in templates/overlay/.pre-commit-config.yaml
-    # -> reddens.
+    # Mutation: `mutations.toml`'s "the overlay template follows gitleaks' default branch".
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "gitleaks" in config
     revisions = re.findall(r"^\s*rev:\s*(\S+)\s*$", config, re.MULTILINE)
@@ -109,19 +108,54 @@ def test_the_template_denies_reading_env_files() -> None:
     # names `.env` is a machine whose agent may read the credentials §6.4 promises never enter
     # the overlay.
     #
-    # Mutation: `{}` into templates/overlay/common/claude/permissions.json -> reddens.
+    # Mutation: `mutations.toml`'s "the overlay template ships no protection at all".
     payload = json.loads(
         (template_root() / "common" / "claude" / "permissions.json").read_text(encoding="utf-8")
     )
-    assert payload["permissions"]["deny"] == ["Read(.env*)", "Read(**/.env*)"]
+    # `.get`, not `[...]`: the two mutations this case is written against -- `{}` for the whole
+    # file, and `"deny"` renamed to `"allow"` -- would otherwise raise `KeyError`, and a crash is
+    # a worse proof than an assertion. A mutation that reddens for an accidental reason reads as
+    # coverage.
+    deny = payload.get("permissions", {}).get("deny")
+    assert deny == ["Read(.env*)", "Read(**/.env*)"], deny
 
 
-# The `permissions:` scopes a workflow may hold, and the trigger it may not. `pull_request_target`
-# runs with the base repository's secrets against a fork's head; paired with a write scope it is
-# the standard Actions privilege-escalation shape, and this file ships into every overlay a user
-# creates. Parsed by line rather than by a YAML reader because the runtime is stdlib-only and
-# `tests/test_import_boundary.py` holds the whole tree to it.
-_WRITE_SCOPE = re.compile(r"^\s*[a-z-]+:\s*write\s*$", re.MULTILINE)
+# A write permission, in every spelling a workflow can grant one. `write-all` is the one that
+# matters most and the one the first draft of this test missed: `permissions: write-all` on a
+# *job* grants every scope while a top-level `permissions: contents: read` sits above it looking
+# correct, which is the same escalation shape with the top-level assertion intact.
+_WRITE_SCOPE = re.compile(r"^\s*[a-z-]+:\s*write(-all)?\s*$", re.MULTILINE)
+# A pinned action: `owner/repo@<40 hex>`, with the release it is in a trailing comment. D16: a
+# full-length commit sha is the only immutable reference GitHub Actions has. The comment's shape
+# is this repository's own convention, taken from `.github/workflows/`, where every `uses:` is
+# already pinned this way -- the overlay template was the one place it was not. `v7`, `v6.0.0` and
+# everything between are all spellings that convention uses, so all three are accepted: a test
+# that rejected the house style would be a trap for whoever next bumps a pin.
+_PINNED_USES = re.compile(r"\A[\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+(\.\d+){0,2}\Z")
+
+
+def _scan_workflow() -> str:
+    return (template_root() / ".github" / "workflows" / "scan.yml").read_text(encoding="utf-8")
+
+
+def _block(text: str, key: str) -> list[str]:
+    """The two-space-indented keys directly under the top-level `key:`, and nothing else.
+
+    A regex over the whole file was the first draft and it was wrong in the way that matters:
+    `^  ([a-z_]+):` matches every two-space-indented key anywhere, so `triggers` also held
+    `contents` and `gitleaks` -- and the non-vacuity guard below would then have passed with the
+    whole `on:` block deleted. Stdlib-only, so this is a reader and not `yaml.safe_load`.
+    """
+    lines = text.splitlines()
+    if f"{key}:" not in lines:
+        return []
+    found: list[str] = []
+    for line in lines[lines.index(f"{key}:") + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        if (match := re.match(r"^  ([A-Za-z_][\w-]*):", line)) is not None:
+            found.append(match.group(1))
+    return found
 
 
 def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token() -> None:
@@ -130,14 +164,33 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
     # passed. Both halves are asserted: the trigger that makes a fork's code privileged, and
     # any write scope, because `contents: read` alone is what a secret scan needs.
     #
-    # Mutation: `pull_request:` -> `pull_request_target:`, or `contents: read` ->
-    # `contents: write`, in templates/overlay/.github/workflows/scan.yml -> reddens.
-    text = (template_root() / ".github" / "workflows" / "scan.yml").read_text(encoding="utf-8")
-    triggers = re.findall(r"^  ([a-z_]+):", text, re.MULTILINE)
-    assert triggers, "no trigger block was found, so the assertion below measures nothing"
+    # Mutations: `mutations.toml`'s "the overlay's secret scan runs a fork's head" and "the
+    # overlay's secret scan is given a write token".
+    text = _scan_workflow()
+    triggers = _block(text, "on")
+    assert triggers, "no `on:` block was found, so the assertion below measures nothing"
     assert "pull_request_target" not in triggers, triggers
     assert re.search(r"^permissions:\n  contents: read\n", text, re.MULTILINE), text
     assert _WRITE_SCOPE.search(text) is None, _WRITE_SCOPE.search(text)
+
+
+def test_the_scan_workflow_pins_every_action_at_an_immutable_revision() -> None:
+    # Finding 23, and the same argument the `rev:` case above makes one directory over: a tag is
+    # a name its owner can move. `actions/checkout@v4` and `gitleaks/gitleaks-action@v2` were
+    # mutable major tags in a file that runs with `secrets.GITHUB_TOKEN` over a repository
+    # holding the owner's rules and notes -- while the sibling `.pre-commit-config.yaml` argued
+    # at length that an unpinned revision "lets somebody else choose what runs on your machine".
+    # D16: a full-length commit sha is the only immutable reference Actions has.
+    #
+    # Mutation: `mutations.toml`'s "the overlay's secret scan follows a moveable action tag".
+    steps = [
+        stripped.removeprefix("- uses:").strip()
+        for line in _scan_workflow().splitlines()
+        if (stripped := line.strip()).startswith("- uses:")
+    ]
+    assert len(steps) == 2, steps
+    for step in steps:
+        assert _PINNED_USES.match(step), step
 
 
 @pytest.mark.parametrize("relative", sorted(OVERLAY_FILES))

@@ -1107,6 +1107,24 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
     assert "uv tool install" in check.remedy
 
 
+def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> None:
+    # The hole the two cases above could not see, because `_env` always supplies a `PATH`:
+    # `context.env.get("PATH")` answers `None` for an environment that carries none, and
+    # `shutil.which(path=None)` then reads `os.environ` -- so the one check this lane made a
+    # function of its context went back to the process environment for exactly the input where
+    # that matters most. A hook's environment is composed, not inherited.
+    #
+    # Mutation: `context.env.get("PATH", "")` -> `context.env.get("PATH")` -> reddens here on any
+    # machine with `keelline` installed, and nowhere else in the suite.
+    root = _initialised(tmp_path)
+    check = _by_name(
+        _checks(tmp_path, root, env={"HOME": str(tmp_path / "home")}),
+        "cli-path",
+    )
+    assert check.status == "warn"
+    assert "uv tool install" in check.remedy
+
+
 def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path) -> None:
     # The other side of the clamp, and the arm no case reached: lowering is the one direction D7
     # allows, so it is `ok` — but it is still a number that is not the preset's, and a reader of

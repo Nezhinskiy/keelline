@@ -2767,3 +2767,170 @@ after = """    if False:
 reddens = [
   "tests/setup/test_setup.py::test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command",
 ]
+
+
+# --- the shipped data files: six guards the external review proved shipped green (PR 12) ---
+#
+# Every entry below mutates a file no type checker reads and no import reaches: a YAML
+# workflow, a JSON permissions table, a `.gitignore`, the hook manifest. That is exactly why
+# they are here. `hooks/run-hook.sh` already has eighteen entries on the same argument --
+# CONTRIBUTING's rule is that a genuinely load-bearing guard goes into this file "instead of
+# only describing it", and a `# Mutation: ...` comment in a test body is a description.
+
+# The overlay's first secret scan, and the revision decides whose code runs on the owner's
+# machine at every commit. The assertion this entry belongs to used to be `"rev:" in config`,
+# which is true of every possible pre-commit configuration including this mutation's result --
+# it is one of the six data-file guards the external review proved shipped green.
+[[mutation]]
+name = "the overlay template follows gitleaks' default branch"
+file = "src/keelline/templates/overlay/.pre-commit-config.yaml"
+before = "    rev: v8.21.2"
+after = "    rev: main"
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
+]
+
+# The template's only actual *protection*, as opposed to its several refusals to grant. Emptying
+# the file left the whole overlay suite green, because the file was held to `is_file()` and to the
+# absence of an allow rule -- and `{}` satisfies both, so the absence test passed *because* the
+# content was gone. The deny rules are asserted by value now, and this is that assertion's proof.
+[[mutation]]
+name = "the overlay template ships no protection at all"
+file = "src/keelline/templates/overlay/common/claude/permissions.json"
+before = '''{
+  "permissions": {
+    "deny": [
+      "Read(.env*)",
+      "Read(**/.env*)"
+    ]
+  }
+}'''
+after = "{}"
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_denies_reading_env_files",
+]
+
+# The cheap half of §6.4's promise that the overlay never holds a credential. The assertion was
+# `".env" in text`, and the word appears in the file's own explanatory comment -- so commenting out
+# every pattern left it green with nothing ignored at all. This is that mutation.
+[[mutation]]
+name = "the overlay template stops ignoring env files"
+file = "src/keelline/templates/overlay/.gitignore"
+before = '''
+.env
+.env.*
+'''
+after = '''
+# .env
+# .env.*
+'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ignores_env_files",
+]
+
+# `pull_request_target` runs with the base repository's secrets against a *fork's* head, which is
+# the standard Actions privilege-escalation shape. Nothing in the suite read this file at all
+# before the repair: the reviewer rewrote the trigger and the scopes together and all 43 cases
+# passed, in a workflow that ships into every overlay a user creates.
+[[mutation]]
+name = "the overlay's secret scan runs a fork's head"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = "  pull_request:"
+after = "  pull_request_target:"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
+]
+
+# The other half, and the half that makes the first one dangerous. A secret scan needs
+# `contents: read` and nothing else; a write scope on the token this workflow hands a third-party
+# action is a repository that can be pushed to by whatever that action does.
+[[mutation]]
+name = "the overlay's secret scan is given a write token"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = '''permissions:
+  contents: read'''
+after = '''permissions:
+  contents: write
+  id-token: write'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
+]
+
+# Finding 23: the same argument the `rev:` entry above makes, one file over and with a token
+# attached. A major tag is a name its owner can move, so `@v4` resolving to different code
+# tomorrow is somebody else choosing what runs against a repository holding the owner's rules and
+# notes. D16 names a full-length commit sha as the only immutable reference Actions has.
+[[mutation]]
+name = "the overlay's secret scan follows a moveable action tag"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
+after = "actions/checkout@v4"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
+]
+
+# §3's other half for the template: a hook shipped by the author executes on every machine that
+# creates an instance. The assertion examined only files carrying a `hooks` key, so a hook under a
+# bare top-level event key -- the shape `.codex/hooks.json` uses -- was not examined at all.
+[[mutation]]
+name = "the overlay template ships a hook under a bare event key"
+file = "src/keelline/templates/overlay/common/claude/hooks.json"
+before = '''{
+  "hooks": {}
+}'''
+after = '''{
+  "PreToolUse": [
+    {"matcher": "Bash", "hooks": [{"type": "command", "command": "curl e"}]}
+  ]
+}'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ships_no_hook_entry",
+]
+
+# `matcher` is a case-sensitive regular expression, and `"bash"` matches no tool either harness
+# reports -- so this one letter retires `bg-cleanup`, the plugin's only `Policy.CLOSED` handler,
+# permanently and with no diagnostic anywhere, because a hook that is never invoked emits nothing.
+# The walk this file's tests are built on used to discard `matcher`, so no assertion could be
+# asked about it and all ten passed.
+[[mutation]]
+name = "the bash guard's matcher stops matching the tool it guards"
+file = "hooks/hooks.json"
+before = '''    "PreToolUse": [
+      {
+        "matcher": "Bash",'''
+after = '''    "PreToolUse": [
+      {
+        "matcher": "bash",'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on",
+]
+
+# `type` is what tells the harness the entry is a command to run at all, and nothing read it:
+# `"commandd"` shipped green. An entry the harness cannot classify is a guard that silently never
+# fires, which is the same failure as a mistyped event one field over.
+[[mutation]]
+name = "a hook entry declares a type the harness cannot classify"
+file = "hooks/hooks.json"
+before = '''            "type": "command",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+after = '''            "type": "commandd",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_a_command_entry",
+]
+
+# The harness dispatches on the JSON key. Both event tests in that file read the event out of the
+# *argv* instead, so a mis-keyed group passed them: the command still said `hook PostToolUse` and
+# still named a registered handler, while the event it was filed under never fired again. This
+# mutation is a valid event rather than a misspelling, so what reddens is the key disagreeing with
+# the argv -- the arm a `PostToolUSe` would never have reached.
+[[mutation]]
+name = "a hook group is filed under an event the harness never emits"
+file = "hooks/hooks.json"
+before = '''    "PostToolUse": ['''
+after = '''    "UserPromptSubmit": ['''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
+]
