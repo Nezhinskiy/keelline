@@ -25,7 +25,7 @@ from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import _machine, _project_and_store
+from tests.attach.test_binding import _git, _machine, _project_and_store
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -46,6 +46,23 @@ class FakeRunner:
         del cwd
         self.calls.append(argv)
         return self.answer
+
+
+def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Path:
+    """The overlay as what it actually is — a git repository — and where its hooks live.
+
+    `attach` asks `guards.hooks_dir` rather than assuming `.git/hooks`, so the fixture has to
+    be a repository for the question to have an answer. `hooks_path` sets `core.hooksPath`,
+    which is an ordinary global dotfiles setting and the arrangement the hardcoded path got
+    wrong: the scan reads as missing on every attach and `pre-commit install` is shelled out to
+    every time.
+    """
+    _git(overlay, "init", "-q", "-b", "main")
+    if hooks_path is None:
+        return overlay / ".git" / "hooks"
+    hooks_path.mkdir(parents=True, exist_ok=True)
+    _git(overlay, "config", "core.hooksPath", str(hooks_path))
+    return hooks_path
 
 
 def _overlay_grants(
@@ -188,6 +205,68 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
     assert len(claimed) == 3, claimed
     assert set(claimed.values()) == {"SessionStart", "PreToolUse"}
     assert json.loads(document)["permissions"]["allow"] == [RULE]
+
+
+def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path) -> None:
+    # I3, walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
+    # deletes it from the overlay, `attach` runs again. The second run adds nothing — no allow
+    # rule, no wanted entry — so it used to return the document untouched, leaving a marked
+    # entry that still FIRES while the ledger (rebuilt from the overlay) forgot it. `doctor`
+    # then reads an entry claiming the marker and named in no ledger, goes red, and tells the
+    # owner to remove an entry Keelline installed: a false red with actively wrong advice.
+    #
+    # `apply_entries(document, {})` is the engine's removal path and is what now runs.
+    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
+    root, store, machine = _attachable(tmp_path, hooks=hooks)
+    home = tmp_path / "home"
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=home,
+    )
+    installed = owned_ids((root / SETTINGS).read_text(encoding="utf-8"))
+    # Non-vacuous: the sequence is only about a second run if the first one installed something.
+    assert installed
+    assert set(ledger(root).entries) == set(installed)
+
+    _overlay_grants(store)  # the owner takes the entry out of the overlay
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=home,
+    )
+    assert attached.settings_written
+    assert owned_ids((root / SETTINGS).read_text(encoding="utf-8")) == {}
+    assert ledger(root).entries == {}
+
+
+def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
+    tmp_path: Path,
+) -> None:
+    # The guard for the clause above: `owned_ids` widened the early return, and a widening that
+    # went too far would reformat a file the owner owns on every run and report itself as a
+    # write. An overlay that grants nothing and a project that was never attached still touch
+    # nothing.
+    root, store, machine = _attachable(tmp_path)
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert not attached.settings_written
+    assert not (root / SETTINGS).exists()
 
 
 def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
@@ -369,6 +448,37 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
     assert not (root / LEDGER).exists()
 
 
+def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
+    tmp_path: Path,
+) -> None:
+    # §7.4 and the Global Constraints' D15: `memory.groups` is repository-authored and reaches
+    # no guard of its own — `config/paths.py` says so in as many words, and names this lane as
+    # the one that has to call the containment itself. The entry decides a directory created
+    # inside the OVERLAY, which is the one tree `attach` trusts, so a `..` in it is refused
+    # rather than created, and refused rather than crashing out as a raw `OSError`.
+    root, store, machine = _attachable(tmp_path)
+    text = (root / "keelline.toml").read_text(encoding="utf-8")
+    (root / "keelline.toml").write_text(
+        text.replace('groups = ["developer", "project-stable"]', 'groups = ["../../escape"]'),
+        encoding="utf-8",
+    )
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=False,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    # Non-vacuous: this refusal and not one of the four `attach` can raise before it.
+    assert "memory.groups" in str(refusal.value)
+    # The entry itself is repository-authored, so it is not quoted back.
+    assert "../../escape" not in str(refusal.value)
+    assert not (store.parents[2].parent / "escape").exists()
+
+
 def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
     # §6.3: "idempotent and reversible by detach". A permission list that grows by one copy of
     # every rule per attach is the shape this catches.
@@ -475,6 +585,7 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
     # never runs `overlay init` again. Doing it twice is free; not doing it at all leaves the
     # commit-time secret scan unarmed on exactly the machine that thinks it is set up.
     root, store, machine = _attachable(tmp_path)
+    _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     runner = FakeRunner()
     attached = attach(
@@ -594,9 +705,9 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
 def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path)
     overlay = store.parents[2]
+    hooks = _overlay_repository(overlay)
     (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    (overlay / ".git" / "hooks").mkdir(parents=True)
-    (overlay / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
     runner = FakeRunner()
     attached = attach(
         root,
@@ -611,10 +722,59 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
     assert attached.notes == ()
 
 
+def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
+    # I2. The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
+    # never `core.hooksPath` read by hand — the rule `docs/cli.md` states for `setup
+    # --git-hooks` and `guards.githooks.hooks_dir` implements. With `core.hooksPath` set, a
+    # hardcoded path finds the scan missing on EVERY attach and shells out to `pre-commit
+    # install` each time, on a machine where it is already armed.
+    root, store, machine = _attachable(tmp_path)
+    overlay = store.parents[2]
+    hooks = _overlay_repository(overlay, hooks_path=tmp_path / "dotfiles" / "hooks")
+    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+    runner = FakeRunner()
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
+    assert runner.calls == []
+    assert attached.notes == ()
+
+
+def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
+    tmp_path: Path,
+) -> None:
+    # `hooks_dir` refuses when `git` cannot name the directory — an overlay that is not a
+    # repository at all is the cheapest such state. Every external binary is optional, so this
+    # is a note; and `pre-commit install` is NOT fired blind at a directory nobody could place
+    # a hook in.
+    root, store, machine = _attachable(tmp_path)
+    (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    runner = FakeRunner()
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=runner,
+        home=tmp_path / "home",
+    )
+    assert runner.calls == []
+    assert any("hooks directory" in note for note in attached.notes)
+
+
 def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: Path) -> None:
     # The Global Constraints make every external binary optional: a missing `pre-commit` is a
     # reported finding, and the push-time scan the template ships still runs.
     root, store, machine = _attachable(tmp_path)
+    _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     runner = FakeRunner(answer=Completed(127, "", "pre-commit could not be run"))
     attached = attach(

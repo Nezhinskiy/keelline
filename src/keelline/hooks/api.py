@@ -79,9 +79,13 @@ class NullSink:
     """A sink that forgets rather than suppresses.
 
     `seen()` is always False, so `once_key` degrades from "once per context" to "every
-    invocation" and every diagnostic is discarded. That is the shipped production behaviour
-    until the `hooks-core` lane provides a durable, session-keyed sink; a handler whose work
-    must genuinely happen once cannot rely on `once_key` alone before then.
+    invocation" and every diagnostic is discarded.
+
+    The durable, session-keyed sink now exists — `keelline.hooks.sink.sink_for` — and this is
+    what it answers when there is nowhere to write: no harness data root, or one this process
+    cannot write to. So this is the *degradation*, not the shipped default, and a handler whose
+    work must genuinely happen once still cannot rely on `once_key` alone, because the
+    degradation is a state any machine can be in.
     """
 
     def diagnostic(self, record: dict[str, object]) -> None:

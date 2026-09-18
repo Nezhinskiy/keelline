@@ -175,7 +175,7 @@ failure, so the reason is part of the contract.
 |---|---|
 | `KL_ARGV` | The entry lost its policy argument. Always a refusal, whatever the missing policy would have been: a `closed` guard that disarmed itself must say so. |
 | `KL_NO_PY` | No candidate interpreter is 3.11 or newer. `KEELLINE_PYTHON_CANDIDATES` overrides the built-in list, space-separated; it exists for the tests and for nothing else. |
-| `KL_NO_LAUNCHER` | `CLAUDE_PLUGIN_ROOT` is unset, or `scripts/keelline` is not there. |
+| `KL_NO_LAUNCHER` | There is no `scripts/keelline` beside the wrapper. The launcher is derived from the wrapper's own path and never read out of the environment: the harness substitutes the plugin root into the *command string*, so the wrapper that runs is always the plugin's own, while a variable of that name reaching this process from anywhere else would choose the program Python is handed — before any Keelline guard runs. |
 | `KL_RC` | `keelline` exited with something other than `0` or `2`; the code is printed. |
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
@@ -424,6 +424,13 @@ your template repository and clone it; `--local` renders the shipped template he
 network call. An invocation with neither is refused (`2`) naming both, so that creating a
 repository on an account is never something an omitted flag does.
 
+**`--local` is the source that works today.** `--template` names
+`<owner>/keelline-overlay-template`, and the command that publishes that repository —
+`overlay publish-template`, a maintainer release action — has not shipped: it belongs with the
+release lane that is its only caller. Until it does, `--template` fails cleanly for anyone who
+has not created that repository on their own account by hand, and `--local` is what an owner
+setting up a first overlay runs.
+
 A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
 made private, which is the one outcome this command exists to prevent.
 
@@ -473,11 +480,14 @@ edited is skipped and named, and the oracle is the digest `.keelline/manifest.js
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
 destroy the only copy of something.
 
-**Two files are always asked about, however their hashes compare.**
+**Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
 that can grant a capability — a permission rule, a command that runs on an event — and a hash
 that matches is not your consent to either. They are listed under `ASK FIRST` beneath the report,
-and under `decisions` in `--json`.
+and under `decisions` in `--json`. Without `--dry-run` that list is printed *after* the refresh,
+not before it: nothing waits for an answer, and the reason it can be a notice rather than a gate
+is that the shipped template grants nothing — its permissions file is deny-only and its hooks
+file is empty, both held by a test. `--dry-run` first is how you read them before anything moves.
 
 `--dry-run` prints the same report and writes nothing; the report you approve is produced by the
 code path that then runs, which is what makes the dry run worth reading.
@@ -619,7 +629,8 @@ failed call is a reported note, never a failure.
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
 one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
 asks GitHub for a private repository from the template (§6.1) and initialises it, the same as
-`keelline overlay create --template` followed by `overlay init`. Creating one needs `--yes` —
+`keelline overlay create --template` followed by `overlay init` — and inherits that flag's
+unshipped precondition, the template repository nothing publishes yet. Creating one needs `--yes` —
 §6.1's own "after explicit confirmation" for the one irreversible, outward-facing act this
 command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes`
 (a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,

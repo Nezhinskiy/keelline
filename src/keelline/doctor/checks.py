@@ -52,6 +52,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.findings import listed
+from keelline.guards.api import hooks_dir
 from keelline.hooks.sink import DIAGNOSTICS, DIRECTORY, MARKERS
 from keelline.memory.api import (
     PROJECTS,
@@ -142,20 +143,45 @@ class Context:
     overlay: Path | None = None
 
 
-def plugin_root(env: Mapping[str, str]) -> Path | None:
-    """Where `hooks/run-hook.sh` is on this machine, or `None` when it cannot be found.
+def _own_root() -> Path | None:
+    """The plugin root **this** Keelline is part of, derived from the running module's path.
 
-    The harness's own variable first, because in a session that is the authoritative answer and
-    the only one that holds for an installed plugin; a checkout second, for a developer running
-    `scripts/keelline` out of the tree. A wheel carries neither — `hooks/` is outside the module
-    root by design — so `None` is an ordinary answer here and the two checks that need it skip.
+    `scripts/keelline` puts `<plugin root>/src` on `sys.path`, so a Keelline launched by the
+    plugin — or out of a checkout — can name its own root without asking anything. A wheel
+    cannot: `hooks/` is outside the module root by design, and `None` is the honest answer.
     """
+    own = Path(keelline.__file__).resolve().parents[2]
+    return own if (own / WRAPPER).is_file() else None
+
+
+def _named_root(env: Mapping[str, str]) -> Path | None:
+    """The plugin root the environment names, when it carries a wrapper."""
     for name in ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"):
         named = env.get(name)
         if named and (Path(named) / WRAPPER).is_file():
             return Path(named)
-    checkout = Path(keelline.__file__).resolve().parents[2]
-    return checkout if (checkout / WRAPPER).is_file() else None
+    return None
+
+
+def plugin_root(env: Mapping[str, str]) -> Path | None:
+    """Where `hooks/run-hook.sh` is on this machine, or `None` when it cannot be found.
+
+    **This Keelline's own root first, and the named variable only after it.** The two checks
+    that read this answer *execute* what they find there — `_wrapper` launches it as a
+    subprocess — and a plugin-root variable is the same class of input `config/machine.py`
+    gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on: a committed `.claude/settings.json` `env`
+    block reaches this process. `hooks/run-hook.sh` derives its launcher from its own path for
+    that reason, and this is the same rule one layer up.
+
+    The variable is still consulted, because there is one arrangement self-derivation cannot
+    answer for: a Keelline installed as a wheel beside a separately installed plugin. There the
+    alternative is skipping both checks forever, and `doctor` is a report a person asks for
+    rather than a hook that fires on every tool call. A wheel with no plugin anywhere carries
+    neither, so `None` is an ordinary answer here and the two checks that need it skip.
+    """
+    # One expression rather than an early return, so the order itself is the single line a
+    # mutation inverts.
+    return _own_root() or _named_root(env)
 
 
 def _not_initialised(context: Context) -> Check:
@@ -570,9 +596,12 @@ def _cli_path(context: Context) -> Check:
     return Check("cli-path", OK, f"`keelline` resolves on PATH at {found}")
 
 
-# The overlay's commit-time secret scan, and the hook `pre-commit install` writes (§6.4).
+# The overlay's commit-time secret scan, and the hook `pre-commit install` writes (§6.4). The
+# hook's *name* only: where it lives is `guards.hooks_dir`'s answer, because an overlay with
+# `core.hooksPath` set, or one that is a worktree or a submodule, keeps its hooks nowhere near
+# `.git/hooks` -- and this row would then warn permanently with a remedy that cannot clear it.
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-PRE_COMMIT_HOOK = Path(".git") / "hooks" / "pre-commit"
+PRE_COMMIT_HOOK = "pre-commit"
 
 
 def _pre_commit(context: Context) -> Check:
@@ -593,7 +622,20 @@ def _pre_commit(context: Context) -> Check:
             f"for the notes it holds",
             "run `keelline overlay upgrade` to refresh the overlay's shipped files",
         )
-    if not (overlay / PRE_COMMIT_HOOK).exists():
+    try:
+        hooks = hooks_dir(overlay)
+    except Refusal:
+        # `git` is invoked, never imported, and a `git` that cannot answer is a reported finding
+        # rather than a traceback -- and rather than a guess at `.git/hooks`, which is the thing
+        # this row was getting wrong.
+        return Check(
+            "pre-commit",
+            WARN,
+            "`git` could not name the overlay's hooks directory, so whether its commit-time "
+            "secret scan is installed cannot be answered here",
+            f"run `git -C {overlay} rev-parse --git-path hooks` and read what it says",
+        )
+    if not (hooks / PRE_COMMIT_HOOK).exists():
         return Check(
             "pre-commit",
             WARN,
@@ -752,10 +794,14 @@ def _guarded(name: str, check: Callable[[Context], Check], context: Context) -> 
     everything else is broken, so a check that raises costs one row and not the diagnosis — and
     the exception's *message* is not printed, because a `Failure` built out of `memory.groups`
     or a note's path is repository-authored by the Global Constraints' own list.
+
+    `Exception` and not `BaseException`: what was asked for is that a check which *raises*
+    becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
+    one `Ctrl-C` into fifteen red rows and a report, instead of stopping.
     """
     try:
         return check(context)
-    except BaseException as exc:  # a broken check must cost one row, never the whole report
+    except Exception as exc:  # a broken check must cost one row, never the whole report
         return Check(
             name,
             RED,

@@ -9,15 +9,43 @@ sees.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check
 from keelline.doctor.commands import summarise
 from keelline.findings import LISTED_LIMIT
 from tests.doctor.test_checks import _initialised
+
+
+@pytest.fixture(autouse=True)
+def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The seam `tests/doctor/test_checks.py` closes with `_env`, closed here instead.
+
+    `run_doctor` passes no `env=`, so `run_checks` falls back to `os.environ` — and that is the
+    real environment, which the Global Constraints forbid a test from reading: `ignored-env`
+    reports whichever of two real variables is set, `diagnostics` finds the harness data root in
+    it and this suite is plausibly run inside a session where that points at a real log, and
+    `load(root, machine=None)` resolves the developer's own `~/.config/keelline/config.toml`.
+    The flag cases below cannot pass an environment through argparse, so the environment is made
+    hermetic instead of passed.
+
+    `_own_root` is stood down for the same reason and one more: `plugin_root` would otherwise
+    answer with this checkout, and the `wrapper` check **executes** what it answers. Every case
+    here would then spawn a real `hooks/run-hook.sh`, and `test_a_clean_installation_exits_zero`
+    would become false the day that run goes red on somebody's machine — which is a fact about
+    their interpreters, not about the argparse wiring this file is for. What the two checks do
+    with a plugin root is `tests/doctor/test_checks.py`'s.
+    """
+    for name in list(os.environ):
+        if name.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_")):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
 
 
 def invoke(argv: list[str]) -> int:

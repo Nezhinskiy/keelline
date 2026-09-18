@@ -16,7 +16,9 @@ Codex, one Python package with **no runtime dependencies**.
 > the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
-> and the adoption state machine — so today you write `keelline.toml` by hand.
+> and the adoption state machine — so today you write `keelline.toml` by hand. Nor the lane that
+> publishes the overlay *template* repository, so `overlay create --local` is the source that
+> works today and `--template` waits on it.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -162,8 +164,8 @@ keelline test hygiene                                 # the faults that make a r
 keelline test audit-entrypoints                       # tests that never exercise what they name
 
 # The private overlay
-keelline overlay create --owner you --name keelline-private --local   # render one here, no network
-keelline overlay create --owner you --name keelline-private --template  # generate it on GitHub, private
+keelline overlay create --owner you --name keelline-private --local   # render one here, no network — the working source today
+keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template on GitHub, which nothing publishes yet
 keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
 keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
 

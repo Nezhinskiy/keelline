@@ -6,10 +6,27 @@ the owner's own rules live, so a silent overwrite here destroys the only copy of
 which is exactly why this lane calls the engine rather than reimplementing the rule.
 
 **Why a wrapper type rather than a bare `Plan`.** §6.1 gives two files an exception to the hash
-rule: `common/claude/permissions.json` and `common/claude/hooks.json` are diffed and asked about
-*regardless of hash*, because they are the two that can grant capability and a hash match is not
-consent for those. C2's `Plan` has no verb for "needs a decision" and C2 is frozen for this plan,
-so the answer is a type *around* the plan rather than a new `Verb` inside it.
+rule: `common/claude/permissions.json` and `common/claude/hooks.json` are named *regardless of
+hash*, because they are the two that can grant capability and a hash match is not consent for
+those. C2's `Plan` has no verb for "needs a decision" and C2 is frozen for this plan, so the
+answer is a type *around* the plan rather than a new `Verb` inside it.
+
+**What `decisions` actually is, stated plainly because an earlier account of it was not.** The
+write is **unconditional**: `apply()` runs before `decisions` is computed, so there is no moment
+at which a decision could be taken and nothing here waits on one. `decisions` is a *post-hoc
+notice* — these two files were refreshed, go and look at them — and not a gate.
+
+That is safe for exactly one reason, and it is a property of the shipped template rather than of
+this function: the template cannot grant anything. `common/claude/permissions.json` is deny-only
+and `common/claude/hooks.json` is `{"hooks": {}}`, held by
+`tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere` and
+`::test_the_template_ships_no_hook_entry`, the first with a mutation behind it. So refreshing
+either file can widen nothing, and a notice is enough.
+
+**It stops being enough the day a third capability file lands** — or the day one of those two
+ships a non-empty body. A lane that adds one has to move the ask in front of `apply()`, or give
+the caller a way to decline; this paragraph is the record that the current shape depends on the
+template being inert, and not on the order of the two statements below.
 """
 
 from __future__ import annotations
@@ -30,7 +47,11 @@ class OverlayUpgrade:
 
 
 def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
-    """What a release would change in this overlay, and what it must ask about first.
+    """What a release would change in this overlay, and which files the caller is told to read.
+
+    `decisions` is computed after `apply()` and names the two capability files unconditionally;
+    it is a notice, not a gate. The module docstring says why that is safe here and what would
+    make it unsafe.
 
     `project.name` is the instance's directory name and goes nowhere: the engine reads
     `keelline.profile` and `artifacts.local` out of a `Config` and nothing else. It is passed

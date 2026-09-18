@@ -25,7 +25,17 @@ fail() {
   degrade "$1"
 }
 
-launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/keelline"
+# The launcher is derived from this script's own path and never re-read from the environment.
+# The harness substitutes the plugin root into the *command string* of `hooks/hooks.json`, so
+# the wrapper that runs is always the plugin's own — but a variable of that name reaching this
+# process from somewhere else would choose the Python program we then execute, before any
+# Keelline guard runs. `config/machine.py`'s docstring makes exactly that argument about
+# `KEELLINE_CONFIG` and `XDG_CONFIG_HOME`, which a committed `.claude/settings.json` `env`
+# block can put in front of a hook; the variable that picks the interpreter's argument belongs
+# to the same class, and one `cd` closes it where those two needed a gate. Whether a project
+# `env` block can in fact shadow a plugin-provided variable is unmeasured, and this does not
+# depend on the answer.
+launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
 
 # The probe runs code rather than matching a path: bare `python3` in a hook subprocess can
 # resolve to macOS's 3.9, and a path list alone would fall through to it on a machine with no
@@ -39,7 +49,7 @@ for c in ${KEELLINE_PYTHON_CANDIDATES:-/Library/Frameworks/Python.framework/Vers
 done
 [ -n "$p" ] || fail "KL_NO_PY no python3 of 3.11 or newer among the candidates"
 
-[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing at ${launcher}"
+[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing at ${launcher}"
 
 # Every entry but the dispatcher's relies on `--root` defaulting to the current directory, and
 # no harness promises to launch a hook inside the project. Resolved here, once, rather than

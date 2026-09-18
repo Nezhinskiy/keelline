@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -14,8 +15,15 @@ ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ROOT / "hooks" / "run-hook.sh"
 
 
-def _plugin_root(tmp_path: Path, exit_code: int, *, echo_cwd: bool = False) -> Path:
-    """A plugin root whose launcher is a Python script exiting with `exit_code`.
+def _plugin_root(
+    base: Path, exit_code: int, *, echo_cwd: bool = False, with_launcher: bool = True
+) -> Path:
+    """A plugin root: a copy of the shipped wrapper, and a launcher beside it.
+
+    The wrapper is **copied in** rather than invoked out of the checkout, because it now finds
+    its launcher relative to its own path. A plugin root is therefore a real directory pair —
+    `hooks/run-hook.sh` and `scripts/keelline` — which is what an installed plugin is, and what
+    the harness substitutes into the command string of `hooks/hooks.json`.
 
     A fake launcher, not the real one: this test is about the wrapper's own exit-code mapping
     and its argv contract, and a real `keelline` run would couple it to every command in the
@@ -27,8 +35,13 @@ def _plugin_root(tmp_path: Path, exit_code: int, *, echo_cwd: bool = False) -> P
     whatever `python3` the session's PATH resolves to, which on macOS is 3.9. A shell script
     here therefore reaches Python as a `SyntaxError` and every exit code below arrives as 1.
     """
-    root = tmp_path / "plugin"
+    root = base / "plugin"
     (root / "scripts").mkdir(parents=True)
+    (root / "hooks").mkdir(parents=True)
+    shutil.copy(WRAPPER, root / "hooks" / WRAPPER.name)
+    (root / "hooks" / WRAPPER.name).chmod(0o755)
+    if not with_launcher:
+        return root
     launcher = root / "scripts" / "keelline"
     # `os.getcwd()` rather than the shell's `pwd`: it reports the physical directory, which is
     # what `Path.resolve()` names, so the assertion is about the directory and not about which
@@ -43,19 +56,25 @@ def _plugin_root(tmp_path: Path, exit_code: int, *, echo_cwd: bool = False) -> P
 
 def _run(
     *argv: str,
-    plugin_root: Path | None = None,
+    plugin_root: Path,
+    env_root: Path | None = None,
     candidates: str | None = None,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """Run the wrapper **inside** `plugin_root`, the way an installed plugin's entry does.
+
+    `CLAUDE_PLUGIN_ROOT` is removed from the environment unless `env_root` names one, and
+    `env_root` is deliberately a *different* root: nothing below may change because of it.
+    """
     env = dict(os.environ)
     env.pop("CLAUDE_PLUGIN_ROOT", None)
     env.pop("CLAUDE_PROJECT_DIR", None)
-    if plugin_root is not None:
-        env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
+    if env_root is not None:
+        env["CLAUDE_PLUGIN_ROOT"] = str(env_root)
     if candidates is not None:
         env["KEELLINE_PYTHON_CANDIDATES"] = candidates
     return subprocess.run(
-        [str(WRAPPER), *argv],
+        [str(plugin_root / "hooks" / WRAPPER.name), *argv],
         capture_output=True,
         text=True,
         check=False,
@@ -124,18 +143,33 @@ def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:
     assert "KL_NO_PY" not in result.stderr
 
 
-def test_an_unset_plugin_root_refuses_rather_than_running_something_else() -> None:
-    # S8 row 3. The printed path is root-relative, which is how that row was told apart from a
-    # deleted launcher at the time.
-    result = _run("closed", "hook", "PreToolUse")
-    assert result.returncode == 2
-    assert "KL_NO_LAUNCHER" in result.stderr
+def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path: Path) -> None:
+    # Replaces S8 row 3, whose premise was that the environment names the launcher. It does
+    # not: the harness substitutes the plugin root into the *command string* of
+    # `hooks/hooks.json`, so the wrapper that runs is always the plugin's own, and the program
+    # it hands to Python is derived from that wrapper's path. A variable of the same name
+    # arriving from anywhere else — a committed `.claude/settings.json` `env` block is the case
+    # `config/machine.py` gates two other variables against — must change nothing, because this
+    # choice is made before any Keelline guard runs.
+    #
+    # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,
+    # which under `closed` policy becomes a KL_RC refusal and exit 2.
+    ours = _plugin_root(tmp_path / "ours", 0)
+    theirs = _plugin_root(tmp_path / "theirs", 3)
+    result = _run("closed", "hook", "PreToolUse", plugin_root=ours, env_root=theirs)
+    assert result.returncode == 0
+    assert "KL_RC" not in result.stderr
 
 
-def test_a_missing_launcher_refuses(tmp_path: Path) -> None:
-    root = _plugin_root(tmp_path, 0)
-    (root / "scripts" / "keelline").unlink()
-    result = _run("closed", "hook", "PreToolUse", plugin_root=root)
+def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path: Path) -> None:
+    # The refusal the self-derivation still owes: a wrapper with no launcher beside it must
+    # say so rather than reach for the one the environment offers. Both arms matter — without
+    # the refusal a missing launcher reaches Python as a missing file and exits 2 by CPython
+    # accident, with no token to attribute it (D11); without the self-derivation it would run
+    # `theirs` and exit 0.
+    ours = _plugin_root(tmp_path / "ours", 0, with_launcher=False)
+    theirs = _plugin_root(tmp_path / "theirs", 0)
+    result = _run("closed", "hook", "PreToolUse", plugin_root=ours, env_root=theirs)
     assert result.returncode == 2
     assert "KL_NO_LAUNCHER" in result.stderr
 
@@ -167,14 +201,22 @@ def test_keelline_runs_from_the_project_root(tmp_path: Path) -> None:
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     root = _plugin_root(tmp_path, 0, echo_cwd=True)
-    env_root = dict(os.environ, CLAUDE_PROJECT_DIR=str(project))
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(project))
+    env.pop("CLAUDE_PLUGIN_ROOT", None)
     result = subprocess.run(
-        [str(WRAPPER), "open", "memory", "session-context", "--bundle", "preset-rules"],
+        [
+            str(root / "hooks" / WRAPPER.name),
+            "open",
+            "memory",
+            "session-context",
+            "--bundle",
+            "preset-rules",
+        ],
         capture_output=True,
         text=True,
         check=False,
         cwd=str(elsewhere),
-        env={**env_root, "CLAUDE_PLUGIN_ROOT": str(root)},
+        env=env,
     )
     assert result.stdout.strip() == str(project.resolve())
 

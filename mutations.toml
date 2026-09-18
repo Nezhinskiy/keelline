@@ -1457,6 +1457,43 @@ before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
 after = 'policy=open'
 reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
 
+# C1: the launcher is chosen by the wrapper's own path and never by a variable in its
+# environment. A committed `.claude/settings.json` `env` block reaches a hook process --
+# `config/machine.py` gates two other variables on exactly that -- and this one would pick the
+# Python program that runs before any Keelline guard does.
+[[mutation]]
+name = "the wrapper takes its launcher from the environment again"
+file = "hooks/run-hook.sh"
+before = 'launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"'
+after = 'launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/keelline"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_plugin_root_in_the_environment_does_not_choose_the_launcher",
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# The other half of the same line. A derived launcher that is not there must still refuse with a
+# token: without the check the file reaches Python as a missing script and exits 2 by CPython
+# accident, which is the unattributed exit D11 exists to make impossible.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher is missing"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing at ${launcher}"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# C1 one layer up: `doctor`'s `wrapper` check launches whatever `plugin_root` resolves, so the
+# root this Keelline is part of has to outrank the one a variable names.
+[[mutation]]
+name = "doctor lets a named plugin root outrank its own"
+file = "src/keelline/doctor/checks.py"
+before = "    return _own_root() or _named_root(env)"
+after = "    return _named_root(env) or _own_root()"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of",
+]
+
 # The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
 # is a write -- and a `remove_within` loop -- outside the one directory D14 permits.
 [[mutation]]
@@ -1689,4 +1726,49 @@ before = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error")'
 after = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error", "context", "decision")'
 reddens = [
   "tests/doctor/test_checks.py::test_diagnostics_are_reported_as_reasons_and_never_as_payloads",
+]
+
+# I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's
+# `--machine` gate -- a flag is a third member of the equivalence class `config/machine.py`
+# gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the
+# machine file into capability: the overlay root comes from it, and from the overlay come allow
+# rules, hook entries and Codex standing rules.
+[[mutation]]
+name = "attach honours --machine from a session nobody is sitting in front of"
+file = "src/keelline/attach/commands.py"
+before = "        raise Refusal(_NO_MACHINE_OVERRIDE)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
+  "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
+]
+
+# The ledger holds the owner's personal allow rules and lives under `.keelline/local/`, a path
+# the repository has no `.gitignore` line for. Written before the region exists, it is published
+# to every collaborator -- so the region goes first, and a region that cannot be written is a
+# refusal rather than a warning.
+[[mutation]]
+name = "the ledger is written before anything makes its path untracked"
+file = "src/keelline/attach/write.py"
+before = "    _write_ignore_region(root)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+# `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
+# names this lane as the one that has to call the containment itself). The entry decides a
+# directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
+# has to reach the caller as a refusal and not as silence.
+[[mutation]]
+name = "a memory.groups entry that leaves the project's share is swallowed instead of refused"
+file = "src/keelline/attach/write.py"
+before = '''            raise Refusal(
+                "a memory.groups entry does not stay inside this project's share of the "
+                "overlay, so it is refused rather than created"
+            ) from exc'''
+after = "            pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]

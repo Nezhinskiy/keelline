@@ -23,7 +23,9 @@ import pytest
 import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE
+from keelline.doctor import checks
 from keelline.doctor.api import SETTINGS_FILES, Check, run_checks
+from keelline.doctor.checks import plugin_root
 from keelline.hooks.sink import DIAGNOSTICS, DIRECTORY
 from keelline.memory.api import PROJECT_RECORD, PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, Completed
@@ -149,6 +151,11 @@ def _overlay(tmp_path: Path) -> Path:
     overlay = tmp_path / "overlay"
     for relative in (COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY):
         (overlay / relative).mkdir(parents=True, exist_ok=True)
+    # An overlay is a git repository, and the `pre-commit` row asks `guards.hooks_dir` where
+    # its hooks live rather than assuming `.git/hooks`. A fixture that is not a repository has
+    # no answer to that question, so the layout says here what it is.
+    if not (overlay / ".git").exists():
+        _git(overlay, "init", "-q", "-b", "main")
     (overlay / PROJECTS / "p" / "memory" / "developer").mkdir(parents=True, exist_ok=True)
     (overlay / PROJECTS / "p" / PROJECT_RECORD).write_text(
         f'remote = "{ORIGIN}"\nfirst_attach = "2026-09-18"\n', encoding="utf-8"
@@ -380,16 +387,29 @@ def test_the_two_other_checks_this_build_cannot_answer_skip_for_their_own_reason
     assert _by_name(checks, "ci-ref").status == "skip"
 
 
+def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
+    """A plugin root carrying a wrapper, and nothing else `plugin_root` looks at."""
+    plugin = base / "plugin"
+    (plugin / "hooks").mkdir(parents=True)
+    wrapper = plugin / "hooks" / "run-hook.sh"
+    wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    wrapper.chmod(0o755 if executable else 0o644)
+    return plugin
+
+
 def test_a_wrapper_that_lost_its_executable_bit_is_red_although_no_hashes_exist(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # §5.9 and Task 1: the hash half of `files` cannot run in this build and the executable-bit
     # half needs nothing but the file, so it runs regardless. A wrapper without `+x` exits 126,
     # which Claude Code reads as a non-blocking error — permission.
-    plugin = tmp_path / "plugin"
-    (plugin / "hooks").mkdir(parents=True)
-    (plugin / "hooks" / "run-hook.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    (plugin / "hooks" / "run-hook.sh").chmod(0o644)
+    #
+    # `_own_root` is stood down because the suite runs from a checkout, which *is* a plugin
+    # root with a healthy wrapper in it, and that root now outranks the named variable. Reached
+    # for by name rather than worked around: the variable is the only way to point `doctor` at
+    # a planted root, and the case below is what makes the ordering itself an assertion.
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    plugin = _planted_plugin(tmp_path, executable=False)
     check = _by_name(
         _checks(
             tmp_path, _initialised(tmp_path), env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(plugin))
@@ -398,6 +418,23 @@ def test_a_wrapper_that_lost_its_executable_bit_is_red_although_no_hashes_exist(
     )
     assert check.status == "red"
     assert "executable" in check.detail
+
+
+def test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C1's `doctor` half. `files` reads this answer and `wrapper` *executes* it, so a variable
+    # a committed `.claude/settings.json` `env` block can set must not choose the script that
+    # runs — the same rule `hooks/run-hook.sh` now follows for its own launcher. Both roots are
+    # planted so the case says nothing about how this suite happens to be installed.
+    ours = _planted_plugin(tmp_path / "ours")
+    theirs = _planted_plugin(tmp_path / "theirs")
+    monkeypatch.setattr(checks, "_own_root", lambda: ours)
+    assert plugin_root(_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(theirs))) == ours
+    # Non-vacuous: the variable is still the answer where self-derivation has none, which is
+    # the wheel-beside-a-plugin arrangement the ordering deliberately keeps working.
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    assert plugin_root(_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(theirs))) == theirs
 
 
 def test_diagnostics_are_reported_as_reasons_and_never_as_payloads(tmp_path: Path) -> None:
@@ -535,10 +572,47 @@ def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path:
     (tmp_path / "overlay" / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     checks = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert _by_name(checks, "pre-commit").status == "warn"
-    (tmp_path / "overlay" / ".git" / "hooks").mkdir(parents=True)
+    (tmp_path / "overlay" / ".git" / "hooks").mkdir(parents=True, exist_ok=True)
     (tmp_path / "overlay" / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n")
     checks = _checks(tmp_path, root, machine=_machine(tmp_path))
     assert _by_name(checks, "pre-commit").status == "ok"
+
+
+def test_the_overlays_hook_is_found_where_git_says_it_is_and_not_under_dot_git(
+    tmp_path: Path,
+) -> None:
+    # I2. `core.hooksPath` is an ordinary global dotfiles setting, and a worktree or submodule
+    # overlay keeps `.git` as a *file*. Against either, a hardcoded `.git/hooks/pre-commit`
+    # warns permanently with a remedy that cannot clear it — the reader runs `pre-commit
+    # install`, it succeeds, and the row stays yellow. `docs/cli.md` states the rule this
+    # follows: `git rev-parse --git-path hooks`, never `core.hooksPath`.
+    root = _attached(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    hooks = tmp_path / "dotfiles" / "hooks"
+    hooks.mkdir(parents=True)
+    _git(overlay, "config", "core.hooksPath", str(hooks))
+    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(checks, "pre-commit").status == "warn"
+    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+    checks = _checks(tmp_path, root, machine=_machine(tmp_path))
+    assert _by_name(checks, "pre-commit").status == "ok"
+
+
+def test_an_overlay_git_cannot_answer_about_is_a_warning_and_never_a_red_row(
+    tmp_path: Path,
+) -> None:
+    # `hooks_dir` refuses when `git` cannot name the directory. `_guarded` would turn that into
+    # a red row naming an exception type, which says nothing a reader can act on; the row says
+    # what could not be asked instead. Reached by taking the repository away, which is the
+    # cheapest state `rev-parse` cannot answer in.
+    root = _attached(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    shutil.rmtree(overlay / ".git")
+    check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "pre-commit")
+    assert check.status == "warn"
+    assert "hooks directory" in check.detail
 
 
 def test_a_recorded_ci_ref_is_asked_of_the_remote_through_the_runner(tmp_path: Path) -> None:

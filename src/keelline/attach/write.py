@@ -62,6 +62,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
 from keelline.gitenv import git_run
+from keelline.guards.api import hooks_dir
 from keelline.memory.api import (
     COMMON_GROUP,
     PROJECT_RECORD,
@@ -94,7 +95,13 @@ IGNORE_REGION = "ignore"
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
-PRE_COMMIT_HOOK = Path(".git") / "hooks" / "pre-commit"
+# The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
+# overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is a
+# worktree or a submodule, where `.git` is a file, has its hooks somewhere else entirely, and a
+# hardcoded path finds the scan missing on every attach and shells out to `pre-commit install`
+# every time. `docs/cli.md`'s `setup --git-hooks` section states the rule this now follows:
+# `git rev-parse --git-path hooks`, never `core.hooksPath`.
+PRE_COMMIT_HOOK = "pre-commit"
 # §6.3's fallback for the one link that leaves Keelline's own channel: "a settings-file value is
 # subject to workspace trust and a link is not", so the symlink is preferred and this is taken
 # only when it cannot be made.
@@ -214,9 +221,18 @@ def _merged_settings(document: str, diff: PermissionDiff, binding: Binding) -> s
     `scaffold.apply_entries`, which is what keys them by marker.
     """
     wanted = overlay_entries(binding)
-    if not diff.added_allow and not wanted:
+    if not diff.added_allow and not wanted and not owned_ids(document):
         # Nothing to add, so nothing is touched. A rewrite here would reformat a file the owner
         # owns, on a run that changed nothing, and report itself as a write.
+        #
+        # **`owned_ids` is the third clause and not decoration.** `apply_entries(document, {})`
+        # is the engine's *removal* path, and an overlay that has had its last hook entry taken
+        # out reaches here with `wanted` empty — so without this the marked entry stays in the
+        # file and goes on firing, while the ledger (built from the overlay, not unioned) loses
+        # it. `doctor._hook_entries` then reads an entry claiming the marker and named in no
+        # ledger, goes RED, and tells the owner to remove an entry Keelline installed. This is
+        # the twin of the case already fixed for `rules`, answered on the settings side rather
+        # than in the ledger, because the honest repair is to take the entry back out.
         return document
     raw = settings_document(document)
     permissions, allow = _allow_list(raw)
@@ -291,7 +307,17 @@ def _secret_scan(binding: Binding, runner: Runner) -> str | None:
     """
     if not (binding.overlay / PRE_COMMIT_CONFIG).is_file():
         return None
-    if (binding.overlay / PRE_COMMIT_HOOK).exists():
+    try:
+        installed = (hooks_dir(binding.overlay) / PRE_COMMIT_HOOK).exists()
+    except Refusal:
+        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this lane's own
+        # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
+        # install` fired blind at an overlay whose hooks directory nobody could name.
+        return (
+            "`git` could not name the overlay's hooks directory, so whether its commit-time "
+            "secret scan is installed was not checked; the push-time scan still runs"
+        )
+    if installed:
         return None
     done = runner.run(["pre-commit", "install"], binding.overlay)
     if done.code == 0:
@@ -481,8 +507,11 @@ def attach(
         )
     if binding.state == MISMATCH and not trust_remote:
         raise Refusal(
-            f"the overlay records a different remote for project {binding.project!r}, so this "
-            f"is not the repository it was bound to; pass --trust-remote only if it should be"
+            # The name is not quoted back, for the reason `permissions.check` states at length:
+            # `project.name` is repository-authored and looser than the marker-id grammar
+            # `doctor` already refuses to print, and a refusal built out of one is still one.
+            "the overlay records a different remote under this project's name, so this is not "
+            "the repository it was bound to; pass --trust-remote only if it should be"
         )
     _write_ignore_region(root)
     rules = _codex_rules(root, binding)
