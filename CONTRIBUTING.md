@@ -48,6 +48,13 @@ wrap it.
 An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by
 name — there is no shared registry to edit.
 
+Today the discovered ones are `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
+`memory`, `overlay`, `release` and `setup`. Three arrived with the install path: `overlay`
+renders and upgrades the private overlay, `attach` binds a repository to one and unbinds it
+again, and `doctor` reports on what every other area left behind and repairs none of it.
+(`config`, `presets` and `scaffold` are subpackages and not areas — nothing discovers them,
+because they carry neither a `commands.py` nor a `hooks.py`.)
+
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
@@ -82,6 +89,21 @@ uv run python scripts/mutation_oracle.py fsops    # only the matching ones
 ```
 
 Each entry names one file, one exact line to change, and the tests that must fail when it does.
+The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not `tests`, and
+`name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
+exact substring of the file and `after` is what replaces it, so an entry whose `before` has
+drifted is a finding rather than a skip. The oracle also refuses to mutate a tree with
+uncommitted changes, which is why a mutation run comes *after* the commit it is about.
+
+```toml
+[[mutation]]
+name = "the containment walk stops refusing '..'"
+file = "src/keelline/fsops.py"
+before = "        if part in (_PARENT, _HERE):"
+after = "        if part in (_HERE,):"
+reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
+```
+
 CI runs the whole set. Three things are findings: a mutation that *survives*; one whose `before`
 line no longer exists, because the assertion and the line it is about have drifted apart; and
 one whose named tests do not pass on a clean tree before the mutation is applied, because a test
@@ -98,8 +120,11 @@ Name a test after the behaviour, not the function:
 Comment *why*, in the test. Most of this suite's comments name the defect the test exists to
 catch, which is what makes a later reader able to tell a load-bearing assertion from decoration.
 
-A test must never read or write the developer's real `~/.config/keelline/`. Pass `--machine` to
-a command, `machine=` to `resolve`, and use `tmp_path` for everything else.
+A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
+`~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
+takes one, and use `tmp_path` for everything else. A test must not shell out to `gh`, `claude`,
+`codex` or `pre-commit` either: `overlay.api.Runner` is the seam those calls go through, and a
+stub records the argv, which is the part of them that can be wrong in a way somebody notices.
 
 ## Commits and changelog
 

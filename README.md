@@ -6,13 +6,17 @@ the platform lets them, and — designed, not yet shipped — an adoption state 
 runs gates advisory until a repository has earned them. One plugin for Claude Code and
 Codex, one Python package with **no runtime dependencies**.
 
-> **Pre-1.0.** Five areas ship: the memory store and its trust gate; the scaffolding engine
-> that writes files into a repository; the guards over a shell call, a commit message and a
-> test run; the bug ledger; and the documentation and plan lints. The first skills ship with
-> them, and so do two command groups meant for a machine rather than for you — `hook`, which
-> dispatches one harness event, and `release check`. The hooks file that wires all of it into
-> a session ships too, so installing the plugin is enough to make the guards fire and the
-> memory bundles arrive. Not yet: `init`, the overlay, and the adoption state machine.
+> **Pre-1.0.** What ships: the memory store and its trust gate; the scaffolding engine that
+> writes files into a repository; the guards over a shell call, a commit message and a test
+> run; the bug ledger; the documentation and plan lints; `keelline setup`, which configures a
+> machine from a preset; the private overlay — `overlay create`, `overlay init`,
+> `overlay upgrade` — and `attach`/`detach`, which bind a repository to it and unbind it
+> again; and `keelline doctor`, which reports on the result. The hooks file that wires all of
+> it into a session ships too, so installing the plugin is enough to make the guards fire and
+> the memory bundles arrive. The first skills ship with them, and so do two command groups
+> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
+> `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
+> and the adoption state machine — so today you write `keelline.toml` by hand.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -36,8 +40,8 @@ adds:
 - **An enforcement state machine** in which gates run advisory until the repository has
   earned them. Designed; the assessment engine is a later work package.
 - **A personal overlay that is itself a versioned plugin** with a declared dependency and
-  its own upgrade manifest, rather than a dotfiles sync. Designed; `attach` is a later
-  work package.
+  its own upgrade manifest, rather than a dotfiles sync. `keelline overlay create` renders
+  one and `keelline attach` binds a repository to it.
 
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not
@@ -96,8 +100,12 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline bugs new`, `bugs index`, `bugs renumber` |
 | `docs/roadmap.md` (configurable) | Only the design-and-plan trail between its two markers | `keelline docs trail` |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
-| `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]` | you |
+| `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `keelline setup` |
 | `~/.config/keelline/trust.json` | Which repositories' committed notes you have approved | `keelline memory trust` |
+| `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
+| `${CLAUDE_PLUGIN_DATA}/keelline/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
+| `.keelline/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — git-ignored by the region `attach` itself writes | `keelline attach` |
+| `<overlay>/projects/<name>/project.toml` | Which remote this overlay is bound to for this project, and when it was first attached | `keelline attach` |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the
