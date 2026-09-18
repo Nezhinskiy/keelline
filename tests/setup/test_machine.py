@@ -4,7 +4,10 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from keelline.config.loader import load
+from keelline.errors import Refusal
 from keelline.memory.api import overlay_root
 from keelline.presets import load_preset
 from keelline.setup.api import read_machine, write_machine
@@ -95,3 +98,73 @@ def test_the_preset_names_the_plugins_and_the_deny_rules() -> None:
     preset = load_preset("recommended")
     assert any("superpowers" in name for name in preset["plugins"]["install"])
     assert any(".env" in rule for rule in preset["deny"]["global"])
+
+
+# --- the file this writer shares with a human (review finding 12) ---
+
+
+def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) -> None:
+    # The docstring promised "a rewrite merges, table by table, key by key"; the merge covered
+    # exactly three hard-coded names and then replaced the whole file, so a `[trust]` table and
+    # a key at the top level were gone after one `setup`. `README.md` lists this file under
+    # "Written by: **you**, or `keelline setup`", which makes a hand-written table the ordinary
+    # case rather than the exotic one.
+    #
+    # Mutation (`mutations.toml`, "a table the machine writer does not own is dropped on a
+    # rewrite"): the carry-through arm stops copying the table → `[trust]` disappears and this
+    # reddens.
+    path = tmp_path / "config.toml"
+    path.write_text(
+        "# my machine file\n"
+        'schema = "mine"\n'
+        "\n"
+        "[personal]\n"
+        'reply_language = "ru"\n'
+        "\n"
+        "[trust]\n"
+        'mode = "strict"\n'
+        'hosts = ["example.com"]\n',
+        encoding="utf-8",
+    )
+    write_machine(path, personal={}, overlay_root=None, machine={"version": "9.9.9"})
+    written = read_machine(path)
+    assert written["trust"] == {"mode": "strict", "hosts": ["example.com"]}
+    assert written["schema"] == "mine"
+    assert written["personal"]["reply_language"] == "ru"
+    assert written["machine"]["version"] == "9.9.9"
+
+
+def test_a_hand_written_float_or_sub_table_does_not_wedge_every_future_run(
+    tmp_path: Path,
+) -> None:
+    # `[personal] scale = 1.5` or `[personal.editor] name = "nvim"` made every future run of
+    # `keelline setup` exit 2 with `Refusal: personal.scale holds a float, which this serialiser
+    # does not emit` — naming a module the owner has never heard of, with no path and no remedy,
+    # for a value they were invited to write. Twice, because the wedge is about *every future*
+    # run: the file is read back at the top of each one.
+    #
+    # Mutation: `tomlout._scalar`'s float arm removed → the first call below raises again. Not a
+    # `mutations.toml` entry: this is value coverage in a serialiser, not a guard something
+    # downstream reads as permission; the entry there is on the table carry-through above.
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[personal]\nscale = 1.5\n\n[personal.editor]\nname = "nvim"\n', encoding="utf-8"
+    )
+    for version in ("1.0.0", "1.0.1"):
+        write_machine(path, personal={}, overlay_root=None, machine={"version": version})
+    written = read_machine(path)
+    assert written["personal"]["scale"] == 1.5
+    assert written["personal"]["editor"] == {"name": "nvim"}
+    assert written["machine"]["version"] == "1.0.1"
+
+
+def test_a_key_that_cannot_be_rewritten_names_the_file_and_the_remedy(tmp_path: Path) -> None:
+    # What is left after the value types are covered: a quoted key, which TOML allows and this
+    # serialiser will not write bare. It is still a refusal — but one that names the file the
+    # owner has to edit and what to do to it, rather than one that names `tomlout`.
+    path = tmp_path / "config.toml"
+    path.write_text('[personal]\n"my key" = 1\n', encoding="utf-8")
+    with pytest.raises(Refusal) as refused:
+        write_machine(path, personal={}, overlay_root=None, machine={})
+    assert str(path) in str(refused.value)
+    assert "run the command again" in str(refused.value)

@@ -497,9 +497,14 @@ made private, which is the one outcome this command exists to prevent.
 
 The `--template` path is idempotent, because `gh` can give up on the clone with the repository
 already created: a directory that already carries `.claude-plugin/` is left alone and reported.
-When the clone brings nothing down, `gh repo view` is asked whether the repository exists at all
-— the answer tells "not created" from "created, and the clone raced its generation" — and the
-clone is retried once, after a ten-second wait when it was the second. **That retry is carried
+When `gh repo create` itself fails, the command stops there and reports **its** exit code and
+**its** stderr: a `gh` that is not installed, or one that hung, costs one launch rather than
+three, and the failure names the binary rather than sending you to `gh auth status` for a
+repository that was never there. It also names the precondition above — the template repository
+nothing publishes yet — because that is the usual reason this source cannot work. When `gh`
+reports success and the clone brings nothing down, `gh repo view` is asked whether the repository
+exists at all — the answer tells "not created" from "created, and the clone raced its generation"
+— and the clone is retried once, after a ten-second wait when it was the second. **That retry is carried
 on the strength of the design rather than of a measurement:** Findings → S6 did not reproduce
 the race in the one trial it ran, and one clean run cannot rule out an asynchronous generation
 step that sometimes outlasts a clone. If the second attempt is still empty, the command fails
@@ -513,11 +518,18 @@ or a missing `--root`.
 
 ## `keelline overlay init --owner OWNER [--root PATH]`
 
-Makes a created overlay yours. It rewrites the plugin and marketplace manifests so their names
-carry your account — `keelline-overlay-octocat`, `keelline-overlay-marketplace-octocat` — because
-a harness installs a plugin by the name in its manifest, and two owners' overlays under one
-configuration directory would otherwise be one plugin fighting itself. The marketplace's own
-plugin entries are suffixed with it, so the listing still names a manifest that answers.
+Makes a created overlay yours. It rewrites all three manifests — `.claude-plugin/plugin.json`,
+`.claude-plugin/marketplace.json` and `.codex-plugin/plugin.json` — so their names carry your
+account (`keelline-overlay-octocat`, `keelline-overlay-marketplace-octocat`), because a harness
+installs a plugin by the name in its manifest, and two owners' overlays under one configuration
+directory would otherwise be one plugin fighting itself; the Codex half is included for the same
+reason as the other two. The marketplace's own plugin entries are suffixed with it, so the
+listing still names a manifest that answers. A manifest this overlay does not carry is reported
+and skipped, not a failure.
+
+Each rewrite is re-stamped into `.keelline/manifest.json`, so `overlay upgrade` still sees these
+files as Keelline's own: without that, the file carrying `keelline.requires` read as hand-edited
+from the moment you ran `init` and no release could ever refresh it again.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
 template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
@@ -527,13 +539,22 @@ traceback.
 Both halves are idempotent. A manifest that already carries the suffix is not rewritten, so a
 second run reports nothing renamed.
 
-**Writes** `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, through the same
-contained walk every other write in this project goes through. Exits `0`; `1` on a manifest that
-cannot be read or is not JSON; `2` on an owner that is not one path segment.
+**Writes** the three manifests and, where the overlay carries one, `.keelline/manifest.json` —
+through the same contained walk every other write in this project goes through. Exits `0`; `1` on
+a manifest that exists and cannot be read or is not JSON; `2` on an owner that is not one path
+segment, or on a scaffold manifest that cannot be trusted.
 
 ---
 
 ## `keelline overlay upgrade [--root PATH] [--dry-run]`
+
+**`--root` must name an overlay, and that is checked before anything is planned.** It defaults
+to `.`, and pointed at a directory that is not one this command used to create the overlay's
+fifteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+`.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
+tree whose two `.claude-plugin/` manifests name it `keelline-overlay[-<owner>]` and
+`keelline-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
+init` renames; anything else is refused (`2`) with nothing written.
 
 Brings an overlay up to date with the template a newer Keelline ships. It is the project rule
 and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
@@ -555,8 +576,8 @@ code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
 `.keelline/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
-nothing would be written while one of those stands; `2` when the manifest itself cannot be
-trusted, or when a write is refused by the containment walk.
+nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
+manifest itself cannot be trusted, or when a write is refused by the containment walk.
 
 ---
 
@@ -688,18 +709,29 @@ reason `keelline attach` gives above.
 Configures this machine from a preset (§5.6, §8.1): the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
 `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per configured
-harness. `--home` and `--machine` default to the real home directory and the usual machine
-configuration path; both exist so this command — the only one in the plugin that writes outside
-a repository — can be pointed at scratch paths for a dry run, the same way every other command
-here takes `--root`. `--root` (default `.`) is the project this invocation was run from; the
-only thing it is used for is refusing an `--overlay` recorded inside it (below).
+harness. `--home` and `--machine` default to the home directory and to
+`~/.config/keelline/config.toml` — the file every reader reads, and not whatever
+`XDG_CONFIG_HOME` or `KEELLINE_CONFIG` names, because a machine file half the installation
+cannot find is not a machine file. Both flags exist so this command — the only one in the plugin
+that writes outside a repository — can be pointed at scratch paths for a dry run, the same way
+every other command here takes `--root`. `--root` (default `.`) is the project this invocation
+was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
+reach (below).
 
 `setup` is the only writer of the machine configuration file, and the two existing readers do
 not change: `[personal]` is `config.loader`'s, `[overlay] root` is `memory.store`'s, and both
 still resolve the file `--machine` names or the default one. A second run merges rather than
 replaces, key by key: a personal value already recorded — by an earlier `setup` or by your own
 hand — is never overwritten by the preset's own default, and an overlay root a previous run
-recorded survives a run that only changes something else.
+recorded survives a run that only changes something else. A table `setup` knows nothing about is
+carried through untouched, and so is a key at the top level; **comments are not** — the file is
+parsed and rewritten, and there is no standard-library parser that keeps them.
+
+The `[personal]` values are mirrored into `pluginConfigs` in `<home>/.claude/settings.json`,
+where Claude Code reads this plugin's own options, and that mirror is recomputed from the machine
+file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
+overwritten by the next `setup`, because one of the two copies has to decide and the machine file
+is the one everything in Keelline reads.
 
 **Plugins are installed per configured harness**, from `[defaults.keelline] agents` (`claude`
 and `codex` by default) and from the preset's own per-harness marketplace table
@@ -721,15 +753,23 @@ unshipped precondition, the template repository nothing publishes yet. Creating 
 §6.1's own "after explicit confirmation" for the one irreversible, outward-facing act this
 command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes`
 (a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,
-so the flag would be theatre there); instead the path itself is validated before it is trusted:
-it must exist, must carry the overlay's own layout (the two manifests `overlay create` and
-`overlay init` already rely on), and must not lie inside `--root` — a directory a repository
-could ship and have this command record as if it were a real overlay.
+so the flag would be theatre there); instead the path itself is validated **before the first
+write** — before the machine file, the settings merge and the plugin installs, and for `create:`
+before `gh repo create` runs on anybody's account. It must exist; its two `.claude-plugin/`
+manifests must name it `keelline-overlay[-<owner>]` and `keelline-overlay-marketplace[-<owner>]`,
+which is what `overlay create` renders and `overlay init` renames, rather than merely being
+present; and it must lie outside the repository `--root` names — not inside it, not above it, and
+not in another checkout of it, since a worktree is not a different repository and a clone ships
+its tree into all of them. Where `git` cannot answer for `--root`, the path comparisons stand
+alone.
 
 **Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
 new or recorded overlay itself. Exits `0` on success, `2` on a refused `--overlay` (missing,
-not an overlay, inside the project root, or `create:` without `--yes`); a plugin that fails to
-install or a harness that is absent is a note in the report, not a nonzero exit.
+not an overlay, reachable from the project root, or `create:` without `--yes`), and `2` on a
+`<home>/.claude` that is a symlink: the settings file is written through a walk that never
+follows one, and the refusal names the link and the `--home` that writes where it leads. Every
+one of those refusals happens before the first write. A plugin that fails to install or a
+harness that is absent is a note in the report, not a nonzero exit.
 
 ---
 

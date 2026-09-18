@@ -85,10 +85,27 @@ def run_setup(args: argparse.Namespace) -> Result:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
+    from keelline.config.machine import machine_config_path
     from keelline.setup.run import setup
 
-    home = Path(args.home).expanduser()
-    machine = Path(args.machine).expanduser()
+    # `interactive=False`, like every *reader* of this file (`config.loader.load`,
+    # `memory.store.overlay_root`, `config.loader._trust_file`) — and unlike this command until
+    # now, which was the one `machine_config_path()` call in the tree taking the `isatty` sniff.
+    # With `XDG_CONFIG_HOME=/xdg`, an owner running `keelline setup` in their own shell wrote
+    # `/xdg/keelline/config.toml`, got exit 0, and every reader then said "no overlay root is
+    # recorded in the machine configuration; run `keelline setup`" — the defect
+    # `config.loader.load`'s docstring says it fixed ("Half a file behind a gate is not a
+    # gate"), reintroduced on the write side. `--machine` itself is still honoured: a path the
+    # owner typed on their own command line is not an environment variable a repository can set.
+    #
+    # Resolved here rather than in `register()`, so that `keelline setup --help` prints the
+    # sentence and not whichever home directory the parser happened to be built under.
+    home = Path.home() if args.home is None else Path(args.home).expanduser()
+    machine = (
+        machine_config_path(interactive=False)
+        if args.machine is None
+        else Path(args.machine).expanduser()
+    )
     report = setup(
         args.preset or "recommended",
         home=home,
@@ -120,7 +137,6 @@ def run_setup(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    from keelline.config.machine import machine_config_path
     from keelline.setup.machine import USER_SETTINGS
 
     setup = groups.add_parser("setup", help="configure this machine from a preset")
@@ -132,15 +148,21 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         help="take the detected defaults for everything except the overlay",
     )
+    # Both defaults are `None` and are resolved in `run_setup`. A path computed here is computed
+    # when the parser is built, which is every run of every command — and printed by
+    # `keelline setup --help`, where it was the developer's own home directory.
     setup.add_argument(
         "--home",
-        default=str(Path.home()),
-        help=f"where to write {USER_SETTINGS} (default: the real home directory)",
+        default=None,
+        help=f"where to write {USER_SETTINGS} (default: the home directory)",
     )
     setup.add_argument(
         "--machine",
-        default=str(machine_config_path()),
-        help="the machine configuration file to write (default: the usual one)",
+        default=None,
+        help=(
+            "the machine configuration file to write "
+            "(default: ~/.config/keelline/config.toml, the file every reader reads)"
+        ),
     )
     setup.add_argument(
         "--overlay",

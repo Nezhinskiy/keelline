@@ -1823,7 +1823,7 @@ reddens = [
 [[mutation]]
 name = "setup creates a new overlay under the caller's cwd instead of --home"
 file = "src/keelline/setup/run.py"
-before = 'created = create(owner, name, source="template", root=home, runner=runner)'
+before = 'created = create(owner, name, source="template", root=planned.root.parent, runner=runner)'
 after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
 
@@ -1853,13 +1853,20 @@ reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_th
 
 # §6.1's own gate, restated in code: `overlay create` runs `gh repo create ... --private` on
 # GitHub, and a default that reaches it is the one default this command may not have. Without
-# this guard, `setup --overlay None` — i.e. every ordinary run with no `--overlay` flag at all —
-# would still attempt `_apply_overlay`, which is "taken without being asked" by definition.
+# this guard, every ordinary run with no `--overlay` flag at all would still reach the overlay
+# branch, which is "taken without being asked" by definition. The `after` is the plausible shape
+# of that bug — defaulting the answer to a directory — rather than a deletion that would crash on
+# a missing name: a mutation that reddens with an `AttributeError` proves nothing about the rule.
 [[mutation]]
 name = "setup touches the overlay even when the caller named no answer"
 file = "src/keelline/setup/run.py"
-before = "    if overlay is not None:"
-after = "    if True:"
+before = """    if overlay is None:
+        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
+        # only way to reach the overlay at all, and `--yes` does not imply one: a default here
+        # would turn an omitted flag into a repository created on somebody's account.
+        return None"""
+after = """    if overlay is None:
+        overlay = str(home)"""
 reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
 
 # The coordinator's ruling on the named risk this wave's first report raised: `--yes` on
@@ -1876,13 +1883,34 @@ reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_r
 
 # The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
 # from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
-# would be recorded and trusted exactly as a real overlay is.
+# would be recorded and trusted exactly as a real overlay is. The probe moved into
+# `overlay.identity`, which is the one module that answers "is this an overlay" for `setup` and
+# for `overlay upgrade` alike, so the entry follows it there.
 [[mutation]]
-name = "setup stops checking that a recorded overlay carries the overlay layout"
-file = "src/keelline/setup/run.py"
-before = "    missing = [f for f in (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST) if not (candidate / f).is_file()]"
-after = "    missing: list[str] = []"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused"]
+name = "the overlay probe stops looking for the manifests at all"
+file = "src/keelline/overlay/identity.py"
+before = """    for relative, expected in (
+        (PLUGIN_MANIFEST, OVERLAY_PLUGIN),
+        (MARKETPLACE_MANIFEST, OVERLAY_MARKETPLACE),
+    ):"""
+after = "    for relative, expected in ():"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused",
+  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+]
+
+# The half that used to be worth nothing: the probe was the two manifests *existing*, which the
+# Keelline checkout itself satisfies and which any Claude Code plugin repository satisfies. What
+# makes a tree an overlay is what its manifests say it is — the names `overlay init` writes and a
+# harness installs it by.
+[[mutation]]
+name = "the overlay probe stops reading what the manifests name"
+file = "src/keelline/overlay/identity.py"
+before = "        if not isinstance(document, dict) or not _claims(document.get(\"name\"), expected):"
+after = "        if not isinstance(document, dict):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
+]
 
 # What the coordinator's ruling calls the wave's actual control over the named risk: a path
 # outside the repository that already carries a real overlay layout is not something a hostile
@@ -1892,9 +1920,37 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_ref
 [[mutation]]
 name = "setup stops refusing an overlay root inside the project"
 file = "src/keelline/setup/run.py"
-before = "    if candidate == resolved_project or resolved_project in candidate.parents:"
+before = """    if (
+        resolved_candidate == resolved_project
+        or resolved_project in resolved_candidate.parents
+        or resolved_candidate in resolved_project.parents
+    ):"""
 after = "    if False:"
 reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
+
+# The arm that was missing, and the one this project's own way of working walks into: `--root` is
+# a worktree by preset rule, and `git worktree add .worktrees/x` puts it *under* the checkout — so
+# a clone shipping its two manifests at its own root was a parent of `--root`, which the first
+# draft accepted as the machine's trust anchor.
+[[mutation]]
+name = "setup stops refusing an overlay root that holds the project"
+file = "src/keelline/setup/run.py"
+before = "        or resolved_candidate in resolved_project.parents"
+after = "        or False"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_root_is_refused"]
+
+# And the case no path comparison can see. `git worktree add ../side` is git's own documented
+# layout and this repository's own convention: the other checkout is neither inside `--root` nor
+# above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
+# directories are one repository.
+[[mutation]]
+name = "setup stops asking git whether the overlay is a checkout of the project"
+file = "src/keelline/setup/run.py"
+before = "    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor",
+]
 
 # §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the
 # Keelline marker to a hostile command → doctor lists every entry with provenance". An entry
@@ -2431,3 +2487,151 @@ after = '''    allow_removed = _withdraw_settings(root, recorded)
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
+
+# --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
+
+# `docs/cli.md` says every cause of exit 2 in `setup --overlay` happens before the first write,
+# and one did not: the whole check ran at the bottom of `setup`, so `--overlay /typo` had written
+# the machine file, merged `~/.claude/settings.json` and installed two plugins before refusing —
+# with the `SetupReport` discarded, so the caller saw only the typo. The mutation leaves
+# `_apply_overlay`'s floor in place, so the refusal still arrives: what reddens is its arriving
+# after the writes, which is the rule.
+[[mutation]]
+name = "setup asks whether --overlay is an overlay after it has already written"
+file = "src/keelline/setup/run.py"
+before = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
+after = "    planned_overlay = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
+]
+
+# The most serious of the eleven. `home/<name>` is knowable from the arguments, and the first
+# draft computed it only inside the call that had already run `gh repo create --private --clone`
+# on somebody's account: the documented command run from `$HOME` created the repository, cloned
+# it, renamed both manifests and installed the secret scan, and then refused. The mutation drops
+# the check on the destination and leaves the floor, so the refusal still happens — after the
+# repository exists.
+[[mutation]]
+name = "setup computes where a created overlay lands only after creating it"
+file = "src/keelline/setup/run.py"
+before = """        destination, account = target_root(home, owner, name)
+        _outside_the_project(destination, project_root=project_root)"""
+after = "        destination, account = target_root(home, owner, name)"
+reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
+
+# `CONTRIBUTING`'s containment rule has two stages, and this lane had only the second: the
+# `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
+# `internal error`, after the machine file was already written. `config.paths.contained` is the
+# user-facing half. The mutation leaves the walk, so the run still refuses — with no link named,
+# no remedy, and the machine file on disk.
+[[mutation]]
+name = "setup meets a symlinked ~/.claude only at write time"
+file = "src/keelline/setup/run.py"
+before = """    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
+    _check_settings_path(home)"""
+after = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
+]
+
+# The floor under the entry above, and not dead: a component that becomes a symlink between the
+# check and the write can only be refused by the walk, and that interval is what the walk is for.
+# Swallowing it would report a settings file this run never wrote.
+[[mutation]]
+name = "the write-time containment on the settings file is swallowed"
+file = "src/keelline/setup/run.py"
+before = """    try:
+        fsops.write_within(home, USER_SETTINGS, new_text)
+    except UnsafePath as exc:"""
+after = """    try:
+        fsops.write_within(home, USER_SETTINGS, new_text)
+    except UnsafePath:
+        return False
+    except UnsafePath as exc:"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused",
+]
+
+# `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
+# overlay it created fourteen files — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+# `.github/workflows/scan.yml` among them — reported them as work done and exited 0. Writing a
+# workflow file into a repository the owner may then commit is the concrete harm.
+[[mutation]]
+name = "overlay upgrade stops asking whether --root is an overlay"
+file = "src/keelline/overlay/upgrade.py"
+before = "    require_overlay(root, because=NOT_AN_OVERLAY)\n"
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+  "tests/overlay/test_upgrade.py::test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overlay",
+]
+
+# The global constraints make `gh` optional and a missing binary "a reported finding, never a
+# traceback" — and never a misattributed one. Without this arm the command launches two more
+# subprocesses, can sleep ten seconds, and blames the owner's GitHub authentication for a binary
+# that was never on PATH.
+[[mutation]]
+name = "overlay create --template asks GitHub about a `gh` that could not run"
+file = "src/keelline/overlay/create.py"
+before = "    if created.code in (NOT_FOUND, TIMED_OUT):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_create.py::test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess",
+]
+
+# `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
+# two owners' overlays under one configuration directory are one plugin fighting itself — applies
+# to Codex exactly as it does to Claude Code, and the project ships a Codex half of everything
+# else.
+[[mutation]]
+name = "overlay init leaves the Codex manifest unsuffixed"
+file = "src/keelline/overlay/create.py"
+before = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)"
+after = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)"
+reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_after_the_owner_too"]
+
+# A write behind the scaffold ledger makes the file read as hand-edited for ever after. The file
+# in question carries `keelline.requires`, the version-compatibility declaration the README
+# advertises, so a release that changes it would never reach an initialised overlay — and the
+# report would attribute to the owner an edit Keelline itself made.
+[[mutation]]
+name = "overlay init writes the manifests behind the scaffold ledger"
+file = "src/keelline/overlay/create.py"
+before = "            ledger = ledger.with_record(replace(record, sha256=digest(written)))"
+after = "            ledger = ledger.with_record(record)"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
+]
+
+# `README.md` lists the machine file under "Written by: **you**, or `keelline setup`", so a table
+# this writer does not recognise is the ordinary case. Dropping it destroys the only copy of
+# something a person wrote, in a file they were invited to write in.
+[[mutation]]
+name = "a table the machine writer does not own is dropped on a rewrite"
+file = "src/keelline/setup/machine.py"
+before = """        else:
+            tables[name] = dict(value)"""
+after = """        else:
+            continue"""
+reddens = ["tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite"]
+
+# The write side of the rule `config.loader.load`'s docstring states for the read side ("Half a
+# file behind a gate is not a gate"). Every reader pins `~/.config/keelline/config.toml` with
+# `interactive=False`; this writer took the `isatty` sniff, so an owner with `XDG_CONFIG_HOME`
+# set wrote a machine file at exit 0 that every reader — and `doctor` — then reported missing.
+[[mutation]]
+name = "setup's --machine default takes the interactive sniff"
+file = "src/keelline/setup/commands.py"
+before = "        machine_config_path(interactive=False)"
+after = "        machine_config_path()"
+reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads"]
+
+# `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
+# written from this run's *new* keys — empty on every run after the first. An owner who edited
+# `reply_language` in the machine file, the documented way, kept `""` there for ever.
+[[mutation]]
+name = "setup mirrors only the values this run itself added"
+file = "src/keelline/setup/run.py"
+before = "    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal)"
+reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]

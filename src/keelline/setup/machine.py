@@ -6,14 +6,29 @@ changes here. This writer adds `[machine]` beside them — what `setup` installe
 can check it later — and nothing else. A caller that wants a fourth table is asking for a third
 reader of this file, which is out of scope for this plan by the same rule.
 
-**A rewrite merges, table by table, key by key.** `setup` runs again on a machine that already
-has a file, and the common case is "set the personal languages, leave the overlay alone" or the
-reverse — `overlay_root=None` means *this call does not know*, not *forget what was recorded*,
-so an unset value is read back off the existing file before anything is written. The three
-tests this file exists to satisfy are the three ways that can go wrong: nothing recorded stays
-nothing recorded, a value nobody touched survives a rewrite that touched something else, and one
-table's `root` never collapses into a fourth state (see `memory.store.overlay_root`'s own
-docstring on that).
+**A rewrite merges, table by table, key by key — including the tables this writer knows
+nothing about.** `setup` runs again on a machine that already has a file, and the common case is
+"set the personal languages, leave the overlay alone" or the reverse — `overlay_root=None` means
+*this call does not know*, not *forget what was recorded*, so an unset value is read back off the
+existing file before anything is written. The three tests this file exists to satisfy are the
+three ways that can go wrong: nothing recorded stays nothing recorded, a value nobody touched
+survives a rewrite that touched something else, and one table's `root` never collapses into a
+fourth state (see `memory.store.overlay_root`'s own docstring on that).
+
+The docstring used to say "table by table" while the merge covered exactly three hard-coded
+names and then replaced the whole file, so a `[trust]` table or a key at the top level was gone
+after one `setup`. `README.md` lists this file under "Written by: **you**, or `keelline setup`",
+which makes a table this writer does not recognise the ordinary case rather than the exotic one:
+every one of them is carried through in the file's own order, and the three it owns are merged
+in place.
+
+**Two things a rewrite still costs, both stated rather than discovered.** Comments do not
+survive — `tomllib` discards them on the way in, and there is no round-tripping parser in the
+standard library to keep them — and a key that is not a bare TOML key cannot be re-emitted.
+Neither may wedge the command: `tomlout` emits every *value* type a TOML document can hold, so
+the float and the nested table that used to make every future run exit 2 round-trip now, and
+the one refusal left names this file, the key, and what to do about it instead of naming a
+serialiser the owner has never heard of.
 
 **`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer in
 this plan owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
@@ -42,6 +57,7 @@ from pathlib import Path
 from typing import Any
 
 from keelline import fsops, tomlout
+from keelline.errors import Refusal
 
 # The one machine-scope settings file this plan writes, relative to `home` (Task 13, Task 15's
 # `hook-entries` check). Codex has no equivalent: §5.4's "no `userConfig` in Codex" is one of
@@ -88,25 +104,53 @@ def write_machine(
     names). `overlay_root=None` reads as "not given this run": the existing `[overlay] root`,
     if any, is carried over unchanged. There is no way to ask this function to *clear* a
     recorded overlay root; nothing in this plan needs one.
+
+    Everything else in the file — a table this writer has never heard of, a key at the top
+    level — is carried through untouched, in the order it was written in.
     """
     existing = _existing(path)
-    tables: dict[str, dict[str, object]] = {}
 
     merged_personal = {**_table(existing, "personal"), **personal}
-    if merged_personal:
-        tables["personal"] = merged_personal
-
     root = overlay_root
     if root is None:
         recorded = _table(existing, "overlay").get("root")
         if isinstance(recorded, str) and recorded:
             root = Path(recorded)
-    if root is not None:
-        tables["overlay"] = {"root": str(root)}
+    owned: dict[str, dict[str, object]] = {
+        "personal": merged_personal,
+        "overlay": {"root": str(root)} if root is not None else {},
+        "machine": {**_table(existing, "machine"), **machine},
+    }
 
-    merged_machine = {**_table(existing, "machine"), **machine}
-    if merged_machine:
-        tables["machine"] = merged_machine
+    tables: dict[str, dict[str, object]] = {}
+    # A key outside every table comes first, because TOML reads everything after a header as
+    # belonging to it. Nothing this project writes here puts one there; a person might.
+    loose = {key: value for key, value in existing.items() if not isinstance(value, dict)}
+    if loose:
+        tables[""] = loose
+    for name, value in existing.items():
+        if not isinstance(value, dict):
+            continue
+        if name in owned:
+            if owned[name]:
+                tables[name] = owned[name]
+        else:
+            tables[name] = dict(value)
+    for name, table in owned.items():
+        if table and name not in tables:
+            tables[name] = table
 
-    fsops.write_atomically(path, tomlout.dumps(tables))
+    try:
+        text = tomlout.dumps(tables)
+    except Refusal as exc:
+        # The one shape left that cannot be re-emitted: a key this serialiser cannot write bare.
+        # It reached the owner as `Refusal: personal.scale holds a …` — no path, no remedy, and
+        # the name of a module they have never heard of — on *every* future run, because the
+        # file is read back at the top of every one of them.
+        raise Refusal(
+            f"{path} cannot be rewritten: {exc}. `keelline setup` rewrites this file, so it has "
+            f"to be able to write back everything in it; remove or rename that key and run the "
+            f"command again"
+        ) from exc
+    fsops.write_atomically(path, text)
     return Written(path)

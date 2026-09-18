@@ -79,3 +79,46 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
 def test_git_hooks_and_preset_refuse_to_combine_through_the_cli(tmp_path: Path) -> None:
     code = invoke(["setup", "--preset", "recommended", "--git-hooks", "--root", str(tmp_path)])
     assert code == 2
+
+
+def test_the_machine_default_is_the_file_every_reader_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding 14. `--machine`'s default was `machine_config_path()` with no argument —
+    # the only such call in the tree — so it took the `isatty` sniff that every *reader* pins
+    # with `interactive=False`. With `XDG_CONFIG_HOME` set, an owner running `keelline setup`
+    # in their own shell wrote `/xdg/keelline/config.toml`, got exit 0, and every reader then
+    # said "no overlay root is recorded in the machine configuration; run `keelline setup`" —
+    # the defect `config.loader.load`'s docstring says it fixed, reintroduced on the write side.
+    #
+    # Mutation (`mutations.toml`, "setup's --machine default takes the interactive sniff"):
+    # `interactive=False` is dropped from the call in `run_setup` → the file lands under
+    # `XDG_CONFIG_HOME` and this reddens on both paths below.
+    home = tmp_path / "home"
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    # An interactive shell is what makes the sniff answer yes; the reader's answer must not
+    # depend on it.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    stub = _NullRunner()
+    monkeypatch.setattr("keelline.setup.commands.subprocess_runner", lambda: stub)
+    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 0
+    assert (home / ".config" / "keelline" / "config.toml").is_file()
+    assert not (xdg / "keelline" / "config.toml").exists()
+    assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
+
+
+def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The second half of the same finding: both defaults used to be computed when the parser is
+    # built, so `keelline setup --help` printed the developer's own home directory — and it was
+    # computed on every run of every command, since the parser is built for all of them.
+    with pytest.raises(SystemExit):
+        invoke(["setup", "--help"])
+    printed = capsys.readouterr().out
+    assert "--machine" in printed
+    assert str(Path.home()) not in printed
+    assert "~/.config/keelline/config.toml" in printed

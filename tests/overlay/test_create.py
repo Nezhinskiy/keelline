@@ -238,6 +238,11 @@ def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subproce
     assert "gh could not be run" in message, "the real cause is in Completed.stderr"
     assert "gh auth status" not in message, "a binary that never ran cannot have a bad token"
     assert "--local" in message, "the source that works today has to be named"
+    # The sentence only this arm produces. `Runner`'s own docstring keeps "not installed" and
+    # "hung for five minutes" apart because their remedies differ, and without this assertion
+    # the mutation below survives: the next arm — `gh` ran and declined — quotes the same
+    # stderr and stops after the same one call, so every other assertion here holds under it.
+    assert "Install `gh` and authenticate it" in message
     assert [argv[:3] for argv in absent.calls] == [["gh", "repo", "create"]]
     assert waited == [], "nothing was waiting to finish generating"
 
@@ -255,6 +260,7 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
     message = str(failed.value)
     assert "Could not resolve to a Repository" in message
     assert "nothing publishes that repository yet" in message
+    assert "exited 1" in message, "a binary that ran has an exit code, not a launch failure"
     assert [argv[:3] for argv in declined.calls] == [["gh", "repo", "create"]]
 
 

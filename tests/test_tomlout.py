@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import tomllib
 
 import pytest
@@ -43,11 +44,28 @@ def test_a_key_that_is_not_a_bare_key_refuses_rather_than_being_quoted() -> None
         dumps({"pro ject": {"remote": "u"}})
 
 
-def test_a_nested_table_refuses_rather_than_being_flattened() -> None:
-    # This serialises flat tables and says so. A dict reaching a value position is a caller
-    # expecting a shape this does not emit, and flattening it would write keys nobody asked for.
-    with pytest.raises(Refusal):
-        dumps({"project": {"remote": {"url": "u"}}})
+def test_every_value_a_toml_document_can_hold_round_trips() -> None:
+    # The contract widened when a third input arrived: `setup` rewrites the machine
+    # configuration, a file `README.md` documents the owner as writing by hand, so what reaches
+    # this serialiser is no longer only a caller's own dict. Refusing a float or a sub-table
+    # merely because no caller of ours produces one wedged `keelline setup` permanently — the
+    # file is read back at the top of every run. A nested dict becomes a sub-table header; a
+    # dict inside a list becomes an inline table, the one spelling that survives being nested.
+    #
+    # Mutation: drop any one arm of `_scalar` (the float, the date/time) or the `children`
+    # branch of `_emit`, and this reddens on that value. No `mutations.toml` entry: value
+    # coverage in a serialiser is not a guard something downstream reads as permission.
+    document: dict[str, dict[str, object]] = {
+        "personal": {
+            "reply_language": "ru",
+            "scale": 1.5,
+            "when": datetime.date(2026, 9, 18),
+            "at": datetime.datetime(2026, 9, 18, 10, 30),
+            "editor": {"name": "nvim", "options": {"deep": True}},
+        },
+        "trust": {"rows": [{"host": "example.com"}, {"host": "other"}]},
+    }
+    assert tomllib.loads(dumps(document)) == document
 
 
 def test_a_control_character_survives_the_round_trip() -> None:
