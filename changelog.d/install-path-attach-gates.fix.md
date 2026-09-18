@@ -36,6 +36,15 @@ from a worktree left the main checkout with no note links at all — silently, e
 in `paths.memory` pointed at a directory of your own was deleted by `detach` and reported as
 revoked; only a link whose target is this project's own share of the overlay is withdrawn now.
 
+**A hook entry is vouched for by the overlay, not by the ledger beside it.** `keelline doctor`
+reported "all accounted for" when a repository committed a marked hook entry *and* an attach
+ledger recording that entry's id — a committable file silencing the one check whose purpose is
+that nobody's entries go unlisted. An entry claiming the Keelline marker is now accounted for
+only if the overlay this repository is bound to still grants that exact command; where the
+overlay cannot be asked, the row says so rather than absolving anything. If you edit the overlay
+and do not re-attach, this row will name the entries that have drifted and tell you to run
+`keelline attach`, which takes them out.
+
 **Two `doctor` rows stop being wrong in the reader's favour.** The `attached` row compares the
 harness memory path against the store instead of printing "a link to the store" for any symlink
 at all: a dangling link, or one pointing at an unrelated directory, is now red and says which,
@@ -44,3 +53,12 @@ absent. And a file Keelline could not read is a warning that names it rather tha
 saying "this check could not run" — a committed ledger could force `hook-entries` red and exit
 `1` on a healthy installation, and an unreadable `${CLAUDE_PLUGIN_DATA}` did the same to
 `diagnostics`.
+
+One thing `attach` now takes away rather than adds: when withdrawing the `autoMemoryDirectory`
+fallback empties `.claude/settings.local.json`, the file itself is removed, because `{}` is not
+what that file looked like before `attach` created it. It can only happen when Keelline's own key
+was the file's entire contents.
+
+And one limitation worth knowing rather than discovering: `keelline detach` reads the ledger from
+the checkout it is run from, and `.keelline/local/` is untracked and per-checkout. Run it from the
+checkout you attached from; once it starts, it reaches every checkout of the repository.

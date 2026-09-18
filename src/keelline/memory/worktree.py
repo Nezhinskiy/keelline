@@ -450,6 +450,26 @@ def detach_main(
     longer resolve — that is half of what detaching means — so the tree is found where the
     configuration says it is and each name is removed only if it is one of ours. `machine` is
     what names the overlay (DP3), for the same reason `attach_main` takes it.
+
+    **`config.memory.mode` is checked here and it does not refuse, and that asymmetry with
+    `attach_main` two functions above is deliberate.** This module's own history argues against
+    duplicated rules, so an asymmetry left unexplained would read as drift rather than as the
+    decision it is. Three reasons it is the decision:
+
+    - `attach_main` can refuse because refusing costs nothing: it runs before the first write,
+      so an early exit leaves the repository as it was. `detach_main` cannot. By the time
+      `attach.write.detach` reaches it, the recorded allow rules, the marked hook entries, the
+      fallback key and the `.codex/rules/` files are already withdrawn — so a `Refusal` here
+      strands a half-detached repository with its ledger still on disk, which is a worse state
+      than the one the check would be protecting against.
+    - An owner who switched `memory.mode` to `in-repo` *after* attaching still needs `detach` to
+      withdraw what `attach` wrote. A refusal would take that away and leave them no command
+      that puts the tree back.
+    - And a mode check spelled as its own gate is a second rule that can disagree with this
+      one. `_detach_source` makes the mode load-bearing instead: outside overlay mode there is
+      no rule naming what a link at one of these names would have pointed at, so no name in the
+      tree can be claimed, and the loop removes nothing. That is the same sentence as "only a
+      symlink whose own target is this store", not a weaker second one.
     """
     base = contained(root, config.paths.memory, allow_final_symlink=True)
     revoked: list[Path] = []

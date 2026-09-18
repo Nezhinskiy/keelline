@@ -275,3 +275,54 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     detach(side, machine=machine, home=home)
     assert not (root / "docs" / "memory" / "developer").is_symlink()
     assert not (side / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_withdrawing_the_fallback_takes_the_settings_file_with_it_when_nothing_is_left(
+    tmp_path: Path,
+) -> None:
+    # The one case in which `attach` removes a file, pinned rather than left to be discovered.
+    # `{}` is not what `.claude/settings.local.json` looked like before the fallback was taken —
+    # it is a file `attach` itself created — so the last thing withdrawn takes it away, which is
+    # the rule `detach`'s own `_withdraw_settings` already applies and what keeps the round trip
+    # byte-for-byte.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness = harness_memory_path(root, home)
+    harness.mkdir(parents=True)
+    _attach(root, store, machine, home)
+    # Non-vacuous: the file exists, and the key is the only thing in it.
+    assert list(_settings(root)) == ["autoMemoryDirectory"]
+
+    harness.rmdir()
+    _attach(root, store, machine, home)
+    assert not (root / ".claude" / "settings.local.json").exists()
+
+
+def test_withdrawing_the_fallback_never_takes_anything_else_out_of_that_file(
+    tmp_path: Path,
+) -> None:
+    # The guard on the case above, and the one that matters: the removal may only ever fire when
+    # Keelline's own key was the file's entire contents. An owner's own setting beside it keeps
+    # the file, and keeps itself.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    (root / ".claude").mkdir(exist_ok=True)
+    (root / ".claude" / "settings.local.json").write_text(
+        '{\n  "permissions": {\n    "deny": [\n      "Bash(curl:*)"\n    ]\n  }\n}\n', "utf-8"
+    )
+    _attach(root, store, machine, home)
+    _trusted(root, machine)
+    harness = harness_memory_path(root, home)
+    harness.mkdir(parents=True)
+    _attach(root, store, machine, home)
+    assert "autoMemoryDirectory" in _settings(root)
+
+    harness.rmdir()
+    _attach(root, store, machine, home)
+    document = _settings(root)
+    assert "autoMemoryDirectory" not in document
+    permissions = document["permissions"]
+    assert isinstance(permissions, dict)
+    assert permissions["deny"] == ["Bash(curl:*)"]

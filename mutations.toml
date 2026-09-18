@@ -1903,8 +1903,10 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_i
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/keelline/doctor/checks.py"
-before = "            if found is not None and entry_id not in recorded:"
-after = "            if False:"
+before = """            if entry_id not in recorded:
+                unrecorded.append(where)"""
+after = """            if False:
+                unrecorded.append(where)"""
 reddens = [
   "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
 ]
@@ -2239,4 +2241,40 @@ before = '        "allow_removed": len(removed.allow_removed),'
 after = '        "allow_removed": list(removed.allow_removed),'
 reddens = [
   "tests/attach/test_commands.py::test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json",
+]
+
+# Finding 5's defect, one field over. `.keelline/local/attach.json` is a path a clone can commit,
+# so a repository that commits a marked hook entry *and* a ledger recording that entry's id got
+# `hook-entries` to answer "all accounted for" — a committable file silencing the one check whose
+# entire purpose is that nobody's entries go unlisted. An id is credible only if the entry it
+# names is one the OVERLAY currently grants, and the overlay is trusted by construction (DP3).
+[[mutation]]
+name = "the attach ledger vouches for a hook entry on its own"
+file = "src/keelline/doctor/checks.py"
+before = '''            elif command not in granted:
+                ungranted.append(where)'''
+after = '''            elif False:
+                ungranted.append(where)'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# And the arm where the overlay cannot be asked at all. Falling back to the ledger there would
+# hand a repository the answer by breaking the overlay instead of by forging the record: the
+# honest answer is the one this check already gives a settings file it could not parse — report
+# it, never absolve it.
+[[mutation]]
+name = "an unreadable overlay falls back to trusting the ledger"
+file = "src/keelline/doctor/checks.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {
+        entry["command"]'''
+after = '''    except (Failure, Refusal, OSError):
+        return set()
+    return {
+        entry["command"]'''
+reddens = [
+  "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
 ]

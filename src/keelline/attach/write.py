@@ -583,6 +583,14 @@ def _harness_fallback(
     longer needed, and the symlink now exists so the fallback is no longer warranted. Both now
     take the key back out. The answer is what the file holds afterwards, so the caller's ledger
     is the file's own state rather than a memory of this run.
+
+    **This is the one place `attach` removes a file**, and it is worth saying out loud rather
+    than leaving to be discovered. Withdrawing the key can empty `.claude/settings.local.json`,
+    and `{}` is not what that file looked like before the fallback was taken — it is a file
+    `attach` created and this is the last thing it takes away, which is the rule
+    `_withdraw_settings` already applies on the `detach` side and what keeps the round trip
+    byte-for-byte. It can only fire when Keelline's own key was all the file held, so nothing of
+    the owner's is ever what goes.
     """
     store = resolve(root, config, machine=machine)
     wanted: str | None = None
@@ -775,6 +783,14 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     them, and required rather than defaulted for the reason `attach` gives: a resolver without a
     machine file reads the developer's real `~/.config/keelline/`, and the harness link is under
     their real home. A caller that means "the machine owner's own" says `None` out loud.
+
+    **It needs the ledger in the checkout it is run from, and that is a limitation rather than a
+    defect.** `.keelline/local/` is untracked and per-checkout, so a sibling worktree does not
+    carry the ledger of the checkout an attach was run from and `detach --root <that worktree>`
+    answers "no ledger". Without one there is nothing to reverse — guessing which allow rules
+    were Keelline's from their content is the heuristic the ledger exists to replace. So the
+    reach this function has *once it starts* is every checkout (`_worktrees` below), and the
+    place it may be started from is the one that holds the record.
     """
     recorded = ledger(root)
     config = load(root, machine=machine)

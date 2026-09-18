@@ -59,7 +59,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import keelline
-from keelline.attach.api import LEDGER, MISMATCH, ledger, read_binding
+from keelline.attach.api import (
+    LEDGER,
+    MISMATCH,
+    Binding,
+    ledger,
+    overlay_entries,
+    read_binding,
+)
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -500,18 +507,58 @@ def _harness_shape(context: Context, harness: Path) -> tuple[str, str, str]:
     return OK, "not in place, which is what this store's trust record asks for", ""
 
 
-def _binding_state(context: Context) -> str | None:
-    """The overlay binding's own label, or `None` when it cannot be asked on this machine.
+def _binding(context: Context) -> Binding | None:
+    """The overlay binding this repository would attach under, or `None` when it cannot be asked.
 
     `read_binding` needs `git` and the recorded store, and it refuses a store that is not this
     project's share of the recorded overlay. A `doctor` that turned any of those into a red row
-    would be reporting on its own inputs rather than on the installation.
+    would be reporting on its own inputs rather than on the installation. One spelling for the
+    two rows that need it, so they cannot come to disagree about what "cannot be asked" is.
     """
     try:
         store = Path(ledger(context.root).store)
-        return read_binding(context.root, store=store, machine=context.machine).state
+        return read_binding(context.root, store=store, machine=context.machine)
     except (Failure, Refusal, GitUnavailable):
         return None
+
+
+def _binding_state(context: Context) -> str | None:
+    """The overlay binding's own label, or `None` when it cannot be asked on this machine."""
+    binding = _binding(context)
+    return None if binding is None else binding.state
+
+
+def _granted_commands(context: Context) -> set[str] | None:
+    """Every marked command the overlay grants this repository **right now**, or `None`.
+
+    The overlay is what `attach` merges from, and DP3 makes it trusted by construction: its root
+    comes from the machine configuration, which `config/machine.py` keeps unselectable by a
+    repository. So it is the one source that can answer whether an entry claiming the Keelline
+    marker is really Keelline's — and it is the answer the ledger cannot give, because
+    `.keelline/local/attach.json` is a path a clone can commit.
+
+    `overlay_entries` is the same enumeration `attach` installs from, so the strings compared are
+    the strings `attach` would write: the *marked command*, not the id. Comparing ids alone would
+    still let a repository take an id the overlay does grant and hang a different command on it.
+
+    `None` means the overlay could not be asked — no readable ledger to name the store, a store
+    `read_binding` refuses, no `git`, or an overlay whose own hook file will not parse. It is not
+    an empty set: an empty set is "the overlay grants nothing", which is an answer.
+    """
+    binding = _binding(context)
+    if binding is None:
+        return None
+    try:
+        wanted = overlay_entries(binding)
+    except (Failure, Refusal, OSError):
+        return None
+    return {
+        entry["command"]
+        for groups in wanted.values()
+        for group in groups
+        for entry in group["hooks"]
+        if isinstance(entry.get("command"), str)
+    }
 
 
 def _entry_commands(document: str) -> list[str]:
@@ -550,10 +597,31 @@ def _hook_entries(context: Context) -> Check:
     """Every entry in every settings file, with provenance (§5.3, §12).
 
     Three provenances, and the third is the one §12 asks for. An entry whose marker id is in the
-    attach ledger is the overlay's; an entry with no marker is foreign and is left alone by every
-    merge this project ships; an entry that **claims** the marker and is in no ledger is a
-    repository saying it is Keelline, which is a stronger statement than "foreign" and the one a
-    reader needs. It is reported by position — see the module docstring for why not by name.
+    attach ledger *and* whose command the overlay still grants is the overlay's; an entry with no
+    marker is foreign and is left alone by every merge this project ships; an entry that
+    **claims** the marker and cannot be vouched for is a repository saying it is Keelline, which
+    is a stronger statement than "foreign" and the one a reader needs. It is reported by position
+    — see the module docstring for why not by name.
+
+    **The ledger alone may never turn an entry green.** `.keelline/local/attach.json` is a path a
+    clone can commit, so a repository that commits a marked hook entry *and* a ledger recording
+    that entry's id got this row to answer "all accounted for" — a committable file silencing the
+    one check whose entire purpose is that nobody's entries go unlisted. That is finding 5's
+    defect one field over, and it gets finding 5's own rule: what could `attach` possibly have
+    written here? An id is credible only if the entry it names is one the **overlay** currently
+    grants, and the overlay is trusted by construction (DP3) because its root comes from the
+    machine configuration rather than from anything a repository can reach.
+
+    `_granted_commands` compares the *marked command* and not the id, because an id the overlay
+    does grant with a different command hung on it is the same attack one step down. And where
+    the overlay cannot be asked at all, the answer is the one this check already gives a file it
+    could not parse: report it, never absolve it.
+
+    The two red lists are kept apart because their remedies differ. An entry in no ledger is one
+    to open and delete; an entry the ledger records and the overlay no longer grants is either a
+    checkout that has drifted from the overlay or a forged ledger, and `keelline attach` settles
+    which — it takes out every marked entry the overlay no longer grants, so anything surviving
+    it was never Keelline's.
 
     **Entries are counted, never keys (DP4).** `owned_ids` answers a `dict[str, str]`, so N
     entries sharing one id yield one key and the same id under two events keeps only the last —
@@ -583,9 +651,14 @@ def _hook_entries(context: Context) -> Check:
     # entries Keelline installed — so the provenance column is not computed at all and the file
     # is named instead.
     recorded = {} if found is None else found
+    # Asked only when the ledger records something, because nothing can be absolved otherwise
+    # and the overlay costs a `git` call. An empty ledger keeps its old answer: every entry
+    # claiming the marker is one no attach recorded, which is the red row below.
+    granted = _granted_commands(context) if recorded else set()
     claimed = 0
     foreign = 0
     unrecorded: list[str] = []
+    ungranted: list[str] = []
     blind: list[str] = []
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
     if context.home is not None:
@@ -614,8 +687,15 @@ def _hook_entries(context: Context) -> Check:
                 foreign += 1
                 continue
             claimed += 1
-            if found is not None and entry_id not in recorded:
-                unrecorded.append(f"{label} entry {position} of {len(commands)}")
+            if found is None or granted is None:
+                # The provenance column is withheld rather than guessed. Absolving an entry on
+                # either source alone is what this row may never do.
+                continue
+            where = f"{label} entry {position} of {len(commands)}"
+            if entry_id not in recorded:
+                unrecorded.append(where)
+            elif command not in granted:
+                ungranted.append(where)
     parts = [f"{claimed} keelline entr(ies), {foreign} foreign"]
     status = OK
     remedy = ""
@@ -626,6 +706,13 @@ def _hook_entries(context: Context) -> Check:
             f"`keelline attach` installed could not be established"
         )
         remedy = f"check that {LEDGER} is readable and is the file your last attach wrote"
+    elif granted is None:
+        status = WARN
+        parts.append(
+            "the overlay this repository is bound to could not be asked which entries it "
+            "grants, so nothing here vouches for the ones claiming the marker"
+        )
+        remedy = "run `keelline attach --check`, which reports why the overlay cannot be read"
     if unrecorded:
         status = RED
         parts.append(
@@ -633,8 +720,18 @@ def _hook_entries(context: Context) -> Check:
             f"{LEDGER}: {listed(unrecorded)}"
         )
         remedy = "open each entry named above and remove the ones you did not install"
+    if ungranted:
+        status = RED
+        parts.append(
+            f"{len(ungranted)} entr(ies) claim the Keelline marker and are recorded in "
+            f"{LEDGER}, and the overlay does not grant them: {listed(ungranted)}"
+        )
+        remedy = (
+            "run `keelline attach --store <overlay>/projects/<project>/memory`, which takes out "
+            "every marked entry the overlay no longer grants; open any that survive it"
+        )
     if blind:
-        status = RED if unrecorded else WARN
+        status = RED if (unrecorded or ungranted) else WARN
         parts.append(
             f"{len(blind)} settings file(s) exist and could not be read as hook entries, so "
             f"nothing here accounts for what is in them: {listed(blind)}"

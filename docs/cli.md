@@ -599,6 +599,13 @@ this checkout and in every existing worktree, the harness memory link, and — i
 of which allow rules are Keelline's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else.
 
+It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
+the harness memory link cannot be made, so when the link becomes possible again — or when the
+store's trust record lapses — that key is withdrawn in the same run. If it was all
+`.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
+looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
+arises when Keelline's own key was the file's entire contents.
+
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
@@ -624,6 +631,12 @@ could have put there — `rules` to a single file under `.codex/rules/`, `settin
 `autoMemoryDirectory` — and a ledger naming anything else is refused (`2`) with nothing removed,
 rather than obeyed. A ledger claiming `settings_keys = ["permissions"]` would otherwise have
 deleted your whole `permissions` block, deny rules included.
+
+**Run it from the checkout you attached from.** `.keelline/local/` is untracked and per-checkout,
+so a sibling worktree does not carry the ledger of the checkout the attach was run from and
+`detach --root <that worktree>` answers "no ledger" — there is nothing there to reverse. Once it
+starts it reaches every checkout of the repository, including the one that owns the store; it is
+only the *starting* point that has to be the one holding the record.
 
 **Writes**: it takes the recorded allow rules and the fallback key back out of
 `.claude/settings.local.json`, drops the hook entries marked `# keelline:…` there (a group that
