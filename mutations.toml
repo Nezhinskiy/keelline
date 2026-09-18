@@ -1649,3 +1649,29 @@ file = "src/keelline/setup/run.py"
 before = "    if candidate == resolved_project or resolved_project in candidate.parents:"
 after = "    if False:"
 reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
+
+# §12's row, and the only reason `doctor`'s provenance list is worth printing: "a hook entry
+# adds the Keelline marker to a hostile command → doctor lists every entry with provenance". An
+# entry that claims the marker and is in no attach ledger is a repository saying it is Keelline,
+# and without this comparison every such entry reads as one `attach` installed.
+[[mutation]]
+name = "doctor stops telling a claimed marker from one the attach ledger records"
+file = "src/keelline/doctor/checks.py"
+before = "            if entry_id not in recorded"
+after = "            if False"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_rather_than_ignored",
+]
+
+# §5.3, "reasons, never payloads". The sink's record carries `context` and `decision`, both
+# filled from a handler's own return value, and printing the record whole is the one place a
+# repository's bytes could reach a terminal — and the model reading it — unwrapped. The
+# allowlist is the guard; without it the check prints everything the record holds.
+[[mutation]]
+name = "doctor prints a whole diagnostic record instead of its three Keelline-owned fields"
+file = "src/keelline/doctor/checks.py"
+before = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error")'
+after = 'DIAGNOSTIC_FIELDS = ("event", "handler", "error", "context", "decision")'
+reddens = [
+  "tests/doctor/test_checks.py::test_diagnostics_are_reported_as_reasons_and_never_as_payloads",
+]
