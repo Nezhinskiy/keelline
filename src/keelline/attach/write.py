@@ -70,6 +70,7 @@ from keelline.memory.api import (
     PROJECT_RECORD,
     PROJECTS,
     Links,
+    PartialLink,
     attach_main,
     detach_main,
     harness_link_needed,
@@ -601,9 +602,17 @@ def _link_everywhere(
     """The owning checkout first, then every other worktree (§6.3).
 
     `attach_main` handles the checkout that holds the store — the case `worktree.link` excludes
-    — and `link` handles the rest unchanged. A `PartialLink` is left to propagate with its
-    `.created` intact: a half-built tree is repairable, and swallowing it into a generic failure
-    is what made one mysterious.
+    — and `link` handles the rest unchanged. A `PartialLink` propagates carrying **everything
+    this run made**, across every call: a half-built tree is repairable, and swallowing it into
+    a generic failure is what made one mysterious.
+
+    That accumulation is the whole of the re-raise below. `link` builds its own `.created` per
+    call, so an exception let out untouched carries the failing checkout's links and not the
+    owning checkout's — which are on disk, made by `attach_main` one call earlier. This
+    docstring claimed "`.created` intact" while that was false, and a list missing the links
+    that were actually made defeats the type: a caller repairing from it is told nothing was
+    made. `attach_main` itself is the first call, so its own `.created` is already the whole of
+    what this run made and needs no wrapping.
 
     **`attach_main` is applied to the owning checkout and never to `--root`.** It used to be
     applied to whatever `--root` named, and the loop below then skipped `main_checkout(root)`
@@ -629,7 +638,10 @@ def _link_everywhere(
             "`keelline memory index --check` reports why"
         )
     for tree in checkouts[1:]:
-        more = link(tree, store, config, home=home)
+        try:
+            more = link(tree, store, config, home=home)
+        except PartialLink as partial:
+            raise PartialLink([*created, *partial.created], partial) from partial
         created += more.created
         revoked += more.revoked
     return Links(created, revoked)

@@ -2966,3 +2966,21 @@ after = '    files = sorted(source.rglob("commands.py"))'
 reddens = [
   "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
 ]
+
+# `PartialLink` exists because a half-built link tree is repairable; a list missing the links
+# that were actually made defeats the type. `_link_everywhere` accumulated `created` across
+# `attach_main` and one `link` per further checkout and let the exception out untouched, so the
+# caller received the failing call's own list -- empty, while the owning checkout's tree sat on
+# disk. Restoring the bare call is that defect exactly, and the assertion reads the symlinks the
+# checkout holds rather than a list a person kept current.
+[[mutation]]
+name = "attach's PartialLink forgets the links made before the failing call"
+file = "src/keelline/attach/write.py"
+before = '''        try:
+            more = link(tree, store, config, home=home)
+        except PartialLink as partial:
+            raise PartialLink([*created, *partial.created], partial) from partial'''
+after = '''        more = link(tree, store, config, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_a_partial_link_failure_carries_every_link_the_run_already_made",
+]

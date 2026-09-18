@@ -87,25 +87,22 @@ def test_every_existing_worktree_is_linked(tmp_path: Path) -> None:
     assert (side / "docs" / "memory" / "project-stable").is_symlink()
 
 
-def test_a_partial_link_failure_leaves_attach_main_s_tree_on_disk_and_out_of_created(
+def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     tmp_path: Path,
 ) -> None:
-    # **This test pins a divergence, and its old name hid one.** `PartialLink` carries
-    # `.created` precisely so a half-built tree is repairable rather than mysterious, and
-    # `_link_everywhere`'s docstring says the exception propagates "with its `.created` intact".
-    # It does not. That function accumulates `created` in a *local* list across `attach_main`
-    # and one `link` per further checkout, and lets the exception out untouched — so what the
-    # caller receives is the failing call's own list and nothing before it. Here that list is
-    # empty while the owning checkout's link tree is on disk, which is precisely the state
-    # `.created` exists to describe.
+    # **The defect this test used to pin.** `PartialLink` carries `.created` precisely so a
+    # half-built tree is repairable rather than mysterious. `_link_everywhere` accumulates
+    # `created` in a *local* list across `attach_main` and one `link` per further checkout, and
+    # used to let the exception out untouched — so what the caller received was the failing
+    # call's own list and nothing before it. Here that list was empty while the owning
+    # checkout's link tree was on disk, which is precisely the state `.created` exists to
+    # describe, and the docstring claiming "`.created` intact" was false.
     #
-    # The old assertions were these two, under the name "reports what it made": `created == []`
-    # and "the main checkout's symlink exists". Read together they say the opposite of the name,
-    # and the suite was green on both. Nothing consumes `.created` out of `attach` today —
-    # `memory.hooks` catches `PartialLink` from `link` directly, where the list *is* intact — so
-    # this is a latent defect and a false docstring rather than a live one, and fixing it is a
-    # change to `attach`, which is another dispatch's file. Asserted as it behaves, named for
-    # what it behaves like, and reported.
+    # The coupling is mechanical rather than a sentence: the assertion below reads the symlinks
+    # the owning checkout actually holds and requires every one of them to be in `.created`.
+    # Nothing has to be restated when the tree grows a group. Mutation: restoring the bare
+    # `more = link(tree, store, config, home=home)` in `_link_everywhere` reddens it —
+    # `mutations.toml`, "attach's PartialLink forgets the links made before the failing call".
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -122,14 +119,15 @@ def test_a_partial_link_failure_leaves_attach_main_s_tree_on_disk_and_out_of_cre
         patch.setattr(Path, "symlink_to", refuse_inside_the_worktree)
         with pytest.raises(PartialLink) as failed:
             _attach(root, store, machine, tmp_path / "home")
-    # The owning checkout's tree exists — `attach_main` made it before the failing call.
+    # The owning checkout's tree exists — `attach_main` made it before the failing call — and
+    # the walk over it is asserted non-empty before anything is asserted about the list, so a
+    # run that made no links at all could not pass this as "nothing missing".
     made_by_attach_main = root / "docs" / "memory" / "developer"
     assert made_by_attach_main.is_symlink()
-    # And the list the exception carries is empty. That is the whole finding, and the `== []` is
-    # the whole of it: a caller repairing from `.created` would be told nothing was made, while
-    # the line above says something was. A second `made_by_attach_main not in created` used to
-    # sit here and could not fail once this line holds -- a restatement reading as a check.
-    assert failed.value.created == []
+    on_disk = {path for path in (root / "docs" / "memory").resolve().iterdir() if path.is_symlink()}
+    assert on_disk, "the owning checkout holds no links, so this would assert nothing"
+    carried = {path.parent.resolve() / path.name for path in failed.value.created}
+    assert on_disk <= carried, f"made on disk and absent from .created: {on_disk - carried}"
 
 
 def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path) -> None:
