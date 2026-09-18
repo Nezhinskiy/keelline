@@ -10,7 +10,11 @@ of `attach`'s refusals now happen before its first write.
 
 That applies to the ledger too: an existing `.keelline/local/attach.json` is read and validated
 before the first write, so a committed one that `attach` could not have produced stops the run
-rather than being discovered four writes in.
+rather than being discovered four writes in. And to `memory.groups`: an entry that leaves this
+project's share of the overlay was refused by the write that created the directory, which is five
+artifacts into the run — including the overlay's binding record, which is what made `keelline
+doctor` call such a repository not merely attached but *bound*. It is now refused before the
+first write, like every other cause of exit `2` that `attach` can see coming.
 
 **`detach` treats `.keelline/local/attach.json` as a record and no longer as an authority.**
 `.gitignore` does not untrack a file a clone committed, so that path can arrive in a fresh

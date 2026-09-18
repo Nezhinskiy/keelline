@@ -20,6 +20,7 @@ import pytest
 
 from keelline.attach.api import attach, ledger
 from keelline.errors import Failure, Refusal
+from keelline.memory.api import PROJECT_RECORD
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, Completed
 from keelline.scaffold import Style, extract, owned_ids
 
@@ -454,6 +455,14 @@ def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path)
     assert not (root / LEDGER).exists()
 
 
+def _with_groups(root: Path, listed: str) -> None:
+    text = (root / "keelline.toml").read_text(encoding="utf-8")
+    (root / "keelline.toml").write_text(
+        text.replace('groups = ["developer", "project-stable"]', f"groups = {listed}"),
+        encoding="utf-8",
+    )
+
+
 def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
@@ -462,27 +471,69 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     # the one that has to call the containment itself. The entry decides a directory created
     # inside the OVERLAY, which is the one tree `attach` trusts, so a `..` in it is refused
     # rather than created, and refused rather than crashing out as a raw `OSError`.
-    root, store, machine = _attachable(tmp_path)
-    text = (root / "keelline.toml").read_text(encoding="utf-8")
-    (root / "keelline.toml").write_text(
-        text.replace('groups = ["developer", "project-stable"]', 'groups = ["../../escape"]'),
-        encoding="utf-8",
-    )
+    #
+    # **And refused before the first write**, which is the half this case was missing. The
+    # containment was called from `_prepare_store`, which runs after the ignore region, the
+    # `.codex/rules/` copies, the settings merge, the ledger *and* the overlay's binding record
+    # — so a clone committing the entry below got five artifacts written and exit 2, and
+    # `doctor._attached` then reported the repository attached and the binding **bound**,
+    # because the record had been written too. The overlay is left out of the snapshot on
+    # purpose: the binding record lives there, and asserting on the repository is what the
+    # separate assertion below the snapshot is for.
+    #
+    # Mutation: `mutations.toml`'s "the memory.groups containment is asked at write time only".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    _with_groups(root, '["../../escape"]')
+    before = _snapshot(root)
+    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
     with pytest.raises(Refusal) as refusal:
         attach(
             root,
             store=store,
             machine=machine,
-            confirmed=False,
-            trust_remote=False,
+            confirmed=True,
+            trust_remote=True,
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    # Non-vacuous: this refusal and not one of the four `attach` can raise before it.
+    # Non-vacuous: this refusal and not one of the five `attach` can raise before it.
     assert "memory.groups" in str(refusal.value)
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
+    _assert_snapshot_unchanged(root, before)
+    # The one write that is not under the root, and the one that made `doctor` say `bound`.
+    assert not (store.parent / PROJECT_RECORD).exists()
+
+
+def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the snapshot above, and the same one finding 1 and the ledger
+    # refusal carry: a refusal that writes nothing proves nothing if the run had nothing to
+    # write. The identical fixture with a group name that stays inside this project's share
+    # attaches, and leaves behind every artifact the case above has to prevent.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    _with_groups(root, '["developer", "project-stable"]')
+    before = _snapshot(root)
+    assert before
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=True,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    after = _snapshot(root)
+    added = set(after) - set(before)
+    assert attached.settings_written and attached.binding_recorded
+    assert {LEDGER, SETTINGS, ".codex/rules/common.rules"} <= added
+    assert before.get(".gitignore") != after.get(".gitignore")
+    assert (store.parent / PROJECT_RECORD).is_file()
+    assert (store / "project-stable").is_dir()
 
 
 def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
@@ -919,3 +970,32 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
     # And the union the ledger exists for survived the refusal being hoisted out of the writer:
     # `_write_ledger` is handed the ledger the caller read once, above every write.
     assert ledger(root).rules == (".codex/rules/common.rules",)
+
+
+def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_path: Path) -> None:
+    # The floor under the containment hoisted above every write, and the proof it is not dead.
+    # `config.paths.contained` answers about a *spelling* and about the symlinks it can see when
+    # it looks; `fsops.mkdirs_within` asks the filesystem again at the moment of writing, through
+    # the `O_NOFOLLOW` walk, which is the only thing that can catch a component that is not a
+    # directory — or became a symlink in between. Here the overlay holds a regular file where
+    # this project's memory directory belongs, which `contained` passes and the walk refuses.
+    #
+    # This is the one remaining way this refusal can arrive after a write, and it is a fact
+    # about the overlay — the owner's own tree — rather than about a repository-authored entry.
+    #
+    # Mutation: `mutations.toml`'s "the write-time containment on the overlay's store directory
+    # is swallowed".
+    root, store, machine = _attachable(tmp_path)
+    shutil.rmtree(store)
+    store.write_text("not a directory\n", encoding="utf-8")
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=True,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    assert "memory.groups" in str(refusal.value)

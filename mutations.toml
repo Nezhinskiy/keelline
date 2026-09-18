@@ -1998,16 +1998,36 @@ reddens = [
 # names this lane as the one that has to call the containment itself). The entry decides a
 # directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
 # has to reach the caller as a refusal and not as silence.
+#
+# And it has to reach the caller BEFORE the first write. The containment used to be called only
+# from `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
+# settings merge, the ledger and the overlay's binding record -- so a clone committing an
+# escaping entry got five artifacts written and exit 2, and `doctor` then reported the
+# repository attached and the binding *bound*, because the record had been written too. The
+# mutation takes the hoisted call away and leaves only the write-time one.
 [[mutation]]
-name = "a memory.groups entry that leaves the project's share is swallowed instead of refused"
+name = "the memory.groups containment is asked at write time only"
 file = "src/keelline/attach/write.py"
-before = '''            raise Refusal(
-                "a memory.groups entry does not stay inside this project's share of the "
-                "overlay, so it is refused rather than created"
-            ) from exc'''
-after = "            pass"
+before = '''    config = load(root, machine=machine)
+    _check_groups(binding, config)'''
+after = '''    config = load(root, machine=machine)'''
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
+]
+
+# The floor under the entry above, and it is not dead. A spelling that escapes is refused before
+# the first write; a component of the overlay that is not a directory — or became a symlink
+# between the check and the write — can only be refused by the `O_NOFOLLOW` walk at the moment of
+# writing, which is the interval that walk exists for.
+[[mutation]]
+name = "the write-time containment on the overlay's store directory is swallowed"
+file = "src/keelline/attach/write.py"
+before = '''        except UnsafePath as exc:
+            raise Refusal(GROUP_ESCAPES) from exc'''
+after = '''        except UnsafePath:
+            pass'''
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time",
 ]
 
 # `_snapshot` (`tests/test_install_path.py`) used to walk the whole of `.git`, and a CI job's

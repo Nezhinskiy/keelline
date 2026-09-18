@@ -59,6 +59,7 @@ from keelline.attach.permissions import (
     settings_document,
 )
 from keelline.config.loader import load
+from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
@@ -116,6 +117,14 @@ FALLBACK_KEY = "autoMemoryDirectory"
 NO_ORIGIN = (
     "this repository has no `origin` remote, so there is nothing for the overlay to record; "
     "add one, or bind the clone that has it"
+)
+# The seventh, and the one whose trigger is repository-authored (§7.4: `memory.groups` reaches no
+# guard of its own). One constant for the check above every write and for the `O_NOFOLLOW` walk
+# that is the floor under it, because two spellings of one refusal are two refusals to keep in
+# step. The entry is never quoted back into it.
+GROUP_ESCAPES = (
+    "a memory.groups entry does not stay inside this project's share of the overlay, so it is "
+    "refused rather than created"
 )
 # `fsops.mkdirs_within` creates a target's *parents*, so a directory is asked for as the parent
 # of a name inside it. Nothing is ever written at this name; `overlay.create` asks the same way.
@@ -476,27 +485,71 @@ def _write_ledger(
     fsops.write_within(root, LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
+def _group_directories(binding: Binding, config: Config) -> list[str]:
+    """Every directory this project's groups need inside the overlay, as one spelling.
+
+    One list for the check and for the write both, so the refusal above every write and the
+    `O_NOFOLLOW` walk that does the writing cannot come to disagree about which paths they are
+    talking about. `common/memory` is not here — it is shared across projects and `overlay
+    create` ships it — and skipping it in one of the two would be the first way they drift.
+    """
+    return [
+        f"{PROJECTS}/{binding.project}/memory/{group}/{_INSIDE}"
+        for group in config.memory.groups
+        if group != COMMON_GROUP
+    ]
+
+
+def _check_groups(binding: Binding, config: Config) -> None:
+    """Refuse a `memory.groups` entry that leaves this project's share of the overlay — first.
+
+    §7.4 and D15: `memory.groups` is repository-authored and reaches no guard of its own —
+    `config/paths.py` says so in as many words, and names this lane as the one that has to call
+    the containment itself. This lane was calling it, and calling it too late: the refusal came
+    out of `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
+    settings merge, the ledger **and** the overlay's binding record. So a clone committing
+    `groups = ["../../escape"]` got `attach` to write five artifacts and exit 2, with
+    `doctor._attached` — which keys on the ledger existing — then reporting the repository
+    attached and the binding *bound*, because the record had been written too.
+
+    Hoisting it here is not only a reordering: it is this project's own two-stage rule, which
+    `attach` was skipping for this one path. `config.paths.contained` "decides whether a
+    configured path *may* be written — it gives a user-facing refusal and catches a committed
+    symlink", and `fsops.mkdirs_within` then does the write through an `O_NOFOLLOW` walk so a
+    component that becomes a symlink *after* the check cannot redirect it. `attach` had only the
+    second half, which is why its user-facing refusal arrived at write time.
+
+    `resolved_root` is passed because this validates many paths against one root, which is the
+    parameter's documented reason for existing.
+    """
+    resolved = binding.overlay.resolve()
+    for relative in _group_directories(binding, config):
+        try:
+            contained(binding.overlay, relative, resolved_root=resolved)
+        except PathEscape as exc:
+            # The entry itself is repository-authored, so it is refused rather than quoted back.
+            raise Refusal(GROUP_ESCAPES) from exc
+
+
 def _prepare_store(binding: Binding, config: Config) -> None:
     """Create this project's own group directories in the overlay.
 
     The link tree has to land on something: `memory.store` drops a group whose target does not
-    exist, and a store with no groups does not resolve at all. `common/memory` is not created
-    here — it is shared across projects and `overlay create` ships it.
+    exist, and a store with no groups does not resolve at all.
+
+    **The `UnsafePath` arm is the floor under `_check_groups` and is not dead.** A spelling that
+    escapes was already refused above every write, so that half reaching here means the hoist
+    drifted. The other half cannot be hoisted and should not be: `contained` asks the filesystem
+    a question and this walk asks it again at the moment of writing, so a component of the
+    overlay that became a symlink in between refuses here and nowhere earlier. That is the
+    interval the `O_NOFOLLOW` walk exists for, and it is the one remaining way this refusal can
+    arrive after a write.
     """
-    for group in config.memory.groups:
-        if group == COMMON_GROUP:
-            continue
+    for relative in _group_directories(binding, config):
         try:
-            fsops.mkdirs_within(
-                binding.overlay, f"{PROJECTS}/{binding.project}/memory/{group}/{_INSIDE}"
-            )
+            fsops.mkdirs_within(binding.overlay, relative)
         except UnsafePath as exc:
-            # The entry itself is repository-authored (§7.4: `memory.groups` reaches no guard of
-            # its own), so it is refused rather than quoted back.
-            raise Refusal(
-                "a memory.groups entry does not stay inside this project's share of the "
-                "overlay, so it is refused rather than created"
-            ) from exc
+            raise Refusal(GROUP_ESCAPES) from exc
 
 
 def _worktrees(root: Path) -> list[Path]:
@@ -643,15 +696,19 @@ def attach(
     The order is the order the refusals have to happen in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
     without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
-    `origin`; read the existing ledger, which refuses one no attach could have written; then
-    write, `.gitignore` first, so the ledger is never in a tracked path even for an instant.
+    `origin`; read the existing ledger, which refuses one no attach could have written; refuse a
+    `memory.groups` entry that leaves this project's share of the overlay; then write,
+    `.gitignore` first, so the ledger is never in a tracked path even for an instant.
 
-    **All five refusals are above every write, and two of them were not.** The no-`origin` one
-    lived in `_record_binding` and the ledger's lived in `_write_ledger`, both of which run after
-    the ignore region, the Codex rule files and the settings merge — so either could exit 2
-    having written three or four artifacts, with `doctor._attached`, which keys on the ledger
-    existing, then reporting the repository attached. A refusal that leaves a repository looking
-    attached is not a refusal, and the second one arrived in the commit that wrote that sentence.
+    **All six refusals are above every write, and three of them were not.** The no-`origin` one
+    lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in
+    `_prepare_store` — which runs after the ignore region, the Codex rule files, the settings
+    merge, the ledger *and* the overlay's binding record. Each could exit 2 having written three,
+    four or five artifacts, with `doctor._attached` — which keys on the ledger existing — then
+    reporting the repository attached, and in the third case *bound*, because the record had been
+    written too. A refusal that leaves a repository looking attached is not a refusal. The second
+    of the three arrived in the commit that wrote that sentence down, and the third was found by
+    asking whether the shape was dead or only its named instances were.
 
     The binding record is written before the links, because `memory.store` checks it and a
     store whose record is missing does not resolve — and `attach_main` resolves as its last
@@ -689,6 +746,11 @@ def attach(
     # `.codex/rules/*` and merge `.claude/settings.local.json` before exiting 2, with the
     # committed ledger still on disk for `doctor._attached` to read as "attached", and with
     # `attach --check` reporting clean beforehand because it does not read the ledger at all.
+    # Loaded here rather than after the binding record, which is where it used to be: the
+    # `memory.groups` refusal below needs the configuration, and a check cannot happen above the
+    # writes while what it reads is loaded below them.
+    config = load(root, machine=machine)
+    _check_groups(binding, config)
     previous = _existing_ledger(root)
     _write_ignore_region(root)
     rules = _codex_rules(root, binding)
@@ -703,7 +765,6 @@ def attach(
     carried = _recorded_keys(root)
     _write_ledger(root, binding, diff, rules, carried, previous)
     recorded = _record_binding(binding)
-    config = load(root, machine=machine)
     _prepare_store(binding, config)
     links = _link_everywhere(root, binding, config, machine=machine, home=home)
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
