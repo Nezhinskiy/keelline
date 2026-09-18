@@ -58,6 +58,7 @@ import subprocess
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final, Literal
 
 import keelline
 from keelline.attach.api import (
@@ -90,11 +91,12 @@ from keelline.overlay.api import Runner
 from keelline.scaffold import marker_id, owned_ids
 from keelline.setup.api import USER_SETTINGS
 
-OK = "ok"
-WARN = "warn"
-RED = "red"
-SKIP = "skip"
-STATUSES = (OK, WARN, RED, SKIP)
+OK: Final = "ok"
+WARN: Final = "warn"
+RED: Final = "red"
+SKIP: Final = "skip"
+Status = Literal["ok", "warn", "red", "skip"]
+STATUSES: tuple[Status, ...] = (OK, WARN, RED, SKIP)
 
 # Every file a hook entry can be installed into, as a path relative to a root. The set is
 # load-bearing twice — `setup` writes `USER_SETTINGS` and this check reads all three — so
@@ -166,7 +168,7 @@ class Check:
     """
 
     name: str
-    status: str
+    status: Status
     detail: str
     remedy: str = ""
 
@@ -499,7 +501,7 @@ def _attached(context: Context) -> Check:
 _RELINK = f"run `keelline attach --store <overlay>/{PROJECTS}/<project>/memory`"
 
 
-def _harness_shape(context: Context, harness: Path) -> tuple[str, str, str]:
+def _harness_shape(context: Context, harness: Path) -> tuple[Status, str, str]:
     """The status, the sentence and the remedy for the harness memory path, as one answer.
 
     One function because the status and the sentence must not be able to disagree — computing
@@ -729,7 +731,7 @@ def _hook_entries(context: Context) -> Check:
             elif command not in granted:
                 ungranted.append(where)
     parts = [f"{claimed} keelline entr(ies), {foreign} foreign"]
-    status = OK
+    status: Status = OK
     remedy = ""
     if found is None:
         status = WARN
@@ -887,6 +889,12 @@ def _cli_path(context: Context) -> Check:
     `os.environ["PATH"]`, so an `env` carrying no `PATH` reached the process environment through
     the very call that was supposed to stop doing that. An environment with no `PATH` resolves
     nothing, which is the honest answer and the one the row's own remedy addresses.
+
+    **The resolved path is never printed.** `PATH` is read from `context.env` precisely because
+    it is repository-authored, and a POSIX path component is unbounded and may hold a newline --
+    `shutil.which` round-trips one -- so the value is the same class of input `_diagnostics`
+    refuses to print and `hook-entries` refuses even when bounded by a grammar. The row says
+    the name resolves; the reader's own `command -v keelline` says where.
     """
     found = shutil.which("keelline", path=context.env.get("PATH", ""))
     if found is None:
@@ -897,7 +905,7 @@ def _cli_path(context: Context) -> Check:
             "Codex, which performs no plugin-root substitution in skill content",
             "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",
         )
-    return Check("cli-path", OK, f"`keelline` resolves on PATH at {found}")
+    return Check("cli-path", OK, "`keelline` resolves on PATH")
 
 
 # The overlay's commit-time secret scan, and the hook `pre-commit install` writes (§6.4). The

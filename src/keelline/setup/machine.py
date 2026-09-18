@@ -116,9 +116,16 @@ def write_machine(
         recorded = _table(existing, "overlay").get("root")
         if isinstance(recorded, str) and recorded:
             root = Path(recorded)
+    # All three spread over the existing table. `overlay` used to replace its table outright,
+    # which the two lines around it did not: a hand-written `[overlay] note` was gone after
+    # any `setup`, and an `[overlay]` carrying no `root` vanished whole -- on the file this
+    # module's own docstring promises to merge "table by table, key by key".
     owned: dict[str, dict[str, object]] = {
         "personal": merged_personal,
-        "overlay": {"root": str(root)} if root is not None else {},
+        "overlay": {
+            **_table(existing, "overlay"),
+            **({"root": str(root)} if root is not None else {}),
+        },
         "machine": {**_table(existing, "machine"), **machine},
     }
 

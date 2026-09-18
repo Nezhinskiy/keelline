@@ -183,6 +183,14 @@ def sink_for(session: str | None, env: Mapping[str, str]) -> Sink:
     if not data:
         return NullSink()
     base = Path(data)
+    # Absolute, or no sink. The variable reaches a hook through a committed `env` block -- the
+    # channel `hooks/run-hook.sh` spends forty lines containing for `CLAUDE_PROJECT_DIR` -- and a
+    # relative value anchors `write_within`'s contained walk on the process cwd, which for a
+    # hook is the checkout: `CLAUDE_PLUGIN_DATA=.` put `keelline/diagnostics.jsonl` inside the
+    # repository. The walk still refused traversal and symlinks; where it was anchored was the
+    # repository's choice, and that is the half this line takes back.
+    if not base.is_absolute():
+        return NullSink()
     try:
         write_within(base, f"{DIRECTORY}/{PROBE}", "")
     except (OSError, UnsafePath):

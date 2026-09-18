@@ -149,12 +149,16 @@ CREATED_DIRS = (".keelline/local", ".keelline", ".codex/rules", ".codex", ".clau
 
 @dataclass(frozen=True)
 class Attached:
-    """What one `attach` changed. Nothing here is repository-authored, so all of it may print."""
+    """What one `attach` changed.
+
+    Nothing here is repository-authored. `notes` is the one field that carries text from
+    outside this process -- what `pre-commit install` printed -- and that is this machine's
+    tool answering in the overlay, not the clone's bytes.
+    """
 
     settings_written: bool
     rules_written: tuple[str, ...]
     binding_recorded: bool
-    ignored: bool
     notes: tuple[str, ...]
     links: Links
 
@@ -191,8 +195,9 @@ class AttachLedger:
     omission. An allow rule has no grammar this lane owns — the ledger exists *because* a rule
     cannot be told from the owner's own by its content — and `_withdraw_settings` only ever
     removes a rule the settings file already holds, so the worst a committed `allow` achieves is
-    taking a permission away. `store` reaches `read_binding`, which refuses any path that is not
-    this project's own share of the recorded overlay.
+    taking a permission away. `store` is read by nothing: `detach` derives every path it
+    withdraws from the configuration and the overlay root, never from this field, so it is a
+    record for a human reading the file and for `doctor`, and a committed value costs nothing.
 
     `entries` maps each marker id to its event, which is the shape `scaffold.owned_ids` answers
     in, so `doctor` can compare the two without a translation in between.
@@ -242,8 +247,9 @@ def _checked(
     foreign += sum(1 for name in directories if name not in CREATED_DIRS)
     if foreign:
         raise Refusal(
-            f"{path} names {foreign} file(s) or settings key(s) that `keelline attach` could "
-            f"never have written, so it is not a record of an attach on this machine; nothing "
+            f"{path} names {foreign} file(s), settings key(s) or directory(ies) that "
+            f"`keelline attach` could never have written, so it is not a record of an attach on "
+            f"this machine; nothing "
             f"was removed. Delete it, or take it out of the clone that committed it"
         )
     return rules, keys, directories
@@ -618,8 +624,21 @@ def _worktrees(root: Path) -> list[Path]:
             "`git` could not list this repository's worktrees, so memory cannot be linked into "
             "them; the fault is on this machine — check that `git` runs here"
         )
-    prefix = "worktree "
-    return [Path(line[len(prefix) :]) for line in out.splitlines() if line.startswith(prefix)]
+    # One record per blank-line-separated block. A block carrying `prunable` names a worktree
+    # whose directory is gone and which nobody has `git worktree prune`d yet -- the state a
+    # deleted worktree is left in by the ordinary `rm -rf`. `link()` run with `cwd=<gone>`
+    # raised `GitUnavailable` ("check that `git` runs here") after the ledger, the region and
+    # the owner's links were written, on a machine whose `git` was fine; and `detach` in the
+    # same state completed. Skipped here, so both halves read the same set.
+    found: list[Path] = []
+    for block in out.split("\n\n"):
+        lines = block.splitlines()
+        if any(line == "prunable" or line.startswith("prunable ") for line in lines):
+            continue
+        found.extend(
+            Path(line[len("worktree ") :]) for line in lines if line.startswith("worktree ")
+        )
+    return found
 
 
 def _checkouts(root: Path) -> list[Path]:
@@ -867,7 +886,7 @@ def attach(
             f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
             f"{LOCAL_SETTINGS} instead; `keelline detach` removes it"
         )
-    return Attached(written, rules, recorded, True, tuple(notes), links)
+    return Attached(written, rules, recorded, tuple(notes), links)
 
 
 @dataclass(frozen=True)
@@ -928,15 +947,36 @@ def _withdraw_settings(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
     return removed
 
 
-def _withdraw_ignore_region(root: Path) -> bool:
+def _ignore_region_remainder(root: Path) -> str | None:
+    """What `.gitignore` will hold once the attach region is dropped; `None` when nothing is
+    there to drop.
+
+    Asked **before the first withdrawal**, for the reason `_checkouts` is: `drop()` refuses a
+    region that is opened or closed twice -- which a merge that kept both sides produces -- and
+    asked where the write used to happen, that refusal came after the settings, the rule files
+    and every link tree were gone, with the ledger still present. `doctor` then reported the
+    repository attached, and a second `detach` failed at the same line. A region that cannot be
+    withdrawn is knowable at the start, and so is a file that cannot be read.
+    """
     path = root / GITIGNORE
     if not path.is_file():
-        return False
-    text = path.read_text(encoding="utf-8")
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise Failure(f"{GITIGNORE} cannot be read: {exc}") from exc
     remaining = drop(text, IGNORE_REGION, Style.HASH)
-    if remaining == text:
+    return None if remaining == text else remaining
+
+
+def _withdraw_ignore_region(root: Path, remaining: str | None) -> bool:
+    if remaining is None:
         return False
-    if remaining.strip():
+    # `if remaining` and not `if remaining.strip()`: a `.gitignore` that held only whitespace
+    # before the attach is a file the owner had, and the round trip `docs/cli.md` promises is
+    # byte-for-byte. Only a file the attach created -- nothing left once its region is gone --
+    # is taken away.
+    if remaining:
         fsops.write_within(root, GITIGNORE, remaining)
     else:
         fsops.remove_within(root, GITIGNORE)
@@ -1028,6 +1068,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # withdrawal and the link trees, so a machine whose `git` was gone got exit 1 with the
     # settings file and the `.codex/rules/` copies already removed and every link still in place.
     checkouts = _checkouts(root)
+    ignore_remainder = _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
     for rule in recorded.rules:
@@ -1042,7 +1083,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     revoked: list[Path] = []
     for tree in checkouts:
         revoked += detach_main(tree, config, machine=machine, home=home).revoked
-    region = _withdraw_ignore_region(root)
+    region = _withdraw_ignore_region(root, ignore_remainder)
     fsops.remove_within(root, LEDGER)
     # Last, because the ledger lives in one of them.
     directories = _withdraw_directories(root, recorded)

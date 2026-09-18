@@ -110,7 +110,30 @@ def test_init_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -> 
     created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
     missing = FakeRunner(answers={"pre-commit": Completed(127, "", "not found")})
     result = init_instance(created.root, "octo", runner=missing)
-    assert any("pre-commit" in note for note in result.notes)
+    # "did not run" and not merely "pre-commit": the success note names the tool too, so the
+    # weaker match held on either outcome and this half asserted nothing.
+    assert any("`pre-commit install` did not run" in note for note in result.notes)
+    assert not any("installed the commit-time" in note for note in result.notes)
+
+
+def test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it(
+    tmp_path: Path,
+) -> None:
+    # `--root` defaults to `.`, and `init` asked nothing of it: run inside the Keelline checkout
+    # itself, it renamed all three plugin manifests and installed a commit hook there. `upgrade`
+    # had the guard and `setup` uses it twice; this is the caller `identity.py` was written for
+    # that it did not list. Mutation: the `require_overlay` line removed → the manifest below is
+    # renamed and the runner is called.
+    project = tmp_path / "project"
+    (project / ".claude-plugin").mkdir(parents=True)
+    manifest = project / ".claude-plugin" / "plugin.json"
+    manifest.write_text(json.dumps({"name": "somebody-elses-plugin"}), encoding="utf-8")
+    runner = FakeRunner()
+    with pytest.raises(Refusal) as refused:
+        init_instance(project, "octo", runner=runner)
+    assert "overlay init" in str(refused.value)
+    assert json.loads(manifest.read_text())["name"] == "somebody-elses-plugin"
+    assert runner.calls == []
 
 
 def test_init_is_idempotent(tmp_path: Path) -> None:

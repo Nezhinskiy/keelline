@@ -20,11 +20,12 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from keelline import fsops
 from keelline.config.loader import preset_defaults
 from keelline.errors import Failure, Refusal
-from keelline.overlay.identity import segment
+from keelline.overlay.identity import require_overlay, segment
 from keelline.overlay.layout import (
     CODEX_PLUGIN_MANIFEST,
     MARKETPLACE_MANIFEST,
@@ -35,7 +36,7 @@ from keelline.overlay.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from keelline.overlay.template import templates
 from keelline.scaffold import Manifest, apply, digest, plan
 
-SOURCES = ("template", "local")
+Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "keelline-overlay-template"
 # The directory whose presence says a generated repository actually arrived — the exact probe
 # Findings → S6 used, and the one thing a repository created from this template always carries.
@@ -69,7 +70,7 @@ MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)
 @dataclass(frozen=True)
 class Created:
     root: Path
-    source: str
+    source: Source
     notes: tuple[str, ...]
 
 
@@ -131,7 +132,7 @@ def create(
     owner: str,
     name: str,
     *,
-    source: str,
+    source: Source,
     root: Path,
     runner: Runner,
     wait: Callable[[float], None] = time.sleep,
@@ -140,8 +141,6 @@ def create(
     # One spelling of "where this lands and what the owner is called", shared with the caller
     # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
     _, account = target_root(root, owner, name)
-    if source not in SOURCES:
-        raise Refusal(f"source {source!r} is not one of {', '.join(SOURCES)}")
     if not root.is_dir():
         # Both branches below start by opening this directory — the contained walk for the
         # local render, the subprocess `cwd` for the other — and a missing one is a mistyped
@@ -248,6 +247,13 @@ def _suffixed(value: object, suffix: str) -> str | None:
     return f"{value}-{suffix}"
 
 
+NOT_AN_OVERLAY = (
+    "`keelline overlay init --root` must name an overlay. It rewrites the tree's plugin "
+    "manifests and installs a commit hook there, so pointed at anything else -- a project, or "
+    "the Keelline checkout itself -- it renames somebody else's manifests"
+)
+
+
 def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     """Make a generated overlay this owner's: name it after them, and install the secret scan.
 
@@ -274,7 +280,12 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     would make this command unusable on exactly the overlays that most need it; one that exists
     and cannot be read is still a failure, because that is a file saying something this command
     cannot act on.
+
+    **Asked whether `root` is an overlay before anything is touched**, the way `upgrade` asks
+    and `setup` asks twice. `--root` defaults to `.`, and run inside the Keelline checkout this
+    renamed all three of its plugin manifests and installed a hook into it.
     """
+    require_overlay(root, because=NOT_AN_OVERLAY)
     suffix = segment("owner", owner.strip().lower())
     ledger = Manifest.read(root)
     renamed: list[str] = []

@@ -103,6 +103,22 @@ def _scalar(value: object, where: str) -> str:
     # `datetime` before `date`, because a `datetime` is a `date`; both spell themselves the way
     # TOML spells an offset date-time, a local date-time, a local date and a local time.
     if isinstance(value, datetime.datetime | datetime.date | datetime.time):
+        # Two shapes `isoformat` spells that TOML cannot read back: a local time carrying an
+        # offset (TOML's local time has no offset form), and an offset that is not a whole
+        # number of minutes (`+00:30:07`; TOML offsets are `±HH:MM`). Both parse-fail in
+        # `tomllib`, which for `setup`'s rewrite-on-every-run file is the permanent wedge the
+        # contract above exists to rule out -- so they are refused here rather than written.
+        offset = value.utcoffset() if isinstance(value, datetime.datetime | datetime.time) else None
+        if isinstance(value, datetime.time) and offset is not None:
+            raise Refusal(
+                f"{where} holds a time with a UTC offset, which TOML has no spelling for; "
+                f"write a naive time, or a datetime"
+            )
+        if offset is not None and offset.total_seconds() % 60:
+            raise Refusal(
+                f"{where} holds a UTC offset that is not a whole number of minutes, which TOML "
+                f"cannot spell"
+            )
         return value.isoformat()
     raise Refusal(
         f"{where} holds a {type(value).__name__}, which this serialiser does not emit; it writes "
@@ -152,10 +168,19 @@ def _emit(lines: list[str], path: tuple[str, ...], table: dict[str, object]) -> 
 
 
 def dumps(tables: dict[str, dict[str, object]]) -> str:
-    """`{table: {key: value}}` as TOML text, in the order given; `""` names the root table."""
+    """`{table: {key: value}}` as TOML text, in the order given; `""` names the root table.
+
+    The root table is emitted first whatever position it holds in `tables`. `_emit` writes no
+    header for it, so a root that followed `[n]` bound its keys to `[n]` -- the misplacement
+    this module exists to prevent, arrived at by ordering rather than by escaping. Both callers
+    happened to put it first; the serialiser no longer depends on that.
+    """
     lines: list[str] = []
-    for name, table in tables.items():
+    for name, table in sorted(tables.items(), key=lambda item: item[0] != ""):
         if not isinstance(table, dict):
-            raise Refusal(f"[{name}] is not a table; this serialiser writes tables of keys")
+            raise Refusal(
+                f"[{name}] is not a table of keys; this file is written one table at a time, "
+                f"and a value here has to sit under a table header"
+            )
         _emit(lines, (name,) if name else (), table)
     return "\n".join(lines)
