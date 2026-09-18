@@ -2062,8 +2062,8 @@ name = "the no-origin refusal moves back below attach's first write"
 file = "src/keelline/attach/write.py"
 before = '''    if binding.remote is None:
         raise Refusal(NO_ORIGIN)
-    _write_ignore_region(root)'''
-after = '''    _write_ignore_region(root)'''
+    # The sixth refusal'''
+after = '''    # The sixth refusal'''
 reddens = [
   "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
 ]
@@ -2374,4 +2374,23 @@ before = "            stdin=subprocess.DEVNULL,"
 after = "            stdin=None,"
 reddens = [
   "tests/doctor/test_checks.py::test_the_wrapper_probe_never_inherits_this_process_stdin",
+]
+
+# `attach`'s own rule, one door over, and introduced by the commit that wrote the rule down.
+# `ledger()` refuses a ledger naming files or settings keys `attach` could not have written, and
+# `_write_ledger` was the thing that asked for it — from the fourth write of the run. A clone
+# committing such a ledger got the ignore region, the `.codex/rules/` copies and the settings
+# merge written before the exit 2, with the committed ledger still on disk for `doctor._attached`
+# to key on. The mutation moves the read back below two of those writes.
+[[mutation]]
+name = "the ledger is read after attach has already written"
+file = "src/keelline/attach/write.py"
+before = '''    previous = _existing_ledger(root)
+    _write_ignore_region(root)
+    rules = _codex_rules(root, binding)'''
+after = '''    _write_ignore_region(root)
+    rules = _codex_rules(root, binding)
+    previous = _existing_ledger(root)'''
+reddens = [
+  "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
 ]

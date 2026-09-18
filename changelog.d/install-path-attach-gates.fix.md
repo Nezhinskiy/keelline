@@ -8,6 +8,10 @@ ledger were all on disk — so the command exited `2` having changed four things
 doctor` then reported the repository attached, because it keys on the ledger existing. All four
 of `attach`'s refusals now happen before its first write.
 
+That applies to the ledger too: an existing `.keelline/local/attach.json` is read and validated
+before the first write, so a committed one that `attach` could not have produced stops the run
+rather than being discovered four writes in.
+
 **`detach` treats `.keelline/local/attach.json` as a record and no longer as an authority.**
 `.gitignore` does not untrack a file a clone committed, so that path can arrive in a fresh
 checkout with contents nobody on your machine wrote — and `detach` deleted files by the strings

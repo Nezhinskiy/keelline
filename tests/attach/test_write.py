@@ -834,3 +834,88 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
         home=tmp_path / "home",
     )
     assert any("did not run" in note for note in attached.notes)
+
+
+def _committed_ledger(root: Path, store: Path, **fields: object) -> None:
+    """The ledger a clone committed, as a fresh checkout can genuinely hold one.
+
+    `.gitignore` does not untrack a file a clone committed, and the `keelline:ignore` region
+    `attach` writes does not either — so this path can be populated before `attach` has ever run
+    here, which is the state both cases below are about.
+    """
+    document: dict[str, object] = {
+        "format": 1,
+        "store": str(store),
+        "allow": [],
+        "entries": {},
+        "rules": [],
+        "settings_keys": [],
+    }
+    document.update(fields)
+    (root / LEDGER).parent.mkdir(parents=True, exist_ok=True)
+    (root / LEDGER).write_text(json.dumps(document), encoding="utf-8")
+
+
+def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write(
+    tmp_path: Path,
+) -> None:
+    # The same shape as `test_a_repository_with_no_origin_remote_has_nothing_to_record`, one
+    # door over, and introduced by the commit that wrote that rule down. `ledger()` refuses a
+    # ledger naming files or settings keys `attach` could not have written, and `_write_ledger`
+    # used to be the thing that asked for it — from the fourth write of the run. So a clone
+    # committing such a ledger got `attach` to write the `keelline:ignore` region, copy
+    # `.codex/rules/*` and merge `.claude/settings.local.json`, and only then exit 2 — with the
+    # committed ledger still on disk, which `doctor._attached` keys on. `attach --check` reports
+    # clean beforehand, because it does not read the ledger at all.
+    #
+    # Nothing the repository gains here differs from a successful attach, so this is not a trust
+    # boundary being crossed. What it is, is `docs/cli.md` asserting that every cause of exit 2
+    # happens before the first write while one of them did not.
+    #
+    # Mutation: `mutations.toml`'s "the ledger is read after attach has already written".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    _committed_ledger(root, store, rules=[".github/workflows/ci.yml"])
+    before = _snapshot(root)
+    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
+    with pytest.raises(Refusal):
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=True,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    _assert_snapshot_unchanged(root, before)
+
+
+def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_files(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the case above, and the same one finding 1's snapshot has: a refusal
+    # that writes nothing proves nothing if the run had nothing to write. The identical fixture,
+    # with a ledger `attach` really could have written, attaches and leaves all three artifacts
+    # the refusal above has to prevent.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
+    _committed_ledger(root, store, rules=[".codex/rules/common.rules"])
+    before = _snapshot(root)
+    assert before
+    attached = attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=True,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    after = _snapshot(root)
+    assert attached.settings_written
+    assert ".codex/rules/common.rules" in set(after) - set(before)
+    assert SETTINGS in set(after) - set(before)
+    assert before.get(".gitignore") != after.get(".gitignore")
+    # And the union the ledger exists for survived the refusal being hoisted out of the writer:
+    # `_write_ledger` is handed the ledger the caller read once, above every write.
+    assert ledger(root).rules == (".codex/rules/common.rules",)

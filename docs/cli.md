@@ -634,8 +634,12 @@ never ran `overlay init`. A missing `pre-commit` is a reported note, never a tra
 
 Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
-with no `origin` remote, or a `--machine` outside an interactive shell. Every one of those
-refusals happens before the first write, so a refused attach leaves the repository as it was.
+with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
+`attach` could not have written, or a `--machine` outside an interactive shell. Every one of
+those refusals happens before the first write, so a refused attach leaves the repository as it
+was. A write that itself fails — an unwritable `.gitignore`, a `memory.groups` entry that leaves
+this project's share of the overlay — also exits `2`, and is the one kind that can leave part of
+a run behind.
 
 ---
 

@@ -423,14 +423,25 @@ def _write_ledger(
     diff: PermissionDiff,
     rules: tuple[str, ...],
     settings_keys: tuple[str, ...],
+    previous: AttachLedger | None,
 ) -> None:
     """Record what this attach may remove again — the union with what an earlier one claimed.
 
     The union is not a nicety. A second attach against an unchanged overlay has an *empty*
     diff, because every rule is already present, so a ledger written from the diff alone would
     forget what the first one added and leave `detach` nothing to remove.
+
+    **`previous` is handed in and not read here**, which is a refusal's position and not a
+    refactor. This function used to call `_existing_ledger` itself, and `ledger()` refuses a
+    ledger naming files or settings keys `attach` could not have written — so that refusal fired
+    from the fourth write of the run, with the ignore region, the `.codex/rules/` copies and the
+    settings merge already on disk and the committed ledger still there for `doctor._attached`
+    to read as "attached". That is the shape `attach`'s own docstring says all its refusals must
+    not have. The caller reads it once, above every write.
+
+    Reading it once is also the more correct union: `attach` writes the ledger twice in a run,
+    and the second call would otherwise union against the file the first call just wrote.
     """
-    previous = _existing_ledger(root)
     allow = list(previous.allow) if previous is not None else []
     allow += [rule for rule in diff.added_allow if rule not in allow]
     # The same union for the rule files, and for a sharper reason than the one above. A file
@@ -632,15 +643,15 @@ def attach(
     The order is the order the refusals have to happen in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
     without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
-    `origin`; then write, `.gitignore` first, so the ledger is never in a tracked path even for
-    an instant.
+    `origin`; read the existing ledger, which refuses one no attach could have written; then
+    write, `.gitignore` first, so the ledger is never in a tracked path even for an instant.
 
-    **All four refusals are above every write, and the fourth was not.** It lived in
-    `_record_binding`, which runs after the ignore region, the Codex rule files, the settings
-    merge and the ledger — so attaching in a checkout with no `origin` exited 2 having written
-    all four, and `doctor._attached`, which keys on the ledger existing, then reported the
-    repository attached with an unbound binding. A refusal that leaves a repository looking
-    attached is not a refusal.
+    **All five refusals are above every write, and two of them were not.** The no-`origin` one
+    lived in `_record_binding` and the ledger's lived in `_write_ledger`, both of which run after
+    the ignore region, the Codex rule files and the settings merge — so either could exit 2
+    having written three or four artifacts, with `doctor._attached`, which keys on the ledger
+    existing, then reporting the repository attached. A refusal that leaves a repository looking
+    attached is not a refusal, and the second one arrived in the commit that wrote that sentence.
 
     The binding record is written before the links, because `memory.store` checks it and a
     store whose record is missing does not resolve — and `attach_main` resolves as its last
@@ -671,6 +682,14 @@ def attach(
         )
     if binding.remote is None:
         raise Refusal(NO_ORIGIN)
+    # The sixth refusal, and it belongs here for the reason the five above it do. `ledger()`
+    # refuses a ledger naming files or settings keys `attach` could not have written, and
+    # `_write_ledger` used to ask for it — from the fourth write of the run. A clone that
+    # commits such a ledger could therefore make `attach` write the ignore region, copy
+    # `.codex/rules/*` and merge `.claude/settings.local.json` before exiting 2, with the
+    # committed ledger still on disk for `doctor._attached` to read as "attached", and with
+    # `attach --check` reporting clean beforehand because it does not read the ledger at all.
+    previous = _existing_ledger(root)
     _write_ignore_region(root)
     rules = _codex_rules(root, binding)
     document = local_document(root)
@@ -682,7 +701,7 @@ def attach(
     # the links so that a `PartialLink` half way through still leaves `detach` able to remove
     # it. The real answer is taken again below, after the only function that can change it.
     carried = _recorded_keys(root)
-    _write_ledger(root, binding, diff, rules, carried)
+    _write_ledger(root, binding, diff, rules, carried, previous)
     recorded = _record_binding(binding)
     config = load(root, machine=machine)
     _prepare_store(binding, config)
@@ -690,7 +709,7 @@ def attach(
     notes = [] if (note := _secret_scan(binding, runner)) is None else [note]
     keys = _harness_fallback(root, config, machine=machine, home=home)
     if keys != carried:
-        _write_ledger(root, binding, diff, rules, keys)
+        _write_ledger(root, binding, diff, rules, keys, previous)
         written = True
     if keys:
         notes.append(
