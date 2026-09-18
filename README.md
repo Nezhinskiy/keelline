@@ -6,12 +6,19 @@ the platform lets them, and — designed, not yet shipped — an adoption state 
 runs gates advisory until a repository has earned them. One plugin for Claude Code and
 Codex, one Python package with **no runtime dependencies**.
 
-> **Pre-1.0.** Five areas ship: the memory store and its trust gate; the scaffolding engine
-> that writes files into a repository; the guards over a shell call, a commit message and a
-> test run; the bug ledger; and the documentation and plan lints. The first skills ship with
-> them, and so do two command groups meant for a machine rather than for you — `hook`, which
-> dispatches one harness event, and `release check`. Not yet: the hooks file that wires the
-> guards into a session, `init`, the overlay, and the adoption state machine.
+> **Pre-1.0.** What ships: the memory store and its trust gate; the scaffolding engine that
+> writes files into a repository; the guards over a shell call, a commit message and a test
+> run; the bug ledger; the documentation and plan lints; `keelline setup`, which configures a
+> machine from a preset; the private overlay — `overlay create`, `overlay init`,
+> `overlay upgrade` — and `attach`/`detach`, which bind a repository to it and unbind it
+> again; and `keelline doctor`, which reports on the result. The hooks file that wires all of
+> it into a session ships too, so installing the plugin is enough to make the guards fire and
+> the memory bundles arrive. The first skills ship with them, and so do two command groups
+> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
+> `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
+> and the adoption state machine — so today you write `keelline.toml` by hand. Nor the lane that
+> publishes the overlay *template* repository, so `overlay create --local` is the source that
+> works today and `--template` waits on it.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -34,19 +41,26 @@ adds:
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
   earned them. Designed; the assessment engine is a later work package.
-- **A personal overlay that is itself a versioned plugin** with a declared dependency and
-  its own upgrade manifest, rather than a dotfiles sync. Designed; `attach` is a later
-  work package.
+- **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
+  rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
+  binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
+  nothing reads that declaration yet, so it is a record and not a precondition.
 
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not
 a summary. The principles behind all of it, with dated sources and an honest note where the
 backing is thin, are in [docs/methodology/README.md](docs/methodology/README.md).
 
-**This is not a replacement for superpowers.** The recommended preset will list it among the
-plugins it installs, and the adoption skill will delegate to it where it is present. Designed;
-the preset's plugin list belongs to the `setup` package and the adoption skill to the one that
-ships the state machine, so nothing in this tree references superpowers today.
+**This is not a replacement for superpowers.** `keelline setup --preset recommended` installs
+it, and [context7](https://github.com/upstash/context7), on Claude Code — both ship in
+Anthropic's own official marketplace, so `setup` needs no separate registration step for
+either. **Codex has no verified non-interactive marketplace source for either plugin** (checked
+against this project's own spike record and each plugin's own published install instructions,
+2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
+you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
+marketplace name (§5.6: nothing is vendored on a guess). The adoption skill will delegate to
+superpowers where it is present. Designed; the adoption skill belongs to the package that ships
+the state machine.
 
 ## Install
 
@@ -89,8 +103,12 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline bugs new`, `bugs index`, `bugs renumber` |
 | `docs/roadmap.md` (configurable) | Only the design-and-plan trail between its two markers | `keelline docs trail` |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
-| `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]` | you |
+| `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `keelline setup` |
 | `~/.config/keelline/trust.json` | Which repositories' committed notes you have approved | `keelline memory trust` |
+| `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
+| `${CLAUDE_PLUGIN_DATA}/keelline/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
+| `.keelline/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — git-ignored by the region `attach` itself writes | `keelline attach` |
+| `<overlay>/projects/<name>/project.toml` | Which remote this overlay is bound to for this project, and when it was first attached | `keelline attach` |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the
@@ -146,6 +164,28 @@ keelline commit strip .git/COMMIT_EDITMSG             # take the attribution blo
 keelline test hygiene                                 # the faults that make a red run unattributable
 keelline test audit-entrypoints                       # tests that never exercise what they name
 
+# The private overlay
+keelline overlay create --owner you --name keelline-private --local   # render one here, no network — the working source today
+keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template on GitHub, which nothing publishes yet
+keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
+keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
+
+# Binding a repository to the overlay
+keelline attach --store ../keelline-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
+keelline attach --store ../keelline-private/projects/widget/memory --yes     # merge the diff you just read, and link the notes in
+keelline attach --store ../keelline-private/projects/widget/memory --trust-remote  # record this remote although the overlay recorded another
+keelline detach                                       # remove what attach added; the binding record stays
+
+# Machine setup
+keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
+keelline setup --preset recommended --yes --overlay ../keelline-private  # take the defaults; record an existing overlay
+keelline setup --git-hooks                             # install the commit-message hook into this repository
+keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
+
+# Diagnosing an installation
+keelline doctor                                       # fifteen checks over this installation, one line
+keelline doctor --json                                # every check with its status, detail and remedy
+
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)
@@ -153,7 +193,9 @@ keelline release check                                # one version everywhere (
 
 Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current
 directory) and `--machine` (read a machine configuration file other than the default);
-`memory` commands and `docs check` take `--store` as well. `--json` is accepted anywhere and
+`memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
+exception: its `--root` names the directory an overlay is created in or the overlay itself,
+not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and
 prints one machine-readable object instead of one line; a list of findings is under
 `findings` whatever the summary calls them.
 

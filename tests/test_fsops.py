@@ -13,6 +13,7 @@ from keelline.fsops import (
     mkdirs_within,
     open_within,
     remove_within,
+    rmdir_within,
     write_atomically,
     write_atomically_at,
     write_within,
@@ -251,6 +252,29 @@ def test_remove_within_refuses_an_escaping_target(tmp_path: Path) -> None:
     with pytest.raises(UnsafePath):
         remove_within(tmp_path / "root", "../outside/victim.txt")
     assert (outside / "victim.txt").exists()
+
+
+def test_rmdir_within_removes_an_empty_directory_and_tolerates_an_absent_one(
+    tmp_path: Path,
+) -> None:
+    # The half `remove_within` cannot do: `unlink` on a directory is EPERM on macOS and EISDIR
+    # on Linux, so a caller reaching for it got an OSError it was most likely already swallowing
+    # and a tree that quietly never shrank.
+    (tmp_path / "stale").mkdir()
+    rmdir_within(tmp_path, "stale")
+    assert not (tmp_path / "stale").exists()
+    rmdir_within(tmp_path, "stale")
+
+
+def test_rmdir_within_refuses_an_escaping_target(tmp_path: Path) -> None:
+    # The same containment as its sibling, asserted separately: this walk is what stands
+    # between a payload-controlled marker segment and an `rmdir` loop outside the one directory
+    # D14 permits, and a new public name on this surface is read as that guarantee.
+    outside = tmp_path / "outside"
+    (outside / "victim").mkdir(parents=True)
+    with pytest.raises(UnsafePath):
+        rmdir_within(tmp_path / "root", "../outside/victim")
+    assert (outside / "victim").is_dir()
 
 
 # --- durability -------------------------------------------------------------------------------

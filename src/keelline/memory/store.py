@@ -60,6 +60,12 @@ from keelline.errors import Failure
 from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
+# The overlay's per-project directory, named once. It was a bare literal at the two call
+# sites below and the `overlay` area was about to spell it a third time, in a second area —
+# which is the drift `_inside` names: "two spellings of a containment rule is one more place
+# for them to stop agreeing". It lives here, with `COMMON`, because this module is the one
+# that resolves the overlay layout for the hook path; `overlay` imports it from the surface.
+PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
 # `keelline.gitenv` and not a copy: `hooks.dispatch` runs `git` too, and the reason this module
@@ -299,8 +305,34 @@ def overlay_root(machine: Path | None) -> Path | None:
     return Path(str(value)).expanduser() if isinstance(value, str) and value else None
 
 
+def origin_remote(root: Path) -> str | None:
+    """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
+
+    Public because `attach` compares it against the overlay's record and must not reach for a
+    `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
+    one would make the comparison answer for a different repository than the session is in.
+    Two lanes asking one question two ways is how they stop agreeing.
+
+    Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
+    The distinction is the whole of `GitAnswer`: "no origin remote" is a fact about the
+    repository and reads as *not this one*, while "could not ask" is a fault on this machine,
+    and collapsing them tells the user to run `keelline attach` about their own `git`.
+
+    The value is repository-authored — a remote URL is on the Global Constraints' own list —
+    so a caller that shows it wraps it first.
+    """
+    origin = _git(root, "remote", "get-url", "origin")
+    if origin.unavailable:
+        raise GitUnavailable(
+            "`git` could not read this repository's origin remote, so the overlay binding "
+            "cannot be checked — the fault is on this machine rather than in the binding; "
+            "check that `git` runs here"
+        )
+    return origin.value
+
+
 def _bound(overlay: Path, project: str, root: Path) -> bool:
-    record = overlay / "projects" / project / PROJECT_RECORD
+    record = overlay / PROJECTS / project / PROJECT_RECORD
     if not record.is_file():
         return False
     try:
@@ -310,14 +342,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:
         return False
-    origin = _git(root, "remote", "get-url", "origin")
-    if origin.unavailable:
-        raise GitUnavailable(
-            "`git` could not read this repository's origin remote, so the overlay binding "
-            "cannot be checked — the fault is on this machine rather than in the binding; "
-            "check that `git` runs here"
-        )
-    return origin.value == recorded
+    return origin_remote(root) == recorded
 
 
 def _inside(candidate: Path, parent: Path) -> bool:
@@ -333,7 +358,27 @@ def _inside(candidate: Path, parent: Path) -> bool:
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
     """This project's whole share of the overlay: the common notes and its own (§6.2)."""
-    return overlay / COMMON, overlay / "projects" / project / "memory"
+    return overlay / COMMON, overlay / PROJECTS / project / "memory"
+
+
+# The one group whose notes are not this project's, and `common/memory` *is* its store rather
+# than its parent: this module's own docstring says so — "`developer` points into the overlay's
+# `common/memory`, which is shared across projects and cannot live under `projects/<name>/`" —
+# and the overlay template's README says it to the owner. Named here beside `COMMON` and
+# `permitted_roots` because `attach` builds the link tree from this routing and `doctor` reports
+# on it; a third spelling is one more place for them to stop agreeing.
+COMMON_GROUP = "developer"
+
+
+def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
+    """Where one group's notes live inside the overlay (§6.2).
+
+    A rule and deliberately not a probe over what happens to exist: a group directory that is
+    not there yet is a first attach, not a reason to link somewhere else. The answer is always
+    inside `permitted_roots`, which is what the resolver then checks the link against.
+    """
+    common, own = permitted_roots(overlay, project)
+    return common if group == COMMON_GROUP else own / group
 
 
 def _declared(root: Path, config: Config) -> Path | None:

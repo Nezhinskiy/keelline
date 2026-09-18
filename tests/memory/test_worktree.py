@@ -10,9 +10,17 @@ import pytest
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
+from keelline.errors import Refusal
 from keelline.memory.store import LOCAL_STORE, Store, resolve
 from keelline.memory.trust import record
-from keelline.memory.worktree import PartialLink, harness_memory_path, link, linked_names
+from keelline.memory.worktree import (
+    PartialLink,
+    attach_main,
+    detach_main,
+    harness_memory_path,
+    link,
+    linked_names,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -732,3 +740,193 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
     assert [p.name for p in excinfo.value.created] == ["MEMORY.md", "developer"]
     assert (base / "developer").is_symlink()
     assert not (base / "sub" / "nested").exists()
+
+
+# --- the main checkout in overlay mode, which is the case `link` excludes -----------------
+#
+# `link` is "a no-op for the main checkout itself: it already holds the real store, not a link
+# to it". That is true in `local-only` and `in-repo` and false in `overlay` mode, where §6.2
+# puts the real store in the overlay and the checkout holds a link tree. `attach_main` is that
+# case, and it lives here beside `link` rather than in `attach` because the two share `_link`,
+# `_unlink` and — above all — the `trust.may_inject` gate on the harness link, which is forty
+# lines of reasoning about a channel Keelline does not control.
+
+
+def an_overlay_to_attach(
+    tmp_path: Path, *, groups: tuple[str, ...] = ("developer", "project-stable")
+) -> tuple[Path, Path, Path, Config]:
+    """A repository in overlay mode whose link tree does not exist yet, and its overlay."""
+    root = _a_repo(tmp_path)
+    overlay = tmp_path / "overlay"
+    (overlay / "common" / "memory").mkdir(parents=True)
+    (overlay / "common" / "memory" / "shared.md").write_text("x", encoding="utf-8")
+    own = overlay / "projects" / "widget" / "memory"
+    for group in groups:
+        if group != "developer":
+            (own / group).mkdir(parents=True)
+    own.mkdir(parents=True, exist_ok=True)
+    (own.parent / "project.toml").write_text(
+        'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
+    )
+    listed = "[" + ", ".join(f'"{g}"' for g in groups) + "]"
+    (root / CONFIG_FILE).write_text(CONFIG.format(mode="overlay", groups=listed), encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    _commit_checkout(root)
+    return root, overlay, machine, load(root, machine=machine)
+
+
+def test_the_main_checkout_gets_the_link_tree_in_overlay_mode(tmp_path: Path) -> None:
+    # The case `link`'s own docstring excludes: `resolve()` reads the link tree, and the link
+    # tree is what this function creates, so it cannot take a resolved `Store`.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    assert resolve(root, config, machine=machine) is None
+    links = attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    assert {p.name for p in links.created} >= {"MEMORY.md", "developer", "project-stable"}
+    assert (base / "developer").readlink() == (overlay / "common" / "memory").resolve()
+    assert (base / "project-stable").readlink() == (own / "project-stable").resolve()
+    assert resolve(root, config, machine=machine) is not None
+
+
+def test_the_harness_link_is_gated_by_the_same_predicate_as_in_a_worktree(tmp_path: Path) -> None:
+    # The gate is `trust.may_inject(store, config, repository_data=in_repository(store,
+    # store.path))`. Asked any other way it answers the wrong question — the worktree docstring
+    # records a clone that got the harness link created for it on no trust record at all, after
+    # which the harness's own native reader injected repository bytes with no delimiter and no
+    # nonce. In overlay mode `store.path` is a real directory *in the repository*, so the
+    # answer is the trust record's, exactly as it is for a worktree of an in-repo store.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    home = tmp_path / "home"
+    attach_main(root, own, config, machine=machine, home=home)
+    assert not harness_memory_path(root, home).is_symlink()
+    store = resolve(root, config, machine=machine)
+    assert store is not None
+    record(store, config)
+    attach_main(root, own, config, machine=machine, home=home)
+    assert harness_memory_path(root, home).is_symlink()
+
+
+def test_a_group_name_that_escapes_the_tree_raises_rather_than_skipping(tmp_path: Path) -> None:
+    # `memory.groups` is an ordinary keelline.toml list and reaches no guard of its own (§7.4).
+    # Skipping one escaping name leaves the next free to try the same thing, which is why
+    # `link` raises `PathEscape` rather than continuing — and `attach_main` must match it.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path, groups=("../escape",))
+    with pytest.raises(PathEscape):
+        attach_main(
+            root,
+            overlay / "projects" / "widget" / "memory",
+            config,
+            machine=machine,
+            home=tmp_path / "home",
+        )
+
+
+def test_a_store_that_is_not_this_projects_share_of_the_overlay_is_refused(tmp_path: Path) -> None:
+    # DP3's containment rule, restated at the boundary that acts on it. `attach` refuses the
+    # same store one layer up; this is the floor under that, so a later caller cannot point the
+    # link tree at another project's notes by handing this function a different path.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    sideways = overlay / "projects" / "other" / "memory"
+    sideways.mkdir(parents=True)
+    with pytest.raises(Refusal):
+        attach_main(root, sideways, config, machine=machine, home=tmp_path / "home")
+
+
+def test_a_repository_that_is_not_in_overlay_mode_is_refused(tmp_path: Path) -> None:
+    # `local-only` and `in-repo` hold the real store in the checkout, so a link tree there would
+    # replace notes with links to nothing. The mode is the repository's own statement that its
+    # store is the overlay, and it can only make this refuse.
+    root, store, config = a_checkout(tmp_path)
+    machine = a_machine_file(tmp_path)
+    with pytest.raises(Refusal):
+        attach_main(root, store.path, config, machine=machine, home=tmp_path / "home")
+
+
+def test_a_machine_that_records_no_overlay_is_refused(tmp_path: Path) -> None:
+    # DP3 again: the overlay root comes from the machine file, so a machine that records none
+    # has no overlay to link into and the answer is not "link into whatever was passed".
+    root, overlay, _, config = an_overlay_to_attach(tmp_path)
+    blank = tmp_path / "blank.toml"
+    blank.write_text("[personal]\n", encoding="utf-8")
+    with pytest.raises(Refusal):
+        attach_main(
+            root,
+            overlay / "projects" / "widget" / "memory",
+            config,
+            machine=blank,
+            home=tmp_path / "home",
+        )
+
+
+def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else(
+    tmp_path: Path,
+) -> None:
+    # `detach_main`'s docstring is explicit — "only a symlink whose own target is this store is
+    # removed" — and it calls the second copy of that rule in the attach area "the duplication
+    # this module's own history argues against". The loop applied only the directory half: it
+    # tested `is_symlink()` and removed whatever stood at a configured group name, with no
+    # comparison against `overlay_group_target(...)`. `attach_main` two functions above has
+    # always compared, so the asymmetry was inside one module, one screen apart.
+    #
+    # An owner who adds a group and points `docs/memory/project-stable` at a directory of their
+    # own loses it — reported under `revoked`, on a command that promises to remove exactly what
+    # `attach` added.
+    #
+    # Mutation: `mutations.toml`'s "the main checkout's withdrawal stops checking what it
+    # removes points at".
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    mine = tmp_path / "my-own-notes"
+    mine.mkdir()
+    (mine / "keep.md").write_text("mine\n", encoding="utf-8")
+    (base / "project-stable").unlink()
+    (base / "project-stable").symlink_to(mine)
+
+    links = detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert (base / "project-stable").is_symlink()
+    assert (base / "project-stable" / "keep.md").is_file()
+    assert base / "project-stable" not in links.revoked
+    # Non-vacuous twice over: the withdrawal did run, and it did withdraw the links that really
+    # are this module's own. A `detach_main` that removed nothing at all would pass the three
+    # assertions above and break the command.
+    assert not (base / "developer").is_symlink()
+    assert base / "developer" in links.revoked
+
+
+def test_a_withdrawal_leaves_a_real_directory_standing_at_a_group_name(tmp_path: Path) -> None:
+    # The other shape `_link` refuses to clobber, asserted on the way out as well: a real
+    # directory at one of these names is unmerged work or a store the harness made, and
+    # withdrawing a link is not licence to delete a directory.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    (base / "project-stable").unlink()
+    (base / "project-stable").mkdir()
+    (base / "project-stable" / "note.md").write_text("mine\n", encoding="utf-8")
+
+    detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert (base / "project-stable" / "note.md").is_file()
+    assert not (base / "developer").is_symlink()
+
+
+def test_a_withdrawal_still_removes_a_link_of_ours_whose_target_has_gone(tmp_path: Path) -> None:
+    # `_unlink`'s rule for the harness link, applied to the tree: "what the gate refuses is the
+    # name, not the bytes behind it". A group directory deleted from the overlay leaves a
+    # dangling link that is still this module's own, and a comparison done through `exists()`
+    # rather than through the link's target would strand it.
+    root, overlay, machine, config = an_overlay_to_attach(tmp_path)
+    own = overlay / "projects" / "widget" / "memory"
+    attach_main(root, own, config, machine=machine, home=tmp_path / "home")
+    base = root / "docs" / "memory"
+    shutil.rmtree(own / "project-stable")
+    assert (base / "project-stable").is_symlink() and not (base / "project-stable").exists()
+
+    links = detach_main(root, config, machine=machine, home=tmp_path / "home")
+    assert not (base / "project-stable").is_symlink()
+    assert base / "project-stable" in links.revoked

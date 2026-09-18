@@ -64,6 +64,35 @@ it. `UnreadableTrustRecord` joins them because `state` and `may_inject` now rais
 that catches `Refusal` broadly is fine, but one that wants to tell "this record is broken" from
 "this store is not approved" — which is the whole point of the class — needs the name.
 
+**`PROJECTS` and `PROJECT_RECORD`, for `overlay` and then for `attach`.** The overlay's
+per-project directory and the record inside it are this lane's layout: `store._bound` reads the
+record and `permitted_roots` bounds a link by the directory. The `overlay` lane renders the
+template that creates both, and `attach` writes the record, so without these two names each
+would spell `projects/` and `project.toml` again — three spellings of one layout, in three
+areas, which is the drift `store._inside` names. The direction is memory → overlay and never
+the reverse: memory is the lower layer and resolves this layout for the hook path.
+
+**`GitUnavailable` and `origin_remote`, for `attach`.** This lane already tells "git ran and
+said no" from "git could not be asked" — that is the whole of `GitAnswer` — and `attach` is the
+first consumer that has to act on the difference: an unreadable `origin` must not read as "never
+bound", which is the state that invites a rebind of somebody else's project. A consumer that
+cannot import the exception by name has to catch `Failure` whole, which is the same as not
+telling them apart. `origin_remote` comes with it rather than after it: without it the lane has
+to run its own `git`, and `_git`'s scrubbing of `GIT_DIR` and `GIT_WORK_TREE` — the reason this
+module's own comparison is trustworthy — would be the thing it re-derived.
+
+**`attach_main`, `harness_memory_path`, `COMMON_GROUP` and `overlay_group_target`, for `attach`
+and `doctor`.** `link` is documented as "a no-op for the main checkout itself: it already holds
+the real store, not a link to it", which is true in `local-only` and `in-repo` and false in
+overlay mode — so the owning checkout has an entry point of its own, and the lane that calls it
+has to be able to name it. `detach_main` is its mirror and is here for the same reason, one
+function over: `_unlink` is deliberately narrower than `_link`, and a second copy of that rule in
+the attach area is the duplication this lane's own history argues against. `harness_memory_path`
+comes with them because §6.3's fallback is taken only when that path cannot be linked, so
+`attach` has to ask where it is and `doctor` has to report on it. The routing pair is here
+because the link tree `attach` builds and the provenance `doctor` prints are two readings of one
+rule, and the rule is this lane's.
+
 **The debt this list recorded is paid.** `docs-tooling` is a consumer of C3, and the row this
 paragraph used to hold open — a reference guard this lane planned and never shipped — is now
 `refs.py`: `WIKI_LINK`, `RefsReport`, `unresolved`, `audience_violations` and `check_refs` are
@@ -105,10 +134,16 @@ from keelline.memory.refs import (
     unresolved,
 )
 from keelline.memory.store import (
+    COMMON_GROUP,
+    PROJECT_RECORD,
+    PROJECTS,
+    GitUnavailable,
     Store,
     in_repository,
     inside_project,
     main_checkout,
+    origin_remote,
+    overlay_group_target,
     overlay_root,
     permitted_roots,
     refusal_reason,
@@ -129,16 +164,29 @@ from keelline.memory.trust import (
     snapshot,
     wrap,
 )
-from keelline.memory.worktree import Links, PartialLink, link, linked_names
+from keelline.memory.worktree import (
+    Links,
+    PartialLink,
+    attach_main,
+    detach_main,
+    harness_link_needed,
+    harness_memory_path,
+    link,
+    linked_names,
+)
 
 __all__ = [
+    "COMMON_GROUP",
     "DELIMITER",
     "INDEX_NAME",
+    "PROJECTS",
+    "PROJECT_RECORD",
     "SLOTS",
     "WIKI_LINK",
     "Bundle",
     "Entry",
     "Fit",
+    "GitUnavailable",
     "IndexCheck",
     "Links",
     "Note",
@@ -154,12 +202,16 @@ __all__ = [
     "UnreadableTrustRecord",
     "UnsafeNote",
     "Walk",
+    "attach_main",
     "audience_violations",
     "blocks",
     "changed",
     "check_index",
     "check_refs",
+    "detach_main",
     "fit",
+    "harness_link_needed",
+    "harness_memory_path",
     "in_repository",
     "index_source",
     "inside_project",
@@ -170,6 +222,8 @@ __all__ = [
     "markers",
     "may_inject",
     "new_nonce",
+    "origin_remote",
+    "overlay_group_target",
     "overlay_root",
     "permitted_roots",
     "read_note",

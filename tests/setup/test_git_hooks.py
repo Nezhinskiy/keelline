@@ -1,0 +1,183 @@
+# tests/setup/test_git_hooks.py
+"""`keelline setup --git-hooks`: the CLI wiring over `guards.githooks`'s already-tested
+installer (`tests/guards/test_githooks.py` covers the hook's own chaining behaviour end to
+end). What is untested until this file is the command that calls it and the report it prints.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from keelline.errors import Refusal
+from keelline.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
+from keelline.setup.commands import run_setup
+
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+@pytest.fixture(autouse=True)
+def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The same guard `tests/guards/test_githooks.py` carries, for the same reason: without a
+    # scrubbed HOME and no global/system gitconfig, a real `core.hooksPath` on this machine
+    # would decide where these tests install a hook — outside `tmp_path`.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    _git(tmp_path, probe, "init", "-q")
+    if tmp_path not in hooks_dir(probe).parents:
+        pytest.skip("a system-wide core.hooksPath points these tests outside tmp_path")
+
+
+def _env(tmp_path: Path) -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.com",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+
+
+def _git(tmp_path: Path, root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_env(tmp_path),
+    ).stdout
+
+
+def _repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(tmp_path, root, "init", "-q", "-b", "main")
+    return root
+
+
+def _args(**over: object) -> argparse.Namespace:
+    # `home`/`machine` are absolute paths under a directory nothing in this test creates, on
+    # purpose: `run_setup`'s git-hooks branch must never reach them, and a relative placeholder
+    # here once resolved against the real repository root and, when a stashed pre-Task-14
+    # `run_setup` fell through to the preset flow instead of refusing early, `setup()`'s own
+    # `home.mkdir(parents=True, exist_ok=True)` created a real directory in this checkout. An
+    # absolute path outside any root this test controls turns that class of mistake into an
+    # `OSError` under `/nonexistent` instead of a write into the tree.
+    base: dict[str, object] = {
+        "preset": None,
+        "yes": False,
+        "home": "/nonexistent/keelline-test-guard/home",
+        "machine": "/nonexistent/keelline-test-guard/config.toml",
+        "overlay": None,
+        "git_hooks": True,
+        "uninstall": False,
+        "root": ".",
+    }
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
+def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Path) -> None:
+    # §7.2: "installs it per repository into `git rev-parse --git-path hooks` (never
+    # `core.hooksPath`)". The parenthesis is the assertion: `core.hooksPath` is global state
+    # this command has no business owning. Assert the file lands under `guards.hooks_dir(root)`
+    # and that `git config --get core.hooksPath` is still unset afterwards.
+    root = _repo(tmp_path)
+    run_setup(_args(root=str(root)))
+    assert (hooks_dir(root) / HOOK_NAME).is_file()
+    completed = subprocess.run(
+        ["git", "-C", str(root), "config", "--get", "core.hooksPath"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env(tmp_path),
+    )
+    assert completed.returncode != 0 and completed.stdout.strip() == ""
+
+
+def test_a_foreign_hook_is_kept_and_chained_to(tmp_path: Path) -> None:
+    # §7.2, and the reason this is not a plain overwrite: a developer's own prepare-commit-msg
+    # is theirs, and silently replacing it is data loss. Mutation: none of this task's own —
+    # the preserve-and-chain guard is `guards.githooks.install`'s, already load-bearing in
+    # `mutations.toml`; this test is about the CLI reporting the same outcome, not a new guard.
+    root = _repo(tmp_path)
+    directory = hooks_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    foreign = directory / HOOK_NAME
+    foreign.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+    foreign.chmod(0o755)
+    run_setup(_args(root=str(root)))
+    local = directory / (HOOK_NAME + ".local")
+    assert local.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
+    assert HOOK_MARKER in (directory / HOOK_NAME).read_text(encoding="utf-8")
+
+
+def test_uninstall_restores_the_foreign_hook(tmp_path: Path) -> None:
+    # The round trip, byte for byte: the `.local` file goes back to its original name with its
+    # original content and mode.
+    root = _repo(tmp_path)
+    directory = hooks_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    foreign = directory / HOOK_NAME
+    original = "#!/bin/sh\necho mine\n"
+    foreign.write_text(original, encoding="utf-8")
+    foreign.chmod(0o700)
+    run_setup(_args(root=str(root)))
+    run_setup(_args(root=str(root), uninstall=True))
+    assert not (directory / (HOOK_NAME + ".local")).exists()
+    restored = directory / HOOK_NAME
+    assert restored.read_text(encoding="utf-8") == original
+    assert oct(restored.stat().st_mode)[-3:] == "700"
+
+
+def test_the_report_names_what_it_moved(tmp_path: Path) -> None:
+    # "prints what it moved" is in the spec because a `.local` file nobody was told about is
+    # indistinguishable from a lost one.
+    root = _repo(tmp_path)
+    directory = hooks_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    foreign = directory / HOOK_NAME
+    foreign.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+    foreign.chmod(0o755)
+    result = run_setup(_args(root=str(root)))
+    local = directory / (HOOK_NAME + ".local")
+    assert str(local) in result.summary
+    assert result.data["preserved"] == str(local)
+
+
+def test_the_two_modes_refuse_to_combine(tmp_path: Path) -> None:
+    # One writes machine-level files and the other writes into one repository; an invocation
+    # that did both would have two exit codes to report and one to return. Mutation: drop the
+    # `if args.preset is not None: raise Refusal(...)` guard in `run_setup` → this test reddens
+    # because the call then falls into the git-hooks branch and returns a `Result` instead.
+    with pytest.raises(Refusal):
+        run_setup(_args(root=str(tmp_path), preset="recommended"))
+
+
+def test_uninstall_with_nothing_installed_reports_that_and_writes_nothing(tmp_path: Path) -> None:
+    # The other half of the round trip: `--uninstall` before any `--git-hooks` run has ever
+    # happened here is not an error, and the report says there was nothing to restore.
+    root = _repo(tmp_path)
+    result = run_setup(_args(root=str(root), uninstall=True))
+    assert not (hooks_dir(root) / HOOK_NAME).exists()
+    assert result.data["restored"] is None
+
+
+def test_a_second_install_over_our_own_hook_reports_a_reinstall(tmp_path: Path) -> None:
+    # `installed.replaced` is true when the hook already there is ours, not a stranger's —
+    # `run_git_hooks` reports that case with its own summary rather than the "kept and chained
+    # to" one, which would misreport a hook that was never foreign.
+    root = _repo(tmp_path)
+    run_setup(_args(root=str(root)))
+    result = run_setup(_args(root=str(root)))
+    assert "reinstalled" in result.summary
+    assert result.data["preserved"] is None and result.data["replaced"] is True

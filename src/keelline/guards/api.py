@@ -9,7 +9,10 @@ characters and keeps discovery cheap.
 Everything a consumer lane needs is re-exported here, and the list is chosen from what those
 lanes actually reach for: `hooks-core` needs nothing to import — its handlers are discovered —
 but reads `LEAK_REASON` and `SLEEP_REASON` in its smoke assertions; `setup` needs `install`,
-`uninstall`, `Installed`, `Removed` and `HOOK_NAME` to offer and undo the git hook; `assess`
+`uninstall`, `Installed`, `Removed` and `HOOK_NAME` to offer and undo the git hook; `attach` and
+`doctor` need `hooks_dir` alone, to ask where an overlay's hooks really live rather than assume
+`.git/hooks` — an overlay with `core.hooksPath` set, or one that is a worktree or a submodule,
+keeps them somewhere else, and both lanes had the same wrong spelling hardcoded; `assess`
 needs the commit rules (`offending_lines`, `check_range`, `Report`, `Violation`, `Offence`,
 `ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `contained_roots`,
 `Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`) and the scanner any later

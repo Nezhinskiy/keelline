@@ -16,6 +16,11 @@ from keelline.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
+# The skills that ship *into* an overlay. They moved under `src/keelline/templates/` during the
+# install-path wave and this walk did not follow, so the one document the invocation lint exists
+# for -- that file once shipped an invocation that does not parse -- was walked by nothing while
+# a model read it in every overlay a user creates.
+TEMPLATE_SKILLS = ROOT / "src" / "keelline" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
 # The plugin's own skill_lines lint (§5.1): a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
@@ -45,10 +50,6 @@ NOT_YET_SHIPPED = {
     "init": "onboarding",
     "upgrade": "upgrade",
     "uninstall": "upgrade",
-    "attach": "attach",
-    "detach": "attach",
-    "setup": "setup",
-    "doctor": "hooks-core",
 }
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`keelline ([^`\n]+)`")
@@ -59,17 +60,49 @@ def skills() -> list[Path]:
     return sorted(SKILLS.glob("*/SKILL.md"))
 
 
+def entry_points() -> list[Path]:
+    """Every `SKILL.md` this repository ships, in the plugin **and** in the overlay template.
+
+    `skills()` never saw the template tree, so the one skill that goes into every overlay a user
+    creates was held to exactly one of the three rules `skills/README.md` states: it reached the
+    invocation lint through `documents()` and was walked by nothing else. The 80-line cap, the
+    frontmatter check and the harness-tool rule all parametrise over `skills()`, so that file
+    passed them by not being one of their cases. It passes today on its merits; nothing was
+    checking that it would tomorrow.
+
+    `skills()` itself is left alone, because `test_the_walk_finds_the_ported_skills` and
+    `test_every_reference_file_is_linked_from_its_skill` are statements about the plugin's own
+    `skills/` directory and its `references/` convention, which the template does not use.
+    """
+    return sorted([*skills(), *TEMPLATE_SKILLS.glob("*/SKILL.md")])
+
+
+def _id(path: Path) -> str:
+    """A case id that is unique across both trees: `attach` exists in each of them."""
+    return str(path.parent.relative_to(ROOT))
+
+
 def documents() -> list[Path]:
     """Every skill document the invocation check reads: the `SKILL.md` entry points and the
-    `references/` files beside them.
+    `references/` files beside them, in the plugin's own `skills/` **and** in the overlay
+    template.
 
     A reference is skill content a model reads and copies, so an invocation that does not parse
     is as wrong there as in a procedure. `skills/README.md` is excluded because its table names
     harness tools rather than commands. The tool-name rule is deliberately *not* widened this
     way: a reference writes ordinary English about writing ("Write the rule, not the incident")
     that `_TOOL` would read as the harness tool of the same name.
+
+    The template's skills are walked for the same reason the plugin's are: they ship into every
+    overlay a user creates and a model reads them there. Where they live is not the question the
+    lint asks.
     """
-    return sorted(path for path in SKILLS.rglob("*.md") if path.name != "README.md")
+    return sorted(
+        path
+        for tree in (SKILLS, TEMPLATE_SKILLS)
+        for path in tree.rglob("*.md")
+        if path.name != "README.md"
+    )
 
 
 def split(path: Path) -> tuple[dict[str, str], str]:
@@ -91,30 +124,37 @@ def test_the_walk_finds_the_ported_skills() -> None:
     assert {"close-bug", "memory-sweep"} <= names
     assert {"init", "upgrade", "uninstall", "attach", "setup", "doctor"} <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
-    # invocation cases with it.
-    assert SKILLS / "memory-sweep" / "references" / "protocol.md" in documents()
+    # invocation cases with it, and so does a template tree that moves again.
+    walked = documents()
+    assert SKILLS / "memory-sweep" / "references" / "protocol.md" in walked
+    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in walked
+    # And the same guard for the walk the three rules above parametrise over. The template tree
+    # moving again, or emptying, would otherwise silently take its cases with it -- which is
+    # exactly how that tree came to be held to one rule of the three in the first place.
+    assert TEMPLATE_SKILLS / "attach" / "SKILL.md" in entry_points()
+    assert set(skills()) < set(entry_points())
 
 
-@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("path", entry_points(), ids=_id)
 def test_every_skill_has_a_name_matching_its_directory_and_a_description(path: Path) -> None:
     fields, _ = split(path)
     assert fields["name"] == path.parent.name
     assert len(fields["description"]) > 40, "a description is what the harness matches on"
 
 
-@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("path", entry_points(), ids=_id)
 def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
     assert len(path.read_text(encoding="utf-8").splitlines()) <= SKILL_MAX_LINES
 
 
-@pytest.mark.parametrize("path", skills(), ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("path", entry_points(), ids=_id)
 def test_no_skill_body_names_a_harness_tool(path: Path) -> None:
     # Mutation: write "use the Grep tool" into a skill body — that skill's case reddens.
     _, body = split(path)
     assert _TOOL.search(body) is None, _TOOL.search(body)
 
 
-@pytest.mark.parametrize("path", documents(), ids=lambda p: str(p.relative_to(SKILLS)))
+@pytest.mark.parametrize("path", documents(), ids=lambda p: str(p.relative_to(ROOT)))
 def test_every_invocation_parses_or_is_allowlisted(path: Path) -> None:
     parser = build_parser(discover_registrars())
     # The whole file, not `split`'s body: a reference carries no frontmatter, and a description

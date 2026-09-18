@@ -1,0 +1,189 @@
+# tests/setup/test_machine.py
+from __future__ import annotations
+
+import tomllib
+from pathlib import Path
+
+import pytest
+
+from keelline.config.loader import load
+from keelline.errors import Refusal
+from keelline.memory.api import overlay_root
+from keelline.presets import load_preset
+from keelline.setup.machine import read_machine, write_machine
+
+# The minimal `keelline.toml` `load()` accepts: everything else comes from the preset's own
+# defaults. `tests/hooks/test_hook_command.py::_initialised_project` carries the same shape for
+# the same reason — a config load needs `[keelline]` and `[project]` and nothing more.
+CONFIG = """
+[keelline]
+version = "0.1.0"
+state = "installed"
+preset = "recommended"
+profile = ""
+agents = ["claude"]
+
+[project]
+name = "widget"
+base_branch = "main"
+release_branch = "main"
+"""
+
+
+def _initialised_project(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "keelline.toml").write_text(CONFIG, encoding="utf-8")
+    return project
+
+
+def test_the_file_written_is_the_file_both_readers_already_read(tmp_path: Path) -> None:
+    # The whole point of DP5, asserted from the readers' side rather than the writer's: a
+    # schema this writer invented would round-trip through its own reader and fail in a hook.
+    path = tmp_path / "config.toml"
+    write_machine(path, personal={"reply_language": "ru"}, overlay_root=tmp_path / "ov", machine={})
+    assert overlay_root(path) == tmp_path / "ov"
+    project = _initialised_project(tmp_path)
+    assert load(project, machine=path).personal.reply_language == "ru"
+
+
+def test_writing_without_an_overlay_leaves_no_overlay_table(tmp_path: Path) -> None:
+    # `overlay_root` answering None must keep meaning "not recorded, and nothing else" — its
+    # docstring spells out that an empty or broken table used to collapse six states into one
+    # and produced wrong advice for three of them.
+    path = tmp_path / "config.toml"
+    write_machine(path, personal={}, overlay_root=None, machine={})
+    assert overlay_root(path) is None
+    assert "overlay" not in tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def test_a_rewrite_preserves_a_value_this_run_did_not_set(tmp_path: Path) -> None:
+    # A second `setup` on a machine that already has one is the common case. Losing the overlay
+    # root because this run only set languages is the shape this catches.
+    path = tmp_path / "config.toml"
+    write_machine(path, personal={}, overlay_root=tmp_path / "ov", machine={})
+    write_machine(path, personal={"reply_language": "ru"}, overlay_root=None, machine={})
+    assert overlay_root(path) == tmp_path / "ov"
+    assert read_machine(path)["personal"]["reply_language"] == "ru"
+
+
+def test_a_hostile_value_cannot_write_a_second_key(tmp_path: Path) -> None:
+    # The machine file records the overlay root — the anchor of the whole trust model. It is a
+    # path the owner typed rather than repository bytes, but it travels through the same
+    # serialiser as `project.toml`'s remote URL, and one escaping rule for both is the reason
+    # `tomlout` exists rather than two format strings.
+    #
+    # Deviation from the plan's literal assertion, recorded rather than silently kept: the
+    # brief's body reads `["artifact_language"] != "zz"`, which raises `KeyError` once the
+    # value is escaped correctly — nothing here ever asked for a second key, so none is present
+    # at all, and a bracket lookup cannot tell "escaped safely" from "never happened" apart
+    # from "the naive concatenation this guards against". `.get(...)` reads the same intent —
+    # no working `artifact_language = "zz"` key exists — without failing on the safe outcome
+    # the escaping is supposed to produce. Mutation: format `reply_language` with an f-string
+    # instead of `tomlout.dumps` → the naive concatenation closes the string early and this
+    # test reddens on `== "zz"`.
+    path = tmp_path / "config.toml"
+    write_machine(
+        path,
+        personal={"reply_language": 'ru"\nartifact_language = "zz'},
+        overlay_root=None,
+        machine={},
+    )
+    assert read_machine(path)["personal"].get("artifact_language") != "zz"
+
+
+def test_the_preset_names_the_plugins_and_the_deny_rules() -> None:
+    # §5.6. superpowers is named because the design's own non-goal says so: "this is not a
+    # replacement for superpowers. The recommended preset installs it."
+    preset = load_preset("recommended")
+    assert any("superpowers" in name for name in preset["plugins"]["install"])
+    assert any(".env" in rule for rule in preset["deny"]["global"])
+
+
+def test_the_preset_denies_reading_env_files_by_value() -> None:
+    # This preset table is where the `.env` deny rules actually fire: `setup._write_user_settings`
+    # merges `[deny] global` into `<home>/.claude/settings.json`, which the harness reads for
+    # every project on the machine. The overlay template used to ship a second, smaller copy of
+    # the same idea in `common/claude/permissions.json`, asserted by value over there — dead,
+    # because `attach.permissions` reads only `permissions.allow`, and already one rule behind
+    # this list. That copy is gone and its by-value assertion is here, on the live one.
+    #
+    # By value and not `any(".env" in rule)`, which the case above already does: `["Read(.env)"]`
+    # satisfies a substring test and leaves `.env.local` and every nested `.env` readable.
+    #
+    # Mutation: `mutations.toml`'s "the preset stops denying the env files".
+    assert load_preset("recommended")["deny"]["global"] == [
+        "Read(.env*)",
+        "Read(**/.env*)",
+        "Read(**/.env)",
+    ]
+
+
+# --- the file this writer shares with a human (review finding 12) ---
+
+
+def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) -> None:
+    # The docstring promised "a rewrite merges, table by table, key by key"; the merge covered
+    # exactly three hard-coded names and then replaced the whole file, so a `[trust]` table and
+    # a key at the top level were gone after one `setup`. `README.md` lists this file under
+    # "Written by: **you**, or `keelline setup`", which makes a hand-written table the ordinary
+    # case rather than the exotic one.
+    #
+    # Mutation (`mutations.toml`, "a table the machine writer does not own is dropped on a
+    # rewrite"): the carry-through arm stops copying the table → `[trust]` disappears and this
+    # reddens.
+    path = tmp_path / "config.toml"
+    path.write_text(
+        "# my machine file\n"
+        'schema = "mine"\n'
+        "\n"
+        "[personal]\n"
+        'reply_language = "ru"\n'
+        "\n"
+        "[trust]\n"
+        'mode = "strict"\n'
+        'hosts = ["example.com"]\n',
+        encoding="utf-8",
+    )
+    write_machine(path, personal={}, overlay_root=None, machine={"version": "9.9.9"})
+    written = read_machine(path)
+    assert written["trust"] == {"mode": "strict", "hosts": ["example.com"]}
+    assert written["schema"] == "mine"
+    assert written["personal"]["reply_language"] == "ru"
+    assert written["machine"]["version"] == "9.9.9"
+
+
+def test_a_hand_written_float_or_sub_table_does_not_wedge_every_future_run(
+    tmp_path: Path,
+) -> None:
+    # `[personal] scale = 1.5` or `[personal.editor] name = "nvim"` made every future run of
+    # `keelline setup` exit 2 with `Refusal: personal.scale holds a float, which this serialiser
+    # does not emit` — naming a module the owner has never heard of, with no path and no remedy,
+    # for a value they were invited to write. Twice, because the wedge is about *every future*
+    # run: the file is read back at the top of each one.
+    #
+    # Mutation: `tomlout._scalar`'s float arm removed → the first call below raises again. Not a
+    # `mutations.toml` entry: this is value coverage in a serialiser, not a guard something
+    # downstream reads as permission; the entry there is on the table carry-through above.
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[personal]\nscale = 1.5\n\n[personal.editor]\nname = "nvim"\n', encoding="utf-8"
+    )
+    for version in ("1.0.0", "1.0.1"):
+        write_machine(path, personal={}, overlay_root=None, machine={"version": version})
+    written = read_machine(path)
+    assert written["personal"]["scale"] == 1.5
+    assert written["personal"]["editor"] == {"name": "nvim"}
+    assert written["machine"]["version"] == "1.0.1"
+
+
+def test_a_key_that_cannot_be_rewritten_names_the_file_and_the_remedy(tmp_path: Path) -> None:
+    # What is left after the value types are covered: a quoted key, which TOML allows and this
+    # serialiser will not write bare. It is still a refusal — but one that names the file the
+    # owner has to edit and what to do to it, rather than one that names `tomlout`.
+    path = tmp_path / "config.toml"
+    path.write_text('[personal]\n"my key" = 1\n', encoding="utf-8")
+    with pytest.raises(Refusal) as refused:
+        write_machine(path, personal={}, overlay_root=None, machine={})
+    assert str(path) in str(refused.value)
+    assert "run the command again" in str(refused.value)

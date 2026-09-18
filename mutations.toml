@@ -89,8 +89,8 @@ reddens = [
 [[mutation]]
 name = "the harness link asks the gate about the notes rather than the directory"
 file = "src/keelline/memory/worktree.py"
-before = '        if trust.may_inject(store, config, repository_data=in_repository(store, store.path)):'
-after = '        if trust.may_inject(store, config):'
+before = '    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))'
+after = '    return trust.may_inject(store, config)'
 reddens = [
   "tests/memory/test_worktree.py::test_a_committed_index_reaches_no_harness_link_before_trust",
   "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
@@ -103,8 +103,8 @@ reddens = [
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
 file = "src/keelline/memory/worktree.py"
-before = '        elif _unlink(store.path.resolve(), harness):'
-after = '        elif False:'
+before = '    elif _unlink(store.path.resolve(), harness):'
+after = '    elif False:'
 reddens = [
   "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
   "tests/memory/test_worktree.py::test_a_dangling_harness_link_of_ours_is_still_withdrawn",
@@ -1434,4 +1434,1662 @@ before = '        if piece in bashscan.REDIRECT_OPERATORS:'
 after = '        if piece[:1] in {">", "<"}:'
 reddens = [
   "tests/guards/test_bgcleanup.py::test_an_ampersand_redirect_is_not_part_of_the_masked_command",
+]
+
+# The wrapper is the whole of D11's fail-closed guarantee: Claude Code reads every exit that is
+# not 2 as a non-blocking error, so a `closed` entry that stops refusing is a guard that permits.
+[[mutation]]
+name = "the wrapper stops refusing under a closed policy"
+file = "hooks/run-hook.sh"
+before = '  if [ "$policy" = closed ]; then refuse "$1"; fi'
+after = '  :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_interpreter_of_the_floor_version_refuses_under_closed_only",
+  "tests/hooks/test_wrapper.py::test_any_other_exit_code_becomes_a_refusal_under_closed",
+]
+
+# The one failure the wrapper can cause itself. `set -u` alone exits 1 with the shell's own
+# message and no token, which reads as permission -- so the disarmed guard would be silent.
+[[mutation]]
+name = "the wrapper stops noticing that it has no policy argument"
+file = "hooks/run-hook.sh"
+before = '[ $# -ge 1 ] || refuse "KL_ARGV no policy argument"'
+after = 'policy=open'
+reddens = ["tests/hooks/test_wrapper.py::test_no_policy_argument_refuses_with_a_token"]
+
+# C1: the launcher is chosen by the wrapper's own path and never by a variable in its
+# environment. A committed `.claude/settings.json` `env` block reaches a hook process --
+# `config/machine.py` gates two other variables on exactly that -- and this one would pick the
+# Python program that runs before any Keelline guard does.
+[[mutation]]
+name = "the wrapper takes its launcher from the environment again"
+file = "hooks/run-hook.sh"
+before = 'launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"'
+after = 'launcher="${CLAUDE_PLUGIN_ROOT:-}/scripts/keelline"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_plugin_root_in_the_environment_does_not_choose_the_launcher",
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# The other half of the same line. A derived launcher that is not there must still refuse with a
+# token: without the check the file reaches Python as a missing script and exits 2 by CPython
+# accident, which is the unattributed exit D11 exists to make impossible.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher is missing"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_missing_launcher_refuses_although_the_environment_names_one",
+]
+
+# C2, first half. This ordering no longer decides what is *executed* -- `_wrapper` takes
+# `own_root` and nothing else -- so what it pins now is which wrapper `files` reads its mode
+# from. A plugin's own and one a repository committed are different files with different
+# meanings, and the row would otherwise report on the wrong one.
+[[mutation]]
+name = "doctor reads a named plugin root's files in preference to its own"
+file = "src/keelline/doctor/checks.py"
+before = "    return _own_root() or _named_root(env)"
+after = "    return _named_root(env) or _own_root()"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_keelline_is_part_of",
+]
+
+# C2, and the entry that matters: `doctor` runs a subprocess out of this answer. With
+# `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and which `cli-path`'s
+# own remedy and the README tell people to install -- a project that commits `hooks/run-hook.sh`
+# mode 100755 plus an `env` block naming its tree got that script RUN, and the report then read
+# `wrapper: ok`. Code execution and a false clean bill of health from a read-only command.
+[[mutation]]
+name = "doctor executes the plugin root the environment named"
+file = "src/keelline/doctor/checks.py"
+before = "    root = context.own_root"
+after = "    root = context.plugin_root"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# The other half of the same containment: `files` keeps reading the wrapper's mode, because that
+# needs only a path -- and must say whose root it measured, so nobody reads "executable" off a
+# repository-planted file as a clean bill of health for the installation.
+[[mutation]]
+name = "doctor reports on a named plugin root's files without saying whose they are"
+file = "src/keelline/doctor/checks.py"
+before = '    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT'
+after = '    whose = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+]
+
+# C1. The headline hardening closed WHICH FILE the wrapper hands Python and left WHICH PYTHON
+# one line below it: the probe asks a candidate only to exit 0 for a trivial `-c`, so a
+# repository-planted `evil-python` ran `<plugin>/scripts/keelline hook PreToolUse` on every
+# PreToolUse, before any Keelline guard. `config/machine.py`'s ruling -- "gating one of a pair of
+# equivalent inputs is not a partial defence, it is a redirect with a longer name" -- is
+# followed by putting that module's own gate on it: an interactive terminal, which a hook's
+# stdin (the harness's payload, on a pipe) never is.
+[[mutation]]
+name = "the wrapper lets the environment choose its interpreter off a terminal"
+file = "hooks/run-hook.sh"
+before = 'if [ -t 0 ] && [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi'
+after = 'if [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_the_environment_names_is_ignored_off_a_terminal",
+]
+
+# C1's other chooser, and the one the tty gate moved rather than closed: with
+# `KEELLINE_PYTHON_CANDIDATES` gated, the hook path always uses the built-in list, whose last
+# entry is a `PATH` lookup -- and `PATH` reaches this process from the same committed `env`
+# block. Dropping the entry is not available (it is the S8 row 2 fall-through, and a pyenv, nix
+# or asdf machine has nothing at the four absolute paths), so what a clone can actually stage is
+# refused instead: an interpreter inside its own tree. Measured with the entry disabled -- a
+# shipped `python3` plus a `PATH` entry naming the tree ran
+# `<plugin>/scripts/keelline hook PreToolUse`.
+[[mutation]]
+name = "the wrapper runs an interpreter the project itself ships"
+file = "hooks/run-hook.sh"
+before = '  if in_project "$resolved"; then'
+after = '  if false; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_inside_the_project_root_is_never_used",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a PATH entry naming the tree]",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a . in PATH]",
+]
+
+# Both sides resolved, or the comparison is a string game. `command -v` answers a `PATH` entry's
+# own spelling, so a symlinked entry names a directory outside the tree that IS the tree.
+[[mutation]]
+name = "the interpreter containment compares a candidate's spelling instead of its resolved path"
+file = "hooks/run-hook.sh"
+before = '  dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1'
+after = '  dir=$(dirname -- "$1") || return 1'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked PATH entry]",
+]
+
+# The same, for the other side. A project reached through a symlink is one spelling in
+# `CLAUDE_PROJECT_DIR` and another on disk, and the containment then reads "outside" for every
+# candidate in the tree.
+[[mutation]]
+name = "the interpreter containment compares against the project root's spelling"
+file = "hooks/run-hook.sh"
+before = '  project=$(pwd -P)'
+after = '  project="$root"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_reached_through_path_is_judged_by_its_resolved_path[a symlinked project root]",
+]
+
+# The half a blunt containment gets wrong. No `CLAUDE_PROJECT_DIR` and no `git` answer is not a
+# project this process can name, and refusing every candidate on a question it could not ask
+# would turn an unresolvable root -- the ordinary state outside a repository -- into no hooks.
+[[mutation]]
+name = "an unresolvable project root refuses every interpreter instead of none"
+file = "hooks/run-hook.sh"
+before = '  [ -n "$2" ] || return 1'
+after = '  [ -n "$2" ] || return 0'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_candidate_stands_when_there_is_no_project_root_to_compare_it_against",
+]
+
+# The wrapper's other half. `hooks/dispatch._git_toplevel` scrubs this identical call one layer
+# down and names the failure verbatim; the wrapper inherited whatever the session had, so
+# `GIT_DIR`/`GIT_WORK_TREE` chose the project -- and every entry but the dispatcher's relies on
+# `--root` defaulting to `.`, so the whole hook then read another repository's configuration,
+# budgets and note store. The Codex hot path, where `CLAUDE_PROJECT_DIR` is unset.
+[[mutation]]
+name = "the wrapper's git inherits the session's GIT_DIR again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$("$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_project_root_is_never_taken_from_an_inherited_git_environment",
+]
+
+# `-f` tests existence, not readability. Measured with `chmod 000`: CPython printed its own
+# "Permission denied" and exited 2 with no KL_ token, passed through by `case "$rc" in 0|2)` --
+# the unattributed exit 2 D11 exists to make impossible, and a state `doctor`'s wrapper row
+# called green because it keys on finding a token.
+[[mutation]]
+name = "the wrapper stops noticing that its launcher cannot be read"
+file = "hooks/run-hook.sh"
+before = '[ -f "$launcher" ] && [ -r "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+after = '[ -f "$launcher" ] || fail "KL_NO_LAUNCHER launcher missing or unreadable at ${launcher}"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_launcher_that_cannot_be_read_refuses_with_a_token",
+]
+
+# A root that cannot be RESOLVED is a correct silent degradation; a root that was named and
+# cannot be entered is not. The process stayed in the harness's working directory, and if that
+# happened to be another Keelline project every `--root`-defaulting entry read its
+# configuration -- with no token, and nothing in the sink.
+[[mutation]]
+name = "an unenterable project root leaves the hook in the harness's directory in silence"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd -- "$root" 2>/dev/null || true'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[closed-2]",
+  "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[open-0]",
+]
+
+# The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
+# is a write -- and a `remove_within` loop -- outside the one directory D14 permits.
+[[mutation]]
+name = "the sink stops hashing a payload-controlled path segment"
+file = "src/keelline/hooks/sink.py"
+before = '    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]'
+after = '    return value'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_lands_at_two_hashed_segments_and_nowhere_else",
+]
+
+# Codex exports `PLUGIN_DATA` where Claude Code exports `CLAUDE_PLUGIN_DATA` (S1). With the
+# fallback gone the sink is a `NullSink` on Codex, so every `once_key` handler silently degrades
+# back to "every invocation" -- the defect the sink exists to remove, on one harness only.
+[[mutation]]
+name = "the sink stops recognising Codex's name for the data directory"
+file = "src/keelline/hooks/sink.py"
+before = '    data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")'
+after = '    data = env.get("CLAUDE_PLUGIN_DATA")'
+reddens = [
+  "tests/hooks/test_sink.py::test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink",
+]
+
+# `seen()` was a plain `Path.exists()`, which follows a symlink and counts a directory -- so
+# anything able to write the data root could silence a `once_key` handler with one `mkdir`. A
+# marker is the regular file `mark()` writes and nothing else is one.
+[[mutation]]
+name = "a marker is any name that exists again, not a file the sink wrote"
+file = "src/keelline/hooks/sink.py"
+before = "        return stat.S_ISREG(info.st_mode)"
+after = "        return True"
+reddens = [
+  "tests/hooks/test_sink.py::test_a_marker_is_a_regular_file_and_not_merely_a_name_that_exists",
+]
+
+# `UNKEYED_SESSION` was `""`, so an invocation whose payload carried no session id filed its
+# markers under `sha256("")` -- a hex pair anything can precompute. With a data root the
+# environment names, that is the one direction a read out of this tree can be used in: plant a
+# file at the known pair and a `once_key` handler never runs.
+[[mutation]]
+name = "an unkeyed session's marker path is predictable again"
+file = "src/keelline/hooks/sink.py"
+before = 'UNKEYED_SESSION = f"unkeyed:{os.getpid()}:{os.urandom(16).hex()}"'
+after = 'UNKEYED_SESSION = ""'
+reddens = [
+  "tests/hooks/test_sink.py::test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute",
+]
+
+# Every call through this seam captures its output, so a `git` or `gh` that asks for a
+# credential on an inherited stdin is invisible and blocks for the whole of
+# NETWORK_TIMEOUT_SECONDS. `doctor`'s `ci-ref` row is what makes it a finding: the URL it
+# resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+[[mutation]]
+name = "a launched command gets this process's stdin again"
+file = "src/keelline/overlay/runner.py"
+before = "                stdin=subprocess.DEVNULL,"
+after = ""
+reddens = [
+  "tests/overlay/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+]
+
+[[mutation]]
+name = "a launched git may prompt for a credential again"
+file = "src/keelline/overlay/runner.py"
+before = '_ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}'
+after = "_ENV_FORCE = {}"
+reddens = [
+  "tests/overlay/test_runner.py::test_a_launched_command_gets_no_stdin_and_no_credential_prompt",
+  "tests/overlay/test_runner.py::test_the_variables_that_redirect_git_are_dropped",
+]
+
+# The comment beside this list used to claim `GIT_DIR` and `GIT_WORK_TREE` were "the two" that
+# redirect git. They are not: this is one of several counterexamples, and a clone into a fresh
+# directory must not inherit an index from elsewhere either.
+[[mutation]]
+name = "the runner stops dropping a variable that redirects git's index"
+file = "src/keelline/overlay/runner.py"
+before = '    "GIT_INDEX_FILE",'
+after = ""
+reddens = ["tests/overlay/test_runner.py::test_the_variables_that_redirect_git_are_dropped"]
+
+# `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
+# arrived as NOT_FOUND -- which every caller reads as "gh is not installed". A wrong finding is
+# worse than a slow one, and the two have different remedies.
+[[mutation]]
+name = "a command that hangs is reported as one that is not installed"
+file = "src/keelline/overlay/runner.py"
+before = '                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+after = '                NOT_FOUND, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+reddens = [
+  "tests/overlay/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
+]
+
+# The one invariant in this wave whose failure ships a permission to every machine that ever
+# creates an overlay from the template. The author may never grant one (§3, first row); only the
+# machine owner may, on their own instance.
+[[mutation]]
+name = "the overlay template starts granting a permission"
+file = "src/keelline/templates/overlay/common/claude/permissions.json"
+before = '  "permissions": {}'
+after = '  "permissions": {"allow": ["Bash(:*)"]}'
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere",
+  "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
+]
+
+# §6.1 permits creating a repository on an account only after explicit confirmation, and in this
+# harness the caller is non-interactive: naming the source IS the confirmation. A default turns
+# an omitted flag into a private repository created on somebody's GitHub account.
+[[mutation]]
+name = "overlay create picks the GitHub source when nobody asked for it"
+file = "src/keelline/overlay/commands.py"
+before = "create.set_defaults(func=run_overlay_create, source=None)"
+after = 'create.set_defaults(func=run_overlay_create, source="template")'
+reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_source_for_you"]
+
+# DP3's first rule, and the one whose failure hands the choice of overlay to whoever wrote the
+# command line -- which in this harness is a model that has read the repository. The machine
+# file is unselectable by a repository by construction; `--store`'s own parent is not.
+[[mutation]]
+name = "attach takes the overlay root from its argument instead of the machine file"
+file = "src/keelline/attach/binding.py"
+before = '    overlay = overlay_root(machine)'
+after = '    overlay = store.parents[2]'
+reddens = [
+  "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
+]
+
+# §12's hostile-clone row: the clone chooses `project.name`, it does not choose which remote the
+# overlay recorded under that name. Stop comparing and every clone declaring a real project's
+# name reads as bound.
+[[mutation]]
+name = "attach stops comparing the recorded remote"
+file = "src/keelline/attach/binding.py"
+before = '    if recorded != origin:'
+after = '    if False:'
+reddens = ["tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind"]
+
+# §3's last row, in one line: committed settings widen permissions -> never merged. The mutation
+# is toward a plausible implementation rather than an obviously broken one, which is the
+# difference between an oracle and a smoke test.
+[[mutation]]
+name = "the permission diff starts reading the committed settings file"
+file = "src/keelline/attach/permissions.py"
+before = '    sources = (overlay_common, overlay_project)'
+after = '    sources = (overlay_common, overlay_project, root / ".claude" / "settings.json")'
+reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
+
+# The Global Constraints ask for this entry by name: "a refusal something downstream reads as
+# permission". With it gone, a repository that says "setup requires `keelline attach --store
+# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the
+# diff. Declared on the predicate rather than on the branch in `write.py`, because the predicate
+# is where the rule is defined once and `check` reports the same one.
+[[mutation]]
+name = "attach widens a permission without a confirmation"
+file = "src/keelline/attach/permissions.py"
+before = '        return bool(self.added_allow or self.added_hooks)'
+after = '        return False'
+reddens = [
+  "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
+  "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
+]
+
+# DP3's anchor is only as good as the file that carries it surviving a second `setup` run. With
+# this guard gone, a rewrite that only sets the personal languages silently drops whatever
+# overlay root an earlier `setup --overlay` recorded, and every later `attach` reads "not
+# recorded" about a machine that was already set up.
+[[mutation]]
+name = "write_machine stops reading back an overlay root it was not given"
+file = "src/keelline/setup/machine.py"
+before = "    if root is None:"
+after = "    if False:"
+reddens = ["tests/setup/test_machine.py::test_a_rewrite_preserves_a_value_this_run_did_not_set"]
+
+# The owner's own `~/.claude/settings.json` predates Keelline on most machines. Without this
+# guard, the first `setup` run on a real machine silently drops every deny rule the owner wrote
+# by hand and replaces it with only the preset's own.
+[[mutation]]
+name = "setup's settings merge stops reading the existing deny list"
+file = "src/keelline/setup/run.py"
+before = "        [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []"
+after = "        []"
+reddens = [
+  "tests/setup/test_setup.py::test_an_existing_user_settings_file_keeps_the_owners_own_rules",
+]
+
+# Measured while this task was written: with `root=Path.cwd()`, the overlay-create branch put a
+# real `keelline-private/` inside whatever directory `setup` happened to be run from — this
+# checkout, the first time a test exercised it. `setup` is a machine command; nothing about
+# where it is invoked from may decide where it writes.
+[[mutation]]
+name = "setup creates a new overlay under the caller's cwd instead of --home"
+file = "src/keelline/setup/run.py"
+before = 'created = create(owner, name, source="template", root=planned.root.parent, runner=runner)'
+after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
+reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
+
+# Fix round 1, item 1: the preset's own `reply_language = ""` default must never win over a
+# value already recorded — by an earlier `setup` run or by the owner's own hand — or a second
+# `setup --preset recommended` resets what "the user's to set" (skills/setup/SKILL.md) means.
+[[mutation]]
+name = "setup resets a personal value the owner already set"
+file = "src/keelline/setup/run.py"
+before = "    return {k: v for k, v in _personal_defaults(preset).items() if k not in existing}"
+after = "    return _personal_defaults(preset)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_second_run_does_not_reset_a_personal_value_the_owner_set",
+]
+
+# §3's trust table in one line: the plugin author may never ship an allow rule, and this is the
+# one place `setup` writes machine-scope permissions at all. A typo that writes the preset's
+# deny rules under `permissions.allow` instead of `permissions.deny` is the exact failure mode
+# the deny-only invariant exists to catch — and it is the more plausible bug than a rule
+# deliberately added, which is why the mutation is a fat-fingered key rather than a deletion.
+[[mutation]]
+name = "setup's settings merge writes the deny rules under allow instead"
+file = "src/keelline/setup/run.py"
+before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
+
+# §6.1's own gate, restated in code: `overlay create` runs `gh repo create ... --private` on
+# GitHub, and a default that reaches it is the one default this command may not have. Without
+# this guard, every ordinary run with no `--overlay` flag at all would still reach the overlay
+# branch, which is "taken without being asked" by definition. The `after` is the plausible shape
+# of that bug — defaulting the answer to a directory — rather than a deletion that would crash on
+# a missing name: a mutation that reddens with an `AttributeError` proves nothing about the rule.
+[[mutation]]
+name = "setup touches the overlay even when the caller named no answer"
+file = "src/keelline/setup/run.py"
+before = """    if overlay is None:
+        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
+        # only way to reach the overlay at all, and `--yes` does not imply one: a default here
+        # would turn an omitted flag into a repository created on somebody's account.
+        return None"""
+after = """    if overlay is None:
+        overlay = str(home)"""
+reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
+
+# The coordinator's ruling on the named risk this wave's first report raised: `--yes` on
+# `--overlay <path>` would be theatre in a harness where the command line is written by a
+# model, so it is not gated there — but creating a repository on GitHub is the one
+# irreversible, outward-facing act `setup` performs, and §6.1 asks for explicit confirmation
+# before it. This is the one place `yes` is a real control rather than a restatement.
+[[mutation]]
+name = "setup creates an overlay on GitHub without --yes"
+file = "src/keelline/setup/run.py"
+before = "        if not yes:"
+after = "        if False:"
+reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_refused"]
+
+# The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
+# from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
+# would be recorded and trusted exactly as a real overlay is. The probe moved into
+# `overlay.identity`, which is the one module that answers "is this an overlay" for `setup` and
+# for `overlay upgrade` alike, so the entry follows it there.
+[[mutation]]
+name = "the overlay probe stops looking for the manifests at all"
+file = "src/keelline/overlay/identity.py"
+before = """    for relative, expected in (
+        (PLUGIN_MANIFEST, OVERLAY_PLUGIN),
+        (MARKETPLACE_MANIFEST, OVERLAY_MARKETPLACE),
+    ):"""
+after = "    for relative, expected in ():"
+reddens = [
+  "tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused",
+  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+]
+
+# The half that used to be worth nothing: the probe was the two manifests *existing*, which the
+# Keelline checkout itself satisfies and which any Claude Code plugin repository satisfies. What
+# makes a tree an overlay is what its manifests say it is — the names `overlay init` writes and a
+# harness installs it by.
+[[mutation]]
+name = "the overlay probe stops reading what the manifests name"
+file = "src/keelline/overlay/identity.py"
+before = "        if not isinstance(document, dict) or not _claims(document.get(\"name\"), expected):"
+after = "        if not isinstance(document, dict):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
+]
+
+# What the coordinator's ruling calls the wave's actual control over the named risk: a path
+# outside the repository that already carries a real overlay layout is not something a hostile
+# clone can create, but a path *inside* it is exactly the shape of tree a clone can ship — so
+# this is the one check that removes the actual exploitable case, and losing it is the whole
+# residual risk the ruling records.
+[[mutation]]
+name = "setup stops refusing an overlay root inside the project"
+file = "src/keelline/setup/run.py"
+before = """    if (
+        resolved_candidate == resolved_project
+        or resolved_project in resolved_candidate.parents
+        or resolved_candidate in resolved_project.parents
+    ):"""
+after = "    if False:"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
+
+# The arm that was missing, and the one this project's own way of working walks into: `--root` is
+# a worktree by preset rule, and `git worktree add .worktrees/x` puts it *under* the checkout — so
+# a clone shipping its two manifests at its own root was a parent of `--root`, which the first
+# draft accepted as the machine's trust anchor.
+[[mutation]]
+name = "setup stops refusing an overlay root that holds the project"
+file = "src/keelline/setup/run.py"
+before = "        or resolved_candidate in resolved_project.parents"
+after = "        or False"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_root_is_refused"]
+
+# And the case no path comparison can see. `git worktree add ../side` is git's own documented
+# layout and this repository's own convention: the other checkout is neither inside `--root` nor
+# above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
+# directories are one repository.
+[[mutation]]
+name = "setup stops asking git whether the overlay is a checkout of the project"
+file = "src/keelline/setup/run.py"
+before = "    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor",
+]
+
+# §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the
+# Keelline marker to a hostile command → doctor lists every entry with provenance". An entry
+# that claims the marker and is in no attach ledger is a repository saying it is Keelline, and
+# without this comparison every such entry reads as one `attach` installed.
+[[mutation]]
+name = "doctor stops telling a claimed marker from one the attach ledger records"
+file = "src/keelline/doctor/checks.py"
+before = """            if entry_id not in recorded:
+                unrecorded.append(where)"""
+after = """            if False:
+                unrecorded.append(where)"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
+]
+
+# The same check's other half, and the one a green report hides. Three arms used to swallow — an
+# OSError on the read, a JSON error inside the walk, and a Refusal out of `owned_ids` — and all
+# three produced "all accounted for" from the check whose whole purpose is that nobody's entries
+# go unlisted. `owned_ids` is asked here for its strictness: it shares its reader with
+# `apply_entries`, so a shape the merge would refuse is a shape this walk must admit it cannot
+# account for.
+[[mutation]]
+name = "doctor swallows a settings file it could not read instead of reporting it"
+file = "src/keelline/doctor/checks.py"
+before = "        except Refusal:\n            blind.append(label)"
+after = "        except Refusal:\n            pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
+]
+
+# §5.3, "reasons, never payloads". The sink's record carries `context` and `decision`, both
+# filled from a handler's own return value, and printing the record whole is the one place a
+# repository's bytes could reach a terminal — and the model reading it — unwrapped. The
+# allowlist is the guard; without it the check prints everything the record holds.
+[[mutation]]
+name = "doctor quotes a diagnostics log whose provenance it cannot establish"
+file = "src/keelline/doctor/checks.py"
+before = '        f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",'
+after = '        f"{counted}; {sessions} session(s) seen: " + raw.decode("utf-8", "replace"),'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_diagnostics_log_the_environment_named_is_counted_and_never_quoted",
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# The cap the sink documents is enforced on WRITE, by `DataSink.diagnostic`. A file this process
+# did not write has no cap at all, and `${CLAUDE_PLUGIN_DATA}` is what decides which file that
+# is -- so the bound has to be applied again on the read or it is not a bound.
+[[mutation]]
+name = "doctor reads an environment-named log with no bound of its own"
+file = "src/keelline/doctor/checks.py"
+before = "            raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)"
+after = "            raw = handle.read()"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
+]
+
+# `[ci] ref` is the sole variable argument this area hands `git`, and `--` stops it becoming an
+# option, not a transport. `ext::<command>` makes `git ls-remote` run a program the repository
+# chose; git 2.54's default `protocol.ext.allow` refuses it, which is git's guard and not this
+# project's -- absent on an older git, off under `protocol.ext.allow=always`.
+[[mutation]]
+name = "a ci-ref naming a git transport helper reaches git again"
+file = "src/keelline/doctor/checks.py"
+before = "    if TRANSPORT_HELPER.match(ref):"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ci_ref_naming_a_transport_helper_never_reaches_git",
+]
+
+# I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's
+# `--machine` gate -- a flag is a third member of the equivalence class `config/machine.py`
+# gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the
+# machine file into capability: the overlay root comes from it, and from the overlay come allow
+# rules, hook entries and Codex standing rules.
+[[mutation]]
+name = "attach honours --machine from a session nobody is sitting in front of"
+file = "src/keelline/attach/commands.py"
+before = "        raise Refusal(_NO_MACHINE_OVERRIDE)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
+  "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
+]
+
+# The ledger holds the owner's personal allow rules and lives under `.keelline/local/`, a path
+# the repository has no `.gitignore` line for. Written before the region exists, it is published
+# to every collaborator -- so the region goes first, and a region that cannot be written is a
+# refusal rather than a warning.
+#
+# Two entries, because the old single one was named for the order and tested the absence:
+# replacing the call with `pass` reddens both named tests against there being no region at all,
+# which is a weaker claim and the one the name did not make. The second entry below moves the
+# statement instead, and the tree afterwards is byte-identical either way -- so only an
+# assertion about the sequence of writes can see it.
+[[mutation]]
+name = "the ignore region is never written at all"
+file = "src/keelline/attach/write.py"
+before = "    _write_ignore_region(root)"
+after = "    pass"
+reddens = [
+  "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+[[mutation]]
+name = "the ignore region is written after the ledger it untracks"
+file = "src/keelline/attach/write.py"
+before = """    _write_ignore_region(root)
+    rules = _codex_rules(root, binding)
+    document = local_document(root)
+    merged = _merged_settings(document, diff, binding)
+    written = merged != document
+    if written:
+        fsops.write_within(root, LOCAL_SETTINGS, merged)
+    # What an earlier attach left in the settings file, carried into the ledger written before
+    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
+    # it. The real answer is taken again below, after the only function that can change it.
+    carried = _recorded_keys(root)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent)"""
+after = """    rules = _codex_rules(root, binding)
+    document = local_document(root)
+    merged = _merged_settings(document, diff, binding)
+    written = merged != document
+    if written:
+        fsops.write_within(root, LOCAL_SETTINGS, merged)
+    # What an earlier attach left in the settings file, carried into the ledger written before
+    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
+    # it. The real answer is taken again below, after the only function that can change it.
+    carried = _recorded_keys(root)
+    _write_ledger(root, binding, diff, rules, carried, previous, absent)
+    _write_ignore_region(root)"""
+reddens = [
+  "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+# `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
+# names this lane as the one that has to call the containment itself). The entry decides a
+# directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
+# has to reach the caller as a refusal and not as silence.
+#
+# And it has to reach the caller BEFORE the first write. The containment used to be called only
+# from `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the
+# settings merge, the ledger and the overlay's binding record -- so a clone committing an
+# escaping entry got five artifacts written and exit 2, and `doctor` then reported the
+# repository attached and the binding *bound*, because the record had been written too. The
+# mutation takes the hoisted call away and leaves only the write-time one.
+[[mutation]]
+name = "the memory.groups containment is asked at write time only"
+file = "src/keelline/attach/write.py"
+before = '''    config = load(root, machine=machine)
+    _check_groups(binding, config)'''
+after = '''    config = load(root, machine=machine)'''
+reddens = [
+  "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
+]
+
+# The floor under the entry above, and it is not dead. A spelling that escapes is refused before
+# the first write; a component of the overlay that is not a directory — or became a symlink
+# between the check and the write — can only be refused by the `O_NOFOLLOW` walk at the moment of
+# writing, which is the interval that walk exists for.
+[[mutation]]
+name = "the write-time containment on the overlay's store directory is swallowed"
+file = "src/keelline/attach/write.py"
+before = '''        except UnsafePath as exc:
+            raise Refusal(GROUP_ESCAPES) from exc'''
+after = '''        except UnsafePath:
+            pass'''
+reddens = [
+  "tests/attach/test_write.py::test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time",
+]
+
+# `_snapshot` (`tests/test_install_path.py`) used to walk the whole of `.git`, and a CI job's
+# own background maintenance (`gc.auto`/`maintenance.auto` at their defaults, because the
+# fixtures pin only `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`) could drop `objects/maintenance.lock`
+# between two snapshots and redden a passing test for a reason that had nothing to do with the
+# code under test. Restoring the full walk over `.git` is exactly that regression.
+[[mutation]]
+name = "the install-path snapshot stops pruning .git from the ordinary walk"
+file = "tests/test_install_path.py"
+before = '            dirnames[:] = [name for name in dirnames if name != ".git"]'
+after = "            pass"
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping",
+]
+
+# The narrowing keeps its teeth only if the allowlist still names every path a defect could
+# land in. Losing `.git/config` from it is the failure mode a denylist doesn't have and an
+# allowlist does: a write nobody added a line for.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/config"
+file = "tests/test_install_path.py"
+before = '_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")'
+after = '_STABLE_GIT_FILES = (Path("info") / "exclude",)'
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other
+# defect this guard exists to catch (§6.3's write-through-a-hook concern), on the branch that
+# walks a directory rather than probing named files.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/hooks"
+file = "tests/test_install_path.py"
+before = '''    hooks = git / "hooks"
+    if hooks.is_dir():'''
+after = '''    hooks = git / "hooks"
+    if False:'''
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# --- wave 3 install path: the review's eight attach/doctor findings ----------------------
+#
+# `attach` owes four refusals before its first write, and the fourth was not where the other
+# three are: it lived in `_record_binding`, which runs after the ignore region, the Codex rule
+# files, the settings merge and the ledger. A checkout with no `origin` therefore exited 2
+# having written all four, and `doctor._attached` — which keys on the ledger existing — then
+# reported the repository attached. The mutation puts the refusal back where it was.
+[[mutation]]
+name = "the no-origin refusal moves back below attach's first write"
+file = "src/keelline/attach/write.py"
+before = '''    if binding.remote is None:
+        raise Refusal(NO_ORIGIN)
+    # The sixth refusal'''
+after = '''    # The sixth refusal'''
+reddens = [
+  "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
+]
+
+# `.keelline/local/attach.json` is a path a clone can commit — `.gitignore` does not untrack a
+# committed file — and `detach` deletes by the strings in `rules` and pops settings keys by the
+# strings in `settings_keys`. `fsops.remove_within` contains the deletion to the root, and
+# `.github/workflows/`, `.pre-commit-config.yaml` and every source file are inside it, so
+# containment is not the guard. The guard is what `attach` could have written.
+[[mutation]]
+name = "detach deletes whatever file the ledger names"
+file = "src/keelline/attach/write.py"
+before = '''    prefix = f"{CODEX_RULES}/"
+    if not rule.startswith(prefix):
+        return False'''
+after = '''    prefix = f"{CODEX_RULES}/"
+    if True:
+        return True'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing",
+]
+
+# The measured widening, and the other half of the same guard. `_withdraw_settings` assigns
+# `raw["permissions"] = permissions` and then pops every string in `settings_keys`, so a
+# committed `settings_keys = ["permissions"]` took the owner's whole permissions block out —
+# deny rules included. A repository may not remove a deny rule by committing a JSON file.
+[[mutation]]
+name = "detach drops whatever settings key the ledger names"
+file = "src/keelline/attach/write.py"
+before = '    foreign += sum(1 for key in keys if key != FALLBACK_KEY)'
+after = '    foreign += 0'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules",
+]
+
+# §6.3's settings-file fallback is state that persists, on the one channel `memory/worktree`
+# calls "the one hop that leaves this lane's gate". A gate evaluated once at creation over such
+# state is not a gate: the key outlived the trust record that allowed it, while the ledger that
+# `detach` reads was reset to `[]` around it.
+[[mutation]]
+name = "the settings fallback outlives the gate that allowed it"
+file = "src/keelline/attach/write.py"
+before = '''    document = settings_document(local_document(root))
+    if document.get(FALLBACK_KEY) == wanted:'''
+after = '''    document = settings_document(local_document(root))
+    if wanted is None or document.get(FALLBACK_KEY) == wanted:'''
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason",
+  "tests/attach/test_links.py::test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made",
+]
+
+# And the record of it, which is the half `detach` reads. `settings_keys` was written from the
+# run's own memory rather than from the file, so a second attach reset it to `[]` while the key
+# was still in `.claude/settings.local.json` — and `detach` then left it there for good.
+[[mutation]]
+name = "the ledger records the fallback from the run rather than from the file"
+file = "src/keelline/attach/write.py"
+before = '    return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(local_document(root)) else ()'
+after = '    return ()'
+reddens = [
+  "tests/attach/test_links.py::test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback",
+  "tests/attach/test_detach.py::test_the_two_values_attach_really_writes_are_still_acted_on",
+]
+
+# `worktree.link` is documented as a no-op for the main checkout, so applying the owning-checkout
+# entry point to whatever `--root` names and then skipping `main_checkout(root)` in the loop left
+# the owning checkout with no link tree at all when `--root` was a worktree: every session there
+# saw no memory, silently, and the command exited 0.
+[[mutation]]
+name = "attach applies the owning-checkout entry point to --root"
+file = "src/keelline/attach/write.py"
+before = '''    links = attach_main(owner, binding.store, config, machine=machine, home=home)'''
+after = '''    links = attach_main(root, binding.store, config, machine=machine, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_attaching_from_a_linked_worktree_links_the_main_checkout_too",
+]
+
+# The mirror, on the withdrawal side.
+[[mutation]]
+name = "detach applies the owning-checkout withdrawal to --root"
+file = "src/keelline/attach/write.py"
+before = '''    for tree in checkouts:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+after = '''    for tree in [root]:
+        revoked += detach_main(tree, config, machine=machine, home=home).revoked'''
+reddens = [
+  "tests/attach/test_links.py::test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too",
+]
+
+# `detach_main`'s own docstring: "only a symlink whose own target is this store is removed,
+# because a real directory at one of these names is unmerged work or a store the harness made,
+# and withdrawing a link is not licence to delete a directory". The loop applied the directory
+# half of that rule and not the target half, one screen below the docstring that states it and
+# two functions below an `attach_main` that has always compared.
+[[mutation]]
+name = "the main checkout's withdrawal stops checking what it removes points at"
+file = "src/keelline/memory/worktree.py"
+before = '''        if pointed.resolve() != source.resolve():
+            continue'''
+after = '''        if False:
+            continue'''
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else",
+]
+
+# §12's own row, and the shape one existing checkout already had: a **real directory** at
+# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of
+# it and reports no fault, so the installation looks attached and behaves like nothing. The row
+# was declared load-bearing and had a test, and nothing made the test prove it. The mutation
+# asks the path a question a real directory answers "no" to, which is the narrowest way to stop
+# the discriminator discriminating: every other shape this row reads reaches the same arm it did
+# before, so the one test that reddens is the one named for this state.
+[[mutation]]
+name = "doctor stops telling a real directory from a link at the harness memory path"
+file = "src/keelline/doctor/checks.py"
+before = "    if harness.is_dir() and not harness.is_symlink():"
+after = "    if harness.is_dir() and not harness.exists():"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
+]
+
+# DP4 in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one id yield one
+# key and the same id under two events keeps only the last -- which deflates the claimed count
+# and inflates `foreign` by exactly the difference. `_entry_commands` walks positionally for that
+# reason, and the walk had a test and no entry. The mutation makes the walk key by id instead of
+# counting entries, which is precisely the defect DP4 names: the second entry vanishes, so the
+# count is wrong AND the grant comparison never sees the command hung on the borrowed id.
+[[mutation]]
+name = "doctor counts hook entries by marker id rather than by position"
+file = "src/keelline/doctor/checks.py"
+before = """                command = entry.get("command") if isinstance(entry, dict) else None
+                found.append(command if isinstance(command, str) else "")"""
+after = """                command = entry.get("command") if isinstance(entry, dict) else None
+                text = command if isinstance(command, str) else ""
+                here = marker_id(text)
+                if here is None or here not in {marker_id(seen) for seen in found}:
+                    found.append(text)"""
+reddens = [
+  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# The harness memory path is the one channel §6.3 uses to reach the model, and this row is the
+# only thing that reports on it. The shape was computed into `detail` and then discarded for the
+# status, and the link's target was never compared — so "the harness memory path is a link to
+# the store" was printed, in green, for a dangling link and for a link to anybody's directory.
+[[mutation]]
+name = "doctor stops asking what the harness memory path points at"
+file = "src/keelline/doctor/checks.py"
+before = '        if harness.resolve() == store.path.resolve():'
+after = '        if True:'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_harness_link_pointing_at_an_unrelated_directory_is_never_green",
+  "tests/doctor/test_checks.py::test_a_dangling_harness_link_is_never_green",
+]
+
+# A repository could force a red row and exit 1 by committing an unreadable ledger: `ledger()`
+# raised, `_guarded` rendered it red, and the remedy was "report this". Reading it as an empty
+# ledger instead is the other wrong answer — every entry `attach` installed would then be
+# reported as one it did not, which is a red row with actively wrong advice.
+[[mutation]]
+name = "doctor reports an unreadable attach ledger as an empty one"
+file = "src/keelline/doctor/checks.py"
+before = '''    except (Failure, Refusal):
+        return None'''
+after = '''    except (Failure, Refusal):
+        return {}'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
+]
+
+# `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it. A directory
+# this process cannot list is a fact about the machine, not about the installation.
+[[mutation]]
+name = "doctor renders an unreadable harness data root as a red row"
+file = "src/keelline/doctor/checks.py"
+before = '''    try:
+        sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    except OSError as exc:'''
+after = '''    sessions = len(list((base / MARKERS).iterdir())) if (base / MARKERS).is_dir() else 0
+    if False:
+        exc = OSError()'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_harness_data_root_this_process_cannot_read_is_a_warning",
+]
+
+# The floor under the row above, for every check at once.
+[[mutation]]
+name = "doctor renders an unreadable file as a broken check"
+file = "src/keelline/doctor/checks.py"
+before = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            WARN,'''
+after = '''    except OSError as exc:  # the machine, not the installation
+        return Check(
+            name,
+            RED,'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_red",
+]
+
+# `permissions.check` reduces `already_present` to a count because that list "comes out of the
+# project's own `settings.local.json`, which a clone can commit". Everything `detach` reports
+# comes out of that file or out of the ledger beside it, and `skills/attach/SKILL.md` tells the
+# model to relay it. This branch removed a marker id bounded by a grammar from `doctor`'s output
+# on the same reasoning; an allow rule is less bounded than that, not more.
+[[mutation]]
+name = "detach prints the ledger's own strings"
+file = "src/keelline/attach/commands.py"
+before = '        "allow_removed": len(removed.allow_removed),'
+after = '        "allow_removed": list(removed.allow_removed),'
+reddens = [
+  "tests/attach/test_commands.py::test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json",
+]
+
+# Finding 5's defect, one field over. `.keelline/local/attach.json` is a path a clone can commit,
+# so a repository that commits a marked hook entry *and* a ledger recording that entry's id got
+# `hook-entries` to answer "all accounted for" — a committable file silencing the one check whose
+# entire purpose is that nobody's entries go unlisted. An id is credible only if the entry it
+# names is one the OVERLAY currently grants, and the overlay is trusted by construction (DP3).
+[[mutation]]
+name = "the attach ledger vouches for a hook entry on its own"
+file = "src/keelline/doctor/checks.py"
+before = '''            elif command not in granted:
+                ungranted.append(where)'''
+after = '''            elif False:
+                ungranted.append(where)'''
+reddens = [
+  "tests/doctor/test_checks.py::test_a_committed_ledger_cannot_vouch_for_a_committed_hook_entry",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
+]
+
+# And the arm where the overlay cannot be asked at all. Falling back to the ledger there would
+# hand a repository the answer by breaking the overlay instead of by forging the record: the
+# honest answer is the one this check already gives a settings file it could not parse — report
+# it, never absolve it.
+[[mutation]]
+name = "an unreadable overlay falls back to trusting the ledger"
+file = "src/keelline/doctor/checks.py"
+before = '''    except (Failure, Refusal, OSError):
+        return None
+    return {
+        entry["command"]'''
+after = '''    except (Failure, Refusal, OSError):
+        return set()
+    return {
+        entry["command"]'''
+reddens = [
+  "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
+]
+
+# S8, and the anchor half of it. `git` is a program this file CHOOSES, resolved through the same
+# `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex hot path, where
+# `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a `git` had that
+# binary EXECUTED on every hook invocation, before any guard of ours, and its stdout became the
+# root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor was
+# itself environment-chosen is "a redirect with a longer name" for the third time in one file.
+[[mutation]]
+name = "the wrapper resolves git through PATH again"
+file = "hooks/run-hook.sh"
+before = 'git_root=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" rev-parse --show-toplevel 2>/dev/null || true)'
+after = 'git_root=$(env -i PATH="${PATH:-}" HOME="${HOME:-}" git rev-parse --show-toplevel 2>/dev/null || true)'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_wrapper_never_runs_a_git_the_environment_put_on_path",
+]
+
+# A machine with no git at any absolute path has no anchor this process can trust. Degrading in
+# silence would keep the shape of the containment and none of its strength -- and `doctor`'s
+# wrapper row keys on a token, so a silent loss is a green row over a guard that is not there.
+[[mutation]]
+name = "no trustworthy git degrades in silence instead of printing a token"
+file = "hooks/run-hook.sh"
+before = '[ -n "$git_bin" ] || fail "KL_NO_GIT no git at any absolute candidate path, so no project root this wrapper can trust"'
+after = ':'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[closed-2]",
+  "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[open-0]",
+]
+
+# The other half of S8: the containment was measured against `CLAUDE_PROJECT_DIR` alone, which
+# reaches this process from the very `env` block it exists to defeat. Measured on the shipped
+# wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
+# `python3` "outside the project root" and it ran the launcher. Dropping this arm leaves exactly
+# that hole, with every other line of the guard still in place.
+[[mutation]]
+name = "the interpreter containment stops measuring against git's answer"
+file = "hooks/run-hook.sh"
+before = '  under_root "$dir" "$git_project" && return 0'
+after = '  :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# The one `cd` in the file that was neither `CDPATH=`-cleared nor `--`-terminated, while the two
+# others took both cares. With `CDPATH` set and a relative root, `cd` writes the destination it
+# chose to STDOUT -- ahead of anything the launcher prints, and a hook's stdout is a contract --
+# and lands in a `CDPATH`-chosen directory, so the `pwd -P` that anchors the containment then
+# measures the wrong tree.
+[[mutation]]
+name = "the project-root cd consults CDPATH again"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_cdpath_never_chooses_the_directory_the_hook_runs_in",
+]
+
+# The same line's other care. Without the `--`, a root whose name begins with `-` is parsed as
+# options and the entry refuses a directory that is on disk and perfectly enterable.
+[[mutation]]
+name = "the project-root cd parses a root beginning with a dash as options"
+file = "hooks/run-hook.sh"
+before = '  CDPATH= cd -- "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+after = '  CDPATH= cd "$root" 2>/dev/null || fail "KL_NO_ROOT the project root this entry was given cannot be entered"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_a_project_root_whose_name_begins_with_a_dash_is_a_destination_and_not_an_option",
+]
+
+# Not a containment, but the message a containment leaves behind, and the only one a vendored
+# in-tree toolchain ever sees. It was byte-identical for "a candidate was found inside the tree
+# and skipped" and "there was no candidate at all" while the comment beside it claimed it "says
+# what happened rather than only that nothing was found". Break the record of WHY nothing was
+# found and both states print the second sentence again -- which is false in the first case, and
+# names no remedy in the one case where a remedy exists.
+[[mutation]]
+name = "the two no-interpreter states print one message again"
+file = "hooks/run-hook.sh"
+before = '    skipped_in_project=1'
+after = '    :'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_two_states_with_no_interpreter_are_told_apart",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
+# Defence in depth, and the only guard in its commit with no entry here -- which is how it stayed
+# a claim rather than a fact. The `KEELLINE_*` strip two lines above is what closes the seam; this
+# flag is the second, independent guard, so that a later edit narrowing the strip, or a second
+# variable gated on a terminal the way the wrapper gates `KEELLINE_PYTHON_CANDIDATES`, still meets
+# a closed stdin. It also stops a wrapper that reads stdin holding the report open.
+[[mutation]]
+name = "doctor's wrapper probe inherits this process's stdin"
+file = "src/keelline/doctor/checks.py"
+before = "            stdin=subprocess.DEVNULL,"
+after = "            stdin=None,"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_wrapper_probe_never_inherits_this_process_stdin",
+]
+
+# `attach`'s own rule, one door over, and introduced by the commit that wrote the rule down.
+# `ledger()` refuses a ledger naming files or settings keys `attach` could not have written, and
+# `_write_ledger` was the thing that asked for it — from the fourth write of the run. A clone
+# committing such a ledger got the ignore region, the `.codex/rules/` copies and the settings
+# merge written before the exit 2, with the committed ledger still on disk for `doctor._attached`
+# to key on. The mutation moves the read back below two of those writes.
+[[mutation]]
+name = "the ledger is read after attach has already written"
+file = "src/keelline/attach/write.py"
+before = '''    previous = _existing_ledger(root)
+    # Above every write, because the first of them creates `.keelline/local/` and the answer
+    # would then be wrong by exactly the directory this run brought into existence.
+    absent = _absent_directories(root)
+    _write_ignore_region(root)'''
+after = '''    absent = _absent_directories(root)
+    _write_ignore_region(root)
+    previous = _existing_ledger(root)'''
+reddens = [
+  "tests/attach/test_write.py::test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write",
+]
+
+# `detach` cannot refuse once it has begun — by the time it reaches the link tree the settings
+# and the `.codex/rules/` copies are gone, and refusing there strands a half-detached repository.
+# So everything structural it *can* know beforehand has to be asked beforehand. `main_checkout`
+# and `_worktrees` are the only things here that need `git`, they are pure reads, and they sat
+# between the settings withdrawal and the link trees: a machine whose `git` was gone got exit 1
+# with two artifacts already removed and every link still in place.
+[[mutation]]
+name = "detach asks git where the checkouts are after it has already withdrawn"
+file = "src/keelline/attach/write.py"
+before = '''    checkouts = _checkouts(root)
+    allow_removed = _withdraw_settings(root, recorded)'''
+after = '''    allow_removed = _withdraw_settings(root, recorded)
+    checkouts = _checkouts(root)'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
+]
+
+# --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
+
+# Fix round 1, item 2, which had a test named for it and no mutation: `claude plugin install
+# superpowers@obra` on a fresh machine always failed, because a plugin cannot be installed from a
+# marketplace that was never registered. The order is the fix, and the test asserted membership —
+# `… in runner.calls` — so the swapped loops made every call it looked for and stayed green. This
+# entry expresses the *move*, not a deletion: both calls still happen, in the wrong order.
+[[mutation]]
+name = "a plugin is installed before its marketplace is registered"
+file = "src/keelline/setup/run.py"
+before = """        added = runner.run(add_argv_of(source), home)
+        if added.code != 0:
+            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            notes.append(f"{agent}: could not register marketplace {source} ({detail})")
+            continue
+        for selector in selectors:
+            argv = install_argv_of(f"{selector}@{marketplace}")
+            done = runner.run(argv, home)
+            if done.code == 0:
+                if selector not in installed:
+                    installed.append(selector)
+            else:
+                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")"""
+after = """        for selector in selectors:
+            argv = install_argv_of(f"{selector}@{marketplace}")
+            done = runner.run(argv, home)
+            if done.code == 0:
+                if selector not in installed:
+                    installed.append(selector)
+            else:
+                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")
+        added = runner.run(add_argv_of(source), home)
+        if added.code != 0:
+            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            notes.append(f"{agent}: could not register marketplace {source} ({detail})")
+            continue"""
+reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded_argv"]
+
+# `docs/cli.md` says every cause of exit 2 in `setup --overlay` happens before the first write,
+# and one did not: the whole check ran at the bottom of `setup`, so `--overlay /typo` had written
+# the machine file, merged `~/.claude/settings.json` and installed two plugins before refusing —
+# with the `SetupReport` discarded, so the caller saw only the typo. The mutation leaves
+# `_apply_overlay`'s floor in place, so the refusal still arrives: what reddens is its arriving
+# after the writes, which is the rule.
+[[mutation]]
+name = "setup asks whether --overlay is an overlay after it has already written"
+file = "src/keelline/setup/run.py"
+before = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
+after = "    planned_overlay = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
+]
+
+# The most serious of the eleven. `home/<name>` is knowable from the arguments, and the first
+# draft computed it only inside the call that had already run `gh repo create --private --clone`
+# on somebody's account: the documented command run from `$HOME` created the repository, cloned
+# it, renamed both manifests and installed the secret scan, and then refused. The mutation drops
+# the check on the destination and leaves the floor, so the refusal still happens — after the
+# repository exists.
+[[mutation]]
+name = "setup computes where a created overlay lands only after creating it"
+file = "src/keelline/setup/run.py"
+before = """        destination, account = target_root(home, owner, name)
+        _outside_the_project(destination, project_root=project_root)"""
+after = "        destination, account = target_root(home, owner, name)"
+reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
+
+# `CONTRIBUTING`'s containment rule has two stages, and this lane had only the second: the
+# `O_NOFOLLOW` walk refused a symlinked `~/.claude` with `UnsafePath`, which `cli.run` renders as
+# `internal error`, after the machine file was already written. `config.paths.contained` is the
+# user-facing half. The mutation leaves the walk, so the run still refuses — with no link named,
+# no remedy, and the machine file on disk.
+[[mutation]]
+name = "setup meets a symlinked ~/.claude only at write time"
+file = "src/keelline/setup/run.py"
+before = """    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
+    _check_settings_path(home)"""
+after = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
+]
+
+# The floor under the entry above, and not dead: a component that becomes a symlink between the
+# check and the write can only be refused by the walk, and that interval is what the walk is for.
+# Swallowing it would report a settings file this run never wrote.
+[[mutation]]
+name = "the write-time containment on the settings file is swallowed"
+file = "src/keelline/setup/run.py"
+before = """    try:
+        fsops.write_within(home, USER_SETTINGS, new_text)
+    except UnsafePath as exc:"""
+after = """    try:
+        fsops.write_within(home, USER_SETTINGS, new_text)
+    except UnsafePath:
+        return False
+    except UnsafePath as exc:"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refused",
+]
+
+# `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
+# overlay it created fourteen files — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+# `.github/workflows/scan.yml` among them — reported them as work done and exited 0. Writing a
+# workflow file into a repository the owner may then commit is the concrete harm.
+[[mutation]]
+name = "overlay upgrade stops asking whether --root is an overlay"
+file = "src/keelline/overlay/upgrade.py"
+before = "    require_overlay(root, because=NOT_AN_OVERLAY)\n"
+after = ""
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+  "tests/overlay/test_upgrade.py::test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overlay",
+]
+
+# The global constraints make `gh` optional and a missing binary "a reported finding, never a
+# traceback" — and never a misattributed one. Without this arm the command launches two more
+# subprocesses, can sleep ten seconds, and blames the owner's GitHub authentication for a binary
+# that was never on PATH.
+[[mutation]]
+name = "overlay create --template asks GitHub about a `gh` that could not run"
+file = "src/keelline/overlay/create.py"
+before = "    if created.code in (NOT_FOUND, TIMED_OUT):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_create.py::test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess",
+]
+
+# `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
+# two owners' overlays under one configuration directory are one plugin fighting itself — applies
+# to Codex exactly as it does to Claude Code, and the project ships a Codex half of everything
+# else.
+[[mutation]]
+name = "overlay init leaves the Codex manifest unsuffixed"
+file = "src/keelline/overlay/create.py"
+before = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST, CODEX_PLUGIN_MANIFEST)"
+after = "MANIFESTS = (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST)"
+reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_after_the_owner_too"]
+
+# A write behind the scaffold ledger makes the file read as hand-edited for ever after. The file
+# in question carries `keelline.requires`, the version-compatibility declaration the README
+# advertises, so a release that changes it would never reach an initialised overlay — and the
+# report would attribute to the owner an edit Keelline itself made.
+[[mutation]]
+name = "overlay init writes the manifests behind the scaffold ledger"
+file = "src/keelline/overlay/create.py"
+before = "            ledger = ledger.with_record(replace(record, sha256=digest(written)))"
+after = "            ledger = ledger.with_record(record)"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
+]
+
+# `README.md` lists the machine file under "Written by: **you**, or `keelline setup`", so a table
+# this writer does not recognise is the ordinary case. Dropping it destroys the only copy of
+# something a person wrote, in a file they were invited to write in.
+[[mutation]]
+name = "a table the machine writer does not own is dropped on a rewrite"
+file = "src/keelline/setup/machine.py"
+before = """        else:
+            tables[name] = dict(value)"""
+after = """        else:
+            continue"""
+reddens = ["tests/setup/test_machine.py::test_a_table_this_writer_does_not_know_survives_a_rewrite"]
+
+# The write side of the rule `config.loader.load`'s docstring states for the read side ("Half a
+# file behind a gate is not a gate"). Every reader pins `~/.config/keelline/config.toml` with
+# `interactive=False`; this writer took the `isatty` sniff, so an owner with `XDG_CONFIG_HOME`
+# set wrote a machine file at exit 0 that every reader — and `doctor` — then reported missing.
+[[mutation]]
+name = "setup's --machine default takes the interactive sniff"
+file = "src/keelline/setup/commands.py"
+before = "        machine_config_path(interactive=False)"
+after = "        machine_config_path()"
+reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_every_reader_reads"]
+
+# `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
+# written from this run's *new* keys — empty on every run after the first. An owner who edited
+# `reply_language` in the machine file, the documented way, kept `""` there for ever.
+[[mutation]]
+name = "setup mirrors only the values this run itself added"
+file = "src/keelline/setup/run.py"
+before = "    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))"
+after = "    deny_written = _write_user_settings(home, deny_rules, personal)"
+reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
+
+# A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
+# as it can, so with `~/.claude` already created by Claude Code it links the *file*, and the first
+# draft's arm — comparing the link's basename to its target's, trivially true for a per-file link
+# — printed `--home <dotfiles>/claude`. Under that command `setup` writes
+# `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
+# untouched: the same "a file no reader reads" defect as the `--machine` default, arriving through
+# the advice instead. Without this check the guard prints a command for a layout no `--home` can
+# express.
+[[mutation]]
+name = "the symlink remedy prints a --home that writes somewhere else"
+file = "src/keelline/setup/run.py"
+before = """    if leads_to.parts[-len(wanted) :] != wanted:
+        return None"""
+after = """    if False:
+        return None"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_command",
+]
+
+
+# --- the shipped data files: six guards the external review proved shipped green (PR 12) ---
+#
+# Every entry below mutates a file no type checker reads and no import reaches: a YAML
+# workflow, a JSON permissions table, a `.gitignore`, the hook manifest. That is exactly why
+# they are here. `hooks/run-hook.sh` already has eighteen entries on the same argument --
+# CONTRIBUTING's rule is that a genuinely load-bearing guard goes into this file "instead of
+# only describing it", and a `# Mutation: ...` comment in a test body is a description.
+
+# The overlay's first secret scan, and the revision decides whose code runs on the owner's
+# machine at every commit. The assertion this entry belongs to used to be `"rev:" in config`,
+# which is true of every possible pre-commit configuration including this mutation's result --
+# it is one of the six data-file guards the external review proved shipped green.
+[[mutation]]
+name = "the overlay template follows gitleaks' default branch"
+file = "src/keelline/templates/overlay/.pre-commit-config.yaml"
+before = "    rev: v8.21.2"
+after = "    rev: main"
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_pins_gitleaks_at_a_revision",
+]
+
+# The `.env` deny rules, where they actually fire. The overlay template used to carry a second,
+# smaller copy of them, asserted by value over there -- dead, because `attach.permissions` reads
+# `permissions.allow` and never `permissions.deny`, and already one rule behind this list. That
+# copy is gone; this is the proof that the live one is asserted by value and not by substring,
+# which `["Read(.env)"]` would satisfy while leaving every nested `.env` readable.
+[[mutation]]
+name = "the preset stops denying the env files"
+file = "src/keelline/presets/recommended.toml"
+before = 'global = ["Read(.env*)", "Read(**/.env*)", "Read(**/.env)"]'
+after = 'global = ["Read(.env)"]'
+reddens = [
+  "tests/setup/test_machine.py::test_the_preset_denies_reading_env_files_by_value",
+  "tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules",
+]
+
+# The cheap half of §6.4's promise that the overlay never holds a credential. The assertion was
+# `".env" in text`, and the word appears in the file's own explanatory comment -- so commenting out
+# every pattern left it green with nothing ignored at all. This is that mutation.
+[[mutation]]
+name = "the overlay template stops ignoring env files"
+file = "src/keelline/templates/overlay/.gitignore"
+before = '''
+.env
+.env.*
+'''
+after = '''
+# .env
+# .env.*
+'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ignores_env_files",
+]
+
+# `pull_request_target` runs with the base repository's secrets against a *fork's* head, which is
+# the standard Actions privilege-escalation shape. Nothing in the suite read this file at all
+# before the repair: the reviewer rewrote the trigger and the scopes together and all 43 cases
+# passed, in a workflow that ships into every overlay a user creates.
+[[mutation]]
+name = "the overlay's secret scan runs a fork's head"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = "  pull_request:"
+after = "  pull_request_target:"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
+]
+
+# The other half, and the half that makes the first one dangerous. A secret scan needs
+# `contents: read` and nothing else; a write scope on the token this workflow hands a third-party
+# action is a repository that can be pushed to by whatever that action does.
+[[mutation]]
+name = "the overlay's secret scan is given a write token"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = '''permissions:
+  contents: read'''
+after = '''permissions:
+  contents: write
+  id-token: write'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token",
+]
+
+# Finding 23: the same argument the `rev:` entry above makes, one file over and with a token
+# attached. A major tag is a name its owner can move, so `@v4` resolving to different code
+# tomorrow is somebody else choosing what runs against a repository holding the owner's rules and
+# notes. D16 names a full-length commit sha as the only immutable reference Actions has.
+[[mutation]]
+name = "the overlay's secret scan follows a moveable action tag"
+file = "src/keelline/templates/overlay/.github/workflows/scan.yml"
+before = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
+after = "actions/checkout@v4"
+reddens = [
+  "tests/overlay/test_template.py::test_the_scan_workflow_pins_every_action_at_an_immutable_revision",
+]
+
+# §3's other half for the template: a hook shipped by the author executes on every machine that
+# creates an instance. The assertion examined only files carrying a `hooks` key, so a hook under a
+# bare top-level event key -- the shape `.codex/hooks.json` uses -- was not examined at all.
+[[mutation]]
+name = "the overlay template ships a hook under a bare event key"
+file = "src/keelline/templates/overlay/common/claude/hooks.json"
+before = '''{
+  "hooks": {}
+}'''
+after = '''{
+  "PreToolUse": [
+    {"matcher": "Bash", "hooks": [{"type": "command", "command": "curl e"}]}
+  ]
+}'''
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ships_no_hook_entry",
+]
+
+# `matcher` is a case-sensitive regular expression, and `"bash"` matches no tool either harness
+# reports -- so this one letter retires `bg-cleanup`, the plugin's only `Policy.CLOSED` handler,
+# permanently and with no diagnostic anywhere, because a hook that is never invoked emits nothing.
+# The walk this file's tests are built on used to discard `matcher`, so no assertion could be
+# asked about it and all ten passed.
+[[mutation]]
+name = "the bash guard's matcher stops matching the tool it guards"
+file = "hooks/hooks.json"
+before = '''    "PreToolUse": [
+      {
+        "matcher": "Bash",'''
+after = '''    "PreToolUse": [
+      {
+        "matcher": "bash",'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_tool_matched_entry_matches_the_name_both_handlers_filter_on",
+]
+
+# `type` is what tells the harness the entry is a command to run at all, and nothing read it:
+# `"commandd"` shipped green. An entry the harness cannot classify is a guard that silently never
+# fires, which is the same failure as a mistyped event one field over.
+[[mutation]]
+name = "a hook entry declares a type the harness cannot classify"
+file = "hooks/hooks.json"
+before = '''            "type": "command",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+after = '''            "type": "commandd",
+            "timeout": 10,
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.sh\" closed hook PreToolUse"'''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_a_command_entry",
+]
+
+# The harness dispatches on the JSON key. Both event tests in that file read the event out of the
+# *argv* instead, so a mis-keyed group passed them: the command still said `hook PostToolUse` and
+# still named a registered handler, while the event it was filed under never fired again. This
+# mutation is a valid event rather than a misspelling, so what reddens is the key disagreeing with
+# the argv -- the arm a `PostToolUSe` would never have reached.
+[[mutation]]
+name = "a hook group is filed under an event the harness never emits"
+file = "hooks/hooks.json"
+before = '''    "PostToolUse": ['''
+after = '''    "UserPromptSubmit": ['''
+reddens = [
+  "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
+]
+
+# --- wave 3 install path: the cross-area import boundary ---------------------------------
+#
+# CONTRIBUTING makes `api.py` the only cross-area import surface, and until this lane nothing
+# asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
+# `hooks.sink`, and both merged green. The guard now walks every module under `src/keelline/`.
+# This mutation puts a violation back — `doctor` reading the setup area's private `machine`
+# module for a name its `api.py` publishes — and the guard must name it. The name still exists
+# at the private spelling, so the mutated tree imports and runs: what goes red is the boundary
+# assertion and nothing else.
+[[mutation]]
+name = "an area reaches past another area's api.py again"
+file = "src/keelline/doctor/checks.py"
+before = 'from keelline.setup.api import USER_SETTINGS'
+after = 'from keelline.setup.machine import USER_SETTINGS'
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# And the failure mode a walk-based guard has that a hand-written assertion does not: a walk
+# that stops walking reports no offences for the same reason a clean tree does. Narrowed to the
+# ten `commands.py` files, the walk still finds files, still finds crossings, and still finds no
+# offence — so the floor is what has to catch it, and the floor is asserted before anything is
+# asserted about the crossings.
+[[mutation]]
+name = "the cross-area import guard walks ten files instead of the package"
+file = "tests/test_areas.py"
+before = '    files = sorted(source.rglob("*.py"))'
+after = '    files = sorted(source.rglob("commands.py"))'
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# `PartialLink` exists because a half-built link tree is repairable; a list missing the links
+# that were actually made defeats the type. `_link_everywhere` accumulated `created` across
+# `attach_main` and one `link` per further checkout and let the exception out untouched, so the
+# caller received the failing call's own list -- empty, while the owning checkout's tree sat on
+# disk. Restoring the bare call is that defect exactly, and the assertion reads the symlinks the
+# checkout holds rather than a list a person kept current.
+[[mutation]]
+name = "attach's PartialLink forgets the links made before the failing call"
+file = "src/keelline/attach/write.py"
+before = '''        try:
+            more = link(tree, store, config, home=home)
+        except PartialLink as partial:
+            raise PartialLink([*created, *partial.created], partial) from partial'''
+after = '''        more = link(tree, store, config, home=home)'''
+reddens = [
+  "tests/attach/test_links.py::test_a_partial_link_failure_carries_every_link_the_run_already_made",
+]
+
+# "An attach and a detach leave the tree byte-for-byte as it was" was false for directories, and
+# the round-trip test could not see it: `_snapshot` filters on `is_file()`, so `.keelline/local/`,
+# `.keelline/`, `.codex/rules/` and `.codex/` accumulated across every cycle with the suite green.
+# Recording what was absent above the first write is what makes the removal safe, and this is that
+# record's proof.
+[[mutation]]
+name = "detach leaves behind the directories the attach created"
+file = "src/keelline/attach/write.py"
+before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+after = '    return ()'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_removes_the_directories_the_attach_created",
+]
+
+# The other direction, and the one that costs somebody a directory: recording the whole closed
+# list rather than the part that was missing makes `detach` remove an empty `.codex/` the owner
+# made themselves. "A detach must not remove a directory it did not create" is what this line is.
+[[mutation]]
+name = "attach records a directory that was already there"
+file = "src/keelline/attach/write.py"
+before = '    return tuple(name for name in CREATED_DIRS if not (root / name).is_dir())'
+after = '    return CREATED_DIRS'
+reddens = [
+  "tests/attach/test_detach.py::test_detach_leaves_a_directory_that_was_there_before_the_attach",
+]
+
+# `.keelline/local/attach.json` is a path a clone can commit, and `directories` drives `rmdir`.
+# Held to the same closed list `rules` and `settings_keys` are, so a ledger naming anything else
+# is refused with nothing removed. Dropping the count is a partial defence reported as a success.
+[[mutation]]
+name = "the ledger's directory list stops being held to what attach could have created"
+file = "src/keelline/attach/write.py"
+before = '    foreign += sum(1 for name in directories if name not in CREATED_DIRS)'
+after = '    foreign += 0'
+reddens = [
+  "tests/attach/test_detach.py::test_a_ledger_naming_a_directory_no_attach_creates_is_refused",
+]
+
+# The guard above walks `src/keelline/`, and `src/keelline/` contains no relative import — so
+# the spelling `from ..hooks.sink import DIRECTORY` could not be exercised by the walk, and the
+# first version of the rule dropped it on the floor (`and not node.level`) with every test
+# green. Nothing bans a relative import here: ruff's `TID` rules are not selected. The rule is
+# therefore tested against a synthetic module, and this mutation stops it resolving one: the
+# relative module name then reads as `hooks.sink`, which is not `keelline.*`, and the violation
+# walks past exactly as it used to. What reddens is the offence list, not a missing name.
+[[mutation]]
+name = "the boundary rule ignores a relative import again"
+file = "tests/test_areas.py"
+before = '            if node.level:'
+after = '            if False:'
+reddens = [
+  "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+]
+
+# Three claims this branch made true were held true by reading, and one had already drifted back:
+# the template README said "fifteen files" while a rendered overlay has sixteen — the scaffold
+# engine writes `.keelline/manifest.json`, which is in neither of that README's tables and is the
+# file `overlay upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a lane
+# that adds a sixteenth template file now reddens the document instead of outliving it.
+[[mutation]]
+name = "the overlay README stops counting the manifest"
+file = "src/keelline/templates/overlay/README.md"
+before = "`keelline overlay create` renders sixteen files here."
+after = "`keelline overlay create` renders fifteen files here."
+reddens = [
+  "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
+]
+
+# The other half of that document: the right count over the wrong sixteen files. `hooks/hooks.json`
+# is the row that matters most, because it is indistinguishable from `common/claude/hooks.json`
+# by content — both are `{"hooks": {}}` — and the README is the only thing that tells them apart.
+[[mutation]]
+name = "the overlay README stops naming the hooks file"
+file = "src/keelline/templates/overlay/README.md"
+before = "| `hooks/hooks.json` | **this repository's own** hook entries as a plugin"
+after = "| `hooks/hooksfile.json` | **this repository's own** hook entries as a plugin"
+reddens = [
+  "tests/overlay/test_template.py::test_the_overlay_readme_accounts_for_every_file_a_create_leaves",
+]
+
+# A machine where `doctor` finds no plugin root is a machine where no hook entry reaches Keelline,
+# and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
+# fault". An empty remedy there is the report's loudest finding rendered as its quietest.
+[[mutation]]
+name = "the plugin-root skips go back to an empty remedy"
+file = "src/keelline/doctor/checks.py"
+before = '''PLUGIN_ROOT_REMEDY = (
+    "run `keelline doctor` from the plugin's own Keelline so its root answers for itself, or "
+    "set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which lets `files` read the "
+    "wrapper without making it runnable here"
+)'''
+after = 'PLUGIN_ROOT_REMEDY = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+]
+
+# The count `doctor/__init__.py` states and `docs/cli.md` repeats. It was "exactly two" and the
+# true answer is four — one launch this area makes and three from inside the areas its rows call,
+# where nobody counting `subprocess.run` under `doctor/` would see them. The number moving
+# silently is the defect; a case that fails when it moves is how a reader finds out.
+[[mutation]]
+name = "a doctor row stops asking git where the overlay keeps its hooks"
+file = "src/keelline/doctor/checks.py"
+before = '    hooks = hooks_dir(overlay)'
+after = '    hooks = overlay / ".git" / "hooks"'
+reddens = [
+  "tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does",
 ]

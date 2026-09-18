@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from keelline.areas import area_modules
@@ -51,3 +53,156 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     assert "keelline.release" not in imported
     assert "keelline.config" not in imported
     assert "keelline.presets" not in imported
+
+
+# The ten areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
+# CLI frame and not an area — nothing discovers it, it has no `api.py`, and it owns the wiring
+# of the `hook` command — so it reads `keelline.hooks.policy` directly. It is named here rather
+# than skipped silently, because an exemption nobody can see is how the two violations this
+# guard exists to catch were merged green.
+SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy")})
+
+
+def _area_names(source: Path) -> list[str]:
+    """CONTRIBUTING's definition, read off the tree: a subpackage carrying `commands.py` or
+    `hooks.py`. Derived rather than listed, so a new area is covered the day it arrives."""
+    return sorted(
+        path.name
+        for path in source.iterdir()
+        if path.is_dir() and ((path / "commands.py").exists() or (path / "hooks.py").exists())
+    )
+
+
+def _imported_modules(tree: ast.AST, package: tuple[str, ...]) -> list[tuple[int, str]]:
+    """Every module name this file imports, as an absolute dotted name.
+
+    Three spellings, and the third is the one this guard shipped without seeing.
+    `from keelline.memory.api import X` and `import keelline.memory.api` are the obvious one;
+    `from keelline.memory import worktree` is the one a rule that looked only at `node.module`
+    would miss, and it reaches a private module just as squarely.
+
+    **The third is the relative import**, and it used to be dropped on the floor: the condition
+    read `and not node.level`, so `from ..hooks.sink import DIRECTORY` inside `doctor/checks.py`
+    — the violation this lane exists to end, spelled the other way — walked straight past. There
+    are no relative imports under `src/keelline/` today, but only by house style: ruff's `TID`
+    rules are not selected, so nothing bans one, and the first contributor to write an idiomatic
+    one would have reopened the boundary with the guard still green.
+
+    Resolved rather than refused, so this test answers the question it is named for — does this
+    import reach past an `api.py` — in whatever spelling, instead of imposing a second rule the
+    project has not made. `level` counts the leading dots: one means this module's own package,
+    and each further dot strips one component off it.
+    """
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node.lineno, alias.name) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = package[: len(package) - (node.level - 1)]
+                # A relative import that climbs above `keelline` is a module Python could not
+                # import at all; it must fail here rather than resolve to something shorter.
+                assert base, f"line {node.lineno}: a relative import above the package root"
+                prefix = ".".join((*base, *(node.module.split(".") if node.module else ())))
+            else:
+                assert node.module is not None
+                prefix = node.module
+            found.append((node.lineno, prefix))
+            found += [(node.lineno, f"{prefix}.{alias.name}") for alias in node.names]
+    return found
+
+
+def _boundary_offences(where: str, text: str, areas: Sequence[str]) -> tuple[list[str], list[str]]:
+    """The rule, for one file: the cross-area imports it makes, and the ones that break it.
+
+    A function rather than a loop body, so the test below can put a spelling in front of it that
+    `src/keelline/` does not currently contain. A guard whose rule can only be exercised by the
+    tree it walks cannot be shown to hold for anything the tree does not happen to do.
+    """
+    parts = Path(where).parts
+    here = parts[0] if len(parts) > 1 else None
+    crossings: list[str] = []
+    offences: list[str] = []
+    for line, module in _imported_modules(ast.parse(text), ("keelline", *parts[:-1])):
+        bits = module.split(".")
+        if len(bits) < 3 or bits[0] != "keelline" or bits[1] not in areas or bits[1] == here:
+            continue
+        crossings.append(f"{where} -> {module}")
+        if bits[2] == "api" or (where, ".".join(bits[:3])) in SURFACE_EXEMPT:
+            continue
+        offences.append(f"{where}:{line} imports {module}")
+    return crossings, offences
+
+
+def test_no_area_reaches_into_another_areas_private_module() -> None:
+    # CONTRIBUTING: "`api.py` is the area's import surface. Other areas import from it and from
+    # nothing else." Nothing asserted it, and an external review found the first two violations
+    # in this repository's history — `memory/commands.py` importing `hooks.dispatch` and
+    # `doctor/checks.py` importing `hooks.sink` — both merged green.
+    #
+    # Three mutations in `mutations.toml`: one puts a violation back (doctor reading the setup
+    # area's private `machine` module), one narrows the walk, because a guard that silently
+    # stops walking reports no offences for the same reason a guard with nothing to report does,
+    # and one breaks the resolution of a relative import — the test below is the one that holds
+    # that spelling, because this walk has none to find.
+    source = ROOT / "src" / "keelline"
+    areas = _area_names(source)
+    files = sorted(source.rglob("*.py"))
+    crossings: list[str] = []
+    offences: list[str] = []
+    for path in files:
+        found, broken = _boundary_offences(
+            str(path.relative_to(source)), path.read_text(encoding="utf-8"), areas
+        )
+        crossings += found
+        offences += broken
+    # The walk is asserted before anything is asserted about it. Both floors are well under
+    # today's numbers and are there to fail on a walk that stopped walking, not to be kept
+    # current: measured at 99 files, 10 areas and 100 crossings when this was written, and a
+    # walk narrowed to `commands.py` alone finds 13.
+    assert len(areas) == 10, areas
+    assert len(files) >= 70, len(files)
+    assert len(crossings) >= 60, crossings
+    assert not offences, "an area reached past another area's api.py:\n" + "\n".join(offences)
+
+
+def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> None:
+    # The hole the guard above shipped with, and the reason it needs a test of its own: there is
+    # not one relative import under `src/keelline/`, so the walk cannot exercise this spelling
+    # and a synthetic module has to. `from ..hooks.sink import DIRECTORY` inside
+    # `doctor/checks.py` is the violation this whole lane exists to end, written the way a
+    # contributor who prefers relative imports would write it.
+    #
+    # Asserted as the exact offence rather than as "some offence": a rule that resolved the
+    # module to any other name would also produce a non-empty list, from the wrong reading.
+    areas = ["doctor", "hooks", "memory", "setup"]
+    crossings, offences = _boundary_offences(
+        "doctor/checks.py", "from ..hooks.sink import DIRECTORY\n", areas
+    )
+    assert offences == [
+        "doctor/checks.py:1 imports keelline.hooks.sink",
+        "doctor/checks.py:1 imports keelline.hooks.sink.DIRECTORY",
+    ]
+    assert crossings == [
+        "doctor/checks.py -> keelline.hooks.sink",
+        "doctor/checks.py -> keelline.hooks.sink.DIRECTORY",
+    ]
+
+    # The published spelling of the same import, relatively: a crossing and not an offence. This
+    # is the arm that fails if the rule is made to refuse every relative import rather than read
+    # it, which is the other repair this could have had.
+    crossings, offences = _boundary_offences(
+        "doctor/checks.py", "from ..hooks.api import DIRECTORY\n", areas
+    )
+    assert crossings == [
+        "doctor/checks.py -> keelline.hooks.api",
+        "doctor/checks.py -> keelline.hooks.api.DIRECTORY",
+    ]
+    assert not offences
+
+    # And an area's own modules, reached relatively, are its own business at any depth — a
+    # module's package is itself for one dot, and `from . import x` carries no module at all.
+    crossings, offences = _boundary_offences(
+        "doctor/checks.py", "from .checks import OK\nfrom . import commands\n", areas
+    )
+    assert (crossings, offences) == ([], [])

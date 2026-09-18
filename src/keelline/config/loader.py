@@ -11,6 +11,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
+from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import validate_paths
 from keelline.config.schema import (
@@ -226,3 +227,40 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     )
     validate_paths(config, root)
     return config
+
+
+def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
+    """A `Config` built from a preset's `[defaults.*]` alone, for a directory that has no
+    `keelline.toml` and never will.
+
+    The overlay is a repository Keelline writes into and does not manage: it has no project
+    configuration, and the scaffold engine needs one (it reads `keelline.profile` and
+    `artifacts.local`, and nothing else). `init --yes` will want the same constructor for the
+    first write into a project, before the file it would load exists.
+
+    `keelline.version` is the one value the preset does not carry and `_build` requires: the
+    engine stamps it into every manifest `Record`, so it comes from `keelline.__version__`
+    rather than from a default that would record an empty string.
+
+    `validate_paths` is deliberately not called. It is about a project root this caller does
+    not have, and the `[paths]` values it would check are the preset's own defaults pointing at
+    documents an overlay does not carry.
+    """
+    raw = load_preset(preset)
+    defaults = dict(raw.get("defaults", {}))
+    head = {**defaults.get("keelline", {}), "preset": preset, "version": __version__}
+    return Config(
+        keelline=_build(Keelline, "keelline", head),
+        project=_build(Project, "project", {**defaults.get("project", {}), "name": project}),
+        paths=_build(Paths, "paths", defaults.get("paths", {})),
+        memory=_build(Memory, "memory", defaults.get("memory", {})),
+        budgets=Budgets(preset=dict(raw["budgets"])),
+        native_caps=_build(NativeCaps, "native_caps", dict(raw["native_caps"])),
+        ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
+        artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
+        ci=_build(Ci, "ci", defaults.get("ci", {})),
+        commit_messages=_build(
+            CommitMessages, "commit_messages", defaults.get("commit_messages", {})
+        ),
+        personal=_build(Personal, "personal", defaults.get("personal", {})),
+    )
