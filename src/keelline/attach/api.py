@@ -11,7 +11,7 @@ the binding (`read_binding`, `Binding`, `MISMATCH`) and the overlay's granted ho
 the four packages in the order a person does — is the other, and it drives `attach` and
 `detach`, whose returns are `Attached` and `Detached`.
 
-Three names are here with no importer at all, on purpose:
+Four names are here with no importer at all, on purpose:
 
 - `BOUND`, `UNBOUND` and `STATES`. `Binding.state` is one of `STATES`, and `doctor` already
   branches on `MISMATCH`; publishing one member of a closed vocabulary and hiding the other two

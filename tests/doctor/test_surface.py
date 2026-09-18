@@ -31,8 +31,6 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "run_checks",
         "Check",
         "SETTINGS_FILES",
-        # the root doctor is allowed to execute, which is the one this process derived
-        "plugin_root",
     }
     assert required == set(doctor.__all__)
 

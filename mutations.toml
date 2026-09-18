@@ -3022,3 +3022,19 @@ after = '    foreign += 0'
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_naming_a_directory_no_attach_creates_is_refused",
 ]
+
+# The guard above walks `src/keelline/`, and `src/keelline/` contains no relative import — so
+# the spelling `from ..hooks.sink import DIRECTORY` could not be exercised by the walk, and the
+# first version of the rule dropped it on the floor (`and not node.level`) with every test
+# green. Nothing bans a relative import here: ruff's `TID` rules are not selected. The rule is
+# therefore tested against a synthetic module, and this mutation stops it resolving one: the
+# relative module name then reads as `hooks.sink`, which is not `keelline.*`, and the violation
+# walks past exactly as it used to. What reddens is the offence list, not a missing name.
+[[mutation]]
+name = "the boundary rule ignores a relative import again"
+file = "tests/test_areas.py"
+before = '            if node.level:'
+after = '            if False:'
+reddens = [
+  "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
+]
