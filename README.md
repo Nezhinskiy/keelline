@@ -44,10 +44,16 @@ mutation that reddens it, and working memory is a routing table of hand-written 
 a summary. The principles behind all of it, with dated sources and an honest note where the
 backing is thin, are in [docs/methodology/README.md](docs/methodology/README.md).
 
-**This is not a replacement for superpowers.** The recommended preset will list it among the
-plugins it installs, and the adoption skill will delegate to it where it is present. Designed;
-the preset's plugin list belongs to the `setup` package and the adoption skill to the one that
-ships the state machine, so nothing in this tree references superpowers today.
+**This is not a replacement for superpowers.** `keelline setup --preset recommended` installs
+it, and [context7](https://github.com/upstash/context7), on Claude Code — both ship in
+Anthropic's own official marketplace, so `setup` needs no separate registration step for
+either. **Codex has no verified non-interactive marketplace source for either plugin** (checked
+against this project's own spike record and each plugin's own published install instructions,
+2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
+you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
+marketplace name (§5.6: nothing is vendored on a guess). The adoption skill will delegate to
+superpowers where it is present. Designed; the adoption skill belongs to the package that ships
+the state machine.
 
 ## Install
 

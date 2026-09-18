@@ -155,11 +155,15 @@ install = ["superpowers", "context7"]
 marketplace = "claude-plugins-official"
 source = "anthropics/claude-plugins-official"
 
-# Codex has no verified non-interactive marketplace source for these two plugins: the
-# `superpowers` project's own install instructions document only an interactive `/plugins`
-# search inside a Codex session, and the spike record's Codex arms only ever registered scratch
-# local directories, never a published marketplace. Nothing is vendored on a guess (§5.6) — the
-# README recommends both for Codex instead of `setup` attempting an unverified install there.
+# Deliberately no [plugins.codex] table below: Codex has no verified non-interactive
+# marketplace source for either plugin in `install` — the `superpowers` project's own install
+# instructions document only an interactive `/plugins` search inside a Codex session, and the
+# spike record's Codex arms only ever registered scratch local directories, never a published
+# marketplace. Nothing is vendored on a guess (§5.6). `install` therefore names two plugins that
+# `setup` installs on Claude Code only; `setup` reports the gap as a note (never silence, never
+# a failure) rather than attempting an unverified install, and README.md's "This is not a
+# replacement for superpowers" paragraph tells the owner to add both by hand on Codex. A reader
+# of this file, the note `setup` prints, and the README should all find the same answer.
 
 [deny]
 # Machine-level deny rules, written into the user-scope settings. Deny only, always: the

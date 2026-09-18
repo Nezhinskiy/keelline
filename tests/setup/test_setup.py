@@ -157,6 +157,30 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     assert not any(argv and argv[0] == "codex" for argv in runner.calls)
 
 
+def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
+    tmp_path: Path,
+) -> None:
+    # Fix round 1 follow-up (R15's second clause, finished): a harness this preset cannot
+    # install for on a verified path is a reported note, never silence and never a failure.
+    # `agents = ["claude", "codex"]` is the preset's own default, so an ordinary run reaches
+    # this for every machine that has Codex configured.
+    preset = load_preset("recommended")
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=FakeRunner(),
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    expected = (
+        f"codex: no verified marketplace for {', '.join(preset['plugins']['install'])}; "
+        f"install manually if this harness supports it (see README)"
+    )
+    assert expected in report.notes
+
+
 def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path) -> None:
     # A missing `claude` binary must never turn a fresh-machine `setup` into a traceback — the
     # marketplace-add call is the first one this harness makes, and it is where a missing
