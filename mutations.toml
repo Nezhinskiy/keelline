@@ -2040,13 +2040,51 @@ reddens = [
 # the repository has no `.gitignore` line for. Written before the region exists, it is published
 # to every collaborator -- so the region goes first, and a region that cannot be written is a
 # refusal rather than a warning.
+#
+# Two entries, because the old single one was named for the order and tested the absence:
+# replacing the call with `pass` reddens both named tests against there being no region at all,
+# which is a weaker claim and the one the name did not make. The second entry below moves the
+# statement instead, and the tree afterwards is byte-identical either way -- so only an
+# assertion about the sequence of writes can see it.
 [[mutation]]
-name = "the ledger is written before anything makes its path untracked"
+name = "the ignore region is never written at all"
 file = "src/keelline/attach/write.py"
 before = "    _write_ignore_region(root)"
 after = "    pass"
 reddens = [
   "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
+  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
+]
+
+[[mutation]]
+name = "the ignore region is written after the ledger it untracks"
+file = "src/keelline/attach/write.py"
+before = """    _write_ignore_region(root)
+    rules = _codex_rules(root, binding)
+    document = local_document(root)
+    merged = _merged_settings(document, diff, binding)
+    written = merged != document
+    if written:
+        fsops.write_within(root, LOCAL_SETTINGS, merged)
+    # What an earlier attach left in the settings file, carried into the ledger written before
+    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
+    # it. The real answer is taken again below, after the only function that can change it.
+    carried = _recorded_keys(root)
+    _write_ledger(root, binding, diff, rules, carried, previous)"""
+after = """    rules = _codex_rules(root, binding)
+    document = local_document(root)
+    merged = _merged_settings(document, diff, binding)
+    written = merged != document
+    if written:
+        fsops.write_within(root, LOCAL_SETTINGS, merged)
+    # What an earlier attach left in the settings file, carried into the ledger written before
+    # the links so that a `PartialLink` half way through still leaves `detach` able to remove
+    # it. The real answer is taken again below, after the only function that can change it.
+    carried = _recorded_keys(root)
+    _write_ledger(root, binding, diff, rules, carried, previous)
+    _write_ignore_region(root)"""
+reddens = [
+  "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
   "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
 ]
 
@@ -2243,6 +2281,43 @@ after = '''        if False:
             continue'''
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else",
+]
+
+# §12's own row, and the shape one existing checkout already had: a **real directory** at
+# `~/.claude/projects/<slug>/memory`. The harness's native reader finds it, reads nothing out of
+# it and reports no fault, so the installation looks attached and behaves like nothing. The row
+# was declared load-bearing and had a test, and nothing made the test prove it. The mutation
+# asks the path a question a real directory answers "no" to, which is the narrowest way to stop
+# the discriminator discriminating: every other shape this row reads reaches the same arm it did
+# before, so the one test that reddens is the one named for this state.
+[[mutation]]
+name = "doctor stops telling a real directory from a link at the harness memory path"
+file = "src/keelline/doctor/checks.py"
+before = "    if harness.is_dir() and not harness.is_symlink():"
+after = "    if harness.is_dir() and not harness.exists():"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_memory_path_that_is_a_real_directory_is_red_rather_than_ok",
+]
+
+# DP4 in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one id yield one
+# key and the same id under two events keeps only the last -- which deflates the claimed count
+# and inflates `foreign` by exactly the difference. `_entry_commands` walks positionally for that
+# reason, and the walk had a test and no entry. The mutation makes the walk key by id instead of
+# counting entries, which is precisely the defect DP4 names: the second entry vanishes, so the
+# count is wrong AND the grant comparison never sees the command hung on the borrowed id.
+[[mutation]]
+name = "doctor counts hook entries by marker id rather than by position"
+file = "src/keelline/doctor/checks.py"
+before = """                command = entry.get("command") if isinstance(entry, dict) else None
+                found.append(command if isinstance(command, str) else "")"""
+after = """                command = entry.get("command") if isinstance(entry, dict) else None
+                text = command if isinstance(command, str) else ""
+                here = marker_id(text)
+                if here is None or here not in {marker_id(seen) for seen in found}:
+                    found.append(text)"""
+reddens = [
+  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
+  "tests/doctor/test_checks.py::test_an_id_the_overlay_grants_does_not_vouch_for_a_different_command",
 ]
 
 # The harness memory path is the one channel §6.3 uses to reach the model, and this row is the
@@ -2489,6 +2564,44 @@ reddens = [
 ]
 
 # --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
+
+# Fix round 1, item 2, which had a test named for it and no mutation: `claude plugin install
+# superpowers@obra` on a fresh machine always failed, because a plugin cannot be installed from a
+# marketplace that was never registered. The order is the fix, and the test asserted membership —
+# `… in runner.calls` — so the swapped loops made every call it looked for and stayed green. This
+# entry expresses the *move*, not a deletion: both calls still happen, in the wrong order.
+[[mutation]]
+name = "a plugin is installed before its marketplace is registered"
+file = "src/keelline/setup/run.py"
+before = """        added = runner.run(add_argv_of(source), home)
+        if added.code != 0:
+            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            notes.append(f"{agent}: could not register marketplace {source} ({detail})")
+            continue
+        for selector in selectors:
+            argv = install_argv_of(f"{selector}@{marketplace}")
+            done = runner.run(argv, home)
+            if done.code == 0:
+                if selector not in installed:
+                    installed.append(selector)
+            else:
+                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")"""
+after = """        for selector in selectors:
+            argv = install_argv_of(f"{selector}@{marketplace}")
+            done = runner.run(argv, home)
+            if done.code == 0:
+                if selector not in installed:
+                    installed.append(selector)
+            else:
+                detail = done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"
+                notes.append(f"{agent}: `{' '.join(argv)}` did not succeed ({detail})")
+        added = runner.run(add_argv_of(source), home)
+        if added.code != 0:
+            detail = added.stderr.strip() or added.stdout.strip() or f"exit {added.code}"
+            notes.append(f"{agent}: could not register marketplace {source} ({detail})")
+            continue"""
+reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded_argv"]
 
 # `docs/cli.md` says every cause of exit 2 in `setup --overlay` happens before the first write,
 # and one did not: the whole check ran at the bottom of `setup`, so `--overlay /typo` had written

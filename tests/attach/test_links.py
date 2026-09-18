@@ -87,9 +87,25 @@ def test_every_existing_worktree_is_linked(tmp_path: Path) -> None:
     assert (side / "docs" / "memory" / "project-stable").is_symlink()
 
 
-def test_a_partial_link_failure_reports_what_it_made(tmp_path: Path) -> None:
-    # `PartialLink` carries `.created` precisely so a half-built tree is repairable rather than
-    # mysterious. attach must surface it, not swallow it into a generic failure.
+def test_a_partial_link_failure_leaves_attach_main_s_tree_on_disk_and_out_of_created(
+    tmp_path: Path,
+) -> None:
+    # **This test pins a divergence, and its old name hid one.** `PartialLink` carries
+    # `.created` precisely so a half-built tree is repairable rather than mysterious, and
+    # `_link_everywhere`'s docstring says the exception propagates "with its `.created` intact".
+    # It does not. That function accumulates `created` in a *local* list across `attach_main`
+    # and one `link` per further checkout, and lets the exception out untouched — so what the
+    # caller receives is the failing call's own list and nothing before it. Here that list is
+    # empty while the owning checkout's link tree is on disk, which is precisely the state
+    # `.created` exists to describe.
+    #
+    # The old assertions were these two, under the name "reports what it made": `created == []`
+    # and "the main checkout's symlink exists". Read together they say the opposite of the name,
+    # and the suite was green on both. Nothing consumes `.created` out of `attach` today —
+    # `memory.hooks` catches `PartialLink` from `link` directly, where the list *is* intact — so
+    # this is a latent defect and a false docstring rather than a live one, and fixing it is a
+    # change to `attach`, which is another dispatch's file. Asserted as it behaves, named for
+    # what it behaves like, and reported.
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
@@ -106,8 +122,13 @@ def test_a_partial_link_failure_reports_what_it_made(tmp_path: Path) -> None:
         patch.setattr(Path, "symlink_to", refuse_inside_the_worktree)
         with pytest.raises(PartialLink) as failed:
             _attach(root, store, machine, tmp_path / "home")
+    # The owning checkout's tree exists — `attach_main` made it before the failing call.
+    made_by_attach_main = root / "docs" / "memory" / "developer"
+    assert made_by_attach_main.is_symlink()
+    # And is absent from the list the exception carries. The `== []` is deliberate and is the
+    # whole finding: a caller repairing from `.created` would be told nothing was made.
     assert failed.value.created == []
-    assert (root / "docs" / "memory" / "developer").is_symlink()
+    assert made_by_attach_main not in failed.value.created
 
 
 def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path) -> None:

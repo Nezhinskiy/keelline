@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import fsops
 from keelline.attach.api import attach, ledger
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
@@ -418,6 +419,44 @@ def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_pat
     body = extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
     assert body is not None and ".keelline/local/" in body
     assert _check_ignore(root, LEDGER)
+
+
+def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The two tests around this one assert the region *exists* afterwards, which is a different
+    # question from the one `attach`'s own comment states: the ledger holds the owner's personal
+    # allow rules and lives under a path the repository has no `.gitignore` line for, so a ledger
+    # written first is a ledger `git add -A` publishes to every collaborator in the window before
+    # the region lands. `mutations.toml`'s entry for it replaced the call with `pass`, so both
+    # named tests reddened against absence and nothing anywhere reddened against order.
+    #
+    # The order of the writes themselves, recorded at `fsops.write_within` — the one primitive
+    # every write in this module goes through — rather than inferred from the tree afterwards,
+    # because the tree afterwards is identical either way.
+    #
+    # Mutation: `mutations.toml`'s "the ignore region is written after the ledger it untracks".
+    root, store, machine = _attachable(tmp_path)
+    written: list[str] = []
+    real = fsops.write_within
+
+    def record(base: Path, relative: str, text: str, *, encoding: str = "utf-8") -> None:
+        if base == root:
+            written.append(relative)
+        real(base, relative, text, encoding=encoding)
+
+    monkeypatch.setattr(fsops, "write_within", record)
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=False,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert ".gitignore" in written and LEDGER in written, written
+    assert written.index(".gitignore") < written.index(LEDGER), written
 
 
 def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path: Path) -> None:

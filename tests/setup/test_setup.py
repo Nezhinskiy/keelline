@@ -53,10 +53,23 @@ class FakeRunner:
     on_call: Callable[[list[str], Path], None] | None = None
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
+        """The answer for the longest key that is a prefix of this argv, else success.
+
+        Keyed on `argv[0]` alone, `{"claude": ...}` answered *every* `claude` call identically,
+        so `_install_plugins`' install-failure branch was unreachable by any test in this file:
+        a script that failed the install failed the `marketplace add` first and `continue`d past
+        it. A prefix keeps `{"claude": ...}` meaning "this binary is missing" -- which is what
+        the not-installed case wants -- while `{"claude plugin install x@y": ...}` can script
+        the one call that actually fails, which is the likeliest real failure of the two.
+        """
         self.calls.append(argv)
         if self.on_call is not None:
             self.on_call(argv, cwd)
-        return self.answers.get(argv[0], Completed(0, "", ""))
+        for width in range(len(argv), 0, -1):
+            answer = self.answers.get(" ".join(argv[:width]))
+            if answer is not None:
+                return answer
+        return Completed(0, "", "")
 
 
 def _populate_overlay(argv: list[str], cwd: Path) -> None:
@@ -151,12 +164,64 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     )
     preset = load_preset("recommended")
     claude = preset["plugins"]["claude"]
-    assert ["claude", "plugin", "marketplace", "add", claude["source"]] in runner.calls
-    for selector in preset["plugins"]["install"]:
-        full = f"{selector}@{claude['marketplace']}"
-        assert ["claude", "plugin", "install", full] in runner.calls
+    add = ["claude", "plugin", "marketplace", "add", claude["source"]]
+    installs = [
+        ["claude", "plugin", "install", f"{selector}@{claude['marketplace']}"]
+        for selector in preset["plugins"]["install"]
+    ]
+    # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test
+    # is named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so
+    # every install ran before its marketplace was registered -- the exact Fix-round-1 defect --
+    # and both assertions still passed, because both calls were still made. `mutations.toml`
+    # carries the swap as "a plugin is installed before its marketplace is registered".
+    assert installs, "the preset installs nothing, so the ordering below measures nothing"
+    assert add in runner.calls
+    for install in installs:
+        assert install in runner.calls
+        assert runner.calls.index(add) < runner.calls.index(install), runner.calls
     # Codex has no verified marketplace for these two plugins (item 2): nothing is attempted.
     assert not any(argv and argv[0] == "codex" for argv in runner.calls)
+
+
+def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
+    tmp_path: Path,
+) -> None:
+    # `_install_plugins`' install-failure branch, which no test in this file could reach: with
+    # `answers` keyed on `argv[0]`, `"claude"` answered the `marketplace add` too, so the run
+    # `continue`d and never attempted an install at all. This is the likelier of the two real
+    # failures -- the marketplace is registered and simply does not carry the selector the
+    # preset names -- and `setup` must report it and finish, not raise and not claim it
+    # installed.
+    #
+    # Mutation: `_install_plugins`' `notes.append(f"{agent}: `{' '.join(argv)}` did not
+    # succeed ({detail})")` replaced by `pass` -> reddens on the missing note, while
+    # `plugins_installed` stays empty, which is what makes the two assertions different
+    # questions rather than one asked twice.
+    preset = load_preset("recommended")
+    claude = preset["plugins"]["claude"]
+    selector = preset["plugins"]["install"][0]
+    full = f"{selector}@{claude['marketplace']}"
+    runner = FakeRunner(
+        answers={
+            f"claude plugin install {full}": Completed(1, "", f"no plugin named {selector} here")
+        }
+    )
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        yes=True,
+        overlay=None,
+        project_root=tmp_path / "project",
+    )
+    assert ["claude", "plugin", "marketplace", "add", claude["source"]] in runner.calls
+    assert ["claude", "plugin", "install", full] in runner.calls
+    assert selector not in report.plugins_installed
+    # The other selector still installs: one failure is one note, never an abandoned run.
+    assert preset["plugins"]["install"][1] in report.plugins_installed
+    assert any(f"claude plugin install {full}" in note for note in report.notes), report.notes
+    assert any("no plugin named" in note for note in report.notes), report.notes
 
 
 def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
