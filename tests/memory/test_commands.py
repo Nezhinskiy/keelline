@@ -238,8 +238,11 @@ def test_indexing_a_trusted_store_does_not_revoke_its_own_trust(
     assert invoke(["memory", "index", *common(project)]) == 0
     # The index bundle renders only under Codex, which has no native auto-memory (§9.5), so the
     # harness has to be named for it to be one of the three bundles this walks. The other two
-    # are harness-neutral, which is its own assertion below.
-    monkeypatch.setenv("PLUGIN_ROOT", "/p")
+    # are harness-neutral, which is its own assertion below. Through `_under_codex` like every
+    # other site: this one was never vacuous, because it asserts the bundle is **non**-empty and
+    # the harness branch would empty it — but one spelling of "put this run on Codex" is what
+    # stops the next case picking the wrong one.
+    _under_codex(monkeypatch)
     capsys.readouterr()
     for bundle in ("standing-rules", "volatile-notes", "index"):
         assert invoke(["memory", "session-context", "--bundle", bundle, *common(project)]) == 0

@@ -523,6 +523,55 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     ]
 
 
+# What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in
+# `docs/cli.md`: four subprocesses on a green attached installation. Written as a number rather
+# than as a set of argv lists so the failure reads as "the count moved", which is the claim.
+DOCTOR_LAUNCHES = 4
+
+
+def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `doctor/__init__.py` used to say "exactly two" and the true answer was four: one launch is
+    # this area's own — the wrapper probe — and three more come from inside the areas its rows
+    # call, where nobody counting `subprocess.run` in `doctor/` would see them. The number had
+    # already moved twice during this branch's review before anyone measured it.
+    #
+    # This case is deliberately brittle. A row that starts asking `git` one more question moves
+    # it, and that is the point: the number moving *silently* is the defect this exists for, and
+    # a reader who has to update a constant has read the paragraph that states it.
+    #
+    # `Popen` and not `subprocess.run`: `run` is a wrapper around it, so patching the lower of
+    # the two counts a caller that reached past `run` as well. `ci-ref` is not among these — it
+    # goes through `overlay.api.Runner`, which the fixture stubs, and it is the only one that
+    # would leave the machine.
+    walk = _install_path(tmp_path)
+    launched: list[list[str]] = []
+    real = subprocess.Popen
+
+    def spy(argv, *args, **kwargs):  # type: ignore[no-untyped-def]
+        launched.append([str(part) for part in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", spy)
+    checks = run_checks(
+        walk.root,
+        home=walk.home,
+        machine=walk.machine,
+        runner=_Harness(),
+        env=_doctor_env(walk),
+    )
+    monkeypatch.undo()
+    # The report is green first, so a count taken from a run that fell over early cannot pass.
+    assert [check.name for check in checks if check.status == RED] == []
+    assert len(launched) == DOCTOR_LAUNCHES, launched
+    # And they are the four the paragraph names, not four of something else: one wrapper probe,
+    # and three `git` questions. Asserted by shape rather than by full argv, because two of the
+    # three carry a temporary path.
+    assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
+    assert sum(1 for argv in launched if argv[0] == "git") == 3
+
+
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
     # §12's row, end to end: replace the link with a real directory and assert `attached` goes
     # red. This is the shape one existing checkout already has, which is why the spec names it

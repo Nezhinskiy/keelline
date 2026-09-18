@@ -700,10 +700,11 @@ is `rmdir`: a directory still holding anything — your own `.codex/rules/` file
 `.claude/settings.json` — survives, and so does its parent. A directory that was already there
 before the attach is not on the record and is never touched.
 
-The exception is the note link tree, ordinarily `docs/memory/`. That path is
-repository-configured and may be one the project keeps for its own reasons, so the links are
-withdrawn and the directory that held them is left — empty, where there was nothing else in it.
-Everything else about the round trip is byte-for-byte.
+The exception is the note link tree, ordinarily `docs/memory/` — **and the directory above it**,
+`docs/`, which the attach creates in order to make it. That path is repository-configured and
+may be one the project keeps for its own reasons, so the links are withdrawn and the directories
+that held them are left, empty where there was nothing else in them. Everything else about the
+round trip is byte-for-byte.
 
 **It does not touch `projects/<name>/project.toml`.** That record is your consent to the binding,
 not local state: deleting it would turn every later re-attach into a first attach and re-ask a

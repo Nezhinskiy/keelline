@@ -12,6 +12,7 @@ from keelline.hooks.api import EVENTS
 from keelline.overlay.layout import OVERLAY_FILES
 from keelline.overlay.template import template_root, templates
 from keelline.presets import load_preset
+from keelline.scaffold import MANIFEST_PATH
 
 
 def _json_files() -> list[Path]:
@@ -243,3 +244,87 @@ def _keys(value: object) -> set[str]:
     if isinstance(value, list):
         return {key for item in value for key in _keys(item)}
     return set()
+
+
+# --- the README that counts the files, checked against the files ------------------------------
+
+# The words this document could plausibly spell a file count with. Local rather than imported
+# from `tests/test_documents.py`, whose map stops at twelve for its own ten-principle sentence.
+_COUNT_WORDS = {
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+}
+_STATED_COUNT = re.compile(r"renders (\w+) files here")
+
+
+def _rendered_paths() -> tuple[str, ...]:
+    """Every file `overlay create` leaves in a fresh instance, as the README has to describe it.
+
+    `OVERLAY_FILES` plus the scaffold manifest, which is the one path the template tree does not
+    hold: `scaffold.apply` writes `.keelline/manifest.json` as the record `overlay upgrade` keys
+    on, so it is in the instance without ever having been in `templates/overlay/`. That is
+    exactly how it went missing from a README that counts them.
+    """
+    return (*OVERLAY_FILES, str(MANIFEST_PATH))
+
+
+def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
+    # The template README said "renders fifteen files here" and a rendered overlay has sixteen —
+    # `.keelline/manifest.json`, the file the project README advertises as the overlay's "own
+    # upgrade manifest", in neither of that README's two tables. The count was written by hand
+    # against `OVERLAY_FILES` and nothing read the document, which is how a file the scaffold
+    # engine adds slips past a sentence that counts them.
+    #
+    # Mutation: `mutations.toml`'s "the overlay README stops counting the manifest".
+    expected = _rendered_paths()
+    assert expected, "no overlay files at all — every assertion below is vacuous"
+    text = (template_root() / "README.md").read_text(encoding="utf-8")
+    stated = _STATED_COUNT.search(text)
+    assert stated is not None, "the overlay README no longer says how many files a create leaves"
+    assert _COUNT_WORDS[stated.group(1).lower()] == len(expected), stated.group(1)
+
+
+def _is_placeholder(relative: str) -> bool:
+    """Whether this path is a directory's own documentation rather than a file in its own right.
+
+    `overlay create` drops a `README.md` into each directory the owner fills — `common/rules/`,
+    `common/memory/`, `projects/` — and a `SKILL.md` under `skills/`. The template README
+    describes those as *directories* on purpose, and naming four placeholders inside them would
+    be noise. Derived from the basename rather than listed, so a fourth such directory needs no
+    edit here; the root `README.md` is not one, which is what the `/` test excludes.
+    """
+    return "/" in relative and relative.rsplit("/", 1)[1] in ("README.md", "SKILL.md")
+
+
+def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
+    # The count is only half of it: fifteen rows and a sixteenth file is caught above, but so is
+    # sixteen rows describing the wrong sixteen files, and only this half says which.
+    #
+    # **A file is accounted for by its full path**, and an ancestor directory is accepted only
+    # for a placeholder. The first draft of this accepted any ancestor, and the declared mutation
+    # that renames `hooks/hooks.json` in the README *survived* it — `hooks/` was still there and
+    # stood in for the file. That is the one pair this document exists to tell apart, because
+    # `hooks/hooks.json` and `common/claude/hooks.json` are both `{"hooks": {}}` and nothing but
+    # this README says which fires where. An accounting rule that cannot see that rename is not
+    # an accounting rule.
+    #
+    # Mutation: `mutations.toml`'s "the overlay README stops naming the hooks file".
+    text = (template_root() / "README.md").read_text(encoding="utf-8")
+    assert text.strip(), "an empty README accounts for nothing"
+    missing = []
+    for relative in _rendered_paths():
+        if _is_placeholder(relative):
+            directory = f"{relative.rsplit('/', 1)[0].split('/')[0]}/"
+            names = [relative, f"{relative.rsplit('/', 1)[0]}/", directory]
+        else:
+            names = [relative]
+        if not any(name in text for name in names):
+            missing.append(relative)
+    assert missing == [], missing

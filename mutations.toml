@@ -3038,3 +3038,58 @@ after = '            if False:'
 reddens = [
   "tests/test_areas.py::test_the_boundary_rule_resolves_a_relative_import_before_judging_it",
 ]
+
+# Three claims this branch made true were held true by reading, and one had already drifted back:
+# the template README said "fifteen files" while a rendered overlay has sixteen — the scaffold
+# engine writes `.keelline/manifest.json`, which is in neither of that README's tables and is the
+# file `overlay upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a lane
+# that adds a sixteenth template file now reddens the document instead of outliving it.
+[[mutation]]
+name = "the overlay README stops counting the manifest"
+file = "src/keelline/templates/overlay/README.md"
+before = "`keelline overlay create` renders sixteen files here."
+after = "`keelline overlay create` renders fifteen files here."
+reddens = [
+  "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
+]
+
+# The other half of that document: the right count over the wrong sixteen files. `hooks/hooks.json`
+# is the row that matters most, because it is indistinguishable from `common/claude/hooks.json`
+# by content — both are `{"hooks": {}}` — and the README is the only thing that tells them apart.
+[[mutation]]
+name = "the overlay README stops naming the hooks file"
+file = "src/keelline/templates/overlay/README.md"
+before = "| `hooks/hooks.json` | **this repository's own** hook entries as a plugin"
+after = "| `hooks/hooksfile.json` | **this repository's own** hook entries as a plugin"
+reddens = [
+  "tests/overlay/test_template.py::test_the_overlay_readme_accounts_for_every_file_a_create_leaves",
+]
+
+# A machine where `doctor` finds no plugin root is a machine where no hook entry reaches Keelline,
+# and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
+# fault". An empty remedy there is the report's loudest finding rendered as its quietest.
+[[mutation]]
+name = "the plugin-root skips go back to an empty remedy"
+file = "src/keelline/doctor/checks.py"
+before = '''PLUGIN_ROOT_REMEDY = (
+    "run `keelline doctor` from the plugin's own Keelline so its root answers for itself, or "
+    "set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which lets `files` read the "
+    "wrapper without making it runnable here"
+)'''
+after = 'PLUGIN_ROOT_REMEDY = ""'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+]
+
+# The count `doctor/__init__.py` states and `docs/cli.md` repeats. It was "exactly two" and the
+# true answer is four — one launch this area makes and three from inside the areas its rows call,
+# where nobody counting `subprocess.run` under `doctor/` would see them. The number moving
+# silently is the defect; a case that fails when it moves is how a reader finds out.
+[[mutation]]
+name = "a doctor row stops asking git where the overlay keeps its hooks"
+file = "src/keelline/doctor/checks.py"
+before = '    hooks = hooks_dir(overlay)'
+after = '    hooks = overlay / ".git" / "hooks"'
+reddens = [
+  "tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does",
+]

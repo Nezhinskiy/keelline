@@ -1525,14 +1525,14 @@ Expected: FAIL at import — `ModuleNotFoundError: No module named 'keelline.ove
 
 | Path | What it is |
 |---|---|
-| `.claude-plugin/plugin.json` | name `keelline-overlay`, version `0.0.0`, `"keelline": {"requires": ">=1.0.0"}` |
+| `.claude-plugin/plugin.json` | name `keelline-overlay`, version `0.0.0`, `"keelline": {"requires": ">=0.1.0"}` |
 | `.claude-plugin/marketplace.json` | name `keelline-overlay-marketplace`, one plugin entry, **no** `version` key (D12: Claude Code silently overrides a marketplace value from `plugin.json`, so duplicating it hides drift) |
 | `.codex-plugin/plugin.json` | the `interface` block; no `hooks` key — the publishing validator rejects one |
 | `hooks/hooks.json` | `{"hooks": {}}` |
 | `skills/attach/SKILL.md` | one skill: "run `keelline attach --store <overlay>/projects/<name>`" |
 | `common/rules/README.md` | what a personal standing rule is, and that `metadata.startup` ranks it |
 | `common/memory/README.md` | what cross-project notes are; the store the index is rendered from |
-| `common/claude/permissions.json` | deny only, in the exact spelling pinned below |
+| `common/claude/permissions.json` | grants nothing: a `permissions` table with no rule in it, in the exact spelling pinned below |
 | `common/claude/hooks.json` | `{"hooks": {}}` |
 | `common/codex/common.rules` | an empty rules file with a header comment |
 | `projects/README.md` | one directory per project, keyed by `[project] name` |
@@ -1547,14 +1547,18 @@ the file any more":
 
 ```json
 {
-  "permissions": {
-    "deny": [
-      "Read(.env*)",
-      "Read(**/.env*)"
-    ]
-  }
+  "permissions": {}
 }
 ```
+
+**Two rows above were changed by the review round, and this note is the record of it.** The file
+shipped `deny: ["Read(.env*)", "Read(**/.env*)"]` and the README called them "merged into a
+bound repository". They were not: `attach.permissions._allow_rules` reads `permissions.allow`
+and never `deny`, so no reader in the tree ever saw them — while `presets/recommended.toml`'s
+`[deny] global`, which `setup` merges into `<home>/.claude/settings.json` and which does fire,
+had already grown a third rule this copy never got. The dead pair was removed and the by-value
+assertion moved to the live one. `requires` moved from `>=1.0.0`, which no released Keelline
+satisfies, to what ships; nothing reads that field yet and both READMEs now say so.
 
 `src/keelline/overlay/layout.py` holds the names, and nothing else, so `attach` in Wave C can
 import them without importing a command module:
@@ -1616,10 +1620,13 @@ git commit -m "feat(overlay): the deny-only overlay template and the constructor
 ```toml
 [[mutation]]
 name = "the overlay template starts granting a permission"
-file = "templates/overlay/common/claude/permissions.json"
-before = '    "deny": ['
-after = '    "allow": ['
-reddens = ["tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere"]
+file = "src/keelline/templates/overlay/common/claude/permissions.json"
+before = '  "permissions": {}'
+after = '  "permissions": {"allow": ["Bash(:*)"]}'
+reddens = [
+  "tests/overlay/test_template.py::test_the_template_ships_no_allow_rule_anywhere",
+  "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
+]
 ```
 
 Run: `uv run python scripts/mutation_oracle.py overlay`
@@ -1964,9 +1971,10 @@ fallback path end to end:
 uv run keelline overlay create --owner "$(whoami)" --name keelline-private-probe --local
 ```
 
-Expected: a complete tree under `./keelline-private-probe` with `.keelline/manifest.json`
-present and `common/claude/permissions.json` carrying `deny` and no `allow`. Delete the probe
-directory afterwards; it is not committed.
+Expected: a complete tree under `./keelline-private-probe` — sixteen files, `OVERLAY_FILES`
+plus the `.keelline/manifest.json` the scaffold engine writes — with
+`common/claude/permissions.json` carrying no rule of any kind. Delete the probe directory
+afterwards; it is not committed.
 
 ---
 ## Wave C — Tasks 8-11: binding a repository to its overlay (`attach`)

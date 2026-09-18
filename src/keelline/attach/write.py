@@ -959,10 +959,17 @@ def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]
     a `.codex/rules/` file they wrote by hand, a file some other tool left — survives, and its
     parents then survive with it because they are no longer empty either.
 
-    `ENOTEMPTY` is therefore an ordinary outcome and not a failure, and it is the only `OSError`
-    swallowed here by design: `fsops.rmdir_within` already contains the walk to `root` and
+    `ENOTEMPTY` is therefore an ordinary outcome and not a failure, and it is the one this
+    `except OSError` is written for: `fsops.rmdir_within` already contains the walk to `root` and
     tolerates an absent target, so what is left is "not empty" and "not permitted", and neither
     is a reason to fail a detach that has already put everything it recorded back.
+
+    Two other things land in the same arm and are meant to. `fsops.UnsafePath` subclasses
+    `OSError`, so a component of one of these paths that became a symlink between the check and
+    the call is caught here too — the walk refuses it, the directory stays, and the detach
+    finishes; that is the same answer "not empty" gets, and the right one for a path this
+    function was never going to be able to remove safely. A `PermissionError` is the third, and
+    is a fact about the filesystem rather than about the detach.
     """
     removed: list[str] = []
     for name in CREATED_DIRS:
