@@ -16,7 +16,8 @@ Codex, one Python package with **no runtime dependencies**.
 > the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
-> and the adoption state machine — so today you write `keelline.toml` by hand. Nor the lane that
+> and the adoption state machine — so today you write `keelline.toml` by hand; the
+> [Quickstart](#quickstart) shows the two keys it needs. Nor the lane that
 > publishes the overlay *template* repository, so `overlay create --local` is the source that
 > works today and `--template` waits on it.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
@@ -58,7 +59,7 @@ either. **Codex has no verified non-interactive marketplace source for either pl
 against this project's own spike record and each plugin's own published install instructions,
 2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
 you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
-marketplace name (§5.6: nothing is vendored on a guess). The adoption skill will delegate to
+marketplace name (nothing is vendored on a guess). The adoption skill will delegate to
 superpowers where it is present. Designed; the adoption skill belongs to the package that ships
 the state machine.
 
@@ -89,6 +90,35 @@ describes, and the published package makes the bare name work.
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
 `O_NOFOLLOW` and `O_DIRECTORY`, which have no Windows equivalent.
+
+## Quickstart
+
+Two keys in a `keelline.toml` at the root of a repository are enough; every other key takes the
+`recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all of them,
+annotated.
+
+```toml
+[keelline]
+version = "0.1.0"
+
+[project]
+name = "widget"          # one lowercase path segment
+```
+
+The default memory mode keeps notes under `.keelline/local/memory/`, git-ignored, one
+directory per group. Write one note and render the index:
+
+```bash
+mkdir -p .keelline/local/memory/developer
+printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
+  > .keelline/local/memory/developer/first-note.md
+keelline memory index      # renders .keelline/local/memory/MEMORY.md from the notes
+keelline doctor            # fifteen checks over this installation, one line; --json has the remedies
+```
+
+`memory index` will tell you the notes reach no session until you say
+`keelline memory trust --in-repo-memory` once — that is the trust gate, and the next section
+says why it exists. Add `.keelline/local/` to `.gitignore` if it is not there already.
 
 ## What it writes, and where
 
@@ -178,7 +208,8 @@ keelline detach                                       # remove what attach added
 
 # Machine setup
 keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
-keelline setup --preset recommended --yes --overlay ../keelline-private  # take the defaults; record an existing overlay
+keelline setup --preset recommended --overlay ../keelline-private   # record an existing overlay; no --yes needed
+keelline setup --preset recommended --overlay create:you/keelline-private --yes  # create one on GitHub; --yes is the consent
 keelline setup --git-hooks                             # install the commit-message hook into this repository
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 

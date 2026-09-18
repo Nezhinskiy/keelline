@@ -23,6 +23,38 @@ Three things hold everywhere:
 | `--root PATH` | The project root. Default: the current directory. |
 | `--store PATH` | Resolve the note store at this path instead of where the configuration says. An override of *where the notes are*, not of the rules about them: the same containment and overlay-binding checks apply, so it is not a way around the trust gate. |
 | `--machine PATH` | Read this machine configuration file instead of `~/.config/keelline/config.toml`. Mostly for tests and for running against a second machine profile; it also decides which `trust.json` is consulted. |
+## Contents
+
+- [`keelline memory index`](#keelline-memory-index)
+- [`keelline memory trust --in-repo-memory`](#keelline-memory-trust---in-repo-memory)
+- [`keelline memory session-context --bundle <name> [--part N]`](#keelline-memory-session-context---bundle-name---part-n)
+- [`keelline memory inventory`](#keelline-memory-inventory)
+- [`keelline memory fit`](#keelline-memory-fit)
+- [`keelline release check`](#keelline-release-check)
+- [`keelline hook <event>`](#keelline-hook-event)
+- [Hooks](#hooks)
+- [`keelline guard bg-cleanup`](#keelline-guard-bg-cleanup)
+- [`keelline commit check --range RANGE`](#keelline-commit-check---range-range)
+- [`keelline commit strip FILE`](#keelline-commit-strip-file)
+- [`keelline test hygiene`](#keelline-test-hygiene)
+- [`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints)
+- [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
+- [`keelline bugs index [--check]`](#keelline-bugs-index---check)
+- [`keelline bugs check`](#keelline-bugs-check)
+- [`keelline bugs renumber OLD NEW`](#keelline-bugs-renumber-old-new)
+- [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
+- [`keelline docs trail [--check]`](#keelline-docs-trail---check)
+- [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
+- [`keelline memory refs`](#keelline-memory-refs)
+- [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
+- [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
+- [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
+- [`keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#keelline-attach---store-path---check---yes---trust-remote---root-path---machine-path)
+- [`keelline detach [--root PATH] [--machine PATH]`](#keelline-detach---root-path---machine-path)
+- [`keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
+- [`keelline setup --git-hooks [--uninstall] [--root PATH]`](#keelline-setup---git-hooks---uninstall---root-path)
+- [`keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#keelline-doctor---json---root-path---home-path---machine-path)
+- [Configuration](#configuration)
 
 ---
 
@@ -55,7 +87,7 @@ the harness's line or byte caps, or when a file in the store cannot be parsed as
 same findings are printed on the write path too — they just do not fail it, because `--check`
 is the mode that fails a build.
 
-Exits `2` if `MEMORY.md` is a symlink this store may not follow (see §9.1's target rule: outside
+Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule: outside
 overlay mode a symlinked index is refused outright; in overlay mode only a link into *this*
 project's own share of the recorded overlay is honoured).
 
@@ -93,7 +125,7 @@ run it by hand except to see what a session actually receives.
 | `preset-rules` | Rules from your own preset. Never repository content, so never gated. |
 | `standing-rules` | Every note flagged `startup`, in full, ranked. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
 | `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. |
-| `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only** (§9.5): Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
+| `index` | `MEMORY.md` itself, so the model can route. **Emitted on Codex only**: Claude Code reads `MEMORY.md` natively, so injecting it there would spend capped `SessionStart` slots on something the harness already has. On any other harness this bundle prints nothing and exits `0`. The harness is read from this process's own environment, so the same command answers differently in a Codex session and a Claude Code one. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -718,7 +750,7 @@ reason `keelline attach` gives above.
 
 ## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
-Configures this machine from a preset (§5.6, §8.1): the machine configuration file's
+Configures this machine from a preset: the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
 `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per configured
 harness. `--home` and `--machine` default to the home directory and to
@@ -761,16 +793,16 @@ source is a no-op reported as such) and then installs each plugin bare (`claude 
 `(scope: user)` as the *default*, and `-y` only ever appears there on `uninstall`). Codex adds
 rather than installs (`codex plugin add <name>@<marketplace>`) where the preset declares a
 marketplace for it. A harness with no declared marketplace for a plugin is not attempted —
-nothing here is vendored on a guessed marketplace name (§5.6) — and a missing binary or a
+nothing here is vendored on a guessed marketplace name — and a missing binary or a
 failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
 one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
-asks GitHub for a private repository from the template (§6.1) and initialises it, the same as
+asks GitHub for a private repository from the template and initialises it, the same as
 `keelline overlay create --template` followed by `overlay init` — and inherits that flag's
 unshipped precondition, the template repository nothing publishes yet. Creating one needs `--yes` —
-§6.1's own "after explicit confirmation" for the one irreversible, outward-facing act this
-command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes`
+explicit confirmation for the one irreversible, outward-facing act this command performs — and
+refuses (`2`) without it. Recording an *existing* path needs no `--yes`
 (a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,
 so the flag would be theatre there); instead the path itself is validated **before the first
 write** — before the machine file, the settings merge and the plugin installs, and for `create:`
@@ -809,7 +841,7 @@ nonzero exit.
 
 ## `keelline setup --git-hooks [--uninstall] [--root PATH]`
 
-Installs the commit-message hook (§7.2) into this repository's own hooks directory — `git
+Installs the commit-message hook into this repository's own hooks directory — `git
 rev-parse --git-path hooks`, never `core.hooksPath`, which is global state this command has no
 business owning and which a repository-wide install would silently compete with husky or
 `pre-commit` elsewhere on the machine.
@@ -830,7 +862,7 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 
 ## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Fifteen checks over one installation (§8.4). It **reports and never repairs**: every finding
+Fifteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
 **Several subprocesses are run and every one of them only asks.** Keelline's own
@@ -898,7 +930,7 @@ resolve are all read and none is quoted back — `keelline doctor --json` is rel
 verbatim by the `doctor` skill, so a byte a repository wrote reaching this report is a byte
 reaching the model outside `trust.wrap`.
 
-`hook-entries` is where that bites, because §12 asks it to list "every entry with provenance".
+`hook-entries` is where that bites, because its job is to list every entry with its provenance.
 It identifies an entry **by position** — `.claude/settings.local.json entry 3 of 5` — which is
 what a reader needs in order to open it, survives two entries claiming one id, and reproduces
 nothing. A settings file that exists and cannot be read as hook entries is reported by path as

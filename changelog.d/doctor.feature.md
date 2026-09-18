@@ -6,3 +6,12 @@ last reasons a hook failed, and an environment variable that is set and quietly 
 writes nothing and repairs nothing: every finding carries the command that would fix it, and
 `--json` carries all fifteen. It exits 1 when any check is red and 0 otherwise — three checks
 cannot be answered by this build and say so rather than guessing.
+
+It holds a repository's bytes to the same rule as the rest of Keelline, because its `--json` is
+relayed to a model. A hook entry is vouched for by the overlay this repository is bound to and
+never by the ledger beside it, and is named by position rather than by its committed id; the
+`diagnostics` row counts the hook sink's log and never quotes it; the `cli-path` row says that
+`keelline` resolves and not where, since `PATH` reaches it from a committed `env` block; and a
+file it could not read is a warning that names the file, never a red row a clone can force. It
+executes only a hook wrapper it derived from its own installation — a plugin root the
+environment named is read, reported and never run.

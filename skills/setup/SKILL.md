@@ -6,8 +6,8 @@ description: Configure the machine for Keelline — the preset, the personal par
 # Machine setup
 
 1. Run `keelline setup --preset recommended` and relay what it writes to the machine
-   configuration file and which plugins and standing rules the preset enables; use
-   `keelline setup --preset recommended --yes` only when the user asked for no prompts.
+   configuration file and which plugins and standing rules the preset enables. It asks nothing;
+   `--yes` exists only to confirm creating an overlay repository (step 4).
 2. For the commit-message hook, run `keelline setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `keelline setup --git-hooks --uninstall` restores it.
