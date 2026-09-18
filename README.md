@@ -171,6 +171,10 @@ keelline setup --preset recommended --yes --overlay ../keelline-private  # take 
 keelline setup --git-hooks                             # install the commit-message hook into this repository
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 
+# Diagnosing an installation
+keelline doctor                                       # fifteen checks over this installation, one line
+keelline doctor --json                                # every check with its status, detail and remedy
+
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)

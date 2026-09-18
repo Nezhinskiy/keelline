@@ -5,13 +5,14 @@ description: Diagnose a Keelline installation — hooks, memory store, budgets, 
 
 # Diagnosing an installation
 
-Written against the CLI contract; the command ships with the `hooks-core` lane and is not
-available yet. If an invocation below is rejected as an unknown command, say so and
-stop — do not improvise a substitute.
-
-1. Run `keelline doctor --json` and read the report: not initialised; store unresolved and
-   why; a hook whose last run failed, with its reason; a bundle that does not fit its slots;
-   each budget override; an ignored environment variable; every hook entry with its
-   provenance.
+1. Run `keelline doctor --json` and read the report: fifteen checks, each with a status, a
+   detail and a remedy. Between them they answer whether the repository is initialised, whether
+   the hook wrapper can reach Keelline at all, whether this checkout is attached and what shape
+   its memory path has, every hook entry with its provenance, each budget the preset clamps, a
+   bundle that does not fit its slots, the last reasons a hook failed, and an environment
+   variable that is set and ignored.
 2. Relay each finding with the remedy the report names, verbatim. Do not change settings or
    hook entries on the user's behalf — name the command that would.
+3. A `skip` is not a fault. Three checks cannot be answered by this build — the release's
+   recorded file hashes, whether a hook is trusted on Codex, and a `[ci]` reference nothing
+   writes yet — and each says so in its own detail. Say so rather than treating it as red.

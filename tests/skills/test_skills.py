@@ -45,7 +45,6 @@ NOT_YET_SHIPPED = {
     "init": "onboarding",
     "upgrade": "upgrade",
     "uninstall": "upgrade",
-    "doctor": "hooks-core",
 }
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`keelline ([^`\n]+)`")

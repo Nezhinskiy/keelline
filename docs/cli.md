@@ -656,6 +656,55 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 
 ---
 
+## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
+
+Fifteen checks over one installation (§8.4). It **reports and never repairs**: every finding
+carries the command that would fix it, and not one of them is run for you. Nothing is written —
+the single subprocess it runs is Keelline's own `hooks/run-hook.sh` with `--version`.
+
+The summary line carries the counts and the names of whichever status most needs reading, capped
+the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
+check with `name`, `status`, `detail` and `remedy`. A remedy that is not in `--json` is a remedy
+nobody sees, so that is where they all are.
+
+`status` is one of `ok`, `warn`, `red`, `skip`.
+
+| Check | What it answers | What it reads |
+|---|---|---|
+| `not-initialised` | whether there is a `keelline.toml` here, and whether it loads | `keelline.toml` |
+| `versions` | whether the project's `[keelline] version` is the Keelline running | `keelline.toml`, the package |
+| `files` | the hook wrapper's executable bit, and the shipped files against the release's hashes | `hooks/run-hook.sh` |
+| `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version` |
+| `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
+| `hook-entries` | every hook entry, with provenance: Keelline's, the overlay's, or foreign | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json` |
+| `codex-trust` | whether any Keelline hook is untrusted on Codex | — |
+| `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `keelline.toml`, the preset |
+| `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
+| `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
+| `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
+| `ci-ref` | whether `[ci] ref` resolves | `git ls-remote --exit-code` |
+| `store-debris` | files in the note store that are not notes | the note store |
+| `diagnostics` | the last reasons the hook sink recorded | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
+| `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
+
+**Three checks skip in this build, and each says which measurement it is missing.** `files`
+compares the installed plugin against the release's recorded hashes, which the release lane
+ships — until then it reports the wrapper's executable bit and skips the rest, because a check
+that compared a file against itself would be worse than one that says it cannot. `codex-trust`
+needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`,
+which `init` writes. A `skip` is **not** a finding and never reaches the exit code.
+
+**What is printed, and what is not.** Counts, statuses and Keelline's own vocabulary print
+freely; a repository-authored string does not. `[keelline] version`, `[ci] ref`, a note's
+filename, a hook's command text and the reason the store would not resolve are all read and none
+is quoted back. The one exception is a marker id an entry *claims* — §12 asks for exactly that
+row, the id is held to `[A-Za-z0-9][A-Za-z0-9._-]*` by the engine that parses it, and it is
+truncated here as well.
+
+**Writes** nothing. Exits `0`, or `1` when any check is red.
+
+---
+
 ## Configuration
 
 `keelline.toml` in the project root, committed. Every value is repository-controlled, which is
