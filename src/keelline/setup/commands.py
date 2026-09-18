@@ -26,7 +26,17 @@ from typing import Any
 
 from keelline.areas import SubParsers
 from keelline.errors import Refusal
+from keelline.overlay.api import subprocess_runner
 from keelline.result import Result
+
+# Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
+# is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
+# monkeypatch a name it can see, and `keelline.setup.commands.subprocess_runner` is one hop
+# rather than two — `run_setup` calling straight into `keelline.overlay.api`'s own attribute
+# left the patch depending on an import this module does not own the shape of (Fix round 1,
+# item 5). `commands.py` is never imported by the hook registry (only `hooks.py` files are, per
+# `tests/test_areas.py`), so a module-scope import here does not reach the clean-interpreter
+# `discover()` this project's Global Constraints hold `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
@@ -75,7 +85,6 @@ def run_setup(args: argparse.Namespace) -> Result:
             raise Refusal(_BOTH_MODES)
         return run_git_hooks(args)
 
-    from keelline.overlay.api import subprocess_runner
     from keelline.setup.run import setup
 
     home = Path(args.home).expanduser()
@@ -87,6 +96,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         runner=subprocess_runner(),
         yes=args.yes,
         overlay=args.overlay,
+        project_root=Path(args.root).resolve(),
     )
     data = {
         "machine_written": report.machine_written,
@@ -151,6 +161,11 @@ def register(groups: SubParsers) -> None:
         help="with --git-hooks, remove the hook and restore what it chained to",
     )
     setup.add_argument(
-        "--root", default=".", help="the repository --git-hooks installs into (default: .)"
+        "--root",
+        default=".",
+        help=(
+            "the repository --git-hooks installs into, and the project root --overlay must "
+            "not be recorded inside of (default: .)"
+        ),
     )
     setup.set_defaults(func=run_setup)

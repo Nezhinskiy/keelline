@@ -586,7 +586,7 @@ shell, for the reason `keelline attach` gives above.
 
 ---
 
-## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE]`
+## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset (§5.6, §8.1): the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
@@ -594,32 +594,44 @@ Configures this machine from a preset (§5.6, §8.1): the machine configuration 
 harness. `--home` and `--machine` default to the real home directory and the usual machine
 configuration path; both exist so this command — the only one in the plugin that writes outside
 a repository — can be pointed at scratch paths for a dry run, the same way every other command
-here takes `--root`.
+here takes `--root`. `--root` (default `.`) is the project this invocation was run from; the
+only thing it is used for is refusing an `--overlay` recorded inside it (below).
 
 `setup` is the only writer of the machine configuration file, and the two existing readers do
 not change: `[personal]` is `config.loader`'s, `[overlay] root` is `memory.store`'s, and both
 still resolve the file `--machine` names or the default one. A second run merges rather than
-replaces: a value this run does not set is read back off what is already there, so setting the
-languages again does not un-record an overlay a previous run recorded.
+replaces, key by key: a personal value already recorded — by an earlier `setup` or by your own
+hand — is never overwritten by the preset's own default, and an overlay root a previous run
+recorded survives a run that only changes something else.
 
 **Plugins are installed per configured harness**, from `[defaults.keelline] agents` (`claude`
-and `codex` by default). Claude Code installs a plugin (`claude plugin install
-<name>@<marketplace> --scope user -y`); Codex adds one (`codex plugin add <name>@<marketplace>`)
-— the spike record measured that the two CLIs use different verbs. A missing binary or a failed
-install is a reported note, never a failure: refusing to set up a machine because one harness is
-absent would refuse most machines.
+and `codex` by default) and from the preset's own per-harness marketplace table
+(`[plugins.<harness>]`). For each harness the preset declares a marketplace for, `setup`
+registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
+source is a no-op reported as such) and then installs each plugin bare (`claude plugin install
+<name>@<marketplace>`; no `--scope` or `-y` — the spike record's own measured output reports
+`(scope: user)` as the *default*, and `-y` only ever appears there on `uninstall`). Codex adds
+rather than installs (`codex plugin add <name>@<marketplace>`) where the preset declares a
+marketplace for it. A harness with no declared marketplace for a plugin is not attempted —
+nothing here is vendored on a guessed marketplace name (§5.6) — and a missing binary or a
+failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply
-one. `--overlay <path>` records an existing overlay's root and creates nothing; `--overlay
-create:<owner>/<name>` asks GitHub for a private repository from the template (§6.1) and
-initialises it, the same as `keelline overlay create --template` followed by `overlay init`.
-Naming either is this command's own confirmation — nothing here still needs `--yes` on top of
-it — which the CLI reference notes as a design point the wave that added this command flagged
-for review rather than deciding unilaterally.
+one. `--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>`
+asks GitHub for a private repository from the template (§6.1) and initialises it, the same as
+`keelline overlay create --template` followed by `overlay init`. Creating one needs `--yes` —
+§6.1's own "after explicit confirmation" for the one irreversible, outward-facing act this
+command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes`
+(a model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`,
+so the flag would be theatre there); instead the path itself is validated before it is trusted:
+it must exist, must carry the overlay's own layout (the two manifests `overlay create` and
+`overlay init` already rely on), and must not lie inside `--root` — a directory a repository
+could ship and have this command record as if it were a real overlay.
 
 **Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
-new or recorded overlay itself. Exits `0` on success; a plugin that fails to install or a
-harness that is absent is a note in the report, not a nonzero exit.
+new or recorded overlay itself. Exits `0` on success, `2` on a refused `--overlay` (missing,
+not an overlay, inside the project root, or `create:` without `--yes`); a plugin that fails to
+install or a harness that is absent is a note in the report, not a nonzero exit.
 
 ---
 

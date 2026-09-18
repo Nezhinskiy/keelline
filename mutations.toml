@@ -1580,3 +1580,72 @@ file = "src/keelline/setup/run.py"
 before = 'created = create(owner, name, source="template", root=home, runner=runner)'
 after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
+
+# Fix round 1, item 1: the preset's own `reply_language = ""` default must never win over a
+# value already recorded — by an earlier `setup` run or by the owner's own hand — or a second
+# `setup --preset recommended` resets what "the user's to set" (skills/setup/SKILL.md) means.
+[[mutation]]
+name = "setup resets a personal value the owner already set"
+file = "src/keelline/setup/run.py"
+before = "    return {k: v for k, v in _personal_defaults(preset).items() if k not in existing}"
+after = "    return _personal_defaults(preset)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_second_run_does_not_reset_a_personal_value_the_owner_set",
+]
+
+# §3's trust table in one line: the plugin author may never ship an allow rule, and this is the
+# one place `setup` writes machine-scope permissions at all. A typo that writes the preset's
+# deny rules under `permissions.allow` instead of `permissions.deny` is the exact failure mode
+# the deny-only invariant exists to catch — and it is the more plausible bug than a rule
+# deliberately added, which is why the mutation is a fat-fingered key rather than a deletion.
+[[mutation]]
+name = "setup's settings merge writes the deny rules under allow instead"
+file = "src/keelline/setup/run.py"
+before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
+reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
+
+# §6.1's own gate, restated in code: `overlay create` runs `gh repo create ... --private` on
+# GitHub, and a default that reaches it is the one default this command may not have. Without
+# this guard, `setup --overlay None` — i.e. every ordinary run with no `--overlay` flag at all —
+# would still attempt `_apply_overlay`, which is "taken without being asked" by definition.
+[[mutation]]
+name = "setup touches the overlay even when the caller named no answer"
+file = "src/keelline/setup/run.py"
+before = "    if overlay is not None:"
+after = "    if True:"
+reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
+
+# The coordinator's ruling on the named risk this wave's first report raised: `--yes` on
+# `--overlay <path>` would be theatre in a harness where the command line is written by a
+# model, so it is not gated there — but creating a repository on GitHub is the one
+# irreversible, outward-facing act `setup` performs, and §6.1 asks for explicit confirmation
+# before it. This is the one place `yes` is a real control rather than a restatement.
+[[mutation]]
+name = "setup creates an overlay on GitHub without --yes"
+file = "src/keelline/setup/run.py"
+before = "        if not yes:"
+after = "        if False:"
+reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_refused"]
+
+# The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
+# from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
+# would be recorded and trusted exactly as a real overlay is.
+[[mutation]]
+name = "setup stops checking that a recorded overlay carries the overlay layout"
+file = "src/keelline/setup/run.py"
+before = "    missing = [f for f in (PLUGIN_MANIFEST, MARKETPLACE_MANIFEST) if not (candidate / f).is_file()]"
+after = "    missing: list[str] = []"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused"]
+
+# What the coordinator's ruling calls the wave's actual control over the named risk: a path
+# outside the repository that already carries a real overlay layout is not something a hostile
+# clone can create, but a path *inside* it is exactly the shape of tree a clone can ship — so
+# this is the one check that removes the actual exploitable case, and losing it is the whole
+# residual risk the ruling records.
+[[mutation]]
+name = "setup stops refusing an overlay root inside the project"
+file = "src/keelline/setup/run.py"
+before = "    if candidate == resolved_project or resolved_project in candidate.parents:"
+after = "    if False:"
+reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
