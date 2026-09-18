@@ -15,7 +15,8 @@ from keelline.errors import Refusal
 from keelline.memory.api import overlay_root
 from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST, Completed
 from keelline.presets import load_preset
-from keelline.setup.api import USER_SETTINGS, read_machine, setup, write_machine
+from keelline.setup.api import USER_SETTINGS, setup
+from keelline.setup.machine import read_machine, write_machine
 
 # The minimal `keelline.toml` `attach.read_binding` needs (a project name and nothing else),
 # the same shape `tests/setup/test_machine.py::_initialised_project` uses for `load()`.

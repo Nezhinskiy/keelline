@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from keelline.gitenv import GIT_TIMEOUT_SECONDS, scrubbed_env
-from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy, Sink
+from keelline.hooks.api import (
+    Decision,
+    Handler,
+    HookEvent,
+    HookResult,
+    Policy,
+    Sink,
+    detect_harness,
+)
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -42,19 +50,6 @@ class Recorder:
 
     def mark(self, key: str) -> None:
         self.marks.add(key)
-
-
-def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = None) -> str:
-    # S1 (spike record): Codex sets PLUGIN_ROOT/PLUGIN_DATA and ALSO CLAUDE_PLUGIN_ROOT, so
-    # the CLAUDE_* names alone identify nothing; Codex's SessionStart stdin also carries
-    # `model` and `permission_mode`, which Claude Code's does not.
-    if "PLUGIN_ROOT" in env:
-        return "codex"
-    if payload is not None and {"model", "permission_mode"} <= set(payload):
-        return "codex"
-    if "CLAUDE_PLUGIN_ROOT" in env or "CLAUDE_PROJECT_DIR" in env:
-        return "claude"
-    return "unknown"
 
 
 def _git_toplevel(cwd: Path) -> Path | None:

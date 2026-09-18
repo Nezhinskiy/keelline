@@ -60,7 +60,21 @@ because they carry neither a `commands.py` nor a `hooks.py`.)
   handler body, never at module level: `tests/test_areas.py` asserts that discovery in a clean
   interpreter imports neither the configuration layer nor the presets.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and
-  its `__all__` must equal exactly what it imports — a test parses the file and checks.
+  its `__all__` must equal exactly what it imports — a test parses the file and checks, and
+  `tests/test_areas.py` walks every module under `src/keelline/` and fails on a cross-area
+  import that reaches past one. The list is what consumers actually reach for, not what the
+  area finds tidy: a lane that needs something absent from it grows it deliberately, in a commit
+  that says which lane and why. `cli.py` is the CLI frame rather than an area, and its one
+  direct import of `hooks.policy` is named in that test rather than skipped silently.
+- **`keelline.hooks.api` is the one exception, and it is structural rather than drift.** That
+  module *defines* the vocabulary two areas share — `EVENTS`, `Policy`, `Decision`, `HookEvent`,
+  `HookResult`, `Handler`, `Sink`, `NullSink`, `detect_harness` and the sink's on-disk layout —
+  instead of re-exporting it, because `hooks.dispatch`, `hooks.sink`, `hooks.registry` and every
+  area's `hooks.py` import *it*: a name defined in one of those modules and re-exported from
+  `api.py` would be an import cycle, not a tidying. So in the one area that ships the common
+  vocabulary the rule runs the other way — **a name two areas share is defined in `api.py`** —
+  and its `__all__` lists what it defines. No other area may read this as licence: a consumer
+  still imports `keelline.hooks.api` and never `keelline.hooks.dispatch` or `.sink`.
 - Every area is a regular package with an `__init__.py`. `pkgutil.iter_modules` does not yield a
   namespace package, so one without it is invisible to both discovery paths.
 

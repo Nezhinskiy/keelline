@@ -1,6 +1,21 @@
+"""The hooks area's import surface — and the one that **defines** rather than re-exports.
+
+Every other area's `api.py` is a list of re-exports whose `__all__` equals what it imports.
+This one cannot be, and the difference is structural rather than a lapse: the handler
+vocabulary below is what `keelline.hooks.registry`, `keelline.hooks.dispatch`,
+`keelline.hooks.sink` and every area's `hooks.py` import, so a name defined in one of those
+modules and re-exported here would be an import cycle — `sink.py` imports `Sink` and
+`NullSink` from this module, and this module would import the sink's layout back out of it.
+
+So the rule this area follows is the other half of the same rule: **a name two areas share is
+defined here.** `detect_harness` and the four names of the sink's on-disk layout live here for
+exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
+CONTRIBUTING records the exception.
+"""
+
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -8,6 +23,23 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
+
+__all__ = [
+    "DIAGNOSTICS",
+    "DIAGNOSTICS_MAX_BYTES",
+    "DIRECTORY",
+    "EVENTS",
+    "MARKERS",
+    "Decision",
+    "Handler",
+    "HandlerFn",
+    "HookEvent",
+    "HookResult",
+    "NullSink",
+    "Policy",
+    "Sink",
+    "detect_harness",
+]
 
 
 # The five events §5.3's table carries. A lane that needs a sixth adds it here deliberately;
@@ -20,6 +52,27 @@ EVENTS = (
     "PreToolUse",
     "PostToolUse",
 )
+
+
+def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = None) -> str:
+    """Which harness this process is running under, from the environment and the stdin payload.
+
+    Here rather than in `dispatch.py` because two areas ask the question: the dispatcher stamps
+    `HookEvent.harness` with it, and `memory index` renders the index only on Codex (§9.5). Two
+    spellings of this rule would be two answers to "which harness", which is the drift a shared
+    vocabulary exists to stop.
+
+    S1 (spike record): Codex sets PLUGIN_ROOT/PLUGIN_DATA and ALSO CLAUDE_PLUGIN_ROOT, so the
+    CLAUDE_* names alone identify nothing; Codex's SessionStart stdin also carries `model` and
+    `permission_mode`, which Claude Code's does not.
+    """
+    if "PLUGIN_ROOT" in env:
+        return "codex"
+    if payload is not None and {"model", "permission_mode"} <= set(payload):
+        return "codex"
+    if "CLAUDE_PLUGIN_ROOT" in env or "CLAUDE_PROJECT_DIR" in env:
+        return "claude"
+    return "unknown"
 
 
 class Policy(StrEnum):
@@ -63,6 +116,17 @@ class Handler:
     # Handlers stay pure `(event, config) -> result` (§5.3), so a handler that must run once
     # per context declares the marker key and the dispatcher owns the bookkeeping.
     once_key: str | None = None
+
+
+# The sink's on-disk layout, which is a contract between two areas rather than one area's
+# detail: `keelline.hooks.sink` writes this tree and `keelline.doctor` reports on it. Both used
+# to reach for `sink.py` directly — doctor by a private cross-area import it wrote a paragraph
+# to excuse — because a re-export could not live here without a cycle. Defining them here costs
+# `sink.py` one import and gives doctor the published name it was owed.
+DIRECTORY = "keelline"
+MARKERS = "markers"
+DIAGNOSTICS = "diagnostics.jsonl"
+DIAGNOSTICS_MAX_BYTES = 256 * 1024
 
 
 class Sink(Protocol):

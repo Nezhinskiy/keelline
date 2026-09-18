@@ -7,7 +7,8 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.errors import Refusal
-from keelline.overlay.api import create, init_instance, upgrade
+from keelline.overlay.api import create, init_instance
+from keelline.overlay.upgrade import upgrade
 from keelline.scaffold import MANIFEST_PATH, Verb, digest
 from tests.overlay.test_create import FakeRunner
 

@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.api import Binding, diff_permissions, read_binding
+from keelline.attach.api import Binding, read_binding
+from keelline.attach.permissions import diff_permissions
 from keelline.config.loader import CONFIG_FILE, ConfigError
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD, PROJECTS

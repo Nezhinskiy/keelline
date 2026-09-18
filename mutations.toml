@@ -2934,3 +2934,35 @@ after = '''    "UserPromptSubmit": ['''
 reddens = [
   "tests/hooks/test_hooks_json.py::test_every_entry_is_filed_under_the_event_its_command_dispatches",
 ]
+
+# --- wave 3 install path: the cross-area import boundary ---------------------------------
+#
+# CONTRIBUTING makes `api.py` the only cross-area import surface, and until this lane nothing
+# asserted it: `memory/commands.py` reached into `hooks.dispatch` and `doctor/checks.py` into
+# `hooks.sink`, and both merged green. The guard now walks every module under `src/keelline/`.
+# This mutation puts a violation back — `doctor` reading the setup area's private `machine`
+# module for a name its `api.py` publishes — and the guard must name it. The name still exists
+# at the private spelling, so the mutated tree imports and runs: what goes red is the boundary
+# assertion and nothing else.
+[[mutation]]
+name = "an area reaches past another area's api.py again"
+file = "src/keelline/doctor/checks.py"
+before = 'from keelline.setup.api import USER_SETTINGS'
+after = 'from keelline.setup.machine import USER_SETTINGS'
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# And the failure mode a walk-based guard has that a hand-written assertion does not: a walk
+# that stops walking reports no offences for the same reason a clean tree does. Narrowed to the
+# ten `commands.py` files, the walk still finds files, still finds crossings, and still finds no
+# offence — so the floor is what has to catch it, and the floor is asserted before anything is
+# asserted about the crossings.
+[[mutation]]
+name = "the cross-area import guard walks ten files instead of the package"
+file = "tests/test_areas.py"
+before = '    files = sorted(source.rglob("*.py"))'
+after = '    files = sorted(source.rglob("commands.py"))'
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]

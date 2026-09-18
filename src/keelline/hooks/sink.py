@@ -28,12 +28,18 @@ from keelline.fsops import (
     rmdir_within,
     write_within,
 )
-from keelline.hooks.api import NullSink, Sink
+from keelline.hooks.api import (
+    DIAGNOSTICS,
+    DIAGNOSTICS_MAX_BYTES,
+    DIRECTORY,
+    MARKERS,
+    NullSink,
+    Sink,
+)
 
-# The one directory Keelline owns inside the data root the harness handed it.
-DIRECTORY = "keelline"
-MARKERS = "markers"
-DIAGNOSTICS = "diagnostics.jsonl"
+# `DIRECTORY` (the one directory Keelline owns inside the data root the harness handed it),
+# `MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` are `hooks.api`'s: `doctor` reports on
+# this tree and must name it with the same strings that wrote it.
 ROTATED = "diagnostics.1.jsonl"
 # Written once, by `sink_for`, to find out whether this data root can be written at all. A
 # probe rather than a `try` around the first real write: the first real write is a marker, and
@@ -44,7 +50,6 @@ PROBE = ".probe"
 # disk one line at a time. Capping the serialised line instead would cut inside whichever field
 # sorts first and leave `doctor` a record it cannot parse.
 DIAGNOSTIC_FIELD_CHARS = 2_000
-DIAGNOSTICS_MAX_BYTES = 256 * 1024
 MARKER_SESSIONS_KEPT = 50
 # A session id the payload did not carry. `parse_event` types `session_id` as `str | None`, and
 # every such invocation used to share one constant segment -- `sha256("")`, a hex pair anything

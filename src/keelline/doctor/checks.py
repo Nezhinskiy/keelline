@@ -39,12 +39,13 @@ reader opens the file. `_diagnostics` has the measurement.
 checks that touch a plugin root now say which they have: `plugin_root` finds the file, `own_root`
 is the only root anything executes.
 
-**`keelline.hooks.sink` is imported directly, and the Global Constraints' "import an area
-through its published surface" is departed from here rather than satisfied.** `hooks/api.py` is
-the handler protocol, imported at module scope by every area's `hooks.py`, and `sink.py` imports
-*it* — so re-exporting the sink's names from `api.py` is an import cycle, not a tidying. The
-plan's own `Consumes:` block names `keelline.hooks.sink`, and this is the note that says it was
-a decision.
+**The sink's layout is read from `keelline.hooks.api`, which is where it is now defined.** This
+module used to import `DIRECTORY`, `MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` from
+`keelline.hooks.sink` — a private module of another area — and excuse it here, on the ground
+that `sink.py` imports `api.py` so a re-export would be a cycle. That was true of a re-export
+and not of the layout itself: four strings that this area and the hook area must agree on are
+shared vocabulary, so they are *defined* on the surface and `sink.py` imports them too. There
+is no departure from "import an area through its published surface" left to record.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.findings import listed
 from keelline.guards.api import hooks_dir
-from keelline.hooks.sink import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
+from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import (
     PROJECTS,
     SLOTS,

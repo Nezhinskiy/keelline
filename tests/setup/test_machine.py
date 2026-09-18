@@ -10,7 +10,7 @@ from keelline.config.loader import load
 from keelline.errors import Refusal
 from keelline.memory.api import overlay_root
 from keelline.presets import load_preset
-from keelline.setup.api import read_machine, write_machine
+from keelline.setup.machine import read_machine, write_machine
 
 # The minimal `keelline.toml` `load()` accepts: everything else comes from the preset's own
 # defaults. `tests/hooks/test_hook_command.py::_initialised_project` carries the same shape for

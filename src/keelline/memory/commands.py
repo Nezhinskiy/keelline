@@ -23,7 +23,7 @@ from keelline.areas import SubParsers
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
-from keelline.hooks.dispatch import detect_harness
+from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
 from keelline.memory.index import (
@@ -293,7 +293,7 @@ def run_session_context(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     # §9.5: "On Codex the handler also injects the index, because Codex has no native
     # auto-memory." Here rather than in `bundles.render`, which is a library function with no
-    # environment to read; `detect_harness` is the dispatcher's own answer to the same question
+    # environment to read; `detect_harness` is the hook area's own answer to the same question
     # and keys on the stdin pair `model`/`permission_mode` and on `PLUGIN_ROOT` (S1), never on
     # `CLAUDE_PLUGIN_ROOT`, which Codex also sets.
     #

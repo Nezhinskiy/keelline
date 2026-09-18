@@ -1003,7 +1003,7 @@ control must not be able to hide the first one's removal. Then `git commit --ame
 - Test: `tests/hooks/test_hook_command.py` (extend), `tests/memory/test_commands.py` (extend)
 
 **Interfaces:**
-- Consumes: `sink_for` (Task 2), `keelline.hooks.dispatch.detect_harness`.
+- Consumes: `sink_for` (Task 2), `keelline.hooks.api.detect_harness`.
 - Produces: no new API. `keelline hook` gains a durable sink; `keelline memory session-context
   --bundle index` emits nothing unless the harness is Codex.
 
@@ -2997,8 +2997,8 @@ is that it is the only code that can see all four packages at once.
 
 **Interfaces:**
 - Consumes: `keelline.memory.api.{fit, Fit, SLOTS, harness_memory_path, resolve}`,
-  `keelline.attach.api.{read_binding, ledger}`, `keelline.setup.api.{read_machine,
-  USER_SETTINGS}`, `keelline.scaffold.owned_ids`, `keelline.hooks.sink.{DIAGNOSTICS, MARKERS}`,
+  `keelline.attach.api.{read_binding, ledger}`, `keelline.setup.api.USER_SETTINGS`,
+  `keelline.scaffold.owned_ids`, `keelline.hooks.api.{DIAGNOSTICS, MARKERS}`,
   `keelline.overlay.api.Runner`, `keelline.findings.listed`.
 - Produces: `Check(name, status, detail, remedy)` with `status` in `ok | warn | red | skip`;
   `SETTINGS_FILES`, the enumerated set the provenance check walks;

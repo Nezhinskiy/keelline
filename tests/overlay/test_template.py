@@ -9,7 +9,8 @@ import pytest
 from keelline import __version__
 from keelline.config.loader import preset_defaults
 from keelline.hooks.api import EVENTS
-from keelline.overlay.api import OVERLAY_FILES, template_root, templates
+from keelline.overlay.layout import OVERLAY_FILES
+from keelline.overlay.template import template_root, templates
 from keelline.presets import load_preset
 
 

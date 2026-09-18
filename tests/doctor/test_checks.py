@@ -27,7 +27,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
 from keelline.doctor.api import SETTINGS_FILES, Check, run_checks
 from keelline.doctor.checks import plugin_root
-from keelline.hooks.sink import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
+from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, Completed

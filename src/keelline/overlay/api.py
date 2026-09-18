@@ -1,44 +1,58 @@
 """The overlay area's import surface: everything another lane may import from it.
 
-`attach` (Wave C) reads `projects/<name>/project.toml` inside this layout and needs the names
-for it, and reuses the `Runner` seam rather than shelling out of its own; the release lane will
-need the template tree. A lane that needs something absent from this list grows it deliberately,
-in a commit that says which lane and why — it does not import a private module of this area.
+The list is chosen from what consumers outside this area actually reach for. A lane that needs
+something absent from it grows it deliberately, in a commit that says which lane and why — it
+does not import a private module of this area.
+
+`setup` builds an overlay and so needs `create`, `init_instance`, `target_root`,
+`require_overlay` and `overlay_fault`; `Created` and `Initialised` come with the first two,
+because a return type absent from this list is a value `setup` can hold and cannot declare.
+`attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
+`COMMON_CODEX`). `attach`, `doctor` and `setup` all run a harness binary through `Runner`, which
+CONTRIBUTING names as the seam a test stubs instead of shelling out, so `Runner`,
+`subprocess_runner` and the `Completed` a runner answers with are part of it.
+
+Two names are here with no importer in `src/`, on purpose:
+
+- `COMMON_MEMORY`, the third of the three `common/` directories beside `COMMON_CLAUDE` and
+  `COMMON_CODEX`. The layout is what a consumer reads; publishing two thirds of it invites the
+  third to be spelled again by hand, which is the drift these constants exist to stop.
+- `CODEX_PLUGIN_MANIFEST`, beside `PLUGIN_MANIFEST` and `MARKETPLACE_MANIFEST`. `init_instance`
+  rewrites all three and its docstring says why in as many words — "the project ships a Codex
+  half of everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision
+  still happening, one harness over". A consumer that checks the Claude manifests and cannot
+  name the Codex one reproduces exactly that bug.
+
+**Trimmed, in the wave-3 boundary remediation.** `COMMON` and `COMMON_RULES` had no importer
+anywhere. `CAPABILITY_FILES`, `OVERLAY_FILES`, `template_root`, `templates`, `upgrade` and
+`OverlayUpgrade` had none outside this area: `upgrade` is driven by this area's own command
+module, and the template tree was published against a sentence — "the release lane will need the
+template tree" — about a lane that does not exist yet. That lane grows the list when it arrives,
+which is what this docstring asks of every other lane.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
 from keelline.overlay.identity import overlay_fault, require_overlay
 from keelline.overlay.layout import (
-    CAPABILITY_FILES,
     CODEX_PLUGIN_MANIFEST,
-    COMMON,
     COMMON_CLAUDE,
     COMMON_CODEX,
     COMMON_MEMORY,
-    COMMON_RULES,
     MARKETPLACE_MANIFEST,
-    OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
 from keelline.overlay.runner import Completed, Runner, subprocess_runner
-from keelline.overlay.template import template_root, templates
-from keelline.overlay.upgrade import OverlayUpgrade, upgrade
 
 __all__ = [
-    "CAPABILITY_FILES",
     "CODEX_PLUGIN_MANIFEST",
-    "COMMON",
     "COMMON_CLAUDE",
     "COMMON_CODEX",
     "COMMON_MEMORY",
-    "COMMON_RULES",
     "MARKETPLACE_MANIFEST",
-    "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
     "Completed",
     "Created",
     "Initialised",
-    "OverlayUpgrade",
     "Runner",
     "create",
     "init_instance",
@@ -46,7 +60,4 @@ __all__ = [
     "require_overlay",
     "subprocess_runner",
     "target_root",
-    "template_root",
-    "templates",
-    "upgrade",
 ]

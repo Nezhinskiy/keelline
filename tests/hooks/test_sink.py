@@ -4,12 +4,11 @@ import json
 import re
 from pathlib import Path
 
-from keelline.hooks.api import NullSink
+# The layout the sink writes is `hooks.api`'s, because `doctor` reads the same tree and the two
+# must name it with one set of strings; the sink's own bookkeeping stays in `hooks.sink`.
+from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, MARKERS, NullSink
 from keelline.hooks.sink import (
     DIAGNOSTIC_FIELD_CHARS,
-    DIAGNOSTICS,
-    DIAGNOSTICS_MAX_BYTES,
-    MARKERS,
     ROTATED,
     UNKEYED_SESSION,
     _segment,
