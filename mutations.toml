@@ -1772,3 +1772,43 @@ after = "            pass"
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
+
+# `_snapshot` (`tests/test_install_path.py`) used to walk the whole of `.git`, and a CI job's
+# own background maintenance (`gc.auto`/`maintenance.auto` at their defaults, because the
+# fixtures pin only `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`) could drop `objects/maintenance.lock`
+# between two snapshots and redden a passing test for a reason that had nothing to do with the
+# code under test. Restoring the full walk over `.git` is exactly that regression.
+[[mutation]]
+name = "the install-path snapshot stops pruning .git from the ordinary walk"
+file = "tests/test_install_path.py"
+before = '            dirnames[:] = [name for name in dirnames if name != ".git"]'
+after = "            pass"
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping",
+]
+
+# The narrowing keeps its teeth only if the allowlist still names every path a defect could
+# land in. Losing `.git/config` from it is the failure mode a denylist doesn't have and an
+# allowlist does: a write nobody added a line for.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/config"
+file = "tests/test_install_path.py"
+before = '_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")'
+after = '_STABLE_GIT_FILES = (Path("info") / "exclude",)'
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]
+
+# And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other
+# defect this guard exists to catch (§6.3's write-through-a-hook concern), on the branch that
+# walks a directory rather than probing named files.
+[[mutation]]
+name = "the stable-.git allowlist stops watching .git/hooks"
+file = "tests/test_install_path.py"
+before = '''    hooks = git / "hooks"
+    if hooks.is_dir():'''
+after = '''    hooks = git / "hooks"
+    if False:'''
+reddens = [
+  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+]

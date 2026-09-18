@@ -18,7 +18,8 @@ from keelline.errors import Failure
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
 from tests.attach.test_links import _attach, _bound, _config
-from tests.attach.test_write import SETTINGS, _snapshot
+from tests.attach.test_write import SETTINGS
+from tests.test_install_path import _assert_snapshot_changed, _assert_snapshot_unchanged, _snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -53,9 +54,9 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     home = tmp_path / "home"
     before = _snapshot(root)
     _attach(root, store, machine, home, confirmed=True)
-    assert _snapshot(root) != before
+    _assert_snapshot_changed(root, before)
     _detach(root, machine, home)
-    assert _snapshot(root) == before
+    _assert_snapshot_unchanged(root, before)
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
@@ -104,13 +105,13 @@ def test_detach_without_a_ledger_says_so_and_changes_nothing(tmp_path: Path) -> 
     _attach(root, store, machine, home, confirmed=True)
     (root / LEDGER).unlink()
     before = _snapshot(root)
-    # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `_snapshot` is an `rglob`
-    # loop and an empty walk satisfies the comparison below on its own.
+    # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `_snapshot` is a walk and an
+    # empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Failure) as failed:
         _detach(root, machine, home)
     assert LEDGER in str(failed.value)
-    assert _snapshot(root) == before
+    _assert_snapshot_unchanged(root, before)
 
 
 def test_detach_withdraws_the_harness_link(tmp_path: Path) -> None:

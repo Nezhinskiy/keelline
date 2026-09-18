@@ -27,6 +27,11 @@ from keelline.scaffold import Style, extract, owned_ids
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
 from tests.attach.test_binding import _git, _machine, _project_and_store
 
+# The walk-based snapshot guard, owned at the top level rather than duplicated here and in
+# tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
+# two copies drifted apart on the one thing that mattered — how much of `.git` to trust.
+from tests.test_install_path import _assert_snapshot_unchanged, _snapshot
+
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 LEDGER = ".keelline/local/attach.json"
@@ -108,15 +113,6 @@ def _attachable(
     return root, store, _machine(tmp_path, overlay=store.parents[2])
 
 
-def _snapshot(root: Path) -> dict[str, bytes]:
-    """Every regular file under the root, by relative path — `.git` included deliberately."""
-    return {
-        str(path.relative_to(root)): path.read_bytes()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
-
-
 def _check_ignore(root: Path, relative: str) -> bool:
     done = subprocess.run(
         ["git", "check-ignore", "-q", "--", relative],
@@ -134,8 +130,8 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
     before = _snapshot(root)
     # The mutation guard for the assertion below, and the Global Constraint that asks for it:
-    # `_snapshot` is an `rglob` loop, so `_snapshot(root) == before` passes vacuously the day
-    # the walk stops finding files — and this is a test standing behind a refusal.
+    # `_snapshot` is a walk, so `_snapshot(root) == before` passes vacuously the day the walk
+    # stops finding files — and this is a test standing behind a refusal.
     assert before
     with pytest.raises(Refusal):
         attach(
@@ -147,7 +143,7 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    assert _snapshot(root) == before
+    _assert_snapshot_unchanged(root, before)
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:

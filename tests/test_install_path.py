@@ -331,13 +331,123 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     assert len(done.stdout) <= config.native_caps.hook_output_chars
 
 
-def _files(root: Path) -> dict[str, bytes]:
-    """Every regular file under the root, by relative path — `.git` included deliberately."""
-    return {
-        str(path.relative_to(root)): path.read_bytes()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
+# The only `.git` paths a defect this guard cares about could actually land in: a hook dropped
+# into `.git/hooks/`, a rule written to `.git/config`, an ignore region added to
+# `.git/info/exclude`. Everything else under `.git` — `objects/`, `logs/`, `refs/`, a fresh
+# `commit-graph`, a pack, `gc.log`, `objects/maintenance.lock` — is git's own background
+# bookkeeping. The fixtures that build these repositories pin `GIT_CONFIG_GLOBAL` and
+# `GIT_CONFIG_SYSTEM` to `os.devnull`, which leaves `gc.auto` and `maintenance.auto` at their
+# defaults, so that bookkeeping can run — and does — between two snapshots taken moments apart.
+_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
+
+
+def _stable_git_snapshot(root: Path) -> dict[str, bytes]:
+    """The narrow slice of `.git` this guard reads: the two named files, plus every file
+    under `hooks/`, by path relative to `root`."""
+    git = root / ".git"
+    files: dict[str, bytes] = {}
+    for relative in _STABLE_GIT_FILES:
+        candidate = git / relative
+        if candidate.is_file():
+            files[str(Path(".git") / relative)] = candidate.read_bytes()
+    hooks = git / "hooks"
+    if hooks.is_dir():
+        for path in sorted(hooks.iterdir()):
+            if path.is_file():
+                files[str(Path(".git") / "hooks" / path.name)] = path.read_bytes()
+    return files
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    """Every regular file under the root, by relative path.
+
+    `.git` is included deliberately — this is the walk that would catch an ignore region
+    written to `.git/info/exclude` or a hook dropped into `.git/hooks` — but narrowed to the
+    paths a defect could actually land in. See `_stable_git_snapshot` for why the rest of
+    `.git` is pruned rather than walked: it is a moving target, not a place this guard watches.
+    """
+    files: dict[str, bytes] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
+        if current == root:
+            dirnames[:] = [name for name in dirnames if name != ".git"]
+        for name in filenames:
+            path = current / name
+            if path.is_file():
+                files[str(path.relative_to(root))] = path.read_bytes()
+    files.update(_stable_git_snapshot(root))
+    return files
+
+
+def _describe_snapshot_diff(before: dict[str, bytes], after: dict[str, bytes]) -> str:
+    """A failure message a person can read: which paths came, went or changed, not a dump of
+    every file's bytes — which is what the bare `dict == dict` assertion this backs used to
+    print, `.git` object tree included, on the one CI job the race actually hit.
+    """
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    changed = sorted(path for path in before.keys() & after.keys() if before[path] != after[path])
+    return f"snapshot differs: added={added} removed={removed} changed={changed}"
+
+
+def _assert_snapshot_unchanged(root: Path, before: dict[str, bytes]) -> None:
+    after = _snapshot(root)
+    assert after == before, _describe_snapshot_diff(before, after)
+
+
+def _assert_snapshot_changed(root: Path, before: dict[str, bytes]) -> dict[str, bytes]:
+    after = _snapshot(root)
+    assert after != before, "expected at least one file under the root to differ; none did"
+    return after
+
+
+def test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path(tmp_path: Path) -> None:
+    # The non-vacuity guard for the narrowing itself: `_snapshot` no longer walks all of
+    # `.git`, and a narrowing that stopped noticing a hook dropped into `.git/hooks/` or an
+    # ignore region added to `.git/info/exclude` would be a regression wearing a fix's clothes.
+    # Plant a file at each of the three stable spots the review named and require the snapshot
+    # to see every one of them, one path at a time.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    before = _snapshot(root)
+    assert before
+
+    (root / ".git" / "info" / "exclude").write_text("/planted-by-a-defect\n", encoding="utf-8")
+    after_exclude = _assert_snapshot_changed(root, before)
+    assert ".git/info/exclude" in after_exclude
+
+    with (root / ".git" / "config").open("a", encoding="utf-8") as handle:
+        handle.write('[planted]\n\tby = "a-defect"\n')
+    after_config = _assert_snapshot_changed(root, after_exclude)
+    assert ".git/config" in after_config
+
+    hooks = root / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    after_hook = _assert_snapshot_changed(root, after_config)
+    assert ".git/hooks/pre-commit" in after_hook
+
+
+def test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping(tmp_path: Path) -> None:
+    # The defect the review found: `checks (ubuntu-latest, 3.13)` failed because git's own
+    # background maintenance dropped `objects/maintenance.lock` between two snapshots, and the
+    # old, unrestricted walk over `.git` treated that as a write `attach`/`detach` had made.
+    # Plant the same artifacts by hand — a lock file, a gc log, a commit-graph — and require
+    # the narrowed walk to stay unaffected by all three.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    before = _snapshot(root)
+    assert before
+
+    objects = root / ".git" / "objects"
+    objects.mkdir(parents=True, exist_ok=True)
+    (objects / "maintenance.lock").write_bytes(b"")
+    (root / ".git" / "gc.log").write_text("warning: there are too many unreachable\n")
+    (objects / "info").mkdir(parents=True, exist_ok=True)
+    (objects / "info" / "commit-graph").write_bytes(b"CGPH")
+    _assert_snapshot_unchanged(root, before)
 
 
 def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
@@ -371,8 +481,8 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         overlay=str(created.root),
         project_root=root,
     )
-    before = _files(root)
-    # The mutation guard the Global Constraints ask for: `_files` is an `rglob` loop, so the
+    before = _snapshot(root)
+    # The mutation guard the Global Constraints ask for: `_snapshot` is a walk, so the
     # comparison below passes vacuously the day the walk stops finding anything.
     assert before
     attach(
@@ -384,9 +494,9 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         runner=runner,
         home=home,
     )
-    assert _files(root) != before
+    _assert_snapshot_changed(root, before)
     detach(root, machine=machine, home=home)
-    assert _files(root) == before
+    _assert_snapshot_unchanged(root, before)
     # Stated rather than left to the file walk: `detach_main` withdraws the links and not the
     # directory that held them, because "withdrawing a link is not licence to delete a
     # directory". What is left is empty, and this is where that is written down.
