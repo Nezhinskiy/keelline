@@ -292,6 +292,9 @@ def _attached(context: Context) -> Check:
     """
     config = context.config
     if config.memory.mode != "overlay":
+        # `memory.mode` is repository-authored and is safe to print for one reason only: the
+        # loader holds it to a fixed set of three words, so what reaches this line is one of
+        # Keelline's own labels rather than a string a clone chose.
         return Check(
             "attached", OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to"
         )
@@ -303,8 +306,10 @@ def _attached(context: Context) -> Check:
             RED,
             "the harness memory path is a real directory rather than a link to the store, so "
             "this checkout looks attached and behaves like nothing",
-            f"remove {harness} and run `keelline attach --store <overlay>/{PROJECTS}/"
-            f"{config.project.name}/memory`",
+            # `<project>` and not `config.project.name`: the name is repository-authored, and a
+            # remedy is as much output as a detail is.
+            f"remove {harness} and run "
+            f"`keelline attach --store <overlay>/{PROJECTS}/<project>/memory`",
         )
     if not recorded:
         return Check(
