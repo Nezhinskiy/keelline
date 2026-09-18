@@ -214,8 +214,12 @@ def _bundle(walk: Walkthrough, bundle: str, part: int = 1) -> subprocess.Complet
 
 def _doctor_env(walk: Walkthrough) -> dict[str, str]:
     """The environment a harness session has: a data root, and neither ignored variable."""
+    # `HOME` is here because `doctor`'s `wrapper` check hands this environment to a real
+    # subprocess: without it the wrapper's `keelline --version` builds the default machine path
+    # out of the developer's own home directory, which is a read this suite does not make.
     return {
         "PATH": os.environ.get("PATH", ""),
+        "HOME": str(walk.home),
         "CLAUDE_PLUGIN_ROOT": str(ROOT),
         "CLAUDE_PLUGIN_DATA": str(walk.data),
     }
