@@ -1650,17 +1650,32 @@ before = "    if candidate == resolved_project or resolved_project in candidate.
 after = "    if False:"
 reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
 
-# §12's row, and the only reason `doctor`'s provenance list is worth printing: "a hook entry
-# adds the Keelline marker to a hostile command → doctor lists every entry with provenance". An
-# entry that claims the marker and is in no attach ledger is a repository saying it is Keelline,
-# and without this comparison every such entry reads as one `attach` installed.
+# §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the
+# Keelline marker to a hostile command → doctor lists every entry with provenance". An entry
+# that claims the marker and is in no attach ledger is a repository saying it is Keelline, and
+# without this comparison every such entry reads as one `attach` installed.
 [[mutation]]
 name = "doctor stops telling a claimed marker from one the attach ledger records"
 file = "src/keelline/doctor/checks.py"
-before = "            if entry_id not in recorded"
-after = "            if False"
+before = "            if entry_id not in recorded:"
+after = "            if False:"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_rather_than_ignored",
+  "tests/doctor/test_checks.py::test_a_foreign_hook_entry_is_listed_by_position_and_never_by_name",
+]
+
+# The same check's other half, and the one a green report hides. Three arms used to swallow — an
+# OSError on the read, a JSON error inside the walk, and a Refusal out of `owned_ids` — and all
+# three produced "all accounted for" from the check whose whole purpose is that nobody's entries
+# go unlisted. `owned_ids` is asked here for its strictness: it shares its reader with
+# `apply_entries`, so a shape the merge would refuse is a shape this walk must admit it cannot
+# account for.
+[[mutation]]
+name = "doctor swallows a settings file it could not read instead of reporting it"
+file = "src/keelline/doctor/checks.py"
+before = "        except Refusal:\n            blind.append(label)"
+after = "        except Refusal:\n            pass"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
 ]
 
 # §5.3, "reasons, never payloads". The sink's record carries `context` and `decision`, both

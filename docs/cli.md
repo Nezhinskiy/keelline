@@ -659,8 +659,10 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 ## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
 Fifteen checks over one installation (§8.4). It **reports and never repairs**: every finding
-carries the command that would fix it, and not one of them is run for you. Nothing is written —
-the single subprocess it runs is Keelline's own `hooks/run-hook.sh` with `--version`.
+carries the command that would fix it, and not one of them is run for you. Nothing is written,
+and exactly two subprocesses are run, both of which only ask: Keelline's own
+`hooks/run-hook.sh` with `--version`, and — only when `[ci] ref` is set — `git ls-remote
+--exit-code` against the remote it names, which is the one call that leaves this machine.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
@@ -676,7 +678,7 @@ nobody sees, so that is where they all are.
 | `files` | the hook wrapper's executable bit, and the shipped files against the release's hashes | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version` |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
-| `hook-entries` | every hook entry, with provenance: Keelline's, the overlay's, or foreign | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the Keelline marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `codex-trust` | whether any Keelline hook is untrusted on Codex | — |
 | `budgets` | every budget that overrides the preset, and every one the ceiling clamps | `keelline.toml`, the preset |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
@@ -694,12 +696,19 @@ that compared a file against itself would be worse than one that says it cannot.
 needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`,
 which `init` writes. A `skip` is **not** a finding and never reaches the exit code.
 
-**What is printed, and what is not.** Counts, statuses and Keelline's own vocabulary print
-freely; a repository-authored string does not. `[keelline] version`, `[ci] ref`, a note's
-filename, a hook's command text and the reason the store would not resolve are all read and none
-is quoted back. The one exception is a marker id an entry *claims* — §12 asks for exactly that
-row, the id is held to `[A-Za-z0-9][A-Za-z0-9._-]*` by the engine that parses it, and it is
-truncated here as well.
+**What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
+project chose and Keelline's own vocabulary print freely; a repository-authored string does not.
+`[keelline] version`, `[ci] ref`, a note's filename, a hook's command text, the marker id an
+entry claims and the reason the store would not resolve are all read and none is quoted back —
+`keelline doctor --json` is relayed to a model verbatim by the `doctor` skill, so a byte a
+repository wrote reaching this report is a byte reaching the model outside `trust.wrap`.
+
+`hook-entries` is where that bites, because §12 asks it to list "every entry with provenance".
+It identifies an entry **by position** — `.claude/settings.local.json entry 3 of 5` — which is
+what a reader needs in order to open it, survives two entries claiming one id, and reproduces
+nothing. A settings file that exists and cannot be read as hook entries is reported by path as
+`warn`, never skipped: this is the one check whose whole purpose is that nobody's entries go
+unlisted, so "all accounted for" must never mean "could not look".
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.
 
