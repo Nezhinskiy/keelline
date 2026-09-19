@@ -4961,3 +4961,47 @@ after = '            return Result("release record drift: " + "; ".join(problems
 reddens = [
   "tests/release/test_hashes.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
+
+# --- Wave 4: four doctor rows that named the wrong cause --------------------------------------
+# These are the sentences a person reads when something is wrong, so a row that names the wrong
+# cause sends them to fix the wrong thing. Each mutation restores exactly the sentence that was
+# there.
+[[mutation]]
+name = "doctor calls a byte-correct file a mismatch again"
+file = "src/keelline/doctor/checks.py"
+before = '            problems.append(f"{listed(unrecorded)} is/are shipped here and not in the record")'
+after = '            problems.append(f"{listed(unrecorded)} do(es) not match the release record")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch",
+]
+
+[[mutation]]
+name = "doctor calls an absent file a mismatch again"
+file = "src/keelline/doctor/checks.py"
+before = '            problems.append(f"{listed(absent)} is/are absent from this installation")'
+after = '            problems.append(f"{listed(absent)} do(es) not match the release record")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch",
+]
+
+# `skip` never reaches the exit code, so this one is not only a wrong sentence: a clone's own
+# committed, malformed ledger was silent as well as misattributed.
+[[mutation]]
+name = "doctor blames git for a ledger the repository committed"
+file = "src/keelline/doctor/checks.py"
+before = "        return UNREADABLE_LEDGER"
+after = "        return UNASKABLE"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git",
+]
+
+# The type is the only thing `doctor` may branch on here: it does not quote the loader's text,
+# because the loader builds that text out of the file's own keys and values.
+[[mutation]]
+name = "a broken machine file is blamed on keelline.toml again"
+file = "src/keelline/config/loader.py"
+before = '        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None'
+after = '        raise ConfigError(f"{machine} is not valid TOML: {exc}") from None'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml",
+]
