@@ -12,8 +12,9 @@ description: Attribute one failing test or command to the change or to the envir
 2. Run `keelline test attribute --command "the command from step 1"`. The base defaults to
    the project's base branch; pass `--base` to compare against another ref. The command
    runs three times — the working tree as it is, `HEAD`'s committed tree in a scratch
-   directory, and the merge-base with the base branch in another — and prints a verdict.
-   The working tree is never written.
+   directory, and the merge-base with the base branch in another — and prints a verdict. It
+   never moves your checkout between commits to read the "before" side; run 1 does execute
+   your command where you are, so whatever that writes, it writes.
 3. Take the verdict, and the three exit codes under `--json` beside it. A run that did not
    execute is reported as a failure naming which of the three it was, never as a verdict:
    a timeout is not a result, and reading one as "it fails there too" is the worst wrong

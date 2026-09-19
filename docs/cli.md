@@ -379,9 +379,15 @@ Run one failing command three times and say what the three exit codes mean. The 
 
 `--base` defaults to `origin/<[project] base_branch>`; pass it to compare against another ref.
 
-**Writes** nothing. Nothing here runs `git checkout`, `git stash` or `git reset` — the working
-tree is read once, by run 1, and never written; the two extractions go to a temporary directory
-that is removed before the command returns.
+**This command writes nothing**, and nothing in it runs `git checkout`, `git stash` or `git
+reset`: the two committed trees are extracted into a temporary directory that is removed before
+the command returns, and your checkout is never moved between commits or restored from one.
+
+**Your command is another matter, and the distinction is the whole safety property.** Run 1
+executes it *in the working tree*, so whatever it writes there, it writes — the example above
+leaves a lockfile, a virtual environment, `.pytest_cache` and `__pycache__` behind exactly as
+running it by hand would. What this command guarantees is that it does not move your checkout
+to another commit to get its "before" reading, not that the three runs leave no trace.
 
 **The command is yours, and so is its environment.** `--command` takes the exact failing
 command *including the sync it needs to be meaningful* — `uv sync --locked && uv run pytest
