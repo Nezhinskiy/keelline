@@ -93,6 +93,72 @@ def test_every_gate_the_workflow_runs_passes_on_the_smoke_fixture(
 
 
 @needs_git
+@pytest.mark.parametrize(
+    ("argv", "examined"),
+    [
+        (["bugs", "check"], {"checked": True, "findings": []}),
+        (["commit", "check", "--range", "HEAD~1..HEAD"], {"commits": 1, "violations": []}),
+        (["docs", "trail", "--check"], {"stale": False}),
+    ],
+    ids=("bugs check", "commit check", "docs trail --check"),
+)
+def test_the_gates_on_the_fixture_report_what_they_examined(
+    tmp_path: Path, argv: list[str], examined: dict[str, object]
+) -> None:
+    # The non-vacuity companions for three more of the five rows above, written for the reason
+    # the `plan check` one was: `exit 0` is also what a gate that examined nothing produces,
+    # and the author closed that for one row and not for the rest. Measured on this tree, each
+    # guard torn out on its own and `tests/test_fixtures.py` run:
+    #   `ledger/check.py`'s `uninitialised()` -> `return True`, so `bugs check` takes its inert
+    #     arm and reports `{"checked": False}` having read no ledger — 30 passed;
+    #   `guards/commit.py`'s `commits = commits_in(root, rev_range)` -> `commits = []`, so the
+    #     range is empty and the gate says "OK: 0 commit message(s) checked" — 30 passed.
+    # The quantity each row is about is what is asserted here, so those two now redden.
+    # `docs trail --check` carries `stale` for the same reason; its own guard is held by the
+    # hand-measured fixture mutation named above.
+    #
+    # Mutations (declared): the bug ledger reports itself uninitialised; the commit gate reads
+    # an empty range.
+    import json
+
+    root = _copy_as_repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, [*argv, "--json"])
+    assert code == 0, printed
+    data = json.loads(printed)
+    for key, value in examined.items():
+        assert data[key] == value, (key, data)
+
+
+@needs_git
+def test_docs_check_on_the_fixture_reads_the_documents_it_is_about(tmp_path: Path) -> None:
+    # The fifth row's companion, and it has to be a planted violation rather than a count:
+    # `docs check` reports `findings: []` and the same `OK:` line whether it examined the
+    # documents or returned early, so no field of its success answer can tell the two apart.
+    # Measured: `check_budgets` and `check_links` in `src/keelline/docs/hygiene.py` each given
+    # `return []` as their first statement left `tests/test_fixtures.py` 30 green.
+    #
+    # Two plants and not one, because they are two walks: an always-loaded document blown past
+    # its line budget, and a link out of it to a file that is not there.
+    #
+    # Mutations (declared): the budget walk returns nothing; the link walk returns nothing.
+    import json
+
+    root = _copy_as_repository(tmp_path)
+    agents = root / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8")
+        + "\n[a link to nothing](docs/not-a-file.md)\n"
+        + "\nfiller\n" * 2000,
+        encoding="utf-8",
+    )
+    code, printed = _invoke(root, tmp_path, ["docs", "check", "--json"])
+    assert code == 1, printed
+    rules = {finding["rule"] for finding in json.loads(printed)["findings"]}
+    assert "agents-lines" in rules, rules
+    assert "missing-link" in rules, rules
+
+
+@needs_git
 def test_plan_check_on_the_fixture_lints_the_plan_it_touched(tmp_path: Path) -> None:
     # The non-vacuity guard for the `plan check` row above, and the reason the fixture's second
     # commit is not empty: `plan check` over a range that touches no plan exits 0 having linted
@@ -164,6 +230,31 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 # cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and
 # legitimately runs none — measured, 0 blocks — and that is the only file with an exemption.
 SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
+# What `run_blocks` returns for each shipped workflow, measured 2026-09-19 with this module's
+# own reader. Equalities rather than floors: the `>= 5` per file and `>= 25` overall they
+# replace left seven of thirty-three bodies droppable, five of them `ci.yml`'s, with this
+# module green — and the character floor at 4,000 against a measured 8,097 did not close the
+# truncation shape its own comment claimed it closed (every body cut to eight lines came to
+# 4,059). `smoke-release.yml` is two reusable-workflow calls and legitimately runs no shell,
+# which is why it is 0 here rather than exempt from the walk.
+EXPECTED_BLOCKS = {
+    "check.yml": 9,
+    "ci.yml": 12,
+    "release.yml": 7,
+    "smoke-release.yml": 0,
+    "smoke.yml": 6,
+}
+# And the size, per file, so a reader that returns the right NUMBER of bodies and truncates
+# each of them reddens on the file it truncated rather than against a whole-set total with
+# headroom in it. Floors and not equalities, because a workflow gaining a line is ordinary and
+# a workflow losing half its script is not.
+EXPECTED_CHARACTERS = {
+    "check.yml": 5030,
+    "ci.yml": 882,
+    "release.yml": 1683,
+    "smoke-release.yml": 0,
+    "smoke.yml": 3042,
+}
 
 
 # `${{ … }}` is YAML plain text and not flow syntax, so it is removed before a line is asked
@@ -301,27 +392,34 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # would never be scanned while the `>=` assertion below went on passing.
     workflows = sorted(WORKFLOWS.glob("*.y*ml"))
     assert {p.name for p in workflows} >= SCRIPTED, workflows
+    # Equality, so a workflow added to this directory fails here — naming it — rather than
+    # raising `KeyError` inside the loop, which is a redness about a missing dictionary key and
+    # not about an unmeasured file.
+    assert {p.name for p in workflows} == set(EXPECTED_BLOCKS), workflows
     read: list[str] = []
     for workflow in workflows:
         blocks = run_blocks(workflow)
-        # Per file and not for all of them: `smoke-release.yml` is two reusable-workflow calls
-        # and legitimately runs no shell at all, so the floor is on the four that do — a
-        # reader that silently stopped finding blocks would otherwise pass on an empty walk.
-        # `release.yml` used to be left out of this set with no reason beside it, which is a
-        # worse hole than `smoke-release.yml`'s stated one: it is the workflow that publishes
-        # to PyPI and creates a Release, and against the whole-set floors below it could have
-        # lost every one of its bodies without either of them noticing.
-        # Measured 2026-09-19 with this module's own `run_blocks`: check.yml 9, ci.yml 12,
-        # release.yml 7, smoke.yml 6. `release.yml` gained its seventh with `environment-gate`.
+        # Per file and not for all of them, and the measured count as an EQUALITY. The `>= 5`
+        # per file and `>= 25` overall that stood here left seven of the bodies droppable and
+        # the character floor at 4,000 left every body truncatable to eight lines. Measured on
+        # this tree, against this test alone: `run_blocks` returning the first seven bodies of
+        # each file — GREEN; every body cut to its first eight lines — GREEN. With the
+        # equalities: `('check.yml', 7) … 7 == 9` and `('check.yml', 1264) … 1264 >= 5030`.
+        # An equality moves when somebody edits a workflow, which is exactly when a reader
+        # regression would otherwise hide behind the headroom.
         #
-        # No `mutations.toml` entry travels with the widened set, and the reason is that there
-        # is nothing for one to mutate: adding a fourth name to `SCRIPTED` extends an existing
-        # predicate over one more file rather than adding a guard, and a mutation that took the
-        # name back out would redden nothing — the floors below still pass. What has to be
+        # `smoke-release.yml` is in the table at 0 rather than exempt from the walk: it is two
+        # reusable-workflow calls and legitimately runs no shell, and an exemption nobody can
+        # see is how a file stops being read without anybody deciding that.
+        #
+        # No `mutations.toml` entry travels with the table itself, and the reason is that there
+        # is nothing for one to mutate: a number changed here reddens this assertion by
+        # construction, which proves the arithmetic rather than the reader. What has to be
         # load-bearing is the reader, and that is held by the four `_scan` entries already in
         # `mutations.toml`, one of which reddens this very case.
-        if workflow.name in SCRIPTED:
-            assert len(blocks) >= 5, (workflow.name, len(blocks))
+        assert len(blocks) == EXPECTED_BLOCKS[workflow.name], (workflow.name, len(blocks))
+        size = sum(len(block) for block in blocks)
+        assert size >= EXPECTED_CHARACTERS[workflow.name], (workflow.name, size)
         read.extend(blocks)
         for block in blocks:
             assert "${{" not in block, (workflow.name, block)
@@ -332,9 +430,12 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
         assert braced_lines(workflow) == [], (workflow.name, braced_lines(workflow))
     # Two floors and not one, for the reason the whole-tree gate needed two: a reader that
     # collects the right NUMBER of bodies and truncates each of them to its first line passes a
-    # count and fails a size. Measured when written: 30 bodies, 7,761 characters.
-    assert len(read) >= 25, len(read)
-    assert sum(len(block) for block in read) >= 4000, sum(len(block) for block in read)
+    # count and fails a size. The per-file assertions above are what do the work now; these are
+    # the whole-set restatement, at the measured values rather than at half of them.
+    # Measured 2026-09-19: 34 bodies, 10,637 characters (check.yml 5,030, ci.yml 882,
+    # release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0).
+    assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
+    assert sum(len(block) for block in read) >= 10_637, sum(len(block) for block in read)
 
 
 def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:

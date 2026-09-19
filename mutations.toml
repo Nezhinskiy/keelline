@@ -4399,3 +4399,65 @@ after = '    return planted.home / ".config" / "keelline" / "absent.json"'
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
 ]
+
+# §4.2 of the PR-14 review: the rows and floors that report on quantities they never looked at.
+#
+# Three of the five smoke-fixture gate rows asserted `exit 0`, which is also what a torn-out
+# gate produces — the author closed exactly this for `plan check` and for none of the others.
+# Each guard below was removed on its own and `tests/test_fixtures.py` was 30 green every time.
+[[mutation]]
+name = "the bug ledger reports itself uninitialised and checks nothing"
+file = "src/keelline/ledger/check.py"
+before = "    return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))"
+after = "    return True"
+reddens = [
+  "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[bugs check]",
+]
+
+[[mutation]]
+name = "the commit gate reads an empty range and reports OK"
+file = "src/keelline/guards/commit.py"
+before = "    commits = commits_in(root, rev_range)"
+after = "    commits = []"
+reddens = [
+  "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[commit check]",
+]
+
+# `docs check` is the row no success field can hold: it answers `findings: []` and the same
+# `OK:` line whether it read the documents or returned early. Its companion plants one
+# violation per walk, so each walk has a mutation of its own.
+[[mutation]]
+name = "the documentation budget walk stops reporting a document over its budget"
+file = "src/keelline/docs/hygiene.py"
+before = "    if measured > limit:"
+after = "    if False:"
+reddens = [
+  "tests/test_fixtures.py::test_docs_check_on_the_fixture_reads_the_documents_it_is_about",
+]
+
+[[mutation]]
+name = "the documentation link walk stops asking whether a target is there"
+file = "src/keelline/docs/hygiene.py"
+before = "    for target in local_markdown_targets(blank_fences(agents)):"
+after = "    for target in ():"
+reddens = [
+  "tests/test_fixtures.py::test_docs_check_on_the_fixture_reads_the_documents_it_is_about",
+]
+
+# The whole-tree neutrality gate's floors — 200 files and 2,000,000 characters against a
+# measured 347 and 4,806,797 — let four top-level trees disappear from the walk. Measured on
+# this tree: dropping every path under `.github/`, `skills/`, `agents/` and `changelog.d/`
+# (58 files) took `tests/test_neutral.py` from 358 passed to 300 passed, 0 failed. The 58
+# parametrised cases stopped existing and no assertion said so. The fix is not a higher floor.
+[[mutation]]
+name = "the whole-tree gate loses four top-level trees and stays green"
+file = "tests/test_neutral.py"
+before = "        return sorted(ROOT / n for n in names if (ROOT / n).is_file())"
+after = """
+        dropped = {".github", "skills", "agents", "changelog.d"}
+        return sorted(
+            ROOT / n
+            for n in names
+            if (ROOT / n).is_file() and n.split("/")[0] not in dropped
+        )"""
+reddens = ["tests/test_neutral.py::test_the_gate_reads_the_whole_tree"]

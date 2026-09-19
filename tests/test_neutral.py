@@ -206,6 +206,25 @@ PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_pa
 PRESET_PATHS_IN_TABLE = 3
 
 
+# Every top-level directory this repository tracks, measured 2026-09-19 against
+# `git ls-files`. The whole-tree gate names one file in most of them and asserts the tree
+# itself for all of them, which is the guard the two numeric floors could not be: four of these
+# can disappear from the walk with both floors still satisfied.
+TRACKED_TREES = (
+    ".claude-plugin",
+    ".codex-plugin",
+    ".github",
+    "agents",
+    "changelog.d",
+    "docs",
+    "hooks",
+    "scripts",
+    "skills",
+    "src",
+    "tests",
+)
+
+
 def tracked_files() -> list[Path]:
     """Every file git tracks, or every file under the tree minus the fixed exclusions."""
     # `--others --exclude-standard` as well as `--cached`: a fixture added in this wave is
@@ -262,7 +281,8 @@ def test_the_gate_reads_the_whole_tree() -> None:
     files = tracked_files()
     names = {str(p.relative_to(ROOT)) for p in files}
     # No `.github/` name here: that tree is outside `source-include`, and this floor has to
-    # hold in the unpacked sdist the fallback walk exists for.
+    # hold in the unpacked sdist the fallback walk exists for. `skills/` and `agents/` are
+    # inside it, so they are named like the rest.
     for wanted in (
         "README.md",
         "src/keelline/cli.py",
@@ -271,8 +291,28 @@ def test_the_gate_reads_the_whole_tree() -> None:
         "hooks/run-hook.sh",
         "scripts/keelline",
         "tests/test_fsops.py",
+        "skills/README.md",
+        "agents/code-navigator.md",
     ):
         assert wanted in names, wanted
+    # **One assertion per tracked top-level tree, because the two floors below cannot hold
+    # this.** Measured 2026-09-19: `tracked_files()` made to drop every path whose first
+    # component is `.github`, `skills`, `agents` or `changelog.d` — 58 of 347 files, every
+    # workflow, every skill document and the whole changelog fragment directory — left this
+    # module at 300 passed, 0 failed, down from 358. The 58 parametrised cases below simply
+    # stopped existing, and the file count and the character count both stayed over their
+    # floors because `docs/` alone is 1.81 M characters. A higher floor does not close that;
+    # naming the trees does.
+    #
+    # Guarded on the tree being there rather than listed with exemptions: `.github/` is outside
+    # `source-include` and is absent from the unpacked sdist the fallback walk exists for, and
+    # `changelog.d/` is empty for as long as it takes towncrier to consume it at a release. The
+    # claim is "a tree that exists on disk is a tree this walk reads", which is true in both
+    # places and needs no list of which is which.
+    trees = {p.relative_to(ROOT).parts[0] for p in files if len(p.relative_to(ROOT).parts) > 1}
+    for tree in TRACKED_TREES:
+        if any((ROOT / tree).rglob("*")):
+            assert tree in trees, (tree, sorted(trees))
     assert len(files) >= 200, len(files)
     assert THIS in files
     # And that a file was actually READ, and that reading it produced its CONTENT. Every
