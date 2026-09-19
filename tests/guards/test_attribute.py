@@ -1,9 +1,10 @@
 """DC9: one failing command, run three times, and a verdict the three exit codes determine.
 
-The working tree is read once and never written: HEAD and the merge-base are extracted with
-`git archive` into a scratch directory. The command itself is the caller's — `uv sync
---locked && uv run pytest …` is what makes run 2 and run 3 "synced" — so the tool is the
-same for every stack.
+This module never writes the working tree and never moves the checkout between commits: HEAD
+and the merge-base are extracted with `git archive` into a scratch directory. Run 1 does
+execute the caller's command in the working tree, so whatever that command writes there it
+writes. The command itself is the caller's — `uv sync --locked && uv run pytest …` is what
+makes run 2 and run 3 "synced" — so the tool is the same for every stack.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from keelline.errors import Failure
+from keelline.gitenv import GIT_TIMEOUT_SECONDS, git_run
 from keelline.guards.attribute import VERDICTS, attribute
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed
 
@@ -231,3 +233,60 @@ def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     with pytest.raises(Failure, match="git could not be run"):
         attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_a_submodule_gitlink_is_present_and_not_a_missing_file(tmp_path: Path) -> None:
+    # Fix round 2, item 1. `git archive` materialises a gitlink as an EMPTY DIRECTORY, which is
+    # neither a file nor a symlink — so the previous walk-and-subtract answered "missing 1
+    # tracked file(s)" and blamed a `.gitattributes` rule on every submodule-bearing
+    # repository. Measured before the fix: `expected - found == {'mod'}`.
+    #
+    # The gitlink is written with `update-index --cacheinfo` rather than `git submodule add`:
+    # the tree entry is the same `160000 commit <sha>` either way, and this form needs no
+    # clone, no network and no `protocol.file.allow` relaxation.
+    #
+    # Mutation (declared): ask `is_file()` instead of `exists()` — the old semantics exactly —
+    # and this reddens while the dangling-symlink case stays green.
+    root = _repo(tmp_path)
+    head = _git(root, "rev-parse", "HEAD")
+    _git(root, "update-index", "--add", "--cacheinfo", f"160000,{head},mod")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "a submodule")
+    result = attribute(root, command="true", base="main", runner=_Coded({}))
+    assert result.verdict == VERDICTS[4]
+
+
+@needs_git
+def test_a_listing_this_process_cannot_decode_skips_the_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 2, item 2. `-z` made this reachable: `ls-tree` used to octal-escape a
+    # non-ASCII name, so the answer was always ASCII, and now the bytes come through raw
+    # against `git_run`'s `text=True` and strict decoding. A tracked name this process cannot
+    # decode raised `UnicodeDecodeError` out of a library function, which is the class the
+    # constraints forbid. The comparison is skipped instead, the way it already is for a
+    # listing git could not produce, and a verdict still comes back.
+    #
+    # The seam and not a real filename, with the reason measured rather than assumed: a
+    # latin-1 name can be committed anywhere (`update-index --cacheinfo` takes the raw bytes),
+    # but on APFS `tar` cannot create it — `caf\351.txt: Can't create: Illegal byte sequence`,
+    # exit 1 — so a real fixture would fail in `_extract`'s tar arm on this platform and
+    # exercise the decode path on Linux only. Patching `git_run` on the module object tests
+    # the same branch on every platform; only the `ls-tree` call is diverted, so the archive
+    # and the merge-base are still the real thing.
+    #
+    # Mutation (declared): narrow the `except` to another exception type -> the
+    # `UnicodeDecodeError` escapes `attribute` and this reddens.
+    root = _repo(tmp_path)
+    real = git_run
+
+    def undecodable(
+        where: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+    ) -> tuple[int, str]:
+        if args[0] == "ls-tree":
+            raise UnicodeDecodeError("utf-8", b"caf\xe9.txt", 3, 4, "invalid continuation byte")
+        return real(where, *args, timeout=timeout, stdin=stdin)
+
+    monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
+    result = attribute(root, command="true", base="main", runner=_Coded({}))
+    assert result.verdict == VERDICTS[4]

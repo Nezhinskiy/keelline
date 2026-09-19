@@ -7,7 +7,9 @@ the environment — provided the command syncs its own environment, which is the
 arrange and the reason the command is an argument.
 
 Nothing here runs `git checkout`, `git stash` or `git reset`: `git archive` reads the object
-database, and the working tree is read once and never written.
+database, and this module never writes the working tree or moves the checkout between
+commits. Run 1 does execute the caller's command *in* the working tree, so whatever that
+command writes there it writes — the guarantee is about this tool, not about that run.
 """
 
 from __future__ import annotations
@@ -72,16 +74,19 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     `git ls-tree -r --name-only REF`, and a difference is a `Failure` naming the likely cause
     rather than a silently smaller tree steering the verdict.
 
-    **Both sides of that comparison are built the pedantic way, because the first draft made
-    the check fire on ordinary repositories.** `-z` and a split on NUL, never `split()` and
-    never `splitlines()`: `split()` breaks `sub dir/a b.txt` into three phantom entries, and
-    plain `splitlines()` survives that but not git's own quoting — without `-z`, `ls-tree`
-    renders a name carrying a quote or a non-ASCII byte as `"quo\"te.txt"` and
-    `"\303\274n..."`, neither of which is the name on disk. And `found` counts a symlink as
-    well as a file: `Path.is_file()` follows the link, so a tracked **dangling** symlink — and
-    a submodule gitlink by the same construction — is present in the extraction and absent
-    from `found`. Each of those three made this guard report missing files and blame a
-    `.gitattributes` rule that was not there, on a tree with nothing wrong with it.
+    **Both sides of that comparison are built the pedantic way, because every casual version
+    of it made the check fire on ordinary repositories.** `-z` and a split on NUL, never
+    `split()` and never `splitlines()`: `split()` breaks `sub dir/a b.txt` into three phantom
+    entries, and plain `splitlines()` survives that but not git's own quoting — without `-z`,
+    `ls-tree` renders a name carrying a quote or a non-ASCII byte as `"quo\"te.txt"` and
+    `"\303\274n..."`, neither of which is the name on disk.
+
+    And presence is **asked of each expected name**, never inferred from a walk of the
+    extraction. A walk that kept files and symlinks still answered "missing" for a submodule
+    gitlink, which `git archive` materialises as an empty directory and which is therefore
+    neither — measured, so every submodule-bearing repository got this `Failure`. `exists()`
+    answers for that directory and `is_symlink()` for a tracked dangling link, whose own
+    special case disappears into the same line.
     """
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
@@ -107,16 +112,33 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     archive.unlink()
     if done.returncode != 0:
         raise Failure(f"extracting {ref} exited {done.returncode}")
-    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
+    try:
+        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
+    # `-z` is what makes this reachable, so it arrived with the fix above: without it `ls-tree`
+    # octal-escapes a non-ASCII name and the answer is always ASCII, and with it the bytes come
+    # through raw. `git_run` runs with `text=True` and strict decoding while catching only
+    # `OSError` and `SubprocessError`, so a tracked name this process's locale cannot decode —
+    # a latin-1 filename committed on Linux, any non-ASCII name under an uncoerced `C` locale —
+    # raised `UnicodeDecodeError` out of a library function. Contained at the call site and not
+    # in `git_run`: its other callers ask for a sha or a config value and never for raw bytes,
+    # and widening a shared seam for one caller's new appetite is how a seam stops meaning
+    # anything.
+    #
+    # A listing that cannot be read is no listing at all, which is exactly what the `code != 0`
+    # arm below already does with one that could not be produced. Skipping is the right answer
+    # rather than a cop-out: this comparison exists to catch an export rule, it cannot answer
+    # that question about a listing it never read, and raising on it would be one more
+    # over-eager `Failure` on a healthy tree — the defect this whole comparison has now
+    # produced in three separate shapes.
+    except UnicodeDecodeError:
+        code, listing = -1, ""
     expected = {name for name in listing.split("\0") if name}
-    found = {
-        str(p.relative_to(into))
-        for p in into.rglob("*")
-        if p.is_file() or p.is_symlink()  # is_file() follows the link, so a dangling one needs both
-    }
-    if code == 0 and expected - found:
+    missing = [
+        name for name in expected if not (into / name).exists() and not (into / name).is_symlink()
+    ]
+    if code == 0 and missing:
         raise Failure(
-            f"{ref}'s archive is missing {len(expected - found)} tracked file(s); the likely "
+            f"{ref}'s archive is missing {len(missing)} tracked file(s); the likely "
             f"cause is a `.gitattributes` export rule in that tree, and this tool cannot "
             f"compare a tree it did not get whole"
         )

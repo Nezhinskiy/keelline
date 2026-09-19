@@ -3559,39 +3559,68 @@ reddens = [
 [[mutation]]
 name = "attribute lets an export rule shrink the tree it compares"
 file = "src/keelline/guards/attribute.py"
-before = "    if code == 0 and expected - found:"
+before = "    if code == 0 and missing:"
 after = "    if False:"
 reddens = [
   "tests/guards/test_attribute.py::test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree",
 ]
 
-# Fix round 1, item 1. The listing and the extraction are compared as SETS OF PATHS, and both
-# sides have to be built the pedantic way or the guard fires on a healthy tree and blames a
-# `.gitattributes` rule that is not there. `split()` breaks `sub dir/a b.txt` into three
-# phantoms; without `-z`, `ls-tree` quotes a name carrying a quote or a non-ASCII byte.
+# Fix round 1, item 1. The listing and the extraction are compared as SETS OF PATHS, and the
+# listing has to be read the pedantic way or the guard fires on a healthy tree and blames a
+# `.gitattributes` rule that is not there. Two lines, two mutations, because the two halves
+# fail differently: `split()` breaks `sub dir/a b.txt` into three phantoms, and without `-z`
+# `ls-tree` quotes a name carrying a quote or a non-ASCII byte.
 [[mutation]]
-name = "attribute splits the tracked listing on whitespace instead of on NUL"
+name = "attribute reads the tracked listing without -z, so git quotes the awkward names"
 file = "src/keelline/guards/attribute.py"
-before = '''
-    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
-    expected = {name for name in listing.split("\0") if name}'''
-after = '''
-    code, listing = git_run(root, "ls-tree", "-r", "--name-only", ref)
-    expected = set(listing.split())'''
+before = '''"-z", ref)'''
+after = '''ref)'''
 reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
 
-# Fix round 1, item 1, the second source. `Path.is_file()` follows the link, so a tracked
-# DANGLING symlink is in the extraction and absent from `found` — and a submodule gitlink is
-# absent by the same construction.
 [[mutation]]
-name = "attribute counts only files, so a dangling symlink reads as a missing file"
+name = "attribute splits the tracked listing on whitespace instead of on NUL"
 file = "src/keelline/guards/attribute.py"
-before = "        if p.is_file() or p.is_symlink()"
-after = "        if p.is_file()"
+before = '''    expected = {name for name in listing.split("\0") if name}'''
+after = '''    expected = set(listing.split())'''
 reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# Fix round 1, item 1, the second source, and fix round 2, item 1, the third. Presence is asked
+# of each expected name rather than inferred from a walk: `exists()` answers for a submodule
+# gitlink, which `git archive` materialises as an empty DIRECTORY, and `is_symlink()` for a
+# tracked dangling link. Dropping either clause restores one of the two false positives, and
+# each has its own fixture, so the two mutations redden different tests.
+[[mutation]]
+name = "attribute asks is_file, so a submodule gitlink reads as a missing file"
+file = "src/keelline/guards/attribute.py"
+before = "not (into / name).exists()"
+after = "not (into / name).is_file()"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_submodule_gitlink_is_present_and_not_a_missing_file",
+]
+
+[[mutation]]
+name = "attribute stops asking is_symlink, so a dangling symlink reads as a missing file"
+file = "src/keelline/guards/attribute.py"
+before = " and not (into / name).is_symlink()"
+after = ""
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# Fix round 2, item 2. `-z` made an undecodable tracked path reachable: `git_run` decodes
+# strictly and catches only `OSError`/`SubprocessError`, so the `UnicodeDecodeError` left a
+# library function as a traceback. A listing that cannot be read is no listing at all.
+[[mutation]]
+name = "attribute lets an undecodable tracked path escape as a traceback"
+file = "src/keelline/guards/attribute.py"
+before = "    except UnicodeDecodeError:"
+after = "    except ZeroDivisionError:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_listing_this_process_cannot_decode_skips_the_comparison",
 ]
 
 # Fix round 1, item 2. Every external program is optional at runtime and a missing binary is a
