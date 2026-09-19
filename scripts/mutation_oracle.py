@@ -21,17 +21,22 @@ Usage:
     uv run python scripts/mutation_oracle.py            # every declared mutation
     uv run python scripts/mutation_oracle.py fsops      # only those whose name or file matches
 
+Every mutation is applied to a throwaway worktree of `HEAD`; the working tree is never written.
+
 Exit codes match the rest of the project: 0 all held, 1 findings.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
 import xml.etree.ElementTree as ElementTree
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,6 +65,42 @@ def declared() -> list[Mutation]:
         )
         for entry in raw.get("mutation", [])
     ]
+
+
+class WorktreeUnavailable(RuntimeError):
+    """`git worktree add` did not produce a checkout; the message is git's own stderr."""
+
+
+@contextlib.contextmanager
+def scratch_checkout() -> Iterator[Path]:
+    """A detached worktree of HEAD under a temporary directory, removed afterwards.
+
+    The oracle proves HEAD and never the working tree (DC1). `--detach` so no branch is
+    created or moved; `worktree remove --force` and `rmtree` in the `finally` so a run that
+    was interrupted mid-mutation leaves nothing behind but a prunable entry, which the next
+    `git worktree prune` clears. The parent directory is created by `mkdtemp` and the tree
+    goes one level below it, because `git worktree add` refuses a path that already exists.
+    """
+    parent = Path(tempfile.mkdtemp(prefix="keelline-oracle-"))
+    tree = parent / "tree"
+    added = subprocess.run(  # noqa: S603
+        ["git", "-C", str(ROOT), "worktree", "add", "--detach", "--quiet", str(tree), "HEAD"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if added.returncode != 0:
+        shutil.rmtree(parent, ignore_errors=True)
+        raise WorktreeUnavailable(added.stderr.strip() or f"exit {added.returncode}")
+    try:
+        yield tree
+    finally:
+        subprocess.run(  # noqa: S603
+            ["git", "-C", str(ROOT), "worktree", "remove", "--force", str(tree)],  # noqa: S607
+            capture_output=True,
+            check=False,
+        )
+        shutil.rmtree(parent, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -105,7 +146,7 @@ def _executed(report: Path) -> int:
     return sum(int(suite.get("tests", 0)) - int(suite.get("skipped", 0)) for suite in suites)
 
 
-def _run(targets: tuple[str, ...]) -> Outcome:
+def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
     """Run only the named tests, against a bytecode cache that cannot be stale.
 
     `PYTHONPYCACHEPREFIX` at a fresh empty directory, and this is not belt-and-braces — it is
@@ -121,8 +162,14 @@ def _run(targets: tuple[str, ...]) -> Outcome:
     fresh directory empty, and an empty cache directory means every module is compiled from the
     source actually on disk.
     """
-    with tempfile.TemporaryDirectory(prefix="keelline-oracle-") as cache:
+    with tempfile.TemporaryDirectory(prefix="keelline-oracle-cache-") as cache:
         report = Path(cache) / "report.xml"
+        # The scratch checkout's `src` goes FIRST: the editable install of the main checkout is
+        # on `sys.path` through site-packages, and PYTHONPATH is the only entry that precedes
+        # it. Without this the named tests import the unmutated modules and every mutation
+        # "survives" — measured before the line was written, by the test that pins it.
+        inherited = os.environ.get("PYTHONPATH", "")
+        pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")
         done = subprocess.run(  # noqa: S603
             [
                 sys.executable,
@@ -136,16 +183,24 @@ def _run(targets: tuple[str, ...]) -> Outcome:
                 f"--junit-xml={report}",
                 *targets,
             ],
-            cwd=ROOT,
+            cwd=cwd,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPYCACHEPREFIX": cache, "PYTHONDONTWRITEBYTECODE": "1"},
+            env={
+                **os.environ,
+                "PYTHONPATH": pythonpath,
+                "PYTHONPYCACHEPREFIX": cache,
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
         )
         return Outcome(done.returncode, _executed(report))
 
 
-def _check(mutation: Mutation) -> str | None:
+def _check(mutation: Mutation, tree: Path) -> str | None:
     """`None` when the mutation was caught; the finding otherwise.
+
+    Every read and write lands in `tree`, a throwaway checkout of HEAD, at the same path
+    relative to `ROOT` the entry names (DC1). The working tree is never touched.
 
     **The clean-tree run comes first, and it is not a formality.** Without it this function
     read "the named tests did not pass" as "the mutation was caught" — and a mistyped test id
@@ -158,9 +213,10 @@ def _check(mutation: Mutation) -> str | None:
     demands that something actually ran: an entry whose tests are all skipped in this
     environment proves nothing here, and says so rather than banking the skip as a proof.
     """
-    if not mutation.file.is_file():
+    subject = tree / mutation.file.relative_to(ROOT)
+    if not subject.is_file():
         return f"{mutation.file.relative_to(ROOT)} does not exist"
-    original = mutation.file.read_text(encoding="utf-8")
+    original = subject.read_text(encoding="utf-8")
     occurrences = original.count(mutation.before)
     if occurrences == 0:
         return (
@@ -169,18 +225,18 @@ def _check(mutation: Mutation) -> str | None:
         )
     if occurrences > 1:
         return f"its `before` line appears {occurrences} times; make it unique"
-    clean = _run(mutation.reddens)
+    clean = _run(mutation.reddens, tree)
     if not clean.passed:
         return (
             f"{', '.join(mutation.reddens)} did not pass on a clean tree "
             f"(pytest exited {clean.code}, {clean.executed} test(s) ran) — so nothing here can "
             "tell a mutation this entry caught from one it never tested; fix or rename them"
         )
-    mutation.file.write_text(original.replace(mutation.before, mutation.after), encoding="utf-8")
+    subject.write_text(original.replace(mutation.before, mutation.after), encoding="utf-8")
     try:
-        mutated = _run(mutation.reddens)
+        mutated = _run(mutation.reddens, tree)
     finally:
-        mutation.file.write_text(original, encoding="utf-8")
+        subject.write_text(original, encoding="utf-8")
     if mutated.code == 0:
         return f"survived — {', '.join(mutation.reddens)} still passed with the guard broken"
     return None
@@ -189,9 +245,14 @@ def _check(mutation: Mutation) -> str | None:
 def _uncommitted(files: set[Path]) -> str | None:
     """`None` when every file is committed as it stands; the refusal otherwise.
 
-    This script writes source files and restores them from a string it holds in memory, so an
-    interruption between the write and the `finally` leaves a dirty file overwritten with bytes
-    nobody chose. The guard is therefore not advice, and **"could not ask" is not "clean"**: it
+    The oracle proves HEAD in a scratch checkout, so an uncommitted edit is simply work this
+    run cannot see: the entry would be proved against the committed bytes while its author
+    reads the result as being about the ones on screen. `main` therefore passes **both** the
+    mutated files and the test files every selected entry's `reddens` names — an uncommitted
+    edit to a test is as invisible to a HEAD checkout as one to a source, and the first draft
+    of this guard swept only the sources.
+
+    **"Could not ask" is not "clean"**: it
     read any non-zero `git` exit as a clean tree, which is precisely the state an unpacked
     sdist is in (`scripts/**` and `mutations.toml` ship in it, and it is not a checkout) and
     the state a broken `git` installation produces. `git status` exits 128 outside a
@@ -222,7 +283,11 @@ def _uncommitted(files: set[Path]) -> str | None:
             "it. Run the oracle from a git checkout of the project"
         )
     if status.stdout.strip():
-        return "refusing to mutate files with uncommitted changes:\n" + status.stdout
+        return (
+            "refusing: these files have uncommitted changes, and the oracle proves HEAD in a "
+            "scratch checkout, so an edit here is work this run cannot see — commit first:\n"
+            + status.stdout
+        )
     return None
 
 
@@ -234,18 +299,29 @@ def main(argv: list[str]) -> int:
     if not mutations:
         print(f"no mutation matches {pattern!r}", file=sys.stderr)
         return 1
-    dirty = _uncommitted({m.file for m in mutations})
+    named_tests = {ROOT / target.split("::", 1)[0] for m in mutations for target in m.reddens}
+    watched = {m.file for m in mutations} | {path for path in named_tests if path.is_file()}
+    dirty = _uncommitted(watched)
     if dirty is not None:
         print(dirty, file=sys.stderr)
         return 1
 
     findings: list[str] = []
-    for mutation in mutations:
-        finding = _check(mutation)
-        mark = "caught " if finding is None else "FINDING"
-        print(f"{mark}  {mutation.name}")
-        if finding is not None:
-            findings.append(f"{mutation.name}: {finding}")
+    try:
+        with scratch_checkout() as tree:
+            for mutation in mutations:
+                finding = _check(mutation, tree)
+                mark = "caught " if finding is None else "FINDING"
+                print(f"{mark}  {mutation.name}")
+                if finding is not None:
+                    findings.append(f"{mutation.name}: {finding}")
+    except WorktreeUnavailable as exc:
+        print(
+            f"could not create a scratch worktree of HEAD ({exc}); the oracle never mutates "
+            "the working tree, so there is nothing to fall back to",
+            file=sys.stderr,
+        )
+        return 1
     print()
     if findings:
         for finding in findings:

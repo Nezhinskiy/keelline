@@ -74,7 +74,7 @@ def test_a_test_id_that_does_not_exist_is_a_finding_not_a_catch(tmp_path: Path) 
     subject = tmp_path / "subject.py"
     subject.write_text("GUARD = True\n", encoding="utf-8")
     finding = module._check(
-        a_mutation(module, subject, ("test_nothing.py::test_this_name_does_not_exist",))
+        a_mutation(module, subject, ("test_nothing.py::test_this_name_does_not_exist",)), tmp_path
     )
     assert finding is not None
     assert "did not pass on a clean tree" in finding
@@ -94,8 +94,10 @@ def test_a_run_where_every_named_test_skipped_proves_nothing(
     module = oracle(root=tmp_path)
     subject = tmp_path / "subject.py"
     subject.write_text("GUARD = True\n", encoding="utf-8")
-    monkeypatch.setattr(module, "_run", lambda _targets: module.Outcome(code=0, executed=0))
-    finding = module._check(a_mutation(module, subject, ("test_x.py::test_skipped_here",)))
+    monkeypatch.setattr(module, "_run", lambda _targets, _cwd: module.Outcome(code=0, executed=0))
+    finding = module._check(
+        a_mutation(module, subject, ("test_x.py::test_skipped_here",)), tmp_path
+    )
     assert finding is not None
     assert "0 test(s) ran" in finding
 
@@ -111,7 +113,9 @@ def test_a_real_guard_with_a_real_test_is_still_reported_caught(tmp_path: Path) 
         "import subject\n\n\ndef test_the_guard_holds() -> None:\n    assert subject.GUARD\n",
         encoding="utf-8",
     )
-    caught = module._check(a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)))
+    caught = module._check(
+        a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)), tmp_path
+    )
     assert caught is None  # `None` is this function's word for "the mutation was caught"
     assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
 
@@ -128,7 +132,9 @@ def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> 
         "    assert subject.GUARD in (True, False)\n",
         encoding="utf-8",
     )
-    finding = module._check(a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)))
+    finding = module._check(
+        a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)), tmp_path
+    )
     assert finding is not None
     assert finding.startswith("survived")
 
@@ -199,3 +205,149 @@ def _git(root: Path, *args: str) -> None:
             "GIT_TERMINAL_PROMPT": "0",
         },
     )
+
+
+# --- the scratch checkout, which is why the working tree is never written --------------------
+
+
+def _repo_with_guard(root: Path) -> None:
+    """A committed repository with one guard and one test that imports it.
+
+    The test records the path it ran from into `ORACLE_PROBE`, which is how the outer test
+    learns whether pytest was collected from the scratch checkout or from this repository.
+    """
+    (root / "src" / "pkg").mkdir(parents=True)
+    (root / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "src" / "pkg" / "guard.py").write_text("GUARD = True\n", encoding="utf-8")
+    (root / "tests").mkdir()
+    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "tests" / "test_guard.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "\n"
+        "from pkg.guard import GUARD\n"
+        "\n"
+        "\n"
+        "def test_the_guard_holds() -> None:\n"
+        "    Path(os.environ['ORACLE_PROBE']).write_text(__file__, encoding='utf-8')\n"
+        "    assert GUARD\n",
+        encoding="utf-8",
+    )
+    (root / "mutations.toml").write_text(
+        "[[mutation]]\n"
+        'name = "the guard is disarmed"\n'
+        'file = "src/pkg/guard.py"\n'
+        'before = "GUARD = True"\n'
+        'after = "GUARD = False"\n'
+        'reddens = ["tests/test_guard.py::test_the_guard_holds"]\n',
+        encoding="utf-8",
+    )
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+
+
+@needs_git
+def test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # DC1, and the retrospective's A3: the oracle used to rewrite `mutation.file` in place and
+    # restore it from a string held in memory, so two runs at once interleaved writes over one
+    # file. It now applies every mutation to a detached worktree of HEAD. Proved from both
+    # sides: every byte of the repository is identical before and after, and the fixture test
+    # reports that it was collected from somewhere that is not this repository.
+    #
+    # Mutation (declared): `_run`'s `cwd=cwd` back to `cwd=ROOT` -> pytest is collected from
+    # the repository, the probe path lands under `tmp_path`, and the second assertion reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    probe = tmp_path / "probe.txt"
+    monkeypatch.setenv("ORACLE_PROBE", str(probe))
+    before = {path: path.read_bytes() for path in root.rglob("*.py")}
+    assert module.main([]) == 0
+    assert {path: path.read_bytes() for path in root.rglob("*.py")} == before
+    ran_from = Path(probe.read_text(encoding="utf-8")).resolve()
+    assert root.resolve() not in ran_from.parents, ran_from
+
+
+@needs_git
+def test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The editable install of the real repository puts its `src/` on `sys.path` through
+    # site-packages, so a scratch checkout whose `src/` is not put *first* runs the named tests
+    # against the unmutated main modules and reports every mutation as surviving. Modelled by
+    # putting the repository's own `src` on PYTHONPATH before the run: only a prepend of the
+    # scratch `src` makes the mutated copy the one imported.
+    #
+    # Mutation (declared): drop the PYTHONPATH prepend in `_run` -> the mutation survives,
+    # `main` returns 1, and the assertion reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    monkeypatch.setenv("PYTHONPATH", str(root / "src"))
+    assert module.main([]) == 0
+
+
+@needs_git
+def test_a_scratch_checkout_that_cannot_be_created_is_a_refusal_not_an_in_place_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No fallback to the old in-place behaviour: an oracle that silently mutated the working
+    # tree because `git worktree add` failed would reintroduce the exact hazard DC1 removes.
+    # `subprocess.run` is wrapped so that only the worktree call fails; `git status` and pytest
+    # are real.
+    #
+    # No mutation entry of its own: the in-place fallback is a code path this module no
+    # longer has, so there is no line to substitute. Measured by hand instead — making
+    # `scratch_checkout` yield `ROOT` on failure reddens the first assertion below with
+    # `assert 0 == 1`, because the fallback run mutates the fixture repository in place, the
+    # entry is caught there, and `main` returns 0. The later two assertions are not reached:
+    # the first `assert` ends the test, which is why this says "the first" and not "both".
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    real_run = module.subprocess.run
+
+    def _no_worktree(argv: list[str], *args: object, **kwargs: object) -> object:
+        if "worktree" in argv:
+            return subprocess.CompletedProcess(argv, 128, "", "fatal: no worktree today")
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", _no_worktree)
+    assert module.main([]) == 1
+    assert "worktree" in capsys.readouterr().err
+    assert (root / "src" / "pkg" / "guard.py").read_text(encoding="utf-8") == "GUARD = True\n"
+
+
+@needs_git
+def test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The dirty-tree guard's second arm, which the scratch checkout is what makes it necessary:
+    # a HEAD checkout cannot see an uncommitted edit to a *test* any more than to a source, so
+    # an entry whose `reddens` file is dirty would be proved against the committed test while
+    # its author reads the result as being about the one on screen. `main` therefore sweeps the
+    # `reddens` files as well as the mutated ones. Only the test file is dirty here.
+    #
+    # Mutation (declared): drop the `reddens` files from the set `main` sweeps -> the run is
+    # not refused, `main` returns 0, and the first assertion reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    (root / "tests" / "test_guard.py").write_text(
+        "def test_the_guard_holds() -> None:\n    pass\n", encoding="utf-8"
+    )
+    assert module.main([]) == 1
+    assert "uncommitted changes" in capsys.readouterr().err

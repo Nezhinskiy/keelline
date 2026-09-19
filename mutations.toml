@@ -3220,3 +3220,34 @@ file = "src/keelline/tomlout.py"
 before = '    for name, table in sorted(tables.items(), key=lambda item: item[0] != ""):'
 after = "    for name, table in tables.items():"
 reddens = ["tests/test_tomlout.py::test_the_root_table_is_hoisted_when_it_is_not_given_first"]
+
+# DC1: the oracle proves HEAD in a detached worktree. All three entries are on the run itself,
+# so a regression to in-place mutation — or a scratch `src` that does not precede the editable
+# install on sys.path, or a dirty-tree sweep that forgets the named tests — is a finding rather
+# than a quiet wrong answer.
+[[mutation]]
+name = "the oracle collects pytest from the working tree again"
+file = "scripts/mutation_oracle.py"
+before = "            cwd=cwd,"
+after = "            cwd=ROOT,"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout",
+]
+
+[[mutation]]
+name = "the scratch checkout's src no longer precedes the editable install"
+file = "scripts/mutation_oracle.py"
+before = '        pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")'
+after = "        pythonpath = inherited"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path",
+]
+
+[[mutation]]
+name = "the dirty-tree sweep forgets the tests every entry names"
+file = "scripts/mutation_oracle.py"
+before = "    watched = {m.file for m in mutations} | {path for path in named_tests if path.is_file()}"
+after = "    watched = {m.file for m in mutations}"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_file",
+]

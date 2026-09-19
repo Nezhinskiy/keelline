@@ -106,8 +106,10 @@ Each entry names one file, one exact line to change, and the tests that must fai
 The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not `tests`, and
 `name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
-drifted is a finding rather than a skip. The oracle also refuses to mutate a tree with
-uncommitted changes, which is why a mutation run comes *after* the commit it is about.
+drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
+mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
+mutated file has uncommitted changes, because that edit is work the run cannot see — which is
+why a mutation run comes *after* the commit it is about.
 
 ```toml
 [[mutation]]
