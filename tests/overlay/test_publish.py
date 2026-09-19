@@ -42,6 +42,11 @@ class _GitHub:
             target = cwd / argv[-1]
             (target / ".git").mkdir(parents=True)
             (target / "stale.md").write_text("old\n", encoding="utf-8")
+            # A nested stale file as well as a loose one, because the two exercise different
+            # halves of `_replace_tree`: the file walk removes both, and only the directory
+            # walk takes `old/deep/` away afterwards.
+            (target / "old" / "deep").mkdir(parents=True)
+            (target / "old" / "deep" / "note.md").write_text("old\n", encoding="utf-8")
             return Completed(0, "", "")
         if argv[:2] == ["git", "-C"] and "status" in argv:
             return Completed(0, " M README.md\n?? hooks/hooks.json\n D stale.md\n", "")
@@ -116,6 +121,7 @@ def test_with_yes_the_rendered_tree_is_committed_and_pushed_without_the_ledger(
     assert written == set(OVERLAY_FILES), written ^ set(OVERLAY_FILES)
     assert str(MANIFEST_PATH) not in written
     assert "stale.md" not in written
+    assert not [name for name in written if name.startswith("old/")]
     push = next(a for a in _argv(stub) if "push" in a)
     assert push[-1] == "HEAD:refs/heads/main"
     commit = next(a for a in _argv(stub) if "commit" in a)
@@ -159,3 +165,49 @@ def test_a_gh_that_cannot_run_is_a_failure_naming_it(tmp_path: Path) -> None:
 
     with pytest.raises(Failure, match="gh repo view"):
         publish_template("owner", yes=True, runner=_NoGh())
+
+
+def test_a_dry_run_against_a_public_repository_that_is_not_a_template_says_it_would_mark_it(
+    tmp_path: Path,
+) -> None:
+    # The third arm of the dry-run report, and the one an owner meets on a second release
+    # against a repository they created by hand. Without this the arm is written and unasserted.
+    stub = _GitHub(exists=True, is_template=False, visibility="PUBLIC")
+    result = publish_template("owner", yes=False, runner=stub)
+    assert any("would mark" in note for note in result.notes)
+    assert any("re-run with --yes" in note for note in result.notes)
+    assert not [a for a in _argv(stub) if a[:3] == ["gh", "repo", "edit"]]
+
+
+def test_a_template_that_is_already_current_is_not_committed_or_pushed(tmp_path: Path) -> None:
+    # Idempotence, which is what makes "run it at every release" safe: `git status` reporting
+    # nothing means the published tree is already this Keelline's, and an empty commit pushed
+    # over it would be a release note for a release that changed nothing.
+    class _Unchanged(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[:2] == ["git", "-C"] and "status" in argv:
+                self.calls.append((argv, cwd))
+                return Completed(0, "", "")
+            return super().run(argv, cwd)
+
+    stub = _Unchanged()
+    result = publish_template("owner", yes=True, runner=stub)
+    assert result.pushed is False
+    assert result.changed == ()
+    assert any("nothing to push" in note for note in result.notes)
+    assert not [a for a in _argv(stub) if "commit" in a or "push" in a]
+
+
+def test_a_push_that_is_declined_is_a_failure_naming_the_repository(tmp_path: Path) -> None:
+    # `gh` that could not be launched at all is the case above; this is the other one, and the
+    # states have different remedies. A push refused by a ruleset or a lost credential must not
+    # read as a publish that worked.
+    class _RefusedPush(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            recorded = super().run(argv, cwd)
+            if argv[:2] == ["git", "-C"] and "push" in argv:
+                return Completed(1, "", "remote: refused by a ruleset")
+            return recorded
+
+    with pytest.raises(Failure, match="refused by a ruleset"):
+        publish_template("owner", yes=True, runner=_RefusedPush())
