@@ -917,10 +917,9 @@ def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_els
     # comparison against `overlay_group_target(...)`. `attach_main` two functions above has
     # always compared, so the asymmetry was inside one module, one screen apart.
     #
-    # An owner who adds a group and points that group's own name in the store at a directory of
-    # their
-    # own loses it — reported under `revoked`, on a command that promises to remove exactly what
-    # `attach` added.
+    # An owner who adds a group and points that group's own name in the store at a directory
+    # of their own loses it — reported under `revoked`, on a command that promises to remove
+    # exactly what `attach` added.
     #
     # Mutation: `mutations.toml`'s "the main checkout's withdrawal stops checking what it
     # removes points at".

@@ -137,9 +137,8 @@ _INSIDE = ".keep"
 # this list: `LEDGER` under `.keelline/local/`, the rule copies under `.codex/rules/`, and
 # `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, wherever the
 # project configures it) is deliberately **not** here: it is repository-configured, may be a
-# directory
-# the project already keeps for its own reasons, and `worktree.detach_main` settled that
-# question the other way — "withdrawing a link is not licence to delete a directory".
+# directory the project already keeps for its own reasons, and `worktree.detach_main` settled
+# that question the other way — "withdrawing a link is not licence to delete a directory".
 #
 # Closed because a ledger is a file a clone can commit. `detach` iterates this tuple and keeps
 # only the members the ledger names, so the ledger can shorten the list and never extend it,
