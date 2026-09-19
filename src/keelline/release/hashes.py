@@ -47,6 +47,15 @@ def read_record(root: Path) -> dict[str, str] | None:
     The two are different answers and the callers branch on the difference: a build with no
     record is one `doctor` skips, and a record that is present and is not a record is one it
     must be red about.
+
+    **The keys are repository-authored and are validated here as shape and never as trust.**
+    A caller that prints one prints bytes the record's author chose: the record is read from
+    an installed plugin root, which `doctor.checks.plugin_root` explains a committed
+    `.claude/settings.json` `env` block can name. Holding the keys to `HASHED_FILES` here is
+    the rule this function must NOT apply — `doctor._files` walks the union of the record and
+    this build's own list precisely so that a record naming a file this build does not ship is
+    visible rather than dropped, and `drift` reports the same direction — so the rule belongs
+    where the printing happens: `_files` prints the names it knows and counts the rest.
     """
     path = root / RECORD
     if not path.is_file():

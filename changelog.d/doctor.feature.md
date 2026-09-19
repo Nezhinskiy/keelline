@@ -21,4 +21,6 @@ overlay's record over a ledger file a clone could have committed.
 wrapper, hook entry table and launcher against the record the release shipped beside them: a
 match is green, a changed or missing file is red with the reinstall remedy, a record that is
 present and unreadable is red too, and a plugin built before the record existed still skips and
-says which it is.
+says which it is. A record that names a file this build does not ship is red as well, and that
+name is counted rather than printed: the record is read from the plugin root, so its keys are
+text the installation's author chose and `doctor` relays no such text to a model.

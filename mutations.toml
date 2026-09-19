@@ -4093,6 +4093,20 @@ before = "        for name in sorted({*HASHED_FILES, *recorded})"
 after = "        for name in sorted(HASHED_FILES)"
 reddens = ["tests/doctor/test_checks.py::test_a_record_naming_a_file_this_build_does_not_ship_is_red"]
 
+# The record's keys are repository-authored — `read_record` validates the values and the record
+# is read from a plugin root a committed `env` block can name — and this detail is what
+# `doctor --json` carries and the skill relays verbatim. `_versions` refuses the same thing one
+# function up. The count is what keeps the union walk above load-bearing, so the case asserts
+# both the absent prose and the count that replaced it.
+[[mutation]]
+name = "doctor files quotes the record's own file names back"
+file = "src/keelline/doctor/checks.py"
+before = "    mine = [name for name in changed if name in HASHED_FILES]"
+after = "    mine = list(changed)"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted",
+]
+
 # `gitenv.git_run` decodes stderr strictly as well as stdout, so git's own error text carrying
 # one non-UTF-8 byte escapes as a bare `UnicodeDecodeError` out of a library function. The
 # listing's arm answers by skipping the comparison; these two have no weaker answer, so each is

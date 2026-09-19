@@ -356,11 +356,27 @@ def _files(context: Context) -> Row:
         for name in sorted({*HASHED_FILES, *recorded})
         if name not in actual or recorded.get(name) != actual[name]
     ]
+    # **Only names this build ships are printed; the rest are counted.** `read_record`
+    # validates the record's values and never its keys, and the record is read from
+    # `plugin_root` — which a committed `.claude/settings.json` `env` block can name, as that
+    # function says in its own words. A key is therefore repository-authored text, this detail
+    # is what `doctor --json` carries, and `skills/doctor/SKILL.md` tells the model to relay it
+    # verbatim: quoting one is repository bytes reaching the model with no delimiter, no nonce
+    # and no trust record. `_versions` above declines to quote the project's own version string
+    # for the same reason, and this row is the same rule one function down.
+    #
+    # Counted and not dropped, which is what keeps the union above load-bearing: what makes a
+    # partial update visible is that the record names a file this build does not ship, never
+    # what that name says.
+    mine = [name for name in changed if name in HASHED_FILES]
+    theirs = len(changed) - len(mine)
     if changed:
+        problems = [f"{listed(mine)} do(es) not match the release record"] if mine else []
+        if theirs:
+            problems.append(f"{theirs} name(s) the record adds that this build does not ship")
         return Row(
             RED,
-            f"{listed(changed)} do(es) not match the release record, so this plugin is not "
-            f"the one the release shipped{whose}",
+            f"{' and '.join(problems)}, so this plugin is not the one the release shipped{whose}",
             "reinstall the plugin from its marketplace; if you edited a shipped file on "
             "purpose, doctor will stay red until you reinstall",
         )
