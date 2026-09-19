@@ -1233,7 +1233,7 @@ reach a token.
 
 ## Shared flags
 
-Five flags mean the same thing wherever they appear, and each has exactly one sentence. Both
+Six flags mean the same thing wherever they appear, and each has exactly one sentence. Both
 tables below are held to `keelline.command`'s own constants, row by row, by
 `tests/test_documents.py` — so a sentence cannot be spelled by hand here any more than it can be
 in a parser, which is the whole point of the rule.
@@ -1245,10 +1245,15 @@ in a parser, which is the whole point of the rule.
 | `--store` | resolve the memory store at this path |
 | `--dry-run` | report what would change and write nothing |
 | `--home` | the home directory to read and write under (default: the real one) |
+| `--check` | report drift instead of writing, and fail if there is any |
 
-Four commands mean something else by a shared name. Each is a **named exception** — a decision
+`--check` is the CI half of `--dry-run`: both read and write nothing, and `--check` fails when
+anything differs. `keelline bugs index`, `keelline docs trail`, `keelline memory index` and
+`keelline release hashes` all take it with that meaning.
+
+Five commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant
-beside the five above:
+beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
@@ -1256,6 +1261,13 @@ beside the five above:
 | `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
 | `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
 | `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
+| `keelline attach --check` | report the binding and the diff, and write nothing |
+
+`attach --check` reports the way the other four do and exits differently on purpose: its `1` is
+a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state
+of a first attach and is exactly what the `--yes` gate exists for — the refusal `attach` raises
+names this flag as the way to read that diff first. A `--check` that failed whenever the run
+would widen would make the documented remedy itself a failure.
 
 ---
 

@@ -4907,3 +4907,34 @@ after = '    modules = sorted(p for p in TESTS.rglob("gitfixture.py") if p.name 
 reddens = [
   "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
 ]
+
+# --- Wave 4: one sentence per `--check` ------------------------------------------------------
+# `--check` was registered five times with five sentences in the tree that built `command.py`'s
+# machinery for `--root`, `--machine`, `--store`, `--dry-run` and `--home`. The mutation is the
+# drift itself, restored: one parser spelling its own sentence again.
+[[mutation]]
+name = "one --check spells its own help string again"
+file = "src/keelline/ledger/commands.py"
+before = '    index.add_argument("--check", action="store_true", help=CHECK_HELP)'
+after = '    index.add_argument("--check", action="store_true", help="fail if the index is stale")'
+reddens = [
+  "tests/test_command.py::test_every_shared_flag_carries_the_one_help_string_or_a_named_exception",
+]
+
+# And the document half. `docs/cli.md`'s shared-flag table is held to the constants row by row;
+# the new row has to be load-bearing too, or a sentence could be spelled by hand there.
+[[mutation]]
+name = "the --check row in docs/cli.md drifts from its constant"
+file = "docs/cli.md"
+before = '| `--check` | report drift instead of writing, and fail if there is any |'
+after = '| `--check` | report drift and write nothing |'
+reddens = [
+  "tests/test_documents.py::test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling",
+]
+
+# No third entry for `attach --check`'s named exception. The mutation would be
+# `help=ATTACH_CHECK_HELP` -> `help=CHECK_HELP` in `attach/commands.py`, and `CHECK_HELP` is not
+# imported there — so the mutant raises `NameError` at import and the test errors rather than
+# fails. A mutation caught for an accidental reason reads as coverage and is worse than none.
+# The exception is held by `tests/test_command.py`'s `EXCEPTIONS` table, which the entry above
+# already proves load-bearing.

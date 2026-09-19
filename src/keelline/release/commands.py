@@ -14,7 +14,7 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
-from keelline.command import ROOT_HELP
+from keelline.command import CHECK_HELP, ROOT_HELP
 from keelline.errors import Failure
 from keelline.release.hashes import HASHED_FILES, drift, write_record
 from keelline.release.notes import build
@@ -23,7 +23,6 @@ from keelline.result import Result
 from keelline.runner import subprocess_runner
 
 TAG_HELP = "the tag this run was created from; the six sources and the changelog must agree with it"
-HASHES_CHECK_HELP = "report drift and write nothing"
 
 
 def run_check(args: argparse.Namespace) -> Result:
@@ -67,6 +66,6 @@ def register(groups: SubParsers) -> None:
     notes.add_argument("--root", default=".", help=ROOT_HELP)
     notes.set_defaults(func=run_notes)
     hashes = sub.add_parser("hashes", help="record the shipped files' hashes for this release")
-    hashes.add_argument("--check", action="store_true", help=HASHES_CHECK_HELP)
+    hashes.add_argument("--check", action="store_true", help=CHECK_HELP)
     hashes.add_argument("--root", default=".", help=ROOT_HELP)
     hashes.set_defaults(func=run_hashes)

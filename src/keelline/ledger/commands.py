@@ -7,7 +7,7 @@ from dataclasses import asdict
 
 from keelline import fsops
 from keelline.areas import SubParsers
-from keelline.command import common_flags, root_and_config
+from keelline.command import CHECK_HELP, common_flags, root_and_config
 from keelline.findings import labels, listed
 from keelline.ledger.entries import SEVERITIES
 from keelline.result import Result
@@ -108,7 +108,7 @@ def register(groups: SubParsers) -> None:
     new.add_argument("--no-fetch", action="store_true", help="skip the pre-allocation fetch")
     new.set_defaults(func=run_bugs_new)
     index = common_flags(sub.add_parser("index", help="regenerate the index from the entry files"))
-    index.add_argument("--check", action="store_true", help="fail if the index is stale")
+    index.add_argument("--check", action="store_true", help=CHECK_HELP)
     index.set_defaults(func=run_bugs_index)
     check = common_flags(
         sub.add_parser("check", help="validate the ledger, the index and every reference")
