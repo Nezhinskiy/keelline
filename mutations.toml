@@ -2163,11 +2163,11 @@ reddens = [
 # code under test. Restoring the full walk over `.git` is exactly that regression.
 [[mutation]]
 name = "the install-path snapshot stops pruning .git from the ordinary walk"
-file = "tests/test_install_path.py"
+file = "tests/snapshot.py"
 before = '            dirnames[:] = [name for name in dirnames if name != ".git"]'
 after = "            pass"
 reddens = [
-  "tests/test_install_path.py::test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping",
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping",
 ]
 
 # The narrowing keeps its teeth only if the allowlist still names every path a defect could
@@ -2175,11 +2175,11 @@ reddens = [
 # allowlist does: a write nobody added a line for.
 [[mutation]]
 name = "the stable-.git allowlist stops watching .git/config"
-file = "tests/test_install_path.py"
+file = "tests/snapshot.py"
 before = '_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")'
 after = '_STABLE_GIT_FILES = (Path("info") / "exclude",)'
 reddens = [
-  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
 ]
 
 # And the other stable path outside the tuple: a hook dropped into `.git/hooks/` is the other
@@ -2187,13 +2187,13 @@ reddens = [
 # walks a directory rather than probing named files.
 [[mutation]]
 name = "the stable-.git allowlist stops watching .git/hooks"
-file = "tests/test_install_path.py"
+file = "tests/snapshot.py"
 before = '''    hooks = git / "hooks"
     if hooks.is_dir():'''
 after = '''    hooks = git / "hooks"
     if False:'''
 reddens = [
-  "tests/test_install_path.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
+  "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
 ]
 
 # --- wave 3 install path: the review's eight attach/doctor findings ----------------------
@@ -3250,4 +3250,23 @@ before = "    watched = {m.file for m in mutations} | {path for path in named_te
 after = "    watched = {m.file for m in mutations}"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_file",
+]
+
+[[mutation]]
+name = "a capability file is named that the template does not ship"
+file = "src/keelline/overlay/layout.py"
+before = 'CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")'
+after = 'CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/allow.json")'
+reddens = [
+  "tests/overlay/test_template.py::test_the_capability_files_are_spelled_once_and_are_shipped_files",
+]
+
+# Premise 2: an empty result used to spend a once-per-context delivery.
+[[mutation]]
+name = "the dispatcher marks a once-per-context handler on any run again"
+file = "src/keelline/hooks/dispatch.py"
+before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
+after = "            delivered = True"
+reddens = [
+  "tests/guards/test_hooks.py::test_an_unrelated_call_does_not_consume_the_one_delivery",
 ]

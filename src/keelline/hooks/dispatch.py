@@ -244,7 +244,17 @@ def dispatch(
             # handler's malformed return destroyed an earlier handler's deny.
             if not isinstance(result, HookResult):
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
-            if handler.once_key is not None:
+            # Marked on DELIVERY, not on any run (Premise 2). A handler that answered with an
+            # empty result has said nothing, and spending its one delivery on that would make
+            # the first unrelated Bash call of a session consume a notice meant for the first
+            # failing test run. A deny is a delivery too: it reached the harness. Marked here,
+            # before the join, and that is an accepted loss stated rather than hidden: when a
+            # NEIGHBOURING handler denies in the same dispatch, `contexts` is discarded with
+            # the refusal and this handler's context never reaches the harness although its
+            # delivery is spent. The alternative — marking after the join for the contexts
+            # that survived into stdout — is the foundation's redesign, not this line's.
+            delivered = bool(result.context) or result.decision == Decision.DENY
+            if handler.once_key is not None and delivered:
                 sink.mark(handler.once_key)
             # The decision is read before anything else that can fail this handler. A deny is
             # the one thing a neighbouring bug must never cost, and it travels on one channel;

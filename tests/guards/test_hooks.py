@@ -324,21 +324,11 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
 
 
 @needs_git
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Premise 2: dispatch marks once_key on any run; foundation owns marking on delivery, "
-        "and the commit that fixes it must delete this marker (xfail_strict is global)"
-    ),
-)
 def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> None:
-    # No mutation of its own: it pins an intended semantics this tree does not have yet, so it
-    # is red by construction and `xfail_strict` is what keeps that honest. `dispatch` calls
-    # `sink.mark(handler.once_key)` after EVERY successful run, including one that returned an
-    # empty `HookResult`, so once a durable sink exists the first unrelated Bash call of a
-    # session silently spends this handler's single delivery. The one-line fix — mark only
-    # when the result carried something — belongs to `foundation`, and the commit that makes
-    # it must delete this marker in the same change, or the fixed test reddens as an XPASS.
+    # The defect this pins: `dispatch` used to call `sink.mark(handler.once_key)` after EVERY
+    # successful run, including one that returned an empty `HookResult`, so once a durable
+    # sink exists the first unrelated Bash call of a session silently spends this handler's
+    # single delivery.
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()
