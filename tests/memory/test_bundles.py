@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import subprocess
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -25,6 +23,7 @@ from keelline.memory.bundles import (
 from keelline.memory.index import INDEX_NAME
 from keelline.memory.store import Store, resolve
 from keelline.memory.trust import DELIMITER, record
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -516,16 +515,6 @@ mode = "overlay"
 groups = ["developer"]
 index_extra = []
 """
-
-
-def git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]:

@@ -42,10 +42,10 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from keelline.runner import Completed
+from tests.gitfixture import git
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
-    git,
     snapshot,
 )
 

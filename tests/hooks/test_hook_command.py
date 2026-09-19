@@ -15,6 +15,7 @@ import pytest
 from keelline.guards.hygiene import LEAD
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from keelline.hooks.commands import _output_cap, run_hook
+from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -174,7 +175,7 @@ def _initialised_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
     (project / "keelline.toml").write_text(CONFIG, encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(project)], check=True, capture_output=True)
+    git(project, "init", "-q")
     return project
 
 

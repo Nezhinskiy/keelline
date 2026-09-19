@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import cast
 
@@ -11,6 +10,7 @@ import pytest
 
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
 from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
+from tests.gitfixture import git
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
 
@@ -558,23 +558,9 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
     # `_git_toplevel` directly, and a `cwd` with no `.git` above it: `project_root` tries
     # `_walk_to_git_root` first and would find the answer without ever asking `git`.
     import shutil
-    import subprocess as sp
 
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
-
-    def git(root: Path, *args: str) -> None:
-        sp.run(
-            ["git", *args],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_CONFIG_SYSTEM": os.devnull,
-            },
-        )
 
     victim = tmp_path / "victim"
     victim.mkdir()

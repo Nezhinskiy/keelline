@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
@@ -31,28 +32,20 @@ PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 def _copy_as_repository(tmp_path: Path) -> Path:
     root = tmp_path / "project"
     shutil.copytree(SMOKE, root)
-    env = {
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "PATH": "/usr/bin:/bin",
-    }
 
     # Two commits, so that `commit check --range HEAD~1..HEAD` checks one message rather than
     # an empty range that proves nothing. The second one touches the fixture's own plan rather
     # than being empty, for the same reason one step further on: `plan check --base HEAD~1`
     # lints the plans that range touches, and a range that touches none exits 0 having linted
     # nothing. `test_plan_check_on_the_fixture_lints_the_plan_it_touched` is what says so.
-    def git(*args: str) -> None:
-        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
-
-    git("init", "-q", "-b", "main")
-    git("add", "-A")
-    git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "chore: the fixture")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "chore: the fixture")
     plan = root / PLAN
     added = plan.read_text(encoding="utf-8") + "\nA line the second commit adds.\n"
     plan.write_text(added, encoding="utf-8")
-    git("add", "-A")
-    git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "docs: a second one")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs: a second one")
     return root
 
 
@@ -635,15 +628,6 @@ def step_script(workflow: Path, step_name: str) -> str:
 
 def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
     """A clone whose `origin/main` carries `on_base` as `keelline.toml`, or carries none."""
-    env = {
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "PATH": "/usr/bin:/bin",
-    }
-
-    def git(where: Path, *args: str) -> None:
-        subprocess.run(["git", "-C", str(where), *args], check=True, capture_output=True, env=env)
-
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     git(upstream, "init", "-q", "-b", "main")
@@ -651,10 +635,9 @@ def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
     if on_base is not None:
         (upstream / "keelline.toml").write_text(on_base, encoding="utf-8")
     git(upstream, "add", "-A")
-    git(upstream, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "chore: base")
+    git(upstream, "commit", "-qm", "chore: base")
     project = tmp_path / "project"
-    clone = ["git", "clone", "-q", str(upstream), str(project)]
-    subprocess.run(clone, check=True, capture_output=True, env=env)
+    git(tmp_path, "clone", "-q", str(upstream), str(project))
     return project
 
 

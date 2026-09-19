@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -14,6 +13,7 @@ from keelline.guards import bgcleanup
 from keelline.guards.hooks import register
 from keelline.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
 from keelline.hooks.dispatch import Recorder, dispatch
+from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -227,19 +227,8 @@ def dirty_project(tmp_path: Path) -> Path:
     root = a_project(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
-    env = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(tmp_path),
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.com",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.com",
-    }
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "chore: seed"]):
-        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+        git(root, *args, home=tmp_path)
     (root / "src" / "m.py").write_text("x = 2\n", encoding="utf-8")
     return root
 

@@ -7,9 +7,7 @@ end). What is untested until this file is the command that calls it and the repo
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +15,7 @@ import pytest
 from keelline.errors import Refusal
 from keelline.guards.api import HOOK_MARKER, HOOK_NAME, hooks_dir
 from keelline.setup.commands import run_setup
+from tests import gitfixture
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -35,26 +34,17 @@ def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _env(tmp_path: Path) -> dict[str, str]:
-    return {
-        "PATH": "/usr/bin:/bin",
-        "HOME": str(tmp_path),
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.com",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.com",
-    }
+    """The shared fixture environment, with `tmp_path` as `HOME`.
+
+    It used to pin `PATH` to `/usr/bin:/bin`; `tests/gitfixture.py` passes the real one
+    through, for the reason `keelline.gitenv`'s docstring gives — a hardcoded path is what
+    picks the Xcode shim on macOS over the `git` the machine owner installed.
+    """
+    return gitfixture.env(tmp_path)
 
 
 def _git(tmp_path: Path, root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(root), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=_env(tmp_path),
-    ).stdout
+    return gitfixture.git(root, *args, home=tmp_path)
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -94,13 +84,8 @@ def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Pat
     root = _repo(tmp_path)
     run_setup(_args(root=str(root)))
     assert (hooks_dir(root) / HOOK_NAME).is_file()
-    completed = subprocess.run(
-        ["git", "-C", str(root), "config", "--get", "core.hooksPath"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env(tmp_path),
-    )
+    # `run_git`: `config --get` exits 1 when the key is unset, which is the answer here.
+    completed = gitfixture.run_git(root, "config", "--get", "core.hooksPath", home=tmp_path)
     assert completed.returncode != 0 and completed.stdout.strip() == ""
 
 

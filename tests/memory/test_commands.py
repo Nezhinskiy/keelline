@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.memory.api import DELIMITER
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -322,16 +321,6 @@ index_extra = []
 
 REMOTE = "git@example.com:acme/widget.git"
 BARE_NOTE = "---\nname: n\ndescription: n description\nmetadata:\n  type: project\n---\n\nBody.\n"
-
-
-def git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 @pytest.fixture

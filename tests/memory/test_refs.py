@@ -19,6 +19,7 @@ from keelline.memory.refs import (
     source_roots,
     unresolved,
 )
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -130,12 +131,11 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
     # precisely the class this guard exists to find. Mutation: drop the inside-store exemption —
     # this reddens.
     import shutil
-    import subprocess
 
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     root, config = project(tmp_path)
-    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
+    git(root, "init", "-q")
     (root / ".gitignore").write_text("notes/\n", encoding="utf-8")
     note(root, "developer", "a", "see `notes/developer/gone.md`\n")
     assert findings(root, config) == [
@@ -145,12 +145,11 @@ def test_a_reference_into_the_store_is_settled_against_the_filesystem_not_the_ig
 
 def test_a_path_the_repository_ignores_outside_the_store_is_not_reported(tmp_path: Path) -> None:
     import shutil
-    import subprocess
 
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     root, config = project(tmp_path)
-    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
+    git(root, "init", "-q")
     (root / ".gitignore").write_text("build/\n", encoding="utf-8")
     note(root, "developer", "a", "see `build/out.py`\n")
     assert findings(root, config) == []
@@ -167,12 +166,11 @@ def test_the_ignore_query_matches_a_non_ascii_path_it_asked_about(tmp_path: Path
     # would arrive with the defect already in place. Mutation: drop `-z` from `_ignored`'s argv
     # and read the output with `splitlines()` — this reddens.
     import shutil
-    import subprocess
 
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     root, _config = project(tmp_path)
-    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
+    git(root, "init", "-q")
     (root / ".gitignore").write_text("build/\n", encoding="utf-8")
     assert _ignored(root, {"build/caf\u00e9.py", "src/widget/boot.py"}) == {"build/caf\u00e9.py"}
 

@@ -10,7 +10,6 @@ named tests do not exist read as *caught*, and a `git status` that could not ans
 from __future__ import annotations
 
 import importlib.util
-import os
 import shutil
 import subprocess
 import sys
@@ -19,6 +18,9 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from tests import gitfixture
+from tests.gitfixture import git as _git
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "mutation_oracle.py"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -225,23 +227,9 @@ def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_ta
     Mutation (declared): the sweep's `worktree remove` is dropped -> the entry survives and
     this reddens.
     """
-    import subprocess
-
-    env = {
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-    }
 
     def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", str(repository), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        return gitfixture.run_git(repository, *args)
 
     repository = tmp_path / "repo"
     repository.mkdir()
@@ -345,21 +333,6 @@ def test_a_git_that_cannot_be_launched_is_refused_not_assumed_clean(
     refusal = module._uncommitted({tmp_path / "subject.py"})
     assert refusal is not None
     assert "could not be run" in refusal
-
-
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", *args],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env={
-            **os.environ,
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_SYSTEM": os.devnull,
-            "GIT_TERMINAL_PROMPT": "0",
-        },
-    )
 
 
 # --- the scratch checkout, which is why the working tree is never written --------------------

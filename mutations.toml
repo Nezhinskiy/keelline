@@ -4879,3 +4879,31 @@ after = "        pass"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch",
 ]
+
+# --- Wave 4: the one fixture `git` -----------------------------------------------------------
+# Twenty-three test modules each carried a copy of this helper, protected by five different
+# subsets of the same precaution. The collapse moves the precaution to one place, which is only
+# worth doing if that one place is proven load-bearing: restoring the inheriting environment is
+# what thirteen of the twenty-three were doing, and it is the shape that lets `git init` land in
+# whatever repository an exported `GIT_DIR` names.
+[[mutation]]
+name = "a fixture git inherits the environment again"
+file = "tests/gitfixture.py"
+before = '    sealed = {key: os.environ[key] for key in ENV_KEEP if key in os.environ}'
+after = "    sealed = dict(os.environ)"
+reddens = [
+  "tests/test_gitfixture.py::test_a_fixture_repository_is_built_where_it_was_asked_although_git_dir_names_another",
+  "tests/test_gitfixture.py::test_the_sealed_environment_carries_nothing_that_could_redirect_git",
+]
+
+# The durable half. A guard that stopped walking reports no offences for the same reason a clean
+# tree does, so the walk's own floor is what this proves — narrowed to the one file the walk
+# already excludes, `modules` comes back empty and the floor is the assertion that goes red.
+[[mutation]]
+name = "the walk for a hand-rolled fixture git stops walking"
+file = "tests/test_gitfixture.py"
+before = '    modules = sorted(p for p in TESTS.rglob("*.py") if p.name != "gitfixture.py")'
+after = '    modules = sorted(p for p in TESTS.rglob("gitfixture.py") if p.name != "gitfixture.py")'
+reddens = [
+  "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
+]

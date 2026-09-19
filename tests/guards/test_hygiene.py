@@ -7,7 +7,6 @@ import os
 import py_compile
 import shutil
 import struct
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -18,6 +17,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.schema import Config
 from keelline.guards.hygiene import Hygiene, context_for, inspect, is_pytest_run, notice, red_exit
 from keelline.guards.roots import contained_roots
+from tests.gitfixture import git
 
 # Per test: `is_pytest_run` and `red_exit` are pure, and a module-level skip would void them.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -38,25 +38,6 @@ release_branch = "main"
 [ledger]
 code_roots = ["src", "tests"]
 """
-
-
-def git(root: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-C", str(root), *args],
-        check=True,
-        capture_output=True,
-        env={
-            "PATH": os.environ["PATH"],
-            "HOME": str(root.parent),
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_SYSTEM": os.devnull,
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@example.com",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@example.com",
-        },
-    )
 
 
 def repo(tmp_path: Path) -> Path:

@@ -9,9 +9,7 @@ in `test_write.py`.
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -24,6 +22,8 @@ from keelline.memory.api import PROJECT_RECORD, PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from keelline.presets import load_preset
 from keelline.scaffold import EntriesError
+from tests.gitfixture import git as _git
+from tests.gitfixture import run_git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -51,19 +51,6 @@ mode = "overlay"
 groups = ["developer", "project-stable"]
 index_extra = []
 """
-
-
-def _git(root: Path, *args: str) -> None:
-    # The developer's own git configuration must not reach these runs, for the reason
-    # `tests/memory/test_store.py` gives: a signing key or a hooks path can fail a fixture
-    # that has nothing to do with the code under test.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,7 +93,7 @@ def _project_and_store(
     (root / CONFIG_FILE).write_text(CONFIG.format(name=name), encoding="utf-8")
     if not (root / ".git").exists():
         _git(root, "init", "-q", "-b", "main")
-    subprocess.run(["git", "remote", "remove", "origin"], cwd=root, capture_output=True)
+    run_git(root, "remote", "remove", "origin")
     if origin is not None:
         _git(root, "remote", "add", "origin", origin)
     if recorded is not None:

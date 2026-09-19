@@ -5,9 +5,7 @@ sample data.
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -16,6 +14,7 @@ from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.plans import asserted_outcomes, lint
 from keelline.errors import Failure, Refusal
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -33,23 +32,6 @@ release_branch = "main"
 SCOPE = "**Scope:** a change belongs to this branch iff it touches the widget.\n\n"
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-
-def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), "-c", "user.email=t@example.com", "-c", "user.name=t", *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    ).stdout
 
 
 def project(tmp_path: Path) -> tuple[Path, Config]:

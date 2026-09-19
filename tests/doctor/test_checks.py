@@ -15,7 +15,6 @@ import json
 import os
 import pty
 import shutil
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +33,7 @@ from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from keelline.release.api import HASHED_FILES
 from keelline.runner import Completed
+from tests.gitfixture import git as _git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -130,19 +130,6 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     `PATH` measures nothing.
     """
     return {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home"), **extra}
-
-
-def _git(root: Path, *args: str) -> None:
-    # The developer's own git configuration must not reach these runs, for the reason
-    # `tests/attach/test_binding.py` gives: a signing key or a hooks path can fail a fixture
-    # that has nothing to do with the code under test.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def _initialised(tmp_path: Path, *, template: str = LOCAL_ONLY) -> Path:
