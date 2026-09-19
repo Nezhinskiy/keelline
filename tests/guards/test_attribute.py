@@ -154,3 +154,80 @@ def test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree(
     _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "exported")
     with pytest.raises(Failure, match=r"missing 1 tracked file"):
         attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files(
+    tmp_path: Path,
+) -> None:
+    # Fix round 1, item 1. The export-rule guard fired on ordinary repositories and blamed a
+    # `.gitattributes` rule that was not there. Three independent sources, one fixture:
+    #
+    #   * `set(listing.split())` broke `sub dir/a b.txt` into `sub`, `dir/a` and `b.txt` —
+    #     three phantom entries, none of them on disk;
+    #   * without `-z`, `ls-tree` renders `quo"te.txt` as `"quo\"te.txt"` and a non-ASCII name
+    #     in octal escapes, so `splitlines()` alone would still have missed two of these;
+    #   * `found` built with `p.is_file()` alone drops a tracked DANGLING symlink, because
+    #     `is_file()` follows the link.
+    #
+    # Each was measured against the real `git` before the fix. The assertion is that the call
+    # returns a verdict at all: this guard's failure mode is a `Failure` on a healthy tree, so
+    # "it did not raise" is the whole claim, and the runner's tree snapshot pins that the
+    # awkward names really were in the extraction rather than quietly absent from both sides.
+    #
+    # Mutation (declared): `-z` and the NUL split back to `split()` -> this reddens.
+    root = _repo(tmp_path)
+    (root / "sub dir").mkdir()
+    (root / "sub dir" / "a b.txt").write_text("spaced\n", encoding="utf-8")
+    (root / 'quo"te.txt').write_text("quoted\n", encoding="utf-8")
+    (root / "ünïcode.txt").write_text("wide\n", encoding="utf-8")
+    (root / "dangling.txt").symlink_to("nowhere-at-all")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "awkward names")
+    runner = _Coded({})
+    result = attribute(root, command="true", base="main", runner=runner)
+    assert result.verdict == VERDICTS[4]
+    head = runner.trees["head"]
+    assert head["sub dir/a b.txt"] == "spaced\n"
+    assert head['quo"te.txt'] == "quoted\n"
+
+
+@needs_git
+def test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 1, item 2. Every external program is optional at runtime and a missing binary
+    # is a reported finding: `gitenv.git_run` answers `(-1, "")` and `runner` answers
+    # `Completed(NOT_FOUND, ...)`. The `tar` call was the one launch in this module with
+    # nothing around it, so a machine without `tar` got `FileNotFoundError` out of a library
+    # function, which only `cli.py`'s mapping caught — as an internal error, exit 2.
+    #
+    # A PATH holding `git` and nothing else, rather than an empty one: an empty PATH breaks
+    # the merge-base first and the test would pass for the wrong reason, never reaching `tar`.
+    # The assertion names `tar`, so a `Failure` raised anywhere else on the path does not
+    # satisfy it. Mutation (declared): drop the `except OSError` -> `FileNotFoundError`
+    # escapes and `pytest.raises(Failure)` reddens.
+    git_binary = shutil.which("git")
+    assert git_binary is not None
+    root = _repo(tmp_path)
+    only_git = tmp_path / "bin"
+    only_git.mkdir()
+    (only_git / "git").symlink_to(git_binary)
+    monkeypatch.setenv("PATH", str(only_git))
+    with pytest.raises(Failure, match="tar could not be run"):
+        attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 1, item 6. `git_run` answers `(-1, "")` when the binary could not be launched,
+    # and `-1` is a sentinel and not an exit status — rendered as one, the message read
+    # "`git merge-base HEAD origin/main` exited -1; is origin/main fetched?", which sends a
+    # reader to fetch a ref when the answer is that there is no git on this machine. The
+    # assertion is on the cause, not on the exception type.
+    root = _repo(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    with pytest.raises(Failure, match="git could not be run"):
+        attribute(root, command="true", base="main", runner=_Coded({}))

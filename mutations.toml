@@ -3564,3 +3564,55 @@ after = "    if False:"
 reddens = [
   "tests/guards/test_attribute.py::test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree",
 ]
+
+# Fix round 1, item 1. The listing and the extraction are compared as SETS OF PATHS, and both
+# sides have to be built the pedantic way or the guard fires on a healthy tree and blames a
+# `.gitattributes` rule that is not there. `split()` breaks `sub dir/a b.txt` into three
+# phantoms; without `-z`, `ls-tree` quotes a name carrying a quote or a non-ASCII byte.
+[[mutation]]
+name = "attribute splits the tracked listing on whitespace instead of on NUL"
+file = "src/keelline/guards/attribute.py"
+before = '''
+    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
+    expected = {name for name in listing.split("\0") if name}'''
+after = '''
+    code, listing = git_run(root, "ls-tree", "-r", "--name-only", ref)
+    expected = set(listing.split())'''
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# Fix round 1, item 1, the second source. `Path.is_file()` follows the link, so a tracked
+# DANGLING symlink is in the extraction and absent from `found` — and a submodule gitlink is
+# absent by the same construction.
+[[mutation]]
+name = "attribute counts only files, so a dangling symlink reads as a missing file"
+file = "src/keelline/guards/attribute.py"
+before = "        if p.is_file() or p.is_symlink()"
+after = "        if p.is_file()"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
+]
+
+# Fix round 1, item 2. Every external program is optional at runtime and a missing binary is a
+# reported finding, never a traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers
+# `Completed(NOT_FOUND, ...)`. This was the one launch in the module with nothing around it.
+[[mutation]]
+name = "attribute lets a missing tar escape as a traceback"
+file = "src/keelline/guards/attribute.py"
+before = "    except OSError as exc:"
+after = "    except ZeroDivisionError as exc:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
+]
+
+# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "could not be launched", not an exit
+# status; rendered as one it sends a reader to fetch a ref that is not the problem.
+[[mutation]]
+name = "attribute reports an unlaunchable git as an exit code"
+file = "src/keelline/guards/attribute.py"
+before = "    if code == -1:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
+]

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import git_run
+from keelline.gitenv import git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
 VERDICTS = (
@@ -69,30 +69,56 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     with a root-level `tree.tar` would otherwise have the archive overwrite itself mid-read.
     `git archive` honours the archived tree's own `.gitattributes` (`export-ignore`,
     `export-subst`), which are versioned too — so the extracted listing is compared to
-    `git ls-tree -r --name-only REF`, and a difference is a `Failure` naming the attribute
+    `git ls-tree -r --name-only REF`, and a difference is a `Failure` naming the likely cause
     rather than a silently smaller tree steering the verdict.
+
+    **Both sides of that comparison are built the pedantic way, because the first draft made
+    the check fire on ordinary repositories.** `-z` and a split on NUL, never `split()` and
+    never `splitlines()`: `split()` breaks `sub dir/a b.txt` into three phantom entries, and
+    plain `splitlines()` survives that but not git's own quoting — without `-z`, `ls-tree`
+    renders a name carrying a quote or a non-ASCII byte as `"quo\"te.txt"` and
+    `"\303\274n..."`, neither of which is the name on disk. And `found` counts a symlink as
+    well as a file: `Path.is_file()` follows the link, so a tracked **dangling** symlink — and
+    a submodule gitlink by the same construction — is present in the extraction and absent
+    from `found`. Each of those three made this guard report missing files and blame a
+    `.gitattributes` rule that was not there, on a tree with nothing wrong with it.
     """
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
     code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
     if code != 0:
         raise Failure(f"`git archive {ref}` exited {code}; nothing was extracted")
-    done = subprocess.run(  # noqa: S603
-        ["tar", "-xf", str(archive)],  # noqa: S607 - PATH on purpose: the machine owner's tar
-        cwd=into,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        done = subprocess.run(  # noqa: S603
+            # PATH on purpose: the machine owner's tar. `env=` for the same reason every other
+            # subprocess in this tree scrubs -- `TAR_OPTIONS` and `TAPE` in the ambient
+            # environment otherwise reach an extraction whose contents decide a verdict.
+            ["tar", "-xf", str(archive)],  # noqa: S607
+            cwd=into,
+            capture_output=True,
+            check=False,
+            env=scrubbed_env(),
+        )
+    # A missing binary is a reported finding, never a traceback (the global constraints make
+    # every external program optional): `gitenv.git_run` answers `(-1, "")` on an `OSError` and
+    # `runner` answers `Completed(NOT_FOUND, ...)`; this is the same rule for `tar`.
+    except OSError as exc:
+        raise Failure(f"extracting {ref}: tar could not be run ({exc})") from None
     archive.unlink()
     if done.returncode != 0:
         raise Failure(f"extracting {ref} exited {done.returncode}")
-    code, listing = git_run(root, "ls-tree", "-r", "--name-only", ref)
-    expected = set(listing.split())
-    found = {str(p.relative_to(into)) for p in into.rglob("*") if p.is_file()}
+    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
+    expected = {name for name in listing.split("\0") if name}
+    found = {
+        str(p.relative_to(into))
+        for p in into.rglob("*")
+        if p.is_file() or p.is_symlink()  # is_file() follows the link, so a dangling one needs both
+    }
     if code == 0 and expected - found:
         raise Failure(
-            f"{ref}'s archive is missing {len(expected - found)} tracked file(s) — a "
-            f"`.gitattributes` export rule in that tree; this tool cannot compare it"
+            f"{ref}'s archive is missing {len(expected - found)} tracked file(s); the likely "
+            f"cause is a `.gitattributes` export rule in that tree, and this tool cannot "
+            f"compare a tree it did not get whole"
         )
 
 
@@ -101,6 +127,11 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
         raise Refusal("--base must name a ref, not an option")
     code, merge_base = git_run(root, "merge-base", "HEAD", base)
     merge_base = merge_base.strip()
+    # `git_run`'s own sentinel for "the binary could not be launched at all", which is not an
+    # exit code and must not be rendered as one: `exited -1; is origin/main fetched?` sends a
+    # reader to fetch a ref when the answer is that there is no git here.
+    if code == -1:
+        raise Failure(f"git could not be run, so `merge-base HEAD {base}` never executed")
     if code != 0 or not merge_base:
         raise Failure(f"`git merge-base HEAD {base}` exited {code}; is {base} fetched?")
     ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
