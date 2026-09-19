@@ -10,7 +10,10 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    # Semver tags only, and deliberately not `v*`: the floating `v1` alias matches `v*`, so
+    # every alias move would start a run that `release check --tag v1` fails — for the life of
+    # the project. The alias points at a release this workflow already published.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
 
 permissions:
   contents: read
@@ -19,6 +22,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Named here because the attestation moved into this job: `attest-build-provenance` signs
+    # through the OIDC token and writes an attestation, so the two write scopes have to travel
+    # with it. They were `publish`'s while the step was, and the top-level default is read.
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -28,20 +38,20 @@ jobs:
       - name: Install
         run: uv sync --locked
       - name: Version discipline, against the tag
-        # The tag is the claim; these six files are what the claim has to agree with. A tag that
+        # The tag is the claim; the six sources, the changelog and the hash record are what
+        # the claim has to agree with, and `release check --tag` holds all of them. A tag that
         # names a version no source carries is the one release mistake PyPI will not let you undo.
-        run: |
-          uv run keelline release check
-          tagged="${GITHUB_REF_NAME#v}"
-          built="$(uv run python -c 'import keelline; print(keelline.__version__)')"
-          test "$tagged" = "$built" || {
-            echo "tag $GITHUB_REF_NAME does not match package version $built" >&2
-            exit 1
-          }
+        run: uv run keelline release check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q
       - name: Build
         run: uv build
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        # Attested here rather than in `publish`, because this is the job that produced
+        # `dist/*`: the artefacts a GitHub Release carries say where they came from whether or
+        # not PyPI is in the picture, and a declined PyPI no longer costs the provenance.
+        with:
+          subject-path: "dist/*"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
@@ -56,14 +66,44 @@ jobs:
     environment: pypi
     permissions:
       id-token: write       # Trusted Publishing: no stored API token anywhere
-      attestations: write
       contents: read
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist
           path: dist/
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: "dist/*"
       - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+
+  # Independent of `publish`, so a declined or failed PyPI upload does not cost the Release —
+  # and behind the same `pypi` environment, because the environment is the one human gate this
+  # file has and a mistaken tag must not become a public Release either.
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi   # the same human gate as publish: a mistaken tag waits here too
+    permissions:
+      contents: write   # the one job that writes: a Release attached to vX.Y.Z, never to v1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+      - name: The release's own changelog section
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 - "$version" <<'PY' > "$RUNNER_TEMP/notes.md"
+          import re, sys
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          version = sys.argv[1]
+          match = re.search(rf"^## {re.escape(version)} .*?(?=^## |\Z)", text, re.S | re.M)
+          assert match, f"CHANGELOG.md has no section for {version}"
+          print(match.group(0).strip())
+          PY
+      - name: The GitHub Release, attached to this tag only (§5.9)
+        # Never attached to the floating `v1`: GitHub's immutable releases would freeze the
+        # alias at whatever it pointed to, and the alias exists to move.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "keelline ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/*

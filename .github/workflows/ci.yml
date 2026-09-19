@@ -119,3 +119,7 @@ jobs:
           claude plugin validate .claude-plugin/plugin.json --strict
           claude plugin validate .claude-plugin/marketplace.json --strict
           claude plugin validate .codex-plugin/plugin.json
+      - name: The platform's own tag tool agrees with the manifests
+        # D12: `claude plugin tag --dry-run` checks the manifest side of "one version"; the
+        # six-source gate above checks the rest. A dry run creates nothing.
+        run: claude plugin tag --dry-run .

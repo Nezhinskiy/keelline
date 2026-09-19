@@ -64,6 +64,23 @@ the state machine.
 
 ## Install
 
+<!-- RELEASING.md step 2.11 replaces the paragraph below with exactly this, at the first
+release, with X.Y.Z the version that was tagged. Written here so that the release commit is an
+edit and not a composition:
+
+**Released as X.Y.Z.** Both commands below install that release. The plugin form takes the
+tag, and `uv tool install keelline` resolves from PyPI:
+
+```
+/plugin marketplace add Nezhinskiy/keelline@vX.Y.Z
+/plugin install keelline@keelline-marketplace
+```
+
+```bash
+uv tool install keelline
+```
+-->
+
 **Nothing is released yet.** There is no version tag, so nothing is on PyPI and both commands
 below install the repository's default branch as it stands rather than a release. `uv tool
 install keelline` does not resolve today; the form that does is here.
