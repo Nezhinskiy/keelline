@@ -2066,6 +2066,7 @@ after = "        pass"
 reddens = [
   "tests/attach/test_commands.py::test_a_non_interactive_session_may_not_name_the_machine_file",
   "tests/attach/test_commands.py::test_the_flag_is_refused_and_never_quietly_ignored",
+  "tests/test_install_path.py::test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal",
 ]
 
 # The ledger holds the owner's personal allow rules and lives under `.keelline/local/`, a path
@@ -3329,4 +3330,18 @@ before = "        (settings.parent, settings.name) if settings is not None else 
 after = "        (home, USER_SETTINGS) if settings is not None else (home, USER_SETTINGS)"
 reddens = [
   "tests/setup/test_setup.py::test_a_per_file_settings_link_is_written_through_settings_and_not_under_home",
+]
+
+# D4: the walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real
+# `PATH` lookup ran and not what a stub recorded. `overlay init` installs the overlay's
+# commit-time secret scan, and a verb that is not `install` installs nothing while every exit
+# code stays 0 -- the quiet half of the failure, which is why the assertion is on the logged
+# command rather than on the command's success.
+[[mutation]]
+name = "the overlay's secret scan is asked for its version instead of installed"
+file = "src/keelline/overlay/create.py"
+before = '    done: Completed = runner.run(["pre-commit", "install"], root)'
+after = '    done: Completed = runner.run(["pre-commit", "--version"], root)'
+reddens = [
+  "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
