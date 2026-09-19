@@ -146,7 +146,10 @@ def register(groups: SubParsers) -> None:
     setup.add_argument(
         "--yes",
         action="store_true",
-        help="take the detected defaults for everything except the overlay",
+        help=(
+            "confirm the one irreversible act: creating an overlay repository on GitHub with "
+            "--overlay create:<owner>/<name>. Nothing else asks"
+        ),
     )
     # Both defaults are `None` and are resolved in `run_setup`. A path computed here is computed
     # when the parser is built, which is every run of every command — and printed by

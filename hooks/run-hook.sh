@@ -156,9 +156,48 @@ if [ -n "$root" ]; then
 fi
 
 # The second anchor, resolved by the same question so the comparison below is between two
-# physical paths. Empty when `git` named nothing, which is simply one anchor fewer.
+# physical paths. Empty when `git` named nothing, which is simply one anchor fewer. It is not
+# compared on its own: it is the first member of the checkout list below, because a checkout is
+# what it names.
 git_project=
 [ -z "$git_root" ] || git_project=$(CDPATH= cd -- "$git_root" 2>/dev/null && pwd -P)
+
+# **Every checkout of this repository, and not only the one the hook runs in.** Both anchors
+# above name a single checkout, and a clone's committed bytes reach every checkout of it: inside
+# a linked worktree `--show-toplevel` answers the worktree, so the main checkout's own tree --
+# and its committed `bin/python3` -- was "outside the project root", reachable through a `PATH`
+# entry of `${CLAUDE_PROJECT_DIR}/../../bin` from the same committed `env` block. `setup` already
+# holds this rule one area over ("a worktree is not a different repository, and a clone ships
+# its own tree into all of them"); this is the wrapper's copy of it. Answered by the same pinned
+# `git`, so no new trusted input arrives; one physical path per line, resolved by the same
+# question as `project`, and a worktree whose directory is gone contributes nothing.
+#
+# A function and not a bare substitution: a `case` inside `$( )` is a parse error on the
+# `/bin/sh` macOS ships (bash 3.2), which this file has to run under.
+list_checkouts() {
+  env -i PATH=/usr/bin:/bin HOME="${HOME:-}" "$git_bin" -C "$git_root" worktree list --porcelain 2>/dev/null |
+    while IFS= read -r line; do
+      case "$line" in
+        "worktree "*)
+          tree=$(CDPATH= cd -- "${line#worktree }" 2>/dev/null && pwd -P) && printf '%s\n' "$tree"
+          ;;
+      esac
+    done
+}
+#
+# `git_project` is the list's first member, written here rather than compared separately in
+# `in_project`: whenever `git worktree list` answers at all its output contains this path too,
+# so a second arm for it was a branch no test could redden -- coverage advertised and not held,
+# which is the shape `mutations.toml` exists to catch (it did: the arm survived its own
+# mutation). Kept as a line of its own all the same, because it is the one git anchor that does
+# not depend on `worktree list` answering: a `git` that resolves `--show-toplevel` and cannot
+# list worktrees must not cost the containment its git anchor entirely. The declared mutation is
+# therefore on the list, which a linked worktree can tell apart from this line.
+git_checkouts=
+[ -z "$git_root" ] || git_checkouts=$(
+  printf '%s\n' "$git_project"
+  list_checkouts
+)
 
 # Whether a resolved interpreter path lies inside the project root. Both sides resolved, which
 # is the whole of the care here: `command -v` answers `./python3` for a `.` in `PATH` and
@@ -168,7 +207,9 @@ git_project=
 # directory and not the leaf: a symlink *at* the leaf lives in the tree whoever it points at,
 # and the tree is what the clone controls.
 #
-# **The UNION of the two anchors, and not either one of them.** `CLAUDE_PROJECT_DIR` reaches this
+# **The UNION of the two anchors, and not either one of them** — the destination
+# `CLAUDE_PROJECT_DIR` named, and every checkout the pinned `git` names, which is where git's
+# own answer enters rather than as a comparison of its own. `CLAUDE_PROJECT_DIR` reaches this
 # process from a committed `.claude/settings.json` `env` block — the very channel this
 # containment exists to defeat — so measuring against it alone let a clone set `PATH` to its own
 # tree *and* name a root outside that tree, and the tree's own `python3` was then "outside the
@@ -196,7 +237,19 @@ in_project() {
   dir=$(CDPATH= cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
   [ -n "$dir" ] || return 1
   under_root "$dir" "$project" && return 0
-  under_root "$dir" "$git_project" && return 0
+  # One checkout per line, `git_project` among them: `IFS` is a newline for this split and is
+  # restored after it. The only caller is the candidate loop below, which runs under `set -f`,
+  # so a `*` in a checkout's path is a character here and not a pattern.
+  saved_ifs=$IFS
+  IFS='
+'
+  for tree in $git_checkouts; do
+    if under_root "$dir" "$tree"; then
+      IFS=$saved_ifs
+      return 0
+    fi
+  done
+  IFS=$saved_ifs
   return 1
 }
 
@@ -220,6 +273,11 @@ candidates='/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 /opt/
 if [ -t 0 ] && [ -n "${KEELLINE_PYTHON_CANDIDATES:-}" ]; then candidates="$KEELLINE_PYTHON_CANDIDATES"; fi
 p=
 skipped_in_project=
+# `set -f` for the split: a candidate is a program name or a path, never a pattern, and without
+# it a `*` in `KEELLINE_PYTHON_CANDIDATES` would expand against the cwd before `command -v` saw
+# it. It also covers `in_project`'s split of the checkout list. Restored after the loop so
+# nothing below inherits the setting.
+set -f
 for c in $candidates; do
   resolved=$(command -v "$c" 2>/dev/null) || continue
   [ -n "$resolved" ] || continue
@@ -232,6 +290,7 @@ for c in $candidates; do
     break
   fi
 done
+set +f
 # Silent on a skipped candidate, and named here: a token printed while a later candidate still
 # answers would be read by `doctor`'s wrapper row as a refusal that exited 0. This is the one
 # message a vendored in-tree toolchain gets, so it says what happened rather than only that

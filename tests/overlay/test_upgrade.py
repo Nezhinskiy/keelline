@@ -57,11 +57,20 @@ def test_the_two_permission_files_are_asked_about_even_when_unchanged(tmp_path: 
     assert set(decisions) == {"common/claude/permissions.json", "common/claude/hooks.json"}
 
 
-def test_a_dry_run_writes_nothing(tmp_path: Path) -> None:
+def test_a_dry_run_writes_nothing_where_a_real_run_would(tmp_path: Path) -> None:
+    # Non-vacuous on purpose: on a freshly created overlay the plan carries no action, so a dry
+    # run and a real run both write nothing and `if not dry_run:` could be deleted unnoticed.
+    # A stale, re-stamped file gives the plan an UPDATE; the dry run must leave the stale bytes
+    # and the real run must replace them. Mutation: `if not dry_run:` → `if True:` reddens the
+    # first assertion; `apply(...)` removed reddens the second.
     root = _an_overlay(tmp_path)
+    (root / "README.md").write_text("stale", encoding="utf-8")
+    _restamp(root, "README.md")
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
-    upgrade(root, dry_run=True)
+    assert upgrade(root, dry_run=True).plan.actions
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+    upgrade(root, dry_run=False)
+    assert (root / "README.md").read_text(encoding="utf-8") != "stale"
 
 
 def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written(

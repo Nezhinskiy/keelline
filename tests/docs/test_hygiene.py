@@ -160,7 +160,7 @@ def test_a_non_utf8_document_is_the_projects_file_being_wrong_not_an_internal_er
 
 
 def test_a_link_out_of_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:
-    # `_normalize_target` already drops an absolute link; a `..` one walked out of the project
+    # `_normalise_target` already drops an absolute link; a `..` one walked out of the project
     # and was settled against the developer's disk, which is an existence oracle and makes the
     # verdict depend on the machine. The assertion is that the answer does not change with the
     # file. Mutation: drop `resolves_within`'s containment — the second call reddens.

@@ -277,7 +277,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
 def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) -> None:
     # §6.1: `overlay create` runs `gh repo create` "after explicit confirmation". A default
     # that creates a GitHub repository is the one default this command may not have — and
-    # `--yes`, which takes the detected defaults for everything else, must not take this one.
+    # `--yes`, which confirms creating one, must not stand in for naming one.
     #
     # Mutation: `setup`'s `if overlay is not None:` changed to `if True:` → reddens (the call
     # then reaches `_apply_overlay(None, ...)`, which is exactly the "taken without being

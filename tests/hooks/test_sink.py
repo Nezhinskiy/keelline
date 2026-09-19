@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 # The layout the sink writes is `hooks.api`'s, because `doctor` reads the same tree and the two
 # must name it with one set of strings; the sink's own bookkeeping stays in `hooks.sink`.
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, MARKERS, NullSink
@@ -32,6 +34,25 @@ def test_a_marker_is_remembered_across_processes(tmp_path: Path) -> None:
     first.mark("ledger-notes")
     second = sink_for("s1", {"CLAUDE_PLUGIN_DATA": str(tmp_path)})
     assert second.seen("ledger-notes") is True
+
+
+def test_a_relative_data_root_is_no_sink_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `CLAUDE_PLUGIN_DATA` arrives through a committed `env` block, and `Path(".")` anchors the
+    # contained walk on the process cwd — for a hook, the checkout. Measured: `CLAUDE_PLUGIN_DATA=.`
+    # landed `keelline/.probe` and `keelline/diagnostics.jsonl` inside the repository. Traversal
+    # and symlinks were still refused; *where the walk was anchored* was the repository's to
+    # choose, and this is the half taken back. The cwd is `tmp_path` here so the assertion can
+    # say what was not written and where.
+    #
+    # Mutation (`mutations.toml`, "the sink accepts a relative data root"): the `is_absolute`
+    # guard removed → a `DataSink` comes back and `keelline/` appears under the cwd.
+    monkeypatch.chdir(tmp_path)
+    for spelling in (".", "keelline-data", "./sub"):
+        assert isinstance(sink_for("s1", {"CLAUDE_PLUGIN_DATA": spelling}), NullSink)
+        assert isinstance(sink_for("s1", {"PLUGIN_DATA": spelling}), NullSink)
+    assert not any(tmp_path.iterdir())
 
 
 def test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink(

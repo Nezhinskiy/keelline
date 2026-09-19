@@ -81,6 +81,29 @@ def test_failures_emit_json_when_asked(capsys: pytest.CaptureFixture[str]) -> No
     assert json.loads(capsys.readouterr().out)["error"] == "failed"
 
 
+def test_every_command_describes_itself_and_names_json_in_its_own_help() -> None:
+    # `keelline attach --help` printed `usage:` and jumped to the options: the one sentence the
+    # area registered with `help=` reached the parent's listing and nothing else. And `--json`
+    # is stripped before argparse sees it, so no command could mention it -- while the README
+    # promised it works everywhere. Mutation: `_finish` not called from `build_parser` reddens
+    # every assertion below.
+    parser = build_parser(discover_registrars())
+    top = parser.format_help()
+    assert "--json" in top
+    groups = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    listed = [action.dest for action in groups._choices_actions]
+    assert listed == sorted(listed)
+    for name, sub in groups._name_parser_map.items():
+        text = sub.format_help()
+        assert sub.description, f"`keelline {name}` has no description"
+        assert "--json" in text, f"`keelline {name} --help` never mentions --json"
+        for action in sub._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for leaf_name, leaf in action._name_parser_map.items():
+                    assert leaf.description, f"`keelline {name} {leaf_name}` has no description"
+                    assert "--json" in leaf.format_help()
+
+
 def test_areas_are_discovered_from_the_package() -> None:
     names = {registrar.__module__ for registrar in discover_registrars()}
     assert "keelline.release.commands" in names

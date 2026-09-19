@@ -624,6 +624,68 @@ def test_an_interpreter_in_the_git_root_is_refused_although_the_environment_name
     assert ran.exists()
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Both anchors named a single checkout, and a clone's committed bytes reach every checkout
+    # of it. Measured on the shipped wrapper: launched inside a linked worktree — which this
+    # project's own preset makes the default place an agent works — `--show-toplevel` answered
+    # the worktree, so the main checkout's committed `python3` was "outside the project root",
+    # reachable through a `PATH` entry of `${CLAUDE_PROJECT_DIR}/../../bin` from the same
+    # committed `env` block, and it ran the launcher. `setup` already refuses an overlay root in
+    # any checkout of the project for exactly this reason; the wrapper now measures against the
+    # same set, taken from `git worktree list` through the pinned `git`.
+    #
+    # Mutation (`mutations.toml`, "the wrapper measures a candidate against one checkout only"):
+    # the checkout-list arm of `in_project` stops answering → the main checkout's interpreter
+    # runs from the worktree and `ran` exists.
+    clone, _shipped, ran = _clone_shipping_an_interpreter(tmp_path)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-C", str(clone)]
+    subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+    subprocess.run([*git, "add", "python3"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "ship"], check=True, capture_output=True)
+    worktree = tmp_path / "worktrees" / "wave"
+    subprocess.run(
+        [*git, "worktree", "add", "-q", str(worktree), "-b", "wave"],
+        check=True,
+        capture_output=True,
+    )
+    plugin = _plugin_root(tmp_path, 0, echo_cwd=True)
+    # `PATH` names the MAIN checkout while the hook runs in the worktree: the arrangement a
+    # committed `env` block reaches with `${CLAUDE_PROJECT_DIR}/../../<main>`.
+    path = f"{clone}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    result = _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        project=worktree,
+        candidates="python3",
+        path=path,
+        cwd=worktree,
+    )
+    assert not ran.exists(), "the main checkout's interpreter ran from a linked worktree"
+    assert result.returncode == 2
+    assert "inside the project root" in result.stderr
+    # Non-vacuous: the same `PATH` from a directory that is not a checkout of this repository
+    # has no such anchor, and the candidate stands — which is what makes the refusal above the
+    # checkout list's doing and not some other arm's.
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    _run(
+        "closed",
+        "hook",
+        "PreToolUse",
+        plugin_root=plugin,
+        project=plain,
+        candidates="python3",
+        path=path,
+        cwd=plain,
+    )
+    assert ran.exists()
+
+
 def test_the_two_states_with_no_interpreter_are_told_apart(tmp_path: Path) -> None:
     # The message was byte-identical for "a candidate was found inside the tree and skipped" and
     # "there was no candidate at all", while the comment beside it claimed it "says what happened

@@ -110,3 +110,42 @@ def test_an_integer_round_trips() -> None:
 def test_a_value_where_a_table_belongs_refuses() -> None:
     with pytest.raises(Refusal):
         dumps({"project": "not a table"})  # type: ignore[dict-item]
+
+
+def test_the_root_table_is_hoisted_when_it_is_not_given_first() -> None:
+    # `_emit` writes no header for the root, so a root that followed `[n]` bound its keys to
+    # `[n]`: `{"n": {"k": True}, "": {"r": "u"}}` parsed back as `{"n": {"k": True, "r": "u"}}`.
+    # That is the misplacement this module exists to prevent, reached by ordering rather than
+    # by escaping. Both callers happened to put the root first; the serialiser no longer
+    # depends on it. Mutation: the `sorted(...)` in `dumps` back to `tables.items()` → reddens.
+    parsed = tomllib.loads(dumps({"n": {"k": True}, "": {"r": "u"}}))
+    assert parsed == {"n": {"k": True}, "r": "u"}
+
+
+def test_a_time_with_an_offset_and_a_sub_minute_offset_are_refused_rather_than_written() -> None:
+    # Two shapes `isoformat` spells that `tomllib` cannot read back: TOML's local time has no
+    # offset form, and an offset is `±HH:MM` with no seconds. Written, either wedges `setup`'s
+    # rewrite-on-every-run file for ever — the contract says refuse, and it did not. Mutation:
+    # either `raise` in `_scalar`'s datetime arm removed → the matching call below writes text
+    # that `tomllib.loads` rejects instead of raising `Refusal`.
+    with pytest.raises(Refusal):
+        dumps({"t": {"k": datetime.time(10, 30, tzinfo=datetime.UTC)}})
+    odd = datetime.timezone(datetime.timedelta(minutes=30, seconds=7))
+    with pytest.raises(Refusal):
+        dumps({"t": {"k": datetime.datetime(2026, 9, 19, 10, 30, tzinfo=odd)}})
+    # The shapes beside them still round-trip, so the refusal is narrow.
+    fine = {
+        "t": {
+            "naive": datetime.time(10, 30),
+            "aware": datetime.datetime(2026, 9, 19, 10, 30, tzinfo=datetime.UTC),
+            "half": datetime.datetime(
+                2026,
+                9,
+                19,
+                10,
+                30,
+                tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30)),
+            ),
+        }
+    }
+    assert tomllib.loads(dumps(fine)) == fine

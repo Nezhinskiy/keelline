@@ -346,3 +346,24 @@ def test_withdrawing_the_fallback_never_takes_anything_else_out_of_that_file(
     permissions = document["permissions"]
     assert isinstance(permissions, dict)
     assert permissions["deny"] == ["Bash(curl:*)"]
+
+
+def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git(
+    tmp_path: Path,
+) -> None:
+    # `rm -rf` on a worktree without `git worktree prune` is the ordinary way one goes away, and
+    # `git worktree list --porcelain` keeps listing it with a `prunable` line. `_worktrees` kept
+    # every `worktree ` line, `link()` ran with `cwd=<gone>`, and `GitUnavailable` said "check
+    # that `git` runs here" — after the ledger, the region, the binding record and the owner's
+    # links were written, on a machine whose `git` was fine. `detach` in the same state
+    # completed, so the two halves disagreed about it.
+    #
+    # Mutation (`mutations.toml`, "attach links into a worktree git reports as prunable"): the
+    # `prunable` skip removed → this raises.
+    root, store, machine = _bound(tmp_path)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    shutil.rmtree(side)
+    attached = _attach(root, store, machine, tmp_path / "home")
+    assert (root / "docs" / "memory" / "developer").is_symlink()
+    assert not any(str(side) in str(path) for path in attached.links.created)

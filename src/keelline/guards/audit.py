@@ -60,7 +60,7 @@ DOUBLE_PARAM_PREFIXES = ("mock_", "stub_", "fake_", "dummy_")
 DOUBLE_PARAM_SUFFIXES = ("_mock", "_stub", "_fake")
 
 # Attributes that INSPECT a double's recorded interactions rather than run its stubbed
-# behavior. Asserting on these is the legitimate way to check the subject's effects.
+# behaviour. Asserting on these is the legitimate way to check the subject's effects.
 INSPECT_ATTRS = frozenset(
     {
         "call_args",
@@ -435,7 +435,7 @@ def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
 
 
 def test_stub_returns_configured_value() -> None:
-    """Asserts on the double's own configured behavior."""
+    """Asserts on the double's own configured behaviour."""
     client = MagicMock()
     client.fetch.return_value = {"ok": True}
     assert client.fetch() == {"ok": True}

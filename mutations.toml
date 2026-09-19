@@ -1633,6 +1633,23 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so[open-0]",
 ]
 
+# Both anchors name a single checkout, and a clone's committed bytes reach every checkout of
+# it. Launched inside a linked worktree, the main checkout's committed `python3` was "outside
+# the project root" and ran the launcher -- code execution from a clone, on the machines the
+# bare-`python3` fall-through exists for. This arm measures the candidate against every
+# checkout `git worktree list` names, the git root among them; disarmed, git's answer leaves the
+# containment altogether and `CLAUDE_PROJECT_DIR` is the only anchor left -- which is why the
+# git-root case reddens here too.
+[[mutation]]
+name = "the wrapper measures a candidate against one checkout only"
+file = "hooks/run-hook.sh"
+before = '    if under_root "$dir" "$tree"; then'
+after = '    if false; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+]
+
 # The marker key and the session id are both payload-controlled. Used verbatim, `../../escape`
 # is a write -- and a `remove_within` loop -- outside the one directory D14 permits.
 [[mutation]]
@@ -1796,16 +1813,28 @@ reddens = [
   "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
 ]
 
-# DP3's anchor is only as good as the file that carries it surviving a second `setup` run. With
-# this guard gone, a rewrite that only sets the personal languages silently drops whatever
-# overlay root an earlier `setup --overlay` recorded, and every later `attach` reads "not
-# recorded" about a machine that was already set up.
+# The machine file is the owner's, by `README.md`'s own table, and every `setup` rewrites it.
+# `[personal]` and `[machine]` were spread over what the file held; `[overlay]` replaced its
+# table outright, so a hand-written key in it was gone after any run and a rootless `[overlay]`
+# vanished whole -- silently, and again on the next run.
+#
+# The same spread is what carries a recorded root through a run that was not given one, which is
+# DP3's anchor surviving a second `setup`: without it, a rewrite that only sets the personal
+# languages drops whatever `setup --overlay` recorded and every later `attach` reads "not
+# recorded" about a machine that was already set up. That property had an entry of its own, on
+# the explicit read-back this module used to do beside the spread; it SURVIVED, because the
+# spread already held the property and the read-back was dead code shaped like a guard. The
+# read-back is gone and the property is declared here, where the code that keeps it is.
 [[mutation]]
-name = "write_machine stops reading back an overlay root it was not given"
+name = "write_machine replaces the overlay table instead of merging over it"
 file = "src/keelline/setup/machine.py"
-before = "    if root is None:"
-after = "    if False:"
-reddens = ["tests/setup/test_machine.py::test_a_rewrite_preserves_a_value_this_run_did_not_set"]
+before = '            **_table(existing, "overlay"),'
+after = '            **({}),'
+reddens = [
+  "tests/setup/test_machine.py::test_a_hand_written_key_in_a_table_this_writer_owns_survives_a_rewrite",
+  "tests/setup/test_machine.py::test_an_overlay_table_with_no_root_is_not_deleted",
+  "tests/setup/test_machine.py::test_a_rewrite_preserves_a_value_this_run_did_not_set",
+]
 
 # The owner's own `~/.claude/settings.json` predates Keelline on most machines. Without this
 # guard, the first `setup` run on a real machine silently drops every deny rule the owner wrote
@@ -2464,15 +2493,21 @@ reddens = [
 # The other half of S8: the containment was measured against `CLAUDE_PROJECT_DIR` alone, which
 # reaches this process from the very `env` block it exists to defeat. Measured on the shipped
 # wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
-# `python3` "outside the project root" and it ran the launcher. Dropping this arm leaves exactly
-# that hole, with every other line of the guard still in place.
+# `python3` "outside the project root" and it ran the launcher. Git's answer enters the
+# containment as the checkout list, so this asks the wrapper to stop asking `git` where the
+# other checkouts are and keep only the root it is standing in -- which a run from a linked
+# worktree can tell apart, and a run in the main checkout cannot.
+#
+# This entry used to name the separate `under_root "$dir" "$git_project"` arm in `in_project`,
+# and it SURVIVED: the checkout list contains the git root, so the arm was a duplicate and no
+# test could redden it. The arm is gone; the line the guard actually needs is declared here.
 [[mutation]]
-name = "the interpreter containment stops measuring against git's answer"
+name = "the wrapper stops asking git for the repository's other checkouts"
 file = "hooks/run-hook.sh"
-before = '  under_root "$dir" "$git_project" && return 0'
-after = '  :'
+before = "  list_checkouts"
+after = "  :"
 reddens = [
-  "tests/hooks/test_wrapper.py::test_an_interpreter_in_the_git_root_is_refused_although_the_environment_names_another_root",
+  "tests/hooks/test_wrapper.py::test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused",
 ]
 
 # The one `cd` in the file that was neither `CDPATH=`-cleared nor `--`-terminated, while the two
@@ -2561,8 +2596,10 @@ reddens = [
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/keelline/attach/write.py"
 before = '''    checkouts = _checkouts(root)
+    ignore_remainder = _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)'''
-after = '''    allow_removed = _withdraw_settings(root, recorded)
+after = '''    ignore_remainder = _ignore_region_remainder(root)
+    allow_removed = _withdraw_settings(root, recorded)
     checkouts = _checkouts(root)'''
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
@@ -3093,3 +3130,93 @@ after = '    hooks = overlay / ".git" / "hooks"'
 reddens = [
   "tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does",
 ]
+
+# --- follow-up to PR #12: the review's important findings, each a guard something reads ---
+
+# `CLAUDE_PLUGIN_DATA` arrives through a committed `env` block. A relative value anchored the
+# sink's contained walk on the hook's cwd -- the checkout -- so `CLAUDE_PLUGIN_DATA=.` landed the
+# diagnostics log inside the repository. Where the walk is anchored was the repository's choice.
+[[mutation]]
+name = "the sink accepts a relative data root"
+file = "src/keelline/hooks/sink.py"
+before = "    if not base.is_absolute():"
+after = "    if False:"
+reddens = ["tests/hooks/test_sink.py::test_a_relative_data_root_is_no_sink_at_all"]
+
+# `drop()` refuses a region opened twice, and it was asked after the settings withdrawal, the
+# rule files and every link tree -- a half-detached repository with the ledger still in place,
+# which `doctor` then reported attached. Read beside the ledger and `_checkouts` instead.
+[[mutation]]
+name = "detach stops reading the ignore region before its first withdrawal"
+file = "src/keelline/attach/write.py"
+before = "    ignore_remainder = _ignore_region_remainder(root)"
+after = "    ignore_remainder = None"
+reddens = [
+  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
+]
+
+# A worktree deleted without `git worktree prune` stays on `git worktree list` with a `prunable`
+# line. Linked into, it raised "check that `git` runs here" after the ledger and the owner's
+# links were written; `detach` in the same state completed.
+[[mutation]]
+name = "attach links into a worktree git reports as prunable"
+file = "src/keelline/attach/write.py"
+before = '        if any(line == "prunable" or line.startswith("prunable ") for line in lines):'
+after = "        if False:"
+reddens = [
+  "tests/attach/test_links.py::test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git",
+]
+
+# `overlay init --root` defaults to `.` and asked nothing of it: inside the Keelline checkout it
+# renamed all three plugin manifests and installed a commit hook. `upgrade` had the guard.
+[[mutation]]
+name = "overlay init writes into a directory that is not an overlay"
+file = "src/keelline/overlay/create.py"
+before = "    require_overlay(root, because=NOT_AN_OVERLAY)"
+after = "    pass"
+reddens = [
+  "tests/overlay/test_create.py::test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it",
+]
+
+# `--check` promises to read the document the real run reads. Filtering a malformed
+# `permissions.allow` let it exit 0 promising one rule for a file the real run then refused.
+[[mutation]]
+name = "attach --check filters a malformed allow list the real run refuses"
+file = "src/keelline/attach/permissions.py"
+before = "        raise EntriesError(f\"{label}: 'permissions.allow' is not a list of strings\")"
+after = "        return ()"
+reddens = [
+  "tests/attach/test_binding.py::test_check_refuses_the_allow_list_shape_the_real_run_refuses",
+]
+
+# `project.name` is repository-authored and the attach skill relays these messages to the model.
+# Printing the path that embeds it is the same defect `permissions.check` was written to avoid.
+[[mutation]]
+name = "the --store refusal prints the path that embeds the project name"
+file = "src/keelline/attach/binding.py"
+before = 'f"records -- {overlay / PROJECTS}/<the name in keelline.toml>/{STORE_DIR} -- and "'
+after = 'f"records ({expected}), and "'
+reddens = [
+  "tests/attach/test_binding.py::test_a_project_name_reaches_neither_refusal_of_this_module",
+]
+
+# `PATH` is read from the context because it is repository-authored; a path component is
+# unbounded and may hold a newline. Printing the resolved value put that text into `--json`,
+# which the doctor skill relays verbatim.
+[[mutation]]
+name = "doctor prints the PATH-derived location of the CLI"
+file = "src/keelline/doctor/checks.py"
+before = '    return Check("cli-path", OK, "`keelline` resolves on PATH")'
+after = '    return Check("cli-path", OK, f"`keelline` resolves on PATH at {found}")'
+reddens = [
+  "tests/doctor/test_checks.py::test_the_cli_resolving_by_name_is_green_and_never_prints_where",
+]
+
+# `_emit` writes no header for the root table, so a root emitted after `[n]` bound its keys to
+# `[n]` -- the misplacement this serialiser exists to prevent, reached by ordering.
+[[mutation]]
+name = "tomlout emits the root table wherever it was given"
+file = "src/keelline/tomlout.py"
+before = '    for name, table in sorted(tables.items(), key=lambda item: item[0] != ""):'
+after = "    for name, table in tables.items():"
+reddens = ["tests/test_tomlout.py::test_the_root_table_is_hoisted_when_it_is_not_given_first"]

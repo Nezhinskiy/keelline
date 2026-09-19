@@ -97,7 +97,6 @@ def run_attach(args: argparse.Namespace) -> Result:
         "settings_written": attached.settings_written,
         "rules_written": list(attached.rules_written),
         "binding_recorded": attached.binding_recorded,
-        "ignored": attached.ignored,
         "notes": list(attached.notes),
     }
     summary = "; ".join(

@@ -108,14 +108,26 @@ def _read(path: Path) -> str:
 
 
 def _allow_rules(path: Path) -> tuple[str, ...]:
-    """The `permissions.allow` list of one settings-shaped document, or nothing."""
-    permissions = _object(_read(path), str(path)).get("permissions")
+    """The `permissions.allow` list of one settings-shaped document, or nothing.
+
+    A shape this cannot read is a refusal and never a filter, for the same reason
+    `_hook_groups` gives: `--check` promises to read the document the real run reads, and the
+    real run (`write._allow_list`) raises on a `permissions` that is not an object or an `allow`
+    that is not a list of strings. Filtering here let `--check` exit 0 promising one rule for a
+    file the real run then refused.
+    """
+    label = str(path)
+    permissions = _object(_read(path), label).get("permissions")
+    if permissions is None:
+        return ()
     if not isinstance(permissions, dict):
-        return ()
+        raise EntriesError(f"{label}: 'permissions' is not an object")
     allow = permissions.get("allow")
-    if not isinstance(allow, list):
+    if allow is None:
         return ()
-    return tuple(rule for rule in allow if isinstance(rule, str))
+    if not isinstance(allow, list) or not all(isinstance(rule, str) for rule in allow):
+        raise EntriesError(f"{label}: 'permissions.allow' is not a list of strings")
+    return tuple(allow)
 
 
 def _hook_groups(path: Path) -> dict[str, list[dict[str, Any]]]:

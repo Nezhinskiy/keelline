@@ -497,8 +497,9 @@ def _requested_overlay(
         if not yes:
             raise Refusal(
                 "creating a private overlay runs `gh repo create ... --private --template ...` "
-                "on GitHub, which §6.1 permits only after explicit confirmation; pass --yes to "
-                "confirm it, or use --overlay <path> to record one that already exists"
+                "on GitHub, which is irreversible and outward-facing, so it needs explicit "
+                "confirmation; pass --yes to confirm it, or use --overlay <path> to record one "
+                "that already exists"
             )
         spec = overlay[len("create:") :]
         owner, sep, name = spec.partition("/")
@@ -539,13 +540,15 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         return planned.root, f"recorded the existing overlay at {planned.root}"
     owner, name = planned.create
     created = create(owner, name, source="template", root=planned.root.parent, runner=runner)
-    init_instance(created.root, owner, runner=runner)
-    _outside_the_project(created.root, project_root=project_root)
+    # Before `init_instance`, which now asks the same question and refuses with an answer that
+    # does not say the repository exists; this one has to, and so it goes first.
     fault = overlay_fault(created.root)
     if fault is not None:
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {created.root}, but {_CREATED}"
         )
+    init_instance(created.root, owner, runner=runner)
+    _outside_the_project(created.root, project_root=project_root)
     return created.root, f"created the overlay at {created.root}"
 
 
@@ -563,8 +566,8 @@ def setup(
 
     `project_root` is the repository this invocation was run from (the CLI's `--root`, default
     `.`), and it exists for exactly one reason: `_outside_the_project` refuses an `--overlay`
-    that any checkout of it could reach. `yes` takes the detected defaults for everything except
-    creating an overlay, which needs it explicitly (see the module docstring).
+    that any checkout of it could reach. `yes` confirms creating an overlay on GitHub and
+    nothing else: there is no other prompt here for it to answer (see the module docstring).
 
     **Everything structural is asked before the first write**, and the order below is
     load-bearing rather than tidy: `--overlay` is parsed, probed and contained, and the settings
@@ -581,8 +584,10 @@ def setup(
     # overlay itself is. Created directly for the same reason `setup.machine`'s module
     # docstring gives for `fsops.write_atomically` on the machine file: there is nothing for a
     # contained walk to be relative to until this directory exists.
-    home.mkdir(parents=True, exist_ok=True)
+    # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
+    # after the home tree had been created for it.
     data = load_preset(preset)
+    home.mkdir(parents=True, exist_ok=True)
     personal = _new_personal_values(data, machine)
     machine_table = {"version": __version__, "installed": datetime.date.today().isoformat()}
     write_machine(machine, personal=personal, overlay_root=None, machine=machine_table)

@@ -32,13 +32,53 @@ def discover_registrars() -> list[Registrar]:
     return [module.register for module in area_modules("commands")]
 
 
+# Named in every `--help` because the frame accepts it before argparse does (`split_json_flag`),
+# so no command declares it and no command's own help would otherwise mention it.
+JSON_EPILOG = (
+    "--json is accepted anywhere on the line and prints one machine-readable object instead "
+    "of one line."
+)
+
+
 def build_parser(registrars: Iterable[Registrar] = ()) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="keelline", description=keelline.__doc__)
+    parser = argparse.ArgumentParser(
+        prog="keelline", description=keelline.__doc__, epilog=JSON_EPILOG
+    )
     parser.add_argument("--version", action="version", version=f"keelline {keelline.__version__}")
     groups = parser.add_subparsers(dest="group", metavar="<group>")
     for register in registrars:
         register(groups)
+    _finish(groups)
     return parser
+
+
+def _finish(groups: SubParsers) -> None:
+    """Give every command the help text it registered with, and list groups in name order.
+
+    An area registers a command as `add_parser(name, help=...)`, and argparse keeps that
+    sentence for the *parent's* listing only: the command's own `--help` opened with `usage:`
+    and went straight to the options, with nothing about what the command does. The one
+    sentence each area already wrote becomes the command's description here, so no area has to
+    spell it twice. The `--json` epilog rides along for the same reason it is on the root.
+
+    The group listing is sorted because discovery is by area and registration within one, so
+    `bugs` (from `ledger`) landed between `hook` and `memory`; `discover_registrars` says "in
+    name order", and that is now true of what the user sees and not only of the modules.
+
+    `_choices_actions` and `_name_parser_map` are argparse's own bookkeeping, unchanged since
+    Python 3.2 and declared in typeshed; the alternative is thirty-six call sites each passing
+    the same string twice.
+    """
+    groups._choices_actions.sort(key=lambda action: action.dest)
+    helps = {action.dest: action.help for action in groups._choices_actions}
+    for name, parser in groups._name_parser_map.items():
+        if parser.description is None:
+            parser.description = helps.get(name)
+        if parser.epilog is None:
+            parser.epilog = JSON_EPILOG
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                _finish(action)
 
 
 def split_json_flag(argv: list[str]) -> tuple[list[str], bool]:

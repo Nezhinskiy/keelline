@@ -153,6 +153,37 @@ def test_a_table_this_writer_does_not_know_survives_a_rewrite(tmp_path: Path) ->
     assert written["machine"]["version"] == "9.9.9"
 
 
+def test_a_hand_written_key_in_a_table_this_writer_owns_survives_a_rewrite(
+    tmp_path: Path,
+) -> None:
+    # The gap between the two rows above it: one covers a table this writer has never heard of,
+    # the other covers the one key of `[overlay]` it writes itself. Nothing covered a table it
+    # *does* own carrying a key it does not -- and that is where the defect was. `[personal]`
+    # and `[machine]` were spread over what the file held; `[overlay]` was replaced outright,
+    # so `[overlay] note` was gone after every `setup`, silently, on the owner's own file.
+    #
+    # Mutation (`mutations.toml`, "write_machine replaces the overlay table instead of merging
+    # over it"): the `**_table(existing, "overlay")` spread is dropped → `note` disappears.
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[overlay]\nroot = "/tmp/ov"\nnote = "hand-written"\nextra_flag = true\n',
+        encoding="utf-8",
+    )
+    write_machine(path, personal={}, overlay_root=None, machine={"version": "9.9.9"})
+    written = read_machine(path)
+    assert written["overlay"] == {"root": "/tmp/ov", "note": "hand-written", "extra_flag": True}
+
+
+def test_an_overlay_table_with_no_root_is_not_deleted(tmp_path: Path) -> None:
+    # The same defect's other face: with no `root` to write, the replacement was `{}`, the
+    # "only a non-empty table is written" guard then dropped it, and the whole `[overlay]` table
+    # the owner wrote was gone -- not one key of it. Same mutation as the row above.
+    path = tmp_path / "config.toml"
+    path.write_text('[overlay]\nnote = "no root here"\n', encoding="utf-8")
+    write_machine(path, personal={}, overlay_root=None, machine={})
+    assert read_machine(path)["overlay"] == {"note": "no root here"}
+
+
 def test_a_hand_written_float_or_sub_table_does_not_wedge_every_future_run(
     tmp_path: Path,
 ) -> None:

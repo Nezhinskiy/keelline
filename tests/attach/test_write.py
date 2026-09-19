@@ -183,7 +183,7 @@ def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> 
         runner=FakeRunner(),
         home=tmp_path / "home",
     )
-    assert attached.ignored and attached.binding_recorded
+    assert attached.binding_recorded
     assert not attached.settings_written
     assert (root / LEDGER).is_file()
 

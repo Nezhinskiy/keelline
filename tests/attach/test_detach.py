@@ -14,9 +14,11 @@ from pathlib import Path
 import pytest
 
 from keelline.attach.api import LEDGER, Detached, detach
+from keelline.attach.write import GITIGNORE, IGNORE_REGION
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
+from keelline.scaffold.regions import RegionError, Style, markers
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.test_install_path import _assert_snapshot_changed, _assert_snapshot_unchanged, _snapshot
@@ -465,3 +467,44 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
         _detach(root, machine, home)
     assert (root / "src").is_dir()
     _assert_snapshot_unchanged(root, before)
+
+
+def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(
+    tmp_path: Path,
+) -> None:
+    # The same shape as the `git` case above, one precondition over. `drop()` refuses a region
+    # opened twice — what a merge that kept both sides leaves — and it was asked *after* the
+    # settings withdrawal, the rule files and every link tree: rules gone, links gone, ledger
+    # still there, `doctor` still reporting the repository attached, and a second `detach`
+    # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
+    # broken one refuses above the first withdrawal.
+    #
+    # Mutation (`mutations.toml`, "detach reads the ignore region after it has already
+    # withdrawn"): the remainder computed where the write happens → the snapshot below changes.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    begin, _end = markers(IGNORE_REGION, Style.HASH)
+    ignore = root / GITIGNORE
+    ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
+    before = _snapshot(root)
+    with pytest.raises(RegionError):
+        _detach(root, machine, home)
+    _assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
+    assert (root / "docs" / "memory" / "developer").is_symlink()
+
+
+def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
+    # `docs/cli.md` promises the round trip is byte-for-byte, and the withdrawal removed the
+    # file whenever what remained was blank — so a `.gitignore` holding one newline before the
+    # attach was gone after the detach. Only a file the attach created is taken away.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    (root / GITIGNORE).write_text("\n", encoding="utf-8")
+    before = _snapshot(root)
+    _attach(root, store, machine, home)
+    _detach(root, machine, home)
+    _assert_snapshot_unchanged(root, before)
+    assert (root / GITIGNORE).read_bytes() == b"\n"
