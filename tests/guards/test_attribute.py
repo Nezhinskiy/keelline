@@ -131,3 +131,26 @@ def test_a_run_that_did_not_execute_is_a_failure_never_a_verdict(tmp_path: Path,
     root = _repo(tmp_path)
     with pytest.raises(Failure, match="head"):
         attribute(root, command="true", base="main", runner=_Coded({"head": code}))
+
+
+@needs_git
+def test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree(
+    tmp_path: Path,
+) -> None:
+    # `git archive` honours the ARCHIVED tree's own `.gitattributes`, and `export-ignore` is
+    # versioned like everything else in it — so runs 2 and 3 can quietly execute against trees
+    # that are missing files the working tree has, and the verdict then answers a question
+    # nobody asked. The guard compares each extraction against `git ls-tree -r --name-only REF`
+    # and fails naming how many files are missing; the count is asserted, not merely that
+    # something was raised, because a wrong count means the comparison is measuring the wrong
+    # two sets.
+    #
+    # Mutation (declared): drop the comparison -> the extraction is one file short, all three
+    # runs complete, a verdict is returned and `pytest.raises` reddens.
+    root = _repo(tmp_path)
+    (root / "secret.txt").write_text("kept out of the archive\n", encoding="utf-8")
+    (root / ".gitattributes").write_text("secret.txt export-ignore\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "exported")
+    with pytest.raises(Failure, match=r"missing 1 tracked file"):
+        attribute(root, command="true", base="main", runner=_Coded({}))

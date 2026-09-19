@@ -3552,3 +3552,15 @@ after = "    if False:"
 reddens = [
   "tests/guards/test_commands.py::test_test_attribute_refuses_a_base_shaped_like_an_option",
 ]
+
+# DC9, `_extract`. `git archive` honours the archived tree's own `.gitattributes`, which is
+# versioned: without this comparison runs 2 and 3 execute against trees missing files the
+# working tree has, and the verdict answers a question nobody asked.
+[[mutation]]
+name = "attribute lets an export rule shrink the tree it compares"
+file = "src/keelline/guards/attribute.py"
+before = "    if code == 0 and expected - found:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_attribute.py::test_an_archive_an_export_rule_shrank_is_a_failure_and_not_a_smaller_tree",
+]
