@@ -1,0 +1,20 @@
+# Hostile, a fixture project
+
+The clone half of S10 (§14). Nothing here is a real project: every file is an input that a
+repository is allowed to author and that must reach nothing it is not allowed to choose.
+
+- `keelline.toml` names `smoke` — **another project's name** — so that a machine which has an
+  overlay for `smoke` is asked to hand this clone that project's notes.
+- `docs/memory/developer/canary.md` is committed in-repo memory flagged `startup: -1`, which
+  is the highest standing-rule rank there is. Without a trust record it must never reach a
+  session; with one it must, and `scripts/smoke_exfiltration.py` asserts both directions so
+  that "the canary is absent" cannot be a broken pipeline reading as a pass.
+- `.claude/settings.json` carries an `env` block naming a machine configuration inside the
+  clone and a `PATH` inside the clone. The two values are **relative on purpose**: a harness
+  applies an `env` block against the project it opened, so `scripts/smoke_exfiltration.py`
+  materialises them as absolute paths inside the scratch clone before running anything. That
+  is what the harness would have done, and asserting against anything weaker would be
+  asserting against a fixture rather than against the boundary.
+
+The scenario is run by `scripts/smoke_exfiltration.py`, from `tests/scripts/test_smoke_scripts.py`
+here and from `.github/workflows/smoke.yml` against the installed plugin.

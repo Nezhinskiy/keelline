@@ -20,6 +20,13 @@ file is that, so the bus factor of the release process is not one.
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
 
+**One version this file does not check, and somebody has to.** `.github/workflows/ci.yml` and
+`.github/workflows/smoke.yml` each `npm install -g @anthropic-ai/claude-code@<version>` — the
+validator the first one runs and the installer the second one runs are the same tool, and the
+two pins must move together. A global npm install is not a manifest, so Dependabot does not see
+either of them: bump both by hand, in one commit, and let the smoke run say whether an install
+still works.
+
 ## Cutting a release
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything

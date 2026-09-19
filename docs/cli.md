@@ -1075,6 +1075,13 @@ and `@dev` are a moving Keelline running against your repository (D16). The SHA 
 would rather track the major. `smoke-release.yml` in this repository runs both moving forms on
 demand, so that they are known to work — it is not a form this reference tells you to write.
 
+**What proves it.** `.github/workflows/smoke.yml` installs this plugin from the checkout with
+the real harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json`
+entry the event it is filed under through the *installed* wrapper, runs `doctor` over the
+result, runs the clone-to-exfiltration scenario of §14's S10, and calls this workflow against
+the committed fixture project — so the reference above is checked by a run and not only by
+this page.
+
 **Checked out with `fetch-depth: 0`.** `plan check` reads a merge base and `commit check` reads
 a range; a shallow checkout has neither, and the run says so rather than passing over a history
 it cannot see. `persist-credentials: false` on both checkouts, so nothing a gate reads can

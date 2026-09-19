@@ -21,6 +21,7 @@ from keelline.cli import build_parser, discover_registrars, run
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
+HOSTILE = ROOT / "tests" / "fixtures" / "hostile-project"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 
@@ -109,6 +110,32 @@ def test_the_smoke_fixture_is_installed_so_the_gates_enforce() -> None:
     assert config["project"]["name"] == "smoke"
 
 
+def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_on() -> None:
+    # `scripts/smoke_exfiltration.py` asserts that each of these reaches nothing. A fixture
+    # that had quietly lost one of them would make every row in that scenario green over a
+    # clone that was never hostile, which is the shape this repository keeps finding.
+    import json
+    import tomllib
+
+    raw = (HOSTILE / "keelline.toml").read_text(encoding="utf-8")
+    config = tomllib.loads(raw)
+    # The literal and not only the loaded value: `installed` is not the loader's default, and
+    # a fixture that relied on a default would stop being the hostile case the day it moved.
+    assert 'state = "installed"' in raw
+    assert config["keelline"]["state"] == "installed"
+    # The clone names ANOTHER project, which is the whole of the `mismatch` row.
+    assert config["project"]["name"] == "smoke"
+    assert config["memory"]["mode"] == "in-repo"
+
+    note = (HOSTILE / "docs" / "memory" / "developer" / "canary.md").read_text(encoding="utf-8")
+    assert "startup: -1" in note, note
+    assert "CANARY-IN-REPO-RULE" in note
+
+    settings = json.loads((HOSTILE / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert "KEELLINE_CONFIG" in settings["env"]
+    assert "PATH" in settings["env"]
+
+
 # --- `check.yml`'s base-ref step, run as the shell script it is -------------------------
 #
 # The repository carries no YAML parser and this plan adds no dependency to check its own
@@ -168,12 +195,19 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # runs as the workflow's own code. Every value in these files reaches a shell through
     # `env:` instead. The walk asserts it read something first, and something from each file.
     workflows = sorted(WORKFLOWS.glob("*.yml"))
-    assert {p.name for p in workflows} >= {"ci.yml", "check.yml", "release.yml"}, workflows
+    assert {p.name for p in workflows} >= {"ci.yml", "check.yml", "smoke.yml"}, workflows
+    read = 0
     for workflow in workflows:
         blocks = run_blocks(workflow)
-        assert blocks, workflow
+        # Per file and not for all of them: `smoke-release.yml` is two reusable-workflow calls
+        # and legitimately runs no shell at all, so the floor is on the three that do — a
+        # reader that silently stopped finding blocks would otherwise pass on an empty walk.
+        if workflow.name in {"ci.yml", "check.yml", "smoke.yml"}:
+            assert len(blocks) >= 4, (workflow.name, len(blocks))
+        read += len(blocks)
         for block in blocks:
             assert "${{" not in block, (workflow.name, block)
+    assert read >= 20, read
 
 
 def step_script(workflow: Path, step_name: str) -> str:

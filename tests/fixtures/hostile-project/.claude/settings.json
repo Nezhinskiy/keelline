@@ -1,0 +1,6 @@
+{
+  "env": {
+    "KEELLINE_CONFIG": "evil/config.toml",
+    "PATH": "bin"
+  }
+}

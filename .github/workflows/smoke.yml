@@ -1,0 +1,112 @@
+# §5.8's smoke: the plugin installed from this checkout with the real harness CLI under a
+# temporary configuration directory, every hook entry fed a sample event through the
+# INSTALLED wrapper, the reusable workflow called in both forms, and the clone-to-
+# exfiltration scenario (S10). Weekly as well as on every change, because the harness CLI
+# moves under this repository and only a run can say whether an install still works.
+#
+# Every value that reaches a shell arrives through `env:`, including the installed plugin's
+# own path: `steps.install.outputs.root` is built by `find` and is this job's own, but a
+# `${{ }}` in a `run:` is interpolated before the shell parses the script, and the rule is
+# about the shape rather than about which values happen to be safe today.
+name: smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  installed-plugin:
+    # A fork inherits the schedule; only this repository runs it weekly.
+    if: github.event_name != 'schedule' || github.repository == 'Nezhinskiy/keelline'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+      - name: The harness CLI, at the version ci.yml validates with
+        # One version in two files; RELEASING.md names both. Not Dependabot's: a global npm
+        # install is not a manifest. The laptop measurement below was taken against 2.1.263;
+        # this pin is the one ci.yml already validates with, and the first run of this job
+        # is the measurement for it.
+        run: npm install -g @anthropic-ai/claude-code@2.1.261
+      - name: Install the plugin from this checkout into a temporary configuration directory
+        id: install
+        # Measured 2026-09-19 on a laptop against 2.1.263: both commands exit 0 with no
+        # authentication and no network, and the installed wrapper carries its executable
+        # bit (DC8).
+        run: |
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude"
+          claude plugin marketplace add "$PWD"
+          claude plugin install keelline@keelline-marketplace
+          cache="$CLAUDE_CONFIG_DIR/plugins/cache/keelline-marketplace/keelline"
+          root="$(find "$cache" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "$root"
+          echo "root=$root" >> "$GITHUB_OUTPUT"
+      - name: The installed copy is the shipped one, and the wrapper can run
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+        run: |
+          diff -r hooks "$INSTALLED/hooks"
+          diff scripts/keelline "$INSTALLED/scripts/keelline"
+          test -x "$INSTALLED/hooks/run-hook.sh"
+      - name: Every hook entry, fed its sample event through the installed wrapper
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+        run: |
+          python3 scripts/smoke_hooks.py --plugin-root "$INSTALLED" \
+            --fixture tests/fixtures/smoke-project --scratch "$RUNNER_TEMP/smoke"
+      - name: doctor on the installed plugin reports no red row
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ steps.install.outputs.root }}
+          CLAUDE_PLUGIN_DATA: ${{ runner.temp }}/smoke/data
+          PYTHONPATH: src
+        run: |
+          python3 -m keelline doctor --json --root "$RUNNER_TEMP/smoke/project" \
+            --home "$RUNNER_TEMP/smoke/home" --machine "$RUNNER_TEMP/machine.toml" \
+            > "$RUNNER_TEMP/doctor.json" || true
+          python3 - "$RUNNER_TEMP/doctor.json" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          rows = report["checks"]
+          red = [row for row in rows if row["status"] == "red"]
+          for row in rows:
+              print(f"{row['status']:<5} {row['name']:<16} {row['detail'][:100]}")
+          assert not red, red
+          PY
+      - name: The clone-to-exfiltration scenario (S10)
+        env:
+          INSTALLED: ${{ steps.install.outputs.root }}
+        run: |
+          python3 scripts/smoke_exfiltration.py --plugin-root "$INSTALLED" \
+            --fixture tests/fixtures/hostile-project --scratch "$RUNNER_TEMP/hostile"
+
+  same-repository-form:
+    # The `./` call form. What this exercises against the FIXTURE is `docs check` and `bugs
+    # check`; `commit check`, `plan check` and `docs trail` read git, and the fixture is a
+    # directory inside Keelline's own repository here, so those three answer for Keelline's
+    # commits and plans — which is a real check of the workflow's plumbing and not a check
+    # of the fixture. The fixture-as-repository run is `installed-plugin`'s `doctor` step
+    # and `tests/test_fixtures.py`. The `owner/repo@ref` forms live in smoke-release.yml:
+    # a reusable-workflow ref is resolved when the run is created, `uses:` takes no
+    # expression, and neither `@dev` nor `@v1` resolves from a wave branch.
+    uses: ./.github/workflows/check.yml
+    with:
+      path: tests/fixtures/smoke-project
+      base: ${{ github.base_ref || 'main' }}
