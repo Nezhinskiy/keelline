@@ -189,6 +189,17 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     assert len(areas) == 10, areas
     assert len(files) >= 70, len(files)
     assert len(crossings) >= 60, crossings
+    # The exemption itself, in both directions. Nothing asserted its size, so a second entry
+    # could be added and no test would move — measured, with the historical violation
+    # `("memory/commands.py", "keelline.hooks.dispatch")` added to it: 6 passed, because
+    # `crossings` still counts the crossing and only the offence is suppressed. And nothing
+    # asserted the one crossing it names is still real, so the exemption would outlive the
+    # import it excuses.
+    #
+    # Mutation (declared): a second live crossing joins the exemption.
+    assert len(SURFACE_EXEMPT) == 1, sorted(SURFACE_EXEMPT)
+    for where, module in SURFACE_EXEMPT:
+        assert f"{where} -> {module}" in crossings, (where, module)
     assert not offences, "an area reached past another area's api.py:\n" + "\n".join(offences)
 
 

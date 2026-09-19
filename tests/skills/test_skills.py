@@ -155,6 +155,19 @@ def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
     assert len(path.read_text(encoding="utf-8").splitlines()) <= SKILL_MAX_LINES
 
 
+def test_the_tool_name_lint_matches_a_tool_name() -> None:
+    # Every use of `_TOOL` below is a NEGATIVE assertion, so a pattern that matches the empty
+    # set satisfies all of them. Measured: `_TOOL` replaced by `re.compile("ZZZNEVER")` left
+    # `tests/skills/` at 83 passed with Premise 14 checked against nothing.
+    #
+    # Mutation (declared): the pattern is made to match nothing.
+    assert _TOOL.search("use the Grep tool"), "the lint cannot match a tool name"
+    assert _TOOL.search("read it with Read first")
+    # And it is a word boundary and not a substring: `Agent` must not fire on `Agentic`, which
+    # is what the `\b` in the pattern is for and what a reader would otherwise have to assume.
+    assert _TOOL.search("an Agentic workflow") is None
+
+
 @pytest.mark.parametrize("path", entry_points(), ids=_id)
 def test_no_skill_body_names_a_harness_tool(path: Path) -> None:
     # Mutation: write "use the Grep tool" into a skill body — that skill's case reddens.

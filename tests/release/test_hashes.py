@@ -3,6 +3,7 @@ every commit by `release check` and compared by `doctor files` on the installed 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -50,6 +51,15 @@ def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path
     assert set(document["files"]) == set(HASHED_FILES)
     assert document["files"] == digests(root)
     assert read_record(root) == digests(root)
+    # And what `digests` computes, against a literal rather than against itself. Every other
+    # assertion in this module compares one side of the record to the other, so both move
+    # together: measured, `hashlib.sha256(...).hexdigest()` truncated to `[:8]` in
+    # `release/hashes.py` left `tests/release/` at 56 passed — the algorithm and the digest
+    # length are what a downstream verifier depends on and nothing here pinned either.
+    # `tests/scaffold/test_manifest.py` makes the same claim the same way.
+    #
+    # Mutation (declared): the record records a truncated digest.
+    assert digests(root)["hooks/hooks.json"] == hashlib.sha256(b"# hooks/hooks.json\n").hexdigest()
 
 
 def test_no_record_reads_as_none_and_a_missing_file_is_drift(tmp_path: Path) -> None:

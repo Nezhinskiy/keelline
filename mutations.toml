@@ -4551,3 +4551,41 @@ after = '            f"token {digest} at {first[digest]}"'
 reddens = [
   "tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window",
 ]
+
+# Taken from the test seat's companion file beyond §4.2's list: three assertions that were
+# never made in the direction that can fail, each one line.
+#
+# Every use of the skills tool-name lint is a NEGATIVE assertion, so a pattern matching the
+# empty set satisfies all of them. Measured: `tests/skills/` 83 passed with the pattern
+# replaced by one that matches nothing, and Premise 14 checked against no skill at all.
+[[mutation]]
+name = "the skill tool-name lint stops matching a tool name"
+file = "tests/skills/test_skills.py"
+before = '_TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")'
+after = '_TOOL = re.compile("ZZZNEVER")'
+reddens = ["tests/skills/test_skills.py::test_the_tool_name_lint_matches_a_tool_name"]
+
+# The release record's tests compared `write_record`, `read_record` and `drift` against
+# `digests` — both sides of every assertion moving together, and nothing anywhere pinning what
+# `digests` computes. Measured: the digest truncated to its first eight characters left
+# `tests/release/` at 56 passed, which is the algorithm and the length a downstream verifier
+# depends on going unchecked.
+[[mutation]]
+name = "the release record records a truncated digest"
+file = "src/keelline/release/hashes.py"
+before = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()"
+after = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]"
+reddens = [
+  "tests/release/test_hashes.py::test_the_record_is_json_with_a_format_and_one_digest_per_file",
+]
+
+# The area-boundary guard's exemption list is emphatic about exemptions nobody can see and
+# nothing held its size. Measured: the historical violation this repository actually merged —
+# `memory/commands.py` importing `keelline.hooks.dispatch` — added to the set, 6 passed. The
+# crossing is still counted, so the `>= 60` floor does not move; only the offence is silenced.
+[[mutation]]
+name = "a second live crossing joins the area-boundary exemption"
+file = "tests/test_areas.py"
+before = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy")})'
+after = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy"), ("memory/commands.py", "keelline.hooks.dispatch")})'
+reddens = ["tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module"]

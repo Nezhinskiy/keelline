@@ -16,6 +16,14 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
     manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert manifest["version"] == __version__
+    # The keys, before anything is asserted about their entries. `"x"` satisfies both
+    # assertions in the loop and `{}` satisfies the loop itself: measured, the three entries
+    # moved to an unread key and `userConfig` left empty, this module was 9 passed — a test
+    # named "…and titled user config" green on a plugin that offers none.
+    #
+    # Mutation: none of its own. The manifest is data and the oracle mutates source; the
+    # measurement above is by hand, like the fixture mutations in `tests/test_fixtures.py`.
+    assert set(manifest["userConfig"]) == {"reply_language", "artifact_language", "preset"}
     for key, entry in manifest["userConfig"].items():
         assert entry["title"], key
         assert entry["description"], key
