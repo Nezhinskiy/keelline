@@ -112,7 +112,6 @@ from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
 from keelline.gitenv import git_run
 from keelline.overlay.api import (
-    Runner,
     create,
     init_instance,
     overlay_fault,
@@ -120,6 +119,7 @@ from keelline.overlay.api import (
     target_root,
 )
 from keelline.presets import load_preset
+from keelline.runner import Runner
 from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and

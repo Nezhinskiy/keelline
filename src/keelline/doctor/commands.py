@@ -61,7 +61,7 @@ def summarise(checks: list[Check]) -> str:
 
 
 def run_doctor(args: argparse.Namespace) -> Result:
-    from keelline.overlay.api import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     root = Path(args.root).resolve()
     checks = run_checks(

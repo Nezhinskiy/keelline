@@ -32,8 +32,8 @@ from keelline.overlay.layout import (
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
-from keelline.overlay.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from keelline.overlay.template import templates
+from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from keelline.scaffold import Manifest, apply, digest, plan
 
 Source = Literal["template", "local"]

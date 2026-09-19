@@ -10,7 +10,7 @@ import os
 import pty
 from pathlib import Path
 
-from keelline.overlay.runner import (
+from keelline.runner import (
     _ENV_DROP,
     _ENV_FORCE,
     NOT_FOUND,
@@ -69,7 +69,7 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     # `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
     # arrived as NOT_FOUND — which every caller reads as "gh is not installed". A wrong finding
     # is worse than a slow one, and the two have different remedies.
-    import keelline.overlay.runner as runner
+    import keelline.runner as runner
 
     before = runner.NETWORK_TIMEOUT_SECONDS
     runner.NETWORK_TIMEOUT_SECONDS = 1

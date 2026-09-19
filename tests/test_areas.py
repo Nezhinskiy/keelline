@@ -27,6 +27,28 @@ def test_commands_modules_are_found_in_area_name_order() -> None:
     assert "keelline.release.commands" in names
 
 
+def test_the_runner_is_a_leaf_and_not_an_area() -> None:
+    # DC2: `runner.py` sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports nothing
+    # from `keelline`. Pinned as an import check rather than by walking the tree, because the
+    # tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
+    # import to a leaf is a review finding the import-boundary test does not catch, and this
+    # is the one line that does.
+    import ast
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "src" / "keelline" / "runner.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    imported = [
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
+    ] + [
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    ]
+    assert not [name for name in imported if name.startswith("keelline")], imported
+
+
 def test_the_cli_registry_reads_the_same_discovery_as_the_helper() -> None:
     assert [registrar.__module__ for registrar in discover_registrars()] == [
         module.__name__ for module in area_modules("commands")

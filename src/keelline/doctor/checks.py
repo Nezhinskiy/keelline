@@ -87,7 +87,7 @@ from keelline.memory.api import (
     render,
     resolve,
 )
-from keelline.overlay.api import Runner
+from keelline.runner import Runner
 from keelline.scaffold import marker_id, owned_ids
 from keelline.setup.api import USER_SETTINGS
 

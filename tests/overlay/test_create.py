@@ -9,8 +9,9 @@ from typing import NoReturn
 import pytest
 
 from keelline.errors import Failure, Refusal
-from keelline.overlay.api import Completed, create, init_instance
+from keelline.overlay.api import create, init_instance
 from keelline.overlay.create import RETRY_WAIT_SECONDS
+from keelline.runner import Completed
 
 
 @dataclass

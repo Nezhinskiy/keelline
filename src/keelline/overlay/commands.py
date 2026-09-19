@@ -23,7 +23,7 @@ _NO_SOURCE = (
 
 def run_overlay_create(args: argparse.Namespace) -> Result:
     from keelline.overlay.create import create
-    from keelline.overlay.runner import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     if args.source is None:
         raise Refusal(_NO_SOURCE)
@@ -40,7 +40,7 @@ def run_overlay_create(args: argparse.Namespace) -> Result:
 
 def run_overlay_init(args: argparse.Namespace) -> Result:
     from keelline.overlay.create import init_instance
-    from keelline.overlay.runner import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     result = init_instance(Path(args.root).resolve(), args.owner, runner=subprocess_runner())
     data = {"renamed": list(result.renamed), "notes": list(result.notes)}

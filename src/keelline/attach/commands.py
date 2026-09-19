@@ -70,7 +70,7 @@ def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
 def run_attach(args: argparse.Namespace) -> Result:
     from keelline.attach.permissions import check
     from keelline.attach.write import attach
-    from keelline.overlay.api import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     root, store, machine = _target(args)
     if args.check:

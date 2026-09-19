@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
-from keelline.overlay.api import Completed
+from keelline.runner import Completed
 
 
 class _NullRunner:

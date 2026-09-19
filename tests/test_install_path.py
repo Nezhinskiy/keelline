@@ -32,7 +32,8 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor.api import RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
-from keelline.overlay.api import Completed, create
+from keelline.overlay.api import create
+from keelline.runner import Completed
 from keelline.setup.api import setup
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")

@@ -79,7 +79,7 @@ from keelline.memory.api import (
     main_checkout,
     resolve,
 )
-from keelline.overlay.api import Runner
+from keelline.runner import Runner
 from keelline.scaffold import (
     EntriesError,
     Style,

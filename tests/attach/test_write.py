@@ -22,7 +22,8 @@ from keelline import fsops
 from keelline.attach.api import attach, ledger
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, Completed
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
+from keelline.runner import Completed
 from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the

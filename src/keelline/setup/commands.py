@@ -26,8 +26,8 @@ from typing import Any
 
 from keelline.areas import SubParsers
 from keelline.errors import Refusal
-from keelline.overlay.api import subprocess_runner
 from keelline.result import Result
+from keelline.runner import subprocess_runner
 
 # Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to

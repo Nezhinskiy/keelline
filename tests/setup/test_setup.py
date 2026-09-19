@@ -13,8 +13,9 @@ import pytest
 from keelline.attach.api import read_binding
 from keelline.errors import Refusal
 from keelline.memory.api import overlay_root
-from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST, Completed
+from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from keelline.presets import load_preset
+from keelline.runner import Completed
 from keelline.setup.api import USER_SETTINGS, setup
 from keelline.setup.machine import read_machine, write_machine
 
@@ -256,7 +257,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
     # binary would surface (`Runner` turns it into `Completed(127, ...)`).
     #
     # No mutation: this is `Runner`'s own fail-soft convention (a non-zero result is a note,
-    # per `overlay.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
+    # per `keelline.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
     # script rather than guarding one line of this module's own whose removal would look like
     # a plausible bug — the "non-zero becomes a note" shape is `_install_plugins`' whole
     # structure, not a single guardable line.

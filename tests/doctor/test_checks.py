@@ -30,7 +30,8 @@ from keelline.doctor.checks import plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, Completed
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from keelline.runner import Completed
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
