@@ -164,8 +164,17 @@ def _render_tree(rendered: Path) -> tuple[str, ...]:
     return tuple(relative for relative in OVERLAY_FILES if (rendered / relative).is_file())
 
 
-def _replace_tree(clone: Path, rendered: Path) -> None:
-    """Every tracked file out, every rendered file in — through the contained walk.
+def _replace_tree(clone: Path, rendered: Path, written: tuple[str, ...]) -> None:
+    """Every tracked file out, every file the render left in — through the contained walk.
+
+    **`written` and not `OVERLAY_FILES`, because the dry run already answered this question.**
+    `_render_tree` reports the shipped files the render actually left, and this loop used to
+    read every `OVERLAY_FILES` entry unconditionally — so a render missing one file made the
+    dry run under-report by one and made the `--yes` run raise `FileNotFoundError` out of a
+    library module, which `cli.run` renders as `internal error`, exit 2. It is unreachable
+    today (`tests/overlay/test_template.py` holds `OVERLAY_FILES` against the template tree
+    both ways), and two functions answering one question two ways is the shape that stops
+    being unreachable without anyone deciding it should.
 
     **The containment anchor is `clone`, and this process made it.** It is a directory under
     the `TemporaryDirectory` opened two frames up, named by this module and cloned into by
@@ -181,7 +190,7 @@ def _replace_tree(clone: Path, rendered: Path) -> None:
             fsops.remove_within(clone, relative)
         elif path.is_dir() and not any(path.iterdir()):
             fsops.rmdir_within(clone, relative)
-    for relative in OVERLAY_FILES:
+    for relative in written:
         fsops.write_within(clone, relative, (rendered / relative).read_text(encoding="utf-8"))
 
 
@@ -202,11 +211,12 @@ def publish_template(
         # publishing one would make every generated overlay read as hand-edited to `overlay
         # upgrade` and never be refreshed again.
         #
-        # `_replace_tree` writes only `OVERLAY_FILES`, so today the ledger could not reach the
-        # clone even unstripped — this is the second of two independent mechanisms, and it is
-        # the one that survives a `_replace_tree` which ever copies the render whole. It is
-        # held by a test over the RENDER and not over the pushed tree, because an assertion
-        # over the pushed tree is satisfied by the whitelist alone and says nothing about this.
+        # `_replace_tree` writes only the files the render left, so today the ledger could not
+        # reach the clone even unstripped — this is the second of two independent mechanisms,
+        # and it is the one that survives a `_replace_tree` which ever copies the render whole.
+        # It is held by a test over the RENDER and not over the pushed tree, because an
+        # assertion over the pushed tree is satisfied by the whitelist alone and says nothing
+        # about this.
         fsops.remove_within(rendered, str(MANIFEST_PATH))
         fsops.rmdir_within(rendered, str(MANIFEST_PATH.parent))
         # Nothing outward-facing before the gate. Without `yes` the repository is only ASKED
@@ -230,7 +240,7 @@ def publish_template(
         clone = scratch / "clone"
         if cloned.code != 0 or not clone.is_dir():
             raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")
-        _replace_tree(clone, rendered)
+        _replace_tree(clone, rendered, written)
         runner.run(["git", "-C", str(clone), "add", "-A"], clone)
         status = runner.run(["git", "-C", str(clone), "status", "--porcelain"], clone)
         changed = tuple(line[3:] for line in status.stdout.splitlines() if line.strip())

@@ -160,6 +160,10 @@ needs_workflow = pytest.mark.skipif(
 
 
 WORKFLOWS = ROOT / ".github" / "workflows"
+# The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
+# cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and
+# legitimately runs none — measured, 0 blocks — and that is the only file with an exemption.
+SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
 
 
 # `${{ … }}` is YAML plain text and not flow syntax, so it is removed before a line is asked
@@ -199,7 +203,15 @@ def _scan(workflow: Path) -> Iterator[tuple[str, str]]:
     `defaults: run: working-directory: ${{ inputs.path }}` — standard, correct Actions, and not
     an injection — fails the guard over these blocks. That is a decision for whoever first needs
     it to take deliberately, with a red test in front of them, rather than a hole dug in
-    advance. Neither shape appears in this tree today.
+    advance.
+
+    **The first of those two shapes is already in this tree**, and saying otherwise was how
+    the cost stopped being visible: `check.yml`'s `defaults: run:` mapping is this reader's
+    first collected block for that file, scanned as a body like any other. It is harmless
+    because it carries only `shell: bash` and no expression — and it is exactly where
+    `working-directory: ${{ inputs.path }}` would be written, so the next person to reach for
+    that hits the red test this paragraph exists to explain rather than one it told them
+    could not happen.
 
     **A comment indented past a one-liner's key column**, which this rule introduced and the
     reader before it did not have: a one-liner used to be taken and the following lines left
@@ -288,15 +300,27 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
     # would never be scanned while the `>=` assertion below went on passing.
     workflows = sorted(WORKFLOWS.glob("*.y*ml"))
-    assert {p.name for p in workflows} >= {"ci.yml", "check.yml", "smoke.yml"}, workflows
+    assert {p.name for p in workflows} >= SCRIPTED, workflows
     read: list[str] = []
     for workflow in workflows:
         blocks = run_blocks(workflow)
         # Per file and not for all of them: `smoke-release.yml` is two reusable-workflow calls
-        # and legitimately runs no shell at all, so the floor is on the three that do — a
+        # and legitimately runs no shell at all, so the floor is on the four that do — a
         # reader that silently stopped finding blocks would otherwise pass on an empty walk.
-        # Measured: check.yml 9, ci.yml 11, smoke.yml 6.
-        if workflow.name in {"ci.yml", "check.yml", "smoke.yml"}:
+        # `release.yml` used to be left out of this set with no reason beside it, which is a
+        # worse hole than `smoke-release.yml`'s stated one: it is the workflow that publishes
+        # to PyPI and creates a Release, and against the whole-set floors below it could have
+        # lost every one of its bodies without either of them noticing.
+        # Measured 2026-09-19 with this module's own `run_blocks`: check.yml 9, ci.yml 12,
+        # release.yml 6, smoke.yml 6.
+        #
+        # No `mutations.toml` entry travels with the widened set, and the reason is that there
+        # is nothing for one to mutate: adding a fourth name to `SCRIPTED` extends an existing
+        # predicate over one more file rather than adding a guard, and a mutation that took the
+        # name back out would redden nothing — the floors below still pass. What has to be
+        # load-bearing is the reader, and that is held by the four `_scan` entries already in
+        # `mutations.toml`, one of which reddens this very case.
+        if workflow.name in SCRIPTED:
             assert len(blocks) >= 5, (workflow.name, len(blocks))
         read.extend(blocks)
         for block in blocks:

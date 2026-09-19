@@ -90,7 +90,18 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     """
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
-    code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
+    # `git_run` decodes STDERR strictly too, so the containment below is not only about the
+    # listing: any git in this module whose diagnostic text carries a non-UTF-8 byte raises
+    # `UnicodeDecodeError` out of a library function, which is the traceback the constraints
+    # forbid. `git archive` writes the tar to a file, so its stdout is empty and its stderr is
+    # the whole of what gets decoded — and a `Failure` and not a skip, because unlike the
+    # listing there is no weaker answer available: nothing was extracted.
+    try:
+        code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
+    except UnicodeDecodeError:
+        raise Failure(
+            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted"
+        ) from None
     if code != 0:
         raise Failure(f"`git archive {ref}` exited {code}; nothing was extracted")
     try:
@@ -147,7 +158,16 @@ def _extract(root: Path, ref: str, into: Path) -> None:
 def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
-    code, merge_base = git_run(root, "merge-base", "HEAD", base)
+    # Guarded for the reason `_extract` gives: `git_run` decodes stderr strictly, so git's own
+    # error text carrying a non-UTF-8 byte escapes as a bare `UnicodeDecodeError`. A `Failure`
+    # and not the `(-1, "")` skip, because this command has no verdict without a merge-base.
+    try:
+        code, merge_base = git_run(root, "merge-base", "HEAD", base)
+    except UnicodeDecodeError:
+        raise Failure(
+            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
+            f"is no merge-base to compare against"
+        ) from None
     merge_base = merge_base.strip()
     # `git_run`'s own sentinel for "the binary could not be launched at all", which is not an
     # exit code and must not be rendered as one: `exited -1; is origin/main fetched?` sends a

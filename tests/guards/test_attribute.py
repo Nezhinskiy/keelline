@@ -290,3 +290,40 @@ def test_a_listing_this_process_cannot_decode_skips_the_comparison(
     monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
     result = attribute(root, command="true", base="main", runner=_Coded({}))
     assert result.verdict == VERDICTS[4]
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("diverted", "names"),
+    [("merge-base", "merge-base"), ("archive", "git archive")],
+    ids=["merge-base", "archive"],
+)
+def test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diverted: str, names: str
+) -> None:
+    # The containment above was argued at the call site — "its other callers ask for a sha or a
+    # config value and never for raw bytes" — while two of this module's own `git_run` calls
+    # were unguarded. `git_run` runs with `text=True` and decodes STDERR strictly as well as
+    # stdout, so this was never only about a tracked filename: git's own error text carrying
+    # one non-UTF-8 byte escaped as a bare `UnicodeDecodeError` out of a library function,
+    # which is the traceback the constraints forbid.
+    #
+    # A `Failure` and not the listing's skip, because neither call has a weaker answer: there
+    # is no verdict without a merge-base, and nothing was extracted without an archive. What is
+    # asserted is the sentence naming the command, not merely that something was raised.
+    #
+    # Mutations (declared, one per arm): each `except UnicodeDecodeError` is narrowed to
+    # another type -> the error escapes `attribute` and that arm's case reddens.
+    root = _repo(tmp_path)
+    real = git_run
+
+    def undecodable(
+        where: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+    ) -> tuple[int, str]:
+        if args[0] == diverted:
+            raise UnicodeDecodeError("utf-8", b"caf\xe9", 3, 4, "invalid continuation byte")
+        return real(where, *args, timeout=timeout, stdin=stdin)
+
+    monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
+    with pytest.raises(Failure, match=names):
+        attribute(root, command="true", base="main", runner=_Coded({}))

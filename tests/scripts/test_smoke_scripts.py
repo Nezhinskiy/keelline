@@ -7,6 +7,7 @@ mismatch is reported and a match is not — so a green CI row means the plugin, 
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -72,6 +73,45 @@ def test_a_wrapper_that_answers_wrongly_is_reported(
     assert code == 1
     out = capsys.readouterr().out
     assert "exited 0, expected 2" in out  # the closed row, for its own reason
+
+
+@needs_git
+def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The guard held one direction. `unsampled = events - SAMPLES.keys()` catches `hooks.json`
+    # GAINING an event with no sample; `hooks.json` LOSING one shrinks `found`, leaves
+    # `unsampled` empty, runs fewer rows and prints a green summary — the entry stopped being
+    # smoke-tested and the script said nothing. That is the vacuous shape this repository names,
+    # arriving through the guard written to prevent it.
+    #
+    # `PostToolUse` is the event removed because it is the one with exactly one sample, so its
+    # rows are the whole of what goes missing.
+    #
+    # Mutation (declared, "the hook smoke stops noticing an event that lost its entry"): the
+    # `unentered` set is emptied -> the run proceeds on the remaining entries, every row passes,
+    # `main` returns 0, and both assertions below redden.
+    smoke = _load("smoke_hooks")
+    planted = tmp_path / "plugin"
+    shutil.copytree(ROOT / "hooks", planted / "hooks")
+    shutil.copytree(ROOT / "scripts", planted / "scripts")
+    entries = planted / "hooks" / "hooks.json"
+    document = json.loads(entries.read_text(encoding="utf-8"))
+    assert "PostToolUse" in document["hooks"], "the fixture removes an event that is there"
+    del document["hooks"]["PostToolUse"]
+    entries.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(planted),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path),
+        ]
+    )
+    assert code == 1
+    assert "no hook entry for ['PostToolUse']" in capsys.readouterr().out
 
 
 @needs_git

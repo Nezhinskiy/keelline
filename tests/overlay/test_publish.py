@@ -72,9 +72,15 @@ def _argv(stub: _GitHub) -> list[list[str]]:
     return [argv for argv, _ in stub.calls]
 
 
-def test_without_yes_everything_but_the_push_happens_and_the_push_is_named(tmp_path: Path) -> None:
-    # The gate is on the one outward-facing act (Global Constraints: a flag a model can type
-    # is not a control, so the gate is a parameter and the push is what it guards).
+def test_without_yes_nothing_is_pushed_and_the_push_is_named(tmp_path: Path) -> None:
+    # `yes` gates everything outward-facing, which is THREE acts and not one: the
+    # repository's creation, its template flag, and the push (`publish.py`'s module
+    # docstring, DC6). This case holds the third; the case below holds the first two, and it
+    # exists because the first draft ran `gh repo create --public` before the gate. The name
+    # and comment this carried said "the one outward-facing act" and "the push is what it
+    # guards" — the design the gate replaced, in the file a reader opens to learn what
+    # `--yes` covers, and wrong in the unsafe direction. The gate is still a parameter and
+    # not a typed flag (Global Constraints); that half was right.
     # Mutation (declared): push regardless of `yes` -> `pushed` is True and reddens.
     stub = _GitHub()
     result = publish_template("Owner", yes=False, runner=stub)
@@ -221,8 +227,13 @@ def test_a_push_that_is_declined_is_a_failure_naming_the_repository(tmp_path: Pa
                 return Completed(1, "", "remote: refused by a ruleset")
             return recorded
 
-    with pytest.raises(Failure, match="refused by a ruleset"):
+    with pytest.raises(Failure, match="refused by a ruleset") as failed:
         publish_template("owner", yes=True, runner=_RefusedPush())
+    # The name promises the repository, and `refused by a ruleset` is the STUB's own stderr:
+    # it is quoted back whatever the message says about which repository was pushed to, so
+    # the assertion above held with the slug dropped from the sentence. The slug is the half
+    # only this code produces.
+    assert f"owner/{TEMPLATE_REPOSITORY}" in str(failed.value)
 
 
 def test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger(tmp_path: Path) -> None:

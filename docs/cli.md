@@ -1157,6 +1157,13 @@ jobs:
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs and those carry whether the gates enforce |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 
+The caller's job needs `contents: read`. That is the default, so the three lines above are
+enough — but a caller that sets `permissions:` at workflow level replaces the default rather
+than adding to it, and a called workflow cannot grant itself a scope the caller did not have.
+`permissions: {}` at the top of the calling file therefore fails this workflow at its first
+checkout, with an error that names neither the cause nor the remedy. Give the calling job
+`permissions: { contents: read }` if the file sets any permissions at all.
+
 It checks out the caller, checks out Keelline **at the commit the `uses:` line pins** — read
 off the platform's own record of which reusable workflow is running, never off the caller's
 inputs, and asserted against `git rev-parse HEAD` before anything else runs — and runs
@@ -1166,8 +1173,10 @@ whatever `setup-python` fetches when the runner has no matching interpreter cach
 
 **Where the configuration comes from, and why it is not the tree under review.** The state the
 gate enforces on is read from `keelline.toml` **on the base ref**, and on any branch but the
-base branch itself the tree's copy must equal it byte for byte or the run fails before a gate
-runs. A pull request that could turn its own gates off is not a gate (§8.3 names the keys a
+base branch itself the tree's copy must equal it byte for byte — once the base's state is
+`installed`, or the run fails before a gate runs. While the base is still `initialised` or
+`adopting` the difference is one `::warning` annotation and the run goes on, which is the
+same advisory rule the next paragraph states for the gates themselves. A pull request that could turn its own gates off is not a gate (§8.3 names the keys a
 pull request may eventually change; that refinement arrives with `assess`). The base ref itself
 is the caller's `base:`, the pull request's base, or the repository's default branch as the
 platform reports it — three anchors, none of them writable from the branch under review.

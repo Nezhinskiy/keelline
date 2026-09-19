@@ -338,10 +338,23 @@ def _files(context: Context) -> Row:
             f"files cannot be compared against one{whose}",
         )
     actual = digests(root)
-    # Both directions, exactly as `drift()` walks them: a file the record names and the
-    # installation lacks is a change, not a `None == None` match.
+    # **The union, and not `HASHED_FILES` alone.** Both directions, the way `drift()` walks
+    # them: `drift` walks `recorded` for the missing-from-tree direction, and this walked
+    # `HASHED_FILES` for both — which is the same list only while the installed record and the
+    # *running* build's `HASHED_FILES` agree. They need not: the record is read from
+    # `plugin_root`, which can name a plugin installed from a different release than the
+    # `keelline` on `PATH` (the case `cli-path` exists for). So a record naming a file this
+    # build has never heard of, which the installation lacks, read green — a partial update,
+    # which is one of the three threats this row's own docstring names.
+    #
+    # `sorted` and not the bare set: `listed(changed)` is printed, and a set's iteration order
+    # over strings moves with the interpreter's hash seed, so the bare union would make one
+    # red row's sentence differ between runs. The `name not in actual` short-circuit is what
+    # protects the lookup for a name `digests()` never produced.
     changed = [
-        name for name in HASHED_FILES if name not in actual or recorded.get(name) != actual[name]
+        name
+        for name in sorted({*HASHED_FILES, *recorded})
+        if name not in actual or recorded.get(name) != actual[name]
     ]
     if changed:
         return Row(

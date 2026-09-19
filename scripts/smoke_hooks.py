@@ -176,9 +176,19 @@ def main(argv: list[str]) -> int:
         return 1
     # An event with no sample would contribute zero rows and a green summary — the vacuous
     # shape this repository names; a sixth event fails here until it has a sample.
-    unsampled = {event for event, _ in found} - SAMPLES.keys()
+    events = {event for event, _ in found}
+    unsampled = events - SAMPLES.keys()
     if unsampled:
         print(f"FAIL  no sample event for {sorted(unsampled)}")
+        return 1
+    # And the converse, which is the direction that fails silently. The check above catches
+    # `hooks.json` GAINING an event; `hooks.json` LOSING one shrinks `found`, empties
+    # `unsampled`, runs fewer rows and prints a green summary — the entry stopped being
+    # tested and nothing said so. Both directions, so the set of events this run covers is
+    # exactly the set the samples describe.
+    unentered = SAMPLES.keys() - events
+    if unentered:
+        print(f"FAIL  no hook entry for {sorted(unentered)}; hooks.json lost an event")
         return 1
     for event, command in found:
         for sample in SAMPLES.get(event, ()):

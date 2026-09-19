@@ -3637,8 +3637,10 @@ reddens = [
 [[mutation]]
 name = "attribute lets an undecodable tracked path escape as a traceback"
 file = "src/keelline/guards/attribute.py"
-before = "    except UnicodeDecodeError:"
-after = "    except ZeroDivisionError:"
+before = """    except UnicodeDecodeError:
+        code, listing = -1, \"\""""
+after = """    except ZeroDivisionError:
+        code, listing = -1, \"\""""
 reddens = [
   "tests/guards/test_attribute.py::test_a_listing_this_process_cannot_decode_skips_the_comparison",
 ]
@@ -3914,8 +3916,8 @@ reddens = ["tests/release/test_hashes.py::test_a_written_record_has_no_drift_and
 [[mutation]]
 name = "doctor files compares the record to itself"
 file = "src/keelline/doctor/checks.py"
-before = "        name for name in HASHED_FILES if name not in actual or recorded.get(name) != actual[name]"
-after = "        name for name in HASHED_FILES if name not in recorded or recorded.get(name) != recorded[name]"
+before = "        if name not in actual or recorded.get(name) != actual[name]"
+after = "        if name not in recorded or recorded.get(name) != recorded[name]"
 reddens = [
   "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
 ]
@@ -3938,7 +3940,7 @@ file = "src/keelline/overlay/publish.py"
 before = "        if not yes:"
 after = "        if False:"
 reddens = [
-  "tests/overlay/test_publish.py::test_without_yes_everything_but_the_push_happens_and_the_push_is_named",
+  "tests/overlay/test_publish.py::test_without_yes_nothing_is_pushed_and_the_push_is_named",
   "tests/overlay/test_publish.py::test_without_yes_no_repository_is_created_or_marked",
 ]
 
@@ -4013,7 +4015,7 @@ reddens = [
 ]
 
 # The scaffold ledger, stripped from the render before the clone. Held over the RENDER and not
-# over the pushed tree: `_replace_tree` writes only `OVERLAY_FILES`, so an assertion over what
+# over the pushed tree: `_replace_tree` writes only the files the render left, so an assertion over what
 # was pushed is satisfied by that whitelist alone and survives this mutation — measured, with
 # every case in `tests/overlay` still green.
 #
@@ -4043,4 +4045,105 @@ before = "    if (root / RECORD).is_file() or all((root / name).is_file() for na
 after = '    if (root / "hooks").is_dir():'
 reddens = [
   "tests/release/test_versions.py::test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record",
+]
+
+# ---------------------------------------------------------------------------------------------
+# The final whole-branch review's fix wave. Eight guards, each one an assertion this wave added
+# or changed, and each entry's `after` chosen so the test reddens on the sentence or the value
+# only the correct behaviour produces — never on a `NameError` from a deleted name or on a
+# status a surviving arm also produces.
+
+# `setup`'s docstring promises every structural question is asked "while nothing is on disk".
+# With `--settings` it was not: `_check_settings_path` ran only for the `None` case, so the
+# refusal came from `_write_user_settings` — after `home.mkdir(parents=True)` and after
+# `write_machine`. The mutation leaves the `Refusal` in place one frame later, which is why the
+# case asserts that nothing was written rather than that something was raised.
+[[mutation]]
+name = "setup asks about the --settings directory only at write time"
+file = "src/keelline/setup/run.py"
+before = """    else:
+        _check_settings_parent(settings)"""
+after = """    else:
+        pass"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written",
+]
+
+# The whole-tree neutrality gate's only diagnostic. The denylist is digests by construction, so
+# without the offset a contributor who trips one of the two four-character entries has nothing
+# to work from. Reporting the LAST window instead of the first satisfies "an offset is printed"
+# and points at the wrong line in any file that carries the token twice, which is the ordinary
+# case for a name — so the assertion is on the value.
+[[mutation]]
+name = "the neutrality gate reports the last matching window instead of the first"
+file = "tests/test_neutral.py"
+before = "            if digest in wanted and digest not in first:"
+after = "            if digest in wanted:"
+reddens = ["tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window"]
+
+# `drift()` walks the record for the missing-from-tree direction and this row walked
+# `HASHED_FILES` for both, which is the same list only while the installed record and the
+# running build agree — and the record is read from `plugin_root`, which can name a plugin from
+# a different release than the `keelline` on `PATH`. A red status alone is produced by several
+# other arms of this row, so the case asserts the file name in the detail.
+[[mutation]]
+name = "doctor files walks only the files this build knows about"
+file = "src/keelline/doctor/checks.py"
+before = "        for name in sorted({*HASHED_FILES, *recorded})"
+after = "        for name in sorted(HASHED_FILES)"
+reddens = ["tests/doctor/test_checks.py::test_a_record_naming_a_file_this_build_does_not_ship_is_red"]
+
+# `gitenv.git_run` decodes stderr strictly as well as stdout, so git's own error text carrying
+# one non-UTF-8 byte escapes as a bare `UnicodeDecodeError` out of a library function. The
+# listing's arm answers by skipping the comparison; these two have no weaker answer, so each is
+# a `Failure` naming its command. One entry per arm, because one entry names one line.
+[[mutation]]
+name = "attribute lets an undecodable merge-base diagnostic escape as a traceback"
+file = "src/keelline/guards/attribute.py"
+before = """    except UnicodeDecodeError:
+        raise Failure(
+            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
+after = """    except ZeroDivisionError:
+        raise Failure(
+            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
+reddens = [
+  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
+]
+
+[[mutation]]
+name = "attribute lets an undecodable archive diagnostic escape as a traceback"
+file = "src/keelline/guards/attribute.py"
+before = """    except UnicodeDecodeError:
+        raise Failure(
+            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
+after = """    except ZeroDivisionError:
+        raise Failure(
+            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
+reddens = [
+  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[archive]",
+]
+
+# The case is named for the repository and matched on `refused by a ruleset`, which is the
+# STUB's own stderr — quoted back whatever this message says about where the push went. The
+# slug is the half only this line produces.
+[[mutation]]
+name = "the declined push stops naming the repository"
+file = "src/keelline/overlay/publish.py"
+before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} ({_detail(pushed)})")'
+after = '            raise Failure(f"`git push` exited {pushed.code} ({_detail(pushed)})")'
+reddens = [
+  "tests/overlay/test_publish.py::test_a_push_that_is_declined_is_a_failure_naming_the_repository",
+]
+
+# The hook smoke's guard held one direction: it caught `hooks.json` gaining an event with no
+# sample, and not `hooks.json` losing one — which shrinks the walk, runs fewer rows and prints a
+# green summary. With this mutation every remaining row still passes and `main` returns 0, so
+# the exit code and the sentence are both the claim.
+[[mutation]]
+name = "the hook smoke stops noticing an event that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    unentered = SAMPLES.keys() - events"
+after = "    unentered = SAMPLES.keys() - SAMPLES.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows",
 ]

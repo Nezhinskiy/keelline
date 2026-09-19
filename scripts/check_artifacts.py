@@ -38,7 +38,8 @@ WHEEL_MUST = (
     "keelline/presets/recommended.toml",
     *(f"keelline/templates/overlay/{relative}" for relative in OVERLAY_FILES),
 )
-# What a downstream packager needs to verify the sdist, and the two files the harness runs.
+# What a downstream packager needs to verify the sdist, plus the three files the harness runs
+# without an interpreter of ours and the record they are checked against.
 SDIST_MUST = (
     "tests/test_fsops.py",
     "CHANGELOG.md",
@@ -47,6 +48,12 @@ SDIST_MUST = (
     "agents/code-navigator.md",
     "hooks/run-hook.sh",
     "hooks/hooks.json",
+    # Beside the three files it records, and for the same reason they are here: a build that
+    # dropped it would pass this checker while `doctor files` quietly degraded from a
+    # comparison to a `skip`, which is the one answer that looks like a healthy install and
+    # is not one. `pyproject.toml` carries it under `hooks/**`, so this is a claim about the
+    # build and not a new packaging rule.
+    "hooks/hashes.json",
     "mutations.toml",
 )
 SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/keelline")

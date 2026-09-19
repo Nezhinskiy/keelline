@@ -1661,6 +1661,40 @@ def test_an_attached_checkout_the_overlay_confirms_is_still_green_and_says_the_b
     assert "the binding is bound" in row.detail
 
 
+def test_a_record_naming_a_file_this_build_does_not_ship_is_red(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The direction `_files` did not walk. `drift()` walks the RECORD for the missing-from-tree
+    # direction; this row walked `HASHED_FILES` for both, which is the same list only while the
+    # installed record and the running build's `HASHED_FILES` agree. They need not — the record
+    # is read from `plugin_root`, which can name a plugin installed from a different release
+    # than the `keelline` on `PATH`, which is the whole case `cli-path` exists for. So a record
+    # that names a file this build never heard of, and that the installation does not have, read
+    # `ok`: a partial update, one of the three threats `_files`' own docstring names.
+    #
+    # The record is written by hand rather than through `write_record`, because `write_record`
+    # records exactly `HASHED_FILES` and the case is a record that does not.
+    #
+    # Mutation (declared, "doctor files walks only the files this build knows about"): the walk
+    # goes back to `HASHED_FILES` -> the extra name is never looked at, the row is `ok`, and
+    # both assertions below redden. The detail assertion is the one that names the arm: a red
+    # status alone is produced by several other arms of this row.
+    from keelline.release.hashes import write_record
+
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    planted = _planted_plugin(tmp_path, executable=True)
+    write_record(planted)
+    record_path = planted / "hooks" / "hashes.json"
+    document = json.loads(record_path.read_text(encoding="utf-8"))
+    document["files"]["hooks/legacy-hook.sh"] = "0" * 64
+    record_path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    root = _initialised(tmp_path)
+    env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))
+    row = _by_name(_checks(tmp_path, root, env=env), "files")
+    assert row.status == RED
+    assert "hooks/legacy-hook.sh" in row.detail
+
+
 def test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

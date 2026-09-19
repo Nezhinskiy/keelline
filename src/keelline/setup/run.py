@@ -432,6 +432,33 @@ def _check_settings_path(home: Path) -> None:
         ) from exc
 
 
+def _check_settings_parent(settings: Path) -> None:
+    """Refuse a `--settings` whose directory cannot be written through — above the first write.
+
+    The other half of `_check_settings_path`, for the layout the flag exists for. `--settings`
+    names the file, so the root of the write is the file's own directory; `fsops.open_within`
+    opens that root with `O_NOFOLLOW` before the loop that wraps `ELOOP`/`ENOTDIR` into
+    `UnsafePath`, so a directory that is not there and a directory that is a symlink are both
+    refused there. Both were refused *late*: `_write_user_settings` runs after
+    `home.mkdir(parents=True)` and after `write_machine`, so
+    `keelline setup --settings /typo/settings.json` created the home tree, wrote the machine
+    configuration, and then exited 2. The same two conditions, asked here while nothing is on
+    disk — which is what the docstring above claims for every structural question.
+
+    `is_dir() and not is_symlink()` and not `exists()`: it is exactly the pair the write refuses
+    one frame down, so this check adds no rule of its own. It moves the existing one earlier.
+    A symlinked *home* stays fine, and is a different question — `_check_settings_path` answers
+    that one, and `open_within` never applies `O_NOFOLLOW` to the root it is handed.
+    """
+    parent = settings.parent
+    if parent.is_dir() and not parent.is_symlink():
+        return
+    raise Refusal(
+        f"{settings} cannot be written: its directory has to exist and be a real directory, "
+        f"because {_SYMLINKED_SETTINGS}"
+    )
+
+
 def _repository_of(path: Path) -> Path | None:
     """The git common directory `path` sits in, or `None` when `git` cannot say it is in one.
 
@@ -603,22 +630,31 @@ def setup(
 
     **Everything structural is asked before the first write**, and the order below is
     load-bearing rather than tidy: `--overlay` is parsed, probed and contained, and the settings
-    path is checked, while nothing is on disk and no repository exists on anyone's GitHub
+    path is checked — **both spellings of it**, the `<home>/.claude` walk and the directory
+    `--settings` names — while nothing is on disk and no repository exists on anyone's GitHub
     account. What is left after that is the work, and the one refusal that follows a write is
     the post-condition on a tree this run created.
     """
     planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
-    # `--settings` names the file, so the `<home>/.claude` walk this check is about is not the
-    # walk that will run: asking it anyway would refuse the one layout the flag exists for.
+    # `--settings` names the file, so the `<home>/.claude` walk `_check_settings_path` is about
+    # is not the walk that will run: asking it anyway would refuse the one layout the flag exists
+    # for. So the question is asked of whichever root the write will actually use. Both arms and
+    # not one: with only the first, `--settings` reached its refusal from `_write_user_settings`,
+    # after `home.mkdir` and after the machine file had been written, and a typo in the directory
+    # component left both of those behind on the way to exit 2.
     if settings is None:
         _check_settings_path(home)
+    else:
+        _check_settings_parent(settings)
 
-    # `home` is the root every write in this function lands under — the settings file through
-    # `fsops.write_within` below, and a created overlay through `overlay.create` further down —
-    # and it is not one this process was handed already existing, the way a project root or the
-    # overlay itself is. Created directly for the same reason `setup.machine`'s module
-    # docstring gives for `fsops.write_atomically` on the machine file: there is nothing for a
-    # contained walk to be relative to until this directory exists.
+    # `home` is the root every write in this function lands under **except the one `--settings`
+    # redirects** — the settings file through `fsops.write_within` below, whose root is the named
+    # file's own directory when the flag is given and `home` when it is not, and a created overlay
+    # through `overlay.create` further down. `home` is not a root this process was handed already
+    # existing, the way a project root or the overlay itself is. Created directly for the same
+    # reason `setup.machine`'s module docstring gives for `fsops.write_atomically` on the
+    # machine file: there is nothing for a contained walk to be relative to until this
+    # directory exists.
     # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
     # after the home tree had been created for it.
     data = load_preset(preset)

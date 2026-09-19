@@ -1057,8 +1057,41 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
     assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
 
 
-def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
+def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written(
     tmp_path: Path,
+) -> None:
+    # The structural question `setup`'s own docstring promises is asked "while nothing is on
+    # disk", asked for the spelling that skipped it. `_check_settings_path(home)` ran only when
+    # `settings is None`, so with `--settings` the refusal came from `_write_user_settings` —
+    # after `home.mkdir(parents=True)` and after `write_machine`. A typo in the directory
+    # component therefore created the home tree, wrote the machine configuration, and exited 2,
+    # and the two cases below asserted the refusal and its sentence while never asking that.
+    #
+    # Mutation (declared, "setup asks about the --settings directory only at write time"): the
+    # `else:` arm becomes `pass`. The `Refusal` still comes — one frame later — so the two
+    # `exists()` assertions are what redden, and the `raises` is not the claim here.
+    home = tmp_path / "home"
+    machine = tmp_path / "machine.toml"
+    missing = tmp_path / "not-there" / "settings.json"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=missing,
+        )
+    assert str(missing) in str(refused.value)
+    assert "has to exist and be a real directory" in str(refused.value)
+    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
+    assert not machine.exists()
+
+
+def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Fix round 1, item 2. `_write_user_settings` caught only `UnsafePath`, and `write_within`
     # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root
@@ -1066,8 +1099,15 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
     # `cli.run`'s final handler as `keelline: internal error`, exit 2, no remedy. A typo in
     # `--settings`' directory component is the ordinary way to get there.
     #
+    # This is now the FLOOR under the case above rather than the case itself:
+    # `_check_settings_parent` refuses the same two conditions one stage earlier, so the
+    # interval in which the directory goes away between the check and the write is what is
+    # left, and it is reached the way the `~/.claude` floor above reaches its own — by patching
+    # the first stage out. The alternative is a race nothing can schedule.
+    #
     # Mutation (declared): the `except OSError` arm -> `except UnsafePath` (a second, dead
     # copy) -> the `OSError` escapes again and this reddens on `Refusal` not being raised.
+    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
     home = tmp_path / "home"
     missing = tmp_path / "not-there" / "settings.json"
     with pytest.raises(Refusal) as refused:
@@ -1088,12 +1128,15 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
 
 
 def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The other half of item 2, and the layout `--settings` is advertised for one door over:
     # `--settings ~/.claude/settings.json` where `~/.claude` is itself the stow link. The walk
     # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare
-    # `OSError` rather than as `UnsafePath`, for the same reason as above.
+    # `OSError` rather than as `UnsafePath`, for the same reason as above. The first stage is
+    # patched out for the reason the case above gives: it now refuses a symlinked directory too,
+    # and this one is the floor beneath it.
+    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
     home = tmp_path / "home"
     real = tmp_path / "dotfiles" / "claude"
     real.mkdir(parents=True)

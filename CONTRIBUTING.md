@@ -136,6 +136,27 @@ Name a test after the behaviour, not the function:
 Comment *why*, in the test. Most of this suite's comments name the defect the test exists to
 catch, which is what makes a later reader able to tell a load-bearing assertion from decoration.
 
+**The neutrality gate walks every tracked file.** `tests/test_neutral.py` holds the whole tree
+to a denylist and three shape rules: no string that identifies the repository these guards were
+extracted from, no personal email address, no bare abbreviated commit id, no vendor-prefixed
+branch name (`codex/…`, `claude/…`, `cursor/…`). The denylist is stored as digests rather than
+as the strings, because a gate that lists what it is hiding publishes it in the very repository
+the rule is about — so a hit reads `token be440e8c9338 at 812` and not the word you wrote.
+
+```bash
+uv run pytest tests/test_neutral.py
+uv run pytest "tests/test_neutral.py::test_no_tracked_file_carries_a_project_identifying_string[docs/cli.md]"
+```
+
+The second form is how you ask about one file: the walk is parametrised and the case id is the
+file's own path from the repository root.
+
+The number after `at` is the byte offset of the first matching window in the lower-cased file,
+and the entry's own length is what you read from there: slice that many characters out of your
+file at that offset and you are looking at the string the gate refused. Two entries are four
+characters long, which is why the offset is printed at all — a four-character window is not
+something a contributor can guess. Rewrite the line; do not add an entry to the exemption.
+
 A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
 takes one, and use `tmp_path` for everything else. A test must not shell out to `gh`, `claude`,

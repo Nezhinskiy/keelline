@@ -132,20 +132,41 @@ SHAPES = (
 
 
 def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> list[str]:
-    """Every denylist digest and every shape name the text hits.
+    """Every denylist digest and every shape name the text hits — and, for a digest, where.
 
     A hashed denylist cannot be substring-matched, so the text is scanned by window: for each
     stored length, every window of that length in the lower-cased bytes is hashed and the
     digests are intersected with the entries of that length. Every token is ASCII, so a window
     over bytes and a substring of the string agree, and this is exactly the `token in lowered`
     it replaces.
+
+    **A digest hit carries the offset of its first matching window**, because without one this
+    gate had no way to diagnose a hit at all. It now holds every tracked file, and a contributor
+    who trips an entry used to get `AssertionError: (PosixPath('…'), ['token dea22fd6c241'])` —
+    a twelve-hex digest naming neither the offset nor the window, against a table they cannot
+    read by construction. Two entries are four characters long, which no one can brute-force by
+    eye. The offset leaks nothing the tree did not already contain: the contributor reads the
+    characters off their own file, which is the file they wrote. `at <offset>` is a byte offset
+    into `text.lower().encode("utf-8")`, and the entry's own stored length is the window's — say
+    both, so the report is actionable without the table being readable.
+
+    The shape arms keep their bare names. A shape is a regex a reader can look up in `SHAPES`
+    two screens up, so an offset would be noise; the digests are the half nothing in the
+    repository can spell out.
     """
     raw = text.lower().encode("utf-8")
     found: list[str] = []
     for width in sorted({width for width, _ in forbidden}):
         wanted = {digest for length, digest in forbidden if length == width}
-        seen = {_digest(raw[start : start + width]) for start in range(len(raw) - width + 1)}
-        found.extend(f"token {digest}" for digest in sorted(wanted & seen))
+        # First window and not last, and the ordering is by digest as it was: a scan that
+        # reported the final occurrence would send a reader to the wrong line in a file that
+        # carries the token twice, which is the ordinary case for a name.
+        first: dict[str, int] = {}
+        for start in range(len(raw) - width + 1):
+            digest = _digest(raw[start : start + width])
+            if digest in wanted and digest not in first:
+                first[digest] = start
+        found.extend(f"token {digest} at {first[digest]}" for digest in sorted(first))
     lowered = text.lower()
     blanked = _URL.sub(" ", lowered)
     found.extend(
@@ -226,8 +247,10 @@ def _text(path: Path) -> str | None:
 
 def test_the_gate_reads_the_whole_tree() -> None:
     # The non-vacuity guard for the parametrised walk below. Named files from six different
-    # trees, and a floor well under today's count (310 when this was written; the commit says
-    # so), so a walk that stopped at one directory cannot pass.
+    # trees, and a floor well under today's count — the one measurement of that count is the
+    # sentence further down, taken from this walk rather than restated here. The number that
+    # used to stand in this line was 310, which is `mutations.toml`'s entry count copied into
+    # the wrong comment: two comments in one function, disagreeing, about the same quantity.
     files = tracked_files()
     names = {str(p.relative_to(ROOT)) for p in files}
     # No `.github/` name here: that tree is outside `source-include`, and this floor has to
@@ -247,12 +270,15 @@ def test_the_gate_reads_the_whole_tree() -> None:
     # And that a file was actually READ, and that reading it produced its CONTENT. Every
     # parametrised case below calls `_text` and skips on `None`, so a regression in `_text` — a
     # changed encoding argument, a widened `except` — turns all of them into skips, and a run of
-    # 334 skips and no failures is what a green gate looks like from the outside. Counting the
+    # 346 skips and no failures is what a green gate looks like from the outside. Counting the
     # files that decoded closes that; counting the characters closes the shape one step along,
     # where `_text` answers `""` for everything, every case scans an empty string and passes,
-    # and the file count is still full. Measured when this was written: 335 tracked files, none
-    # undecodable, 4,667,131 characters. `UNDECODABLE` and the character floor are numbers
-    # somebody moves on purpose, not silences to walk past.
+    # and the file count is still full. **The measurement, once, and this is the only place in
+    # this module that states it:** on 2026-09-19, running `tracked_files()` and `_text` from
+    # this module, `len(tracked_files())` was 347, of which 346 are read here (this file is the
+    # one the walk skips), none was undecodable, and they hold 4,806,797 characters.
+    # `UNDECODABLE` and the character floor are numbers somebody moves on purpose, not silences
+    # to walk past.
     read = [_text(path) for path in files if path != THIS]
     kept = [text for text in read if text is not None]
     assert len(kept) >= 200, len(kept)
@@ -303,7 +329,7 @@ def test_the_gate_discriminates() -> None:
     # undo the hashing this file exists to keep.
     probe = "quernstone"
     planted = ((len(probe), digest_of(probe)),)
-    assert offending("see Quernstone/plans", planted) == [f"token {digest_of(probe)}"]
+    assert offending("see Quernstone/plans", planted) == [f"token {digest_of(probe)} at 4"]
     assert offending("see quernston/plans", planted) == []
     assert offending("Co-authored-by: Someone <someone@gmail.com>") == ["personal email"]
     assert offending("fixed in 1b279648") == ["bare commit id"]
@@ -338,6 +364,30 @@ def test_the_gate_discriminates() -> None:
     assert offending("size = 13936739") == []
     assert offending("bytes: 1234567890") == []
     assert offending("bytes: 123456789a") == ["bare commit id"]
+
+
+def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
+    # The whole-tree gate's only diagnostic. The digest is unreadable by construction, so
+    # without the offset a contributor who trips a four-character entry has nothing to go on
+    # but brute-forcing windows of their own file. What is asserted is the offset's VALUE and
+    # that it indexes the token — a report that named the last window, or 0, or the hit count,
+    # would satisfy "an offset is printed" and send the reader to the wrong place.
+    #
+    # Mutation (declared, "the neutrality gate reports the last matching window instead of the
+    # first"): drop the `and digest not in first` guard -> the offset becomes 25 and the first
+    # assertion reddens on the value. The planted token is a made-up word passed in as a
+    # one-entry denylist, for the reason `test_the_gate_discriminates` gives.
+    probe = "quernstone"
+    planted = ((len(probe), digest_of(probe)),)
+    text = "a quernstone and another quernstone"
+    assert offending(text, planted) == [f"token {digest_of(probe)} at 2"]
+    assert text[2 : 2 + len(probe)] == probe, "the offset does not index the token it names"
+    # And the offset is into the LOWER-CASED bytes, which for an ASCII token is the same index
+    # in the original — the equivalence the window scan itself rests on.
+    assert offending(text.upper(), planted) == [f"token {digest_of(probe)} at 2"]
+    # A shape hit keeps its bare name: there is no window to point at, and the arm is readable
+    # in `SHAPES`.
+    assert offending("fixed in 1b279648") == ["bare commit id"]
 
 
 def test_mutations_toml_carries_no_source_repository_string() -> None:
@@ -383,7 +433,7 @@ def test_the_public_table_still_discriminates() -> None:
     assert all(offending(value, PUBLIC_FORBIDDEN) == [] for value in defaults)
     probe = "quernstone"
     planted = ((len(probe), digest_of(probe)),)
-    assert offending("see quernstone", planted) == [f"token {digest_of(probe)}"]
+    assert offending("see quernstone", planted) == [f"token {digest_of(probe)} at 4"]
     assert offending("edit .claude/settings.json and .codex/hooks.json") == []
     assert offending("~/.claude/settings.json") == []
     # The dot in the lookbehind, which the dash requirement does not make redundant: those two
