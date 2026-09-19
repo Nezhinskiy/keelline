@@ -16,9 +16,12 @@ keeps them somewhere else, and both lanes had the same wrong spelling hardcoded;
 needs the commit rules (`offending_lines`, `check_range`, `Report`, `Violation`, `Offence`,
 `ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `contained_roots`,
 `Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`) and the scanner any later
-guard is built on (`Heredoc`, `tokenize`, `segments`, `operator_pieces`, `command_words`); and
-the judge itself (`judge`, `Verdict`, `ALLOW`). A lane that needs something absent from this
-list grows it deliberately, in a commit that says which lane and why.
+guard is built on (`Heredoc`, `tokenize`, `segments`, `operator_pieces`, `command_words`),
+and now the failure attribution beside them (`attribute`, `Attribution`, `VERDICTS`) — a red
+run `assess` has to route is a red run it has to attribute first, and the five sentences are
+the table it would otherwise re-derive; and the judge itself (`judge`, `Verdict`, `ALLOW`). A
+lane that needs something absent from this list grows it deliberately, in a commit that says
+which lane and why.
 """
 
 from keelline.guards.attribute import VERDICTS, Attribution, attribute

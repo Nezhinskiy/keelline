@@ -408,10 +408,10 @@ thing to hit the cap, and two timed-out runs scored as exit codes would read as 
 both", which is the one wrong answer a tool feeding a ledger entry must not give. Narrow the
 command to the failing test rather than asking for a wider cap.
 
-`--json` carries `runs` (`head_ambient`, `head_clean`, `base_clean` — the three exit codes in
-the order they were run), `base` (the ref asked for), `merge_base` (the commit actually
-extracted) and `verdict`. Record all four where the failure is discussed: a verdict without its
-inputs cannot be re-run.
+`--json` carries `summary` (the line the command would have printed), `runs` (`head_ambient`,
+`head_clean`, `base_clean` — the three exit codes in the order they were run), `base` (the ref
+asked for), `merge_base` (the commit actually extracted) and `verdict`. Record the last four
+where the failure is discussed: a verdict without its inputs cannot be re-run.
 
 Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is origin/main
 fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
