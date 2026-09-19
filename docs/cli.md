@@ -51,9 +51,10 @@ Three things hold everywhere:
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
 - [`keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#keelline-attach---store-path---check---yes---trust-remote---root-path---machine-path)
 - [`keelline detach [--root PATH] [--machine PATH]`](#keelline-detach---root-path---machine-path)
-- [`keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
+- [`keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`keelline setup --git-hooks [--uninstall] [--root PATH]`](#keelline-setup---git-hooks---uninstall---root-path)
 - [`keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#keelline-doctor---json---root-path---home-path---machine-path)
+- [Shared flags](#shared-flags)
 - [Configuration](#configuration)
 
 ---
@@ -748,7 +749,7 @@ reason `keelline attach` gives above.
 
 ---
 
-## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset: the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
@@ -761,6 +762,17 @@ scratch destination instead of your real one, the same way every other command h
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
 writes inside a repository and ignores both.
+
+`--settings PATH` writes the user-scope settings file at `PATH` instead of at
+`<home>/.claude/settings.json`, for a dotfiles layout that links that file into another tree.
+`stow` folds a package as far as it can, so with `~/.claude` already created by the harness it
+links the *file*: `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. No `--home`
+value names that target — `--home <dotfiles>/claude` writes
+`<dotfiles>/claude/.claude/settings.json`, a file no reader reads — and the refusal that used
+to print an unusable remedy now names this flag. The write still never follows a symlink: the
+root is the directory `PATH` names and the walk is one component deep, so a link *at* the file
+itself is refused rather than written through. `--settings` changes nothing else: the machine
+configuration file is still `--machine`'s, and the harness memory link is still under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `keelline memory trust` records approval in `~/.config/keelline/trust.json`, and
@@ -954,6 +966,32 @@ that root's wrapper is still read by `files`, for its executable bit, and `wrapp
 called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.
+
+---
+
+## Shared flags
+
+Five flags mean the same thing wherever they appear, and each has exactly one sentence, held to
+every parser that registers it by a walk in `tests/test_command.py`:
+
+| Flag | What it means |
+|---|---|
+| `--root` | project root (default: current directory) |
+| `--machine` | machine configuration file to read |
+| `--store` | resolve the memory store at this path |
+| `--dry-run` | report what would change and write nothing |
+| `--home` | the home directory to read and write under (default: the real one) |
+
+Four commands mean something else by a shared name, and each is a named exception rather than a
+sentence that drifted:
+
+- `keelline overlay create --root` — the directory the instance is created **in**, not a project
+  root.
+- `keelline overlay init --root` and `keelline overlay upgrade --root` — the overlay root.
+- `keelline setup --root` — the repository `--git-hooks` installs into, and the project root
+  `--overlay` must not be recorded inside of.
+- `keelline setup --machine` — the machine configuration file to **write**, defaulting to
+  `~/.config/keelline/config.toml`; every other `--machine` reads one.
 
 ---
 

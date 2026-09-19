@@ -210,6 +210,7 @@ keelline detach                                       # remove what attach added
 keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 keelline setup --preset recommended --overlay ../keelline-private   # record an existing overlay; no --yes needed
 keelline setup --preset recommended --overlay create:you/keelline-private --yes  # create one on GitHub; --yes is the consent
+keelline setup --preset recommended --settings ~/dotfiles/claude/settings.json   # a linked settings file, written where it really is
 keelline setup --git-hooks                             # install the commit-message hook into this repository
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 

@@ -274,7 +274,11 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def _write_user_settings(
-    home: Path, deny_rules: Sequence[str], personal: Mapping[str, Any]
+    home: Path,
+    deny_rules: Sequence[str],
+    personal: Mapping[str, Any],
+    *,
+    settings: Path | None = None,
 ) -> bool:
     """Merge the preset's deny rules and the personal values into `<home>/<USER_SETTINGS>`.
 
@@ -282,8 +286,14 @@ def _write_user_settings(
     this run did not add may be recorded as if it had. Deny only — this never reads or writes
     `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
     `options`, so a value this run did not set survives a second one same as `write_machine`'s.
+
+    `settings` (R3) names the file itself, for the layout no `--home` can express: `stow` folds
+    a package as far as it can, so with `~/.claude` already there it links
+    `~/.claude/settings.json` into a dotfiles tree, and `--home <dotfiles>/claude` writes
+    `<dotfiles>/claude/.claude/settings.json` — a file no reader reads. When it is given, the
+    root of the write is the named file's own directory and the walk is one component deep.
     """
-    path = home / USER_SETTINGS
+    path = settings if settings is not None else home / USER_SETTINGS
     document, text = _read_document(path)
 
     permissions = document.get("permissions")
@@ -309,16 +319,22 @@ def _write_user_settings(
     new_text = json.dumps(document, indent=2, sort_keys=True) + "\n"
     if new_text == text:
         return False
+    root, relative = (
+        (settings.parent, settings.name) if settings is not None else (home, USER_SETTINGS)
+    )
     try:
-        fsops.write_within(home, USER_SETTINGS, new_text)
+        # One write, through whichever root `path` named. With `--settings` the root is the
+        # owner's own directory and the walk is one component deep: a symlink AT the file is
+        # still refused, because a write through a link is what this flag exists to avoid
+        # guessing about.
+        #
+        # Without it this is the floor under `_check_settings_path`, and not dead: a component
+        # that became a symlink, or stopped being a directory, between that check and this
+        # write can only be refused here. `UnsafePath` is an `OSError`, and reaching `cli.run`'s
+        # final handler is what made the ordinary symlinked `~/.claude` an `internal error`.
+        fsops.write_within(root, relative, new_text)
     except UnsafePath as exc:
-        # The floor under `_check_settings_path`, and not dead: a component that became a
-        # symlink, or stopped being a directory, between that check and this write can only be
-        # refused here. `UnsafePath` is an `OSError`, and reaching `cli.run`'s final handler is
-        # what made the ordinary symlinked `~/.claude` an `internal error`.
-        raise Refusal(
-            f"{home / USER_SETTINGS} cannot be written: {exc}; {_SYMLINKED_SETTINGS}"
-        ) from exc
+        raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
     return True
 
 
@@ -391,7 +407,8 @@ def _check_settings_path(home: Path) -> None:
             # equivalents) take a real file back afterwards.
             remedy = (
                 f"no --home can name it: this command writes <home>/{USER_SETTINGS} and nothing "
-                f"else, and {real} is not a {USER_SETTINGS} inside any directory. Either point "
+                f"else, and {real} is not a {USER_SETTINGS} inside any directory. "
+                f"`--settings {real}` writes that file directly. Otherwise point "
                 f"the link at a path ending in {USER_SETTINGS}, or take the link away, let this "
                 f"command write a real {kind}, and have your dotfiles manager adopt it"
             )
@@ -561,6 +578,7 @@ def setup(
     yes: bool,
     overlay: str | None,
     project_root: Path,
+    settings: Path | None = None,
 ) -> SetupReport:
     """Configure this machine from `preset`.
 
@@ -576,7 +594,10 @@ def setup(
     the post-condition on a tree this run created.
     """
     planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
-    _check_settings_path(home)
+    # `--settings` names the file, so the `<home>/.claude` walk this check is about is not the
+    # walk that will run: asking it anyway would refuse the one layout the flag exists for.
+    if settings is None:
+        _check_settings_path(home)
 
     # `home` is the root every write in this function lands under — the settings file through
     # `fsops.write_within` below, and a created overlay through `overlay.create` further down —
@@ -604,7 +625,9 @@ def setup(
     # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every Keelline reader reads.
-    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))
+    deny_written = _write_user_settings(
+        home, deny_rules, _existing_personal(machine), settings=settings
+    )
 
     installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
     notes = list(install_notes)

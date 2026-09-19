@@ -2682,9 +2682,9 @@ reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_
 [[mutation]]
 name = "setup meets a symlinked ~/.claude only at write time"
 file = "src/keelline/setup/run.py"
-before = """    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
-    _check_settings_path(home)"""
-after = "    planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)"
+before = """    if settings is None:
+        _check_settings_path(home)"""
+after = "    if False:\n        _check_settings_path(home)"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link",
 ]
@@ -2695,11 +2695,9 @@ reddens = [
 [[mutation]]
 name = "the write-time containment on the settings file is swallowed"
 file = "src/keelline/setup/run.py"
-before = """    try:
-        fsops.write_within(home, USER_SETTINGS, new_text)
+before = """        fsops.write_within(root, relative, new_text)
     except UnsafePath as exc:"""
-after = """    try:
-        fsops.write_within(home, USER_SETTINGS, new_text)
+after = """        fsops.write_within(root, relative, new_text)
     except UnsafePath:
         return False
     except UnsafePath as exc:"""
@@ -2787,8 +2785,8 @@ reddens = ["tests/setup/test_commands.py::test_the_machine_default_is_the_file_e
 [[mutation]]
 name = "setup mirrors only the values this run itself added"
 file = "src/keelline/setup/run.py"
-before = "    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))"
-after = "    deny_written = _write_user_settings(home, deny_rules, personal)"
+before = "        home, deny_rules, _existing_personal(machine), settings=settings"
+after = "        home, deny_rules, personal, settings=settings"
 reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
 
 # A remedy is held to the standard of the refusal that carries it. `stow` folds a package as far
@@ -3307,4 +3305,28 @@ before = "    if state == UNBOUND:"
 after = "    if False:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
+]
+
+# DC4: one sentence per shared flag, held to every parser by a walk over the real parser rather
+# than by a convention. The mutation drifts `common_flags`' own `--machine` sentence, which is
+# what every `--machine` but `setup`'s inherits.
+[[mutation]]
+name = "a shared flag's help drifts from the one sentence"
+file = "src/keelline/command.py"
+before = '    parser.add_argument("--machine", default=None, help=MACHINE_HELP)'
+after = '    parser.add_argument("--machine", default=None, help="machine file")'
+reddens = [
+  "tests/test_command.py::test_every_shared_flag_carries_the_one_help_string_or_a_named_exception",
+]
+
+# R3: `--settings` names the settings file itself, for the per-file stow layout no `--home` can
+# express. Ignoring it and writing under `home` is the defect the flag exists to remove, and it
+# is a silent one: the command exits 0 into a file no reader reads.
+[[mutation]]
+name = "setup ignores --settings and writes under home"
+file = "src/keelline/setup/run.py"
+before = "        (settings.parent, settings.name) if settings is not None else (home, USER_SETTINGS)"
+after = "        (home, USER_SETTINGS) if settings is not None else (home, USER_SETTINGS)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_per_file_settings_link_is_written_through_settings_and_not_under_home",
 ]

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from keelline import fsops
 from keelline.areas import SubParsers
+from keelline.command import common_flags
 from keelline.config.loader import load
 from keelline.errors import Failure, Refusal
 from keelline.result import Result
@@ -277,10 +278,10 @@ def register(groups: SubParsers) -> None:
 
     commit = groups.add_parser("commit", help="commit-message rules")
     commit_sub = commit.add_subparsers(dest="command", metavar="<command>")
-    check = commit_sub.add_parser("check", help="check every message in a revision range")
+    check = common_flags(
+        commit_sub.add_parser("check", help="check every message in a revision range")
+    )
     check.add_argument("--range", dest="rev_range", required=True, help="e.g. main..HEAD")
-    check.add_argument("--root", default=".", help="project root (default: current directory)")
-    check.add_argument("--machine", default=None, help="machine configuration file to read")
     check.set_defaults(func=run_commit_check)
     strip = commit_sub.add_parser("strip", help="strip attribution lines from a message file")
     strip.add_argument("file", help="the commit-message file git handed the hook")
@@ -288,13 +289,11 @@ def register(groups: SubParsers) -> None:
 
     test = groups.add_parser("test", help="test-suite hygiene")
     test_sub = test.add_subparsers(dest="command", metavar="<command>")
-    hygiene = test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
-    hygiene.add_argument("--root", default=".", help="project root (default: current directory)")
-    hygiene.add_argument("--machine", default=None, help="machine configuration file to read")
-    hygiene.set_defaults(func=run_test_hygiene)
-    audit = test_sub.add_parser(
-        "audit-entrypoints", help="tests that never exercise what they name"
+    hygiene = common_flags(
+        test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
     )
-    audit.add_argument("--root", default=".", help="project root (default: current directory)")
-    audit.add_argument("--machine", default=None, help="machine configuration file to read")
+    hygiene.set_defaults(func=run_test_hygiene)
+    audit = common_flags(
+        test_sub.add_parser("audit-entrypoints", help="tests that never exercise what they name")
+    )
     audit.set_defaults(func=run_test_audit)

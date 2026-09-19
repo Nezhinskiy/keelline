@@ -6,6 +6,11 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
+from keelline.command import (
+    DRY_RUN_HELP,
+    INSTANCE_DIR_HELP,
+    OVERLAY_ROOT_HELP,
+)
 from keelline.errors import Refusal
 from keelline.result import Result
 from keelline.scaffold import render_report
@@ -82,9 +87,7 @@ def register(groups: SubParsers) -> None:
     create.add_argument(
         "--name", default="keelline-private", help="the repository name (default: %(default)s)"
     )
-    create.add_argument(
-        "--root", default=".", help="directory to create it in (default: current directory)"
-    )
+    create.add_argument("--root", default=".", help=INSTANCE_DIR_HELP)
     # Mutually exclusive and neither is required, so that "neither was given" reaches the
     # command as a refusal naming both rather than as argparse's own usage error.
     source = create.add_mutually_exclusive_group()
@@ -106,14 +109,10 @@ def register(groups: SubParsers) -> None:
 
     init = sub.add_parser("init", help="make a created overlay this owner's")
     init.add_argument("--owner", required=True, help="the account to name this overlay after")
-    init.add_argument("--root", default=".", help="the overlay root (default: current directory)")
+    init.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)
     init.set_defaults(func=run_overlay_init)
 
     upgrade = sub.add_parser("upgrade", help="refresh the files in an overlay nobody has edited")
-    upgrade.add_argument(
-        "--root", default=".", help="the overlay root (default: current directory)"
-    )
-    upgrade.add_argument(
-        "--dry-run", action="store_true", help="report what would change and write nothing"
-    )
+    upgrade.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)
+    upgrade.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     upgrade.set_defaults(func=run_overlay_upgrade)

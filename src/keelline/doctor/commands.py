@@ -36,7 +36,7 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags
+from keelline.command import HOME_HELP, common_flags
 from keelline.doctor.checks import RED, SKIP, WARN, Check, run_checks
 from keelline.findings import listed
 from keelline.result import Result
@@ -90,9 +90,5 @@ def run_doctor(args: argparse.Namespace) -> Result:
 
 def register(groups: SubParsers) -> None:
     doctor = common_flags(groups.add_parser("doctor", help="report on this installation"))
-    doctor.add_argument(
-        "--home",
-        default=None,
-        help="the home directory whose harness files to read (default: the real one)",
-    )
+    doctor.add_argument("--home", default=None, help=HOME_HELP)
     doctor.set_defaults(func=run_doctor)

@@ -1016,3 +1016,42 @@ def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_comman
     assert "no --home can name it" in message
     assert "keelline setup --home" not in message, "a command that cannot work is worse than none"
     assert "adopt it" in message, "the way out has to be named, not just the refusal"
+
+
+def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home(
+    tmp_path: Path,
+) -> None:
+    # R3: `stow` links `~/.claude/settings.json` itself into a dotfiles tree, and no `--home`
+    # value writes that file — `--home <dotfiles>/claude` writes `<dotfiles>/claude/.claude/
+    # settings.json`. `--settings PATH` names the file. The link under `home` is left exactly
+    # as it was; the dotfiles file gains the deny rules; nothing new appears under `home`.
+    #
+    # Mutation (declared): the `root, relative = …` line -> `(home, USER_SETTINGS)`
+    # unconditionally -> the write is refused at the link, and the dotfiles assertion reddens.
+    home = tmp_path / "home"
+    dotfiles = tmp_path / "dotfiles" / "claude"
+    dotfiles.mkdir(parents=True)
+    real = dotfiles / "settings.json"
+    real.write_text("{}\n", encoding="utf-8")
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "settings.json").symlink_to(real)
+    before = sorted(str(p.relative_to(home)) for p in home.rglob("*"))
+    setup(
+        "recommended",
+        home=home,
+        machine=tmp_path / "machine.toml",
+        runner=FakeRunner(),
+        yes=False,
+        overlay=None,
+        project_root=tmp_path / "project",
+        settings=real,
+    )
+    written = json.loads(real.read_text(encoding="utf-8"))
+    # Read defensively so the failure says which file was written rather than raising a
+    # `KeyError` on a document the deny rules never reached: under the declared mutation the
+    # write lands under `home` — replacing the link with a real file of the same name, so the
+    # inventory below is unchanged — and the dotfiles file is still the empty `{}` it started
+    # as. That silence is the whole defect, and this sentence is what names it.
+    deny = written.get("permissions", {}).get("deny", [])
+    assert "Read(.env*)" in deny, f"the file --settings named was not written: {written}"
+    assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
