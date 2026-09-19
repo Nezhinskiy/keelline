@@ -90,43 +90,19 @@ jobs:
         run: uv run keelline release check
       - name: Build
         run: uv build
-      - name: The preset ships inside the wheel
-        # CI installs from source, so a packaging regression that dropped the preset would
-        # break every `uv tool install` while this workflow stayed green.
+      - name: The artifacts carry what an installed Keelline needs
+        # D5: every earlier test resolves the template tree to the checkout; only an artifact
+        # can say whether the build backend shipped it.
+        run: uv run python scripts/check_artifacts.py dist
+      - name: An installed wheel renders the overlay template
+        # The wheel is installed into a scratch environment with no checkout in reach, and
+        # `overlay create --local` — the one working source for a first overlay — has to find
+        # its template tree inside the package.
         run: |
-          uv run python - <<'PY'
-          import glob
-          import zipfile
-
-          wheel = sorted(glob.glob("dist/*.whl"))[-1]
-          names = zipfile.ZipFile(wheel).namelist()
-          assert "keelline/presets/recommended.toml" in names, sorted(names)
-          print(f"{wheel} carries keelline/presets/recommended.toml")
-          PY
-      - name: The sdist carries what a downstream packager needs to verify it
-        # A packager for Homebrew, Debian or nixpkgs cannot run a single test against an sdist
-        # that ships only `src/`, which is the artefact they most need to verify for a
-        # security-sensitive tool.
-        run: |
-          uv run python - <<'PY'
-          import glob
-          import tarfile
-
-          sdist = sorted(glob.glob("dist/*.tar.gz"))[-1]
-          names = tarfile.open(sdist).getnames()
-          stripped = {"/".join(n.split("/")[1:]) for n in names}
-          # `skills/` and `agents/` are here because `tests/skills/test_skills.py` reads those
-          # trees directly: an sdist without them ships a test module that cannot pass.
-          for wanted in (
-              "tests/test_fsops.py",
-              "CHANGELOG.md",
-              "scripts/keelline",
-              "skills/README.md",
-              "agents/code-navigator.md",
-          ):
-              assert wanted in stripped, (wanted, sorted(stripped)[:40])
-          print(f"{sdist} carries the tests, the changelog and the launcher")
-          PY
+          uv venv "$RUNNER_TEMP/wheel"
+          uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl
+          "$RUNNER_TEMP/wheel/bin/keelline" overlay create --owner ci --name rendered --local --root "$RUNNER_TEMP"
+          uv run python scripts/check_artifacts.py rendered "$RUNNER_TEMP/rendered"
 
   plugin:
     runs-on: ubuntu-latest

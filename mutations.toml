@@ -3485,3 +3485,27 @@ after = "            (worktree / base).mkdir(parents=True, exist_ok=True)\n     
 reddens = [
   "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
 ]
+
+# D5. `tar` preserves the mode and a downstream packager unpacks it: a wrapper at 0644 exits
+# 126 for every hook entry, which Claude Code reports as a permission error rather than as a
+# broken install. Nothing in `tests/` can see this — only the built artifact can.
+[[mutation]]
+name = "the sdist check stops reading the wrapper's mode"
+file = "scripts/check_artifacts.py"
+before = "        if member is not None and member.mode & 0o111 == 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+# Fix round 2, item 1. `rendered` with the directory omitted used to be reinterpreted as a
+# dist path: the length check was part of the arm's condition, so a bare `rendered` fell
+# through and was globbed as a directory name.
+[[mutation]]
+name = "a rendered with no directory is globbed as a dist path again"
+file = "scripts/check_artifacts.py"
+before = '    if argv[:1] == ["rendered"]:'
+after = '    if argv[:1] == ["rendered"] and len(argv) == 2:'
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk",
+]
