@@ -30,7 +30,8 @@ Three things hold everywhere:
 - [`keelline memory session-context --bundle <name> [--part N]`](#keelline-memory-session-context---bundle-name---part-n)
 - [`keelline memory inventory`](#keelline-memory-inventory)
 - [`keelline memory fit`](#keelline-memory-fit)
-- [`keelline release check`](#keelline-release-check)
+- [`keelline release check [--tag TAG]`](#keelline-release-check---tag-tag)
+- [`keelline release notes --version X.Y.Z [--draft]`](#keelline-release-notes---version-xyz---draft)
 - [`keelline hook <event>`](#keelline-hook-event)
 - [Hooks](#hooks)
 - [`keelline guard bg-cleanup`](#keelline-guard-bg-cleanup)
@@ -163,13 +164,40 @@ whether the trust gate is open.
 
 Writes nothing.
 
-## `keelline release check`
+## `keelline release check [--tag TAG]`
 
 Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/keelline/__init__.py`, both
 plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
 
+`--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
+shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
+`keelline--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
+other rule tightens: without it a pending fragment in `changelog.d/` lets `CHANGELOG.md` lag,
+because a lane writes its fragment long before a release assembles it, but at a tag there is
+nothing left to assemble, so a fragment still pending means the changelog users will read is
+not the one the tag claims. That is a finding naming the count.
+
 This is discipline for **the Keelline repository itself**, not something Keelline offers your
 project. See [RELEASING.md](../RELEASING.md).
+
+## `keelline release notes --version X.Y.Z [--draft]`
+
+Assemble `CHANGELOG.md` from the fragments in `changelog.d/`, through towncrier.
+
+```bash
+keelline release notes --version 1.2.3 --draft   # print the section; write nothing
+keelline release notes --version 1.2.3           # write it, and consume the fragments
+```
+
+A wrapper and nothing more: towncrier does the rendering and `[tool.towncrier]` in
+`pyproject.toml` owns the format. Two things are this command's own. A `--version` that is not
+the project's version is **refused** (`2`) before towncrier runs, because assembling under
+another number writes a `CHANGELOG.md` heading that `release check` then refuses — set the
+version in every source first, then assemble under it. And a towncrier that cannot be run is a
+finding (`1`) that names it as the development dependency it is, rather than a traceback.
+
+Without `--draft` the fragment files are consumed, which is a write to the repository; with it
+nothing is written and the rendered section is printed.
 
 ## `keelline hook <event>`
 

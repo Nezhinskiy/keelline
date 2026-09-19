@@ -334,3 +334,71 @@ def test_the_cli_command_exits_one_on_a_malformed_source(
     (root / "uv.lock").write_text("not = = toml")
     assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
     assert "uv.lock is not valid TOML" in capsys.readouterr().err
+
+
+def _at(tmp_path: Path, version: str) -> Path:
+    """The module's `_repo` with every source at one version.
+
+    The plan named a `_repository(tmp_path, version=…)` fixture this module has never had;
+    `_repo` is the one that exists and it takes a keyword per source, so the two tests below
+    say the version once through here rather than five times each.
+    """
+    return _repo(
+        tmp_path,
+        pyproject=version,
+        init=version,
+        claude=version,
+        codex=version,
+        changelog=version,
+    )
+
+
+def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
+    # The release workflow used to compare the tag to the package in shell; the gate that
+    # exists to say "one version everywhere" now takes the tag as a seventh source. Both
+    # tag shapes are accepted — `vX.Y.Z` (the workflow's trigger) and the platform's
+    # `keelline--vX.Y.Z` — because either may be the one the run was created from.
+    # Mutation (declared): accept any tag -> the first assertion reddens.
+    root = _at(tmp_path, "1.2.3")
+    assert check(root, tag="v1.2.4") == ["tag v1.2.4 names 1.2.4; pyproject.toml says '1.2.3'"]
+    assert check(root, tag="v1.2.3") == []
+    assert check(root, tag="keelline--v1.2.3") == []
+
+
+def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
+    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a lane's fragment is
+    # written before the release assembles it. AT a tag there is nothing left to assemble:
+    # a fragment still pending means the changelog the users read is not the one the tag
+    # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
+    root = _at(tmp_path, "1.2.3")
+    (root / "changelog.d" / "late.feature.md").write_text("late\n", encoding="utf-8")
+    assert check(root) == []
+    problems = check(root, tag="v1.2.3")
+    assert problems == [
+        "changelog.d still holds 1 fragment(s); run "
+        "`keelline release notes --version 1.2.3` before tagging"
+    ]
+
+
+def test_the_cli_passes_the_tag_through_to_the_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # That the flag exists is held by the README row walk, which parses every row against the
+    # real parser; that its value reaches `check` is held here and nowhere else. Mutation:
+    # `check(root, tag=args.tag)` -> `check(root)` -> exit 0 and this reddens.
+    root = _at(tmp_path, "1.2.3")
+    argv = ["release", "check", "--root", str(root), "--tag", "v9.9.9"]
+    assert run(argv, parser=build_parser([register])) == 1
+    assert "tag v9.9.9 names 9.9.9" in capsys.readouterr().err
+
+
+def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
+    # so this walks the registered command end to end without shelling out — which the global
+    # constraints forbid a test to do. The write path stays a unit test over the stub.
+    root = _at(tmp_path, "1.2.3")
+    argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
+    assert run(argv, parser=build_parser([register])) == 2
+    assert "set the version everywhere first" in capsys.readouterr().err

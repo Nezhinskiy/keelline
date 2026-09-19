@@ -225,6 +225,9 @@ keelline doctor --json                                # every check with its sta
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)
+keelline release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
+keelline release notes --version 1.2.3 --draft        # render the section towncrier would write
+keelline release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
 ```
 
 Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current

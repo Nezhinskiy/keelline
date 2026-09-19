@@ -3861,3 +3861,35 @@ after = '        if kind == "line" and "{" in line'
 reddens = [
   "tests/test_fixtures.py::test_an_expression_is_not_mistaken_for_flow_syntax",
 ]
+
+# Wave F, Task 16. The tag is the seventh version source, and the one a release is actually
+# created from. Accept any tag and the gate that exists to say "one version everywhere"
+# stops saying it about the only claim a user ever sees.
+[[mutation]]
+name = "release check accepts a tag naming another version"
+file = "src/keelline/release/versions.py"
+before = "        if tag not in tag_for(canonical):"
+after = "        if False:"
+reddens = ["tests/release/test_versions.py::test_a_tag_that_names_another_version_is_drift"]
+
+# The other half: without `--tag` a pending fragment is why CHANGELOG.md may lag, and at a tag
+# it is why the changelog is wrong. Skip the check under a tag and a release ships a changelog
+# that does not carry the section the tag claims.
+[[mutation]]
+name = "release check tags over a pending fragment"
+file = "src/keelline/release/versions.py"
+before = "        if pending_fragments(root):\n            count = sum("
+after = "        if False:\n            count = sum("
+reddens = ["tests/release/test_versions.py::test_a_tag_with_pending_fragments_is_refused"]
+
+# `release notes` writes CHANGELOG.md. Under a version that is not the project's it writes a
+# heading `release check` then refuses — and the fragments are consumed by then, so the fix is
+# a revert rather than a re-run.
+[[mutation]]
+name = "release notes assembles under a version that is not the project's"
+file = "src/keelline/release/notes.py"
+before = "    if version != current:"
+after = "    if False:"
+reddens = [
+  "tests/release/test_notes.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
+]

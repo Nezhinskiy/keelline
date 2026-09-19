@@ -37,22 +37,28 @@ still works.
    uv run pytest -q && uv run ruff check . && uv run ruff format --check . && uv run mypy
    ```
 
-2. **Build the changelog.** Towncrier consumes `changelog.d/` and writes the section:
-
-   ```bash
-   uv run towncrier build --version X.Y.Z
-   ```
-
-   Read what it wrote. A fragment written as a note to the author rather than as a release note
-   is worth fixing now — this is the text users see.
-
-3. **Set the version in the five other places.** `pyproject.toml`, `src/keelline/__init__.py`,
+2. **Set the version in the five places.** `pyproject.toml`, `src/keelline/__init__.py`,
    both plugin manifests, and then `uv sync` so `uv.lock` follows.
 
    ```bash
    uv sync
+   uv run keelline release check     # names every source that still disagrees
+   ```
+
+   `CHANGELOG.md` is the sixth source and is still behind at this point; a pending fragment in
+   `changelog.d/` is what lets it lag, and step 3 catches it up.
+
+3. **Build the changelog.** `keelline release notes` runs towncrier over `changelog.d/`:
+
+   ```bash
+   uv run keelline release notes --version X.Y.Z --draft   # read it first; writes nothing
+   uv run keelline release notes --version X.Y.Z
    uv run keelline release check     # must print "one version everywhere: X.Y.Z"
    ```
+
+   Read what it wrote. A fragment written as a note to the author rather than as a release note
+   is worth fixing now — this is the text users see. The version comes second and the changelog
+   third because `release notes` refuses a `--version` that is not the project's.
 
 4. **Commit and tag.** Two tags, deliberately: `claude plugin tag` creates
    `<name>--v<version>`, which is the shape the marketplace reads, while `vX.Y.Z` is the shape

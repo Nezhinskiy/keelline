@@ -127,7 +127,12 @@ def pending_fragments(root: Path) -> bool:
     return any(_is_fragment(entry.name, types) for entry in directory.iterdir())
 
 
-def check(root: Path) -> list[str]:
+def tag_for(version: str) -> tuple[str, str]:
+    """The two tags one release carries: the workflow's `vX.Y.Z` and the platform's own."""
+    return f"v{version}", f"{PACKAGE}--v{version}"
+
+
+def check(root: Path, *, tag: str | None = None) -> list[str]:
     # Four different conditions used to share one wrong message, so a user who typoed --root,
     # or ran the command in their own project (--root defaults to "."), was told their
     # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
@@ -145,8 +150,20 @@ def check(root: Path) -> list[str]:
     if canonical is None:
         return [f"{PYPROJECT} has no [project].version"]
     problems: list[str] = []
+    if tag is not None:
+        if tag not in tag_for(canonical):
+            named = tag.split("v", 1)[-1]
+            problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")
+        if pending_fragments(root):
+            count = sum(
+                _is_fragment(e.name, fragment_types(root)) for e in (root / "changelog.d").iterdir()
+            )
+            problems.append(
+                f"changelog.d still holds {count} fragment(s); run `keelline release notes "
+                f"--version {canonical}` before tagging"
+            )
     for name, value in found.items():
-        if name == "CHANGELOG.md" and pending_fragments(root):
+        if name == "CHANGELOG.md" and tag is None and pending_fragments(root):
             continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
