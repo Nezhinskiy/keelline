@@ -471,6 +471,50 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
     assert_snapshot_unchanged(root, before)
 
 
+def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
+    tmp_path: Path,
+) -> None:
+    # The mirror of the `attach` case, and the half that had no answer at all: the walk's
+    # `UnsafePath` left `detach` uncaught, `cli.run` rendered it as `internal error` and exit
+    # 2, and every later `detach` failed at the same line — with `.codex/rules/` already
+    # deleted and the ledger, the ignore region and every link still on disk. A repository no
+    # shipped command could return to its pre-attach state.
+    #
+    # The layout is reached the way a person reaches it: attach first, then let the dotfiles
+    # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
+    # `attach`'s — the home directory was fine when the repository was attached.
+    #
+    # Mutation (declared, "detach discovers the harness anchor from inside the withdrawal"):
+    # the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+    # `assert_snapshot_unchanged` reddens with the rule files already removed.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    _attach(root, store, machine, home, confirmed=True)
+    harness = harness_memory_path(root, home)
+    assert harness.is_symlink(), "there is no harness link for this case to be about"
+    adopted = tmp_path / "dotfiles" / "claude"
+    adopted.parent.mkdir(parents=True)
+    shutil.move(str(home / ".claude"), str(adopted))
+    (home / ".claude").symlink_to(adopted, target_is_directory=True)
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert str(home / ".claude") in str(refused.value)
+    # Nothing was withdrawn, so the repository is still the one the attach left and a second
+    # `detach` — against a home whose `.claude` is a real directory — still has everything to
+    # withdraw.
+    assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
+    assert (root / ".codex" / "rules").is_dir()
+    assert harness.is_symlink()
+
+
 def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(
     tmp_path: Path,
 ) -> None:

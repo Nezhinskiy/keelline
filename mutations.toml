@@ -2614,11 +2614,15 @@ reddens = [
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/keelline/attach/write.py"
 before = '''    checkouts = _checkouts(root)
+    for tree in checkouts:
+        harness_anchor(tree, home)
     ignore_remainder = _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)'''
 after = '''    ignore_remainder = _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
-    checkouts = _checkouts(root)'''
+    checkouts = _checkouts(root)
+    for tree in checkouts:
+        harness_anchor(tree, home)'''
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -3478,7 +3482,7 @@ reddens = [
 [[mutation]]
 name = "the withdrawal takes the anchor without asking whether it is there"
 file = "src/keelline/memory/worktree.py"
-before = "    home_root, harness_relative = _harness_anchor(root, home)"
+before = "    home_root, harness_relative = harness_anchor(root, home)"
 after = "    home_root, harness_relative = harness_link_parts(root, home)"
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
@@ -4160,4 +4164,47 @@ before = "    unentered = SAMPLES.keys() - events"
 after = "    unentered = SAMPLES.keys() - SAMPLES.keys()"
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows",
+]
+
+# The anchor for the harness memory link, both halves of it. The walk under the home directory
+# refuses a symlinked component — intended, and `harness_link_parts` cites `setup --settings` as
+# the precedent — but `_link` and `_unlink` caught `NotASymlink` and `FileNotFoundError` and not
+# `UnsafePath`, so the ordinary stow / chezmoi layout half-attached a repository on the way in
+# and crashed `detach` on the way out. Four entries, because the guard is four decisions: the
+# question itself, the floor under it for the component that changes after it is asked, and the
+# two hoists that make the refusal precede the first write and the first withdrawal.
+[[mutation]]
+name = "the harness anchor stops asking whether the walk can reach it"
+file = "src/keelline/memory/worktree.py"
+before = "        contained(root, relative, allow_final_symlink=True)"
+after = "        pass"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_is_a_refusal_in_both_directions",
+]
+
+[[mutation]]
+name = "a withdrawal whose walk refuses a component fails the command"
+file = "src/keelline/memory/worktree.py"
+before = "        # one checkout's odd home from being a `detach` that cannot finish.\n        return False"
+after = "        raise"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",
+]
+
+[[mutation]]
+name = "attach discovers the harness anchor from inside the link step"
+file = "src/keelline/attach/write.py"
+before = "    harness_anchor(root, home)\n    previous = _existing_ledger(root)"
+after = "    previous = _existing_ledger(root)"
+reddens = [
+  "tests/attach/test_links.py::test_a_home_whose_claude_is_a_symlink_refuses_above_every_write",
+]
+
+[[mutation]]
+name = "detach discovers the harness anchor from inside the withdrawal"
+file = "src/keelline/attach/write.py"
+before = "    for tree in checkouts:\n        harness_anchor(tree, home)\n"
+after = "    for tree in checkouts:\n        pass\n"
+reddens = [
+  "tests/attach/test_detach.py::test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal",
 ]

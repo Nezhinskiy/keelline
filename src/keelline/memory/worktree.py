@@ -58,7 +58,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from keelline import fsops
-from keelline.config.paths import contained
+from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.memory import trust
@@ -139,8 +139,8 @@ def harness_memory_path(worktree: Path, home: Path | None = None) -> Path:
     return root / relative
 
 
-def _harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
-    """`harness_link_parts`, with the anchor's absence made a refusal instead of an errno.
+def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
+    """`harness_link_parts`, with every structural refusal made a refusal instead of an errno.
 
     The anchor is found and never created — `harness_link_parts` says why — so a home
     directory that is not there is a mistyped `--home` and not a tree to build. Saying so is
@@ -167,6 +167,19 @@ def _harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
             f"Keelline writes inside the home directory and never creates the home directory "
             f"itself, so it has to exist already"
         )
+    try:
+        contained(root, relative, allow_final_symlink=True)
+    except PathEscape as exc:
+        # `allow_final_symlink=True`, because the final component is the link this module
+        # makes and removes; `open_within` applies `O_NOFOLLOW` to every component *above* it
+        # and never opens it, so this asks the walk's own question and not a stricter one.
+        raise Refusal(
+            f"the harness memory link cannot be reached: {exc}, and Keelline follows no "
+            f"symlink below {root}. Make that component a real directory and have your "
+            f"dotfiles manager adopt the files inside it, or run from a home directory whose "
+            f"`.claude` is real — the same rule `keelline setup --settings` states for the "
+            f"settings file"
+        ) from None
     return root, relative
 
 
@@ -231,6 +244,13 @@ def _unlink(root: Path, relative: str, source: Path) -> bool:
         return False  # somebody else's file or directory is left standing
     except FileNotFoundError:
         return False  # no directory above the name, so there is no link of ours there
+    except fsops.UnsafePath:
+        # A component the walk refuses, which is the third thing there is no link of ours
+        # behind. `harness_anchor` asks the same question above every write and every
+        # withdrawal, so this is the race and not the layout: a component that became a
+        # symlink after that check. Degrading the way the two arms above degrade is what keeps
+        # one checkout's odd home from being a `detach` that cannot finish.
+        return False
 
 
 @dataclass(frozen=True)
@@ -317,7 +337,7 @@ def _apply_harness_link(
     Three rules written down once and then copied is exactly how a pair stops agreeing, which is
     why they are not copied.
     """
-    root, relative = _harness_anchor(where, home)
+    root, relative = harness_anchor(where, home)
     harness = root / relative
     created: list[Path] = []
     revoked: list[Path] = []
@@ -586,7 +606,7 @@ def detach_main(
     """
     base = contained(root, config.paths.memory, allow_final_symlink=True)
     revoked: list[Path] = []
-    home_root, harness_relative = _harness_anchor(root, home)
+    home_root, harness_relative = harness_anchor(root, home)
     harness = home_root / harness_relative
     if _unlink(home_root, harness_relative, base.resolve()):
         revoked.append(harness)

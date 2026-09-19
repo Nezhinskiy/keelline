@@ -839,6 +839,14 @@ store's trust record lapses — that key is withdrawn in the same run. If it was
 looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
 arises when Keelline's own key was the file's entire contents.
 
+**The harness memory link is written under a walk that follows no symlink.** The home
+directory itself is found and never created — a missing one is a refusal — and every component
+below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
+name, above `attach`'s first write and above `detach`'s first withdrawal, rather than written
+through. The refusal names the component and the way out, which is the same one `--settings`
+exists for on the `setup` side: make the directory real and have your dotfiles manager adopt the
+files inside it.
+
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.

@@ -6,7 +6,16 @@ worktree it reaches the main checkout too, and a worktree whose directory is gon
 `keelline attach --check` reports all of that and writes nothing, and it reads the settings file
 the way the real run does, so a file the run would refuse is refused by the check. Every refusal
 `attach` can see coming — no `origin`, a ledger it could not have written, a `memory.groups`
-entry that leaves this project's share of the overlay — happens before its first write.
+entry that leaves this project's share of the overlay, a home directory the harness memory link
+cannot be put under — happens before its first write.
+
+**The path to that link is walked and never followed.** A `~/.claude` that is a symlink into a
+dotfiles tree — stow, chezmoi, a synced home — is refused by name, above `attach`'s first write
+and above `detach`'s first withdrawal, rather than written through: the home directory is the
+only thing Keelline takes on trust there, and every component below it has to be real. The
+refusal says which component and what to do about it. This is the same rule `keelline setup`
+applies to `~/.claude/settings.json`, and the way out is the same one: make the directory real
+and let your dotfiles manager adopt the files inside it.
 
 `keelline detach` removes exactly what was added, reading a ledger it keeps under
 `.keelline/local/` rather than guessing from the settings file, and leaves the binding record in

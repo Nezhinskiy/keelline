@@ -12,6 +12,7 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
 from keelline.errors import Refusal
+from keelline.memory import worktree
 from keelline.memory.index import INDEX_NAME
 from keelline.memory.store import LOCAL_STORE, Store, resolve
 from keelline.memory.trust import record
@@ -1099,6 +1100,75 @@ def test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_repor
         detach_main(root, config, machine=machine, home=absent)
     assert str(absent) in str(refused.value)
     assert "never creates the home directory itself" in str(refused.value)
+
+
+def _a_linked_claude(home: Path, tmp_path: Path) -> Path:
+    """`~/.claude` as a link into a dotfiles tree — stow, chezmoi, a synced home.
+
+    Returned as the directory the link leads to, so a case can assert that nothing was written
+    behind the link as well as that the command refused in front of it.
+    """
+    elsewhere = tmp_path / "dotfiles" / "claude"
+    elsewhere.mkdir(parents=True)
+    (home / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    return elsewhere
+
+
+def test_a_symlinked_claude_directory_is_a_refusal_in_both_directions(tmp_path: Path) -> None:
+    # The walk under the home directory applies `O_NOFOLLOW` to every component below it, so
+    # `.claude` being a link raises `UnsafePath` — and that refusal is intended
+    # (`harness_link_parts` says so and cites `setup --settings` as the precedent). What was
+    # not intended is its shape: `_link` and `_unlink` catch `NotASymlink` and
+    # `FileNotFoundError` and not `UnsafePath`, so creating wrapped it as a `PartialLink`
+    # *after* the worktree's own links were made, and withdrawing let it out raw —
+    # `keelline: internal error`, exit 2, and every later `detach` failing at the same line
+    # with the repository half-attached for good.
+    #
+    # The assertion is on the sentence rather than on the class, for the reason the home-that-
+    # is-not-there case above gives: `PathEscape` is a `Refusal` too. `PartialLink` is an
+    # `OSError` and `Refusal` is not, so `pytest.raises(Refusal)` is also what says the
+    # creating direction no longer half-builds the tree.
+    #
+    # Mutation (declared, "the harness anchor stops asking whether the walk can reach it"):
+    # the `contained` call goes -> `link` raises `PartialLink` again and the first
+    # `pytest.raises(Refusal)` reddens.
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = a_home(tmp_path)
+    elsewhere = _a_linked_claude(home, tmp_path)
+    record(store, config)
+    with pytest.raises(Refusal) as creating:
+        link(tree, store, config, home=home)
+    assert "passes through a symlink" in str(creating.value)
+    assert str(home / ".claude") in str(creating.value)
+    # The way out is named, because a refusal a dotfiles user cannot act on is the shape
+    # `setup`'s own settings refusal was rewritten to stop being.
+    assert "real directory" in str(creating.value)
+    # Nothing was written through the link, and nothing was written in front of it either.
+    assert list(elsewhere.iterdir()) == []
+    with pytest.raises(Refusal) as withdrawing:
+        detach_main(root, config, machine=None, home=home)
+    assert "passes through a symlink" in str(withdrawing.value)
+
+
+def test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing(tmp_path: Path) -> None:
+    # The floor under the refusal above, and it is not the same rule: the anchor is checked
+    # once, above every write, and a component that becomes a symlink *after* that check is
+    # exactly the race the `O_NOFOLLOW` walk exists for. `_unlink` already answers `False` for
+    # the two things it declines to clobber — somebody else's file, somebody else's link — and
+    # a component the walk refuses is the third: there is no link of ours to withdraw behind
+    # it, and reporting that as a failure turns one worktree's odd home layout into a `detach`
+    # that cannot finish.
+    #
+    # `_unlink` is called directly, because reaching it through `detach_main` now means getting
+    # past the anchor check that is the point of the case above.
+    #
+    # Mutation (declared, "a withdrawal whose walk refuses a component fails the command"):
+    # `return False` -> `raise` -> `UnsafePath` leaves `_unlink` and this case reddens.
+    home = a_home(tmp_path)
+    elsewhere = _a_linked_claude(home, tmp_path)
+    (elsewhere / "projects").mkdir()
+    assert worktree._unlink(home, ".claude/projects/x/memory", tmp_path / "store") is False
 
 
 def test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind(tmp_path: Path) -> None:
