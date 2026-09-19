@@ -4232,3 +4232,30 @@ after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written",
 ]
+
+# The storefront — PyPI's page, the Claude Code plugin card, the marketplace row and the Codex
+# listing — is what a stranger reads before the README, and all four of its strings advertised
+# "an adoption state machine" while `keelline assess` did not exist and the README listed it
+# under **Not yet**. `keelline release check` reads versions, never descriptions, so nothing
+# looked. This puts the claim back into the widest-reach of the four.
+[[mutation]]
+name = "the PyPI description advertises the unshipped adoption state machine again"
+file = "pyproject.toml"
+before = 'description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."'
+after = 'description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and an adoption state machine, packaged as one plugin for Claude Code and Codex."'
+reddens = [
+  "tests/test_manifests.py::test_no_storefront_string_advertises_what_the_readme_says_is_not_yet",
+]
+
+# The test above reads its expectation out of the README's own roadmap sentence, which is what
+# keeps the rule in one place — and is also what makes it vacuous the moment that sentence stops
+# yielding items. Shorten the list to one and the storefront may advertise anything the other
+# five names cover.
+[[mutation]]
+name = "the README's not-yet sentence stops naming what has not shipped"
+file = "README.md"
+before = "> discipline. **Not yet:** `init`, `upgrade`,\n> `uninstall`, the project templates, `assess` and the adoption state machine \u2014 so today you"
+after = "> discipline. **Not yet:** `init` \u2014 so today you"
+reddens = [
+  "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
+]

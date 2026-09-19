@@ -105,7 +105,7 @@ command ran, it refuses to carry trust and says so.
 
 ## `keelline memory trust --in-repo-memory`
 
-Record that the notes this repository committed may reach the model.
+Record that the notes sitting inside this repository may reach the model.
 
 The flag is required and never read: it is a confirmation gesture, not a switch, and it is what
 stops this from being a bare, trivially scripted command.
@@ -330,9 +330,9 @@ reached only when none of the four absolute candidates answers first.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and no policy applies — the guard
-is silent rather than closed. The wrapper cannot defend its own mode, and nothing in this
-build catches it: `keelline doctor`, whose wrapper probe is the answer to it, does not ship
-yet. Until it does, `ls -l` on the file is the whole of the check.
+is silent rather than closed. The wrapper cannot defend its own mode, so `keelline doctor` is
+what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
+it after anything that rewrites the plugin directory.
 
 ## `keelline guard bg-cleanup`
 
@@ -387,8 +387,10 @@ Git's own trailing comment block is kept, and so is everything below the scissor
 
 This is what the chained `prepare-commit-msg` hook runs, so the trailer is gone before the
 commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. Installing the
-hook is a library call today (`keelline.guards.api.install`) — no `keelline` subcommand offers
-it yet. **Writes** `FILE`.
+hook is `keelline setup --git-hooks`, and removing it — restoring whatever it chained to — is
+`keelline setup --git-hooks --uninstall`; both are documented below.
+`keelline.guards.api.install` is the same call for a caller embedding Keelline.
+**Writes** `FILE`.
 
 ## `keelline test hygiene`
 

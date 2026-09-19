@@ -186,7 +186,7 @@ parser, and every registered command has a line — a test holds both.
 # Memory
 keelline memory index                                 # render MEMORY.md from the notes
 keelline memory index --check                         # report drift, write nothing
-keelline memory trust --in-repo-memory                # approve a repository's committed notes
+keelline memory trust --in-repo-memory                # approve the notes inside this repository
 keelline memory inventory                             # what a memory sweep reads
 keelline memory fit                                   # whether each injection bundle fits its hook slots
 keelline memory session-context --bundle standing-rules --part 1
@@ -309,9 +309,12 @@ Run `uv add`, not `pip install`. The lockfile is committed and CI runs `uv sync 
 note's `index:` line. A second writer appending entries to `MEMORY.md` is expected, and
 `memory index` harvests those back into the notes before it re-renders.
 
-`memory.mode` decides where the store is: `local-only` (the default — `.keelline/local/memory`,
-git-ignored, yours), `in-repo` (committed, and therefore behind the trust gate), or `overlay`
-(a directory of links into a machine-level overlay shared across your projects).
+`memory.mode` decides where the store is. `local-only` (the default — `.keelline/local/memory`,
+git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
+behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
+your projects) puts them outside it, and notes that are yours need no approval. The gate keys on
+where a note actually sits, never on what the repository's own `keelline.toml` declares — a clone
+that wrote `mode = "local-only"` would otherwise gate itself.
 
 ## The bug ledger, in one paragraph
 

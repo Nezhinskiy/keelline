@@ -63,14 +63,16 @@ def run_bg_cleanup(args: argparse.Namespace) -> Result:
 
 
 # Printed on every `commit check` failure, which is inside the CI gate's own output, so it may
-# only name commands that exist. It named `keelline setup --git-hooks`, which does not: the hook
-# installer ships as a library this lane owns and `setup` is the lane that will offer it from the
-# command line. A remedy that sends a person to an unknown subcommand costs more than the missing
-# clause does.
+# only name commands that exist. The clause naming the installer was dropped while the hook
+# installer shipped as a library alone and `setup` had not yet offered it from the command line;
+# `keelline setup --git-hooks` ships now, so the clause is back, and the rule it was dropped for
+# — a remedy that sends a person to an unknown subcommand costs more than a missing clause does
+# — is what holds it to `setup --git-hooks` and nothing else.
 _STRIP_REMEDY = (
     "Rewrite the messages without the trailer (`git rebase -i --exec 'git commit --amend "
     "--no-edit' <base>`, or `git commit --amend` for the last one). `keelline commit strip "
-    "FILE` does the same to one message file."
+    "FILE` does the same to one message file, and `keelline setup --git-hooks` installs the "
+    "hook that strips it before the commit exists."
 )
 
 # git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read

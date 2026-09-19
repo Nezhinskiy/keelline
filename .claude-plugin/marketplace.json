@@ -6,7 +6,7 @@
     {
       "name": "keelline",
       "source": "./",
-      "description": "A methodology harness for coding agents: bug ledger, curated working memory, guards, and an adoption state machine."
+      "description": "A methodology harness for coding agents: bug ledger, curated working memory behind a trust gate, and fail-closed guards."
     }
   ]
 }

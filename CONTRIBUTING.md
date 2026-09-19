@@ -170,7 +170,10 @@ Conventional-commit subjects (`feat(memory):`, `fix(scaffold):`, `docs(plans):`)
 from vanishing` is the house style; `fix: update worktree.py` is not.
 
 User-visible changes need a towncrier fragment in `changelog.d/`, named
-`<slug>.<type>.md` where type is `feature`, `fix` or `change`. Write it as a release note
+`+<slug>.<type>.md` where type is `feature`, `fix` or `change`. The leading `+` is towncrier's
+orphan prefix, and it is not decoration: without it towncrier reads the slug as an issue
+reference and prints it in parentheses at the end of the bullet, so the release notes everyone
+reads would carry the project's internal lane vocabulary. Write the fragment as a release note
 someone outside the project can read — not as a note to yourself about the lane.
 
 `uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,
