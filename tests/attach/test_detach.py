@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -19,6 +19,7 @@ from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
 from keelline.scaffold.regions import RegionError, Style, markers
+from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
@@ -403,7 +404,8 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # to change this line: `worktree.detach_main` withdraws the links and not the directory that
     # held them, because that directory is repository-configured and may be one the project
     # keeps for its own reasons.
-    assert _directories(root) - before == {"docs", "docs/memory"}
+    memory = PurePosixPath(DEFAULT_MEMORY)
+    assert _directories(root) - before == {str(memory), str(memory.parent)}
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:

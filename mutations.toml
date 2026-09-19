@@ -899,11 +899,11 @@ reddens = [
 # scan comes back clean: the whole-lane walk goes green over a tree that could name anything.
 [[mutation]]
 name = "the hashed neutrality denylist stops matching a planted token"
-file = "tests/guards/test_neutral.py"
+file = "tests/test_neutral.py"
 before = '        wanted = {digest for length, digest in forbidden if length == width}'
 after = '        wanted = set()'
 reddens = [
-  "tests/guards/test_neutral.py::test_the_gate_discriminates",
+  "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
 # The public-document half of the same gate, which had no entry here until two rounds of review
@@ -914,12 +914,12 @@ reddens = [
 # "simplification" takes, and the derivation fails silently either way.
 [[mutation]]
 name = "the public document table is written by hand instead of derived from the preset"
-file = "tests/test_neutral_wave2.py"
+file = "tests/test_neutral.py"
 before = 'PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())'
 after = 'PUBLIC_FORBIDDEN = FORBIDDEN'
 reddens = [
-  "tests/test_neutral_wave2.py::test_the_exemption_is_exactly_the_presets_default_paths",
-  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+  "tests/test_neutral.py::test_the_exemption_is_exactly_the_presets_default_paths",
+  "tests/test_neutral.py::test_the_public_table_still_discriminates",
 ]
 
 # The vendor-branch arm, whose failure mode is silence and whose history is a hole per round of
@@ -929,11 +929,11 @@ reddens = [
 # straight through a gate that reports nothing.
 [[mutation]]
 name = "the vendor-branch arm stops seeing a prefixed branch name"
-file = "tests/test_neutral_wave2.py"
+file = "tests/test_neutral.py"
 before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
 after = '        re.compile(r"(?<![.\w/])(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
 reddens = [
-  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+  "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
 # The other half of the same replacement, and it cuts both ways, so it is two entries. The
@@ -943,11 +943,11 @@ reddens = [
 # one, which is how an arm gets loosened in the first place.
 [[mutation]]
 name = "the vendor arm reads a URL as if it were prose"
-file = "tests/test_neutral_wave2.py"
+file = "tests/test_neutral.py"
 before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
 after = '        name for name, shape in SHAPES if shape.search(lowered)'
 reddens = [
-  "tests/test_neutral_wave2.py::test_the_public_table_still_discriminates",
+  "tests/test_neutral.py::test_the_public_table_still_discriminates",
 ]
 
 # And the other direction, which is the one that shipped for three commits: blanking for *every*
@@ -956,24 +956,25 @@ reddens = [
 # arm has a legitimate reason to meet its own shape inside a URL path.
 [[mutation]]
 name = "every arm goes blind inside a URL"
-file = "tests/test_neutral_wave2.py"
+file = "tests/test_neutral.py"
 before = '        name for name, shape in SHAPES if shape.search(blanked if name in URL_BLIND else lowered)'
 after = '        name for name, shape in SHAPES if shape.search(blanked)'
 reddens = [
-  "tests/test_neutral_wave2.py::test_the_gate_discriminates",
+  "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
-# The two gates are hand-synced copies, which is a documented decision and was a false claim for
-# one commit: `SHAPES` was edited in one and not the other, in the direction of weakening.
-# Diverge them again — here by restoring the sibling's pre-review arm — and the test that reads
-# both must say so.
+# The `bare commit id` arm already required one digit, so an eight-letter hex word is a word and
+# not an id. The whole-tree walk bought the other half of that argument: one hex LETTER, so a
+# plain decimal number is a number and not an id. Take the second lookahead away and `uv.lock`
+# alone reddens on fifty-five byte counts the resolver rewrites at every lock — a gate whose
+# only answer is to exempt a file from itself, which is how an arm gets deleted instead.
 [[mutation]]
-name = "the two copies of the neutrality gate diverge again"
-file = "tests/guards/test_neutral.py"
-before = '        re.compile(r"(?<![.\w])(?:[\w.-]+/)*(?:codex|claude|cursor)/[a-z0-9][\w-]*[-_][\w-]*"),'
-after = '        re.compile(r"\b(?:codex|claude|cursor)/[a-z0-9][\w-]*"),'
+name = "the bare commit id arm reads a decimal number as an id"
+file = "tests/test_neutral.py"
+before = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,10}(?![\w/])"),'
+after = '        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])"),'
 reddens = [
-  "tests/test_neutral_wave2.py::test_the_two_copies_of_the_gate_agree",
+  "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.
@@ -3132,7 +3133,8 @@ reddens = [
   "tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does",
 ]
 
-# --- follow-up to PR #12: the review's important findings, each a guard something reads ---
+# --- follow-up to the second pull request: the review's important findings, each a guard
+# something reads ---
 
 # `CLAUDE_PLUGIN_DATA` arrives through a committed `env` block. A relative value anchored the
 # sink's contained walk on the hook's cwd -- the checkout -- so `CLAUDE_PLUGIN_DATA=.` landed the

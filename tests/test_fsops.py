@@ -348,13 +348,13 @@ def test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_par
     # walk -> the link appears under `elsewhere` and the last assertion reddens.
     root = tmp_path / "root"
     elsewhere = tmp_path / "elsewhere"
-    (root / "docs").mkdir(parents=True)
+    (root / "notes").mkdir(parents=True)
     elsewhere.mkdir()
-    (root / "docs" / "memory").symlink_to(elsewhere)
+    (root / "notes" / "private").symlink_to(elsewhere)
     source = tmp_path / "store" / "developer"
     source.mkdir(parents=True)
     with pytest.raises(UnsafePath):
-        symlink_within(root, "docs/memory/developer", source)
+        symlink_within(root, "notes/private/developer", source)
     assert list(elsewhere.iterdir()) == []
 
 

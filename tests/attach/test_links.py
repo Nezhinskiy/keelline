@@ -18,7 +18,7 @@ from keelline.attach.api import Attached, attach
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.memory.api import PartialLink, harness_memory_path
-from tests.attach.test_binding import CONFIG, _machine
+from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
 from tests.attach.test_write import FakeRunner
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -60,7 +60,7 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     (overlay / "common" / "claude").mkdir(parents=True)
     (overlay / "common" / "codex").mkdir(parents=True)
     (root / "keelline.toml").write_text(CONFIG.format(name="p"), encoding="utf-8")
-    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", "git@example.com:o/p.git")
     _git(root, "add", "-A")

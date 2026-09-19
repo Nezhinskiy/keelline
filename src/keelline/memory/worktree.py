@@ -358,8 +358,8 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     exposes**, which is what `repository_data=in_repository(store, store.path)` says. Asked
     without that argument it fell through `inside_project(store)`, and in overlay mode that is
     False by design — every group resolves out into the overlay — while `store.path` is a real
-    directory *inside the repository*. So a clone shipping a committed `docs/memory/MEMORY.md`
-    got the harness link created for it on no trust record at all, and the harness's own
+    directory *inside the repository*. So a clone shipping a committed index at the configured
+    memory path got the harness link created for it on no trust record at all, and the harness's own
     **native** memory reader then injected the file with no delimiter, no nonce and no gate.
     `bundles.blocks` correctly returned `[]` for the same store in the same session: this lane
     refused to inject the file through the channel it controls, and created the link to the
@@ -394,7 +394,7 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
 
     **The tree's own base directory is created by the first link that goes into it, and not
     before.** It used to be created unconditionally, which meant a store whose groups all
-    resolved to nothing still left an empty `docs/memory/` behind in every worktree a
+    resolved to nothing still left the configured directory behind, empty, in every worktree a
     `SessionStart` touched. `symlink_within` creates a target's parents through the same
     `O_NOFOLLOW` walk that creates the link, so when `linked_names(config)` yields no source
     the base is not created at all.
@@ -544,8 +544,9 @@ def detach_main(
 
     **The loop applies that rule and not half of it.** It used to test `is_symlink()` alone and
     remove whatever stood at a configured group name, with no comparison against
-    `overlay_group_target(...)` — so an owner who added a group and pointed `docs/memory/scratch`
-    at a directory of their own lost that link, reported under `revoked`, on a command that
+    `overlay_group_target(...)` — so an owner who added a group and pointed that group's own name
+    inside the store at a directory of their own lost that link, reported under `revoked`, on a
+    command that
     promises to remove exactly what `attach` added. `attach_main` two functions above has always
     compared; the asymmetry was inside one module, one screen apart, under a docstring that
     states the rule it was not applying.

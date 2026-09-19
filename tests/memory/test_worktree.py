@@ -23,8 +23,15 @@ from keelline.memory.worktree import (
     link,
     linked_names,
 )
+from keelline.presets import load_preset
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+# The preset's own default `paths.memory` — read off the preset, never spelled. `a_checkout`
+# takes the default, so the ignore entry `_commit_checkout` writes has to be the same string
+# the preset ships, and §5.8's whole-tree gate holds a test module to the full table, where a
+# default path is a finding. Derived, the fixture follows the preset if it ever moves.
+DEFAULT_MEMORY = load_preset("recommended")["defaults"]["paths"]["memory"]
 
 CONFIG = """
 [keelline]
@@ -74,7 +81,7 @@ def _a_repo(tmp_path: Path) -> Path:
     return root
 
 
-def _commit_checkout(root: Path, *, ignore: str = "docs/memory/") -> None:
+def _commit_checkout(root: Path, *, ignore: str = f"{DEFAULT_MEMORY}/") -> None:
     (root / "README.md").write_text("x", encoding="utf-8")
     # The store is git-ignored, which is the whole reason a worktree has none of it. Which
     # directory that is depends on the mode: `local-only` keeps it at `.keelline/local/`, and
@@ -508,7 +515,7 @@ NOTE = '---\nname: a\ndescription: d\nindex: "t → a"\n---\n\nBody.\n'
 
 
 def a_local_only_checkout(
-    tmp_path: Path, *, paths_memory: str = "docs/memory", leaks_to: Path | None = None
+    tmp_path: Path, *, paths_memory: str = "notes/private", leaks_to: Path | None = None
 ) -> tuple[Path, Store, Config]:
     """A `local-only` checkout, optionally with `paths.memory` committed as a symlink out of it.
 
@@ -910,7 +917,8 @@ def test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_els
     # comparison against `overlay_group_target(...)`. `attach_main` two functions above has
     # always compared, so the asymmetry was inside one module, one screen apart.
     #
-    # An owner who adds a group and points `docs/memory/project-stable` at a directory of their
+    # An owner who adds a group and points that group's own name in the store at a directory of
+    # their
     # own loses it — reported under `revoked`, on a command that promises to remove exactly what
     # `attach` added.
     #
@@ -1004,7 +1012,7 @@ def test_the_worktree_module_writes_links_only_through_fsops() -> None:
 def test_a_group_directory_that_is_a_symlink_in_the_worktree_is_refused_and_nothing_lands_behind_it(
     tmp_path: Path,
 ) -> None:
-    # S9's shape at the worktree: the branch checked out there commits `docs/memory` as a
+    # S9's shape at the worktree: the branch checked out there commits the configured store as a
     # symlink to a directory outside the checkout. `link` raises rather than following it, and
     # the outside directory gains nothing. The refusal is `PathEscape` and not `UnsafePath`,
     # because `keelline.memory.hooks` catches `PartialLink` — an `OSError`, which `UnsafePath`
@@ -1097,7 +1105,7 @@ def test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_repor
 def test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind(tmp_path: Path) -> None:
     # `link`'s own docstring now says the base is created by the first link that goes into it
     # and not before. It used to be created unconditionally, so every worktree a `SessionStart`
-    # touched gained an empty `docs/memory/` whether or not there was anything to put in it.
+    # touched gained an empty store directory whether or not there was anything to put in it.
     #
     # Nothing to link is built by giving `link` a configuration that names no groups and a
     # store whose index file is gone: `linked_names(config)` then yields only `MEMORY.md`, and

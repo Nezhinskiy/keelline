@@ -1,82 +1,50 @@
-"""§5.8: no project-identifying string in the public repository, held over this plan's files.
+"""§5.8: no project-identifying string anywhere in the public repository — the whole tree.
 
-The design's whole-tree gate belongs to the `workflows` lane; this is the same rule scoped to
-what the three wave-2 closure ports can carry in, checked from the first task so a ported
-docstring, a ported skill or a ported theme list cannot land the state §11 requires it to
-shed. It walks three areas, two document trees and four shared leaf modules because one plan
-delivers them, and it lives at the top level of `tests/` for that reason. It now holds two
-tables: `FORBIDDEN` over the lane's source, tests and skills, and `PUBLIC_FORBIDDEN` over the
-public documents the second closure plan writes. The public table is the full one minus the
-digests of the default `[paths]` values the preset itself ships, read off the preset at import
-time, because a README that could not say where the note store lives by default would be
-useless. The lane walk is unchanged and still refuses those three: a module has no reason to
-spell a default path.
+Two lane-scoped copies of this gate held the door since wave 2, the second of them saying
+"both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
+extend either into a third." This is that day. Source under `src/`, `tests/` and `scripts/`
+is held to the full table: a module has no reason to spell a default path. Every other
+tracked text file is held to the public table, which exempts exactly the preset's own
+default `[paths]` values, because a document that could not say where the note store lives
+by default would be useless. The denylist is digests; the two docstrings this replaces say
+why, and their reasoning is kept verbatim in `digest_of`.
 
-**A deliberate second copy.** `tests/guards/test_neutral.py` carries the same denylist and
-the same `offending()`; a twenty-first token has to be added to both tables by hand, and
-`test_the_two_copies_of_the_gate_agree` below is what says so out loud when one of them is
-not. Both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
-extend either into a third.
-
-The denylist is stored as digests, not tokens — see tests/guards/test_neutral.py for why, and
-do not "simplify" them back into literals.
+**The denylist is stored as digests, not as the tokens themselves, and that is not decoration.**
+A gate that lists the strings it is hiding publishes them: this file ships in a public
+repository, so a plain-text list would put every identifier §5.8 forbids into the very tree the
+rule is about, one `grep` away. Each entry is a lower-cased token's length and a short
+`blake2s` digest of it; the scan hashes every window of each stored length and compares digests.
+The behaviour is identical to the substring list it replaces — the same inputs fail — and a
+digest is not a secret, it is merely not readable. **Do not "simplify" them back into
+literals.** To add a token, run `digest_of("<token>")` and append `(len, digest)`.
 """
 
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import re
+import subprocess
+import tomllib
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SIBLING_GATE = ROOT / "tests" / "guards" / "test_neutral.py"
-LANE = (
-    ROOT / "src" / "keelline" / "ledger",
-    ROOT / "src" / "keelline" / "docs",
-    ROOT / "tests" / "ledger",
-    ROOT / "tests" / "docs",
-    ROOT / "tests" / "skills",
-    ROOT / "skills",
-    ROOT / "agents",
-)
-PLANS = (
-    "docs/plans/2026-09-16-wave-2-closure-ledger-docs-skills.md",
-    "docs/plans/2026-09-16-wave-2-closure-readme-notes.md",
-)
-FRAGMENTS = ("ledger", "docs-tooling", "skills-port", "memory-refs", "readme-methodology", "notes")
-# The public documents the second closure plan writes or rewrites, walked with
-# `PUBLIC_FORBIDDEN` rather than the full table (see it). `docs/methodology/` is a glob so a
-# fourth file there is gated the day it is added; the preset is here because that plan
-# writes its `[rules]` table and a rule body is prose.
-DOCUMENTS = (
-    ROOT / "README.md",
-    ROOT / "src" / "keelline" / "presets" / "recommended.toml",
-    ROOT / "docs" / "plans" / "README.md",
-)
-METHODOLOGY = ROOT / "docs" / "methodology"
-# The leaf modules this plan adds beside the areas (Task 2), the one memory module it adds
-# to a merged lane (Premise 8), and their tests. The last two are the second closure plan's
-# own tests — the document contract and the bundle tests it grew for the preset's `[rules]`
-# table — walked here rather than with `PUBLIC_FORBIDDEN`, because a test module has no more
-# reason to spell a default path than any other module does.
-EXTRA_FILES = (
-    ROOT / "src" / "keelline" / "identifiers.py",
-    ROOT / "src" / "keelline" / "findings.py",
-    ROOT / "src" / "keelline" / "command.py",
-    ROOT / "src" / "keelline" / "prose.py",
-    ROOT / "src" / "keelline" / "memory" / "refs.py",
-    ROOT / "tests" / "test_identifiers.py",
-    ROOT / "tests" / "test_findings.py",
-    ROOT / "tests" / "test_command.py",
-    ROOT / "tests" / "test_git_run.py",
-    ROOT / "tests" / "memory" / "test_refs.py",
-    ROOT / "tests" / "test_documents.py",
-    ROOT / "tests" / "memory" / "test_bundles.py",
-)
+THIS = Path(__file__).resolve()
+FULL_TABLE_TREES = ("src", "tests", "scripts")
+# Only for the fallback walk in an unpacked sdist, where `git ls-files` cannot answer.
+FALLBACK_EXCLUDED = {
+    ".git",
+    ".venv",
+    "dist",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "htmlcov",
+    ".claude",
+    ".superpowers",
+}
 
 
 def _digest(window: bytes) -> str:
@@ -132,8 +100,18 @@ URL_BLIND = frozenset({"vendor branch"})
 SHAPES = (
     # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
-    # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id.
-    ("bare commit id", re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)[0-9a-f]{8,10}(?![\w/])")),
+    # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id — and, by the
+    # same argument in the other direction, at least one letter, so a plain decimal number is
+    # not one either. The second lookahead is this gate's own finding: the first whole-tree
+    # walk reddened `uv.lock` fifty-five times on `size = 13936739`, a file size the resolver
+    # writes and no edit of ours can neutralise, and the arm would go on firing on every
+    # byte count, timestamp and line number in the tree. What it costs is an abbreviated id
+    # that happens to be all digits, which is (10/16)**8 of them and which no rule could tell
+    # from an ordinary number anyway.
+    (
+        "bare commit id",
+        re.compile(r"(?<![\w/])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,10}(?![\w/])"),
+    ),
     # One arm for every form of the name, in three parts, and the only one in `URL_BLIND`
     # above. The lookbehind keeps a dotted harness directory out — a public document has to be
     # able to name the one it configures. The optional path prefix lets any depth in, so a
@@ -188,57 +166,89 @@ def _preset_paths() -> tuple[tuple[int, str], ...]:
 
 
 PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())
+# Three of the preset's eleven default `[paths]` values are also digest-table entries — the
+# ones that were the source repository's paths before they were Keelline's defaults. Pinned so
+# the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
+# path the plugin itself ships, which is a contradiction to resolve, not to exempt.
+PRESET_PATHS_IN_TABLE = 3
 
 
-def document_files() -> list[Path]:
-    found = [*DOCUMENTS, *sorted(METHODOLOGY.glob("*.md"))]
-    # Both plans, without an existence guard, for the reason `lane_files` gives.
-    found.extend(ROOT / plan for plan in PLANS)
-    for slug in ("readme-methodology", "notes"):
-        fragment = ROOT / "changelog.d" / f"{slug}.feature.md"
-        if fragment.is_file():
-            found.append(fragment)
-    return sorted(found)
+def tracked_files() -> list[Path]:
+    """Every file git tracks, or every file under the tree minus the fixed exclusions."""
+    # `--others --exclude-standard` as well as `--cached`: a fixture added in this wave is
+    # untracked until its commit, and a gate that could not see it until the commit after
+    # would let the commit that adds it land unwalked. Step 2 says `git add -N` first.
+    done = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        capture_output=True,
+        check=False,
+    )
+    if done.returncode == 0 and done.stdout:
+        names = [n for n in done.stdout.decode("utf-8").split("\0") if n]
+        return sorted(ROOT / n for n in names if (ROOT / n).is_file())
+    # Anchored on the FIRST component: `tests/fixtures/hostile-project/.claude/settings.json`
+    # is a fixture to walk, not a configuration directory to skip.
+    return sorted(
+        p
+        for p in ROOT.rglob("*")
+        if p.is_file() and p.relative_to(ROOT).parts[0] not in FALLBACK_EXCLUDED
+    )
 
 
-def lane_files() -> list[Path]:
-    found: list[Path] = []
-    for directory in LANE:
-        found.extend(directory.rglob("*.py"))
-        found.extend(directory.rglob("*.md"))
-    found.extend(path for path in EXTRA_FILES if path.is_file())
-    # The plan is named without an existence guard on purpose — a skipped file would hide
-    # exactly the drift this walk exists to catch.
-    found.append(ROOT / PLANS[0])
-    for slug in FRAGMENTS:
-        fragment = ROOT / "changelog.d" / f"{slug}.feature.md"
-        if fragment.is_file():
-            found.append(fragment)
-    # `docs/cli.md` and `gitenv.py` are shared, pre-existing files with Keelline's own strings
-    # that hit the gate; the sections and the function this plan adds to them are checked by
-    # hand at the tasks that write them.
-    return sorted(path for path in found if path.name != "test_neutral_wave2.py")
+def table_for(path: Path) -> tuple[tuple[int, str], ...]:
+    relative = path.relative_to(ROOT)
+    source_tree = relative.parts[0] in FULL_TABLE_TREES
+    if source_tree and (path.suffix == ".py" or relative.parts[0] == "scripts"):
+        return FORBIDDEN
+    return PUBLIC_FORBIDDEN
 
 
-def test_the_gate_reads_something() -> None:
-    # No mutation of its own: this is the mutation guard for the parametrised test below,
-    # which passes vacuously if the walk ever finds no files. `rglob` over a directory that
-    # does not exist yet yields nothing and raises nothing, so each wave that creates a gated
-    # tree extends this guard with one file from it (Tasks 2, 13 and 14) — the wave that
-    # creates a tree is the wave that proves the gate reads it.
-    files = lane_files()
-    assert ROOT / "src" / "keelline" / "ledger" / "__init__.py" in files
-    assert ROOT / "src" / "keelline" / "docs" / "__init__.py" in files
-    assert ROOT / PLANS[0] in files
-    assert ROOT / "src" / "keelline" / "identifiers.py" in files
-    assert ROOT / "src" / "keelline" / "findings.py" in files
-    assert ROOT / "skills" / "close-bug" / "SKILL.md" in files
-    assert ROOT / "agents" / "code-navigator.md" in files
-    # The two test modules the second closure plan writes and rewrites. They are `EXTRA_FILES`
-    # entries, which `lane_files` filters by `is_file()`, so a rename would drop them from the
-    # walk silently; this is the assertion that notices.
-    assert ROOT / "tests" / "test_documents.py" in files
-    assert ROOT / "tests" / "memory" / "test_bundles.py" in files
+def _text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def test_the_gate_reads_the_whole_tree() -> None:
+    # The non-vacuity guard for the parametrised walk below. Named files from six different
+    # trees, and a floor well under today's count (310 when this was written; the commit says
+    # so), so a walk that stopped at one directory cannot pass.
+    files = tracked_files()
+    names = {str(p.relative_to(ROOT)) for p in files}
+    # No `.github/` name here: that tree is outside `source-include`, and this floor has to
+    # hold in the unpacked sdist the fallback walk exists for.
+    for wanted in (
+        "README.md",
+        "src/keelline/cli.py",
+        "docs/cli.md",
+        "mutations.toml",
+        "hooks/run-hook.sh",
+        "scripts/keelline",
+        "tests/test_fsops.py",
+    ):
+        assert wanted in names, wanted
+    assert len(files) >= 200, len(files)
+    assert THIS in files
+
+
+def test_the_two_tables_are_told_apart_by_the_file_they_are_for() -> None:
+    # `table_for` is what decides whether a file may name a default path, so it is worth an
+    # assertion of its own rather than only being exercised through the walk. A module and a
+    # test module take the full table; the preset that ships those defaults, every document,
+    # and a data file under a full-table tree take the public one. `scripts/keelline` has no
+    # suffix at all and is source, which is why the tree name is a second arm.
+    assert table_for(ROOT / "src" / "keelline" / "cli.py") == FORBIDDEN
+    assert table_for(ROOT / "tests" / "test_fsops.py") == FORBIDDEN
+    assert table_for(ROOT / "scripts" / "keelline") == FORBIDDEN
+    assert table_for(ROOT / "src" / "keelline" / "presets" / "recommended.toml") == PUBLIC_FORBIDDEN
+    fixture = ROOT / "tests" / "fixtures" / "smoke-project" / "keelline.toml"
+    assert table_for(fixture) == PUBLIC_FORBIDDEN
+    assert table_for(ROOT / "docs" / "cli.md") == PUBLIC_FORBIDDEN
+    assert table_for(ROOT / "README.md") == PUBLIC_FORBIDDEN
+    # And the two tables really are different tables, or every arm above would be the same
+    # claim written seven ways.
+    assert PUBLIC_FORBIDDEN != FORBIDDEN
 
 
 def test_the_denylist_is_stored_as_digests() -> None:
@@ -292,78 +302,28 @@ def test_the_gate_discriminates() -> None:
     assert offending("merged fork/cursor/spike-one") == branch
     assert offending("cat secrets/.env; person@example.com; 0x1234; deadbeef") == []
     assert offending("Co-authored-by: Someone <someone@users.noreply.github.com>") == []
-
-
-def _sibling_gate() -> ModuleType:
-    """`tests/guards/test_neutral.py` as a module, loaded by path.
-
-    `tests/` is not a package, so there is no import statement to write. This is the only
-    place that needs the sibling as an object rather than as a file, which is why the loader
-    lives here rather than in a shared helper neither gate is allowed to grow.
-    """
-    spec = importlib.util.spec_from_file_location("_sibling_neutral_gate", SIBLING_GATE)
-    assert spec is not None and spec.loader is not None, SIBLING_GATE
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_the_two_copies_of_the_gate_agree() -> None:
-    # The docstring above says the sibling carries the same denylist and the same `offending()`,
-    # and that a twenty-first token has to go into both by hand. That claim went false the last
-    # time `SHAPES` was edited in one copy and not the other — in the direction of weakening,
-    # in the same commit that edited them — and nothing noticed. This is what notices. It is
-    # here and not in the sibling because this is the copy whose docstring makes the claim, and
-    # because a second copy of this test would be one more thing to hand-sync.
-    sibling = _sibling_gate()
-    assert sibling.FORBIDDEN == FORBIDDEN
-    assert [(name, shape.pattern) for name, shape in sibling.SHAPES] == [
-        (name, shape.pattern) for name, shape in SHAPES
-    ]
-    assert sibling._URL.pattern == _URL.pattern
-    # Which arms read a blanked text is as much of the gate as the patterns are: the two copies
-    # would agree on every regex and still disagree about what each one reads.
-    assert sibling.URL_BLIND == URL_BLIND
+    # A decimal number is not a commit id, and this is the assertion the whole-tree walk
+    # bought: `uv.lock` writes `size = 13936739` fifty-five times, the resolver rewrites it on
+    # every lock, and the arm that read it as an id could only ever have been answered by
+    # exempting a file from the gate. Eight digits, ten digits, and the same run with one hex
+    # letter in it, which is an id again.
+    assert offending("size = 13936739") == []
+    assert offending("bytes: 1234567890") == []
+    assert offending("bytes: 123456789a") == ["bare commit id"]
 
 
 def test_mutations_toml_carries_no_source_repository_string() -> None:
-    text = (ROOT / "mutations.toml").read_text(encoding="utf-8")
-    mine = (
-        "keelline/ledger/",
-        "keelline/docs/",
-        "keelline/memory/refs.py",
-        "keelline/identifiers.py",
-        "keelline/findings.py",
-        "keelline/command.py",
-        "keelline/prose.py",
-    )
-    entries = [b for b in text.split("[[mutation]]") if any(name in b for name in mine)]
-    for block in entries:
-        assert offending(block) == [], block[:120]
-
-
-@pytest.mark.parametrize("path", lane_files(), ids=lambda p: str(p.relative_to(ROOT)))
-def test_no_lane_file_carries_a_source_repository_string(path: Path) -> None:
-    assert offending(path.read_text(encoding="utf-8")) == [], path
-
-
-# Three of the preset's eleven default `[paths]` values are also digest-table entries — the
-# ones that were the source repository's paths before they were Keelline's defaults. Pinned so
-# the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
-# path the plugin itself ships, which is a contradiction to resolve, not to exempt.
-PRESET_PATHS_IN_TABLE = 3
-
-
-def test_the_public_document_walk_is_not_empty() -> None:
-    # The vacuity guard for the parametrised public walk below, the same shape as
-    # `test_the_gate_reads_something` for the lane walk; named apart from it so `-k` can pick
-    # one. `docs/methodology/README.md` is named because the wave that created that tree is
-    # the wave that proves the gate reads it.
-    files = document_files()
-    assert ROOT / "README.md" in files
-    assert ROOT / PLANS[1] in files
-    assert ROOT / "src" / "keelline" / "presets" / "recommended.toml" in files
-    assert METHODOLOGY / "README.md" in files
+    # `mutations.toml` is walked whole under the public table by the parametrised test below,
+    # like every other tracked document. This is the stricter half the two lane gates each
+    # carried for their own entries: a mutation quotes a line of the file it names, so the
+    # entry is held to *that file's* table. Scoping it by the named file rather than by a
+    # hand-kept list of path prefixes is what one gate can do that two could not — neither
+    # copy could see the other's lane, and every lane added since was nobody's.
+    entries = tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"]
+    assert len(entries) >= 200, len(entries)
+    for entry in entries:
+        quoted = "\n".join(str(entry[key]) for key in ("name", "file", "before", "after"))
+        assert offending(quoted, table_for(ROOT / str(entry["file"]))) == [], entry["name"]
 
 
 def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
@@ -374,7 +334,7 @@ def test_the_exemption_is_exactly_the_presets_default_paths() -> None:
     # `exempt <= set(_preset_paths())` used to stand here and was dropped: `PUBLIC_FORBIDDEN`
     # is *defined* as that difference, so the subset held for any derivation and reddened for
     # none. The size is the claim with teeth — it is the one a hand-written table breaks.
-    # The full table's size is pinned by `test_the_denylist_is_stored_as_digests`; the lane
+    # The full table's size is pinned by `test_the_denylist_is_stored_as_digests`; the source
     # walk still refuses those three, which `test_the_public_table_still_discriminates` shows.
 
 
@@ -421,6 +381,20 @@ def test_the_public_table_still_discriminates() -> None:
     # this plan is walked by the gate and would trip on its own example.
 
 
-@pytest.mark.parametrize("path", document_files(), ids=lambda p: str(p.relative_to(ROOT)))
-def test_no_public_document_carries_a_source_repository_string(path: Path) -> None:
-    assert offending(path.read_text(encoding="utf-8"), PUBLIC_FORBIDDEN) == [], path
+# This file is the one the walk does not read, and the exclusion is `!= THIS` rather than a name
+# so a rename cannot quietly drop a different file. It carries no denylist token — the table is
+# digests — but the three shape arms are proven by fixtures that are personal-address-shaped,
+# commit-id-shaped and branch-shaped **by construction**, which is the same reason the two gates
+# this replaces each skipped themselves. The pre-commit sweep reads the raw diff and so reports
+# those fixtures; a shape hit on a line of this module is the gate quoting itself, and the stop
+# condition Global Constraints states is a `token` hit.
+@pytest.mark.parametrize(
+    "path",
+    [p for p in tracked_files() if p != THIS],
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
+def test_no_tracked_file_carries_a_project_identifying_string(path: Path) -> None:
+    text = _text(path)
+    if text is None:
+        pytest.skip("binary")
+    assert offending(text, table_for(path)) == [], path

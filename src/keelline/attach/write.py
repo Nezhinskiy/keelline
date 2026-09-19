@@ -135,8 +135,9 @@ _INSIDE = ".keep"
 #
 # There are exactly three writes that create a directory here, and each one's parents are on
 # this list: `LEDGER` under `.keelline/local/`, the rule copies under `.codex/rules/`, and
-# `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, ordinarily
-# `docs/memory/`) is deliberately **not** here: it is repository-configured, may be a directory
+# `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, wherever the
+# project configures it) is deliberately **not** here: it is repository-configured, may be a
+# directory
 # the project already keeps for its own reasons, and `worktree.detach_main` settled that
 # question the other way — "withdrawing a link is not licence to delete a directory".
 #
