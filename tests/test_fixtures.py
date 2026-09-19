@@ -218,10 +218,21 @@ BASE_STEP = "The base ref, and the configuration it carries"
 needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not installed")
 # `.github/` is outside `source-include`: it is this repository's own continuous integration
 # and not source a downstream packager needs, and `scripts/check_artifacts.py` states that the
-# sdist exists so such a packager can run the suite. So these five cases skip where the file
+# sdist exists so such a packager can run the suite. So the cases below skip where the file
 # they are about is not there, rather than the tree gaining a line to ship CI configuration.
+# There are **ten** of them, all of which really do run `check.yml`'s base step; the comment
+# said five for as long as there have been more than five.
 needs_workflow = pytest.mark.skipif(
     not CHECK_WORKFLOW.is_file(), reason="check.yml is not in the sdist"
+)
+# And its own marker for the one guard that is not about `check.yml` at all. The tree-wide
+# `${{ }}`-in-`run:` scan is the only assertion covering `ci.yml`, `release.yml` and
+# `smoke.yml`, and it carried `needs_workflow` — so renaming or deleting `check.yml` would
+# have switched off the guard over the other four, silently and green. A guard whose predicate
+# is unrelated to what it guards is a guard that will eventually be off without anyone
+# deciding it should be.
+needs_workflows_dir = pytest.mark.skipif(
+    not (ROOT / ".github" / "workflows").is_dir(), reason="the workflows are not in the sdist"
 )
 
 
@@ -298,7 +309,7 @@ SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
 # 4,059). `smoke-release.yml` is two reusable-workflow calls and legitimately runs no shell,
 # which is why it is 0 here rather than exempt from the walk.
 EXPECTED_BLOCKS = {
-    "check.yml": 9,
+    "check.yml": 10,
     "ci.yml": 12,
     "release.yml": 7,
     "smoke-release.yml": 0,
@@ -309,7 +320,10 @@ EXPECTED_BLOCKS = {
 # headroom in it. Floors and not equalities, because a workflow gaining a line is ordinary and
 # a workflow losing half its script is not.
 EXPECTED_CHARACTERS = {
-    "check.yml": 5030,
+    # Re-measured when the import proof and the pull-request base refusal landed: 5030 -> 6503.
+    # Kept level with the measurement rather than left where it was, because a floor with a
+    # thousand characters of headroom under it is a floor a truncation walks past.
+    "check.yml": 6503,
     "ci.yml": 882,
     "release.yml": 1683,
     "smoke-release.yml": 0,
@@ -440,7 +454,7 @@ def braced_lines(workflow: Path) -> list[str]:
     ]
 
 
-@needs_workflow
+@needs_workflows_dir
 def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # The one class of workflow defect a text scan can catch, and the one worth catching: a
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
@@ -722,6 +736,100 @@ def test_a_branch_that_changes_an_installed_projects_configuration_is_refused(
     code, _written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
     assert code == 1, printed
     assert "may not change an installed project's gate configuration" in printed, printed
+
+
+# Every `- name:`/`- uses:` step in `check.yml`'s one job, in order, with the keys that decide
+# whether a failure is allowed to pass. A line reader rather than a parser, for the reason the
+# `run:` scanner gives one screen up: this repository ships no YAML parser and a classifier is
+# the hole.
+_STEP = re.compile(r"^      - (?:name: (?P<name>.+)|uses: (?P<uses>\S+))$")
+
+
+def check_steps() -> list[tuple[str, bool]]:
+    """`(step name, is it allowed to fail)` for each step of `check.yml`'s job, in order."""
+    steps: list[tuple[str, bool]] = []
+    for line in CHECK_WORKFLOW.read_text(encoding="utf-8").splitlines():
+        match = _STEP.match(line)
+        if match:
+            steps.append((match.group("name") or match.group("uses"), False))
+        elif steps and line.strip() == "continue-on-error: true":
+            steps[-1] = (steps[-1][0], True)
+    return steps
+
+
+@needs_workflow
+def test_something_outside_the_advisory_arm_proves_keelline_runs_at_all() -> None:
+    """Advisory mode used to make "Keelline cannot import" indistinguishable from "your
+    documents have findings".
+
+    All five gates carry `continue-on-error: true`, and while the base's state is not
+    `installed` the Verdict turns each failure into one `::warning` and exits 0. So a bad
+    checkout, a renamed module, or an interpreter below the 3.11 floor — which
+    `inputs.python-version` can name and nothing validates — produced five warnings and a green
+    job for every adopting project, which by design is every project's first weeks. Nothing
+    outside the advisory arm asked whether the harness ran at all.
+
+    Advisory means "your findings do not fail the job". It does not mean "our harness not
+    running does not fail the job", and this is the step that says so.
+
+    Mutation (declared): the proof step gains `continue-on-error: true` -> this reddens.
+    """
+    steps = check_steps()
+    names = [name for name, _ in steps]
+    # The walk's floor before anything is read off it: a regex that stopped matching would make
+    # every `in` below fail loudly, but an `any()` over an empty list would not.
+    assert len(steps) >= 8, steps
+    gates = ["docs check", "bugs check", "plan check", "commit check", "docs trail"]
+    assert set(gates) <= set(names), names
+    allowed = {name: may_fail for name, may_fail in steps}
+    # The premise, asserted rather than assumed: every gate really is advisory, which is what
+    # makes an unguarded step necessary in the first place.
+    assert all(allowed[gate] for gate in gates), allowed
+    proof = "Keelline runs at all"
+    assert proof in names, names
+    assert allowed[proof] is False, allowed
+    # And it runs before the first gate, or a broken harness still produces the five warnings
+    # before anything says why.
+    assert names.index(proof) < min(names.index(gate) for gate in gates), names
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The half of "a pull request cannot turn off the gates it is about to face" that was not.
+
+    On a `pull_request` event the platform runs the workflow file from the merge commit — the
+    author's copy — and `with: base:` lives in it. So a pull request could point `base:` at a
+    branch it had pushed whose `keelline.toml` says `state = "initialised"`, get `enforce=false`
+    without touching the tree's own `keelline.toml`, and every gate would become one
+    `::warning` while the required status check still reported. The byte-equality rule never
+    fires, because nothing differs.
+
+    The platform's `github.base_ref` is the answer that cannot be written from the branch, so
+    where both are present and they disagree the step refuses. This costs a legitimate caller
+    nothing: on a pull request `base:` decides nothing anyway, which the agreeing case below
+    is here to keep true.
+
+    Mutation (declared): the disagreement test is removed -> this reddens on the exit code.
+    """
+    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    code, written, printed = _run_base_step(
+        project, tmp_path, INPUT_BASE="a-branch-the-author-pushed", PR_BASE="main"
+    )
+    assert code == 1, printed
+    assert "this pull request's base is 'main'" in printed, printed
+    # Nothing was written, so no later step can read a base or an `enforce` from this run.
+    assert written == {}, written
+
+    # Agreeing is not refused, and `base:` still decides on every event that reports no base —
+    # which is what makes the refusal free.
+    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main", PR_BASE="main")
+    assert code == 0, printed
+    assert written["base"] == "main", written
+    assert written["enforce"] == "true", written
 
 
 @needs_git

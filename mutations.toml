@@ -4786,3 +4786,32 @@ after = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "
 reddens = [
   "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
 ]
+
+# §4.3. All five gates carry `continue-on-error: true`, so while the base is not `installed` a
+# Keelline that cannot even import produced five `::warning`s and a green job — for every
+# adopting project, which by design is every project's first weeks. This is the one unguarded
+# step given the guard back.
+[[mutation]]
+name = "the proof that Keelline runs at all becomes advisory too"
+file = ".github/workflows/check.yml"
+before = """
+      - name: Keelline runs at all"""
+after = """
+      - name: Keelline runs at all
+        continue-on-error: true"""
+reddens = [
+  "tests/test_fixtures.py::test_something_outside_the_advisory_arm_proves_keelline_runs_at_all",
+]
+
+# §4.3. On a `pull_request` the workflow file comes from the merge commit, so `with: base:` is
+# the author's. A `base:` naming a branch whose `keelline.toml` says `initialised` yielded
+# `enforce=false` without the tree's own file being touched, and the byte-equality rule never
+# fired.
+[[mutation]]
+name = "a pull request's base: input is preferred over the platform's own answer again"
+file = ".github/workflows/check.yml"
+before = '          if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
+]
