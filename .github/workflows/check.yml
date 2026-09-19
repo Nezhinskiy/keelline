@@ -91,6 +91,24 @@ jobs:
             ""|.|./) p="" ;;
             *) p="${INPUT_PATH#./}"; p="${p%/}" ;;
           esac
+          # `p` is appended to `$GITHUB_OUTPUT` below, which the runner parses line by line — so
+          # a `path:` carrying a newline writes further `key=value` lines of its own, and the
+          # keys the next steps read are `base`, `state` and `enforce`. `enforce` is the whole of
+          # the base-ref rule's teeth. The caller already chooses `base:` by design, so this is
+          # not an escalation of what it may decide; it is a value on a control channel, and a
+          # value on a control channel is checked before it is written. A plain relative path is
+          # all `path:` has ever meant, and `..` is refused with it so `root=` below is provably
+          # inside the caller's own checkout.
+          case "$p" in
+            *[!A-Za-z0-9._/-]*)
+              echo "::error::path: must be a plain relative path — letters, digits, '.', '_', '-' and '/'"
+              exit 1
+              ;;
+            ..|../*|*/..|*/../*)
+              echo "::error::path: must not leave the checkout"
+              exit 1
+              ;;
+          esac
           file="${p:+$p/}keelline.toml"
           base="$INPUT_BASE"
           [ -n "$base" ] || base="$PR_BASE"

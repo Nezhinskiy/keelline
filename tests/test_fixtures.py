@@ -169,10 +169,26 @@ def run_blocks(workflow: Path) -> list[str]:
         line = lines[index]
         stripped = line.strip()
         index += 1
+        # `- run: …` as well as `run: …`: a step whose first key is `run` carries the list dash
+        # on the same line, which is the ordinary spelling for a step with no `name`. No file in
+        # this tree uses it today — the same reason the fold marker went unnoticed — and a
+        # reader that cannot see it would report nothing for a whole workflow written that way.
+        if stripped.startswith("- "):
+            stripped = stripped[2:].lstrip()
         if not stripped.startswith("run:"):
             continue
         rest = stripped[len("run:") :].strip()
-        if not rest.startswith("|"):
+        # `defaults: run:` is a mapping of shell settings and not a script. It contributed an
+        # empty string, which scanned clean and still counted toward the floor below — and that
+        # floor is the only thing making the scan non-vacuous, so it may count only what it
+        # scans.
+        if not rest:
+            continue
+        # `>` and `>-` as well as `|`: a folded scalar is a script too, and sending one down the
+        # one-liner path scanned the fold marker and let the whole body past. Nothing in the tree
+        # uses `>` today, which is exactly why nobody would have noticed — and the body would
+        # have gone on counting toward the floor while escaping the check.
+        if not rest.startswith(("|", ">")):
             found.append(rest)
             continue
         indent = len(line) - len(line.lstrip())
@@ -194,7 +210,9 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
     # `env:` instead. The walk asserts it read something first, and something from each file.
-    workflows = sorted(WORKFLOWS.glob("*.yml"))
+    # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
+    # would never be scanned while the `>=` assertion below went on passing.
+    workflows = sorted(WORKFLOWS.glob("*.y*ml"))
     assert {p.name for p in workflows} >= {"ci.yml", "check.yml", "smoke.yml"}, workflows
     read = 0
     for workflow in workflows:
@@ -357,6 +375,72 @@ def test_the_base_ref_falls_back_to_the_pull_requests_base_and_then_the_default_
 @needs_git
 @needs_bash
 @needs_workflow
+def test_a_path_input_cannot_write_the_steps_own_outputs(tmp_path: Path) -> None:
+    # `p` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a `path:`
+    # carrying a newline used to write further `key=value` lines — and the keys the next steps
+    # read are `base`, `state` and `enforce`, the last of which is the whole of the base-ref
+    # rule's teeth. The caller already chooses `base:` by design, so this was not an escalation
+    # of what it may decide; it was an unvalidated value on a control channel.
+    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    code, written, printed = _run_base_step(
+        project, tmp_path, INPUT_BASE="main", INPUT_PATH="sub\nenforce=true"
+    )
+    assert code == 1, printed
+    assert "must be a plain relative path" in printed, printed
+    assert written == {}, written
+    # And the other half of the same check, so `root=` below is provably inside the checkout.
+    code, written, printed = _run_base_step(
+        project, tmp_path, INPUT_BASE="main", INPUT_PATH="../elsewhere"
+    )
+    assert code == 1, printed
+    assert "must not leave the checkout" in printed, printed
+    assert written == {}, written
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_the_base_branch_itself_is_exempt_from_the_equality_rule(tmp_path: Path) -> None:
+    # DC7's strict form applies "on any branch but the base branch itself". A push to the base
+    # branch IS the change, so comparing it against `origin/<base>` would refuse every merge —
+    # and the arm that exempts it had no test.
+    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    (project / "keelline.toml").write_text(
+        INSTALLED.replace('state = "installed"', 'state = "installed"\nprofile = ""'),
+        encoding="utf-8",
+    )
+    code, written, printed = _run_base_step(
+        project, tmp_path, INPUT_BASE="main", CURRENT_REF="refs/heads/main"
+    )
+    assert code == 0, printed
+    assert written["state"] == "installed", written
+    assert written["enforce"] == "true", written
+    assert "::error" not in printed, printed
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_a_differing_configuration_under_a_base_that_is_not_installed_warns(
+    tmp_path: Path,
+) -> None:
+    # The advisory half of the same comparison (D8): while the base's state is `adopting` the
+    # branch may change the configuration, and the run says so rather than refusing. Without
+    # this the refusal arm and the warning arm are one untested branch between them.
+    adopting = INSTALLED.replace('state = "installed"', 'state = "adopting"')
+    project = _project_with_a_base(tmp_path, on_base=adopting)
+    (project / "keelline.toml").write_text(INSTALLED, encoding="utf-8")
+    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
+    assert code == 0, printed
+    assert written["state"] == "adopting", written
+    assert written["enforce"] == "false", written
+    assert "::warning" in printed and "advisory while the base's state is adopting" in printed
+    assert "::error" not in printed, printed
+
+
+@needs_git
+@needs_bash
+@needs_workflow
 def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_from(
     tmp_path: Path,
 ) -> None:
@@ -369,3 +453,102 @@ def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_fr
     assert code == 0, printed
     assert written["root"] == "project/sub/project", written
     assert "sub/project/keelline.toml is not on origin/main" in printed, printed
+
+
+def test_the_reader_sees_a_folded_script_and_not_a_shell_settings_mapping(tmp_path: Path) -> None:
+    # The two ways the scan above could have read a file and still checked nothing, on a
+    # synthetic workflow rather than on the tree — the tree is exactly where neither shape
+    # appears, which is why neither was noticed. Mutation (declared): narrow the reader back to
+    # `rest.startswith("|")` and the folded body walks through with an expression in it.
+    workflow = tmp_path / "synthetic.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    defaults:\n"
+        "      run:\n"
+        "        shell: bash\n"
+        "    steps:\n"
+        "      - run: >\n"
+        "          echo folded ${{ github.ref }}\n"
+        "      - run: |\n"
+        "          echo literal\n"
+        "      - run: echo inline\n"
+        "      - name: with a name of its own\n"
+        "        run: echo named\n",
+        encoding="utf-8",
+    )
+    blocks = run_blocks(workflow)
+    # Four scripts, and the `defaults: run:` mapping is not one of them — it scanned clean and
+    # counted toward the floor that exists to make the scan non-vacuous.
+    assert len(blocks) == 4, blocks
+    assert any("folded" in block and "${{" in block for block in blocks), blocks
+    assert any(block.strip() == "echo literal" for block in blocks), blocks
+    assert "echo inline" in blocks, blocks
+    assert "echo named" in blocks, blocks
+
+
+# --- `check.yml`'s verdict step, run as the shell script it is --------------------------
+
+VERDICT_STEP = "Verdict"
+
+
+def _run_verdict(tmp_path: Path, **environment: str) -> tuple[int, str]:
+    done = subprocess.run(
+        ["bash", "-e", "-c", step_script(CHECK_WORKFLOW, VERDICT_STEP)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "ENFORCE": "false",
+            "STATE": "absent",
+            "O_DOCS": "success",
+            "O_BUGS": "success",
+            "O_PLAN": "success",
+            "O_COMMIT": "success",
+            "O_TRAIL": "success",
+            **environment,
+        },
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+@needs_bash
+@needs_workflow
+def test_the_verdict_fails_the_job_only_where_the_base_says_installed(tmp_path: Path) -> None:
+    # D8 in three lines of shell, and the reviewer's point that reading it is not running it.
+    # Enforcing and clean is the control: a verdict that failed there would be noticed at once,
+    # and one that passes everything would not.
+    code, printed = _run_verdict(tmp_path, ENFORCE="true", STATE="installed")
+    assert code == 0, printed
+    assert "::error" not in printed and "::warning" not in printed, printed
+
+    code, printed = _run_verdict(tmp_path, ENFORCE="true", STATE="installed", O_DOCS="failure")
+    assert code == 1, printed
+    assert "::error::docs failed" in printed, printed
+
+    code, printed = _run_verdict(tmp_path, ENFORCE="false", STATE="adopting", O_DOCS="failure")
+    assert code == 0, printed
+    assert "::warning::docs failed, advisory while the base's state is adopting" in printed
+    assert "::error" not in printed, printed
+
+
+@needs_bash
+@needs_workflow
+def test_every_gate_is_named_in_the_verdict_and_not_only_the_first(tmp_path: Path) -> None:
+    # "Every gate ran, whatever the first one said" is the step's own claim, and a loop that
+    # stopped at the first failure would satisfy every assertion above.
+    code, printed = _run_verdict(
+        tmp_path,
+        ENFORCE="true",
+        STATE="installed",
+        O_DOCS="failure",
+        O_BUGS="failure",
+        O_PLAN="failure",
+        O_COMMIT="failure",
+        O_TRAIL="failure",
+    )
+    assert code == 1, printed
+    for name in ("docs", "bugs", "plan", "commit", "trail"):
+        assert f"::error::{name} failed" in printed, (name, printed)

@@ -278,15 +278,29 @@ def main(argv: list[str]) -> int:
         "CLAUDE_PLUGIN_ROOT": str(contained_root),
     }
     contained_env.pop("KEELLINE_PYTHON_CANDIDATES", None)
-    refused = through_wrapper(
+    # Both policies, and the exit codes are NOT the same — asserting "the wrapper refused, so it
+    # exited non-zero" would have been wrong about `open`, which is the whole of D11: a fault the
+    # wrapper can see prints its token and then degrades to 0 under `open` and refuses with 2
+    # under `closed`. What both rows share is the token, the reason inside it, and that the
+    # planted interpreter never ran.
+    degraded = through_wrapper(
         copied, ["open", "hook", "SessionStart"], contained_env, planted.clone
     )
+    refused = through_wrapper(
+        copied, ["closed", "hook", "PreToolUse"], contained_env, planted.clone
+    )
+    named = all(
+        "KL_NO_PY" in done.stderr and "inside the project root" in done.stderr
+        for done in (degraded, refused)
+    )
     report.row(
-        "KL_NO_PY" in refused.stderr
-        and "inside the project root" in refused.stderr
+        named
+        and degraded.returncode == 0
+        and refused.returncode == 2
         and not planted.planted_marker.exists(),
         "the interpreter inside the clone is refused by name, not merely not reached",
-        f"stderr={refused.stderr.strip()[:120]!r}, planted-ran={planted.planted_marker.exists()}",
+        f"open rc={degraded.returncode}, closed rc={refused.returncode}, named={named}, "
+        f"planted-ran={planted.planted_marker.exists()}",
     )
 
     # --- what the clone's machine configuration bought it: a warning row and nothing else ----

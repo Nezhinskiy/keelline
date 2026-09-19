@@ -32,6 +32,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 THIS = Path(__file__).resolve()
 FULL_TABLE_TREES = ("src", "tests", "scripts")
+# How many tracked files the walk is allowed to skip for being undecodable. Zero, measured: this
+# repository ships no binary. A file that changes it is a deliberate edit here and not a case
+# that quietly stopped being checked.
+UNDECODABLE = 0
 # Only for the fallback walk in an unpacked sdist, where `git ls-files` cannot answer.
 FALLBACK_EXCLUDED = {
     ".git",
@@ -195,6 +199,16 @@ def tracked_files() -> list[Path]:
     )
 
 
+# **What the split gives up, stated as a decision rather than left as an accident.** The two
+# gates this replaces walked `skills/**/*.md` and `agents/*.md` under the FULL table; DC10 says
+# `.py` under the three source trees takes the full table and every other text file takes the
+# public one, so under one gate those documents take the public table and may now spell a preset
+# default `[paths]` value where they could not before. That is the design and not a slip: a skill
+# is a document a person reads, and the argument that a README which could not say where the note
+# store lives by default would be useless is the same argument one directory over. The denylist
+# proper is unchanged for them — only the three exempted preset defaults move — and the shape arms
+# are not table-scoped at all, so a personal address, a bare commit id and a vendor branch are
+# still refused in a skill. Changing it back means changing DC10, not this function.
 def table_for(path: Path) -> tuple[tuple[int, str], ...]:
     relative = path.relative_to(ROOT)
     source_tree = relative.parts[0] in FULL_TABLE_TREES
@@ -230,6 +244,15 @@ def test_the_gate_reads_the_whole_tree() -> None:
         assert wanted in names, wanted
     assert len(files) >= 200, len(files)
     assert THIS in files
+    # And that a file was actually READ. Every parametrised case below calls `_text` and skips
+    # on `None`, so a regression in `_text` — a changed encoding argument, a widened `except` —
+    # turns all of them into skips and the gate reports green over a tree that could name
+    # anything. Measured when this was written: 335 tracked files, none undecodable, so the skip
+    # arm is taken by nothing at all and `UNDECODABLE` is a number to move deliberately when a
+    # binary file is added rather than a silence to walk past.
+    readable = [path for path in files if path != THIS and _text(path) is not None]
+    assert len(readable) >= 200, len(readable)
+    assert len(files) - 1 - len(readable) == UNDECODABLE, (len(files), len(readable))
 
 
 def test_the_two_tables_are_told_apart_by_the_file_they_are_for() -> None:

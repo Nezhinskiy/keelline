@@ -40,6 +40,14 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
+      - name: The interpreter every step below runs on
+        # Keelline's floor is 3.11 and `check.yml` pins with this action for the same reason:
+        # the two smoke scripts and `python3 -m keelline doctor` all run the runner's bare
+        # `python3`, and which interpreter that is on `macos-latest` is the image's business
+        # rather than a contract. One step removes the question from every step after it.
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.13"
       - name: The harness CLI, at the version ci.yml validates with
         # One version in two files; RELEASING.md names both. Not Dependabot's: a global npm
         # install is not a manifest. The laptop measurement below was taken against 2.1.263;
@@ -98,6 +106,9 @@ jobs:
             --fixture tests/fixtures/hostile-project --scratch "$RUNNER_TEMP/hostile"
 
   same-repository-form:
+    # The same guard `installed-plugin` carries: a fork inherits the schedule, and only this
+    # repository runs either job weekly.
+    if: github.event_name != 'schedule' || github.repository == 'Nezhinskiy/keelline'
     # The `./` call form. What this exercises against the FIXTURE is `docs check` and `bugs
     # check`; `commit check`, `plan check` and `docs trail` read git, and the fixture is a
     # directory inside Keelline's own repository here, so those three answer for Keelline's

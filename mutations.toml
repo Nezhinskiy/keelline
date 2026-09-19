@@ -968,6 +968,20 @@ reddens = [
 # plain decimal number is a number and not an id. Take the second lookahead away and `uv.lock`
 # alone reddens on fifty-five byte counts the resolver rewrites at every lock — a gate whose
 # only answer is to exempt a file from itself, which is how an arm gets deleted instead.
+# The whole-tree walk skips a file it cannot decode, which is the right answer for a binary and
+# the wrong answer for every file at once. `_text` answering `None` turns all 334 parametrised
+# cases into skips, and a run of 334 skips and no failures is what a green gate looks like from
+# the outside. The floor is therefore on the files that were READ, not on the files that were
+# listed, and the count of skips is pinned at the measured zero.
+[[mutation]]
+name = "the whole-tree gate reads nothing and skips every file"
+file = "tests/test_neutral.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = "        return None"
+reddens = [
+  "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
+]
+
 [[mutation]]
 name = "the bare commit id arm reads a decimal number as an id"
 file = "tests/test_neutral.py"
@@ -3677,13 +3691,43 @@ reddens = [
 # And the same question asked of the other script. Every row but the first in the exfiltration
 # scenario asserts an ABSENCE, and a scenario whose pipeline is broken prints the same
 # absences — so the first row is a positive control, and a control nothing holds to its own
-# result is decoration. Make the control unfailable and the run reports 0 failures over a
-# store that never emitted anything.
+# result is decoration. This mutation blinds THAT ROW and nothing else: the control stops being
+# able to notice that the note never arrived, so the scenario reports success over a store that
+# emitted nothing while the four absence rows stay green, which is exactly the shape the control
+# exists to catch. (An earlier form pinned `Report.failures` to zero, which made every row
+# unfailable and so claimed more than the control's own argument needed.)
 [[mutation]]
 name = "the exfiltration scenario's positive control cannot fail"
 file = "scripts/smoke_exfiltration.py"
-before = "        return sum(1 for ok, _, _ in self.rows if not ok)"
-after = "        return 0"
+before = "        and CANARY in emitted.stdout"
+after = "        and True"
 reddens = [
   "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way",
+]
+
+# `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
+# `path:` carrying a newline writes further `key=value` lines — and the keys the very next steps
+# read are `base`, `state` and `enforce`. `enforce` is the whole of DC7's teeth. Disable the
+# character check and a caller's `path:` decides whether an installed project's gates enforce.
+[[mutation]]
+name = "the reusable workflow lets `path:` write its own outputs"
+file = ".github/workflows/check.yml"
+before = "            *[!A-Za-z0-9._/-]*)"
+after = "            unmatchable-pattern-that-is-never-a-path)"
+reddens = [
+  "tests/test_fixtures.py::test_a_path_input_cannot_write_the_steps_own_outputs",
+]
+
+# The `${{ }}`-in-a-shell scan reads a `run:` block by its fold marker. Narrow the reader back
+# to `|` alone and a folded script — `run: >` — is read as a one-liner whose only content is the
+# marker, so the whole body escapes the scan *while still counting toward the floor* that exists
+# to make the scan non-vacuous. No file in this tree uses `>` today, which is why the hole was
+# invisible; the synthetic workflow is what makes it a case.
+[[mutation]]
+name = "the workflow scan goes blind to a folded script"
+file = "tests/test_fixtures.py"
+before = '        if not rest.startswith(("|", ">")):'
+after = '        if not rest.startswith("|"):'
+reddens = [
+  "tests/test_fixtures.py::test_the_reader_sees_a_folded_script_and_not_a_shell_settings_mapping",
 ]
