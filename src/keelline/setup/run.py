@@ -335,6 +335,20 @@ def _write_user_settings(
         fsops.write_within(root, relative, new_text)
     except UnsafePath as exc:
         raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
+    except OSError as exc:
+        # `UnsafePath` is not the only `OSError` reachable here, and the two that are not it
+        # used to leave this library and land on `cli.run`'s final handler as `keelline:
+        # internal error: FileNotFoundError`, exit 2, no remedy -- the exact rendering the
+        # paragraph above and `_check_settings_path` were written to remove. `write_within`
+        # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into `UnsafePath`,
+        # so a root that is not there and a root that is a symlink to a directory both arrive
+        # raw. `--settings` is what makes both ordinary: a typo in the directory component, and
+        # the whole-directory stow layout (`--settings ~/.claude/settings.json`) that the
+        # refusal below now advertises. One refusal, naming the path and both causes.
+        raise Refusal(
+            f"{path} cannot be written ({type(exc).__name__}: {exc}); its directory has to "
+            f"exist and be a real directory, because {_SYMLINKED_SETTINGS}"
+        ) from exc
     return True
 
 

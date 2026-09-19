@@ -301,3 +301,56 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     text = prose(README)
     assert "docs/methodology/README.md" in text
     assert "docs/cli.md" in text
+
+
+CLI_REFERENCE = ROOT / "docs" / "cli.md"
+# The section Task 6 created and two later waves anchor on. Everything between its heading and
+# the next `## ` heading, so a table moved out of it stops being checked loudly rather than
+# quietly.
+_SHARED_FLAGS_SECTION = re.compile(r"^## Shared flags\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+_TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$", re.MULTILINE)
+
+
+def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
+    # Fix round 1, item 4. DC4's premise is that no sentence is spelled by hand, and the
+    # section this task added spelled all nine of them a second time in a document nothing
+    # checked — re-creating, one file over, exactly the drift the task exists to remove. Held
+    # row by row to `keelline.command`'s constants, the same way the README's Commands block is
+    # held to the real parser above.
+    #
+    # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
+    from keelline.command import (
+        DRY_RUN_HELP,
+        HOME_HELP,
+        INSTANCE_DIR_HELP,
+        MACHINE_HELP,
+        OVERLAY_ROOT_HELP,
+        ROOT_HELP,
+        SETUP_MACHINE_HELP,
+        SETUP_ROOT_HELP,
+        STORE_HELP,
+    )
+
+    expected = {
+        "`--root`": ROOT_HELP,
+        "`--machine`": MACHINE_HELP,
+        "`--store`": STORE_HELP,
+        "`--dry-run`": DRY_RUN_HELP,
+        "`--home`": HOME_HELP,
+        "`keelline overlay create --root`": INSTANCE_DIR_HELP,
+        "`keelline overlay init --root`, `keelline overlay upgrade --root`": OVERLAY_ROOT_HELP,
+        "`keelline setup --root`": SETUP_ROOT_HELP,
+        "`keelline setup --machine`": SETUP_MACHINE_HELP,
+    }
+    section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `## Shared flags` section"
+    rows = dict(_TABLE_ROW.findall(section.group(1)))
+    # The walk's own floor, before anything is compared: a regex that matched nothing would
+    # make every comparison below vacuously true, and a section that lost a table would look
+    # exactly like one that never had it.
+    assert len(rows) == len(expected), rows
+    assert rows == expected, {
+        flag: (rows.get(flag), sentence)
+        for flag, sentence in expected.items()
+        if rows.get(flag) != sentence
+    }

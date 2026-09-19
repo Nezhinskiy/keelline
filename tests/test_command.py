@@ -99,8 +99,11 @@ def _flags() -> list[tuple[str, str | None, str, str | None]]:
 
 def test_every_shared_flag_carries_the_one_help_string_or_a_named_exception() -> None:
     # D3 (DC4): `--root` and `--machine` were spelled by hand in three parsers and drifted from
-    # `common_flags`' sentence; `--dry-run` and `--home` each had two sentences in two areas.
-    # One constant per flag in `command.py`, and this walk holds every occurrence to it.
+    # `common_flags`' sentence, and `--home` had two sentences in two areas, one saying "read"
+    # and the other "write". `--dry-run` and `--store` were each spelled once and are here for
+    # the property rather than for a defect: this walk is what stops the second spelling from
+    # ever being written. One constant per flag in `command.py`, and this holds every
+    # occurrence to it.
     #
     # The floor is the walk's own non-emptiness, asserted before anything is filtered out of it:
     # a `_flags()` that found nothing would make the comparison below vacuously true. Measured

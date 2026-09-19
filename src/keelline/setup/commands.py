@@ -117,7 +117,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         yes=args.yes,
         overlay=args.overlay,
         project_root=Path(args.root).resolve(),
-        settings=Path(args.settings) if args.settings else None,
+        settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {
         "machine_written": report.machine_written,

@@ -169,3 +169,53 @@ def test_settings_reaches_setup_as_a_path_and_not_as_the_string_argparse_read(
     )
     assert code == 0
     assert seen["settings"] == settings
+
+
+def test_a_tilde_in_settings_is_expanded_the_way_home_and_machine_already_are(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 1, item 3. `--home` and `--machine` are both `expanduser`'d in `run_setup` and
+    # `--settings` was not, while the README row this flag ships advertises
+    # `--settings ~/dotfiles/claude/settings.json`. From a shell that works because the shell
+    # expands it; from an agent harness passing argv as a list -- the harness this project is
+    # written for -- `Path("~/dotfiles/claude/settings.json").parent` is the *relative* path
+    # `~/dotfiles/claude`, so the run either creates a literal `~` directory under the cwd or
+    # dies on the missing one.
+    #
+    # Mutation (declared): drop the `.expanduser()` -> the recorded keyword is the unexpanded
+    # `Path("~/...")` and this reddens naming both.
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    seen: dict[str, object] = {}
+
+    def fake_setup(preset: str, **kwargs: object) -> SetupReport:
+        seen.update(kwargs)
+        return SetupReport(
+            machine_written=True,
+            plugins_installed=(),
+            deny_written=True,
+            cli_on_path=True,
+            overlay=None,
+            notes=(),
+        )
+
+    monkeypatch.setattr("keelline.setup.run.setup", fake_setup)
+    code = invoke(
+        [
+            "setup",
+            "--preset",
+            "recommended",
+            "--home",
+            str(home),
+            "--machine",
+            str(tmp_path / "config.toml"),
+            "--settings",
+            "~/dotfiles/claude/settings.json",
+            "--root",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    assert seen["settings"] == home / "dotfiles" / "claude" / "settings.json"
+    assert "~" not in str(seen["settings"])

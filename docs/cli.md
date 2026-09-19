@@ -971,8 +971,10 @@ called the result green, would be worse than one that says it could not vouch fo
 
 ## Shared flags
 
-Five flags mean the same thing wherever they appear, and each has exactly one sentence, held to
-every parser that registers it by a walk in `tests/test_command.py`:
+Five flags mean the same thing wherever they appear, and each has exactly one sentence. Both
+tables below are held to `keelline.command`'s own constants, row by row, by
+`tests/test_documents.py` — so a sentence cannot be spelled by hand here any more than it can be
+in a parser, which is the whole point of the rule.
 
 | Flag | What it means |
 |---|---|
@@ -982,16 +984,16 @@ every parser that registers it by a walk in `tests/test_command.py`:
 | `--dry-run` | report what would change and write nothing |
 | `--home` | the home directory to read and write under (default: the real one) |
 
-Four commands mean something else by a shared name, and each is a named exception rather than a
-sentence that drifted:
+Four commands mean something else by a shared name. Each is a **named exception** — a decision
+that the flag means something else, not a sentence that drifted — and each has its own constant
+beside the five above:
 
-- `keelline overlay create --root` — the directory the instance is created **in**, not a project
-  root.
-- `keelline overlay init --root` and `keelline overlay upgrade --root` — the overlay root.
-- `keelline setup --root` — the repository `--git-hooks` installs into, and the project root
-  `--overlay` must not be recorded inside of.
-- `keelline setup --machine` — the machine configuration file to **write**, defaulting to
-  `~/.config/keelline/config.toml`; every other `--machine` reads one.
+| Command and flag | What it means there |
+|---|---|
+| `keelline overlay create --root` | directory to create it in (default: current directory) |
+| `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
+| `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
+| `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
 
 ---
 

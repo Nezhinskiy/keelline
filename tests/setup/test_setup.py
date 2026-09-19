@@ -1027,7 +1027,7 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
     # as it was; the dotfiles file gains the deny rules; nothing new appears under `home`.
     #
     # Mutation (declared): the `root, relative = …` line -> `(home, USER_SETTINGS)`
-    # unconditionally -> the write is refused at the link, and the dotfiles assertion reddens.
+    # unconditionally. What it actually does is recorded beside the assertion below.
     home = tmp_path / "home"
     dotfiles = tmp_path / "dotfiles" / "claude"
     dotfiles.mkdir(parents=True)
@@ -1055,3 +1055,64 @@ def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home
     deny = written.get("permissions", {}).get("deny", [])
     assert "Read(.env*)" in deny, f"the file --settings named was not written: {written}"
     assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
+
+
+def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # Fix round 1, item 2. `_write_user_settings` caught only `UnsafePath`, and `write_within`
+    # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root
+    # that is not there raises a bare `FileNotFoundError`, which left the library and reached
+    # `cli.run`'s final handler as `keelline: internal error`, exit 2, no remedy. A typo in
+    # `--settings`' directory component is the ordinary way to get there.
+    #
+    # Mutation (declared): the `except OSError` arm -> `except UnsafePath` (a second, dead
+    # copy) -> the `OSError` escapes again and this reddens on `Refusal` not being raised.
+    home = tmp_path / "home"
+    missing = tmp_path / "not-there" / "settings.json"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "machine.toml",
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=missing,
+        )
+    message = str(refused.value)
+    assert str(missing) in message
+    assert "FileNotFoundError" in message
+    assert "has to exist and be a real directory" in message
+
+
+def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    # The other half of item 2, and the layout `--settings` is advertised for one door over:
+    # `--settings ~/.claude/settings.json` where `~/.claude` is itself the stow link. The walk
+    # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare
+    # `OSError` rather than as `UnsafePath`, for the same reason as above.
+    home = tmp_path / "home"
+    real = tmp_path / "dotfiles" / "claude"
+    real.mkdir(parents=True)
+    linked = tmp_path / "linked-claude"
+    linked.symlink_to(real, target_is_directory=True)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "machine.toml",
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=linked / "settings.json",
+        )
+    message = str(refused.value)
+    assert str(linked / "settings.json") in message
+    assert "has to exist and be a real directory" in message
+    # The file the link leads to is untouched: a refusal that had already written would be the
+    # defect this one replaces, one step later.
+    assert not (real / "settings.json").exists()
