@@ -4461,3 +4461,93 @@ after = """
             if (ROOT / n).is_file() and n.split("/")[0] not in dropped
         )"""
 reddens = ["tests/test_neutral.py::test_the_gate_reads_the_whole_tree"]
+
+# The snapshot helper's two unheld claims. Its own guard file built an empty working tree in
+# both tests, so `assert before` was satisfied by `.git/config` alone and the ordinary walk was
+# untested where it is defined — measured, the walk deleted outright: 2 passed. And no consumer
+# anywhere plants a same-length content change, so the helper's content capture was held by
+# nothing: `read_bytes()` replaced by the file's SIZE left `tests/test_snapshot.py`,
+# `tests/test_install_path.py` and all of `tests/attach/` at 113 passed. A `detach` that
+# rewrote a settings file in place was invisible to every one of them.
+[[mutation]]
+name = "the snapshot walks the ordinary tree and finds nothing in it"
+file = "tests/snapshot.py"
+before = "    for dirpath, dirnames, filenames in os.walk(root):"
+after = "    for dirpath, dirnames, filenames in ():"
+reddens = [
+  "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
+]
+
+[[mutation]]
+name = "the snapshot records each file's size instead of its bytes"
+file = "tests/snapshot.py"
+before = "                files[str(path.relative_to(root))] = path.read_bytes()"
+after = "                files[str(path.relative_to(root))] = str(path.stat().st_size).encode()"
+reddens = [
+  "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
+]
+
+# The decode-containment case matched on the COMMAND NAME, which the pre-existing generic arm
+# emits too: with the merge-base arm's `raise` replaced by a fall-through, `match="merge-base"`
+# was satisfied by *"git could not be run, so `merge-base HEAD main` never executed"* — the
+# exact misdiagnosis `test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code`
+# exists to forbid. Measured: 16 passed, two tests contradicting each other, both green. The
+# case now matches the clause only this arm produces.
+[[mutation]]
+name = "the undecodable merge-base falls through to the unlaunchable-git sentence"
+file = "src/keelline/guards/attribute.py"
+before = """
+        raise Failure(
+            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
+            f"is no merge-base to compare against"
+        ) from None"""
+after = '        code, merge_base = -1, ""'
+reddens = [
+  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
+]
+
+# Three of the D5 artifact gate's four claims were unheld, each removable with the module's
+# five tests still passing. The executable case compared `check_sdist`'s output against a list
+# recomputed from the same tuple the fixture builds the archive from; `_sdist`'s `without=`
+# parameter was passed by nothing; and `main`'s `dist` arm — the one CI runs — was reached by
+# no test at all, so both CI steps would have reported success while printing findings.
+[[mutation]]
+name = "the sdist executable claim covers no file"
+file = "scripts/check_artifacts.py"
+before = 'SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/keelline")'
+after = "SDIST_EXECUTABLE = ()"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the sdist stops reporting a member it does not carry"
+file = "scripts/check_artifacts.py"
+before = '    findings = [f"sdist: missing {name}" for name in SDIST_MUST if name not in members]'
+after = "    findings: list[str] = []"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_a_member_missing_from_the_sdist_is_named",
+]
+
+[[mutation]]
+name = "the artifact checker reports success whatever it found"
+file = "scripts/check_artifacts.py"
+before = "    return 1 if findings else 0"
+after = "    return 0"
+reddens = [
+  "tests/scripts/test_check_artifacts.py::test_the_dist_arm_reports_a_finding_and_is_clean_when_there_is_none",
+]
+
+# The neutrality gate's only diagnostic was a BYTE offset and `CONTRIBUTING.md` told the
+# contributor to slice CHARACTERS at it. Every fixture in the offset case was pure ASCII, so
+# the one property it names was asserted only on the input class where it cannot fail. On an
+# ordinary line in this repository's house style — two em dashes, three bytes each — the gate
+# said `at 53` for a token at character 49, and following the instruction gave 'nstone her'.
+[[mutation]]
+name = "the neutrality gate reports a byte offset into a file of characters"
+file = "tests/test_neutral.py"
+before = "            f\"token {digest} at {len(raw[: first[digest]].decode('utf-8', 'ignore'))}\""
+after = '            f"token {digest} at {first[digest]}"'
+reddens = [
+  "tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_first_window",
+]

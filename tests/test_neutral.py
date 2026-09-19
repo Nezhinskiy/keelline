@@ -154,9 +154,11 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
     a twelve-hex digest naming neither the offset nor the window, against a table they cannot
     read by construction. Two entries are four characters long, which no one can brute-force by
     eye. The offset leaks nothing the tree did not already contain: the contributor reads the
-    characters off their own file, which is the file they wrote. `at <offset>` is a byte offset
-    into `text.lower().encode("utf-8")`, and the entry's own stored length is the window's — say
-    both, so the report is actionable without the table being readable.
+    characters off their own file, which is the file they wrote. `at <offset>` is a CHARACTER
+    offset into `text.lower()` — the scan runs over bytes and the report is converted back,
+    because `CONTRIBUTING.md` tells the reader to slice characters at it and this repository's
+    house style is em dashes, three bytes each. The entry's own stored length is the window's:
+    say both, so the report is actionable without the table being readable.
 
     The shape arms keep their bare names. A shape is a regex a reader can look up in `SHAPES`
     two screens up, so an offset would be noise; the digests are the half nothing in the
@@ -174,7 +176,18 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
             digest = _digest(raw[start : start + width])
             if digest in wanted and digest not in first:
                 first[digest] = start
-        found.extend(f"token {digest} at {first[digest]}" for digest in sorted(first))
+        # Reported as a CHARACTER offset, not as the byte offset the scan works in. The two
+        # differ on every line in this repository's house style — an em dash is three bytes —
+        # and `CONTRIBUTING.md` tells a contributor to slice the entry's own length *in
+        # characters* from that offset. Measured before this line existed: on
+        # "the gate — the one that walks the tree — refuses quernstone here" the gate said
+        # `at 53` where the token begins at character 49, and following the instruction gave
+        # 'nstone her'. The prefix always ends on a character boundary, because every stored
+        # token is ASCII and so every matching window begins at an ASCII byte.
+        found.extend(
+            f"token {digest} at {len(raw[: first[digest]].decode('utf-8', 'ignore'))}"
+            for digest in sorted(first)
+        )
     lowered = text.lower()
     blanked = _URL.sub(" ", lowered)
     found.extend(
@@ -430,9 +443,21 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
     text = "a quernstone and another quernstone"
     assert offending(text, planted) == [f"token {digest_of(probe)} at 2"]
     assert text[2 : 2 + len(probe)] == probe, "the offset does not index the token it names"
-    # And the offset is into the LOWER-CASED bytes, which for an ASCII token is the same index
+    # And the offset is into the LOWER-CASED text, which for an ASCII token is the same index
     # in the original — the equivalence the window scan itself rests on.
     assert offending(text.upper(), planted) == [f"token {digest_of(probe)} at 2"]
+    # **Non-ASCII before the token, which is the one input class where the property this test
+    # names can fail and where every fixture above cannot.** The scan runs over bytes, an em
+    # dash is three of them, and this repository's house style puts two on an ordinary line.
+    # Reported as a byte offset the line below said `at 53` for a token at character 49, so a
+    # contributor following `CONTRIBUTING.md` sliced ten characters and read 'nstone her'.
+    #
+    # Mutation (declared, "the neutrality gate reports a byte offset into a file of
+    # characters"): the conversion is dropped -> this reddens on 53 != 49.
+    housed = "the gate — the one that walks the tree — refuses quernstone here"
+    where = housed.index(probe)
+    assert offending(housed, planted) == [f"token {digest_of(probe)} at {where}"]
+    assert housed[where : where + len(probe)] == probe, "the offset does not index the token"
     # A shape hit keeps its bare name: there is no window to point at, and the arm is readable
     # in `SHAPES`.
     assert offending("fixed in 1b279648") == ["bare commit id"]

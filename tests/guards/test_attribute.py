@@ -295,7 +295,13 @@ def test_a_listing_this_process_cannot_decode_skips_the_comparison(
 @needs_git
 @pytest.mark.parametrize(
     ("diverted", "names"),
-    [("merge-base", "merge-base"), ("archive", "git archive")],
+    [
+        (
+            "merge-base",
+            "merge-base HEAD main` printed output this process cannot decode",
+        ),
+        ("archive", "printed output this process cannot decode; nothing was extracted"),
+    ],
     ids=["merge-base", "archive"],
 )
 def test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback(
@@ -309,8 +315,16 @@ def test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback(
     # which is the traceback the constraints forbid.
     #
     # A `Failure` and not the listing's skip, because neither call has a weaker answer: there
-    # is no verdict without a merge-base, and nothing was extracted without an archive. What is
-    # asserted is the sentence naming the command, not merely that something was raised.
+    # is no verdict without a merge-base, and nothing was extracted without an archive.
+    #
+    # **What is asserted is the clause only this arm can produce, and not the command name.**
+    # Both commands already have a generic failure sentence carrying their own name, so
+    # `match="merge-base"` was satisfied by the fall-through as well: measured, with the
+    # merge-base arm's `raise` replaced by `code, merge_base = -1, ""`, this module was 16
+    # green while the user was being told *"git could not be run, so `merge-base HEAD main`
+    # never executed"* — the exact misdiagnosis the case below at
+    # `test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code` forbids. Two tests
+    # contradicting each other's intent, both green.
     #
     # Mutations (declared, one per arm): each `except UnicodeDecodeError` is narrowed to
     # another type -> the error escapes `attribute` and that arm's case reddens.

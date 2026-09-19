@@ -151,11 +151,14 @@ uv run pytest "tests/test_neutral.py::test_no_tracked_file_carries_a_project_ide
 The second form is how you ask about one file: the walk is parametrised and the case id is the
 file's own path from the repository root.
 
-The number after `at` is the byte offset of the first matching window in the lower-cased file,
-and the entry's own length is what you read from there: slice that many characters out of your
-file at that offset and you are looking at the string the gate refused. Two entries are four
-characters long, which is why the offset is printed at all — a four-character window is not
-something a contributor can guess. Rewrite the line; do not add an entry to the exemption.
+The number after `at` is the character offset of the first matching window in the lower-cased
+file, and the entry's own length is what you read from there: slice that many characters out of
+your file at that offset and you are looking at the string the gate refused. Characters and not
+bytes, because the sentence before this one is the instruction and an em dash is three bytes:
+the gate used to report the byte offset, and on a line in this repository's own house style the
+two differed by four. Two entries are four characters long, which is why the offset is printed
+at all — a four-character window is not something a contributor can guess. Rewrite the line;
+do not add an entry to the exemption.
 
 A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
