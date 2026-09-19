@@ -593,8 +593,12 @@ def test_test_attribute_refuses_a_base_shaped_like_an_option(
     # Exit 2, the third code the CLI row promises: `--base` reaches `git merge-base` as an
     # argument, so a `-`-shaped value is refused above the first subprocess rather than
     # becoming an option to it (§3). Reddened by deleting the `base.startswith("-")` raise in
-    # `attribute`; measured — the command then exits 1 with git's own complaint, so the
-    # assertion is on the refusal's exit code and its word, not merely on "not zero".
+    # `attribute`; measured — the command then exits 1 with git's own complaint.
+    #
+    # Fix round 1, item 4. The assertion was `== 2` plus the word "refused:", which ANY refusal
+    # on this path satisfies — `_root_and_config`'s missing-configuration refusal reaches the
+    # same two lines, and only the hand-measured mutation ruled that reading out. The refusal's
+    # own sentence is matched instead, so the test names the arm it is about.
     root = repo(tmp_path)
     argv = [
         "test",
@@ -608,4 +612,4 @@ def test_test_attribute_refuses_a_base_shaped_like_an_option(
         str(tmp_path / "m.toml"),
     ]
     assert invoke(argv) == 2
-    assert "refused:" in capsys.readouterr().err
+    assert "--base must name a ref" in capsys.readouterr().err
