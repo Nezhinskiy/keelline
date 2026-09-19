@@ -9,9 +9,11 @@ message about the fixture rather than about Keelline.
 from __future__ import annotations
 
 import io
+import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -160,62 +162,82 @@ needs_workflow = pytest.mark.skipif(
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
-def run_blocks(workflow: Path) -> list[str]:
-    """Everything a `run:` key introduces, as text: every shape YAML gives it.
+# `${{ … }}` is YAML plain text and not flow syntax, so it is removed before a line is asked
+# whether it carries a brace. Non-greedy, because two expressions on one line are two.
+_EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
 
-    Four of them, and the reader was wrong about three before it was right about them. A `run:`
-    takes an inline one-liner, a block scalar (`|`, `>`, and their chomping variants), or an
-    indented plain scalar — a body on the following lines with no marker at all; and the key
-    itself may carry the list dash of a step that has no `name`. The fourth `run:` in a workflow
-    is not a script: `defaults: run:` is a mapping of `shell` and `working-directory`.
 
-    **Everything a `run:` introduces is collected, the mapping included, and the caller scans
-    all of it.** The earlier reader skipped the mapping to keep it out of the count, which was
-    right about the count and wrong about the scan — and left the indented plain scalar skipped
-    with it, by the same `if not rest`. Collecting both closes that, keeps the count honest
-    (nothing is counted that is not scanned, which was the whole of that objection), and needs
-    no rule for telling a mapping from a scalar — a rule whose failure mode would be a script
-    silently classified as settings, which is the hole all over again. An expression in a
-    `shell:` value is worth seeing anyway.
+def _scan(workflow: Path) -> Iterator[tuple[str, str]]:
+    """The file, cut into what a `run:` key owns and everything else.
+
+    **One rule, and it replaces four rounds of enumerating shapes: a `run:` key owns the rest of
+    its own line and every following line indented past the KEY's column.** That is what YAML
+    indentation means, and it is true of an inline one-liner, a block scalar, an indented plain
+    scalar, a quoted scalar that wraps, and a plain scalar that continues onto the next line —
+    without this function knowing which of those it is looking at. Enumerating them is what was
+    wrong four times: a reader that knows five shapes is a reader that is blind to the sixth,
+    and it reports clean while being so.
+
+    The key's column and not the line's, because a step whose first key is `run` carries the
+    list dash on the same line (the ordinary spelling for a step with no `name`), and measuring
+    at the dash would make the step's own sibling keys part of its script — `env:` among them,
+    which is exactly where a `${{ }}` belongs.
+
+    `defaults: run:` is a mapping of `shell` and `working-directory` rather than a script, and
+    it is **collected and scanned like everything else, on purpose**. Telling a mapping from a
+    script needs a classifier, and a classifier fails by reading a script as settings, which is
+    the same hole wearing the name of a feature. The consequence is stated rather than
+    exempted: `defaults: run: working-directory: ${{ inputs.path }}` is standard, correct
+    Actions and is not an injection, and the guard over these blocks will fail on it. That is a
+    decision for whoever first needs it to take deliberately, with a red test in front of them,
+    rather than a hole dug in advance — and it is the only false positive this rule has.
+
+    What it yields: `("run", body)` for each `run:` key, and `("line", raw)` for every line
+    outside one. The second stream exists so the flow-mapping refusal below can ask its question
+    without a `run:` body's own braces answering it.
     """
     lines = workflow.read_text(encoding="utf-8").splitlines()
-    found: list[str] = []
     index = 0
     while index < len(lines):
         line = lines[index]
         stripped = line.strip()
         index += 1
-        # `- run: …` as well as `run: …`: a step whose first key is `run` carries the list dash
-        # on the same line, which is the ordinary spelling for a step with no `name`. No file in
-        # this tree uses it today — the same reason the fold marker went unnoticed — and a
-        # reader that cannot see it would report nothing for a whole workflow written that way.
         if stripped.startswith("- "):
             stripped = stripped[2:].lstrip()
         if not stripped.startswith("run:"):
+            yield "line", line
             continue
-        rest = stripped[len("run:") :].strip()
-        # `>` and `>-` as well as `|`: a folded scalar is a script too, and sending one down the
-        # one-liner path scanned the fold marker and let the whole body past. Nothing in the tree
-        # uses `>` today, which is exactly why nobody would have noticed — and the body would
-        # have gone on counting toward the floor while escaping the check.
-        if rest and not rest.startswith(("|", ">")):
-            found.append(rest)
-            continue
-        # The KEY's column and not the line's: after the dash strip above, a `- run: |` measured
-        # at the dash swallows the step's sibling keys into the block — and `env:` is exactly
-        # where a `${{ }}` is supposed to live, so a no-name step with a block script would have
-        # reported its own `env:` as a finding. `line.index` is the key, because `stripped`
-        # already begins with it.
         indent = line.index("run:")
-        block: list[str] = []
+        body = [rest] if (rest := stripped[len("run:") :].strip()) else []
         while index < len(lines):
             following = lines[index]
             if following.strip() and len(following) - len(following.lstrip()) <= indent:
                 break
-            block.append(following)
+            body.append(following)
             index += 1
-        found.append("\n".join(block))
-    return found
+        yield "run", "\n".join(body)
+
+
+def run_blocks(workflow: Path) -> list[str]:
+    """Everything every `run:` key in the file owns, one string each."""
+    return [body for kind, body in _scan(workflow) if kind == "run"]
+
+
+def flow_mapping_lines(workflow: Path) -> list[str]:
+    """Every line outside a `run:` body that spells a YAML flow mapping.
+
+    The one shape the indentation rule above cannot reach: `- {run: "…"}` puts the whole step on
+    one line inside braces, and there is no following line to own. It is **refused rather than
+    parsed** — writing a flow-mapping parser is the enumeration again, one level down — so the
+    day a workflow spells a step that way, the test says so loudly instead of silently not
+    seeing it. Lines inside a `run:` body are not asked: a heredoc's own Python carries braces,
+    and they are already scanned as the script they are.
+    """
+    return [
+        line
+        for kind, line in _scan(workflow)
+        if kind == "line" and "{" in _EXPRESSION.sub("", line)
+    ]
 
 
 @needs_workflow
@@ -224,23 +246,136 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
-    # `env:` instead. The walk asserts it read something first, and something from each file.
+    # `env:` instead.
+    #
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
     # would never be scanned while the `>=` assertion below went on passing.
     workflows = sorted(WORKFLOWS.glob("*.y*ml"))
     assert {p.name for p in workflows} >= {"ci.yml", "check.yml", "smoke.yml"}, workflows
-    read = 0
+    read: list[str] = []
     for workflow in workflows:
         blocks = run_blocks(workflow)
         # Per file and not for all of them: `smoke-release.yml` is two reusable-workflow calls
         # and legitimately runs no shell at all, so the floor is on the three that do — a
         # reader that silently stopped finding blocks would otherwise pass on an empty walk.
+        # Measured: check.yml 9, ci.yml 11, smoke.yml 6.
         if workflow.name in {"ci.yml", "check.yml", "smoke.yml"}:
-            assert len(blocks) >= 4, (workflow.name, len(blocks))
-        read += len(blocks)
+            assert len(blocks) >= 5, (workflow.name, len(blocks))
+        read.extend(blocks)
         for block in blocks:
             assert "${{" not in block, (workflow.name, block)
-    assert read >= 20, read
+        # Refused and not parsed: a step spelled as a flow mapping — `- {run: "…"}` — has no
+        # following line for the indentation rule to own, and writing a parser for it is the
+        # enumeration again one level down. The day a workflow spells one, this says so.
+        assert flow_mapping_lines(workflow) == [], (workflow.name, flow_mapping_lines(workflow))
+    # Two floors and not one, for the reason the whole-tree gate needed two: a reader that
+    # collects the right NUMBER of bodies and truncates each of them to its first line passes a
+    # count and fails a size. Measured when written: 30 bodies, 7,761 characters.
+    assert len(read) >= 25, len(read)
+    assert sum(len(block) for block in read) >= 4000, sum(len(block) for block in read)
+
+
+def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
+    # The rule, stated as a case rather than as a list of shapes. Eight bodies in eight
+    # spellings, each carrying an expression, so a body the reader truncates or cannot see is a
+    # body the guard above reports clean. Five of these eight were holes in successive rounds;
+    # the last two — a plain scalar that continues onto the next line and a quoted one that
+    # wraps — are here because the rule covers them without being told to, which is the whole
+    # of why it replaced the list. Mutations (declared): drop the continuation
+    # loop, drop the value on the key's own line, drop the dash strip, measure the indent at
+    # the line instead of the key.
+    workflow = tmp_path / "synthetic.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    defaults:\n"
+        "      run:\n"
+        "        shell: bash ${{ inputs.shell }}\n"
+        "    steps:\n"
+        "      - run: >\n"
+        "          echo folded ${{ github.ref }}\n"
+        "      - run: |\n"
+        "          echo dashed-block ${{ github.actor }}\n"
+        "        env:\n"
+        "          SAFE: ${{ github.sha }}\n"
+        "      - run: echo inline ${{ github.job }}\n"
+        "      - name: with a name of its own\n"
+        "        run: echo named ${{ github.workflow }}\n"
+        "      - name: an indented plain scalar, which carries no marker at all\n"
+        "        run:\n"
+        "          echo plain ${{ github.run_id }}\n"
+        "      - run: echo continued\n"
+        "          && echo ${{ github.event.pull_request.title }}\n"
+        '      - run: "echo quoted\n'
+        '          && echo ${{ github.head_ref }}"\n',
+        encoding="utf-8",
+    )
+    blocks = run_blocks(workflow)
+    # Eight: the seven scripts and the `defaults: run:` mapping. Every one of them was
+    # collected by the same rule and every one of them is scanned, so the count below and the
+    # scan above are over the same set — and no classifier has to tell a mapping from a script.
+    assert len(blocks) == 8, blocks
+    for wanted in ("folded", "dashed-block", "inline", "named", "plain", "continued", "quoted"):
+        assert any(wanted in block for block in blocks), (wanted, blocks)
+    # Every one of them carries its expression into the scan, which is the property the guard
+    # rests on: a body collected but truncated at its first line reports clean. The two
+    # continuation shapes are exactly that case — the value begins on the key's line and the
+    # expression is on the next one.
+    for block in blocks:
+        assert "${{" in block, block
+    continued = next(block for block in blocks if "continued" in block)
+    assert "pull_request.title" in continued, continued
+    quoted = next(block for block in blocks if "quoted" in block)
+    assert "head_ref" in quoted, quoted
+    # And the dashed block stops at its own `env:` rather than swallowing it — the direction
+    # that would have produced a spurious finding on `env:`, which is where an expression
+    # belongs.
+    dashed = next(block for block in blocks if "dashed-block" in block)
+    assert "SAFE" not in dashed, dashed
+    assert flow_mapping_lines(workflow) == []
+
+
+def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed(tmp_path: Path) -> None:
+    # The one shape the indentation rule cannot reach, because there is no following line to
+    # own. It is reported, not read: a flow-mapping parser would be the enumeration again one
+    # level down, and the failure mode of the thing being replaced is a shape nobody thought
+    # of. Mutation (declared): stop reporting it and the reader sees a workflow with one step
+    # in it, silently.
+    workflow = tmp_path / "flow.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    steps:\n"
+        '      - {run: "echo flow ${{ github.actor }}"}\n'
+        "      - run: echo ordinary\n",
+        encoding="utf-8",
+    )
+    # The step in braces is not a `run:` body the reader can see...
+    assert run_blocks(workflow) == ["echo ordinary"], run_blocks(workflow)
+    # ...so it is named here instead, with the expression stripped before the question is asked
+    # so that `${{ }}` — which is plain text, not flow syntax — cannot answer it.
+    flow = flow_mapping_lines(workflow)
+    assert len(flow) == 1, flow
+    assert "run" in flow[0] and "{" in flow[0], flow
+
+
+def test_an_expression_is_not_mistaken_for_flow_syntax(tmp_path: Path) -> None:
+    # The negative of the test above, and the reason `_EXPRESSION` exists: every `${{ }}` in
+    # these files carries braces, and a brace check that counted them would report every
+    # workflow in the tree as a flow mapping — a guard that cries wolf on every line is a guard
+    # somebody deletes.
+    workflow = tmp_path / "ordinary.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    if: ${{ github.event_name == 'push' }}\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "        with:\n"
+        "          ref: ${{ github.sha }} and ${{ github.ref }}\n",
+        encoding="utf-8",
+    )
+    assert flow_mapping_lines(workflow) == []
 
 
 def step_script(workflow: Path, step_name: str) -> str:
@@ -468,53 +603,6 @@ def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_fr
     assert code == 0, printed
     assert written["root"] == "project/sub/project", written
     assert "sub/project/keelline.toml is not on origin/main" in printed, printed
-
-
-def test_the_reader_sees_every_shape_a_run_key_takes(tmp_path: Path) -> None:
-    # Every shape YAML gives a `run:`, on a synthetic workflow rather than on the tree — the
-    # tree is exactly where none of them appears, which is why none of them was noticed. Each
-    # body carries an expression, so a shape the reader cannot see is a shape the scan above
-    # reports clean. Mutations (declared): narrow the reader back to `|` and the folded body
-    # walks through; drop the dash strip and three of these six vanish; measure the block's
-    # indent at the dash and the dashed step's own `env:` is swallowed into its script.
-    workflow = tmp_path / "synthetic.yml"
-    workflow.write_text(
-        "jobs:\n"
-        "  one:\n"
-        "    defaults:\n"
-        "      run:\n"
-        "        shell: bash ${{ inputs.shell }}\n"
-        "    steps:\n"
-        "      - run: >\n"
-        "          echo folded ${{ github.ref }}\n"
-        "      - run: |\n"
-        "          echo dashed-block ${{ github.actor }}\n"
-        "        env:\n"
-        "          SAFE: ${{ github.sha }}\n"
-        "      - run: echo inline ${{ github.job }}\n"
-        "      - name: with a name of its own\n"
-        "        run: echo named ${{ github.workflow }}\n"
-        "      - name: an indented plain scalar, which carries no marker at all\n"
-        "        run:\n"
-        "          echo plain ${{ github.run_id }}\n",
-        encoding="utf-8",
-    )
-    blocks = run_blocks(workflow)
-    # Six: the five scripts and the `defaults: run:` mapping, which is collected and scanned
-    # rather than skipped — nothing is counted that is not scanned, and no rule has to tell a
-    # mapping from a script.
-    assert len(blocks) == 6, blocks
-    for wanted in ("folded", "dashed-block", "inline", "named", "plain", "shell: bash"):
-        assert any(wanted in block for block in blocks), (wanted, blocks)
-    # Every one of them carries its expression into the scan, which is the property the guard
-    # above rests on: a shape collected but truncated is a shape that reports clean.
-    for block in blocks:
-        assert "${{" in block, block
-    # And the dashed block stops at its own `env:` rather than swallowing it — the direction
-    # that would have produced a spurious finding on `env:`, which is where an expression
-    # belongs.
-    dashed = next(block for block in blocks if "dashed-block" in block)
-    assert "SAFE" not in dashed, dashed
 
 
 # --- `check.yml`'s verdict step, run as the shell script it is --------------------------
