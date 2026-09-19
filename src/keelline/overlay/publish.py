@@ -22,6 +22,7 @@ becomes one. `gh` decides the protocol and carries the token; this module only n
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,6 +85,38 @@ def _gh(runner: Runner, argv: list[str], cwd: Path) -> Completed:
     return done
 
 
+def _git(runner: Runner, argv: list[str], cwd: Path) -> Completed:
+    """`_gh`'s twin for the `git` half, and it exists because the `git` half had no guard.
+
+    The four `git` calls in this module went through `runner.run` directly, and two of them —
+    `add -A` and `status --porcelain` — had their exit codes read by nothing. A `git` that is
+    absent, hung, blocked by an `index.lock` another process left, or failed by a
+    `core.hooksPath` pre-commit hook returns an empty `stdout`, so `changed` came out empty and
+    the publisher reported *"already carries this Keelline's template; nothing to push"* and
+    exited 0. Four different causes, one message, none of them named, and the operator told the
+    published template is current when nothing was examined and nothing was pushed.
+
+    `NOT_FOUND` and `TIMED_OUT` are the two the seam invents rather than `git` reporting, which
+    is why they get their own sentence: neither is an answer from `git` at all.
+    """
+    done = runner.run(["git", *argv], cwd)
+    if done.code in (NOT_FOUND, TIMED_OUT):
+        raise Failure(
+            f"`git {' '.join(argv[2:4])} …` could not be run ({_detail(done)}); this command "
+            f"needs git on PATH to publish"
+        )
+    return done
+
+
+# What `gh` says when the repository really is not there, in the two spellings it uses: the
+# GraphQL resolution failure for `repo view`, and the REST 404 for anything that falls through
+# to `gh api`. Matched on `gh`'s own stderr rather than on an exit code, because the exit code
+# is 1 for every failure this command can meet.
+_NOT_FOUND_REMOTELY = re.compile(
+    r"could not resolve to a repository|http 404|not found", re.IGNORECASE
+)
+
+
 def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
     """Ask GitHub what is there. A read, and the only outward-facing call the gate does not
     cover — because reporting what `--yes` would do requires knowing what exists."""
@@ -91,6 +124,21 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
         runner, ["repo", "view", slug, "--json", "isTemplate,visibility,defaultBranchRef"], cwd
     )
     if view.code != 0:
+        # **Not every non-zero answer is "it is not there."** `gh repo view` exits non-zero
+        # for a repository that is absent, and equally for an unauthenticated `gh`, a rate
+        # limit, a network failure and a repository the token cannot see. Reading all four as
+        # `exists=False` made the dry run offer to *create* a repository that exists and is
+        # private — the opposite of the truth, and precisely the case `_not_public` exists to
+        # refuse — after which `--yes` failed at `gh repo create` with GitHub's "name already
+        # exists", so the error the operator finally saw named the wrong cause.
+        #
+        # The distinguishing evidence is `gh`'s own not-found sentence. Anything else is a
+        # question this command could not ask, and the gate never reports on one of those.
+        if not _NOT_FOUND_REMOTELY.search(_detail(view)):
+            raise Failure(
+                f"`gh repo view {slug}` exited {view.code} ({_detail(view)}), so whether "
+                f"{slug} exists is not known; authenticate gh, or retry"
+            )
         return Existing(False, False, "", DEFAULT_BRANCH)
     try:
         document = json.loads(view.stdout or "{}")
@@ -241,20 +289,31 @@ def publish_template(
         if cloned.code != 0 or not clone.is_dir():
             raise Failure(f"`gh repo clone {slug}` exited {cloned.code} ({_detail(cloned)})")
         _replace_tree(clone, rendered, written)
-        runner.run(["git", "-C", str(clone), "add", "-A"], clone)
-        status = runner.run(["git", "-C", str(clone), "status", "--porcelain"], clone)
+        added = _git(runner, ["-C", str(clone), "add", "-A"], clone)
+        if added.code != 0:
+            raise Failure(f"`git add -A` in the clone exited {added.code} ({_detail(added)})")
+        status = _git(runner, ["-C", str(clone), "status", "--porcelain"], clone)
+        # Read before the emptiness of `stdout` is interpreted. An empty listing means "the
+        # published tree is already this Keelline's" only when the question was actually
+        # answered; a non-zero `git status` produces the same empty string and means nothing of
+        # the kind.
+        if status.code != 0:
+            raise Failure(
+                f"`git status` in the clone exited {status.code} ({_detail(status)}), so "
+                f"whether {slug} already carries this template is not known"
+            )
         changed = tuple(line[3:] for line in status.stdout.splitlines() if line.strip())
         if not changed:
             notes.append(f"{slug} already carries this Keelline's template; nothing to push")
             return Published(slug, (), False, tuple(notes))
         message = f"keelline overlay template {keelline.__version__}"
-        committed = runner.run(["git", "-C", str(clone), "commit", "-q", "-m", message], clone)
+        committed = _git(runner, ["-C", str(clone), "commit", "-q", "-m", message], clone)
         if committed.code != 0:
             raise Failure(f"committing the template exited {committed.code} ({_detail(committed)})")
         # `HEAD:refs/heads/<default>`: a freshly created repository has no branch to clone,
         # so a bare `push origin HEAD` would push whatever `init.defaultBranch` says.
-        pushed = runner.run(
-            ["git", "-C", str(clone), "push", "origin", f"HEAD:refs/heads/{default_branch}"], clone
+        pushed = _git(
+            runner, ["-C", str(clone), "push", "origin", f"HEAD:refs/heads/{default_branch}"], clone
         )
         if pushed.code != 0:
             raise Failure(f"`git push` to {slug} exited {pushed.code} ({_detail(pushed)})")

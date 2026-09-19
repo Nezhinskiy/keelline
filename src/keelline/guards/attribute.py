@@ -124,7 +124,17 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     if done.returncode != 0:
         raise Failure(f"extracting {ref} exited {done.returncode}")
     try:
-        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)
+        # `timeout=120`, matching the `git archive` twenty lines up, and for the same reason
+        # `gitenv` asks a caller to pass its own bound: the default is documented there as the
+        # cap for "a local, argument-free, read-only query … which neither touches the network
+        # nor grows with the repository", and `ls-tree -r` is the one call in this module whose
+        # cost IS the repository's size. On the five-second cap a large or slow-volume tree
+        # timed out, `git_run` returned `(-1, "")`, the `code == 0 and missing` test below went
+        # False, and the export-rule comparison was skipped with no note — so the verdict was
+        # then computed from a tree that really was missing files. The author had already
+        # judged this tree big enough to need more than the default when giving `git archive`
+        # its 120.
+        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
     # `-z` is what makes this reachable, so it arrived with the fix above: without it `ls-tree`
     # octal-escapes a non-ASCII name and the answer is always ASCII, and with it the bytes come
     # through raw. `git_run` runs with `text=True` and strict decoding while catching only

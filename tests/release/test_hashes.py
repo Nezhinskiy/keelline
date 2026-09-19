@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -101,6 +102,51 @@ def test_a_record_that_is_not_json_is_unreadable_rather_than_absent(tmp_path: Pa
         read_record(root)
     with pytest.raises(UnreadableRecord):
         drift(root)
+
+
+def test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error(
+    tmp_path: Path,
+) -> None:
+    """A truncated or half-copied record is exactly what this module's docstring is about.
+
+    The decoder guard caught `json.JSONDecodeError` alone, so non-UTF-8 bytes raised
+    `UnicodeDecodeError` past every caller. Measured before the fix, on a tree carrying the
+    three hashed files::
+
+        printf '{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n' > hooks/hashes.json
+
+    `keelline release hashes --check`, `keelline release check` and `doctor files` all printed
+    `keelline: internal error: UnicodeDecodeError: …` and exited **2** — the refusal code,
+    where a finding is 1 — and `doctor`'s `except UnreadableRecord` arm did not catch it.
+
+    Mutation (declared): the `UnicodeDecodeError` arm is removed -> both raises redden.
+    """
+    root = _plugin(tmp_path)
+    (root / RECORD).write_bytes(b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n')
+    with pytest.raises(UnreadableRecord, match="is not UTF-8 text"):
+        read_record(root)
+    with pytest.raises(UnreadableRecord):
+        drift(root)
+
+
+def test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning(
+    tmp_path: Path,
+) -> None:
+    # The other escape through the same `try`, and it took the other wrong turn: an
+    # `OSError` reached `doctor._guarded` as `warn — this check could not read something it
+    # needed`, when the record is present and the answer "present and unreadable" is red.
+    # Mutation (declared): the `OSError` arm is removed -> this reddens.
+    root = _plugin(tmp_path)
+    record = root / RECORD
+    record.write_text('{"format": 1, "files": {}}\n', encoding="utf-8")
+    record.chmod(0o000)
+    try:
+        if os.access(record, os.R_OK):  # pragma: no cover - a root-owned test run
+            pytest.skip("this process can read a mode-000 file")
+        with pytest.raises(UnreadableRecord, match="could not be read"):
+            read_record(root)
+    finally:
+        record.chmod(0o644)
 
 
 @pytest.mark.parametrize(

@@ -4688,3 +4688,101 @@ after = "because `tests/` is not a package and"
 reddens = [
   "tests/test_documents.py::test_no_module_claims_the_test_tree_cannot_share_a_helper",
 ]
+
+# §4.4. `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git`
+# was absent, hung or blocked: the `git` half of the module had no `_gh`-style guard, and an
+# empty `git status` stdout read as "already current".
+[[mutation]]
+name = "the git half of publish-template stops guarding the two sentinels"
+file = "src/keelline/overlay/publish.py"
+before = """
+    if done.code in (NOT_FOUND, TIMED_OUT):
+        raise Failure(
+            f"`git """
+after = """
+    if False:
+        raise Failure(
+            f"`git """
+reddens = [
+  "tests/overlay/test_publish.py::test_a_git_that_cannot_run_is_a_failure_and_not_a_report_that_nothing_changed",
+]
+
+# And the other half of the same reading: `git` runs, answers non-zero, and its empty stdout
+# is byte-identical to "nothing changed".
+[[mutation]]
+name = "publish-template reads an empty git status without reading its exit code"
+file = "src/keelline/overlay/publish.py"
+before = "        if status.code != 0:"
+after = "        if False:"
+reddens = [
+  "tests/overlay/test_publish.py::test_a_git_status_that_fails_is_never_read_as_an_unchanged_template",
+]
+
+# §4.4. Every non-zero `gh repo view` read as "the repository does not exist", so an
+# unauthenticated `gh` made the dry run offer to create a repository that exists and is
+# private — the case `_not_public` exists to refuse.
+[[mutation]]
+name = "any gh failure is read as a repository that is not there"
+file = "src/keelline/overlay/publish.py"
+before = "        if not _NOT_FOUND_REMOTELY.search(_detail(view)):"
+after = "        if False:"
+reddens = [
+  "tests/overlay/test_publish.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",
+]
+
+# §4.4. `release check --tag` derived the drift message with `tag.split("v", 1)[-1]`, so
+# `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
+[[mutation]]
+name = "the tag drift message invents a version by splitting on the letter v"
+file = "src/keelline/release/versions.py"
+before = """
+            workflow_tag, platform_tag = tag_for(canonical)
+            problems.append(
+                f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
+                f"{PYPROJECT} says {canonical!r}"
+            )"""
+after = """
+            named = tag.split("v", 1)[-1]
+            problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")"""
+reddens = [
+  "tests/release/test_versions.py::test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version",
+]
+
+# §4.4. A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every
+# caller and surfaced as `keelline: internal error`, exit 2 — through `doctor`, with the
+# remedy "report this, with the command you ran".
+[[mutation]]
+name = "a record that is not UTF-8 escapes UnreadableRecord again"
+file = "src/keelline/release/hashes.py"
+before = "    except UnicodeDecodeError as exc:"
+after = "    except ValueError as exc:  # unreachable: JSONDecodeError is caught above"
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error",
+]
+
+# The other escape through the same `try`: a record the process cannot read took the wrong
+# turn to `warn` rather than to the red "present and unreadable" arm.
+[[mutation]]
+name = "a record that cannot be read escapes UnreadableRecord again"
+file = "src/keelline/release/hashes.py"
+before = """
+    except OSError as exc:
+        raise UnreadableRecord"""
+after = """
+    except InterruptedError as exc:
+        raise UnreadableRecord"""
+reddens = [
+  "tests/release/test_hashes.py::test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning",
+]
+
+# §4.4. `git ls-tree -r` grows with the repository and ran on `gitenv`'s cap for queries that
+# do not; on timeout `git_run` answers `(-1, "")` and the export-rule comparison is skipped
+# with no note, so the verdict is computed from a truncated tree.
+[[mutation]]
+name = "the tree listing goes back on the argument-free timeout"
+file = "src/keelline/guards/attribute.py"
+before = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
+after = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
+reddens = [
+  "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
+]

@@ -185,6 +185,88 @@ def test_a_gh_that_cannot_run_is_a_failure_naming_it(tmp_path: Path) -> None:
         publish_template("owner", yes=True, runner=_NoGh())
 
 
+def test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent() -> None:
+    # `gh repo view` exits 1 for a repository that is not there, and equally for an
+    # unauthenticated `gh`, a rate limit, a network failure and a repository the token cannot
+    # see. All four read as `exists=False`, so the dry run against an account that already owns
+    # a PRIVATE `keelline-overlay-template` printed
+    # `would create owner/keelline-overlay-template, public, and mark it as a template` —
+    # the opposite of the truth, and exactly the case `_not_public` exists to refuse.
+    # Mutation (declared): the not-found test is dropped and every non-zero answer is absence
+    # again -> the "would create" note comes back.
+    class _LoggedOut(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[:3] == ["gh", "repo", "view"]:
+                self.calls.append((argv, cwd))
+                return Completed(1, "", "gh: To use GitHub CLI in a GitHub Actions workflow…")
+            return super().run(argv, cwd)
+
+    stub = _LoggedOut()
+    with pytest.raises(Failure, match="is not known") as raised:
+        publish_template("owner", yes=False, runner=stub)
+    assert "authenticate gh" in str(raised.value)
+    assert "would create" not in str(raised.value)
+
+
+def test_a_repository_gh_really_cannot_find_is_still_reported_as_absent() -> None:
+    # The other side of the same test, and the reason it is a pair: a guard that refused every
+    # non-zero answer would break the one case this command exists for, the first publish. The
+    # stub's not-found stderr is `gh`'s own sentence.
+    stub = _GitHub(exists=False)
+    result = publish_template("owner", yes=False, runner=stub)
+    assert any("would create" in note for note in result.notes), result.notes
+
+
+def test_a_git_that_cannot_run_is_a_failure_and_not_a_report_that_nothing_changed() -> None:
+    # The `gh` half had this guard and the `git` half did not. Measured before the fix, with
+    # every `git` argv answering `Completed(NOT_FOUND, "", …)` and `gh` answering normally:
+    #
+    #   pushed : False
+    #   changed: ()
+    #   note   : someowner/keelline-overlay-template already carries this Keelline's
+    #            template; nothing to push
+    #
+    # exit 0, and the operator told the published template is current when nothing was
+    # examined and nothing was pushed. The same output came from `git` timing out, from an
+    # `index.lock` another process left, and from a `core.hooksPath` hook failing `git add`.
+    # Mutation (declared): `_git` stops raising on the two sentinels -> the note comes back.
+    class _NoGit(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[0] == "git":
+                self.calls.append((argv, cwd))
+                return Completed(NOT_FOUND, "", "git could not be run: [Errno 2]")
+            return super().run(argv, cwd)
+
+    stub = _NoGit()
+    with pytest.raises(Failure, match="needs git on PATH") as raised:
+        publish_template("someowner", yes=True, runner=stub)
+    # The specific sentence, and not merely "a Failure": the whole defect is that a `git`
+    # nobody could run read as an answer, so a message that does not name `git` would be the
+    # same silence one level up.
+    assert "could not be run" in str(raised.value)
+    assert "nothing to push" not in str(raised.value)
+
+
+def test_a_git_status_that_fails_is_never_read_as_an_unchanged_template() -> None:
+    # The other half, and the one no sentinel covers: `git` runs and answers non-zero — a
+    # broken index, a repository `git status` refuses — with an empty stdout that is
+    # byte-identical to "nothing changed". `add -A` succeeds here, so this is squarely the
+    # emptiness-versus-exit-code reading and not the launch guard above.
+    # Mutation (declared): `status.code` stops being read -> "nothing to push" comes back.
+    class _BrokenStatus(_GitHub):
+        def run(self, argv: list[str], cwd: Path) -> Completed:
+            if argv[:2] == ["git", "-C"] and "status" in argv:
+                self.calls.append((argv, cwd))
+                return Completed(128, "", "fatal: not a git repository")
+            return super().run(argv, cwd)
+
+    stub = _BrokenStatus()
+    with pytest.raises(Failure, match="is not known") as raised:
+        publish_template("someowner", yes=True, runner=stub)
+    assert "exited 128" in str(raised.value)
+    assert not [a for a in _argv(stub) if "commit" in a or "push" in a]
+
+
 def test_a_dry_run_against_a_public_repository_that_is_not_a_template_says_it_would_mark_it(
     tmp_path: Path,
 ) -> None:

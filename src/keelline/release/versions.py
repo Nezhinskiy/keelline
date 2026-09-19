@@ -153,8 +153,20 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
     problems: list[str] = []
     if tag is not None:
         if tag not in tag_for(canonical):
-            named = tag.split("v", 1)[-1]
-            problems.append(f"tag {tag} names {named}; {PYPROJECT} says {canonical!r}")
+            # **Say what was checked, do not re-derive a version from the tag.** This used to
+            # be `tag.split("v", 1)[-1]` — a split on the first `v` anywhere in the string and
+            # not a parse — so `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3; pyproject.toml
+            # says '1.2.3'`, two identical strings asserted to disagree, and `--tag dev-v1.2.3`
+            # reported `names -v1.2.3`. The membership test above is exact and was always
+            # right; only the sentence was invented. Both slips are the ones `RELEASING.md`
+            # invites, because a human types this flag by hand right after a tool prints
+            # `keelline--vX.Y.Z`. The existing cases passed by accident: every tag they
+            # exercised began with `v` and carried no earlier one.
+            workflow_tag, platform_tag = tag_for(canonical)
+            problems.append(
+                f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
+                f"{PYPROJECT} says {canonical!r}"
+            )
         if pending_fragments(root):
             count = sum(
                 _is_fragment(e.name, fragment_types(root)) for e in (root / "changelog.d").iterdir()

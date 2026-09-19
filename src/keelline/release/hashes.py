@@ -60,10 +60,25 @@ def read_record(root: Path) -> dict[str, str] | None:
     path = root / RECORD
     if not path.is_file():
         return None
+    # **Three ways a present record is not readable, and all three are this class.** The guard
+    # used to catch `json.JSONDecodeError` alone, so a record carrying non-UTF-8 bytes — a
+    # truncated or half-copied file, which is exactly the threat this module's docstring names
+    # — raised `UnicodeDecodeError` past every caller. `release hashes --check` and
+    # `release check` turned it into `keelline: internal error`, **exit 2**, where a finding is
+    # 1; and `doctor._files` reached it through `_guarded`'s `except Exception`, which reports
+    # `this check could not run` with the remedy *"report this, with the command you ran"* —
+    # telling the owner to file a bug against Keelline for a corrupt file in their own install.
+    # A record the process cannot read (`PermissionError`) took the other wrong turn, to `warn`.
+    # Neither reached the `except UnreadableRecord` arm whose sentence is "present and
+    # unreadable", which is the arm this class exists to select.
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        document = json.loads(path.read_bytes())
     except json.JSONDecodeError as exc:
         raise UnreadableRecord(f"{RECORD} is not valid JSON: {exc}") from None
+    except UnicodeDecodeError as exc:
+        raise UnreadableRecord(f"{RECORD} is present and is not UTF-8 text: {exc}") from None
+    except OSError as exc:
+        raise UnreadableRecord(f"{RECORD} is present and could not be read: {exc}") from None
     files = document.get("files") if isinstance(document, dict) else None
     if (
         not isinstance(document, dict)

@@ -360,9 +360,46 @@ def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
     # `keelline--vX.Y.Z` — because either may be the one the run was created from.
     # Mutation (declared): accept any tag -> the first assertion reddens.
     root = _at(tmp_path, "1.2.3")
-    assert check(root, tag="v1.2.4") == ["tag v1.2.4 names 1.2.4; pyproject.toml says '1.2.3'"]
+    assert check(root, tag="v1.2.4") == [
+        "tag v1.2.4 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
     assert check(root, tag="v1.2.3") == []
     assert check(root, tag="keelline--v1.2.3") == []
+
+
+def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version(
+    tmp_path: Path,
+) -> None:
+    # The message used to be derived with `tag.split("v", 1)[-1]` — a split on the first `v`
+    # anywhere in the string, not a parse — so it named a version the tag does not carry.
+    # Measured on this repository before the fix:
+    #
+    #   --tag 0.1.0          -> tag 0.1.0 names 0.1.0; pyproject.toml says '0.1.0'
+    #   --tag keelline-v0.1.0 -> tag keelline-v0.1.0 names 0.1.0; …says '0.1.0'
+    #   --tag dev-v0.1.0     -> tag dev-v0.1.0 names -v0.1.0; …says '0.1.0'
+    #
+    # The first asserts that two identical strings disagree, which is the failure the comment
+    # above `check` was written to end. Both of the first two are the slips `RELEASING.md`
+    # invites: a human types this flag by hand right after a tool prints `keelline--vX.Y.Z`.
+    # The tags the older case exercised (`v1.2.4`, `v9.9.9`) all begin with `v` and carry no
+    # earlier one, so the split happened to be right and the tests passed for that reason.
+    #
+    # Mutation (declared): the derived `named` comes back -> all three assertions redden.
+    root = _at(tmp_path, "1.2.3")
+    # A bare version, which is the tag `git tag 1.2.3` makes and the one that read as agreeing
+    # with itself.
+    assert check(root, tag="1.2.3") == [
+        "tag 1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+    # One hyphen short of the platform's own tag.
+    assert check(root, tag="keelline-v1.2.3") == [
+        "tag keelline-v1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+    # And a prefix carrying an earlier `v`, where the split produced `-v1.2.3` — a string that
+    # is not a version at all.
+    assert check(root, tag="dev-v1.2.3") == [
+        "tag dev-v1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
 
 
 def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
@@ -389,7 +426,7 @@ def test_the_cli_passes_the_tag_through_to_the_gate(
     root = _at(tmp_path, "1.2.3")
     argv = ["release", "check", "--root", str(root), "--tag", "v9.9.9"]
     assert run(argv, parser=build_parser([register])) == 1
-    assert "tag v9.9.9 names 9.9.9" in capsys.readouterr().err
+    assert "tag v9.9.9 is neither v1.2.3 nor" in capsys.readouterr().err
 
 
 def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(

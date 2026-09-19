@@ -257,6 +257,48 @@ def test_a_submodule_gitlink_is_present_and_not_a_missing_file(tmp_path: Path) -
 
 
 @needs_git
+def test_the_tree_listing_is_not_bounded_by_the_argument_free_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ls-tree -r` grows with the repository, so it does not run on the cap for queries that
+    do not.
+
+    `gitenv.GIT_TIMEOUT_SECONDS` is documented in its own file as the bound for "a local,
+    argument-free, read-only query … which neither touches the network nor grows with the
+    repository", and it instructs a caller whose query is not that shape to pass its own. This
+    call was the one in the module whose cost *is* the repository's size, and it ran on the
+    default five seconds — while the `git archive` twenty lines above it, over the same tree,
+    was given 120.
+
+    What the timeout costs is not an error. `git_run` answers `(-1, "")` on `TimeoutExpired`,
+    so `code == 0 and missing` goes False and the export-rule comparison is **skipped with no
+    note**: the verdict is then computed from a tree that really is missing files, which is the
+    one outcome this comparison exists to prevent. A large monorepo, or any repository on a
+    slow or network volume, is the trigger.
+
+    Mutation (declared): the explicit bound is removed -> this reddens naming the five.
+    """
+    root = _repo(tmp_path)
+    real = git_run
+    bounds: dict[str, float] = {}
+
+    def recorded(
+        where: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
+    ) -> tuple[int, str]:
+        bounds[args[0]] = timeout
+        return real(where, *args, timeout=timeout, stdin=stdin)
+
+    monkeypatch.setattr("keelline.guards.attribute.git_run", recorded)
+    attribute(root, command="true", base="main", runner=_Coded({}))
+    # The walk's floor before the bound is read: a run that never reached `ls-tree` would make
+    # a `.get` comparison vacuously true, and the archive is here to show the two agree.
+    assert "ls-tree" in bounds, bounds
+    assert "archive" in bounds, bounds
+    assert bounds["ls-tree"] > GIT_TIMEOUT_SECONDS, bounds
+    assert bounds["ls-tree"] == bounds["archive"], bounds
+
+
+@needs_git
 def test_a_listing_this_process_cannot_decode_skips_the_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
