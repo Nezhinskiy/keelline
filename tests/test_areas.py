@@ -46,6 +46,10 @@ def test_the_runner_is_a_leaf_and_not_an_area() -> None:
         if isinstance(node, ast.Import)
         for alias in node.names
     ]
+    # The walk states it is non-empty first: an `imported` that came back empty — a parse that
+    # found no imports at all, or a filter that stopped matching — satisfies the filter below
+    # without reading a single name. `runner.py` imports five stdlib modules.
+    assert imported
     assert not [name for name in imported if name.startswith("keelline")], imported
 
 

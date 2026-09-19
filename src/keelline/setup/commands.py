@@ -32,11 +32,13 @@ from keelline.runner import subprocess_runner
 # Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
 # monkeypatch a name it can see, and `keelline.setup.commands.subprocess_runner` is one hop
-# rather than two — `run_setup` calling straight into `keelline.overlay.api`'s own attribute
+# rather than two — `run_setup` calling straight into `keelline.runner`'s own attribute
 # left the patch depending on an import this module does not own the shape of (Fix round 1,
-# item 5). `commands.py` is never imported by the hook registry (only `hooks.py` files are, per
-# `tests/test_areas.py`), so a module-scope import here does not reach the clean-interpreter
-# `discover()` this project's Global Constraints hold `hooks.py` to.
+# item 5). The runner was the `overlay` area's when that was written; DC2 made it a leaf, and
+# this sentence follows it. `commands.py` is never imported by the hook registry (only
+# `hooks.py` files are, per `tests/test_areas.py`), so a module-scope import here does not
+# reach the clean-interpreter `discover()` this project's Global Constraints hold
+# `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "

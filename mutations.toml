@@ -2188,9 +2188,9 @@ reddens = [
 [[mutation]]
 name = "the stable-.git allowlist stops watching .git/hooks"
 file = "tests/snapshot.py"
-before = '''    hooks = git / "hooks"
+before = '''    hooks = git_dir / "hooks"
     if hooks.is_dir():'''
-after = '''    hooks = git / "hooks"
+after = '''    hooks = git_dir / "hooks"
     if False:'''
 reddens = [
   "tests/test_snapshot.py::test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path",
@@ -3269,4 +3269,19 @@ before = "            delivered = bool(result.context) or result.decision == Dec
 after = "            delivered = True"
 reddens = [
   "tests/guards/test_hooks.py::test_an_unrelated_call_does_not_consume_the_one_delivery",
+]
+
+# Fix round 1, item 1: the delivery is banked BELOW the two validations that can discard the
+# result. Marking it above them spent a once-per-context handler's single delivery on a result
+# that then raised into the per-handler `except`. The mutation re-adds the early mark rather
+# than moving the late one, so one substituted line restores the whole defect.
+[[mutation]]
+name = "a once-per-context delivery is banked before the result is validated"
+file = "src/keelline/hooks/dispatch.py"
+before = "            delivered = bool(result.context) or result.decision == Decision.DENY"
+after = """            delivered = bool(result.context) or result.decision == Decision.DENY
+            if handler.once_key is not None and delivered:
+                sink.mark(handler.once_key)"""
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
 ]

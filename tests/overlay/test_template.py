@@ -302,6 +302,12 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
     # holds by construction, so the assertion that can fail is that each name is a file the
     # template actually carries. Mutation: rename one entry of `CAPABILITY_NAMES` to
     # `common/claude/allow.json` -> it is no longer under `template_root()` and this reddens.
+    # The count by value, first and on its own. The derived form this replaced could not be
+    # emptied without emptying `OVERLAY_FILES` too; one spelling removed that guard, and
+    # `CAPABILITY_NAMES = ()` satisfies the alias comparison, the subset (`OVERLAY_FILES`
+    # unpacks the tuple) and the loop below, while silently emptying `overlay upgrade`'s
+    # decision list — the one list §6.1 diffs "regardless of hash".
+    assert len(CAPABILITY_NAMES) == 2, CAPABILITY_NAMES
     assert CAPABILITY_FILES == CAPABILITY_NAMES
     assert set(CAPABILITY_NAMES) <= set(OVERLAY_FILES)
     for relative in CAPABILITY_NAMES:

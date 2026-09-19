@@ -267,6 +267,7 @@ def test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checko
     probe = tmp_path / "probe.txt"
     monkeypatch.setenv("ORACLE_PROBE", str(probe))
     before = {path: path.read_bytes() for path in root.rglob("*.py")}
+    assert before  # a walk-based assertion states its walk is non-empty: `{} == {}` passes
     assert module.main([]) == 0
     assert {path: path.read_bytes() for path in root.rglob("*.py")} == before
     ran_from = Path(probe.read_text(encoding="utf-8")).resolve()

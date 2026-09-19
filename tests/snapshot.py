@@ -34,13 +34,15 @@ _STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
 def stable_git_snapshot(root: Path) -> dict[str, bytes]:
     """The narrow slice of `.git` this guard reads: the two named files, plus every file
     under `hooks/`, by path relative to `root`."""
-    git = root / ".git"
+    # `git_dir`, not `git`: this module publishes a `git(root, *args)` helper, and a local
+    # named `git` shadows it for the rest of the function.
+    git_dir = root / ".git"
     files: dict[str, bytes] = {}
     for relative in _STABLE_GIT_FILES:
-        candidate = git / relative
+        candidate = git_dir / relative
         if candidate.is_file():
             files[str(Path(".git") / relative)] = candidate.read_bytes()
-    hooks = git / "hooks"
+    hooks = git_dir / "hooks"
     if hooks.is_dir():
         for path in sorted(hooks.iterdir()):
             if path.is_file():
