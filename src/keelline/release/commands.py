@@ -1,5 +1,14 @@
 """The `release` group (§5.2): one version everywhere, the changelog, and the file record.
 
+**Findings are returned, not raised.** This was the one area that reported a finding by raising
+`Failure`, and the cost was in `--json`: the frame turns a `Failure` into
+`{"error": "failed", "summary": "failed: ..."}` and drops `Result.data` entirely, so the
+machine-readable object changed *shape* between a clean run and a drifted one -- a consumer
+that read `versions` on success had nothing to read on the run it actually cared about. Every
+other area returns `Result(..., exit_code=1)`; these two do now. The exit codes are unchanged
+(0 and 1), and `Failure` is still raised for what it is for: a refusal or a source this gate
+cannot parse at all, which is `versions.MalformedSource` and `notes`' missing towncrier.
+
 **`release notes --draft` is the one summary in this CLI that is not one line**, and it is
 deliberate: §5.2 gives every command one line because a line is what a caller reads, and a
 draft's whole purpose is that a person reads the section towncrier *would* write before it is
@@ -15,7 +24,6 @@ from pathlib import Path
 
 from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, ROOT_HELP
-from keelline.errors import Failure
 from keelline.release.hashes import HASHED_FILES, drift, write_record
 from keelline.release.notes import build
 from keelline.release.versions import check, collect
@@ -28,10 +36,13 @@ TAG_HELP = "the tag this run was created from; the six sources and the changelog
 def run_check(args: argparse.Namespace) -> Result:
     root = Path(args.root)
     problems = check(root, tag=args.tag)
-    if problems:
-        raise Failure("version drift: " + "; ".join(problems))
+    # `collect` after `check` and never before it: a source `collect` could not parse is a
+    # `MalformedSource`, which `check` raises first, so reaching this line means all six parsed.
     versions = collect(root)
-    return Result(f"one version everywhere: {versions['pyproject.toml']}", {"versions": versions})
+    data = {"problems": problems, "versions": versions}
+    if problems:
+        return Result("version drift: " + "; ".join(problems), data, exit_code=1)
+    return Result(f"one version everywhere: {versions['pyproject.toml']}", data)
 
 
 def run_notes(args: argparse.Namespace) -> Result:
@@ -46,9 +57,10 @@ def run_hashes(args: argparse.Namespace) -> Result:
     root = Path(args.root)
     if args.check:
         problems = drift(root)
+        data = {"problems": problems, "files": sorted(HASHED_FILES)}
         if problems:
-            raise Failure("release record drift: " + "; ".join(problems))
-        return Result(f"{len(HASHED_FILES)} shipped file(s) match the release record")
+            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)
+        return Result(f"{len(HASHED_FILES)} shipped file(s) match the release record", data)
     write_record(root)
     return Result(f"recorded {len(HASHED_FILES)} shipped file(s)", {"files": sorted(HASHED_FILES)})
 

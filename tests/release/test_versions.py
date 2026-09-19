@@ -157,7 +157,52 @@ def test_the_cli_command_exits_one_on_version_drift(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
     assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
-    assert "version drift" in capsys.readouterr().err
+    # stdout, and that is the change rather than an accident: this area used to report a
+    # finding by raising `Failure`, which the frame prints to stderr under a `keelline: failed:`
+    # prefix and which drops `Result.data`. Every other area returns its findings.
+    assert "version drift" in capsys.readouterr().out
+
+
+def test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The whole of why this area stopped raising. A `Failure` becomes
+    # `{"error": "failed", "summary": "failed: ..."}` and `Result.data` never reaches the
+    # output — so a consumer that read `versions` on a clean run had nothing to read on the run
+    # it cared about, and the machine-readable shape flipped on exactly the condition being
+    # tested for. Asserted as the key sets being equal AND as the drifted run carrying the
+    # data: "both objects are empty" would satisfy the first on its own.
+    #
+    # Mutation (declared): the drift arm returns `{}` for its data, which is what raising
+    # produced -> the key sets differ and this reddens naming them.
+    clean = repo(
+        tmp_path / "a",
+        pyproject="0.1.0",
+        init="0.1.0",
+        claude="0.1.0",
+        codex="0.1.0",
+        changelog="0.1.0",
+    )
+    drifted = repo(
+        tmp_path / "b",
+        pyproject="0.1.0",
+        init="0.2.0",
+        claude="0.1.0",
+        codex="0.1.0",
+        changelog="0.1.0",
+    )
+    parser = build_parser([register])
+    assert run(["release", "check", "--root", str(clean), "--json"], parser=parser) == 0
+    on_success = json.loads(capsys.readouterr().out)
+    assert run(["release", "check", "--root", str(drifted), "--json"], parser=parser) == 1
+    on_drift = json.loads(capsys.readouterr().out)
+
+    assert set(on_success) == set(on_drift) == {"summary", "problems", "versions"}
+    assert on_success["problems"] == []
+    assert on_drift["problems"] == [
+        "src/keelline/__init__.py says '0.2.0'; pyproject.toml says '0.1.0'"
+    ]
+    assert on_drift["versions"]["src/keelline/__init__.py"] == "0.2.0"
 
 
 def test_the_cli_command_reports_the_agreed_version_on_success(
@@ -426,7 +471,7 @@ def test_the_cli_passes_the_tag_through_to_the_gate(
     root = _at(tmp_path, "1.2.3")
     argv = ["release", "check", "--root", str(root), "--tag", "v9.9.9"]
     assert run(argv, parser=build_parser([register])) == 1
-    assert "tag v9.9.9 is neither v1.2.3 nor" in capsys.readouterr().err
+    assert "tag v9.9.9 is neither v1.2.3 nor" in capsys.readouterr().out
 
 
 def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(

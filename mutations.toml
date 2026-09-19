@@ -4938,3 +4938,26 @@ reddens = [
 # fails. A mutation caught for an accidental reason reads as coverage and is worse than none.
 # The exception is held by `tests/test_command.py`'s `EXCEPTIONS` table, which the entry above
 # already proves load-bearing.
+
+# --- Wave 4: release returns its findings like every other area ------------------------------
+# This was the one area reporting a finding by raising `Failure`, and the cost was in `--json`:
+# the frame turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
+# machine-readable object changed shape on exactly the condition a consumer runs the command to
+# detect. `{}` for the drift arm's data is precisely what raising produced.
+[[mutation]]
+name = "release check's drift arm carries no data again"
+file = "src/keelline/release/commands.py"
+before = '        return Result("version drift: " + "; ".join(problems), data, exit_code=1)'
+after = '        return Result("version drift: " + "; ".join(problems), {}, exit_code=1)'
+reddens = [
+  "tests/release/test_versions.py::test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]
+
+[[mutation]]
+name = "release hashes --check's drift arm carries no data again"
+file = "src/keelline/release/commands.py"
+before = '            return Result("release record drift: " + "; ".join(problems), data, exit_code=1)'
+after = '            return Result("release record drift: " + "; ".join(problems), {}, exit_code=1)'
+reddens = [
+  "tests/release/test_hashes.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
+]

@@ -82,13 +82,41 @@ def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
     root = _plugin(tmp_path)
     parser = build_parser([register])
     assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 1
-    assert "is missing" in capsys.readouterr().err
+    # stdout: findings are returned here now, as they are in every other area.
+    assert "is missing" in capsys.readouterr().out
     assert run(["release", "hashes", "--root", str(root)], parser=parser) == 0
     assert (root / RECORD).is_file()
     assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 0
     (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
     assert run(["release", "hashes", "--check", "--root", str(root)], parser=parser) == 1
-    assert "hooks/hooks.json" in capsys.readouterr().err
+    assert "hooks/hooks.json" in capsys.readouterr().out
+
+
+def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same invariant `tests/release/test_versions.py` states for `release check`, and the
+    # reason this area stopped raising `Failure` to report a finding: the frame drops
+    # `Result.data` for a `Failure`, so the machine-readable object changed shape on exactly
+    # the condition a consumer runs this to detect.
+    #
+    # Mutation (declared): the drift arm returns `{}` for its data -> the key sets differ.
+    root = _plugin(tmp_path)
+    parser = build_parser([register])
+    assert run(["release", "hashes", "--root", str(root)], parser=parser) == 0
+    capsys.readouterr()
+    assert run(["release", "hashes", "--check", "--root", str(root), "--json"], parser=parser) == 0
+    on_success = json.loads(capsys.readouterr().out)
+    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
+    assert run(["release", "hashes", "--check", "--root", str(root), "--json"], parser=parser) == 1
+    on_drift = json.loads(capsys.readouterr().out)
+
+    assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
+    assert on_success["problems"] == []
+    assert on_drift["problems"] == [
+        f"{RECORD} does not match hooks/hooks.json; run `keelline release hashes`"
+    ]
+    assert on_drift["files"] == sorted(HASHED_FILES)
 
 
 def test_a_record_that_is_not_json_is_unreadable_rather_than_absent(tmp_path: Path) -> None:

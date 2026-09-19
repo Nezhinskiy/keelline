@@ -173,6 +173,11 @@ Writes nothing.
 Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/keelline/__init__.py`, both
 plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
 
+The `--json` object carries `summary`, `versions` (every source and what it says) and
+`problems` (empty on a clean run), and it carries all three **whether or not there is drift** —
+the drift is in `problems`, not in the shape. A source this gate cannot parse at all is still a
+refusal and prints `error` instead, which is the difference between a finding and a failure.
+
 `--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
 shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
 `keelline--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
@@ -225,7 +230,9 @@ files` reads the installed record against the installed files, and reports post-
 modification, a partial update or a broken checkout. An attacker who edits both the files and
 the record is not this check's threat; tag protection and the pinned SHA are.
 
-**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift.
+**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift. Under
+`--check --json` the object carries `summary`, `files` and `problems`, in both outcomes, for
+the reason `release check` above gives.
 
 ## `keelline hook <event>`
 
