@@ -9,8 +9,9 @@ reader of this file, which is out of scope for this plan by the same rule.
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is
 "set the personal languages, leave the overlay alone" or the reverse — `overlay_root=None` means
-*this call does not know*, not *forget what was recorded*, so an unset value is read back off the
-existing file before anything is written. The three tests this file exists to satisfy are the
+*this call does not know*, not *forget what was recorded*, so an unset value is simply not
+written over and survives in the table it was spread onto. The three tests this file exists to
+satisfy are the
 three ways that can go wrong: nothing recorded stays nothing recorded, a value nobody touched
 survives a rewrite that touched something else, and one table's `root` never collapses into a
 fourth state (see `memory.store.overlay_root`'s own docstring on that).
@@ -111,20 +112,21 @@ def write_machine(
     existing = _existing(path)
 
     merged_personal = {**_table(existing, "personal"), **personal}
-    root = overlay_root
-    if root is None:
-        recorded = _table(existing, "overlay").get("root")
-        if isinstance(recorded, str) and recorded:
-            root = Path(recorded)
     # All three spread over the existing table. `overlay` used to replace its table outright,
     # which the two lines around it did not: a hand-written `[overlay] note` was gone after
     # any `setup`, and an `[overlay]` carrying no `root` vanished whole -- on the file this
     # module's own docstring promises to merge "table by table, key by key".
+    #
+    # That spread is also what carries a recorded `root` through a run that was not given one.
+    # There used to be an explicit read-back here -- `root = overlay_root` and, when it was
+    # `None`, the existing `[overlay] root` parsed back into a `Path` -- written when this table
+    # was still replaced wholesale. Once the spread arrived it was dead code that looked like a
+    # guard: `mutations.toml` disarmed it and every test stayed green.
     owned: dict[str, dict[str, object]] = {
         "personal": merged_personal,
         "overlay": {
             **_table(existing, "overlay"),
-            **({"root": str(root)} if root is not None else {}),
+            **({"root": str(overlay_root)} if overlay_root is not None else {}),
         },
         "machine": {**_table(existing, "machine"), **machine},
     }
