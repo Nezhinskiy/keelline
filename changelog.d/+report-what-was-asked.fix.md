@@ -8,9 +8,10 @@ The `git` calls now have the guard the `gh` calls always had, and an empty `git 
 is read as "nothing changed" only when `git status` actually answered.
 
 `overlay publish-template`'s dry run no longer reads every `gh repo view` failure as "the
-repository does not exist". An unauthenticated `gh`, a rate limit or a repository the token
-cannot see now names itself, instead of producing an offer to create a repository that exists
-and is private.
+repository does not exist". An unauthenticated `gh`, a rate limit and a network failure now
+name themselves instead of producing an offer to create a repository that exists and is
+private. A private repository your token may not see is the one case that cannot be told apart,
+because GitHub answers 404 for it on purpose.
 
 `keelline release check --tag` says which tags it compared against rather than inventing a
 version out of the one it was given. `--tag 1.2.3` used to report `tag 1.2.3 names 1.2.3;

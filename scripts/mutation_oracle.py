@@ -100,6 +100,13 @@ def sweep_stale_scratch(keep: Path | None = None) -> list[str]:
     `rmtree` for anything `remove` declined, then `prune` to collect whatever is now missing a
     directory. Failures are not raised — this is housekeeping at the top of a run, and a
     temporary directory another user owns is not this run's business.
+
+    **The cost, stated rather than hidden: this assumes one oracle at a time.** A second run
+    started while the first is working would sweep the first's checkout out from under it. That
+    is the same single-writer assumption DC1 already makes — the scratch checkout exists so that
+    two oracles, or an oracle beside an editor, cannot interleave writes over one file — and CI
+    runs exactly one. The sweep is at the *top* of `main` and never again, so nothing a live run
+    creates afterwards is in reach of it.
     """
     dropped: list[str] = []
     listing = _git("worktree", "list", "--porcelain")

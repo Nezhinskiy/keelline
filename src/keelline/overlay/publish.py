@@ -126,14 +126,22 @@ def _inspect_repository(runner: Runner, slug: str, cwd: Path) -> Existing:
     if view.code != 0:
         # **Not every non-zero answer is "it is not there."** `gh repo view` exits non-zero
         # for a repository that is absent, and equally for an unauthenticated `gh`, a rate
-        # limit, a network failure and a repository the token cannot see. Reading all four as
-        # `exists=False` made the dry run offer to *create* a repository that exists and is
-        # private — the opposite of the truth, and precisely the case `_not_public` exists to
-        # refuse — after which `--yes` failed at `gh repo create` with GitHub's "name already
-        # exists", so the error the operator finally saw named the wrong cause.
+        # limit and a network failure. Reading all of them as `exists=False` made the dry run
+        # offer to *create* a repository that exists and is private — the opposite of the
+        # truth, and precisely the case `_not_public` exists to refuse — after which `--yes`
+        # failed at `gh repo create` with GitHub's "name already exists", so the error the
+        # operator finally saw named the wrong cause.
         #
         # The distinguishing evidence is `gh`'s own not-found sentence. Anything else is a
         # question this command could not ask, and the gate never reports on one of those.
+        #
+        # **One case this cannot separate, said plainly rather than left implied.** GitHub
+        # answers 404 for a private repository the token may not see, deliberately, so
+        # "not there" and "there and not yours" are the same answer over the wire. An owner
+        # publishing under an account `gh` is authenticated as does not meet it; an owner who
+        # authenticated as somebody else does, and for them `--yes` still stops at
+        # `gh repo create`. Distinguishing it would take a credential this command should not
+        # want.
         if not _NOT_FOUND_REMOTELY.search(_detail(view)):
             raise Failure(
                 f"`gh repo view {slug}` exited {view.code} ({_detail(view)}), so whether "
