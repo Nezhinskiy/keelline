@@ -65,12 +65,67 @@ jobs:
           name: dist
           path: dist/
 
+  # The one gate on this file's two irreversible acts that is not prose. GitHub **auto-creates**
+  # an environment a job names and the repository does not have, with no protection rules on it,
+  # so `environment: pypi` below reads like a human gate whether or not one exists: a first
+  # release cut before RELEASING.md §3 would upload to PyPI — which cannot be retracted — and
+  # publish a GitHub Release, with nobody asked and nothing failing. A sentence in RELEASING.md
+  # is the wrong medium for that, so here it is as a check.
+  #
+  # One job rather than a first step copied into each of the two that name the environment. Two
+  # byte-identical scripts in one file drift, and the property that has to hold is not "this job
+  # checked" but "every job that names the environment waited for the check" — which is a claim
+  # about the file, is asserted over the file in `tests/test_fixtures.py`, and covers the third
+  # such job nobody has written yet. The check runs before any approval is asked for, which is
+  # the only time it can run at all: the case it exists for is the one where GitHub asks nobody.
+  environment-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: The pypi environment is a gate and not a name GitHub invented
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          # The environment this gate is about. `tests/test_fixtures.py` holds it equal to the
+          # `environment:` every gated job names, so renaming one and not the other reddens
+          # rather than leaving this job checking a name nothing uses.
+          ENVIRONMENT: pypi
+          # The fallback, and the one question it is allowed to answer.
+          # `GET /repos/OWNER/REPO/environments/NAME` is not readable by every default
+          # token, and a gate that fails closed on a permission it may never be granted is a
+          # gate that blocks every release forever. So a repository variable — which only an
+          # administrator can set and no pull request can write — may stand in for the READ,
+          # and never for the ANSWER: an environment that reads back with zero rules fails
+          # below whatever this says.
+          DECLARED: ${{ vars.PYPI_ENVIRONMENT_PROTECTED }}
+        run: |
+          rules="$(gh api "repos/$REPOSITORY/environments/$ENVIRONMENT" \
+            --jq '.protection_rules | length' 2>/dev/null || true)"
+          case "$rules" in
+            ''|*[!0-9]*)
+              if [ "$DECLARED" = "true" ]; then
+                echo "::warning::$ENVIRONMENT's protection rules could not be read; the repository variable PYPI_ENVIRONMENT_PROTECTED stands in for the read"
+                exit 0
+              fi
+              echo "::error::$ENVIRONMENT's protection rules could not be read, and the repository variable PYPI_ENVIRONMENT_PROTECTED does not say it is a gate; see RELEASING.md section 3"
+              exit 1
+              ;;
+          esac
+          if [ "$rules" -eq 0 ]; then
+            echo "::error::the $ENVIRONMENT environment has no protection rules, so GitHub created it on the spot and nothing is waiting for an approval; see RELEASING.md section 3"
+            exit 1
+          fi
+          echo "$ENVIRONMENT has $rules protection rule(s); the gate is real"
+
   publish:
-    needs: build
+    needs: [build, environment-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The last human gate. A tag pushed by mistake waits for an approval here instead of
-    # becoming a permanent PyPI release.
+    # becoming a permanent PyPI release — and `environment-gate` above is what makes that
+    # true rather than hopeful, because an environment with no rules asks nobody.
     environment: pypi
     permissions:
       id-token: write       # Trusted Publishing: no stored API token anywhere
@@ -86,7 +141,7 @@ jobs:
   # and behind the same `pypi` environment, because the environment is the one human gate this
   # file has and a mistaken tag must not become a public Release either.
   github-release:
-    needs: build
+    needs: [build, environment-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi   # the same human gate as publish: a mistaken tag waits here too

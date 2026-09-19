@@ -312,7 +312,7 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
         # to PyPI and creates a Release, and against the whole-set floors below it could have
         # lost every one of its bodies without either of them noticing.
         # Measured 2026-09-19 with this module's own `run_blocks`: check.yml 9, ci.yml 12,
-        # release.yml 6, smoke.yml 6.
+        # release.yml 7, smoke.yml 6. `release.yml` gained its seventh with `environment-gate`.
         #
         # No `mutations.toml` entry travels with the widened set, and the reason is that there
         # is nothing for one to mutate: adding a fourth name to `SCRIPTED` extends an existing
@@ -732,3 +732,129 @@ def test_every_gate_is_named_in_the_verdict_and_not_only_the_first(tmp_path: Pat
     assert code == 1, printed
     for name in ("docs", "bugs", "plan", "commit", "trail"):
         assert f"::error::{name} failed" in printed, (name, printed)
+
+
+RELEASE_WORKFLOW = WORKFLOWS / "release.yml"
+GATE_JOB = "environment-gate"
+GATE_STEP = "The pypi environment is a gate and not a name GitHub invented"
+needs_release_workflow = pytest.mark.skipif(
+    not RELEASE_WORKFLOW.is_file(), reason="release.yml is not in the sdist"
+)
+
+
+def _release_jobs() -> dict[str, dict[str, str]]:
+    """Every job in `release.yml`, with the two keys this module asks about.
+
+    Indentation arithmetic rather than a YAML parser: the package carries no runtime
+    dependency and `tests/test_import_boundary.py` is why none arrives through a test either,
+    and `environment:` and `needs:` are each written on one line in this file. A job that stops
+    writing them that way is a finding for whoever writes it, so the callers below assert the
+    walk found something rather than trusting it to have.
+    """
+    jobs: dict[str, dict[str, str]] = {}
+    current: str | None = None
+    inside = False
+    for line in RELEASE_WORKFLOW.read_text(encoding="utf-8").splitlines():
+        if line.rstrip() == "jobs:":
+            inside = True
+            continue
+        if not inside or not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent == 2 and line.rstrip().endswith(":"):
+            current = line.strip().rstrip(":")
+            jobs[current] = {}
+        elif indent == 4 and current is not None and ":" in line:
+            key, _, value = line.strip().partition(":")
+            if key in ("environment", "needs"):
+                jobs[current][key] = value.split("#")[0].strip()
+    return jobs
+
+
+def _gate_environment() -> str:
+    """The environment name the gate step reads, out of its own `env:` block."""
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    match = re.search(r"^\s+ENVIRONMENT: (\S+)$", text, re.M)
+    assert match is not None
+    return match.group(1)
+
+
+@needs_release_workflow
+def test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate() -> None:
+    """The property, stated over the file rather than over two hand-kept copies of a step.
+
+    GitHub auto-creates an environment a job names and the repository lacks, with no protection
+    rules on it, so `environment: pypi` is a gate only if something checked. What has to hold is
+    not "the gate job exists" but "no job that names the environment can start before it", and
+    that has to keep holding for the third such job nobody has written yet. Mutation (declared):
+    point the gate's `ENVIRONMENT` at another name -> the equality below reddens, so the gate
+    cannot end up checking a name no job uses.
+    """
+    jobs = _release_jobs()
+    assert GATE_JOB in jobs, sorted(jobs)
+    gated = {name: job["environment"] for name, job in jobs.items() if "environment" in job}
+    # The non-vacuity guard: a walk that found no `environment:` at all would satisfy every
+    # assertion below by having nothing to check.
+    assert len(gated) >= 2, gated
+    assert set(gated.values()) == {_gate_environment()}, (gated, _gate_environment())
+    for name in gated:
+        assert GATE_JOB in jobs[name].get("needs", ""), (name, jobs[name])
+    # And the gate itself is not behind the environment it is asking about: it has to run in
+    # the one case the environment asks nobody, which is the case it exists for.
+    assert "environment" not in jobs[GATE_JOB], jobs[GATE_JOB]
+
+
+def _run_gate(tmp_path: Path, gh: str, declared: str = "") -> tuple[int, str]:
+    """The shipped gate script, out of the shipped file, against a `gh` that answers `gh`."""
+    stub = tmp_path / "bin"
+    stub.mkdir(exist_ok=True)
+    (stub / "gh").write_text(f"#!/bin/sh\n{gh}\n", encoding="utf-8")
+    (stub / "gh").chmod(0o755)
+    done = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step_script(RELEASE_WORKFLOW, GATE_STEP)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{stub}:/usr/bin:/bin",
+            "GH_TOKEN": "t",
+            "REPOSITORY": "owner/repository",
+            "ENVIRONMENT": _gate_environment(),
+            "DECLARED": declared,
+        },
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+@needs_bash
+@needs_release_workflow
+@pytest.mark.parametrize(
+    ("gh", "declared", "code", "wanted"),
+    [
+        ("echo 2", "", 0, "2 protection rule(s)"),
+        # The case the gate exists for: GitHub made the environment up on the spot.
+        ("echo 0", "", 1, "no protection rules"),
+        ("echo 0", "true", 1, "no protection rules"),
+        # Unreadable — an endpoint the default token may not be allowed, or no `gh` at all.
+        ("echo denied >&2; exit 1", "", 1, "could not be read"),
+        ("echo denied >&2; exit 1", "true", 0, "stands in for the read"),
+        ("echo denied >&2; exit 1", "false", 1, "could not be read"),
+        # A body that is not a count is not a count, and `[ "$x" -eq 0 ]` would have died on it.
+        ("echo null", "", 1, "could not be read"),
+    ],
+    ids=["two-rules", "no-rules", "no-rules-declared", "unreadable", "declared", "denied", "null"],
+)
+def test_the_gate_admits_a_release_only_where_the_environment_is_one(
+    tmp_path: Path, gh: str, declared: str, code: int, wanted: str
+) -> None:
+    """Nothing here can run GitHub Actions, so the script is run instead, exactly as shipped.
+
+    The two rows that matter are `no-rules-declared` and `declared`, and they are the whole of
+    what the repository variable is allowed to do: it stands in for the **read** when the
+    endpoint is closed to the token, and it does not answer for an environment that read back
+    with zero rules. Mutations (declared): stop testing the count for zero; let the variable be
+    consulted before the read has failed.
+    """
+    got, printed = _run_gate(tmp_path, gh, declared)
+    assert got == code, (got, printed)
+    assert wanted in printed, printed

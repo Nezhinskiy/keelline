@@ -4259,3 +4259,40 @@ after = "> discipline. **Not yet:** `init` \u2014 so today you"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
+
+# §3 of the final review: `environment: pypi` is a human gate only if the environment has
+# protection rules, and GitHub auto-creates an environment a job names and the repository lacks
+# with none on it. `environment-gate` is the check; these three are what make it one.
+[[mutation]]
+name = "the release gate stops failing an environment with zero protection rules"
+file = ".github/workflows/release.yml"
+before = '          if [ "$rules" -eq 0 ]; then'
+after = '          if false; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[no-rules-declared]",
+]
+
+# The fallback exists because the environments endpoint is not open to every default token, and
+# it may answer one question only: whether the READ failed. Consulted without that condition it
+# would let a repository variable an administrator once set stand in for the gate itself.
+[[mutation]]
+name = "the release gate's repository-variable fallback answers for the read it did get"
+file = ".github/workflows/release.yml"
+before = '              if [ "$DECLARED" = "true" ]; then'
+after = '              if true; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[unreadable]",
+  "tests/test_fixtures.py::test_the_gate_admits_a_release_only_where_the_environment_is_one[denied]",
+]
+
+# A gate that asks about an environment no job names is a gate about nothing, and the two
+# spellings are seven lines apart in one file. The equality is what ties them together.
+[[mutation]]
+name = "the release gate checks an environment no job names"
+file = ".github/workflows/release.yml"
+before = "          ENVIRONMENT: pypi"
+after = "          ENVIRONMENT: production"
+reddens = [
+  "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
+]

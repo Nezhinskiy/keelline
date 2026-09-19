@@ -182,8 +182,19 @@ gate, and both `publish` and `github-release` wait behind it: a tag pushed by mi
 for an approval instead of becoming a permanent PyPI release or a public GitHub Release.
 PyPI does not allow re-uploading a version. **Create it first**: naming an environment that
 does not exist does not fail the job — GitHub creates one on the spot, with no protection
-rules — so a release cut before this step has the gate's two `environment:` lines and none
-of the gate.
+rules — so a release cut before this step would have the gate's two `environment:` lines and
+none of the gate.
+
+This paragraph is no longer the whole of the defence. `release.yml`'s `environment-gate` job
+reads the environment's protection-rule count over the API before either gated job can start,
+and fails the run when it is zero: the order these two sections are written in is now checked
+rather than asked for. If the workflow's own token cannot read
+`GET /repos/OWNER/REPO/environments/NAME` — the endpoint is not open to every default token —
+the gate refuses by default, and the way to say "it is a real gate, the read is simply closed
+to me" is a repository variable, **Settings → Secrets and variables → Actions → Variables**,
+`PYPI_ENVIRONMENT_PROTECTED = true`. It stands in for the *read* only: an environment that
+reads back with zero rules fails whatever the variable says. Set it only after the environment
+and its reviewer exist.
 
 **Tag protection.** A repository ruleset over `refs/tags/v*.*.*` and `refs/tags/keelline--v*`
 with `deletion` and `update` rules, so a semver tag is immutable while the `v1` alias — which
