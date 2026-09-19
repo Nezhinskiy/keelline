@@ -50,15 +50,13 @@ PROBE = ".claude-plugin"
 # asynchronous on GitHub's side and one clean run cannot rule out a slow one.
 RETRY_WAIT_SECONDS = 10
 # The precondition `docs/cli.md` names and the command itself never did. `--template` generates
-# from a repository on the owner's own account, and the maintainer action that would publish it
-# has not shipped, so on nearly every account this source cannot work at all today. A failure
-# here that does not say so sends the owner to `gh auth status` for a repository that was never
-# there.
-UNSHIPPED_TEMPLATE = (
-    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY}, and nothing publishes that "
-    f"repository yet — the maintainer action that will has not shipped — so this source works "
-    f"only for an owner who created it by hand. `keelline overlay create --local` renders the "
-    f"same tree here and makes no network call"
+# from a repository on the owner's own account, and that repository has to have been published
+# there first. A failure here that does not say so sends the owner to `gh auth status` for a
+# repository that was never there.
+TEMPLATE_PRECONDITION = (
+    f"`--template` generates from <owner>/{TEMPLATE_REPOSITORY}, which `keelline overlay "
+    f"publish-template` publishes at each release; an owner who has not published one "
+    f"renders the same tree here with `keelline overlay create --local`, with no network call"
 )
 # The three manifests `init_instance` names after the owner. The Codex one was left out of the
 # first draft, so the collision the suffix exists to prevent still happened on Codex: two
@@ -200,7 +198,7 @@ def _from_template(
         raise Failure(
             f"`gh repo create {slug} …` could not be run ({_detail(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
-            f"overlay locally: {UNSHIPPED_TEMPLATE}"
+            f"overlay locally: {TEMPLATE_PRECONDITION}"
         )
     if created.code != 0:
         # `gh` ran and declined. Its own stderr is the cause — a missing template repository, an
@@ -209,7 +207,7 @@ def _from_template(
         # arrived, which is the one shape the race can take.
         raise Failure(
             f"`gh repo create {slug} …` exited {created.code} ({_detail(created)}), so no tree "
-            f"arrived at {target}. {UNSHIPPED_TEMPLATE}"
+            f"arrived at {target}. {TEMPLATE_PRECONDITION}"
         )
 
     # `gh` reported success and nothing arrived. Which of the two failures it was decides whether
@@ -235,7 +233,7 @@ def _from_template(
             "clone it by hand"
             if raced
             else f"`gh repo view` did not confirm the repository exists ({_detail(view)}); "
-            f"check `gh auth status`. {UNSHIPPED_TEMPLATE}"
+            f"check `gh auth status`. {TEMPLATE_PRECONDITION}"
         )
     )
 

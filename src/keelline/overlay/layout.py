@@ -61,6 +61,7 @@ OVERLAY_FILES = (
     f"{PROJECTS}/README.md",
     ".pre-commit-config.yaml",
     ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
     ".gitignore",
     "README.md",
 )

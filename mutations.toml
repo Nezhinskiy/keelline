@@ -3096,12 +3096,16 @@ reddens = [
 # the template README said "fifteen files" while a rendered overlay has sixteen — the scaffold
 # engine writes `.keelline/manifest.json`, which is in neither of that README's tables and is the
 # file `overlay upgrade` keys on. The denominator is `OVERLAY_FILES` plus that path, so a lane
-# that adds a sixteenth template file now reddens the document instead of outliving it.
+# that adds a sixteenth template file now reddens the document instead of outliving it. Wave F
+# was that lane — `.github/dependabot.yml` is the sixteenth shipped file and the seventeenth
+# rendered one — and the count below moved with it. This entry is an inline count too, so it has
+# to move as well; the unfiltered oracle is what says so, because a run filtered to the lane's
+# own entries cannot see one an earlier lane declared and this change invalidated.
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/keelline/templates/overlay/README.md"
-before = "`keelline overlay create` renders sixteen files here."
-after = "`keelline overlay create` renders fifteen files here."
+before = "`keelline overlay create` renders seventeen files here."
+after = "`keelline overlay create` renders sixteen files here."
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
 ]
@@ -3915,3 +3919,34 @@ after = "        name for name in HASHED_FILES if name not in recorded or record
 reddens = [
   "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
 ]
+
+# Wave F, Task 18. The template's pins are full-length shas and a sha rots in silence; the
+# Dependabot file is the only thing that moves them. Point it at another ecosystem and it
+# watches nothing while still looking like a configuration.
+[[mutation]]
+name = "the template's dependabot configuration stops naming the actions ecosystem"
+file = "src/keelline/templates/overlay/.github/dependabot.yml"
+before = "  - package-ecosystem: github-actions"
+after = "  - package-ecosystem: npm"
+reddens = ["tests/overlay/test_template.py::test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions"]
+
+# DC6's gate, and the whole reason the command has one. Remove it and the documented dry run
+# creates a public repository on the owner's account and pushes a tree to it.
+[[mutation]]
+name = "publish-template pushes without --yes"
+file = "src/keelline/overlay/publish.py"
+before = "        if not yes:"
+after = "        if False:"
+reddens = [
+  "tests/overlay/test_publish.py::test_without_yes_everything_but_the_push_happens_and_the_push_is_named",
+  "tests/overlay/test_publish.py::test_without_yes_no_repository_is_created_or_marked",
+]
+
+# D1 makes the template the PUBLIC half: a private template is one no other account can
+# generate from, and `overlay create --template` fails against it for everyone but the owner.
+[[mutation]]
+name = "publish-template creates the template repository private"
+file = "src/keelline/overlay/publish.py"
+before = '            runner, ["repo", "create", slug, "--public", "--description", DESCRIPTION], cwd'
+after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
+reddens = ["tests/overlay/test_publish.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]

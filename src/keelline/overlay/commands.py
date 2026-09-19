@@ -12,6 +12,7 @@ from keelline.command import (
     OVERLAY_ROOT_HELP,
 )
 from keelline.errors import Refusal
+from keelline.overlay.create import TEMPLATE_REPOSITORY
 from keelline.result import Result
 from keelline.scaffold import render_report
 
@@ -50,6 +51,22 @@ def run_overlay_init(args: argparse.Namespace) -> Result:
     result = init_instance(Path(args.root).resolve(), args.owner, runner=subprocess_runner())
     data = {"renamed": list(result.renamed), "notes": list(result.notes)}
     return Result("; ".join(result.notes), data)
+
+
+def run_overlay_publish_template(args: argparse.Namespace) -> Result:
+    from keelline.overlay.publish import publish_template
+    from keelline.runner import subprocess_runner
+
+    published = publish_template(
+        args.owner, name=args.name, yes=args.yes, runner=subprocess_runner()
+    )
+    data = {
+        "repository": published.repository,
+        "changed": list(published.changed),
+        "pushed": published.pushed,
+        "notes": list(published.notes),
+    }
+    return Result(f"{published.repository}: {'; '.join(published.notes)}", data)
 
 
 def run_overlay_upgrade(args: argparse.Namespace) -> Result:
@@ -111,6 +128,26 @@ def register(groups: SubParsers) -> None:
     init.add_argument("--owner", required=True, help="the account to name this overlay after")
     init.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)
     init.set_defaults(func=run_overlay_init)
+
+    publish = sub.add_parser(
+        "publish-template", help="publish the overlay template repository from this checkout"
+    )
+    publish.add_argument("--owner", required=True, help="the account to publish the template to")
+    publish.add_argument(
+        "--name",
+        default=TEMPLATE_REPOSITORY,
+        help="the repository name (default: %(default)s)",
+    )
+    # The gate, and it is a parameter rather than a step in a procedure: in an agent harness a
+    # flag a model can type is not a control, so the three outward-facing acts — creating the
+    # repository, marking it a template, pushing — all sit behind this one value.
+    publish.add_argument(
+        "--yes",
+        action="store_true",
+        help="push to the repository; without it the render, the clone and the diff happen and "
+        "the push is only named",
+    )
+    publish.set_defaults(func=run_overlay_publish_template)
 
     upgrade = sub.add_parser("upgrade", help="refresh the files in an overlay nobody has edited")
     upgrade.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)

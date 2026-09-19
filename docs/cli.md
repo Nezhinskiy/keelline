@@ -52,6 +52,7 @@ Three things hold everywhere:
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
 - [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
+- [`keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
 - [`keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#keelline-attach---store-path---check---yes---trust-remote---root-path---machine-path)
 - [`keelline detach [--root PATH] [--machine PATH]`](#keelline-detach---root-path---machine-path)
 - [`keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
@@ -631,12 +632,12 @@ your template repository and clone it; `--local` renders the shipped template he
 network call. An invocation with neither is refused (`2`) naming both, so that creating a
 repository on an account is never something an omitted flag does.
 
-**`--local` is the source that works today.** `--template` names
-`<owner>/keelline-overlay-template`, and the command that publishes that repository —
-`overlay publish-template`, a maintainer release action — has not shipped: it belongs with the
-release lane that is its only caller. Until it does, `--template` fails cleanly for anyone who
-has not created that repository on their own account by hand, and `--local` is what an owner
-setting up a first overlay runs.
+**`--template` needs a template repository of your own.** It names
+`<owner>/keelline-overlay-template`, which
+[`keelline overlay publish-template`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
+publishes to your account at each release. Until you have run that once, `--template` fails
+cleanly with `gh`'s own answer, and `--local` renders exactly the same tree here with no
+network call — an owner setting up a first overlay can use either.
 
 A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
 made private, which is the one outcome this command exists to prevent.
@@ -696,7 +697,7 @@ segment, or on a scaffold manifest that cannot be trusted.
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
-fifteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+sixteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
 `.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
 tree whose two `.claude-plugin/` manifests name it `keelline-overlay[-<owner>]` and
 `keelline-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
@@ -724,6 +725,49 @@ code path that then runs, which is what makes the dry run worth reading.
 `.keelline/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
 nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
 manifest itself cannot be trusted, or when a write is refused by the containment walk.
+
+---
+
+## `keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`
+
+Publishes the repository `overlay create --template` generates from: the shipped
+`templates/overlay/` tree, as one commit on `<owner>/keelline-overlay-template`.
+
+```bash
+keelline overlay publish-template --owner you          # what it would create, mark and push
+keelline overlay publish-template --owner you --yes    # do it
+```
+
+Six steps, in this order. It renders the shipped template into a scratch directory; it strips
+the scaffold ledger, because a repository generated from a template carries none and publishing
+one would make every generated overlay read as hand-edited to `overlay upgrade`; it asks `gh`
+what exists under that name; it creates the repository **public** and marks it
+`is_template` if it is not one already; it clones it and replaces the tree with the render; and
+it commits and pushes to the repository's default branch.
+
+**`--yes` is the gate, and it covers three acts rather than one** — creating the repository,
+marking it a template, and pushing. Without it the command renders, asks `gh` what is there,
+and reports what it *would* create, mark and push. That is the dry run; there is no separate
+`--dry-run` flag, because a second way to say the same thing is a second thing to get wrong.
+The gate is a parameter and not a step in a procedure: in a session driven by an agent, a flag
+a model can type is not a control, so the flag is where the consent is recorded.
+
+**An existing repository that is not public is refused (`2`), never flipped.** A template is
+generated from by other accounts only when it is public, and a repository somebody made private
+under that name is not one this command may change a flag on — publish under another `--name`,
+or make it public yourself first.
+
+**It runs from your own authenticated checkout by design.** The public repository's CI holds no
+credential that can write a second repository, so this is not a workflow and does not become
+one: `gh` decides the protocol and carries the token. `gh` that cannot be run at all is a
+finding (`1`) naming it.
+
+`--owner` is your account and `--name` the repository (default `keelline-overlay-template`);
+both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
+it. There is no `--root`: the tree is rendered from this Keelline's own package.
+
+**Writes** nothing outside a temporary directory this command creates and removes. Exits `0`;
+`1` on a `gh` or `git` that failed, `2` on a refusal.
 
 ---
 

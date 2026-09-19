@@ -2,10 +2,19 @@ Keelline can now create your private overlay — the repository that holds your 
 rules, your cross-project notes, and one record per repository bound to them. `keelline overlay
 create` renders it on your machine with `--local` and no network call at all, or generates it on
 GitHub from a template with `--template`, private from the first moment; neither source is a
-default, so an omitted flag never creates a repository on your account. `--local` is the source
-that works today: the command that publishes the overlay template repository is a maintainer
-release action and has not shipped yet, so `--template` is for an account that already has one,
-and a `gh` that is missing or fails is reported with its own exit code and message.
+default, so an omitted flag never creates a repository on your account. `--template` generates from
+`<owner>/keelline-overlay-template`, which `keelline overlay publish-template` publishes to your
+own account, and a `gh` that is missing or fails is reported with its own exit code and message.
+
+`keelline overlay publish-template` is that command. It renders the shipped template into a
+scratch directory, strips the scaffold ledger so a generated overlay does not read as
+hand-edited, makes sure the repository exists, is public and is marked as a template, and
+pushes the tree as one commit — all of it from your own authenticated checkout, so no CI
+credential anywhere can write a second repository. `--yes` gates all three outward-facing acts;
+without it the command reports what it would create, mark and push and makes no call that
+writes. A repository under that name that is not public is refused rather than flipped. The
+template now also ships `.github/dependabot.yml`, so the commit shas its scan workflow pins
+stop rotting in silence.
 
 `keelline overlay init` names the overlay after you — all three plugin manifests, the Codex one
 included — so two overlays never collide in one harness, installs the commit-time secret scan the

@@ -10,16 +10,15 @@ Codex, one Python package with **no runtime dependencies**.
 > writes files into a repository; the guards over a shell call, a commit message and a test
 > run; the bug ledger; the documentation and plan lints; `keelline setup`, which configures a
 > machine from a preset; the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade` — and `attach`/`detach`, which bind a repository to it and unbind it
+> `overlay upgrade`, `overlay publish-template` — and `attach`/`detach`, which bind a
+> repository to it and unbind it
 > again; and `keelline doctor`, which reports on the result. The hooks file that wires all of
 > it into a session ships too, so installing the plugin is enough to make the guards fire and
-> the memory bundles arrive. The first skills ship with them, and so do two command groups
-> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
-> `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
-> and the adoption state machine — so today you write `keelline.toml` by hand; the
-> [Quickstart](#quickstart) shows the two keys it needs. Nor the lane that
-> publishes the overlay *template* repository, so `overlay create --local` is the source that
-> works today and `--template` waits on it.
+> the memory bundles arrive. The first skills ship with them, and so do three command groups
+> meant for a machine rather than for you — `hook`, which dispatches one harness event,
+> `release check` and `release notes`, and `release hashes`. **Not yet:** `init`, `upgrade`,
+> `uninstall`, the project templates, `assess` and the adoption state machine — so today you
+> write `keelline.toml` by hand; the [Quickstart](#quickstart) shows the two keys it needs.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -199,10 +198,12 @@ keelline test audit-entrypoints                       # tests that never exercis
 keelline test attribute --command "uv sync --locked && uv run pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
-keelline overlay create --owner you --name keelline-private --local   # render one here, no network — the working source today
-keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template on GitHub, which nothing publishes yet
+keelline overlay create --owner you --name keelline-private --local   # render one here, no network call at all
+keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template, which you publish yourself
 keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
 keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
+keelline overlay publish-template --owner you                  # what it would create, mark and push; nothing leaves yet
+keelline overlay publish-template --owner you --yes            # publish the template repository from this checkout
 
 # Binding a repository to the overlay
 keelline attach --store ../keelline-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing

@@ -353,3 +353,12 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
         if not any(name in text for name in names):
             missing.append(relative)
     assert missing == [], missing
+
+
+def test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions() -> None:
+    # R4: the scan workflow pins both actions by full-length SHA, and nothing told the owner
+    # a pin was two years old. The same Dependabot shape this repository uses for its own
+    # actions. Mutation: delete the `github-actions` ecosystem line -> reddens.
+    text = (template_root() / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    assert "package-ecosystem: github-actions" in text
+    assert ".github/dependabot.yml" in OVERLAY_FILES
