@@ -3597,8 +3597,10 @@ reddens = [
 [[mutation]]
 name = "attribute reads the tracked listing without -z, so git quotes the awkward names"
 file = "src/keelline/guards/attribute.py"
-before = '''"-z", ref)'''
-after = '''ref)'''
+# `timeout=120` is part of this line now — the call was moved off `gitenv`'s argument-free cap,
+# which `ls-tree -r` never fitted. Carried into the `before` so the entry still names a line.
+before = '''"-z", ref, timeout=120)'''
+after = '''ref, timeout=120)'''
 reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
@@ -4755,7 +4757,10 @@ reddens = [
 name = "a record that is not UTF-8 escapes UnreadableRecord again"
 file = "src/keelline/release/hashes.py"
 before = "    except UnicodeDecodeError as exc:"
-after = "    except ValueError as exc:  # unreachable: JSONDecodeError is caught above"
+# NOT `except ValueError`: `UnicodeDecodeError` is a subclass of it (so is
+# `json.JSONDecodeError`), so that substitution still caught the error it was meant to stop
+# catching, and the entry survived while reading as coverage. Measured by the unfiltered run.
+after = "    except InterruptedError as exc:"
 reddens = [
   "tests/release/test_hashes.py::test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error",
 ]
@@ -4832,14 +4837,19 @@ reddens = [
 # §4.4. An interrupted run left a `git worktree` registration that `git worktree prune` will
 # not take, because prune only drops entries whose directory is gone and the `mkdtemp` tree is
 # still standing. One was live in the development repository at review time, 6.5 MB.
+#
+# The mutation is the `rmtree` and not the `worktree remove` beside it, and the unfiltered run
+# is what said so: with the directory gone, the `prune` at the end of the sweep collects the
+# registration by itself, so removing `worktree remove` changed no outcome this test can see
+# and the entry survived. `rmtree` is the line the leak is really about — the tree on disk.
 [[mutation]]
-name = "the scratch sweep stops dropping the registration git prune will not take"
+name = "the scratch sweep leaves the leaked tree on disk"
 file = "scripts/mutation_oracle.py"
 before = """
         _git("worktree", "remove", "--force", str(tree))
         shutil.rmtree(tree.parent, ignore_errors=True)"""
 after = """
-        shutil.rmtree(tree.parent, ignore_errors=True)"""
+        _git("worktree", "remove", "--force", str(tree))"""
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
 ]
