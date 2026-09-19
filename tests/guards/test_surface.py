@@ -57,6 +57,10 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "scan_paths",
         "suite_files",
         "contained_roots",
+        # the failure attribution, for the skill that wraps it and for assess
+        "attribute",
+        "Attribution",
+        "VERDICTS",
     }
     assert required == set(guards.__all__)
 

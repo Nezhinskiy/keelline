@@ -516,3 +516,96 @@ def test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating(
     ]
     assert invoke(argv) == 2
     assert "refused:" in capsys.readouterr().err
+
+
+@needs_git
+def test_test_attribute_runs_the_three_trees_and_reports_the_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The argv wiring end to end (D4): the real launcher, the real `git archive`, the real
+    # `sh`. `repo()` leaves HEAD on `main`, so the merge-base with `main` is HEAD itself and a
+    # command that always passes gives the "not reproduced" sentence — the one verdict of the
+    # five that a green command can produce, so the assertion names it rather than asserting
+    # that some sentence came back. The `--json` keys are the documented contract
+    # (`docs/cli.md`), stated as fixed literals and not read off the dataclass.
+    #
+    # The summary is asserted beside the `verdict` key and not only through it: the first
+    # draft of this test checked `out["verdict"]` alone, and mutating `run_test_attribute`'s
+    # `Result(result.verdict, data)` to `Result("done", data)` left the whole suite green —
+    # `verdict` comes out of `data`, so the line a person reads was covered by nothing.
+    # Re-measured with both: that mutation now reddens this test, and this test alone.
+    from keelline.guards.attribute import VERDICTS
+
+    root = repo(tmp_path)
+    argv = [
+        "test",
+        "attribute",
+        "--command",
+        "true",
+        "--base",
+        "main",
+        "--root",
+        str(root),
+        "--machine",
+        str(tmp_path / "m.toml"),
+        "--json",
+    ]
+    assert invoke(argv) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["verdict"] == VERDICTS[4]
+    assert out["summary"] == VERDICTS[4]
+    assert sorted(out) == ["base", "merge_base", "runs", "summary", "verdict"]
+    assert out["runs"] == {"head_ambient": 0, "head_clean": 0, "base_clean": 0}
+    assert out["base"] == "main"
+    assert out["merge_base"] == git(root, "rev-parse", "HEAD").strip()
+
+
+@needs_git
+def test_test_attribute_defaults_the_base_to_the_configured_branch_on_the_remote(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--base` omitted means `origin/<project.base_branch>` and not the bare branch name: a
+    # local `main` that has not been fetched is not the base a pull request is measured
+    # against. The fixture has no remote, so the default is proved by the ref the failure
+    # names — `origin/main`, which only the default produces. Exit 1, because a merge-base
+    # that cannot be resolved is a failed operation and not a refusal.
+    # Reddened by mutating the default to `config.project.base_branch`; measured, and the
+    # failure then names `main`, so the assertion is on the string and not on the exit code.
+    root = repo(tmp_path)
+    argv = [
+        "test",
+        "attribute",
+        "--command",
+        "true",
+        "--root",
+        str(root),
+        "--machine",
+        str(tmp_path / "m.toml"),
+    ]
+    assert invoke(argv) == 1
+    assert "origin/main" in capsys.readouterr().err
+
+
+@needs_git
+def test_test_attribute_refuses_a_base_shaped_like_an_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Exit 2, the third code the CLI row promises: `--base` reaches `git merge-base` as an
+    # argument, so a `-`-shaped value is refused above the first subprocess rather than
+    # becoming an option to it (§3). Reddened by deleting the `base.startswith("-")` raise in
+    # `attribute`; measured — the command then exits 1 with git's own complaint, so the
+    # assertion is on the refusal's exit code and its word, not merely on "not zero".
+    root = repo(tmp_path)
+    argv = [
+        "test",
+        "attribute",
+        "--command",
+        "true",
+        "--base=--upload-pack=touch /tmp/x",
+        "--root",
+        str(root),
+        "--machine",
+        str(tmp_path / "m.toml"),
+    ]
+    assert invoke(argv) == 2
+    assert "refused:" in capsys.readouterr().err

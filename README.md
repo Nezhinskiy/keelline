@@ -193,6 +193,7 @@ keelline commit check --range origin/main..HEAD       # attribution lines in com
 keelline commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 keelline test hygiene                                 # the faults that make a red run unattributable
 keelline test audit-entrypoints                       # tests that never exercise what they name
+keelline test attribute --command "uv sync --locked && uv run pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
 keelline overlay create --owner you --name keelline-private --local   # render one here, no network — the working source today

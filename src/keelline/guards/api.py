@@ -21,6 +21,7 @@ the judge itself (`judge`, `Verdict`, `ALLOW`). A lane that needs something abse
 list grows it deliberately, in a commit that says which lane and why.
 """
 
+from keelline.guards.attribute import VERDICTS, Attribution, attribute
 from keelline.guards.audit import SHAPES, Finding, import_roots, scan_paths, suite_files
 from keelline.guards.bashscan import (
     Heredoc,
@@ -60,6 +61,8 @@ __all__ = [
     "RESTORE_HINT",
     "SHAPES",
     "SLEEP_REASON",
+    "VERDICTS",
+    "Attribution",
     "Finding",
     "Heredoc",
     "Hygiene",
@@ -69,6 +72,7 @@ __all__ = [
     "Report",
     "Verdict",
     "Violation",
+    "attribute",
     "check_range",
     "command_words",
     "contained_roots",

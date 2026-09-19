@@ -3509,3 +3509,46 @@ after = '    if argv[:1] == ["rendered"] and len(argv) == 2:'
 reddens = [
   "tests/scripts/test_check_artifacts.py::test_rendered_without_a_directory_is_the_usage_message_and_not_a_dist_walk",
 ]
+
+# DC9, run 3. The merge-base and the base's tip are the same commit only until the base
+# advances; after that, archiving the tip puts commits that are not "before this change" into
+# the before side and the verdict silently answers a different question.
+[[mutation]]
+name = "attribute compares against the base's tip instead of the merge-base"
+file = "src/keelline/guards/attribute.py"
+before = "        _extract(root, merge_base, merge)"
+after = "        _extract(root, base, merge)"
+reddens = [
+  "tests/guards/test_attribute.py::test_the_three_runs_land_in_the_working_tree_head_and_the_merge_base",
+]
+
+# DC9. A run that never executed has no exit code to score: the seam answers TIMED_OUT and
+# NOT_FOUND, and both are non-zero, so scoring them reads as "fails on both" — the one wrong
+# answer a tool whose output goes into a ledger entry must not give.
+[[mutation]]
+name = "attribute scores a run that never executed"
+file = "src/keelline/guards/attribute.py"
+before = "    if done.code in (TIMED_OUT, NOT_FOUND):"
+after = "    if False:"
+reddens = ["tests/guards/test_attribute.py::test_a_run_that_did_not_execute_is_a_failure_never_a_verdict"]
+
+# DC9, the verdict table. The two arms that differ only in the merge-base's code are the pair
+# a reader acts on: one says "your change", the other says "not your change".
+[[mutation]]
+name = "attribute swaps the this-change and pre-existing verdicts"
+file = "src/keelline/guards/attribute.py"
+before = "    if head != 0 and base != 0:\n        return VERDICTS[0]\n    if head != 0 and base == 0:\n        return VERDICTS[1]"
+after = "    if head != 0 and base != 0:\n        return VERDICTS[1]\n    if head != 0 and base == 0:\n        return VERDICTS[0]"
+reddens = ["tests/guards/test_attribute.py::test_each_verdict_follows_from_its_exit_codes"]
+
+# §3: a repository- or argument-derived value shaped like an option must be refused above the
+# first subprocess. `--base` reaches `git merge-base` as a positional argument, and git reads a
+# leading `-` as an option (`--upload-pack=` among them).
+[[mutation]]
+name = "attribute hands a -shaped --base straight to git"
+file = "src/keelline/guards/attribute.py"
+before = '    if base.startswith("-"):'
+after = "    if False:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_attribute_refuses_a_base_shaped_like_an_option",
+]

@@ -38,6 +38,7 @@ Three things hold everywhere:
 - [`keelline commit strip FILE`](#keelline-commit-strip-file)
 - [`keelline test hygiene`](#keelline-test-hygiene)
 - [`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints)
+- [`keelline test attribute --command CMD [--base REF]`](#keelline-test-attribute---command-cmd---base-ref)
 - [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`keelline bugs index [--check]`](#keelline-bugs-index---check)
 - [`keelline bugs check`](#keelline-bugs-check)
@@ -364,6 +365,58 @@ finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-o
 `names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
 `detail` are repository-authored strings, which is why they are in `--json` and not in the
 summary line.
+
+## `keelline test attribute --command CMD [--base REF]`
+
+Run one failing command three times and say what the three exit codes mean. The three trees:
+
+1. **The working tree as it is** — the command runs with `--root` as its directory, exactly
+   where you are.
+2. **`HEAD`'s committed tree** — extracted with `git archive` into a scratch directory.
+3. **The merge-base with the base branch** — extracted the same way. The merge-base, not the
+   base's tip: a base branch that advanced after the fork would otherwise carry commits that
+   are not "before this change" into the before side.
+
+`--base` defaults to `origin/<[project] base_branch>`; pass it to compare against another ref.
+
+**Writes** nothing. Nothing here runs `git checkout`, `git stash` or `git reset` — the working
+tree is read once, by run 1, and never written; the two extractions go to a temporary directory
+that is removed before the command returns.
+
+**The command is yours, and so is its environment.** `--command` takes the exact failing
+command *including the sync it needs to be meaningful* — `uv sync --locked && uv run pytest
+tests/x.py::t` for a Python project, the equivalent for another stack. That sync is the whole of
+what makes runs 2 and 3 comparable; a command that does not sync compares two drifted
+environments and the verdict is worth nothing. It is also what makes this command the same tool
+for every language.
+
+The verdict, from runs 2 and 3 first and run 1 only when both passed:
+
+| `HEAD` | merge-base | working tree | Verdict |
+|---|---|---|---|
+| fails | fails | — | `pre-existing: the failure is on the merge-base too, so it is not this change` |
+| fails | passes | — | `this change: HEAD fails and the merge-base passes` |
+| passes | fails | — | `this change fixed a pre-existing failure: HEAD passes and the merge-base fails` |
+| passes | passes | fails | `environmental: HEAD passes when synced and fails in the working tree as it is` |
+| passes | passes | passes | `not reproduced: all three runs passed` |
+
+Five sentences, and the four `HEAD`/merge-base cases are exhaustive: there is no sixth verdict
+and no fall-through. A run that **did not execute** — the launcher's wall-clock cap, or a
+command it could not start at all — is a failure naming which of the three it was, never a
+verdict. That matters more than it sounds: a cold sync in a fresh extraction is the likeliest
+thing to hit the cap, and two timed-out runs scored as exit codes would read as "fails on
+both", which is the one wrong answer a tool feeding a ledger entry must not give. Narrow the
+command to the failing test rather than asking for a wider cap.
+
+`--json` carries `runs` (`head_ambient`, `head_clean`, `base_clean` — the three exit codes in
+the order they were run), `base` (the ref asked for), `merge_base` (the commit actually
+extracted) and `verdict`. Record all four where the failure is discussed: a verdict without its
+inputs cannot be re-run.
+
+Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is origin/main
+fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
+archived tree's own `.gitattributes` excluded them, and `2` when `--base` is shaped like an
+option, which is refused above the first subprocess rather than handed to `git` as one.
 
 ## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 

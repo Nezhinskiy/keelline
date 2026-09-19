@@ -270,6 +270,26 @@ def run_test_audit(args: argparse.Namespace) -> Result:
     return Result(f"no candidates in {len(files)} test file(s)", data)
 
 
+def run_test_attribute(args: argparse.Namespace) -> Result:
+    from keelline.guards.attribute import attribute
+    from keelline.runner import subprocess_runner
+
+    root, config = _root_and_config(args)
+    base = args.base or f"origin/{config.project.base_branch}"
+    result = attribute(root, command=args.command, base=base, runner=subprocess_runner())
+    data = {
+        "runs": {
+            "head_ambient": result.head_ambient,
+            "head_clean": result.head_clean,
+            "base_clean": result.base_clean,
+        },
+        "base": result.base,
+        "merge_base": result.merge_base,
+        "verdict": result.verdict,
+    }
+    return Result(result.verdict, data)
+
+
 def register(groups: SubParsers) -> None:
     guard = groups.add_parser("guard", help="fail-closed guards over a tool call")
     guard_sub = guard.add_subparsers(dest="command", metavar="<command>")
@@ -297,3 +317,19 @@ def register(groups: SubParsers) -> None:
         test_sub.add_parser("audit-entrypoints", help="tests that never exercise what they name")
     )
     audit.set_defaults(func=run_test_audit)
+    attribute = common_flags(
+        test_sub.add_parser(
+            "attribute", help="attribute a failing command to the change or to the environment"
+        )
+    )
+    attribute.add_argument(
+        "--command",
+        required=True,
+        help="the exact failing command, including the environment sync it needs",
+    )
+    attribute.add_argument(
+        "--base",
+        default=None,
+        help="ref to compare against (default: origin/<project.base_branch>)",
+    )
+    attribute.set_defaults(func=run_test_attribute)
