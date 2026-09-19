@@ -225,6 +225,66 @@ needs_workflow = pytest.mark.skipif(
 )
 
 
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+needs_ci_workflow = pytest.mark.skipif(
+    not CI_WORKFLOW.is_file(), reason="ci.yml is not in the sdist"
+)
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
+PR_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
+_SHORT_VERSION = re.compile(
+    r"^## The short version\n.*?^```bash\n(.*?)^```", re.MULTILINE | re.DOTALL
+)
+_TEMPLATE_BLOCK = re.compile(r"^## Verification\n.*?^```\n(.*?)^```", re.MULTILINE | re.DOTALL)
+_COVERAGE_FLOOR = re.compile(r"--cov-fail-under=(\d+)")
+
+
+@needs_ci_workflow
+def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
+    """The two blocks a contributor runs before pushing, against what CI actually runs.
+
+    They listed five commands and CI ran seven: no coverage floor on the `pytest` line while
+    `ci.yml` fails below 92%, and no mutation oracle at all — the project's headline
+    obligation, missing from the one block a contributor copies. A contributor who followed
+    `CONTRIBUTING.md` exactly got a green tree and a red pull request, twice over.
+
+    Bound rather than restated: the floor is read out of `ci.yml`'s own `pytest` invocation, so
+    raising it in CI reddens here until both documents move with it.
+    """
+    # Mutation: drop the mutation-oracle line from `CONTRIBUTING.md`'s block -> reddens naming
+    # it. The floor first: a `run:` walk that returned nothing would satisfy every `in` below
+    # by making `ci` the empty string.
+    bodies = run_blocks(CI_WORKFLOW)
+    assert len(bodies) == EXPECTED_BLOCKS["ci.yml"], len(bodies)
+    ci = "\n".join(bodies)
+    floor = _COVERAGE_FLOOR.search(ci)
+    assert floor is not None, "ci.yml no longer runs pytest with a coverage floor"
+
+    blocks = {}
+    match = _SHORT_VERSION.search(CONTRIBUTING.read_text(encoding="utf-8"))
+    assert match is not None, "CONTRIBUTING.md has no `## The short version` bash block"
+    blocks["CONTRIBUTING.md"] = match.group(1)
+    match = _TEMPLATE_BLOCK.search(PR_TEMPLATE.read_text(encoding="utf-8"))
+    assert match is not None, "the pull-request template has no `## Verification` block"
+    blocks[".github/pull_request_template.md"] = match.group(1)
+
+    # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
+    required = (
+        f"--cov-fail-under={floor.group(1)}",
+        "scripts/mutation_oracle.py",
+        "ruff check .",
+        "ruff format --check .",
+        "mypy",
+        "keelline release check",
+    )
+    for name, text in blocks.items():
+        assert text.strip(), name
+        missing = [gate for gate in required if gate not in text]
+        assert missing == [], (name, missing)
+        # And each one is really a gate CI runs, so the block cannot drift into naming a
+        # command nobody checks.
+        assert all(gate in ci for gate in required), [g for g in required if g not in ci]
+
+
 WORKFLOWS = ROOT / ".github" / "workflows"
 # The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
 # cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and

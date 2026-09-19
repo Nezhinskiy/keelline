@@ -113,9 +113,9 @@ tested; Windows is not. The containment this project is built on uses `openat` w
 
 ## Quickstart
 
-Two keys in a `keelline.toml` at the root of a repository are enough; every other key takes the
-`recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all of them,
-annotated.
+Three keys in a `keelline.toml` at the root of a repository start a project; every other key
+takes the `recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all
+of them, annotated.
 
 ```toml
 [keelline]
@@ -123,6 +123,9 @@ version = "0.1.0"
 
 [project]
 name = "widget"          # one lowercase path segment
+
+[memory]
+groups = ["developer"]   # the preset names four; the store below has one
 ```
 
 The default memory mode keeps notes under `.keelline/local/memory/`, git-ignored, one
@@ -137,8 +140,14 @@ keelline doctor            # fifteen checks over this installation, one line; --
 ```
 
 `memory index` will tell you the notes reach no session until you say
-`keelline memory trust --in-repo-memory` once — that is the trust gate, and the next section
-says why it exists. Add `.keelline/local/` to `.gitignore` if it is not there already.
+`keelline memory trust --in-repo-memory` once — that is the trust gate, and
+[The threat model, in one paragraph](#the-threat-model-in-one-paragraph) says why it exists.
+Add `.keelline/local/` to `.gitignore` if it is not there already.
+
+The other commands in [Commands](#commands) expect more of a repository than those three keys
+create: `docs check` wants an `AGENTS.md`, `docs trail` a `docs/roadmap.md`, `bugs check` a
+ledger entry. Until `keelline init` ships, add each path as you start using the command that
+reads it; [docs/cli.md](docs/cli.md#configuration) lists every default.
 
 ## What it writes, and where
 
@@ -255,8 +264,10 @@ directory) and `--machine` (read a machine configuration file other than the def
 `memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
 exception: its `--root` names the directory an overlay is created in or the overlay itself,
 not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and
-prints one machine-readable object instead of one line; a list of findings is under
-`findings` whatever the summary calls them.
+prints one machine-readable object instead of one line. The commands that report a list of
+findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
+all spell it `findings`, whatever their summary line calls them; every other command's keys
+are its own and are listed with it in [docs/cli.md](docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
 internal error. A caller must never read 2 as permission. Two commands are deliberately

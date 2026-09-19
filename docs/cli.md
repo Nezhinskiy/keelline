@@ -9,8 +9,10 @@ Three things hold everywhere:
   It is not declared per command — the frame strips it from `argv` before parsing. A command
   whose result is a list of findings carries it under **`findings`**, named after what the
   values are and spelled the same way by every command, whatever its summary line calls them.
-  A list that is not findings keeps its own key: `docs check`'s advisory `notices`, and
-  `docs trail`'s `written`, `undeclared` and `stale`.
+  Five commands do: `bugs check`, `docs check`, `memory refs`, `plan check` and
+  `test audit-entrypoints`. Every other command's keys are its own and are listed with it
+  below — `doctor`'s `checks`, `docs check`'s advisory `notices`, `docs trail`'s `undeclared`,
+  and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result.
@@ -578,7 +580,7 @@ otherwise split the block and push repository prose into the roadmap. **Writes**
 ## `keelline plan check [--base REF] [PATH …]`
 
 With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
-`REF...HEAD` touches, `REF` defaulting to `origin/<project.base_branch>`. Four rules, each from a
+`REF...HEAD` touches, `REF` defaulting to `origin/<project.base_branch>`. Five rules, each from a
 retrospective: every backticked path resolves unless the line says `(create)` or declares it
 on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
 nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
@@ -1190,10 +1192,16 @@ gate enforces on is read from `keelline.toml` **on the base ref**, and on any br
 base branch itself the tree's copy must equal it byte for byte — once the base's state is
 `installed`, or the run fails before a gate runs. While the base is still `initialised` or
 `adopting` the difference is one `::warning` annotation and the run goes on, which is the
-same advisory rule the next paragraph states for the gates themselves. A pull request that could turn its own gates off is not a gate (§8.3 names the keys a
-pull request may eventually change; that refinement arrives with `assess`). The base ref itself
-is the caller's `base:`, the pull request's base, or the repository's default branch as the
-platform reports it — three anchors, none of them writable from the branch under review.
+same advisory rule the next paragraph states for the gates themselves. A pull request that
+could turn its own gates off is not a gate; which keys a pull request may eventually change is
+a question the `assess` lane answers, and until it ships the answer is none. The base ref
+itself is the pull request's base as the platform reports it, the caller's `base:` on every
+other event, or the repository's default branch — none of the three readable out of the tree
+under review, and on a pull request a `base:` that disagrees with the platform's answer is
+refused rather than preferred. The call site is the remaining surface: `.github/` is under
+CODEOWNERS here, and a project adopting this workflow wants the same plus a required review
+and a required status check, because the `uses:` line and its `with:` block live in a file a
+pull request can edit.
 
 **Advisory until the base says `installed`.** While the base's state is `initialised` or
 `adopting`, or while the base carries no `keelline.toml` at all — the bootstrap, which is every
@@ -1211,7 +1219,8 @@ demand, so that they are known to work — it is not a form this reference tells
 **What proves it.** `.github/workflows/smoke.yml` installs this plugin from the checkout with
 the real harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json`
 entry the event it is filed under through the *installed* wrapper, runs `doctor` over the
-result, runs the clone-to-exfiltration scenario of §14's S10, and calls this workflow against
+result, runs the clone-to-exfiltration scenario — a hostile clone attempting to reach the
+model through committed memory — and calls this workflow against
 the committed fixture project — so the reference above is checked by a run and not only by
 this page.
 
@@ -1301,7 +1310,28 @@ memory_index_words = 1200
 startup_rules_words = 1600
 volatile_notes_words = 2500
 volatile_ttl_days = 30
+
+[artifacts]
+local = []               # scaffold template ids whose artifact is written under
+                         # .keelline/local/ instead of being committed
+
+[ci]
+mode = "reusable"        # reusable | uvx | none — how this project means to be gated
+ref = ""                 # a remote `doctor`'s `ci-ref` row resolves with `git ls-remote`
+gate_branch = "main"     # the branch a gate reads its configuration from
+
+[commit_messages]
+attribution_check = true # whether `commit check` enforces the attribution block
+types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
 ```
+
+**Nine sections, and the list is closed**: a section this block does not show is refused when
+the file loads (`unknown section(s)`), so the grammar above is the whole of it. Two of the
+keys in the last three sections are read today — `[ci] ref` by `doctor`'s `ci-ref` row and
+`[commit_messages] attribution_check` by `commit check` — and `[artifacts] local` by the
+scaffold. `[ci] mode`, `[ci] gate_branch` and `[commit_messages] types` are validated on load
+and read by nothing yet; they are written here so that a project can record its intent without
+the loader refusing the file, and the lane that reads each one will say so.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -1309,8 +1339,7 @@ exceptions, and one line that is an example rather than a default. `[keelline] v
 not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
 `installed` above shows a set value, not what an omitted key takes. Everything from
-`[project] base_branch` down, `[paths]`, `[memory]`, `[ledger]` and `[budgets]` included, is the
-preset's default exactly as written.
+`[project] base_branch` down is the preset's default exactly as written.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two
@@ -1359,10 +1388,15 @@ value above the preset's is ignored rather than refused, so raising one is not a
 [personal]
 reply_language = ""      # chat replies; durable artifacts stay in the artifact language
 artifact_language = "en"
+preset = "recommended"   # the preset `setup` applies, and `init` will
 
 [overlay]
 root = "~/keelline-overlay"   # only read in overlay mode
 ```
+
+`keelline setup` writes a third table, `[machine]`, into the same file — `version`, the
+Keelline that ran, and `installed`, the date it ran. It is `setup`'s record of what it did, not
+a setting: it is written, never hand-edited, and a file that has never had one loads fine.
 
 **This file's location is not selectable by a repository.** The path is
 `~/.config/keelline/config.toml`, and neither `KEELLINE_CONFIG` nor `XDG_CONFIG_HOME` changes

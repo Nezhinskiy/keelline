@@ -7,15 +7,21 @@ those rules.
 ## The short version
 
 ```bash
-uv sync                         # once
-uv run pytest -q                # the suite
+uv sync                                     # once
+uv run pytest --cov --cov-fail-under=92     # the suite, at CI's coverage floor
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
-uv run keelline release check   # version discipline
+uv run python scripts/mutation_oracle.py    # every declared mutation still reddens
+uv run keelline release check               # version discipline
 ```
 
-All four run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13. CI also
-measures coverage and fails below 92%.
+All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
+the mutation oracle, which is this project's headline obligation and not an optional extra, and
+the coverage floor, which is why `pytest -q` alone will give you a green tree and a red pull
+request. CI runs three more steps you can reproduce only from a build (`uv build`, then
+`scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
+reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
+in either is ours to diagnose, not yours.
 
 ## What this project is, and what that costs a change
 
@@ -108,8 +114,9 @@ The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not 
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
 drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
 mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
-mutated file has uncommitted changes, because that edit is work the run cannot see — which is
-why a mutation run comes *after* the commit it is about.
+mutated file — **or any test file that a selected entry's `reddens` names** — has uncommitted
+changes, because that edit is work the run cannot see. Which is why a mutation run comes
+*after* the commit it is about, and why an uncommitted test edit mid-change stops it too.
 
 ```toml
 [[mutation]]
@@ -120,10 +127,11 @@ after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 ```
 
-CI runs the whole set. Three things are findings: a mutation that *survives*; one whose `before`
-line no longer exists, because the assertion and the line it is about have drifted apart; and
-one whose named tests do not pass on a clean tree before the mutation is applied, because a test
-that is red, skipped or misspelled cannot prove anything about a guard. This is not a coverage
+CI runs the whole set. Four things are findings: a mutation that *survives*; one whose `before`
+line no longer exists, because the assertion and the line it is about have drifted apart; one
+whose `before` line appears more than once in the file, because then the entry does not name a
+line; and one whose named tests do not pass on a clean tree before the mutation is applied,
+because a test that is red, skipped or misspelled cannot prove anything about a guard. This is not a coverage
 substitute; `--cov` is the breadth measure. It is the set of guards whose load-bearingness has
 to be proven rather than merely executed, which is exactly the distinction that let
 `fsops.open_within` be covered by twelve tests and contain nothing.

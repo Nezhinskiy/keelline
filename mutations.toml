@@ -4589,3 +4589,52 @@ file = "tests/test_areas.py"
 before = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy")})'
 after = 'SURFACE_EXEMPT = frozenset({("cli.py", "keelline.hooks.policy"), ("memory/commands.py", "keelline.hooks.dispatch")})'
 reddens = ["tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module"]
+
+# §4.6 item 6/7. The README's `--json` paragraph named four commands where five emit the key,
+# so a reader scripting against it would have read a `memory refs` findings list as "this
+# command does not report findings". The mutation is in the document, because the document is
+# what drifted.
+[[mutation]]
+name = "the README's --json paragraph drops a command that really emits `findings`"
+file = "README.md"
+before = "`memory refs`, "
+after = ""
+reddens = [
+  "tests/test_documents.py::test_the_readme_names_every_command_whose_json_carries_findings",
+]
+
+# §4.6 item 10. The configuration block showed six of the nine sections the loader accepts,
+# while the loader *refuses* an unknown one — so the block read as a closed grammar three
+# sections narrower than the real thing.
+[[mutation]]
+name = "docs/cli.md's configuration block loses a section the loader accepts"
+file = "docs/cli.md"
+before = """
+[ci]
+mode = "reusable\""""
+after = """
+mode = "reusable\""""
+reddens = [
+  "tests/test_documents.py::test_the_configuration_block_shows_every_section_the_loader_accepts",
+]
+
+# §4.6 item 9. The sentence announced four rules and then enumerated five, in one breath.
+[[mutation]]
+name = "docs/cli.md counts `plan check`'s rules wrong again"
+file = "docs/cli.md"
+before = "Five rules, each from a"
+after = "Four rules, each from a"
+reddens = [
+  "tests/test_documents.py::test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits",
+]
+
+# §4.6 item 13. The one block a contributor copies before pushing left out the mutation oracle
+# and the coverage floor, both of which fail the pull request CI runs.
+[[mutation]]
+name = "CONTRIBUTING's short version drops the mutation oracle again"
+file = "CONTRIBUTING.md"
+before = "uv run python scripts/mutation_oracle.py    # every declared mutation still reddens\n"
+after = ""
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
