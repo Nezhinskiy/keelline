@@ -92,11 +92,15 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    because `release notes` refuses a `--version` that is not the project's; after this step
    `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
 
-5. **Edit the README's install paragraph, then commit.** Replace the "**Nothing is released
-   yet.**" paragraph in `README.md` with the text in the HTML comment directly above it, which
-   carries the two tagged install forms — it is written there so this is an edit and not a
-   composition. Do it now: the commit below is the release commit, and after step 6 the tag
-   points at whatever this commit contains.
+5. **Edit the README's install section, then commit.** In `README.md`, replace everything
+   between `<!-- release-install:begin -->` and `<!-- release-install:end -->` — the markers,
+   included — with the text in the HTML comment directly above them, which carries the two
+   tagged install forms. **The whole marked region, not only the "Nothing is released yet."
+   paragraph**: the replacement brings its own code blocks, so a partial swap would leave the
+   untagged install commands standing beneath the tagged ones and keep a "From the first
+   release on…" promise that the release just falsified. It is written in the comment so this
+   is an edit and not a composition. Do it now: the commit below is the release commit, and
+   after step 6 the tag points at whatever this commit contains.
 
    ```bash
    git commit -am "chore(release): X.Y.Z"

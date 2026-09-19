@@ -41,7 +41,7 @@ adds:
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
-  earned them. Designed; the assessment engine is a later work package.
+  earned them. Designed; the assessment engine ships later.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
@@ -65,22 +65,33 @@ the state machine.
 
 ## Install
 
-<!-- RELEASING.md section 2, step 5 replaces the paragraph below with exactly this, at the
-first release, with X.Y.Z the version that was tagged. Written here so that the release
-commit is an edit and not a composition:
+<!-- RELEASING.md section 2, step 5 replaces EVERYTHING between the two
+`release-install` markers below — not just the first paragraph — with exactly the text in this
+comment, at the first release, with X.Y.Z the version that was tagged. The extent is marked
+rather than described because the replacement carries its own two code blocks: swapping only
+the opening paragraph would leave the untagged install commands and the "From the first
+release on" promise standing underneath it, so the released README would name two different
+install commands and make a forward reference that the release itself had just falsified.
+Written here so that the release commit is an edit and not a composition:
 
 **Released as X.Y.Z.** Both commands below install that release. The plugin form takes the
 tag, and `uv tool install keelline` resolves from PyPI:
+
+As a Claude Code plugin:
 
 ```
 /plugin marketplace add Nezhinskiy/keelline@vX.Y.Z
 /plugin install keelline@keelline-marketplace
 ```
 
+As a command-line tool:
+
 ```bash
 uv tool install keelline
 ```
 -->
+
+<!-- release-install:begin -->
 
 **Nothing is released yet.** There is no version tag, so nothing is on PyPI and both commands
 below install the repository's default branch as it stands rather than a release. `uv tool
@@ -103,6 +114,8 @@ From the first release on, the same command takes the tag —
 `uv tool install git+https://github.com/Nezhinskiy/keelline@<tag>` — which is the pinned form
 with no resolver to run at hook time that [principle 9](docs/methodology/principles.md)
 describes, and the published package makes the bare name work.
+
+<!-- release-install:end -->
 
 In CI, a project calls the reusable workflow at a commit SHA;
 [docs/cli.md](docs/cli.md#the-reusable-workflow) shows the three lines.
@@ -155,7 +168,7 @@ Keelline writes files. Being specific about which is the point of this section.
 
 | Path | What it is | Written by |
 |---|---|---|
-| `keelline.toml` | Your project's configuration, committed | you, or a later `init` lane |
+| `keelline.toml` | Your project's configuration, committed | you, until `keelline init` ships |
 | `docs/memory/` (configurable) | The note store, in `in-repo` and `overlay` mode | `keelline memory index` |
 | `.keelline/local/memory/` | The note store in `local-only` mode, the default — git-ignored | `keelline memory index` |
 | `<store>/MEMORY.md` | The rendered routing index. **Generated — do not hand-edit** | `keelline memory index` |
@@ -273,7 +286,7 @@ Exit codes are the same everywhere: **0** success, **1** findings, **2** a refus
 internal error. A caller must never read 2 as permission. Two commands are deliberately
 outside that rule. `keelline test audit-entrypoints` exits **0** even when it has findings,
 and lists them under `--json`, because its candidates are for triage and gating on them
-belongs to a lane that has not shipped. And `keelline hook` refuses with **2** on an internal
+is not shipped yet. And `keelline hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 Keelline must not cost you that. A handler's own deny is a decision, not a breakage, and
@@ -347,7 +360,7 @@ registers; `agents/` ships a read-only `code-navigator`. Every skill is written 
 language — never a harness tool's name — with the per-harness mapping in
 [skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is
 parsed against the real parser by a test. Three wrappers (`init`, `upgrade`, `uninstall`)
-describe commands later work packages ship, and the test that holds them says which.
+describe commands that ship later, and the test that holds them says which.
 
 ## Contributing
 

@@ -4843,3 +4843,16 @@ after = """
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
 ]
+
+# §4.6 item 12. `RELEASING.md` step 5 said to replace "the **Nothing is released yet.**
+# paragraph" with text that carries its own two code blocks — so the literal reading left the
+# untagged install commands standing beneath the tagged ones, plus a "From the first release
+# on" promise the release had just falsified. The extent is markers now.
+[[mutation]]
+name = "the README's release-install region loses the marker the release step names"
+file = "README.md"
+before = "<!-- release-install:begin -->"
+after = "<!-- an ordinary comment -->"
+reddens = [
+  "tests/test_documents.py::test_the_release_step_and_the_readme_agree_on_what_it_replaces",
+]
