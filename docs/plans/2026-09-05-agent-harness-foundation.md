@@ -19,11 +19,11 @@
 
 **Architecture:** One repository, `~/Dev/keelline`, is at once a plugin (manifests under `.claude-plugin/` and `.codex-plugin/`, a launcher under `scripts/`) and a package (`src/keelline/`, built by `uv_build`). Areas are subpackages that the CLI frame and the hook registry discover by name, so later lanes add `keelline/<area>/commands.py` and `keelline/<area>/hooks.py` without editing a shared registry. The runtime imports only the standard library, enforced by a test on every supported interpreter; Python 3.11 is the floor because the config loader uses `tomllib`, and the launcher refuses anything older with a reason.
 
-**Order:** the P0 spikes plan has recorded its Findings (merged as PR #349 into this branch). This plan takes from them: **S1** — Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` (Codex-only names) *and also* `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the `CLAUDE_*` names alone identify nothing, and Codex's `SessionStart` stdin carries `model` and `permission_mode` while Claude Code's does not; **S2** — `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` (the source directory for a directory-sourced marketplace), not to the `plugins/cache` copy, and a directory-sourced install preserves file modes; **S4** — only the `.claude-plugin/plugin.json` path validates skills and agents (the directory and marketplace targets report none of the planted defects), the Codex manifest is validated only by its own path, and its `skills` value resolves relative to `.codex-plugin/`; **S7** — the cap is exactly 10,000 characters per hook entry; **S8** — a hook file whose executable bit is lost degrades open on the platform side, which the installer and `doctor` must check at `installLocation` (a `hooks-core` concern, recorded in the Premise). Codex-side verification (S1's tool names, S2's Codex arm, S3) was deferred by the owner to the end of the programme on 2026-09-05; a follow-up spike round has since measured two of those three. **S1**: Codex's `PreToolUse` reports `Bash` uniformly for a shell command, a shell-routed file read and a shell-routed write attempt, and reports the literal string `apply_patch` — not `Write`, not `Edit` — for a patch-based edit; a separate probe then showed that a matcher of exactly `Edit|Write` still fires on that edit, so the aliases govern matching while the payload carries only the canonical name. The same round also measured `additionalContext` on Codex's `PreToolUse` specifically: the probe's canary reached the model in full and unabbreviated on all three firings. **S2**: no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content under Codex. Those results — the Codex tool names, the `PreToolUse` `additionalContext` canary, and S2's Codex arm — are now recorded in §10. **S3** (whether Codex's `/import` carries Claude memory notes) is still open: the interactive `/import` has since been run, but it read the owner's default Claude Code configuration directory rather than the seeded scratch one, so the fixture's canary was never in scope and the question needs a redesigned fixture rather than another keystroke. The eight Codex clauses §10 marks unmeasured — the hook-trust hash, `prompt`/`agent` handlers, `additionalContext` on the four events other than `PreToolUse`, async hooks unable to block, an exit 2 with empty stderr, `userConfig`, the ask-user fallback, `UserPromptExpansion` — stay unmeasured; §10's other Codex rows (the plugin-root variables reaching hooks, the absent `CLAUDE_PROJECT_DIR`, and the read/search routing) are Confirmed and must not be re-measured. So this plan still ships and validates the Codex manifest without depending on a Codex measurement of its own dispatcher.
+**Order:** the P0 spikes plan has recorded its Findings (merged into this branch). This plan takes from them: **S1** — Codex's hook launch sets `PLUGIN_ROOT` and `PLUGIN_DATA` (Codex-only names) *and also* `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the `CLAUDE_*` names alone identify nothing, and Codex's `SessionStart` stdin carries `model` and `permission_mode` while Claude Code's does not; **S2** — `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` (the source directory for a directory-sourced marketplace), not to the `plugins/cache` copy, and a directory-sourced install preserves file modes; **S4** — only the `.claude-plugin/plugin.json` path validates skills and agents (the directory and marketplace targets report none of the planted defects), the Codex manifest is validated only by its own path, and its `skills` value resolves relative to `.codex-plugin/`; **S7** — the cap is exactly 10,000 characters per hook entry; **S8** — a hook file whose executable bit is lost degrades open on the platform side, which the installer and `doctor` must check at `installLocation` (a `hooks-core` concern, recorded in the Premise). Codex-side verification (S1's tool names, S2's Codex arm, S3) was deferred by the owner to the end of the programme on 2026-09-05; a follow-up spike round has since measured two of those three. **S1**: Codex's `PreToolUse` reports `Bash` uniformly for a shell command, a shell-routed file read and a shell-routed write attempt, and reports the literal string `apply_patch` — not `Write`, not `Edit` — for a patch-based edit; a separate probe then showed that a matcher of exactly `Edit|Write` still fires on that edit, so the aliases govern matching while the payload carries only the canonical name. The same round also measured `additionalContext` on Codex's `PreToolUse` specifically: the probe's canary reached the model in full and unabbreviated on all three firings. **S2**: no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content under Codex. Those results — the Codex tool names, the `PreToolUse` `additionalContext` canary, and S2's Codex arm — are now recorded in §10. **S3** (whether Codex's `/import` carries Claude memory notes) is still open: the interactive `/import` has since been run, but it read the owner's default Claude Code configuration directory rather than the seeded scratch one, so the fixture's canary was never in scope and the question needs a redesigned fixture rather than another keystroke. The eight Codex clauses §10 marks unmeasured — the hook-trust hash, `prompt`/`agent` handlers, `additionalContext` on the four events other than `PreToolUse`, async hooks unable to block, an exit 2 with empty stderr, `userConfig`, the ask-user fallback, `UserPromptExpansion` — stay unmeasured; §10's other Codex rows (the plugin-root variables reaching hooks, the absent `CLAUDE_PROJECT_DIR`, and the read/search routing) are Confirmed and must not be re-measured. So this plan still ships and validates the Codex manifest without depending on a Codex measurement of its own dispatcher.
 
 **Tech Stack:** Python ≥ 3.11 (stdlib only at runtime), `uv` 0.11 with the `uv_build` backend, pytest, ruff, mypy, towncrier 26.9 (dev-time only), `claude` CLI for `plugin validate`, GitHub Actions.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` — §5 (public repository), §7.1 (configuration schema), §15.2 (the `foundation` row), §15.4 (contracts C1, C4, C5, C6 and disjoint ownership).
+**Spec:** the agent-harness extraction design, at the source's spec path — a private repository; it cannot be opened from this one — §5 (public repository), §7.1 (configuration schema), §15.2 (the `foundation` row), §15.4 (contracts C1, C4, C5, C6 and disjoint ownership).
 
 **Scope:** package `foundation` (§15.2); produces C1, C4 (interface), C5 and C6; consumes the S1, S4 and S7 answers of the spike record. A change belongs to this plan iff it lands in the Keelline repository under a path this plan's Files blocks name, or copies the two P0 documents from this repository into `docs/plans/` there. Handlers, hook entries, the wrapper, templates, skills and every preset section other than the three named below belong to other lanes.
 
@@ -441,7 +441,7 @@ git add tests/test_import_boundary.py && git commit -q -m "guard: pin the stdlib
 
 - [ ] **Step 1: Write the preset with the values §7.1 lists**
 
-`hook_output_chars` is the cap S7 measured: exactly 10,000 characters per hook entry (10,000 stayed unspilled, 10,001 spilled), so the value below is measured, not merely documented. `memory_index_words` follows the enforced budget in ai-daybook, raised from 1,100 to 1,200 on 2026-09-05.
+`hook_output_chars` is the cap S7 measured: exactly 10,000 characters per hook entry (10,000 stayed unspilled, 10,001 spilled), so the value below is measured, not merely documented. `memory_index_words` follows the enforced budget measured in the source project, raised from 1,100 to 1,200 on 2026-09-05.
 
 ```toml
 # src/keelline/presets/recommended.toml
@@ -843,7 +843,7 @@ def test_a_section_that_is_not_a_table_is_rejected(tmp_path: Path) -> None:
         load(tmp_path, machine=tmp_path / "no-machine.toml")
 
 
-@pytest.mark.parametrize("name", ["../common", "Ai Daybook", "", "-leading", "a/b"])
+@pytest.mark.parametrize("name", ["../common", "Two Words", "", "-leading", "a/b"])
 def test_project_name_must_be_one_lowercase_path_segment(tmp_path: Path, name: str) -> None:
     write(tmp_path, MINIMAL.replace('"sample"', f'"{name}"'))
     with pytest.raises(ConfigError, match="project.name"):
@@ -2604,27 +2604,28 @@ git commit -q -m "chore(ci): lint, types, tests on 3.11-3.13, version discipline
 - Create: `docs/plans/2026-09-05-agent-harness-foundation.md`
 
 **Interfaces:**
-- Produces: the plan location every later lane writes to (`docs/plans/<date>-<slug>.md`), and the proof that the plugin installs from the checkout. The two P0 documents are **copied**: ai-daybook keeps its copies as the historical record its design trail registers, and the Keelline copies are authoritative from this commit on.
+- Produces: the plan location every later lane writes to (`docs/plans/<date>-<slug>.md`), and the proof that the plugin installs from the checkout. The two P0 documents are **copied**: the source project keeps its copies as the historical record its design trail registers, and the Keelline copies are authoritative from this commit on.
 
-- [ ] **Step 1: Copy the two P0 documents from the ai-daybook branch and write the plans index**
+- [ ] **Step 1: Copy the two P0 documents from the source project's branch and write the plans index**
 
 ```bash
 mkdir -p docs/plans
-SRC="${AI_DAYBOOK:-$HOME/Dev/ai-daybook}"
+SRC="${SOURCE_CHECKOUT:?the source project's checkout}"
 REF=$(git -C "$SRC" rev-parse --verify --quiet harness/agent-harness-foundation \
   || git -C "$SRC" rev-parse --verify --quiet spec/agent-harness-extraction \
   || echo origin/dev)
 for name in 2026-09-05-agent-harness-p0-spikes 2026-09-05-agent-harness-foundation; do
-  git -C "$SRC" show "$REF:docs/superpowers/plans/$name.md" > "docs/plans/$name.md"
+  git -C "$SRC" show "$REF:<the source's plans directory>/$name.md" > "docs/plans/$name.md"
 done
 cat > docs/plans/README.md <<'EOF'
 # Plans
 
 One implementation plan per work package, `YYYY-MM-DD-<slug>.md`, written against the
-frozen design (`docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` in the
-ai-daybook repository until the methodology docs move here). A plan's `Scope:` line names
-the package it belongs to and the contracts it consumes and produces. The two P0 documents
-were copied from ai-daybook, which keeps its own copies as history.
+frozen extraction design. That design document is not public: it lives in a private
+repository, and a plan's references to it cannot be followed from this repository. A
+plan's `Scope:` line names the package it belongs to and the contracts it consumes and
+produces. The two P0 documents here were copied from that repository, which keeps its
+own copies as history.
 EOF
 if grep -nE '/[U]sers/[a-z]|/[h]ome/[a-z]|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' docs/plans/*.md \
      | grep -vE 'git@github\.com'; then
@@ -2633,7 +2634,7 @@ fi
 echo "the copied documents carry no home path and no personal address"
 ```
 
-The branch name is read at run time because the ai-daybook branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it. It is anchored on the *shape* of a leak — a home directory with a user under it, or an address — rather than on the owner's login, because the login appears legitimately in a repository URL, in the licence and in both manifests: an earlier form matched six such lines and zero leaks, which left its "clean" branch unreachable and the check unable to say anything. `[U]sers` and `[h]ome` are bracketed so the pattern does not match its own text, and `git@github.com` is filtered because an SSH remote is not an address. The `if` carries the verdict: in the pipeline form this step first used, the exit status was the trailing `grep -v`'s, which is **0 when it printed leak lines** and 0 again through the `echo` when it printed none — measured with a planted `/Users/someone/Dev/…` line, the leak was printed and the pipeline exited 0. Step 4's consent question calls these documents "scrubbed … in Step 1", so an executor reading exit codes would have pushed the leak to a public repository. (Every raw match in today's text is a `git@github.com` line.)
+The branch name is read at run time because the source project's branch may already have merged into `dev`; the executing branch is preferred over `spec/agent-harness-extraction` so that amendments made while this plan runs travel with the copy. `SRC` is written as a parameter expansion rather than a literal path because this plan is itself one of the copied documents, so a literal home directory here publishes the owner's account name. The last line scrubs **both** copied documents, not only the spike record: the earlier form greped the spike plan alone, and the one home path in the tree sat in this document, where nothing looked for it. It is anchored on the *shape* of a leak — a home directory with a user under it, or an address — rather than on the owner's login, because the login appears legitimately in a repository URL, in the licence and in both manifests: an earlier form matched six such lines and zero leaks, which left its "clean" branch unreachable and the check unable to say anything. `[U]sers` and `[h]ome` are bracketed so the pattern does not match its own text, and `git@github.com` is filtered because an SSH remote is not an address. The `if` carries the verdict: in the pipeline form this step first used, the exit status was the trailing `grep -v`'s, which is **0 when it printed leak lines** and 0 again through the `echo` when it printed none — measured with a planted `/Users/someone/Dev/…` line, the leak was printed and the pipeline exited 0. Step 4's consent question calls these documents "scrubbed … in Step 1", so an executor reading exit codes would have pushed the leak to a public repository. (Every raw match in today's text is a `git@github.com` line.)
 
 - [ ] **Step 2: Install the plugin from the checkout into a temporary configuration**
 

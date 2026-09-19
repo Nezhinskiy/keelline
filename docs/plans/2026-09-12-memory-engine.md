@@ -32,7 +32,7 @@ directory without reformatting each other's work.
 `secrets`, `datetime`, `pathlib`, `subprocess`, `os`, `tomllib`, `dataclasses`, `enum`),
 pytest, ruff, mypy strict.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` — §5.2 (the
+**Spec:** the agent-harness extraction design, at the source's spec path — a private repository; it cannot be opened from this one — §5.2 (the
 Memory row of the CLI table), §5.3 (which events these handlers serve), §6.2 and §6.3 (the
 overlay's layout and the tree `attach` creates), §9.1–§9.5 (the whole memory contract), §11
 (what migrates and the `common/ → projects/` link rule), §12 (the hostile-clone rows), §15.2
@@ -3940,7 +3940,7 @@ lost it.
 
 ### Task 11: Ledger notes
 
-**Source:** `scripts/bug_ledger_memory_hook.py`, with `tests/scripts/test_memory_hooks.py` and
+**Source:** the source project's ledger memory hook script, with `tests/scripts/test_memory_hooks.py` and
 `tests/scripts/test_bug_ledger_committed_tree.py`.
 
 **Produces:** `LEDGER_TERMS`, `opens_the_ledger(event, config)`, `build_context(store, config)`;
@@ -4200,9 +4200,9 @@ Expected on the scratch tree with both contract lanes present: **422 passed**, r
 - [ ] **Step 6: Confirm nothing project-identifying came along with the ports**
 
 ```bash
-cd ~/Dev/keelline && git diff --name-only main... | grep -E '^(src|tests)/' | xargs -r grep -niE 'ai-daybook|daybook|\bBR-[0-9]|docs/superpowers|src/app|telegram|temporal' || echo "clean"
+uv run python "$SCRATCH/neutral_hits.py" $(git diff --name-only main...)
 ```
-Expected: `clean`. Scoped to this lane's own files: §5.8's whole-tree gate is the `release`
+Expected: no hits. Scoped to this lane's own files: §5.8's whole-tree gate is the `release`
 lane's to run, and `docs/plans/` carries source references in three documents that predate it.
 
 - [ ] **Step 7: Commit and hand over**
