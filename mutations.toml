@@ -4856,3 +4856,16 @@ after = "<!-- an ordinary comment -->"
 reddens = [
   "tests/test_documents.py::test_the_release_step_and_the_readme_agree_on_what_it_replaces",
 ]
+
+# The harness guard for the sweep. `main` deletes every `keelline-oracle-*` directory under
+# `TEMPDIR`, so a test module that loads this script without redirecting it swept the
+# developer's own temporary directory — measured with a canary, which the suite removed — and
+# would have destroyed a concurrently running oracle's checkout.
+[[mutation]]
+name = "the oracle's test loader stops aiming TEMPDIR at its own scratch"
+file = "tests/scripts/test_mutation_oracle.py"
+before = '        module.__dict__["TEMPDIR"] = scratch'
+after = "        pass"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch",
+]

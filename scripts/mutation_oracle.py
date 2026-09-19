@@ -43,6 +43,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DECLARATION = ROOT / "mutations.toml"
+# Where scratch checkouts are made and where the sweep looks for leaked ones. A module-level
+# name rather than a `gettempdir()` call at each site, for the reason `ROOT` is one: this
+# module deletes directories, and its own tests have to be able to aim both halves somewhere
+# harmless. `tests/scripts/test_mutation_oracle.py` redirects this beside `ROOT` — before it
+# did, every run of that module swept the developer's real temporary directory, which is a
+# thing the suite must not touch and which would have destroyed a concurrent oracle's checkout.
+TEMPDIR = Path(tempfile.gettempdir())
 
 
 @dataclass(frozen=True)
@@ -84,7 +91,7 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def sweep_stale_scratch(keep: Path | None = None) -> list[str]:
+def sweep_stale_scratch(keep: Path | None = None, *, tempdir: Path | None = None) -> list[str]:
     """Drop every leaked scratch checkout but this run's, and return what was dropped.
 
     **`git worktree prune` does not clear these, and the docstring that said it did was wrong
@@ -125,7 +132,13 @@ def sweep_stale_scratch(keep: Path | None = None) -> list[str]:
         dropped.append(str(tree.parent))
     # And the trees no `git worktree` entry points at any more: `_run`'s `TemporaryDirectory`
     # leaks the same way on a kill, under the same prefix.
-    for stale in Path(tempfile.gettempdir()).glob(f"{SCRATCH_PREFIX}*"):
+    #
+    # `tempdir` overrides `TEMPDIR` for one call; both exist because this function deletes
+    # directories and a test has to be able to aim it somewhere harmless. With `gettempdir()`
+    # hard-coded here, every run of `tests/scripts/test_mutation_oracle.py` swept the
+    # developer's real temporary directory — measured with a canary planted there, which the
+    # suite removed — and a real oracle running at that moment would have lost its checkout.
+    for stale in (tempdir or TEMPDIR).glob(f"{SCRATCH_PREFIX}*"):
         if keep is not None and keep.parent == stale:
             continue
         if str(stale) in dropped or not stale.is_dir():
@@ -152,7 +165,7 @@ def scratch_checkout() -> Iterator[Path]:
     behind. `SIGKILL` cannot be caught by anything, which is what `sweep_stale_scratch` at the
     top of `main` is for.
     """
-    parent = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX))
+    parent = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX, dir=TEMPDIR))
     tree = parent / "tree"
     added = _git("worktree", "add", "--detach", "--quiet", str(tree), "HEAD")
     if added.returncode != 0:
@@ -247,7 +260,7 @@ def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
     fresh directory empty, and an empty cache directory means every module is compiled from the
     source actually on disk.
     """
-    with tempfile.TemporaryDirectory(prefix="keelline-oracle-cache-") as cache:
+    with tempfile.TemporaryDirectory(prefix=f"{SCRATCH_PREFIX}cache-", dir=TEMPDIR) as cache:
         report = Path(cache) / "report.xml"
         # The scratch checkout's `src` goes FIRST: the editable install of the main checkout is
         # on `sys.path` through site-packages, and PYTHONPATH is the only entry that precedes

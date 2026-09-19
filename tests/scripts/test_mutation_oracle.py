@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -48,6 +49,21 @@ def oracle(root: Path | None = None) -> ModuleType:
         # Through `__dict__`, not an attribute assignment: `ModuleType` types reads as
         # `Any` and writes as an error, and this one is deliberate.
         module.__dict__["ROOT"] = root
+        # And `TEMPDIR` beside it, for every test in this module rather than for the ones that
+        # remember. `main` sweeps `TEMPDIR` for leaked scratch checkouts and deletes what it
+        # finds, so with the real temporary directory in place each test that calls `main`
+        # swept the developer's own — measured with a canary planted there, which the suite
+        # removed — and would have destroyed a concurrently running oracle's checkout. The
+        # scratch checkout and the bytecode cache are created under it too.
+        #
+        # A SIBLING of `root` and never `root` itself: the scratch checkout has to land outside
+        # the repository it is a checkout of, which is the property
+        # `test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout`
+        # asserts — pointing it at `root` put the worktree inside the tree under test and
+        # reddened that test, correctly.
+        scratch = root.parent / f"{root.name}-oracle-tmp"
+        scratch.mkdir(parents=True, exist_ok=True)
+        module.__dict__["TEMPDIR"] = scratch
     return module
 
 
@@ -163,6 +179,33 @@ def test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch(tmp_path
     assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
 
 
+def test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch(
+    tmp_path: Path,
+) -> None:
+    """The guard on the harness, because this module drives a function that deletes trees.
+
+    `main` sweeps `TEMPDIR` for leaked scratch checkouts and removes what it finds. With the
+    real temporary directory in place, every test here that calls `main` swept the developer's
+    own — measured by planting a `keelline-oracle-canary` directory in it and running this
+    module, which removed it — and a concurrently running oracle would have lost its checkout
+    mid-run. A suite that can delete a developer's files is a defect whatever it is testing.
+
+    A sibling of `root` and never `root` itself, because a scratch checkout of a repository
+    must not land inside it.
+
+    Mutation (declared): the `TEMPDIR` redirect is dropped from `oracle()` -> this reddens.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    module = oracle(root=root)
+    aimed = Path(module.TEMPDIR)
+    assert aimed != Path(tempfile.gettempdir()), aimed
+    assert tmp_path in aimed.parents, aimed
+    assert root not in aimed.parents and aimed != root, aimed
+    # And the checkout really is made under it, rather than the name merely being set.
+    assert Path(module.__dict__["ROOT"]) == root
+
+
 @needs_git
 def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it(
     tmp_path: Path,
@@ -216,10 +259,20 @@ def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_ta
     git("worktree", "prune")
     assert str(tree) in git("worktree", "list").stdout, "prune took it, so there is no leak"
 
-    dropped = module.sweep_stale_scratch()
+    # `tempdir=tmp_path` explicitly, so this test states the containment it depends on rather
+    # than inheriting it from the loader.
+    dropped = module.sweep_stale_scratch(tempdir=tmp_path)
     assert str(leaked) in dropped, dropped
     assert str(tree) not in git("worktree", "list").stdout, git("worktree", "list").stdout
     assert not leaked.exists(), sorted(tmp_path.iterdir())
+
+    # The orphaned-directory half, in the same scratch: a directory under the prefix that no
+    # `git worktree` entry points at is swept too, because `_run`'s cache leaks the same way.
+    orphan = tmp_path / f"{module.SCRATCH_PREFIX}cache-left-by-a-kill"
+    orphan.mkdir()
+    dropped = module.sweep_stale_scratch(tempdir=tmp_path)
+    assert str(orphan) in dropped, dropped
+    assert not orphan.exists()
 
 
 def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> None:
