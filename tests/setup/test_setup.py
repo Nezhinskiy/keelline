@@ -13,8 +13,9 @@ import pytest
 from keelline.attach.api import read_binding
 from keelline.errors import Refusal
 from keelline.memory.api import overlay_root
-from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST, Completed
+from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from keelline.presets import load_preset
+from keelline.runner import Completed
 from keelline.setup.api import USER_SETTINGS, setup
 from keelline.setup.machine import read_machine, write_machine
 
@@ -256,7 +257,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
     # binary would surface (`Runner` turns it into `Completed(127, ...)`).
     #
     # No mutation: this is `Runner`'s own fail-soft convention (a non-zero result is a note,
-    # per `overlay.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
+    # per `keelline.runner.Runner`'s own docstring), exercised here through the `FakeRunner`
     # script rather than guarding one line of this module's own whose removal would look like
     # a plausible bug — the "non-zero becomes a note" shape is `_install_plugins`' whole
     # structure, not a single guardable line.
@@ -1015,3 +1016,226 @@ def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_comman
     assert "no --home can name it" in message
     assert "keelline setup --home" not in message, "a command that cannot work is worse than none"
     assert "adopt it" in message, "the way out has to be named, not just the refusal"
+
+
+def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home(
+    tmp_path: Path,
+) -> None:
+    # R3: `stow` links `~/.claude/settings.json` itself into a dotfiles tree, and no `--home`
+    # value writes that file — `--home <dotfiles>/claude` writes `<dotfiles>/claude/.claude/
+    # settings.json`. `--settings PATH` names the file. The link under `home` is left exactly
+    # as it was; the dotfiles file gains the deny rules; nothing new appears under `home`.
+    #
+    # Mutation (declared): the `root, relative = …` line -> `(home, USER_SETTINGS)`
+    # unconditionally. What it actually does is recorded beside the assertion below.
+    home = tmp_path / "home"
+    dotfiles = tmp_path / "dotfiles" / "claude"
+    dotfiles.mkdir(parents=True)
+    real = dotfiles / "settings.json"
+    real.write_text("{}\n", encoding="utf-8")
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "settings.json").symlink_to(real)
+    before = sorted(str(p.relative_to(home)) for p in home.rglob("*"))
+    setup(
+        "recommended",
+        home=home,
+        machine=tmp_path / "machine.toml",
+        runner=FakeRunner(),
+        yes=False,
+        overlay=None,
+        project_root=tmp_path / "project",
+        settings=real,
+    )
+    written = json.loads(real.read_text(encoding="utf-8"))
+    # Read defensively so the failure says which file was written rather than raising a
+    # `KeyError` on a document the deny rules never reached: under the declared mutation the
+    # write lands under `home` — replacing the link with a real file of the same name, so the
+    # inventory below is unchanged — and the dotfiles file is still the empty `{}` it started
+    # as. That silence is the whole defect, and this sentence is what names it.
+    deny = written.get("permissions", {}).get("deny", [])
+    assert "Read(.env*)" in deny, f"the file --settings named was not written: {written}"
+    assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
+
+
+def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The structural question `setup`'s own docstring promises is asked "while nothing is on
+    # disk", asked for the spelling that skipped it. `_check_settings_path(home)` ran only when
+    # `settings is None`, so with `--settings` the refusal came from `_write_user_settings` —
+    # after `home.mkdir(parents=True)` and after `write_machine`. A typo in the directory
+    # component therefore created the home tree, wrote the machine configuration, and exited 2,
+    # and the two cases below asserted the refusal and its sentence while never asking that.
+    #
+    # Mutation (declared, "setup asks about the --settings directory only at write time"): the
+    # `else:` arm becomes `pass`. The `Refusal` still comes — one frame later — so the two
+    # `exists()` assertions are what redden, and the `raises` is not the claim here.
+    home = tmp_path / "home"
+    machine = tmp_path / "machine.toml"
+    missing = tmp_path / "not-there" / "settings.json"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=missing,
+        )
+    assert str(missing) in str(refused.value)
+    assert "has to exist and be a real directory" in str(refused.value)
+    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
+    assert not machine.exists()
+
+
+def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 1, item 2. `_write_user_settings` caught only `UnsafePath`, and `write_within`
+    # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root
+    # that is not there raises a bare `FileNotFoundError`, which left the library and reached
+    # `cli.run`'s final handler as `keelline: internal error`, exit 2, no remedy. A typo in
+    # `--settings`' directory component is the ordinary way to get there.
+    #
+    # This is now the FLOOR under the case above rather than the case itself:
+    # `_check_settings_parent` refuses the same two conditions one stage earlier, so the
+    # interval in which the directory goes away between the check and the write is what is
+    # left, and it is reached the way the `~/.claude` floor above reaches its own — by patching
+    # the first stage out. The alternative is a race nothing can schedule.
+    #
+    # Mutation (declared): the `except OSError` arm -> `except UnsafePath` (a second, dead
+    # copy) -> the `OSError` escapes again and this reddens on `Refusal` not being raised.
+    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
+    home = tmp_path / "home"
+    missing = tmp_path / "not-there" / "settings.json"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "machine.toml",
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=missing,
+        )
+    message = str(refused.value)
+    assert str(missing) in message
+    assert "FileNotFoundError" in message
+    assert "has to exist and be a real directory" in message
+
+
+def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other half of item 2, and the layout `--settings` is advertised for one door over:
+    # `--settings ~/.claude/settings.json` where `~/.claude` is itself the stow link. The walk
+    # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare
+    # `OSError` rather than as `UnsafePath`, for the same reason as above. The first stage is
+    # patched out for the reason the case above gives: it now refuses a symlinked directory too,
+    # and this one is the floor beneath it.
+    monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
+    home = tmp_path / "home"
+    real = tmp_path / "dotfiles" / "claude"
+    real.mkdir(parents=True)
+    linked = tmp_path / "linked-claude"
+    linked.symlink_to(real, target_is_directory=True)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "machine.toml",
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=linked / "settings.json",
+        )
+    message = str(refused.value)
+    assert str(linked / "settings.json") in message
+    assert "has to exist and be a real directory" in message
+    # The file the link leads to is untouched: a refusal that had already written would be the
+    # defect this one replaces, one step later.
+    assert not (real / "settings.json").exists()
+
+
+def test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_survives(
+    tmp_path: Path,
+) -> None:
+    # The layout the flag is advertised for, with the path a person actually types: `stow`
+    # folds as far as it can, so with `~/.claude` already there it links the *file*, and
+    # `--settings ~/.claude/settings.json` names the link. `_check_settings_parent` asked only
+    # about the directory, and `fsops.write_within` reaches `os.replace`, which REPLACES a
+    # symlink entry rather than following or refusing it — so the link became a regular file,
+    # the dotfiles copy kept its old bytes, and the command exited 0. Three surfaces said it
+    # was refused: the comment beside the write, `docs/cli.md`, and the changelog.
+    #
+    # Measured before the fix: `is_symlink()` went `True -> False` and the dotfiles file was
+    # still `{"mine": true}`. Both assertions below are that measurement.
+    #
+    # Mutation (declared, "setup --settings asks about the directory and not the file"): the
+    # `contained` call goes -> the write lands, the link is replaced, and `pytest.raises`
+    # reddens with `DID NOT RAISE`.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    machine = tmp_path / "machine.toml"
+    real = tmp_path / "dotfiles" / "claude" / "settings.json"
+    real.parent.mkdir(parents=True)
+    real.write_text('{"mine": true}\n', encoding="utf-8")
+    link = home / USER_SETTINGS
+    link.symlink_to(real)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=link,
+        )
+    message = str(refused.value)
+    assert str(link) in message
+    # The way out names the file to pass instead, the way `_check_settings_path`'s does.
+    assert str(real) in message
+    assert link.is_symlink(), "the link was replaced rather than refused"
+    assert json.loads(real.read_text(encoding="utf-8")) == {"mine": True}
+    assert not machine.exists()
+
+
+def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The mirror of the case above, and the standing defect class in the function whose
+    # docstring says it has been eliminated: a directory at `--settings` passed the early check
+    # — `parent.is_dir() and not parent.is_symlink()` is true of it — and failed from inside
+    # `_write_user_settings`, after `home.mkdir(parents=True)` and after the machine
+    # configuration had been written. The `Refusal` is therefore NOT what this case is about:
+    # the `except OSError` arm produces one either way, and what reddens under the declared
+    # mutation is the two `exists()` assertions.
+    #
+    # Mutation (declared, "setup --settings accepts a directory where the file goes"): the
+    # `is_dir()` refusal goes -> the run writes the home tree and the machine file before
+    # `os.replace` reports `IsADirectoryError`, and both assertions below redden.
+    home = tmp_path / "home"
+    machine = tmp_path / "machine.toml"
+    directory = tmp_path / "claude" / "settings.json"
+    directory.mkdir(parents=True)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=directory,
+        )
+    assert str(directory) in str(refused.value)
+    assert "is a directory" in str(refused.value)
+    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
+    assert not machine.exists()

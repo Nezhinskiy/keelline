@@ -8,12 +8,16 @@ import pytest
 
 from keelline.fsops import (
     NEW_FILE_MODE,
+    NotASymlink,
     UnsafePath,
     _mode_of,
     mkdirs_within,
     open_within,
+    readlink_within,
     remove_within,
     rmdir_within,
+    symlink_within,
+    unlink_within,
     write_atomically,
     write_atomically_at,
     write_within,
@@ -330,3 +334,57 @@ def test_a_directory_that_cannot_be_fsynced_does_not_fail_a_written_file(tmp_pat
     finally:
         monkey.undo()
     assert (tmp_path / "a.md").read_text(encoding="utf-8") == "body\n"
+
+
+def test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_parent(
+    tmp_path: Path,
+) -> None:
+    # N1: `memory/worktree._link` created links with `Path.symlink_to` after a `Path.exists`
+    # check, so a component swapped for a symlink between the two put the link wherever the
+    # link pointed. The primitive walks with O_NOFOLLOW and creates through the directory
+    # descriptor, so a symlinked parent is refused and nothing lands behind it.
+    #
+    # Mutation (declared): create with `os.symlink(str(source), root / target)` before the
+    # walk -> the link appears under `elsewhere` and the last assertion reddens.
+    root = tmp_path / "root"
+    elsewhere = tmp_path / "elsewhere"
+    (root / "notes").mkdir(parents=True)
+    elsewhere.mkdir()
+    (root / "notes" / "private").symlink_to(elsewhere)
+    source = tmp_path / "store" / "developer"
+    source.mkdir(parents=True)
+    with pytest.raises(UnsafePath):
+        symlink_within(root, "notes/private/developer", source)
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_readlink_within_tells_absent_from_symlink_from_real(tmp_path: Path) -> None:
+    # Three answers, because `_link` needs all three: nothing there (create), a link (compare
+    # and maybe replace), a real entry (leave alone — "withdrawing a link is not licence to
+    # delete a directory"). No mutation: each arm is one `lstat` branch, and the two callers'
+    # tests below redden on the wrong answer.
+    root = tmp_path / "root"
+    root.mkdir()
+    assert readlink_within(root, "absent") is None
+    (root / "real").mkdir()
+    with pytest.raises(NotASymlink):
+        readlink_within(root, "real")
+    (root / "link").symlink_to(tmp_path / "target")
+    assert readlink_within(root, "link") == tmp_path / "target"
+
+
+def test_unlink_within_removes_only_a_link_that_points_where_it_was_told(tmp_path: Path) -> None:
+    # Mutation (declared): drop the `pointing_at` comparison -> the foreign link is removed
+    # and the middle assertion reddens.
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "real").mkdir()
+    with pytest.raises(NotASymlink):
+        unlink_within(root, "real")
+    (root / "foreign").symlink_to(tmp_path / "theirs")
+    assert unlink_within(root, "foreign", pointing_at=tmp_path / "ours") is False
+    assert (root / "foreign").is_symlink()
+    (root / "ours").symlink_to(tmp_path / "ours")
+    assert unlink_within(root, "ours", pointing_at=tmp_path / "ours") is True
+    assert not (root / "ours").is_symlink()
+    assert unlink_within(root, "ours") is False

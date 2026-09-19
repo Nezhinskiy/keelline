@@ -1,7 +1,7 @@
 [project]
 name = "keelline"
 version = "0.1.0"
-description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and an adoption state machine, packaged as one plugin for Claude Code and Codex."
+description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

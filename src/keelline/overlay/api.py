@@ -8,9 +8,8 @@ does not import a private module of this area.
 `require_overlay` and `overlay_fault`; `Created` and `Initialised` come with the first two,
 because a return type absent from this list is a value `setup` can hold and cannot declare.
 `attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
-`COMMON_CODEX`). `attach`, `doctor` and `setup` all run a harness binary through `Runner`, which
-CONTRIBUTING names as the seam a test stubs instead of shelling out, so `Runner`,
-`subprocess_runner` and the `Completed` a runner answers with are part of it.
+`COMMON_CODEX`). The runner is a leaf (`keelline.runner`), not this area's; it used to be
+published here on behalf of three other areas, which is the shape DC2 ended.
 
 Two names are here with no importer in `src/`, on purpose:
 
@@ -41,7 +40,6 @@ from keelline.overlay.layout import (
     MARKETPLACE_MANIFEST,
     PLUGIN_MANIFEST,
 )
-from keelline.overlay.runner import Completed, Runner, subprocess_runner
 
 __all__ = [
     "CODEX_PLUGIN_MANIFEST",
@@ -50,14 +48,11 @@ __all__ = [
     "COMMON_MEMORY",
     "MARKETPLACE_MANIFEST",
     "PLUGIN_MANIFEST",
-    "Completed",
     "Created",
     "Initialised",
-    "Runner",
     "create",
     "init_instance",
     "overlay_fault",
     "require_overlay",
-    "subprocess_runner",
     "target_root",
 ]

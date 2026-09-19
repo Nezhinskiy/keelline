@@ -3,21 +3,28 @@
 One command and not a group, the shape §5.2's contract row states and the shape the skill
 already invokes.
 
-**A `skip` is not a finding.** Three of the fifteen checks cannot be answered by this build —
-the release's recorded hashes, the Codex hook-trust hash §10 lists as unmeasured, and a `[ci]
-ref` that `init` has not shipped a writer for — so an exit code that counted skips would make
-`doctor` red on every correct installation until wave 5. Exit 1 is reserved for `red` (C5:
-findings), and `warn` does not reach it either: a budget lowered below the preset and a harness
-link the trust gate has not opened are both correct states somebody should still see.
+**A `skip` is not a finding.** Two of the fifteen checks cannot be answered by this build —
+the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` has not shipped
+a writer for — so an exit code that counted skips would make `doctor` red on every correct
+installation until wave 5. `files` was the third of the two until the release lane shipped the
+record it compares against. Exit 1 is reserved for `red` (C5: findings), and `warn` does not
+reach it either: a budget lowered below the preset and a harness link the trust gate has not
+opened are both correct states somebody should still see.
 
-**Three is the floor and not the count.** Five more rows have a skip arm that fires on a state
-of the machine rather than on this build — `wrapper` and a second arm of `files` when no plugin
-root can be vouched for, `pre-commit` with no overlay root recorded, `bundles` and
-`store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
-`run_checks` skips fourteen at once when `keelline.toml` is missing or will not load. The
-plugin-root pair is the one that matters: it is the state in which every hook entry on the
-machine is silent, and it reports as two `skip` rows, so both carry `checks.PLUGIN_ROOT_REMEDY`
-rather than the empty remedy a "this build cannot answer" skip is entitled to.
+**Two is the floor and not the count.** Seven more rows have a skip arm that fires on a state
+of the machine rather than on this build — `wrapper` and `files` when no plugin root can be
+vouched for, `files` again on a build that carries no release record, `attached` with no
+overlay recorded or an overlay that could not be asked, `pre-commit` with no overlay root
+recorded, `bundles` and `store-debris` with a store that does not resolve, `diagnostics` with
+no harness data root — and `run_checks` skips fourteen at once when `keelline.toml` is missing
+or will not load. Twelve skip arms in all, and **five of them carry a remedy** — but not
+because they skip on a state: four state skips (`bundles`, `pre-commit`, `store-debris`,
+`diagnostics`) carry nothing, and `pre-commit`'s state is changed by the very command
+`checks._uncorroborated` names. The line is whether the skip is **itself worth acting on**, and
+`checks.Check`'s docstring is where that rule is stated. The plugin-root pair is the case that
+makes it: it is the state in which every hook entry on the machine is silent, nothing else in
+the report says so, and it reports as two quiet `skip` rows — so both carry
+`checks.PLUGIN_ROOT_REMEDY`.
 
 **The remedies live in `--json` and never in the summary.** §5.2 gives every command one line,
 and fifteen remedies do not fit in one; the skill relays each remedy verbatim from the report,
@@ -36,7 +43,7 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags
+from keelline.command import HOME_HELP, common_flags
 from keelline.doctor.checks import RED, SKIP, WARN, Check, run_checks
 from keelline.findings import listed
 from keelline.result import Result
@@ -61,7 +68,7 @@ def summarise(checks: list[Check]) -> str:
 
 
 def run_doctor(args: argparse.Namespace) -> Result:
-    from keelline.overlay.api import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     root = Path(args.root).resolve()
     checks = run_checks(
@@ -90,9 +97,5 @@ def run_doctor(args: argparse.Namespace) -> Result:
 
 def register(groups: SubParsers) -> None:
     doctor = common_flags(groups.add_parser("doctor", help="report on this installation"))
-    doctor.add_argument(
-        "--home",
-        default=None,
-        help="the home directory whose harness files to read (default: the real one)",
-    )
+    doctor.add_argument("--home", default=None, help=HOME_HELP)
     doctor.set_defaults(func=run_doctor)

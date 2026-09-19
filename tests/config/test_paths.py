@@ -61,11 +61,11 @@ def test_a_final_symlink_is_refused_unless_allowed(tmp_path: Path) -> None:
     outside = tmp_path.parent / f"{tmp_path.name}-store"
     outside.mkdir()
     (tmp_path / "docs").mkdir()
-    os.symlink(outside, tmp_path / "docs" / "memory", target_is_directory=True)
+    os.symlink(outside, tmp_path / "docs" / "notes", target_is_directory=True)
     with pytest.raises(PathEscape, match="symlink"):
-        contained(tmp_path, "docs/memory")
-    allowed = contained(tmp_path, "docs/memory", allow_final_symlink=True)
-    assert allowed == tmp_path / "docs" / "memory"
+        contained(tmp_path, "docs/notes")
+    allowed = contained(tmp_path, "docs/notes", allow_final_symlink=True)
+    assert allowed == tmp_path / "docs" / "notes"
 
 
 def test_a_symlinked_root_does_not_confuse_containment(tmp_path: Path) -> None:
@@ -81,7 +81,7 @@ def test_allow_final_symlink_does_not_relax_an_intermediate_symlink(tmp_path: Pa
     real.mkdir()
     (tmp_path / "docs").symlink_to(real, target_is_directory=True)
     with pytest.raises(PathEscape, match="symlink"):
-        contained(tmp_path, "docs/memory", allow_final_symlink=True)
+        contained(tmp_path, "docs/notes", allow_final_symlink=True)
 
 
 def test_a_supplied_resolved_root_is_the_one_compared(tmp_path: Path) -> None:

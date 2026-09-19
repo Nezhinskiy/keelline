@@ -22,9 +22,16 @@ from keelline.config.loader import CONFIG_FILE, ConfigError
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD, PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from keelline.presets import load_preset
 from keelline.scaffold import EntriesError
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+# The preset's own default `paths.memory` — read off the preset, never spelled. Every fixture
+# here takes the default, so a literal would have to be the same string the preset ships, and
+# §5.8's whole-tree gate holds a test module to the full table, where a default path is a
+# finding. Derived, the fixture and the assertions follow the preset if it ever moves.
+DEFAULT_MEMORY = load_preset("recommended")["defaults"]["paths"]["memory"]
 
 CONFIG = """
 [keelline]
@@ -83,6 +90,13 @@ def _project_and_store(
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
+    # A home directory that is already there. Keelline finds the machine owner's home and
+    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
+    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
+    # anchor itself — so a home that is not there is a refusal, which
+    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
+    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     for relative in (COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY):
         (overlay / relative).mkdir(parents=True, exist_ok=True)

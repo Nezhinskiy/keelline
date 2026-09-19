@@ -30,7 +30,9 @@ Three things hold everywhere:
 - [`keelline memory session-context --bundle <name> [--part N]`](#keelline-memory-session-context---bundle-name---part-n)
 - [`keelline memory inventory`](#keelline-memory-inventory)
 - [`keelline memory fit`](#keelline-memory-fit)
-- [`keelline release check`](#keelline-release-check)
+- [`keelline release check [--tag TAG]`](#keelline-release-check---tag-tag)
+- [`keelline release notes --version X.Y.Z [--draft]`](#keelline-release-notes---version-xyz---draft)
+- [`keelline release hashes [--check]`](#keelline-release-hashes---check)
 - [`keelline hook <event>`](#keelline-hook-event)
 - [Hooks](#hooks)
 - [`keelline guard bg-cleanup`](#keelline-guard-bg-cleanup)
@@ -38,6 +40,7 @@ Three things hold everywhere:
 - [`keelline commit strip FILE`](#keelline-commit-strip-file)
 - [`keelline test hygiene`](#keelline-test-hygiene)
 - [`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints)
+- [`keelline test attribute --command CMD [--base REF]`](#keelline-test-attribute---command-cmd---base-ref)
 - [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`keelline bugs index [--check]`](#keelline-bugs-index---check)
 - [`keelline bugs check`](#keelline-bugs-check)
@@ -49,11 +52,14 @@ Three things hold everywhere:
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
 - [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
+- [`keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
 - [`keelline attach --store PATH [--check] [--yes] [--trust-remote] [--root PATH] [--machine PATH]`](#keelline-attach---store-path---check---yes---trust-remote---root-path---machine-path)
 - [`keelline detach [--root PATH] [--machine PATH]`](#keelline-detach---root-path---machine-path)
-- [`keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
+- [`keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`keelline setup --git-hooks [--uninstall] [--root PATH]`](#keelline-setup---git-hooks---uninstall---root-path)
 - [`keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#keelline-doctor---json---root-path---home-path---machine-path)
+- [The reusable workflow](#the-reusable-workflow)
+- [Shared flags](#shared-flags)
 - [Configuration](#configuration)
 
 ---
@@ -99,7 +105,7 @@ command ran, it refuses to carry trust and says so.
 
 ## `keelline memory trust --in-repo-memory`
 
-Record that the notes this repository committed may reach the model.
+Record that the notes sitting inside this repository may reach the model.
 
 The flag is required and never read: it is a confirmation gesture, not a switch, and it is what
 stops this from being a bare, trivially scripted command.
@@ -160,13 +166,64 @@ whether the trust gate is open.
 
 Writes nothing.
 
-## `keelline release check`
+## `keelline release check [--tag TAG]`
 
 Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/keelline/__init__.py`, both
 plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
 
+`--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
+shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
+`keelline--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
+other rule tightens: without it a pending fragment in `changelog.d/` lets `CHANGELOG.md` lag,
+because a lane writes its fragment long before a release assembles it, but at a tag there is
+nothing left to assemble, so a fragment still pending means the changelog users will read is
+not the one the tag claims. That is a finding naming the count.
+
 This is discipline for **the Keelline repository itself**, not something Keelline offers your
 project. See [RELEASING.md](../RELEASING.md).
+
+## `keelline release notes --version X.Y.Z [--draft]`
+
+Assemble `CHANGELOG.md` from the fragments in `changelog.d/`, through towncrier.
+
+```bash
+keelline release notes --version 1.2.3 --draft   # print the section; write nothing
+keelline release notes --version 1.2.3           # write it, and consume the fragments
+```
+
+A wrapper and nothing more: towncrier does the rendering and `[tool.towncrier]` in
+`pyproject.toml` owns the format. Two things are this command's own. A `--version` that is not
+the project's version is **refused** (`2`) before towncrier runs, because assembling under
+another number writes a `CHANGELOG.md` heading that `release check` then refuses — set the
+version in every source first, then assemble under it. And a towncrier that cannot be run is a
+finding (`1`) that names it as the development dependency it is, rather than a traceback.
+
+Without `--draft` the fragment files are consumed, which is a write to the repository; with it
+nothing is written and the rendered section is printed.
+
+## `keelline release hashes [--check]`
+
+Record the sha256 of every file the harness executes without Python, into `hooks/hashes.json`
+beside them.
+
+```bash
+keelline release hashes            # write the record
+keelline release hashes --check    # report drift, write nothing
+```
+
+Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/keelline` —
+because those are the ones a harness runs directly; a wheel's own contents are the packaging
+tool's to attest. The record is refused rather than written when any of the three is missing: a
+record naming two of three reads as a clean comparison for the third.
+
+**Not a release-time command.** `keelline release check` compares the record to the tree on
+every run, so editing any of the three without re-recording fails the gate in the same commit
+rather than at a tag — which is what makes it a record somebody has watched fail. `doctor
+files` reads the installed record against the installed files, and reports post-install
+modification, a partial update or a broken checkout. An attacker who edits both the files and
+the record is not this check's threat; tag protection and the pinned SHA are.
+
+**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift.
 
 ## `keelline hook <event>`
 
@@ -273,9 +330,9 @@ reached only when none of the four absolute candidates answers first.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and no policy applies — the guard
-is silent rather than closed. The wrapper cannot defend its own mode, and nothing in this
-build catches it: `keelline doctor`, whose wrapper probe is the answer to it, does not ship
-yet. Until it does, `ls -l` on the file is the whole of the check.
+is silent rather than closed. The wrapper cannot defend its own mode, so `keelline doctor` is
+what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
+it after anything that rewrites the plugin directory.
 
 ## `keelline guard bg-cleanup`
 
@@ -330,8 +387,10 @@ Git's own trailing comment block is kept, and so is everything below the scissor
 
 This is what the chained `prepare-commit-msg` hook runs, so the trailer is gone before the
 commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. Installing the
-hook is a library call today (`keelline.guards.api.install`) — no `keelline` subcommand offers
-it yet. **Writes** `FILE`.
+hook is `keelline setup --git-hooks`, and removing it — restoring whatever it chained to — is
+`keelline setup --git-hooks --uninstall`; both are documented below.
+`keelline.guards.api.install` is the same call for a caller embedding Keelline.
+**Writes** `FILE`.
 
 ## `keelline test hygiene`
 
@@ -363,6 +422,64 @@ finding is `path`, `line`, `test` (the test function's name), `shape` (`assert-o
 `names-but-never-invokes`) and `detail`. These keys are the contract; `path`, `test` and
 `detail` are repository-authored strings, which is why they are in `--json` and not in the
 summary line.
+
+## `keelline test attribute --command CMD [--base REF]`
+
+Run one failing command three times and say what the three exit codes mean. The three trees:
+
+1. **The working tree as it is** — the command runs with `--root` as its directory, exactly
+   where you are.
+2. **`HEAD`'s committed tree** — extracted with `git archive` into a scratch directory.
+3. **The merge-base with the base branch** — extracted the same way. The merge-base, not the
+   base's tip: a base branch that advanced after the fork would otherwise carry commits that
+   are not "before this change" into the before side.
+
+`--base` defaults to `origin/<[project] base_branch>`; pass it to compare against another ref.
+
+**This command writes nothing**, and nothing in it runs `git checkout`, `git stash` or `git
+reset`: the two committed trees are extracted into a temporary directory that is removed before
+the command returns, and your checkout is never moved between commits or restored from one.
+
+**Your command is another matter, and the distinction is the whole safety property.** Run 1
+executes it *in the working tree*, so whatever it writes there, it writes — the example above
+leaves a lockfile, a virtual environment, `.pytest_cache` and `__pycache__` behind exactly as
+running it by hand would. What this command guarantees is that it does not move your checkout
+to another commit to get its "before" reading, not that the three runs leave no trace.
+
+**The command is yours, and so is its environment.** `--command` takes the exact failing
+command *including the sync it needs to be meaningful* — `uv sync --locked && uv run pytest
+tests/x.py::t` for a Python project, the equivalent for another stack. That sync is the whole of
+what makes runs 2 and 3 comparable; a command that does not sync compares two drifted
+environments and the verdict is worth nothing. It is also what makes this command the same tool
+for every language.
+
+The verdict, from runs 2 and 3 first and run 1 only when both passed:
+
+| `HEAD` | merge-base | working tree | Verdict |
+|---|---|---|---|
+| fails | fails | — | `pre-existing: the failure is on the merge-base too, so it is not this change` |
+| fails | passes | — | `this change: HEAD fails and the merge-base passes` |
+| passes | fails | — | `this change fixed a pre-existing failure: HEAD passes and the merge-base fails` |
+| passes | passes | fails | `environmental: HEAD passes when synced and fails in the working tree as it is` |
+| passes | passes | passes | `not reproduced: all three runs passed` |
+
+Five sentences, and the four `HEAD`/merge-base cases are exhaustive: there is no sixth verdict
+and no fall-through. A run that **did not execute** — the launcher's wall-clock cap, or a
+command it could not start at all — is a failure naming which of the three it was, never a
+verdict. That matters more than it sounds: a cold sync in a fresh extraction is the likeliest
+thing to hit the cap, and two timed-out runs scored as exit codes would read as "fails on
+both", which is the one wrong answer a tool feeding a ledger entry must not give. Narrow the
+command to the failing test rather than asking for a wider cap.
+
+`--json` carries `summary` (the line the command would have printed), `runs` (`head_ambient`,
+`head_clean`, `base_clean` — the three exit codes in the order they were run), `base` (the ref
+asked for), `merge_base` (the commit actually extracted) and `verdict`. Record the last four
+where the failure is discussed: a verdict without its inputs cannot be re-run.
+
+Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is origin/main
+fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
+archived tree's own `.gitattributes` excluded them, and `2` when `--base` is shaped like an
+option, which is refused above the first subprocess rather than handed to `git` as one.
 
 ## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 
@@ -517,12 +634,12 @@ your template repository and clone it; `--local` renders the shipped template he
 network call. An invocation with neither is refused (`2`) naming both, so that creating a
 repository on an account is never something an omitted flag does.
 
-**`--local` is the source that works today.** `--template` names
-`<owner>/keelline-overlay-template`, and the command that publishes that repository —
-`overlay publish-template`, a maintainer release action — has not shipped: it belongs with the
-release lane that is its only caller. Until it does, `--template` fails cleanly for anyone who
-has not created that repository on their own account by hand, and `--local` is what an owner
-setting up a first overlay runs.
+**`--template` needs a template repository of your own.** It names
+`<owner>/keelline-overlay-template`, which
+[`keelline overlay publish-template`](#keelline-overlay-publish-template---owner-owner---name-name---yes)
+publishes to your account at each release. Until you have run that once, `--template` fails
+cleanly with `gh`'s own answer, and `--local` renders exactly the same tree here with no
+network call — an owner setting up a first overlay can use either.
 
 A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
 made private, which is the one outcome this command exists to prevent.
@@ -582,7 +699,7 @@ segment, or on a scaffold manifest that cannot be trusted.
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
-fifteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
+sixteen files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
 `.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
 tree whose two `.claude-plugin/` manifests name it `keelline-overlay[-<owner>]` and
 `keelline-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
@@ -610,6 +727,49 @@ code path that then runs, which is what makes the dry run worth reading.
 `.keelline/manifest.json`. Exits `0`; `1` when the report carries a REFUSED section, because
 nothing would be written while one of those stands; `2` when `--root` is not an overlay, when the
 manifest itself cannot be trusted, or when a write is refused by the containment walk.
+
+---
+
+## `keelline overlay publish-template --owner OWNER [--name NAME] [--yes]`
+
+Publishes the repository `overlay create --template` generates from: the shipped
+`templates/overlay/` tree, as one commit on `<owner>/keelline-overlay-template`.
+
+```bash
+keelline overlay publish-template --owner you          # what it would create, mark and push
+keelline overlay publish-template --owner you --yes    # do it
+```
+
+Six steps, in this order. It renders the shipped template into a scratch directory; it strips
+the scaffold ledger, because a repository generated from a template carries none and publishing
+one would make every generated overlay read as hand-edited to `overlay upgrade`; it asks `gh`
+what exists under that name; it creates the repository **public** and marks it
+`is_template` if it is not one already; it clones it and replaces the tree with the render; and
+it commits and pushes to the repository's default branch.
+
+**`--yes` is the gate, and it covers three acts rather than one** — creating the repository,
+marking it a template, and pushing. Without it the command renders, asks `gh` what is there,
+and reports what it *would* create, mark and push. That is the dry run; there is no separate
+`--dry-run` flag, because a second way to say the same thing is a second thing to get wrong.
+The gate is a parameter and not a step in a procedure: in a session driven by an agent, a flag
+a model can type is not a control, so the flag is where the consent is recorded.
+
+**An existing repository that is not public is refused (`2`), never flipped.** A template is
+generated from by other accounts only when it is public, and a repository somebody made private
+under that name is not one this command may change a flag on — publish under another `--name`,
+or make it public yourself first.
+
+**It runs from your own authenticated checkout by design.** The public repository's CI holds no
+credential that can write a second repository, so this is not a workflow and does not become
+one: `gh` decides the protocol and carries the token. `gh` that cannot be run at all is a
+finding (`1`) naming it.
+
+`--owner` is your account and `--name` the repository (default `keelline-overlay-template`);
+both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
+it. There is no `--root`: the tree is rendered from this Keelline's own package.
+
+**Writes** nothing outside a temporary directory this command creates and removes. Exits `0`;
+`1` on a `gh` or `git` that failed, `2` on a refusal.
 
 ---
 
@@ -681,6 +841,14 @@ store's trust record lapses — that key is withdrawn in the same run. If it was
 looked like before `attach` created it. Nothing you wrote is ever what goes: the case only
 arises when Keelline's own key was the file's entire contents.
 
+**The harness memory link is written under a walk that follows no symlink.** The home
+directory itself is found and never created — a missing one is a refusal — and every component
+below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
+name, above `attach`'s first write and above `detach`'s first withdrawal, rather than written
+through. The refusal names the component and the way out, which is the same one `--settings`
+exists for on the `setup` side: make the directory real and have your dotfiles manager adopt the
+files inside it.
+
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
@@ -748,7 +916,7 @@ reason `keelline attach` gives above.
 
 ---
 
-## `keelline setup --preset NAME [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset: the machine configuration file's
 `[personal]` and `[machine]` tables, the deny rules and personal values in
@@ -761,6 +929,21 @@ scratch destination instead of your real one, the same way every other command h
 `--root`. A scratch destination is **not a dry run**: the same files are written, at the paths
 these two flags name, and nothing is suppressed. They apply to `--preset` alone — `--git-hooks`
 writes inside a repository and ignores both.
+
+`--settings PATH` writes the user-scope settings file at `PATH` instead of at
+`<home>/.claude/settings.json`, for a dotfiles layout that links that file into another tree.
+`stow` folds a package as far as it can, so with `~/.claude` already created by the harness it
+links the *file*: `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. No `--home`
+value names that target — `--home <dotfiles>/claude` writes
+`<dotfiles>/claude/.claude/settings.json`, a file no reader reads — and the refusal that used
+to print an unusable remedy now names this flag. The write still never follows a symlink, and a
+link *at* the file itself is refused rather than written through — by a check above the first
+write, and not by the walk: the root is the directory `PATH` names and the walk is one component
+deep, so the walk never opens the final name and the rename underneath it would *replace* a link
+rather than refuse it. The refusal names the file the link leads to, which is the path to pass
+instead, and a directory at that path is refused in the same place. `--settings` changes nothing
+else: the machine configuration file is still `--machine`'s, and the harness memory link is still
+under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `keelline memory trust` records approval in `~/.config/keelline/trust.json`, and
@@ -882,7 +1065,7 @@ nobody sees, so that is where they all are.
 |---|---|---|
 | `not-initialised` | whether there is a `keelline.toml` here, and whether it loads | `keelline.toml` |
 | `versions` | whether the project's `[keelline] version` is the Keelline running | `keelline.toml`, the package |
-| `files` | the hook wrapper's executable bit, and the shipped files against the release's hashes | `hooks/run-hook.sh` |
+| `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/keelline`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version`, and only under the plugin root this Keelline is part of |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the Keelline marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
@@ -896,20 +1079,32 @@ nobody sees, so that is where they all are.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Eight of the fifteen have a `skip` arm: three always, and five more on a state of this
-machine.** A `skip` is **not** a finding and never reaches the exit code, so read the detail —
-each one says which measurement it is missing.
+**Nine of the fifteen have a `skip` arm — twelve arms between them: two always, and seven
+more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
+code, so read the detail — each one says which measurement it is missing.
 
-The three that skip on every correct installation are the ones this build cannot answer. `files` compares the installed
-plugin against the release's recorded hashes, which the release lane ships — until then it
-reports the wrapper's executable bit and skips the rest, because a check that compared a file
-against itself would be worse than one that says it cannot. `codex-trust` needs the hash Codex
-keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`, which `init` writes.
+The two that skip on every correct installation are the ones this build cannot answer.
+`codex-trust` needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs
+a `[ci] ref`, which `init` writes. `files` was the third of these and is not any more: it now
+compares the installed plugin against the hashes the release recorded beside it.
 
-The five that skip on a state are `wrapper`, when there is no plugin root this process can
-vouch for; `pre-commit`, when no overlay root is recorded on this machine; `bundles` and
-`store-debris`, when the note store does not resolve; and `diagnostics`, when no harness data
-root is set in the environment. `files` has a second skip arm for the same reason `wrapper` does.
+The seven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+process can vouch for; `attached`, when this machine records no overlay to check the ledger
+against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
+recorded on this machine; `bundles` and `store-debris`, when the note store does not resolve;
+and `diagnostics`, when no harness data root is set in the environment. `files` has a second
+state arm of its own — a plugin built before the release record existed carries none, and it
+says so rather than comparing anything.
+
+**A `skip` does not mean there is nothing to do.** Five of the twelve arms carry a remedy: the
+two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing line
+is not "always" versus "on a state" — `bundles`, `pre-commit`, `store-debris` and `diagnostics`
+all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
+five report something wrong that no other row will tell you: a plugin root nothing can find, a
+root that will be read and never executed, a recorded attach the overlay could not confirm. The
+other seven report a measurement that is simply unavailable — no store, no overlay, no harness
+data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no command
+in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -954,6 +1149,104 @@ that root's wrapper is still read by `files`, for its executable bit, and `wrapp
 called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.
+
+---
+
+## The reusable workflow
+
+`.github/workflows/check.yml` is a `workflow_call` workflow a project runs its Keelline gates
+through. Three lines in the caller:
+
+```yaml
+jobs:
+  keelline:
+    uses: Nezhinskiy/keelline/.github/workflows/check.yml@<40-hex sha>
+    with:
+      base: main
+```
+
+| Input | Default | Meaning |
+|---|---|---|
+| `base` | `""` | the branch the gate's configuration is read from; empty means the pull request's base, and on a push the repository's default branch |
+| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs and those carry whether the gates enforce |
+| `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
+
+The caller's job needs `contents: read`. That is the default, so the three lines above are
+enough — but a caller that sets `permissions:` at workflow level replaces the default rather
+than adding to it, and a called workflow cannot grant itself a scope the caller did not have.
+`permissions: {}` at the top of the calling file therefore fails this workflow at its first
+checkout, with an error that names neither the cause nor the remedy. Give the calling job
+`permissions: { contents: read }` if the file sets any permissions at all.
+
+It checks out the caller, checks out Keelline **at the commit the `uses:` line pins** — read
+off the platform's own record of which reusable workflow is running, never off the caller's
+inputs, and asserted against `git rev-parse HEAD` before anything else runs — and runs
+`docs check`, `bugs check`, `plan check`, `commit check` and `docs trail --check` with
+`python3 -m keelline`. No resolver and no build backend; the network is the two checkouts and
+whatever `setup-python` fetches when the runner has no matching interpreter cached.
+
+**Where the configuration comes from, and why it is not the tree under review.** The state the
+gate enforces on is read from `keelline.toml` **on the base ref**, and on any branch but the
+base branch itself the tree's copy must equal it byte for byte — once the base's state is
+`installed`, or the run fails before a gate runs. While the base is still `initialised` or
+`adopting` the difference is one `::warning` annotation and the run goes on, which is the
+same advisory rule the next paragraph states for the gates themselves. A pull request that could turn its own gates off is not a gate (§8.3 names the keys a
+pull request may eventually change; that refinement arrives with `assess`). The base ref itself
+is the caller's `base:`, the pull request's base, or the repository's default branch as the
+platform reports it — three anchors, none of them writable from the branch under review.
+
+**Advisory until the base says `installed`.** While the base's state is `initialised` or
+`adopting`, or while the base carries no `keelline.toml` at all — the bootstrap, which is every
+project's first pull request — every gate still runs and every failure is one warning
+annotation, and the job is green (D8). Once the base's state is `installed`, a failed gate
+fails the job. Every gate runs whatever the one before it said, so a project fixing its
+documents does not pay a round trip per finding.
+
+**Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1`
+and `@dev` are a moving Keelline running against your repository (D16). The SHA pin is what
+`init` will write and `upgrade` will bump; `@v1` is the documented opt-in for a project that
+would rather track the major. `smoke-release.yml` in this repository runs both moving forms on
+demand, so that they are known to work — it is not a form this reference tells you to write.
+
+**What proves it.** `.github/workflows/smoke.yml` installs this plugin from the checkout with
+the real harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json`
+entry the event it is filed under through the *installed* wrapper, runs `doctor` over the
+result, runs the clone-to-exfiltration scenario of §14's S10, and calls this workflow against
+the committed fixture project — so the reference above is checked by a run and not only by
+this page.
+
+**Checked out with `fetch-depth: 0`.** `plan check` reads a merge base and `commit check` reads
+a range; a shallow checkout has neither, and the run says so rather than passing over a history
+it cannot see. `persist-credentials: false` on both checkouts, so nothing a gate reads can
+reach a token.
+
+---
+
+## Shared flags
+
+Five flags mean the same thing wherever they appear, and each has exactly one sentence. Both
+tables below are held to `keelline.command`'s own constants, row by row, by
+`tests/test_documents.py` — so a sentence cannot be spelled by hand here any more than it can be
+in a parser, which is the whole point of the rule.
+
+| Flag | What it means |
+|---|---|
+| `--root` | project root (default: current directory) |
+| `--machine` | machine configuration file to read |
+| `--store` | resolve the memory store at this path |
+| `--dry-run` | report what would change and write nothing |
+| `--home` | the home directory to read and write under (default: the real one) |
+
+Four commands mean something else by a shared name. Each is a **named exception** — a decision
+that the flag means something else, not a sentence that drifted — and each has its own constant
+beside the five above:
+
+| Command and flag | What it means there |
+|---|---|
+| `keelline overlay create --root` | directory to create it in (default: current directory) |
+| `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
+| `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
+| `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
 
 ---
 

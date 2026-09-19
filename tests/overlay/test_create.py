@@ -9,8 +9,9 @@ from typing import NoReturn
 import pytest
 
 from keelline.errors import Failure, Refusal
-from keelline.overlay.api import Completed, create, init_instance
+from keelline.overlay.api import create, init_instance
 from keelline.overlay.create import RETRY_WAIT_SECONDS
+from keelline.runner import Completed
 
 
 @dataclass
@@ -271,10 +272,10 @@ def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subproce
 
 
 def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> None:
-    # The other arm of the same finding, and the one `docs/cli.md` names as the actual reason
-    # `--template` cannot work today: `<owner>/keelline-overlay-template` does not exist,
-    # because the maintainer action that would publish it has not shipped. `gh`'s own stderr
-    # says so, and is quoted rather than replaced by a guess about authentication.
+    # The other arm of the same finding, and the one `docs/cli.md` names as the likeliest
+    # reason `--template` fails: `<owner>/keelline-overlay-template` does not exist, because
+    # this owner has never run `keelline overlay publish-template`. `gh`'s own stderr says so,
+    # and is quoted rather than replaced by a guess about authentication.
     declined = FakeRunner(
         answers={"gh": Completed(1, "", "GraphQL: Could not resolve to a Repository")}
     )
@@ -282,7 +283,7 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
         create("octo", "keelline-private", source="template", root=tmp_path, runner=declined)
     message = str(failed.value)
     assert "Could not resolve to a Repository" in message
-    assert "nothing publishes that repository yet" in message
+    assert "publishes at each release" in message
     assert "exited 1" in message, "a binary that ran has an exit code, not a launch failure"
     assert [argv[:3] for argv in declined.calls] == [["gh", "repo", "create"]]
 

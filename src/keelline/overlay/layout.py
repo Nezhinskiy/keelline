@@ -33,6 +33,21 @@ CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 # the tree are two statements of one thing: `tests/overlay/test_template.py` asserts each way
 # round, so a file deleted from the tree and a file added to it without a line here are both
 # caught rather than one of them.
+# The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
+# has a decision list at all: §6.1 diffs these and asks about them "regardless of hash", because
+# a hash match is not consent for a permission or a hook entry. Named once, unpacked into
+# OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is a
+# rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
+# spelling of the two names, under a comment claiming they were not spelled twice.
+CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
+
+# A directory's own documentation rather than a file in its own right: `overlay create`
+# drops one of these into each directory the owner fills, and the template README describes
+# those as directories on purpose. `tests/overlay/test_template.py` accounts for the tree
+# by this rule; a fourth such directory needs no edit there. The root `README.md` is not a
+# placeholder — the rule applies to a basename BELOW a directory, never to the root.
+PLACEHOLDER_NAMES = ("README.md", "SKILL.md")
+
 OVERLAY_FILES = (
     PLUGIN_MANIFEST,
     MARKETPLACE_MANIFEST,
@@ -41,23 +56,14 @@ OVERLAY_FILES = (
     "skills/attach/SKILL.md",
     f"{COMMON_RULES}/README.md",
     f"{COMMON_MEMORY}/README.md",
-    f"{COMMON_CLAUDE}/permissions.json",
-    f"{COMMON_CLAUDE}/hooks.json",
+    *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
     f"{PROJECTS}/README.md",
     ".pre-commit-config.yaml",
     ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
     ".gitignore",
     "README.md",
 )
 
-# The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
-# has a decision list at all: §6.1 diffs these and asks about them "regardless of hash", because
-# a hash match is not consent for a permission or a hook entry. Derived from `OVERLAY_FILES` and
-# not spelled twice, so a file renamed there and forgotten here empties the list rather than
-# quietly agreeing with it — which is what `tests/overlay/test_upgrade.py` asserts against.
-CAPABILITY_FILES = tuple(
-    relative
-    for relative in OVERLAY_FILES
-    if relative in (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
-)
+CAPABILITY_FILES = CAPABILITY_NAMES

@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Check the built artifacts carry what an installed Keelline needs (D5).
+
+    uv run python scripts/check_artifacts.py dist            # the one wheel and one sdist
+    uv run python scripts/check_artifacts.py rendered DIR    # what `overlay create --local` left
+
+The checkout passes every test with the template tree in place; only an artifact can say
+whether `uv_build` shipped it. Exit 0 with no findings, 1 with them.
+
+Three things this looks at, each of which was an inline CI step or nothing at all:
+
+* **The wheel.** CI installs from source, so a packaging regression that dropped the preset
+  or the overlay template would break every `uv tool install` while the workflow stayed
+  green. `resources.files` resolves to the checkout under `uv run`, which is why no test in
+  `tests/` can see this.
+* **The sdist.** A packager for Homebrew, Debian or nixpkgs cannot run a single test against
+  an sdist that ships only `src/`, which is the artefact they most need to verify for a
+  security-sensitive tool. `skills/` and `agents/` are here because
+  `tests/skills/test_skills.py` reads those trees directly. And `tar` preserves the mode: a
+  wrapper unpacked at 0644 exits 126 for every hook entry, which Claude Code reads as a
+  permission error rather than as a broken install.
+* **A rendered overlay.** `overlay create --local` is the one working source for a first
+  overlay, and what it leaves behind has to be the files the package ships plus the scaffold
+  ledger — no more and no less.
+"""
+
+from __future__ import annotations
+
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+
+from keelline.overlay.layout import OVERLAY_FILES
+from keelline.scaffold import MANIFEST_PATH
+
+WHEEL_MUST = (
+    "keelline/presets/recommended.toml",
+    *(f"keelline/templates/overlay/{relative}" for relative in OVERLAY_FILES),
+)
+# What a downstream packager needs to verify the sdist, plus the three files the harness runs
+# without an interpreter of ours and the record they are checked against.
+SDIST_MUST = (
+    "tests/test_fsops.py",
+    "CHANGELOG.md",
+    "scripts/keelline",
+    "skills/README.md",
+    "agents/code-navigator.md",
+    "hooks/run-hook.sh",
+    "hooks/hooks.json",
+    # Beside the three files it records, and for the same reason they are here: a build that
+    # dropped it would pass this checker while `doctor files` quietly degraded from a
+    # comparison to a `skip`, which is the one answer that looks like a healthy install and
+    # is not one. `pyproject.toml` carries it under `hooks/**`, so this is a claim about the
+    # build and not a new packaging rule.
+    "hooks/hashes.json",
+    "mutations.toml",
+)
+SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/keelline")
+
+
+def check_wheel(path: Path) -> list[str]:
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+    return [f"wheel: missing {name}" for name in WHEEL_MUST if name not in names]
+
+
+def check_sdist(path: Path) -> list[str]:
+    with tarfile.open(path) as archive:
+        members = {"/".join(m.name.split("/")[1:]): m for m in archive.getmembers()}
+    findings = [f"sdist: missing {name}" for name in SDIST_MUST if name not in members]
+    for name in SDIST_EXECUTABLE:
+        member = members.get(name)
+        if member is not None and member.mode & 0o111 == 0:
+            findings.append(f"sdist: {name} is not executable")
+    return findings
+
+
+def check_render(root: Path) -> list[str]:
+    expected = {*OVERLAY_FILES, str(MANIFEST_PATH)}
+    found = {str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()}
+    return [f"rendered: missing {n}" for n in sorted(expected - found)] + [
+        f"rendered: unexpected {n}" for n in sorted(found - expected)
+    ]
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] == ["rendered"]:
+        # The length is checked inside this arm and not as part of its condition: with
+        # `and len(argv) == 2` a bare `rendered` fell through to the `dist` branch, where it
+        # was globbed as a directory name and answered "expected exactly one wheel and one
+        # sdist under rendered" — a report about an argument the user never gave.
+        if len(argv) != 2:
+            print(__doc__, file=sys.stderr)
+            return 2
+        findings = check_render(Path(argv[1]))
+    elif len(argv) == 1:
+        dist = Path(argv[0])
+        wheels, sdists = sorted(dist.glob("*.whl")), sorted(dist.glob("*.tar.gz"))
+        if len(wheels) != 1 or len(sdists) != 1:
+            print(
+                f"expected exactly one wheel and one sdist under {dist}, "
+                f"found {len(wheels)} and {len(sdists)}",
+                file=sys.stderr,
+            )
+            return 2
+        wheel, sdist = wheels[0], sdists[0]
+        findings = check_wheel(wheel) + check_sdist(sdist)
+        print(f"checked {wheel.name} and {sdist.name}")
+    else:
+        print(__doc__, file=sys.stderr)
+        return 2
+    for finding in findings:
+        print(finding, file=sys.stderr)
+    print("no findings" if not findings else f"{len(findings)} finding(s)")
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

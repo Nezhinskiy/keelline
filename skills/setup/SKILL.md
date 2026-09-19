@@ -28,7 +28,8 @@ description: Configure the machine for Keelline — the preset, the personal par
    recording it, or one somebody else created that needs renaming:
    `keelline overlay create --owner NAME --local` renders one on this machine with no network
    call, `keelline overlay create --owner NAME --name keelline-private --template` creates it on
-   GitHub, and `keelline overlay init --owner NAME --root PATH` makes it theirs. Relay what
+   GitHub once the template repository is published to their account, and `keelline overlay
+   init --owner NAME --root PATH` makes it theirs. Relay what
    `init` renamed and whether the secret scan installed.
 5. After a Keelline release, `keelline overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can

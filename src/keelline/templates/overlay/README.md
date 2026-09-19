@@ -18,7 +18,7 @@ of intent, and `keelline doctor` is what tells you which Keelline you are actual
 
 ## What is where
 
-`keelline overlay create` renders sixteen files here. These are the ones that are
+`keelline overlay create` renders seventeen files here. These are the ones that are
 yours to fill in:
 
 | Path | What it holds |
@@ -40,9 +40,10 @@ And these are the machinery. Leave them alone unless you know why:
 | `.codex-plugin/plugin.json` | the same manifest for Codex. |
 | `.pre-commit-config.yaml` | the gitleaks hook, pinned at a revision: the commit-time half of "no credential enters this repository". `keelline overlay init` installs it. |
 | `.github/workflows/scan.yml` | the push-time half, with every action pinned to a commit sha. |
+| `.github/dependabot.yml` | what keeps those pins from rotting: a monthly grouped pull request that moves each sha and the version comment beside it. You read it before you merge it. |
 | `.gitignore` | env files, in every spelling, so a credential cannot be added by accident. |
 | `README.md` | this file. |
-| `.keelline/manifest.json` | the digest of every file above as `keelline overlay create` wrote it. `keelline overlay upgrade` compares against it to tell a file you have edited from one you have not, and refreshes only the second kind. It is the sixteenth file, and the one nothing in `templates/overlay/` holds: the scaffold engine writes it at create time. |
+| `.keelline/manifest.json` | the digest of every file above as `keelline overlay create` wrote it. `keelline overlay upgrade` compares against it to tell a file you have edited from one you have not, and refreshes only the second kind. It is the seventeenth file, and the one nothing in `templates/overlay/` holds: the scaffold engine writes it at create time. |
 
 Your `.env` files are denied to the agent by `keelline setup`, which writes those deny rules into
 `~/.claude/settings.json` at machine scope — once, for every project on the machine. They are not

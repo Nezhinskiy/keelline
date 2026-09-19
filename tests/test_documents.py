@@ -301,3 +301,84 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
     text = prose(README)
     assert "docs/methodology/README.md" in text
     assert "docs/cli.md" in text
+
+
+CLI_REFERENCE = ROOT / "docs" / "cli.md"
+# The section Task 6 created and two later waves anchor on. Everything between its heading and
+# the next `## ` heading, so a table moved out of it stops being checked loudly rather than
+# quietly.
+_SHARED_FLAGS_SECTION = re.compile(r"^## Shared flags\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+_TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$", re.MULTILINE)
+
+
+def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
+    # Fix round 1, item 4. DC4's premise is that no sentence is spelled by hand, and the
+    # section this task added spelled all nine of them a second time in a document nothing
+    # checked — re-creating, one file over, exactly the drift the task exists to remove. Held
+    # row by row to `keelline.command`'s constants, the same way the README's Commands block is
+    # held to the real parser above.
+    #
+    # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
+    from keelline.command import (
+        DRY_RUN_HELP,
+        HOME_HELP,
+        INSTANCE_DIR_HELP,
+        MACHINE_HELP,
+        OVERLAY_ROOT_HELP,
+        ROOT_HELP,
+        SETUP_MACHINE_HELP,
+        SETUP_ROOT_HELP,
+        STORE_HELP,
+    )
+
+    expected = {
+        "`--root`": ROOT_HELP,
+        "`--machine`": MACHINE_HELP,
+        "`--store`": STORE_HELP,
+        "`--dry-run`": DRY_RUN_HELP,
+        "`--home`": HOME_HELP,
+        "`keelline overlay create --root`": INSTANCE_DIR_HELP,
+        "`keelline overlay init --root`, `keelline overlay upgrade --root`": OVERLAY_ROOT_HELP,
+        "`keelline setup --root`": SETUP_ROOT_HELP,
+        "`keelline setup --machine`": SETUP_MACHINE_HELP,
+    }
+    section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `## Shared flags` section"
+    rows = dict(_TABLE_ROW.findall(section.group(1)))
+    # The walk's own floor, before anything is compared: a regex that matched nothing would
+    # make every comparison below vacuously true, and a section that lost a table would look
+    # exactly like one that never had it.
+    assert len(rows) == len(expected), rows
+    assert rows == expected, {
+        flag: (rows.get(flag), sentence)
+        for flag, sentence in expected.items()
+        if rows.get(flag) != sentence
+    }
+
+
+# Fix round 1, item 3. The five verdict sentences are `VERDICTS` in
+# `keelline.guards.attribute` and are reproduced by hand in `docs/cli.md`'s table; every test
+# that had them read the expectation back out of `VERDICTS`, which is shape 9 of the
+# `sweep-defect-class` skill's own reference — both sides move together under any reword. This
+# is the same rule the Shared flags tables are held to, one section over.
+_ATTRIBUTE_SECTION = re.compile(
+    r"^## `keelline test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
+# `| fails | passes | — | `sentence` |`: the three code columns, then the sentence in backticks.
+_VERDICT_ROW = re.compile(r"^\| (?:fails|passes) \| [^|]+ \| [^|]+ \| `(.+?)` \|$", re.MULTILINE)
+
+
+def test_the_verdict_table_is_the_shipped_sentences_and_not_a_second_spelling() -> None:
+    # Mutation: reword one sentence in `docs/cli.md`'s table — reddens naming the row.
+    from keelline.guards.attribute import VERDICTS
+
+    section = _ATTRIBUTE_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `keelline test attribute` section"
+    rows = _VERDICT_ROW.findall(section.group(1))
+    # The walk's floor before anything is compared, for the reason the Shared flags test gives:
+    # a regex that matched nothing would make the comparison below vacuously true, and a
+    # section that lost its table would look exactly like one that never had it.
+    assert len(rows) == len(VERDICTS), rows
+    assert tuple(rows) == VERDICTS, [
+        (row, sentence) for row, sentence in zip(rows, VERDICTS, strict=True) if row != sentence
+    ]

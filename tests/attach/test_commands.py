@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
-from tests.attach.test_binding import _machine, _project_and_store
+from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -172,7 +172,7 @@ def test_no_command_prints_a_path_a_repository_chose(
     assert invoke(["attach", *_flags(root, store, machine), "--json"]) == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed["links_created"] >= 1
-    assert "docs/memory" not in json.dumps(printed)
+    assert DEFAULT_MEMORY not in json.dumps(printed)
 
 
 def test_a_non_interactive_session_may_not_name_the_machine_file(

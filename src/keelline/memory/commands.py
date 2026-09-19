@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 
 from keelline.areas import SubParsers
+from keelline.command import common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -414,27 +415,26 @@ def run_refs(args: argparse.Namespace) -> Result:
     return Result("; ".join(parts), data, exit_code=1)
 
 
-def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument("--root", default=".", help="project root (default: current directory)")
-    parser.add_argument("--store", default=None, help="resolve the store at this path")
-    parser.add_argument("--machine", default=None, help="machine configuration file to read")
-    return parser
-
-
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("memory", help="the working-memory store")
     sub = group.add_subparsers(dest="command", metavar="<command>")
 
-    index = _with_common(sub.add_parser("index", help="render MEMORY.md from the notes"))
+    index = common_flags(
+        sub.add_parser("index", help="render MEMORY.md from the notes"), store=True
+    )
     index.add_argument("--check", action="store_true", help="report drift instead of writing")
     index.set_defaults(func=run_index)
 
-    context = _with_common(sub.add_parser("session-context", help="render one injection bundle"))
+    context = common_flags(
+        sub.add_parser("session-context", help="render one injection bundle"), store=True
+    )
     context.add_argument("--bundle", required=True, help=", ".join(b.value for b in Bundle))
     context.add_argument("--part", type=int, default=1, help="which numbered slot to render")
     context.set_defaults(func=run_session_context)
 
-    trusted = _with_common(sub.add_parser("trust", help="trust notes committed to this repository"))
+    trusted = common_flags(
+        sub.add_parser("trust", help="trust notes committed to this repository"), store=True
+    )
     trusted.add_argument(
         "--in-repo-memory",
         action="store_true",
@@ -452,13 +452,17 @@ def register(groups: SubParsers) -> None:
     )
     trusted.set_defaults(func=run_trust)
 
-    listing = _with_common(sub.add_parser("inventory", help="what a memory sweep reads"))
+    listing = common_flags(
+        sub.add_parser("inventory", help="what a memory sweep reads"), store=True
+    )
     listing.set_defaults(func=run_inventory)
 
-    fitting = _with_common(sub.add_parser("fit", help="whether each bundle fits its hook slots"))
+    fitting = common_flags(
+        sub.add_parser("fit", help="whether each bundle fits its hook slots"), store=True
+    )
     fitting.set_defaults(func=run_doctor_bundles)
 
-    refs = _with_common(
-        sub.add_parser("refs", help="backticked paths in notes that no longer resolve")
+    refs = common_flags(
+        sub.add_parser("refs", help="backticked paths in notes that no longer resolve"), store=True
     )
     refs.set_defaults(func=run_refs)

@@ -6,7 +6,13 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
+from keelline.command import (
+    DRY_RUN_HELP,
+    INSTANCE_DIR_HELP,
+    OVERLAY_ROOT_HELP,
+)
 from keelline.errors import Refusal
+from keelline.overlay.create import TEMPLATE_REPOSITORY
 from keelline.result import Result
 from keelline.scaffold import render_report
 
@@ -23,7 +29,7 @@ _NO_SOURCE = (
 
 def run_overlay_create(args: argparse.Namespace) -> Result:
     from keelline.overlay.create import create
-    from keelline.overlay.runner import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     if args.source is None:
         raise Refusal(_NO_SOURCE)
@@ -40,11 +46,27 @@ def run_overlay_create(args: argparse.Namespace) -> Result:
 
 def run_overlay_init(args: argparse.Namespace) -> Result:
     from keelline.overlay.create import init_instance
-    from keelline.overlay.runner import subprocess_runner
+    from keelline.runner import subprocess_runner
 
     result = init_instance(Path(args.root).resolve(), args.owner, runner=subprocess_runner())
     data = {"renamed": list(result.renamed), "notes": list(result.notes)}
     return Result("; ".join(result.notes), data)
+
+
+def run_overlay_publish_template(args: argparse.Namespace) -> Result:
+    from keelline.overlay.publish import publish_template
+    from keelline.runner import subprocess_runner
+
+    published = publish_template(
+        args.owner, name=args.name, yes=args.yes, runner=subprocess_runner()
+    )
+    data = {
+        "repository": published.repository,
+        "changed": list(published.changed),
+        "pushed": published.pushed,
+        "notes": list(published.notes),
+    }
+    return Result(f"{published.repository}: {'; '.join(published.notes)}", data)
 
 
 def run_overlay_upgrade(args: argparse.Namespace) -> Result:
@@ -82,9 +104,7 @@ def register(groups: SubParsers) -> None:
     create.add_argument(
         "--name", default="keelline-private", help="the repository name (default: %(default)s)"
     )
-    create.add_argument(
-        "--root", default=".", help="directory to create it in (default: current directory)"
-    )
+    create.add_argument("--root", default=".", help=INSTANCE_DIR_HELP)
     # Mutually exclusive and neither is required, so that "neither was given" reaches the
     # command as a refusal naming both rather than as argparse's own usage error.
     source = create.add_mutually_exclusive_group()
@@ -106,14 +126,30 @@ def register(groups: SubParsers) -> None:
 
     init = sub.add_parser("init", help="make a created overlay this owner's")
     init.add_argument("--owner", required=True, help="the account to name this overlay after")
-    init.add_argument("--root", default=".", help="the overlay root (default: current directory)")
+    init.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)
     init.set_defaults(func=run_overlay_init)
 
+    publish = sub.add_parser(
+        "publish-template", help="publish the overlay template repository from this checkout"
+    )
+    publish.add_argument("--owner", required=True, help="the account to publish the template to")
+    publish.add_argument(
+        "--name",
+        default=TEMPLATE_REPOSITORY,
+        help="the repository name (default: %(default)s)",
+    )
+    # The gate, and it is a parameter rather than a step in a procedure: in an agent harness a
+    # flag a model can type is not a control, so the three outward-facing acts — creating the
+    # repository, marking it a template, pushing — all sit behind this one value.
+    publish.add_argument(
+        "--yes",
+        action="store_true",
+        help="create, mark and push; without it nothing outward-facing happens — the command "
+        "renders, asks gh what exists, and reports what it would do",
+    )
+    publish.set_defaults(func=run_overlay_publish_template)
+
     upgrade = sub.add_parser("upgrade", help="refresh the files in an overlay nobody has edited")
-    upgrade.add_argument(
-        "--root", default=".", help="the overlay root (default: current directory)"
-    )
-    upgrade.add_argument(
-        "--dry-run", action="store_true", help="report what would change and write nothing"
-    )
+    upgrade.add_argument("--root", default=".", help=OVERLAY_ROOT_HELP)
+    upgrade.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     upgrade.set_defaults(func=run_overlay_upgrade)

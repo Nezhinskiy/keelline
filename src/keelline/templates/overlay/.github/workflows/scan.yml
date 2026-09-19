@@ -18,7 +18,7 @@ jobs:
       # `.pre-commit-config.yaml` one directory up gives about `rev:`: a tag is a name its owner
       # can move, and `v4` or `v2` resolving to different code tomorrow is somebody else choosing
       # what runs against a repository holding your rules and your notes, with a token. The
-      # trailing comment is the release each sha is, and is what a reader upgrades from.
+      # trailing comment is the release each sha is; `.github/dependabot.yml` keeps both current.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0

@@ -25,18 +25,21 @@ from pathlib import Path
 from typing import Any
 
 from keelline.areas import SubParsers
+from keelline.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
 from keelline.errors import Refusal
-from keelline.overlay.api import subprocess_runner
 from keelline.result import Result
+from keelline.runner import subprocess_runner
 
 # Imported at module scope, and not deferred into `run_setup` the way `setup.run.setup` still
 # is: a test that wants to keep this command away from a real `claude`/`codex` binary has to
 # monkeypatch a name it can see, and `keelline.setup.commands.subprocess_runner` is one hop
-# rather than two — `run_setup` calling straight into `keelline.overlay.api`'s own attribute
+# rather than two — `run_setup` calling straight into `keelline.runner`'s own attribute
 # left the patch depending on an import this module does not own the shape of (Fix round 1,
-# item 5). `commands.py` is never imported by the hook registry (only `hooks.py` files are, per
-# `tests/test_areas.py`), so a module-scope import here does not reach the clean-interpreter
-# `discover()` this project's Global Constraints hold `hooks.py` to.
+# item 5). The runner was the `overlay` area's when that was written; DC2 made it a leaf, and
+# this sentence follows it. `commands.py` is never imported by the hook registry (only
+# `hooks.py` files are, per `tests/test_areas.py`), so a module-scope import here does not
+# reach the clean-interpreter `discover()` this project's Global Constraints hold
+# `hooks.py` to.
 
 _BOTH_MODES = (
     "--git-hooks installs a hook into one repository; --preset writes machine-level files. "
@@ -114,6 +117,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         yes=args.yes,
         overlay=args.overlay,
         project_root=Path(args.root).resolve(),
+        settings=Path(args.settings).expanduser() if args.settings else None,
     )
     data = {
         "machine_written": report.machine_written,
@@ -154,19 +158,16 @@ def register(groups: SubParsers) -> None:
     # Both defaults are `None` and are resolved in `run_setup`. A path computed here is computed
     # when the parser is built, which is every run of every command — and printed by
     # `keelline setup --help`, where it was the developer's own home directory.
+    setup.add_argument("--home", default=None, help=HOME_HELP)
     setup.add_argument(
-        "--home",
-        default=None,
-        help=f"where to write {USER_SETTINGS} (default: the home directory)",
-    )
-    setup.add_argument(
-        "--machine",
+        "--settings",
         default=None,
         help=(
-            "the machine configuration file to write "
-            "(default: ~/.config/keelline/config.toml, the file every reader reads)"
+            f"write the user-scope settings file here instead of <home>/{USER_SETTINGS}, "
+            "for a dotfiles layout that links that file into another tree"
         ),
     )
+    setup.add_argument("--machine", default=None, help=SETUP_MACHINE_HELP)
     setup.add_argument(
         "--overlay",
         default=None,
@@ -185,12 +186,5 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         help="with --git-hooks, remove the hook and restore what it chained to",
     )
-    setup.add_argument(
-        "--root",
-        default=".",
-        help=(
-            "the repository --git-hooks installs into, and the project root --overlay must "
-            "not be recorded inside of (default: .)"
-        ),
-    )
+    setup.add_argument("--root", default=".", help=SETUP_ROOT_HELP)
     setup.set_defaults(func=run_setup)

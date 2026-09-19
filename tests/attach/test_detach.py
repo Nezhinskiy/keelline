@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -19,9 +19,10 @@ from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
 from keelline.scaffold.regions import RegionError, Style, markers
+from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
-from tests.test_install_path import _assert_snapshot_changed, _assert_snapshot_unchanged, _snapshot
+from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -54,11 +55,11 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    before = _snapshot(root)
+    before = snapshot(root)
     _attach(root, store, machine, home, confirmed=True)
-    _assert_snapshot_changed(root, before)
+    assert_snapshot_changed(root, before)
     _detach(root, machine, home)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
@@ -106,14 +107,14 @@ def test_detach_without_a_ledger_says_so_and_changes_nothing(tmp_path: Path) -> 
     home = tmp_path / "home"
     _attach(root, store, machine, home, confirmed=True)
     (root / LEDGER).unlink()
-    before = _snapshot(root)
-    # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `_snapshot` is a walk and an
+    before = snapshot(root)
+    # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `snapshot` is a walk and an
     # empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Failure) as failed:
         _detach(root, machine, home)
     assert LEDGER in str(failed.value)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_detach_withdraws_the_harness_link(tmp_path: Path) -> None:
@@ -237,12 +238,12 @@ def test_a_ledger_naming_a_file_attach_could_not_have_written_removes_nothing(
     workflow.parent.mkdir(parents=True)
     workflow.write_text("on: push\n", encoding="utf-8")
     _rewrite_ledger(root, rules=[".github/workflows/ci.yml", ".codex/rules/common.rules"])
-    before = _snapshot(root)
-    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Refusal):
         _detach(root, machine, home)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
     assert workflow.is_file()
 
 
@@ -331,13 +332,13 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     _attach(root, store, machine, home, confirmed=True)
-    before = _snapshot(root)
-    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     _a_git_that_cannot_run(monkeypatch)
     with pytest.raises(Failure):
         _detach(root, machine, home)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
     assert (root / "docs" / "memory" / "developer").is_symlink()
 
 
@@ -349,10 +350,10 @@ def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path:
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     _attach(root, store, machine, home, confirmed=True)
-    before = _snapshot(root)
+    before = snapshot(root)
     assert before
     removed = _detach(root, machine, home)
-    after = _snapshot(root)
+    after = snapshot(root)
     gone = set(before) - set(after)
     assert {SETTINGS, ".codex/rules/common.rules", LEDGER} <= gone
     assert removed.allow_removed == (RULE,)
@@ -363,7 +364,7 @@ def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path:
 
 
 def _directories(root: Path) -> set[str]:
-    """Every directory under the root but `.git`, as `_snapshot` would if it saw directories."""
+    """Every directory under the root but `.git`, as `snapshot` would if it saw directories."""
     found: set[str] = set()
     for path in root.rglob("*"):
         if path.is_dir() and not path.is_symlink() and ".git" not in path.relative_to(root).parts:
@@ -374,7 +375,7 @@ def _directories(root: Path) -> set[str]:
 def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> None:
     # `docs/cli.md` promised "an attach and a detach leave the tree byte-for-byte as it was" and
     # it was false for directories: `.keelline/local/`, `.keelline/`, `.codex/rules/` and
-    # `.codex/` survived every round trip. `_snapshot` filters on `is_file()`, so the round-trip
+    # `.codex/` survived every round trip. `snapshot` filters on `is_file()`, so the round-trip
     # test above passed while four directories accumulated.
     #
     # The set is asserted by value and not by `not any(...)`: a `_withdraw_directories` that
@@ -403,7 +404,8 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     # to change this line: `worktree.detach_main` withdraws the links and not the directory that
     # held them, because that directory is repository-configured and may be one the project
     # keeps for its own reasons.
-    assert _directories(root) - before == {"docs", "docs/memory"}
+    memory = PurePosixPath(DEFAULT_MEMORY)
+    assert _directories(root) - before == {str(memory), str(memory.parent)}
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
@@ -461,12 +463,56 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
     recorded["directories"] = ["src"]
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
     (root / "src").mkdir()
-    before = _snapshot(root)
+    before = snapshot(root)
     assert before
     with pytest.raises(Refusal):
         _detach(root, machine, home)
     assert (root / "src").is_dir()
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
+
+
+def test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal(
+    tmp_path: Path,
+) -> None:
+    # The mirror of the `attach` case, and the half that had no answer at all: the walk's
+    # `UnsafePath` left `detach` uncaught, `cli.run` rendered it as `internal error` and exit
+    # 2, and every later `detach` failed at the same line — with `.codex/rules/` already
+    # deleted and the ledger, the ignore region and every link still on disk. A repository no
+    # shipped command could return to its pre-attach state.
+    #
+    # The layout is reached the way a person reaches it: attach first, then let the dotfiles
+    # manager adopt `~/.claude`. That is also why this is `detach`'s case and not a repeat of
+    # `attach`'s — the home directory was fine when the repository was attached.
+    #
+    # Mutation (declared, "detach discovers the harness anchor from inside the withdrawal"):
+    # the hoisted loop goes -> the refusal still arrives, from `detach_main`, and
+    # `assert_snapshot_unchanged` reddens with the rule files already removed.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    resolved = resolve(root, _config(root, machine), machine=machine)
+    assert resolved is not None
+    record(resolved, _config(root, machine))
+    _attach(root, store, machine, home, confirmed=True)
+    harness = harness_memory_path(root, home)
+    assert harness.is_symlink(), "there is no harness link for this case to be about"
+    adopted = tmp_path / "dotfiles" / "claude"
+    adopted.parent.mkdir(parents=True)
+    shutil.move(str(home / ".claude"), str(adopted))
+    (home / ".claude").symlink_to(adopted, target_is_directory=True)
+    before = snapshot(root)
+    assert before
+    with pytest.raises(Refusal) as refused:
+        _detach(root, machine, home)
+    assert str(home / ".claude") in str(refused.value)
+    # Nothing was withdrawn, so the repository is still the one the attach left and a second
+    # `detach` — against a home whose `.claude` is a real directory — still has everything to
+    # withdraw.
+    assert_snapshot_unchanged(root, before)
+    assert (root / LEDGER).is_file()
+    assert (root / ".codex" / "rules").is_dir()
+    assert harness.is_symlink()
 
 
 def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(
@@ -488,10 +534,10 @@ def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything
     begin, _end = markers(IGNORE_REGION, Style.HASH)
     ignore = root / GITIGNORE
     ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
-    before = _snapshot(root)
+    before = snapshot(root)
     with pytest.raises(RegionError):
         _detach(root, machine, home)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / "docs" / "memory" / "developer").is_symlink()
 
@@ -503,8 +549,8 @@ def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> 
     root, store, machine = _bound(tmp_path)
     home = tmp_path / "home"
     (root / GITIGNORE).write_text("\n", encoding="utf-8")
-    before = _snapshot(root)
+    before = snapshot(root)
     _attach(root, store, machine, home)
     _detach(root, machine, home)
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
     assert (root / GITIGNORE).read_bytes() == b"\n"

@@ -22,7 +22,8 @@ from keelline import fsops
 from keelline.attach.api import attach, ledger
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, Completed
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
+from keelline.runner import Completed
 from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
@@ -32,7 +33,7 @@ from tests.attach.test_binding import _git, _machine, _project_and_store
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
 # two copies drifted apart on the one thing that mattered — how much of `.git` to trust.
-from tests.test_install_path import _assert_snapshot_unchanged, _snapshot
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -130,9 +131,9 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
     # assertion that matters is the second half: snapshot every file under the root before,
     # expect `Refusal`, and compare the snapshot after. Not one byte changed.
     root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
-    before = _snapshot(root)
+    before = snapshot(root)
     # The mutation guard for the assertion below, and the Global Constraint that asks for it:
-    # `_snapshot` is a walk, so `_snapshot(root) == before` passes vacuously the day the walk
+    # `snapshot` is a walk, so `snapshot(root) == before` passes vacuously the day the walk
     # stops finding files — and this is a test standing behind a refusal.
     assert before
     with pytest.raises(Refusal):
@@ -145,7 +146,7 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
@@ -523,8 +524,8 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     # Mutation: `mutations.toml`'s "the memory.groups containment is asked at write time only".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _with_groups(root, '["../../escape"]')
-    before = _snapshot(root)
-    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Refusal) as refusal:
         attach(
@@ -541,7 +542,7 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
     # The one write that is not under the root, and the one that made `doctor` say `bound`.
     assert not (store.parent / PROJECT_RECORD).exists()
 
@@ -555,7 +556,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
     # attaches, and leaves behind every artifact the case above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _with_groups(root, '["developer", "project-stable"]')
-    before = _snapshot(root)
+    before = snapshot(root)
     assert before
     attached = attach(
         root,
@@ -566,7 +567,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
         runner=FakeRunner(),
         home=tmp_path / "home",
     )
-    after = _snapshot(root)
+    after = snapshot(root)
     added = set(after) - set(before)
     assert attached.settings_written and attached.binding_recorded
     assert {LEDGER, SETTINGS, ".codex/rules/common.rules"} <= added
@@ -738,8 +739,8 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
     # `_write_ignore_region`, and this reddens on the snapshot while `pytest.raises` stays green.
     root, store, machine = _attachable(tmp_path, codex="# a standing rule\n")
     subprocess.run(["git", "remote", "remove", "origin"], cwd=root, capture_output=True)
-    before = _snapshot(root)
-    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Refusal):
         attach(
@@ -751,7 +752,7 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_the_no_origin_refusal_is_reached_with_a_diff_that_would_have_written(
@@ -965,8 +966,8 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
     # Mutation: `mutations.toml`'s "the ledger is read after attach has already written".
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _committed_ledger(root, store, rules=[".github/workflows/ci.yml"])
-    before = _snapshot(root)
-    # `_snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Refusal):
         attach(
@@ -978,7 +979,7 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    _assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(root, before)
 
 
 def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_files(
@@ -990,7 +991,7 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
     # the refusal above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _committed_ledger(root, store, rules=[".codex/rules/common.rules"])
-    before = _snapshot(root)
+    before = snapshot(root)
     assert before
     attached = attach(
         root,
@@ -1001,7 +1002,7 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
         runner=FakeRunner(),
         home=tmp_path / "home",
     )
-    after = _snapshot(root)
+    after = snapshot(root)
     assert attached.settings_written
     assert ".codex/rules/common.rules" in set(after) - set(before)
     assert SETTINGS in set(after) - set(before)

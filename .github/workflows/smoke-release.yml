@@ -1,0 +1,28 @@
+# The `owner/repo/…@ref` call forms — what a project actually writes (§5.8: "the same-repo
+# form carries no ref and would hide a dangling tag"). Dispatched by hand: a reusable-workflow
+# ref is resolved when the run is created and `uses:` takes no expression, so `@dev` resolves
+# only once this work has merged and `@v1` only once the first release has moved the alias
+# (§5.9). Both callers are Keelline calling Keelline, so what is exercised is ref resolution
+# and the `job.workflow_sha` checkout assertion inside check.yml — not a second repository or
+# a token that cannot reach one. These two refs are mutable on purpose and against D16: they
+# are the two non-recommended forms, run here so that they are known to work, and nothing a
+# consumer copies from this file is a form the reference tells them to write.
+name: smoke-release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  at-the-development-branch:
+    uses: Nezhinskiy/keelline/.github/workflows/check.yml@dev
+    with:
+      path: tests/fixtures/smoke-project
+      base: main
+  at-the-alias:
+    uses: Nezhinskiy/keelline/.github/workflows/check.yml@v1
+    with:
+      path: tests/fixtures/smoke-project
+      base: main

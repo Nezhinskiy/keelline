@@ -123,6 +123,14 @@ def test_the_walk_finds_the_ported_skills() -> None:
     names = {path.parent.name for path in skills()}
     assert {"close-bug", "memory-sweep"} <= names
     assert {"init", "upgrade", "uninstall", "attach", "setup", "doctor"} <= names
+    assert {
+        "file-bug",
+        "sweep-defect-class",
+        "review-plan-three-lenses",
+        "attribute-failure",
+        "run-correctness-audit",
+        "retro-to-guard",
+    } <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
     # invocation cases with it, and so does a template tree that moves again.
     walked = documents()

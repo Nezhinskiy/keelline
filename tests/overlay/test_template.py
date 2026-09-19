@@ -9,7 +9,7 @@ import pytest
 from keelline import __version__
 from keelline.config.loader import preset_defaults
 from keelline.hooks.api import EVENTS
-from keelline.overlay.layout import OVERLAY_FILES
+from keelline.overlay.layout import OVERLAY_FILES, PLACEHOLDER_NAMES
 from keelline.overlay.template import template_root, templates
 from keelline.presets import load_preset
 from keelline.scaffold import MANIFEST_PATH
@@ -291,6 +291,29 @@ def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
     assert _COUNT_WORDS[stated.group(1).lower()] == len(expected), stated.group(1)
 
 
+def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
+    # S1: the comment beside `CAPABILITY_FILES` said the two names were "not spelled twice"
+    # while the tuple was built by filtering `OVERLAY_FILES` against a second spelling of
+    # them. One spelling now: `CAPABILITY_NAMES` is unpacked into `OVERLAY_FILES` and
+    # `CAPABILITY_FILES` is that same tuple.
+    from keelline.overlay.layout import CAPABILITY_FILES, CAPABILITY_NAMES, OVERLAY_FILES
+
+    # Against the SHIPPED tree, not against `OVERLAY_FILES`: with one spelling the subset
+    # holds by construction, so the assertion that can fail is that each name is a file the
+    # template actually carries. Mutation: rename one entry of `CAPABILITY_NAMES` to
+    # `common/claude/allow.json` -> it is no longer under `template_root()` and this reddens.
+    # The count by value, first and on its own. The derived form this replaced could not be
+    # emptied without emptying `OVERLAY_FILES` too; one spelling removed that guard, and
+    # `CAPABILITY_NAMES = ()` satisfies the alias comparison, the subset (`OVERLAY_FILES`
+    # unpacks the tuple) and the loop below, while silently emptying `overlay upgrade`'s
+    # decision list — the one list §6.1 diffs "regardless of hash".
+    assert len(CAPABILITY_NAMES) == 2, CAPABILITY_NAMES
+    assert CAPABILITY_FILES == CAPABILITY_NAMES
+    assert set(CAPABILITY_NAMES) <= set(OVERLAY_FILES)
+    for relative in CAPABILITY_NAMES:
+        assert (template_root() / relative).is_file(), relative
+
+
 def _is_placeholder(relative: str) -> bool:
     """Whether this path is a directory's own documentation rather than a file in its own right.
 
@@ -298,9 +321,11 @@ def _is_placeholder(relative: str) -> bool:
     `common/memory/`, `projects/` — and a `SKILL.md` under `skills/`. The template README
     describes those as *directories* on purpose, and naming four placeholders inside them would
     be noise. Derived from the basename rather than listed, so a fourth such directory needs no
-    edit here; the root `README.md` is not one, which is what the `/` test excludes.
+    edit here. The convention is stated in `layout.py`, beside `PLACEHOLDER_NAMES`, which is
+    also where the sentence about the root `README.md` now lives; the `/` conjunct below is
+    what excludes it.
     """
-    return "/" in relative and relative.rsplit("/", 1)[1] in ("README.md", "SKILL.md")
+    return "/" in relative and relative.rsplit("/", 1)[1] in PLACEHOLDER_NAMES
 
 
 def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
@@ -328,3 +353,12 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
         if not any(name in text for name in names):
             missing.append(relative)
     assert missing == [], missing
+
+
+def test_the_template_ships_a_dependabot_configuration_for_its_pinned_actions() -> None:
+    # R4: the scan workflow pins both actions by full-length SHA, and nothing told the owner
+    # a pin was two years old. The same Dependabot shape this repository uses for its own
+    # actions. Mutation: delete the `github-actions` ecosystem line -> reddens.
+    text = (template_root() / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    assert "package-ecosystem: github-actions" in text
+    assert ".github/dependabot.yml" in OVERLAY_FILES

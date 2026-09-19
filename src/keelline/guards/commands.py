@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from keelline import fsops
 from keelline.areas import SubParsers
+from keelline.command import common_flags
 from keelline.config.loader import load
 from keelline.errors import Failure, Refusal
 from keelline.result import Result
@@ -62,14 +63,16 @@ def run_bg_cleanup(args: argparse.Namespace) -> Result:
 
 
 # Printed on every `commit check` failure, which is inside the CI gate's own output, so it may
-# only name commands that exist. It named `keelline setup --git-hooks`, which does not: the hook
-# installer ships as a library this lane owns and `setup` is the lane that will offer it from the
-# command line. A remedy that sends a person to an unknown subcommand costs more than the missing
-# clause does.
+# only name commands that exist. The clause naming the installer was dropped while the hook
+# installer shipped as a library alone and `setup` had not yet offered it from the command line;
+# `keelline setup --git-hooks` ships now, so the clause is back, and the rule it was dropped for
+# — a remedy that sends a person to an unknown subcommand costs more than a missing clause does
+# — is what holds it to `setup --git-hooks` and nothing else.
 _STRIP_REMEDY = (
     "Rewrite the messages without the trailer (`git rebase -i --exec 'git commit --amend "
     "--no-edit' <base>`, or `git commit --amend` for the last one). `keelline commit strip "
-    "FILE` does the same to one message file."
+    "FILE` does the same to one message file, and `keelline setup --git-hooks` installs the "
+    "hook that strips it before the commit exists."
 )
 
 # git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read
@@ -269,6 +272,26 @@ def run_test_audit(args: argparse.Namespace) -> Result:
     return Result(f"no candidates in {len(files)} test file(s)", data)
 
 
+def run_test_attribute(args: argparse.Namespace) -> Result:
+    from keelline.guards.attribute import attribute
+    from keelline.runner import subprocess_runner
+
+    root, config = _root_and_config(args)
+    base = args.base or f"origin/{config.project.base_branch}"
+    result = attribute(root, command=args.command, base=base, runner=subprocess_runner())
+    data = {
+        "runs": {
+            "head_ambient": result.head_ambient,
+            "head_clean": result.head_clean,
+            "base_clean": result.base_clean,
+        },
+        "base": result.base,
+        "merge_base": result.merge_base,
+        "verdict": result.verdict,
+    }
+    return Result(result.verdict, data)
+
+
 def register(groups: SubParsers) -> None:
     guard = groups.add_parser("guard", help="fail-closed guards over a tool call")
     guard_sub = guard.add_subparsers(dest="command", metavar="<command>")
@@ -277,10 +300,10 @@ def register(groups: SubParsers) -> None:
 
     commit = groups.add_parser("commit", help="commit-message rules")
     commit_sub = commit.add_subparsers(dest="command", metavar="<command>")
-    check = commit_sub.add_parser("check", help="check every message in a revision range")
+    check = common_flags(
+        commit_sub.add_parser("check", help="check every message in a revision range")
+    )
     check.add_argument("--range", dest="rev_range", required=True, help="e.g. main..HEAD")
-    check.add_argument("--root", default=".", help="project root (default: current directory)")
-    check.add_argument("--machine", default=None, help="machine configuration file to read")
     check.set_defaults(func=run_commit_check)
     strip = commit_sub.add_parser("strip", help="strip attribution lines from a message file")
     strip.add_argument("file", help="the commit-message file git handed the hook")
@@ -288,13 +311,27 @@ def register(groups: SubParsers) -> None:
 
     test = groups.add_parser("test", help="test-suite hygiene")
     test_sub = test.add_subparsers(dest="command", metavar="<command>")
-    hygiene = test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
-    hygiene.add_argument("--root", default=".", help="project root (default: current directory)")
-    hygiene.add_argument("--machine", default=None, help="machine configuration file to read")
-    hygiene.set_defaults(func=run_test_hygiene)
-    audit = test_sub.add_parser(
-        "audit-entrypoints", help="tests that never exercise what they name"
+    hygiene = common_flags(
+        test_sub.add_parser("hygiene", help="what could falsify a red run in this tree")
     )
-    audit.add_argument("--root", default=".", help="project root (default: current directory)")
-    audit.add_argument("--machine", default=None, help="machine configuration file to read")
+    hygiene.set_defaults(func=run_test_hygiene)
+    audit = common_flags(
+        test_sub.add_parser("audit-entrypoints", help="tests that never exercise what they name")
+    )
     audit.set_defaults(func=run_test_audit)
+    attribute = common_flags(
+        test_sub.add_parser(
+            "attribute", help="attribute a failing command to the change or to the environment"
+        )
+    )
+    attribute.add_argument(
+        "--command",
+        required=True,
+        help="the exact failing command, including the environment sync it needs",
+    )
+    attribute.add_argument(
+        "--base",
+        default=None,
+        help="ref to compare against (default: origin/<project.base_branch>)",
+    )
+    attribute.set_defaults(func=run_test_attribute)

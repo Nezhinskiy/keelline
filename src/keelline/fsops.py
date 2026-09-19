@@ -271,3 +271,66 @@ def rmdir_within(root: Path, target: str) -> None:
     """
     with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
         os.rmdir(name, dir_fd=dir_fd)
+
+
+class NotASymlink(OSError):
+    """A real file or directory was found where a symlink was asked about; it is left alone."""
+
+
+def _type_of(dir_fd: int, name: str) -> int | None:
+    """`S_IFMT` of the entry, or `None` when nothing is there — the link questions' `lstat`.
+
+    Separate from `_mode_of`, which answers "what permission bits does the replacement carry
+    over" and deliberately returns `None` for anything that is not a regular file, with the
+    type bits stripped: `stat.S_ISLNK(_mode_of(...))` is False for every value it can return.
+    """
+    try:
+        return stat.S_IFMT(os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode)
+    except FileNotFoundError:
+        return None
+
+
+def readlink_within(root: Path, target: str) -> Path | None:
+    """The target of the symlink at `root/target`; `None` when nothing is there.
+
+    Through the same walk as every other primitive, so the question is asked of the entry
+    the descriptor names and not of whatever a re-resolved path would reach. A real entry
+    raises `NotASymlink`: the callers treat it as somebody else's and never remove it.
+    """
+    with open_within(root, target) as (dir_fd, name):
+        kind = _type_of(dir_fd, name)
+        if kind is None:
+            return None
+        if kind != stat.S_IFLNK:
+            raise NotASymlink(f"{target!r} is not a symlink")
+        return Path(os.readlink(name, dir_fd=dir_fd))
+
+
+def symlink_within(root: Path, target: str, source: Path) -> None:
+    """Create `root/target -> source` through the walk; parents are created the same way.
+
+    `FileExistsError` when anything is already there — the caller reads first
+    (`readlink_within`) and removes first (`unlink_within`); this never replaces.
+    """
+    mkdirs_within(root, target)
+    with open_within(root, target) as (dir_fd, name):
+        os.symlink(str(source), name, dir_fd=dir_fd)
+
+
+def unlink_within(root: Path, target: str, *, pointing_at: Path | None = None) -> bool:
+    """Remove the symlink at `root/target`; report whether anything was removed.
+
+    A real entry raises `NotASymlink`. With `pointing_at`, only a link to exactly that path
+    is removed — the mirror of `_link`'s "a symlink pointing anywhere else belongs to
+    somebody else".
+    """
+    with open_within(root, target) as (dir_fd, name):
+        kind = _type_of(dir_fd, name)
+        if kind is None:
+            return False
+        if kind != stat.S_IFLNK:
+            raise NotASymlink(f"{target!r} is not a symlink")
+        if pointing_at is not None and Path(os.readlink(name, dir_fd=dir_fd)) != pointing_at:
+            return False
+        os.unlink(name, dir_fd=dir_fd)
+        return True
