@@ -55,6 +55,7 @@ Three things hold everywhere:
 - [`keelline setup --preset NAME [--yes] [--home PATH] [--settings PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#keelline-setup---preset-name---yes---home-path---settings-path---machine-path---overlay-value---root-path)
 - [`keelline setup --git-hooks [--uninstall] [--root PATH]`](#keelline-setup---git-hooks---uninstall---root-path)
 - [`keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#keelline-doctor---json---root-path---home-path---machine-path)
+- [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
 - [Configuration](#configuration)
 
@@ -1025,6 +1026,59 @@ that root's wrapper is still read by `files`, for its executable bit, and `wrapp
 called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.
+
+---
+
+## The reusable workflow
+
+`.github/workflows/check.yml` is a `workflow_call` workflow a project runs its Keelline gates
+through. Three lines in the caller:
+
+```yaml
+jobs:
+  keelline:
+    uses: Nezhinskiy/keelline/.github/workflows/check.yml@<40-hex sha>
+    with:
+      base: main
+```
+
+| Input | Default | Meaning |
+|---|---|---|
+| `base` | `""` | the branch the gate's configuration is read from; empty means the pull request's base, and on a push the repository's default branch |
+| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture |
+| `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
+
+It checks out the caller, checks out Keelline **at the commit the `uses:` line pins** — read
+off the platform's own record of which reusable workflow is running, never off the caller's
+inputs, and asserted against `git rev-parse HEAD` before anything else runs — and runs
+`docs check`, `bugs check`, `plan check`, `commit check` and `docs trail --check` with
+`python3 -m keelline`. No resolver, no build backend and no network beyond the two checkouts.
+
+**Where the configuration comes from, and why it is not the tree under review.** The state the
+gate enforces on is read from `keelline.toml` **on the base ref**, and on any branch but the
+base branch itself the tree's copy must equal it byte for byte or the run fails before a gate
+runs. A pull request that could turn its own gates off is not a gate (§8.3 names the keys a
+pull request may eventually change; that refinement arrives with `assess`). The base ref itself
+is the caller's `base:`, the pull request's base, or the repository's default branch as the
+platform reports it — three anchors, none of them writable from the branch under review.
+
+**Advisory until the base says `installed`.** While the base's state is `initialised` or
+`adopting`, or while the base carries no `keelline.toml` at all — the bootstrap, which is every
+project's first pull request — every gate still runs and every failure is one warning
+annotation, and the job is green (D8). Once the base's state is `installed`, a failed gate
+fails the job. Every gate runs whatever the one before it said, so a project fixing its
+documents does not pay a round trip per finding.
+
+**Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1`
+and `@dev` are a moving Keelline running against your repository (D16). The SHA pin is what
+`init` will write and `upgrade` will bump; `@v1` is the documented opt-in for a project that
+would rather track the major. `smoke-release.yml` in this repository runs both moving forms on
+demand, so that they are known to work — it is not a form this reference tells you to write.
+
+**Checked out with `fetch-depth: 0`.** `plan check` reads a merge base and `commit check` reads
+a range; a shallow checkout has neither, and the run says so rather than passing over a history
+it cannot see. `persist-credentials: false` on both checkouts, so nothing a gate reads can
+reach a token.
 
 ---
 

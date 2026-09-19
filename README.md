@@ -87,6 +87,9 @@ From the first release on, the same command takes the tag —
 with no resolver to run at hook time that [principle 9](docs/methodology/principles.md)
 describes, and the published package makes the bare name work.
 
+In CI, a project calls the reusable workflow at a commit SHA;
+[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the three lines.
+
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
 `O_NOFOLLOW` and `O_DIRECTORY`, which have no Windows equivalent.

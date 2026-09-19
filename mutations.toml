@@ -3647,3 +3647,17 @@ after = "    if False:"
 reddens = [
   "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
 ]
+
+# A `${{ }}` inside a workflow's `run:` is interpolated by the platform before the shell sees
+# the script, so a branch name or a pull-request title carrying shell metacharacters runs as the
+# workflow's own code. Every value in these files reaches a shell through `env:` instead, and
+# that is a rule nothing but this scan can hold: the repository carries no YAML parser, so a
+# workflow is otherwise proven only by the run that first executes it.
+[[mutation]]
+name = "a workflow splices an expression into a shell"
+file = ".github/workflows/check.yml"
+before = '          actual="$(git -C keelline rev-parse HEAD)"'
+after = '          actual="$(git -C keelline rev-parse ${{ github.ref }})"'
+reddens = [
+  "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
+]
