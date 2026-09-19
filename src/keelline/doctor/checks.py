@@ -476,10 +476,14 @@ def _attached(context: Context) -> Row:
             f"memory.mode is overlay and {LEDGER} does not exist, so nothing records an attach",
             "run `keelline attach --store <overlay>/projects/<project>/memory --check`",
         )
-    state = _binding_state(context)
-    # `UNBOUND` and never `None`: `_binding_state` answers `None` when the overlay could
-    # not be ASKED (no `git`, an unreadable ledger, a refused binding), and a row that
-    # accused the repository on that answer would be reporting on its own inputs.
+    answer = _binding_answer(context)
+    # The ledger exists, so from here on this row's job is to say what the **overlay** makes of
+    # it (R5, D15). Every arm below but the last refuses to print the word "attached": the
+    # ledger asserting one is exactly what a clone can commit, and the only thing that confirms
+    # it is the overlay, whose root this repository cannot choose (DP3).
+    if isinstance(answer, str):
+        return _uncorroborated(answer)
+    state = answer.state
     if state == UNBOUND:
         return Row(
             WARN,
@@ -497,16 +501,62 @@ def _attached(context: Context) -> Row:
             "run `keelline attach --check`, and `--trust-remote` only if it should be",
         )
     status, shape, remedy = _harness_shape(context, harness)
-    detail = f"attached; the harness memory path is {shape}"
-    if state is not None:
-        detail = f"{detail}; the binding is {state}"
-    return Row(status, detail, remedy)
+    return Row(
+        status, f"attached; the harness memory path is {shape}; the binding is {state}", remedy
+    )
 
 
 # The remedy every harness-memory-path row but the green one carries: one command puts the link
 # where §6.3 asks for it, whatever the wrong shape was. `<overlay>` and `<project>` and never
 # `config.project.name`, for the reason the real-directory row above gives.
 _RELINK = f"run `keelline attach --store <overlay>/{PROJECTS}/<project>/memory`"
+
+# Why the overlay could not corroborate the ledger, as `_binding_answer`'s three answers. Not
+# statuses and not sentences: the row below decides both, and these are the question's own
+# vocabulary. `UNRESOLVED` is about the repository, the other two about this machine.
+UNRESOLVED: Final = "unresolved"
+NO_OVERLAY: Final = "no-overlay"
+UNASKABLE: Final = "unaskable"
+# Said by every row that meets a ledger the overlay has not confirmed, because it is the whole
+# reason those rows exist: §6.2's consent lives in the overlay, and this file does not.
+_NOT_EVIDENCE = f"a clone can commit {LEDGER}, so on its own it is not evidence of an attach"
+_RE_ATTACH = (
+    "run `keelline attach --store <overlay>/projects/<project>/memory --check`; if this "
+    "checkout was never attached on this machine, remove the ledger"
+)
+
+
+def _uncorroborated(reason: str) -> Row:
+    """The row for a ledger the overlay did not confirm, split by what the reason is *about*.
+
+    `warn` accuses the repository and `skip` does not, and the split is the point: `skip` never
+    reaches the exit code, so using it for the repository's own doing would be the defect this
+    function was written to remove, and using `warn` for a machine where `setup` has never run
+    would make `doctor` warn on every correct fresh install. Neither row ever says "attached".
+    """
+    if reason == UNRESOLVED:
+        return Row(
+            WARN,
+            f"{LEDGER} records an attach, and the store it names is not this project's "
+            f"directory inside the overlay this machine records — {_NOT_EVIDENCE}",
+            _RE_ATTACH,
+        )
+    if reason == NO_OVERLAY:
+        return Row(
+            SKIP,
+            f"{LEDGER} records an attach and this machine records no overlay to check it "
+            f"against, so whether this checkout is attached could not be answered here — "
+            f"{_NOT_EVIDENCE}",
+            "run `keelline setup --overlay <path>` to record the overlay, then `keelline "
+            "doctor` again",
+        )
+    return Row(
+        SKIP,
+        f"{LEDGER} records an attach and the overlay could not be asked about it here — no "
+        f"`git`, or a record this process could not read — so whether this checkout is "
+        f"attached could not be answered; {_NOT_EVIDENCE}",
+        "run `keelline doctor` again where `git` runs and the overlay is readable",
+    )
 
 
 def _harness_shape(context: Context, harness: Path) -> tuple[Status, str, str]:
@@ -549,25 +599,49 @@ def _harness_shape(context: Context, harness: Path) -> tuple[Status, str, str]:
     return OK, "not in place, which is what this store's trust record asks for", ""
 
 
-def _binding(context: Context) -> Binding | None:
-    """The overlay binding this repository would attach under, or `None` when it cannot be asked.
+def _binding_answer(context: Context) -> Binding | str:
+    """The overlay binding this repository would attach under, or the label of why there is none.
 
-    `read_binding` needs `git` and the recorded store, and it refuses a store that is not this
-    project's share of the recorded overlay. A `doctor` that turned any of those into a red row
-    would be reporting on its own inputs rather than on the installation. One spelling for the
-    two rows that need it, so they cannot come to disagree about what "cannot be asked" is.
+    Three different situations used to collapse into one `None` — a ledger naming a store the
+    overlay does not permit, a machine that records no overlay at all, and a machine with no
+    usable `git` — and the `attached` row then treated the last two as *attached*. They are not
+    one finding. A ledger whose store is not this project's share of the recorded overlay is a
+    fact about **this repository**, and `.keelline/local/attach.json` is a path a clone can
+    commit (R5, D15), so it earns a warning. A missing overlay or a missing `git` is a fact
+    about **our own inputs**, and a row that accused the repository on it would be reporting on
+    itself.
+
+    The three are told apart without restructuring `read_binding`, which raises `Refusal` for
+    two of them: `context.overlay` is the answer of the same `overlay_root(machine)` that
+    function calls with the same argument, so asking it first takes the overlay-is-missing arm
+    off the table, and what is left of `Refusal` is the store that is not this project's
+    permitted root. Anything else that goes wrong — a `Failure` out of the overlay's own record,
+    a ledger this process may not read — answers `UNASKABLE`, which is the conservative
+    direction: it never accuses the repository for something it may not have done.
     """
+    if context.overlay is None:
+        return NO_OVERLAY
     try:
         store = Path(ledger(context.root).store)
+    except (Failure, Refusal):
+        return UNASKABLE
+    try:
         return read_binding(context.root, store=store, machine=context.machine)
-    except (Failure, Refusal, GitUnavailable):
-        return None
+    except Refusal:
+        return UNRESOLVED
+    except (Failure, GitUnavailable):
+        return UNASKABLE
 
 
-def _binding_state(context: Context) -> str | None:
-    """The overlay binding's own label, or `None` when it cannot be asked on this machine."""
-    binding = _binding(context)
-    return None if binding is None else binding.state
+def _binding(context: Context) -> Binding | None:
+    """The overlay binding, or `None` when it could not be read, whatever the reason was.
+
+    What `hook-entries` wants: it withholds the provenance column whenever the overlay cannot
+    vouch for an entry, and the three reasons are one answer to that question. `_attached` asks
+    `_binding_answer` directly, because for that row they are three.
+    """
+    answer = _binding_answer(context)
+    return answer if isinstance(answer, Binding) else None
 
 
 def _granted_commands(context: Context) -> set[str] | None:

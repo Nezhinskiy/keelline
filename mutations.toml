@@ -3345,3 +3345,28 @@ after = '    done: Completed = runner.run(["pre-commit", "--version"], root)'
 reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
+
+# Fix round 1, item 1. `read_binding` refuses for two different reasons and `origin_remote`
+# raises for a third, and all three used to collapse into one `None` that the `attached` row
+# read as "attached". These two entries prove the three are told apart: the first turns the
+# repository's own doing into a skip nobody acts on, the second turns a missing overlay into an
+# accusation against the repository.
+[[mutation]]
+name = "a ledger naming a store the overlay does not permit is excused as our own input"
+file = "src/keelline/doctor/checks.py"
+before = """    except Refusal:
+        return UNRESOLVED"""
+after = """    except Refusal:
+        return UNASKABLE"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning",
+]
+
+[[mutation]]
+name = "a machine with no overlay recorded is blamed on the repository"
+file = "src/keelline/doctor/checks.py"
+before = "    if context.overlay is None:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
+]

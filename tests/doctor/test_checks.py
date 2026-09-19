@@ -26,7 +26,7 @@ import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
-from keelline.doctor.api import SETTINGS_FILES, WARN, Check, run_checks
+from keelline.doctor.api import OK, SETTINGS_FILES, SKIP, WARN, Check, run_checks
 from keelline.doctor.checks import plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
@@ -1554,3 +1554,94 @@ def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attac
     assert "has no binding for this project" in row.detail
     assert "a clone can commit that file" in row.detail
     assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
+
+
+def test_a_ledger_naming_a_store_the_overlay_does_not_permit_is_a_warning(tmp_path: Path) -> None:
+    # Fix round 1, item 1. `_attached` asked the overlay only for its *state*, and
+    # `read_binding` answers with a `Refusal` — not a state — when the store the ledger names is
+    # not this project's share of the recorded overlay. That refusal used to collapse into the
+    # same `None` as "no overlay recorded", the row skipped both new arms, and a repository that
+    # committed `.keelline/local/attach.json` with any store it liked was reported `attached:
+    # ok` to a model. This is the likeliest hostile shape of the three: an attacker cannot know
+    # the victim's overlay root, so the store they commit is one the overlay does not permit.
+    #
+    # `warn` and not `skip`: this is a fact about the repository, and `skip` never reaches the
+    # exit code.
+    #
+    # Mutation (declared): `except Refusal: return UNRESOLVED` -> `return UNASKABLE` -> the row
+    # becomes a skip about this machine and this reddens on the status and the sentence.
+    root = _attached(tmp_path)
+    recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    recorded["store"] = str(tmp_path / "somewhere-else" / "memory")
+    (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert row.status == WARN
+    assert "is not this project's directory inside the overlay" in row.detail
+    assert "not evidence of an attach" in row.detail
+    assert "attached;" not in row.detail, "a ledger the overlay does not confirm is not an attach"
+    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
+
+
+def _no_overlay_machine(tmp_path: Path) -> Path:
+    """A machine file that exists and records no overlay — what a fresh machine looks like.
+
+    A real file rather than `machine=None`: `overlay_root(None)` resolves the *developer's* own
+    `~/.config/keelline/config.toml`, which this suite may not read.
+    """
+    path = tmp_path / "no-overlay.toml"
+    path.write_text("[personal]\n", encoding="utf-8")
+    return path
+
+
+def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached(
+    tmp_path: Path,
+) -> None:
+    # The universal case on a machine where `setup` has never run, and the second half of item
+    # 1: `read_binding` refuses for this too, and the row used to print "attached" over it. It
+    # is a fact about *our own inputs*, so it is a `skip` that says what could not be asked —
+    # never a warning that accuses the repository, and never the word "attached".
+    #
+    # Mutation (declared): `if context.overlay is None: return NO_OVERLAY` -> `if False:` ->
+    # the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the arm is gone)
+    # and this reddens on the status and the sentence.
+    root = _attached(tmp_path)
+    row = _by_name(_checks(tmp_path, root, machine=_no_overlay_machine(tmp_path)), "attached")
+    assert row.status == SKIP
+    assert "records no overlay to check it against" in row.detail
+    assert "attached;" not in row.detail
+    assert "keelline setup --overlay" in row.remedy
+
+
+def test_an_overlay_record_this_process_cannot_read_skips_rather_than_reading_as_attached(
+    tmp_path: Path,
+) -> None:
+    # The third of the three, and the one that is about neither side's honesty: the overlay is
+    # recorded and its `projects/<name>/project.toml` will not parse, so `read_binding` raises
+    # `Failure` and nothing can be said about the binding either way. A `skip` naming the
+    # reason, and — the property all three share — not the word "attached".
+    #
+    # No mutation of its own: the arm it exercises is the `except (Failure, GitUnavailable)`
+    # fallback, and the two declared mutations above already prove that `_binding_answer`'s
+    # three answers are told apart rather than collapsed. This is the case that pins the
+    # fallback's own sentence.
+    root = _attached(tmp_path)
+    overlay = _overlay(tmp_path)
+    (overlay / PROJECTS / "p" / PROJECT_RECORD).write_text("remote = [", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert row.status == SKIP
+    assert "the overlay could not be asked about it here" in row.detail
+    assert "attached;" not in row.detail
+
+
+def test_an_attached_checkout_the_overlay_confirms_is_still_green_and_says_the_binding(
+    tmp_path: Path,
+) -> None:
+    # The vacuity guard for the three above: refusing to print "attached" whenever the overlay
+    # did not answer must not become refusing to print it at all. The fixture is the state a
+    # real attach leaves, the overlay's record matches this checkout's remote, and the row says
+    # so with the binding's own label on it.
+    root = _attached(tmp_path)
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert row.status == OK
+    assert row.detail.startswith("attached;")
+    assert "the binding is bound" in row.detail
