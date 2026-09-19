@@ -183,17 +183,38 @@ def _scan(workflow: Path) -> Iterator[tuple[str, str]]:
     at the dash would make the step's own sibling keys part of its script — `env:` among them,
     which is exactly where a `${{ }}` belongs.
 
-    `defaults: run:` is a mapping of `shell` and `working-directory` rather than a script, and
-    it is **collected and scanned like everything else, on purpose**. Telling a mapping from a
-    script needs a classifier, and a classifier fails by reading a script as settings, which is
-    the same hole wearing the name of a feature. The consequence is stated rather than
-    exempted: `defaults: run: working-directory: ${{ inputs.path }}` is standard, correct
-    Actions and is not an injection, and the guard over these blocks will fail on it. That is a
-    decision for whoever first needs it to take deliberately, with a red test in front of them,
-    rather than a hole dug in advance — and it is the only false positive this rule has.
+    **Everything a `run:` key introduces is collected, and nothing is classified.** Telling a
+    script from something else needs a classifier, and a classifier fails by reading a script as
+    settings — the same hole wearing the name of a feature. So the rule is applied to the key's
+    NAME alone, and the cost of that is stated here rather than exempted away. It is a cry-wolf
+    cost and never a hole: every case below fails loudly, in the safe direction, in front of
+    whoever writes it.
+
+    There are three of them, and they are one class and one consequence rather than a list to
+    keep up with.
+
+    **A key named `run` that is not a script.** `defaults: run:` is a mapping of `shell` and
+    `working-directory`, and an action input that happens to be called `run` under `with:` is
+    another. Both are collected and scanned identically. So
+    `defaults: run: working-directory: ${{ inputs.path }}` — standard, correct Actions, and not
+    an injection — fails the guard over these blocks. That is a decision for whoever first needs
+    it to take deliberately, with a red test in front of them, rather than a hole dug in
+    advance. Neither shape appears in this tree today.
+
+    **A comment indented past a one-liner's key column**, which this rule introduced and the
+    reader before it did not have: a one-liner used to be taken and the following lines left
+    alone, and now the key owns them. So
+
+        - run: echo a
+            # never splice ${{ github.ref }} here — use env:
+
+    is one body carrying an expression, and the guard fails pointing at a comment — which is
+    exactly the comment a repository shipping this guard tends to write. Keeping it is the same
+    trade as the first: the alternative is a rule that knows what a comment is, which is a
+    classifier, which is the hole.
 
     What it yields: `("run", body)` for each `run:` key, and `("line", raw)` for every line
-    outside one. The second stream exists so the flow-mapping refusal below can ask its question
+    outside one. The second stream exists so the brace refusal below can ask its question
     without a `run:` body's own braces answering it.
     """
     lines = workflow.read_text(encoding="utf-8").splitlines()
@@ -223,15 +244,31 @@ def run_blocks(workflow: Path) -> list[str]:
     return [body for kind, body in _scan(workflow) if kind == "run"]
 
 
-def flow_mapping_lines(workflow: Path) -> list[str]:
-    """Every line outside a `run:` body that spells a YAML flow mapping.
+def braced_lines(workflow: Path) -> list[str]:
+    """Every line outside a `run:` body that still carries a brace once `${{ … }}` is removed.
 
-    The one shape the indentation rule above cannot reach: `- {run: "…"}` puts the whole step on
-    one line inside braces, and there is no following line to own. It is **refused rather than
-    parsed** — writing a flow-mapping parser is the enumeration again, one level down — so the
-    day a workflow spells a step that way, the test says so loudly instead of silently not
-    seeing it. Lines inside a `run:` body are not asked: a heredoc's own Python carries braces,
-    and they are already scanned as the script they are.
+    **What it is for** is the one shape the indentation rule above cannot reach: a step spelled
+    as a flow mapping — `- {run: "…"}` — puts the whole step on one line inside braces, and
+    there is no following line to own. It is **refused rather than parsed**: writing a
+    flow-mapping parser is the enumeration again, one level down, and the failure mode of the
+    thing that replaced is a shape nobody thought of. So the day a workflow spells a step that
+    way, the guard says so loudly instead of silently not seeing it.
+
+    **What it actually checks is broader than that, deliberately, and the name says so.** It
+    reports anything brace-shaped rather than deciding what the braces mean — a flow sequence of
+    mappings, a flow-style `matrix` entry, `extra: {a: 1}`, a quoted JSON-ish scalar such as
+    `CFG: '{"a": 1}'`. All of those are refused too, and none of them is a flow-mapping step.
+    Classifying them apart is the classifier again; refusing anything brace-shaped is the
+    conservative answer, and the message a reader gets names the brace they wrote rather than a
+    flow-mapping step that is not there. None of these shapes appears in this tree.
+
+    `${{ … }}` is removed first because it is plain text that carries braces: without the strip
+    every line of every workflow here would be reported, and a guard that cries wolf on every
+    line is a guard somebody deletes. The strip is not a way past the check either — a brace
+    outside an expression survives it, which is what `- {run: "echo ${{ x }}"}` is.
+
+    Lines inside a `run:` body are not asked at all: a heredoc's own Python carries braces, and
+    they are already scanned as the script they are.
     """
     return [
         line
@@ -264,10 +301,11 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
         read.extend(blocks)
         for block in blocks:
             assert "${{" not in block, (workflow.name, block)
-        # Refused and not parsed: a step spelled as a flow mapping — `- {run: "…"}` — has no
-        # following line for the indentation rule to own, and writing a parser for it is the
-        # enumeration again one level down. The day a workflow spells one, this says so.
-        assert flow_mapping_lines(workflow) == [], (workflow.name, flow_mapping_lines(workflow))
+        # Refused and not classified: anything brace-shaped outside a `run:` body. What it is
+        # for is the step spelled as a flow mapping — `- {run: "…"}` — which has no following
+        # line for the indentation rule to own; what it reports is every brace, because deciding
+        # which ones are a step is the classifier the rule above exists without.
+        assert braced_lines(workflow) == [], (workflow.name, braced_lines(workflow))
     # Two floors and not one, for the reason the whole-tree gate needed two: a reader that
     # collects the right NUMBER of bodies and truncates each of them to its first line passes a
     # count and fails a size. Measured when written: 30 bodies, 7,761 characters.
@@ -332,7 +370,7 @@ def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
     # belongs.
     dashed = next(block for block in blocks if "dashed-block" in block)
     assert "SAFE" not in dashed, dashed
-    assert flow_mapping_lines(workflow) == []
+    assert braced_lines(workflow) == []
 
 
 def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed(tmp_path: Path) -> None:
@@ -354,7 +392,7 @@ def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed(tmp_path
     assert run_blocks(workflow) == ["echo ordinary"], run_blocks(workflow)
     # ...so it is named here instead, with the expression stripped before the question is asked
     # so that `${{ }}` — which is plain text, not flow syntax — cannot answer it.
-    flow = flow_mapping_lines(workflow)
+    flow = braced_lines(workflow)
     assert len(flow) == 1, flow
     assert "run" in flow[0] and "{" in flow[0], flow
 
@@ -375,7 +413,7 @@ def test_an_expression_is_not_mistaken_for_flow_syntax(tmp_path: Path) -> None:
         "          ref: ${{ github.sha }} and ${{ github.ref }}\n",
         encoding="utf-8",
     )
-    assert flow_mapping_lines(workflow) == []
+    assert braced_lines(workflow) == []
 
 
 def step_script(workflow: Path, step_name: str) -> str:
