@@ -253,7 +253,27 @@ def _install_path(tmp_path: Path) -> Walkthrough:
     )
     # 2. make it this owner's, and install its commit-time secret scan.
     step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
-    # 3. the machine layer, into a scratch machine file and a scratch home, recording the overlay.
+    # 3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
+    # the walkthrough had before it was converted: the first writes the machine file with no
+    # overlay in it, the second records one into a file that already exists. "A second `setup`
+    # records an overlay the first did not" is a merge seam between two lanes, and collapsing
+    # the two runs into one would have left it to `tests/setup/` alone -- which is the shape of
+    # gap this whole module exists to close. The assertion between them is what makes it a
+    # seam rather than two commands that happened to run.
+    step(
+        "setup",
+        "--preset",
+        "recommended",
+        "--home",
+        str(home),
+        "--machine",
+        str(machine),
+        "--root",
+        str(root),
+    )
+    assert str(overlay) not in machine.read_text(encoding="utf-8"), (
+        "the first `setup` named no overlay and must have recorded none"
+    )
     step(
         "setup",
         "--preset",
@@ -266,6 +286,9 @@ def _install_path(tmp_path: Path) -> Walkthrough:
         str(overlay),
         "--root",
         str(root),
+    )
+    assert str(overlay) in machine.read_text(encoding="utf-8"), (
+        "the second `setup` recorded the overlay into the file the first one wrote"
     )
     # 4. attach: the diff first, then the write. `--check` writes nothing and prints what the
     # `--yes` run is consenting to, which is the order the attach skill walks.
@@ -579,7 +602,6 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     assert "real directory" in attached["detail"]
 
 
-@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:
     # The interactive-shell gate on `--machine`, reached through argv rather than through the
     # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
