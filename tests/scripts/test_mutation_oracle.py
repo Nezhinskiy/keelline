@@ -120,6 +120,108 @@ def test_a_real_guard_with_a_real_test_is_still_reported_caught(tmp_path: Path) 
     assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
 
 
+def test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch(tmp_path: Path) -> None:
+    """The clean run's own argument, applied to the mutated run.
+
+    `_check` gates the clean run on `Outcome.passed` — `code == 0 and executed > 0` — with a
+    long paragraph about why an exit code alone cannot tell a green assertion from an absent
+    one. It then judged the *mutated* run by `mutated.code` alone, computing `mutated.executed`
+    and throwing it away. A mutation that makes the module unimportable exits 2 from a
+    collection error, 2 is not 0, and that read as `caught`.
+
+    Measured before the fix, with this exact fixture::
+
+        caught   probe
+        all 1 mutations were caught
+
+    exit 0 — for an entry whose named test never ran. The module's own sentence is "an oracle
+    whose own failures look exactly like its successes is worse than no oracle", and this is
+    the half of it that was left open in a file of 368 entries.
+
+    Mutation (declared): the `mutated.executed == 0` test is removed -> this reddens.
+    """
+    module = oracle(root=tmp_path)
+    subject = tmp_path / "subject.py"
+    subject.write_text("GUARD = True\n", encoding="utf-8")
+    (tmp_path / "test_subject.py").write_text(
+        "import subject\n\n\ndef test_the_guard_holds() -> None:\n    assert subject.GUARD\n",
+        encoding="utf-8",
+    )
+    breaks_the_import = module.Mutation(
+        name="probe",
+        file=subject,
+        before="GUARD = True",
+        after="import a_module_that_does_not_exist\nGUARD = True",
+        reddens=("test_subject.py::test_the_guard_holds",),
+    )
+    finding = module._check(breaks_the_import, tmp_path)
+    assert finding is not None, "a collection error read as the guard being caught"
+    assert "from running at all" in finding, finding
+    # Both counts in the message, so a reader can tell this from a guard that legitimately
+    # stops a parametrised case being generated.
+    assert "1 test(s) ran on the clean tree, 0 with the mutation applied" in finding, finding
+    assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
+
+
+@needs_git
+def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it(
+    tmp_path: Path,
+) -> None:
+    """The leak, and the reason `prune` was never going to clear it.
+
+    `scratch_checkout`'s docstring promised that an interrupted run "leaves nothing behind but
+    a prunable entry, which the next `git worktree prune` clears". Both halves were false: the
+    `mkdtemp` tree is still on disk, and `prune` only drops entries whose directory is *gone*.
+    One such registration was live in the development repository at review time — 6.5 MB, and
+    `git worktree prune --dry-run -v` printed nothing about it — pinning a commit against
+    `git gc` and joining `hooks/run-hook.sh`'s `list_checkouts` containment set.
+
+    This builds a real repository, registers a leak under the real prefix, and asserts that
+    `prune` declines it and the sweep takes it.
+
+    Mutation (declared): the sweep's `worktree remove` is dropped -> the entry survives and
+    this reddens.
+    """
+    import subprocess
+
+    env = {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    }
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(repository), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    git("init", "-q", "-b", "main")
+    (repository / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "chore: one")
+
+    module = oracle(root=repository)
+    leaked = tmp_path / f"{module.SCRATCH_PREFIX}leaked-by-a-kill"
+    tree = leaked / "tree"
+    git("worktree", "add", "--detach", "--quiet", str(tree), "HEAD")
+    assert tree.is_dir()
+    # The premise, measured rather than assumed: prune leaves it exactly where it is.
+    git("worktree", "prune")
+    assert str(tree) in git("worktree", "list").stdout, "prune took it, so there is no leak"
+
+    dropped = module.sweep_stale_scratch()
+    assert str(leaked) in dropped, dropped
+    assert str(tree) not in git("worktree", "list").stdout, git("worktree", "list").stdout
+    assert not leaked.exists(), sorted(tmp_path.iterdir())
+
+
 def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> None:
     # And the finding the oracle exists to produce: the named test passes on a clean tree and
     # passes again with the guard broken. Without the clean-tree run this and the typo above

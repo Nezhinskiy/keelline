@@ -4815,3 +4815,31 @@ after = '          if false; then'
 reddens = [
   "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
 ]
+
+# §4.4. The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code
+# alone cannot tell a green assertion from an absent one; the mutated run was then judged by
+# `mutated.code` alone, with `mutated.executed` computed and discarded. A mutation that breaks
+# the import exits 2 from a collection error, which is not zero, which read as `caught`.
+[[mutation]]
+name = "the mutated run is judged on its exit code alone again"
+file = "scripts/mutation_oracle.py"
+before = "    if mutated.executed == 0:"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_that_breaks_collection_is_a_finding_and_not_a_catch",
+]
+
+# §4.4. An interrupted run left a `git worktree` registration that `git worktree prune` will
+# not take, because prune only drops entries whose directory is gone and the `mkdtemp` tree is
+# still standing. One was live in the development repository at review time, 6.5 MB.
+[[mutation]]
+name = "the scratch sweep stops dropping the registration git prune will not take"
+file = "scripts/mutation_oracle.py"
+before = """
+        _git("worktree", "remove", "--force", str(tree))
+        shutil.rmtree(tree.parent, ignore_errors=True)"""
+after = """
+        shutil.rmtree(tree.parent, ignore_errors=True)"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_take_it",
+]

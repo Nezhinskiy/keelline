@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -71,36 +72,102 @@ class WorktreeUnavailable(RuntimeError):
     """`git worktree add` did not produce a checkout; the message is git's own stderr."""
 
 
+SCRATCH_PREFIX = "keelline-oracle-"
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        ["git", "-C", str(ROOT), *args],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def sweep_stale_scratch(keep: Path | None = None) -> list[str]:
+    """Drop every leaked scratch checkout but this run's, and return what was dropped.
+
+    **`git worktree prune` does not clear these, and the docstring that said it did was wrong
+    in both halves.** `prune` only drops entries whose directory is *gone*, and an interrupted
+    run leaves the `mkdtemp` tree standing — so the registration survived every prune, the
+    commit stayed pinned against `git gc`, and the tree stayed on disk. One was found in the
+    development repository during review: 6.5 MB, and `git worktree prune --dry-run -v` printed
+    nothing about it. Because the leaked trees are checkouts of this repository they also join
+    `hooks/run-hook.sh`'s `list_checkouts` containment set, which is the part that is not
+    merely untidy.
+
+    The order matters: `worktree remove --force` first so git forgets the registration, then
+    `rmtree` for anything `remove` declined, then `prune` to collect whatever is now missing a
+    directory. Failures are not raised — this is housekeeping at the top of a run, and a
+    temporary directory another user owns is not this run's business.
+    """
+    dropped: list[str] = []
+    listing = _git("worktree", "list", "--porcelain")
+    registered = [
+        Path(line[len("worktree ") :])
+        for line in listing.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
+    for tree in registered:
+        if tree.name != "tree" or not tree.parent.name.startswith(SCRATCH_PREFIX):
+            continue
+        if keep is not None and tree == keep:
+            continue
+        _git("worktree", "remove", "--force", str(tree))
+        shutil.rmtree(tree.parent, ignore_errors=True)
+        dropped.append(str(tree.parent))
+    # And the trees no `git worktree` entry points at any more: `_run`'s `TemporaryDirectory`
+    # leaks the same way on a kill, under the same prefix.
+    for stale in Path(tempfile.gettempdir()).glob(f"{SCRATCH_PREFIX}*"):
+        if keep is not None and keep.parent == stale:
+            continue
+        if str(stale) in dropped or not stale.is_dir():
+            continue
+        shutil.rmtree(stale, ignore_errors=True)
+        dropped.append(str(stale))
+    _git("worktree", "prune")
+    return dropped
+
+
 @contextlib.contextmanager
 def scratch_checkout() -> Iterator[Path]:
     """A detached worktree of HEAD under a temporary directory, removed afterwards.
 
     The oracle proves HEAD and never the working tree (DC1). `--detach` so no branch is
-    created or moved; `worktree remove --force` and `rmtree` in the `finally` so a run that
-    was interrupted mid-mutation leaves nothing behind but a prunable entry, which the next
-    `git worktree prune` clears. The parent directory is created by `mkdtemp` and the tree
-    goes one level below it, because `git worktree add` refuses a path that already exists.
+    created or moved. The parent directory is created by `mkdtemp` and the tree goes one level
+    below it, because `git worktree add` refuses a path that already exists.
+
+    **Cleanup, which is the half this used to get wrong.** The `finally` removes the *tree*
+    before asking git to drop the registration, so an entry whose `worktree remove` fails is
+    at least left prunable rather than pinned for ever; `prune` then collects it. A `SIGTERM`
+    is turned into `SystemExit` so that a terminate runs the `finally` at all — without the
+    handler, the ordinary way CI and an interrupted agent stop a process left everything
+    behind. `SIGKILL` cannot be caught by anything, which is what `sweep_stale_scratch` at the
+    top of `main` is for.
     """
-    parent = Path(tempfile.mkdtemp(prefix="keelline-oracle-"))
+    parent = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX))
     tree = parent / "tree"
-    added = subprocess.run(  # noqa: S603
-        ["git", "-C", str(ROOT), "worktree", "add", "--detach", "--quiet", str(tree), "HEAD"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    added = _git("worktree", "add", "--detach", "--quiet", str(tree), "HEAD")
     if added.returncode != 0:
         shutil.rmtree(parent, ignore_errors=True)
         raise WorktreeUnavailable(added.stderr.strip() or f"exit {added.returncode}")
+    previous = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, _terminate)
     try:
         yield tree
     finally:
-        subprocess.run(  # noqa: S603
-            ["git", "-C", str(ROOT), "worktree", "remove", "--force", str(tree)],  # noqa: S607
-            capture_output=True,
-            check=False,
-        )
+        signal.signal(signal.SIGTERM, previous)
+        # `rmtree` BEFORE `worktree remove`: git refuses to remove a worktree it considers
+        # dirty, and a run interrupted mid-mutation leaves exactly that. Removing the directory
+        # first makes the entry prunable whatever `remove` then says.
         shutil.rmtree(parent, ignore_errors=True)
+        _git("worktree", "remove", "--force", str(tree))
+        _git("worktree", "prune")
+
+
+def _terminate(signum: int, frame: object) -> None:
+    """A terminate becomes an exception, so every `finally` on the stack runs."""
+    raise SystemExit(f"terminated by signal {signum}")
 
 
 @dataclass(frozen=True)
@@ -123,13 +190,21 @@ class Outcome:
 
 
 def _executed(report: Path) -> int:
-    """How many tests ran and were not skipped, from pytest's own JUnit XML.
+    """How many tests ran and reported a result, from pytest's own JUnit XML.
 
     Machine-readable on purpose. The alternative — looking for the word "passed" in `-q`
     output — makes the oracle's own correctness depend on the wording of a summary line, and
     this file's history is a run of defects where the oracle could not tell one state from
     another. A report pytest never wrote (a usage error, which is exactly what a mistyped test
     id produces) counts as zero, which is the honest answer and the fail-closed one.
+
+    **`errors` are subtracted as well as `skipped`, and that is the whole of the count's
+    meaning.** A module that cannot be imported still produces a JUnit report with one
+    `<testcase>` in it carrying an `<error>`, so `tests - skipped` came to 1 for a run in which
+    the named test never executed — measured: `code 4 executed 1`. The question this number
+    answers is "did the assertion get to run", and a collection error, a fixture that raised
+    and a mistyped id are all "no". Subtracting them is what lets `_check` tell a mutation that
+    reddened a guard from one that stopped the guard's test from running at all.
     """
     if not report.is_file():
         return 0
@@ -143,7 +218,10 @@ def _executed(report: Path) -> int:
     except ElementTree.ParseError:
         return 0
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-    return sum(int(suite.get("tests", 0)) - int(suite.get("skipped", 0)) for suite in suites)
+    return sum(
+        int(suite.get("tests", 0)) - int(suite.get("skipped", 0)) - int(suite.get("errors", 0))
+        for suite in suites
+    )
 
 
 def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
@@ -239,6 +317,24 @@ def _check(mutation: Mutation, tree: Path) -> str | None:
         subject.write_text(original, encoding="utf-8")
     if mutated.code == 0:
         return f"survived — {', '.join(mutation.reddens)} still passed with the guard broken"
+    # **The clean run's reasoning, applied to the mutated run, which is the half that was
+    # left open.** The paragraphs above argue at length that an exit code alone cannot tell a
+    # green assertion from an absent one — and then judged the mutated run by `mutated.code`
+    # alone, computing `mutated.executed` and discarding it. A mutation that makes the module
+    # unimportable exits 2 from a collection error, which is not zero, which read as `caught`
+    # although the named test never ran. Demonstrated on a synthetic entry whose `after` was
+    # `import a_module_that_does_not_exist`: `caught`, `all 1 mutations were caught`, exit 0.
+    #
+    # Not an equality with `clean.executed`, because a guard that legitimately stops one
+    # parametrised case from being generated is a real thing; zero is the line, and a count
+    # that fell is reported so a reader can judge it.
+    if mutated.executed == 0:
+        return (
+            f"the mutation stopped {', '.join(mutation.reddens)} from running at all "
+            f"({clean.executed} test(s) ran on the clean tree, 0 with the mutation applied) "
+            "rather than reddening them — pytest's exit code says only that something went "
+            "wrong, and this entry proves nothing about the guard"
+        )
     return None
 
 
@@ -305,6 +401,13 @@ def main(argv: list[str]) -> int:
     if dirty is not None:
         print(dirty, file=sys.stderr)
         return 1
+
+    # Housekeeping before the run, not after it: a `SIGKILL` runs no `finally`, so the entries
+    # an earlier killed run left behind are cleared here or never. `git worktree prune` alone
+    # does not do it — it only drops entries whose directory is gone, and these leave theirs.
+    swept = sweep_stale_scratch()
+    for leaked in swept:
+        print(f"swept a leaked scratch checkout: {leaked}", file=sys.stderr)
 
     findings: list[str] = []
     try:
