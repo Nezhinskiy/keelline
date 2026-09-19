@@ -103,7 +103,7 @@ reddens = [
 [[mutation]]
 name = "the harness link outlives the trust record that authorised it again"
 file = "src/keelline/memory/worktree.py"
-before = '    elif _unlink(store.path.resolve(), harness):'
+before = '    elif _unlink(root, relative, store.path.resolve()):'
 after = '    elif False:'
 reddens = [
   "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
@@ -111,12 +111,14 @@ reddens = [
 ]
 
 # Withdrawing a link is not licence to delete a directory: the two shapes `_link` declines to
-# clobber on the way in are the two `_unlink` must decline to remove on the way out.
+# clobber on the way in are the two `_unlink` must decline to remove on the way out. Re-anchored
+# when the pair moved onto the contained walk: `NotASymlink` still keeps a real directory
+# standing, so what this drops is the half that says whose link it is.
 [[mutation]]
 name = "the withdrawal stops checking what the link it removes points at"
 file = "src/keelline/memory/worktree.py"
-before = '    if not target.is_symlink() or target.readlink() != source:'
-after = '    if not target.is_symlink():'
+before = '        return fsops.unlink_within(root, relative, pointing_at=source)'
+after = '        return fsops.unlink_within(root, relative)'
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
 ]
@@ -3407,4 +3409,79 @@ before = "| `--machine` | machine configuration file to read |"
 after = "| `--machine` | machine file |"
 reddens = [
   "tests/test_documents.py::test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling",
+]
+
+# N1: a link created by path follows a parent that became a symlink after the check.
+[[mutation]]
+name = "a link is created by path, outside the walk"
+file = "src/keelline/fsops.py"
+before = "    mkdirs_within(root, target)\n    with open_within(root, target) as (dir_fd, name):\n        os.symlink(str(source), name, dir_fd=dir_fd)"
+after = "    os.symlink(str(source), root / target)"
+reddens = [
+  "tests/test_fsops.py::test_a_symlink_is_created_through_the_walk_and_never_through_a_symlinked_parent",
+]
+
+[[mutation]]
+name = "unlink_within removes a link that points elsewhere"
+file = "src/keelline/fsops.py"
+before = "        if pointing_at is not None and Path(os.readlink(name, dir_fd=dir_fd)) != pointing_at:"
+after = "        if False:"
+reddens = [
+  "tests/test_fsops.py::test_unlink_within_removes_only_a_link_that_points_where_it_was_told",
+]
+
+[[mutation]]
+name = "the link tree creates a link by path again"
+file = "src/keelline/memory/worktree.py"
+before = "    fsops.symlink_within(root, relative, source)\n    return True"
+after = "    (root / relative).symlink_to(source)\n    return True"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
+]
+
+# Fix round 1, item 1. The anchor is found and never created, and a refusal is the whole of
+# what that decision buys. Without the check the create direction raised a bare
+# `FileNotFoundError` the hook rendered as "0 links made", and the withdraw direction answered
+# `False` and exited 0 — an anchor that is not there reading as success.
+[[mutation]]
+name = "a home that is not there stops being a refusal"
+file = "src/keelline/memory/worktree.py"
+before = "    if not root.is_dir():"
+after = "    if False:"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_link",
+  "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
+]
+
+# Fix round 1, item 1, the withdrawal call site on its own: the check exists and `detach_main`
+# stops asking for it.
+[[mutation]]
+name = "the withdrawal takes the anchor without asking whether it is there"
+file = "src/keelline/memory/worktree.py"
+before = "    home_root, harness_relative = _harness_anchor(root, home)"
+after = "    home_root, harness_relative = harness_link_parts(root, home)"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
+]
+
+# Fix round 1, item 2. The source pin used to read three dot-methods and nothing else, so the
+# path-based write N1 is about — spelled `os.symlink` — walked straight through it.
+[[mutation]]
+name = "the link tree creates a link by path without a dot-method"
+file = "src/keelline/memory/worktree.py"
+before = "    fsops.symlink_within(root, relative, source)\n    return True"
+after = "    os.symlink(str(source), root / relative)\n    return True"
+reddens = [
+  "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
+]
+
+# Fix round 1, item 5. `link`'s docstring says the base is created by the first link that goes
+# into it and not before; this is the line that used to create it whatever happened.
+[[mutation]]
+name = "the worktree tree's base directory is created again whether or not anything links"
+file = "src/keelline/memory/worktree.py"
+before = "            sources: dict[str, Path] = dict(store.groups)"
+after = "            (worktree / base).mkdir(parents=True, exist_ok=True)\n            sources: dict[str, Path] = dict(store.groups)"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
 ]

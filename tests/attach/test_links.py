@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import fsops
 from keelline.attach.api import Attached, attach
 from keelline.config.loader import load
 from keelline.config.schema import Config
@@ -41,6 +42,13 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     """A committed repository in overlay mode, and the overlay that already records it."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
+    # A home directory that is already there. Keelline finds the machine owner's home and
+    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
+    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
+    # anchor itself — so a home that is not there is a refusal, which
+    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
+    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
     (overlay / "common" / "memory" / "shared.md").write_text("x", encoding="utf-8")
@@ -106,17 +114,20 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    real = Path.symlink_to
+    # Patched at `fsops.symlink_within` and no longer at `Path.symlink_to`: the link tree
+    # creates every link through the contained walk, so the `Path` method it used to call is
+    # not on the path any more and patching it would simulate nothing. The root is what says
+    # which checkout the link is going into — it is the containment anchor `worktree._link`
+    # takes, and for a worktree's own links it is that worktree.
+    real = fsops.symlink_within
 
-    def refuse_inside_the_worktree(
-        self: Path, target: Path, target_is_directory: bool = False
-    ) -> None:
-        if str(self).startswith(str(side)):
+    def refuse_inside_the_worktree(root_of_the_link: Path, target: str, source: Path) -> None:
+        if str(root_of_the_link).startswith(str(side)):
             raise OSError("this filesystem refuses symlinks")
-        real(self, target, target_is_directory=target_is_directory)
+        real(root_of_the_link, target, source)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Path, "symlink_to", refuse_inside_the_worktree)
+        patch.setattr(fsops, "symlink_within", refuse_inside_the_worktree)
         with pytest.raises(PartialLink) as failed:
             _attach(root, store, machine, tmp_path / "home")
     # The owning checkout's tree exists — `attach_main` made it before the failing call — and
