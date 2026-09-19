@@ -300,11 +300,14 @@ key. The `close-bug` skill walks the closing of an entry through these commands.
 
 ## Skills and agents
 
-`skills/` ships `close-bug`, `memory-sweep`, and thin wrappers for commands that have not
-landed yet; `agents/` ships a read-only `code-navigator`. Every skill is written in action
+`skills/` ships two ported skills (`close-bug`, `memory-sweep`), six authored ones
+(`file-bug`, `sweep-defect-class`, `review-plan-three-lenses`, `attribute-failure`,
+`run-correctness-audit`, `retro-to-guard`), and thin wrappers for the commands the CLI
+registers; `agents/` ships a read-only `code-navigator`. Every skill is written in action
 language — never a harness tool's name — with the per-harness mapping in
-[skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is parsed
-against the real parser by a test.
+[skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is
+parsed against the real parser by a test. Three wrappers (`init`, `upgrade`, `uninstall`)
+describe commands later work packages ship, and the test that holds them says which.
 
 ## Contributing
 
