@@ -144,8 +144,8 @@ def register(groups: SubParsers) -> None:
     publish.add_argument(
         "--yes",
         action="store_true",
-        help="push to the repository; without it the render, the clone and the diff happen and "
-        "the push is only named",
+        help="create, mark and push; without it nothing outward-facing happens — the command "
+        "renders, asks gh what exists, and reports what it would do",
     )
     publish.set_defaults(func=run_overlay_publish_template)
 

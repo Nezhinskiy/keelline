@@ -29,6 +29,10 @@ class _GitHub:
     visibility: str = "PUBLIC"
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     pushed_tree: set[str] = field(default_factory=set)
+    # The render, snapshotted where the clone is made beside it. The scratch directory is gone
+    # when `publish_template` returns, and the render is the only place the scaffold ledger's
+    # removal is observable at all — see the test that says so.
+    rendered_tree: set[str] = field(default_factory=set)
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append((argv, cwd))
@@ -39,6 +43,10 @@ class _GitHub:
             marked = "true" if self.is_template else "false"
             return Completed(0, body % (marked, self.visibility), "")
         if argv[:3] == ["gh", "repo", "clone"]:
+            rendered = cwd / "rendered"
+            self.rendered_tree = {
+                str(p.relative_to(rendered)) for p in rendered.rglob("*") if p.is_file()
+            }
             target = cwd / argv[-1]
             (target / ".git").mkdir(parents=True)
             (target / "stale.md").write_text("old\n", encoding="utf-8")
@@ -119,6 +127,10 @@ def test_with_yes_the_rendered_tree_is_committed_and_pushed_without_the_ledger(
     assert result.pushed is True
     written = stub.pushed_tree
     assert written == set(OVERLAY_FILES), written ^ set(OVERLAY_FILES)
+    # This one guards `_replace_tree`'s whitelist and NOT the ledger strip: that function
+    # writes only `OVERLAY_FILES`, so the ledger cannot reach the clone whether it was
+    # stripped or not. Measured — with the strip deleted, all 74 cases in this directory still
+    # passed. The strip has a case of its own below, over the render.
     assert str(MANIFEST_PATH) not in written
     assert "stale.md" not in written
     assert not [name for name in written if name.startswith("old/")]
@@ -211,3 +223,19 @@ def test_a_push_that_is_declined_is_a_failure_naming_the_repository(tmp_path: Pa
 
     with pytest.raises(Failure, match="refused by a ruleset"):
         publish_template("owner", yes=True, runner=_RefusedPush())
+
+
+def test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger(tmp_path: Path) -> None:
+    # Fix round 1, item 3. `scaffold.apply` writes `.keelline/manifest.json` into every local
+    # render, and a repository generated from a template carries none — publishing one would
+    # make every generated overlay read as hand-edited to `overlay upgrade` and never be
+    # refreshed again. The assertion the plan gave for this was over the PUSHED tree, which
+    # `_replace_tree`'s whitelist keeps clean on its own: deleting the strip left every case
+    # in this file green. The strip is observable one step earlier, in the render, and the
+    # stub snapshots it at clone time because the scratch directory is gone by the time
+    # `publish_template` returns. Mutation (declared): drop the strip -> this reddens.
+    stub = _GitHub()
+    publish_template("owner", yes=True, runner=stub)
+    assert stub.rendered_tree, "the stub never saw the render, so this asserts nothing"
+    assert str(MANIFEST_PATH) not in stub.rendered_tree
+    assert stub.rendered_tree == set(OVERLAY_FILES), stub.rendered_tree ^ set(OVERLAY_FILES)

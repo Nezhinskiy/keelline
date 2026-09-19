@@ -1679,30 +1679,34 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     planted = _planted_plugin(tmp_path, executable=True)
     write_record(planted)
     root = _initialised(tmp_path)
-    green = _by_name(
-        _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
-    )
+
+    def files_row() -> Check:
+        env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))
+        return _by_name(_checks(tmp_path, root, env=env), "files")
+
+    green = files_row()
     assert green.status == OK and "match the release record" in green.detail
     # Different bytes from `WRAPPER_BODY`, deliberately: rewriting the fixture's own body would
     # be a no-op the record cannot see, and the red arm would never be reached.
     (planted / "hooks" / "run-hook.sh").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    red = _by_name(
-        _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
-    )
+    red = files_row()
     assert red.status == RED and "hooks/run-hook.sh" in red.detail and "reinstall" in red.remedy
     # A shipped file that is MISSING is a change too, never a `None == None` match.
     (planted / "scripts" / "keelline").unlink()
-    assert (
-        _by_name(
-            _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
-        ).status
-        == RED
-    )
-    # A record that is present and malformed is red, not the skip an absent record gets.
+    assert files_row().status == RED
+
+    # **The tree is put back first**, and the restore is asserted before the record is broken.
+    # Fix round 1, item 2: without it this arm measured nothing. The row was already red from
+    # the two edits above, and an uncaught `UnreadableRecord` becomes a red row anyway through
+    # `_guarded`, which reds every non-`OSError` exception — so `status == RED` held with
+    # `_files`' `except UnreadableRecord:` arm deleted outright, and that arm is the entire
+    # reason `UnreadableRecord` is a class of its own rather than a `Failure`. What is asserted
+    # is therefore the sentence only that arm produces, and not the status.
+    # Mutation (declared): `raise` inside the arm -> `_guarded` still reds the row and the
+    # sentence assertion is the one that goes.
+    _planted_plugin(tmp_path, executable=True)
+    assert files_row().status == OK, "the restore did not put the planted tree back"
     (planted / "hooks" / "hashes.json").write_text('{"format": 1, "files": []}\n', encoding="utf-8")
-    assert (
-        _by_name(
-            _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
-        ).status
-        == RED
-    )
+    unreadable = files_row()
+    assert unreadable.status == RED
+    assert "present and unreadable" in unreadable.detail

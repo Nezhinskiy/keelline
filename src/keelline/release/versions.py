@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from keelline.errors import Failure
-from keelline.release.hashes import drift
+from keelline.release.hashes import HASHED_FILES, RECORD, drift
 
 PYPROJECT = "pyproject.toml"
 LOCKFILE = "uv.lock"
@@ -178,9 +178,14 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
                     "plugin.json is the only source (D12)"
                 )
     # DC5: the record of the shipped files is held current here and not only at a tag, so a
-    # wrapper edited without `keelline release hashes` fails the gate the same commit. Only
-    # where there is a `hooks/` to record: `--root` defaults to `.`, and a user who runs this
-    # in their own project must not be told a record they never had is missing.
-    if (root / "hooks").is_dir():
+    # wrapper edited without `keelline release hashes` fails the gate the same commit.
+    #
+    # Asked of the recorded files themselves and not of a `hooks/` directory. `--root` defaults
+    # to `.`, and a user who runs this in their own project must not be told a record they
+    # never had is missing — and plenty of projects have a `hooks/` directory, which is what
+    # the first spelling of this actually tested. Either the record is here, or every file it
+    # would name is: the first keeps a tree whose wrapper was deleted honest, the second is how
+    # a checkout with no record yet is told to write one.
+    if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
         problems += drift(root)
     return problems

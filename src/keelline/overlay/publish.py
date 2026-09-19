@@ -201,6 +201,12 @@ def publish_template(
         # repository generated from a template carries none (`init_instance`'s docstring), so
         # publishing one would make every generated overlay read as hand-edited to `overlay
         # upgrade` and never be refreshed again.
+        #
+        # `_replace_tree` writes only `OVERLAY_FILES`, so today the ledger could not reach the
+        # clone even unstripped — this is the second of two independent mechanisms, and it is
+        # the one that survives a `_replace_tree` which ever copies the render whole. It is
+        # held by a test over the RENDER and not over the pushed tree, because an assertion
+        # over the pushed tree is satisfied by the whitelist alone and says nothing about this.
         fsops.remove_within(rendered, str(MANIFEST_PATH))
         fsops.rmdir_within(rendered, str(MANIFEST_PATH.parent))
         # Nothing outward-facing before the gate. Without `yes` the repository is only ASKED

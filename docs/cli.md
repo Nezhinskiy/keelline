@@ -1083,9 +1083,14 @@ state arm of its own — a plugin built before the release record existed carrie
 says so rather than comparing anything.
 
 **A `skip` does not mean there is nothing to do.** Five of the twelve arms carry a remedy: the
-two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. What is empty is a
-remedy that would not help — an `ok` row, and a skip this build cannot answer, where no command
-a reader could run changes the answer.
+two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing line
+is not "always" versus "on a state" — `bundles`, `pre-commit`, `store-debris` and `diagnostics`
+all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
+five report something wrong that no other row will tell you: a plugin root nothing can find, a
+root that will be read and never executed, a recorded attach the overlay could not confirm. The
+other seven report a measurement that is simply unavailable — no store, no overlay, no harness
+data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no command
+in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,

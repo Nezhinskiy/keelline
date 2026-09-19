@@ -165,12 +165,18 @@ DIAGNOSTICS_REMEDY = (
 class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
-    `remedy` is empty for a row nothing can be done about — an `ok`, or a `skip` this build
-    cannot answer, where no command a reader could run changes the answer. A `skip` is **not**
-    entitled to an empty remedy merely for being a skip: five of the twelve skip arms in this
-    module carry one, because a skip on a *state of this machine* names the command that
-    changes the state. A reader is never handed a command that would not help, and never
-    denied one that would.
+    `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
+    an empty remedy merely for being a skip: five of this module's twelve skip arms carry one.
+    The line is not "always" versus "on a state" — four state skips (`bundles`, `pre-commit`,
+    `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is changed by the very
+    command `_uncorroborated` names. It is whether **the skip is itself worth acting on**: the
+    two rows that report a plugin root nothing can find, which is every hook entry on this
+    machine silent; `wrapper`'s row for a root it will read and never execute; and the two ways
+    a ledger's recorded attach cannot be corroborated. Those five say what to do. The other
+    seven report a measurement that is simply not available — no store, no overlay, no harness
+    data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no
+    command in that row's gift changes it. A reader is never handed a command that would not
+    help, and never denied one that would.
     """
 
     name: str

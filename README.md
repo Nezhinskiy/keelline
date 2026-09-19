@@ -14,9 +14,10 @@ Codex, one Python package with **no runtime dependencies**.
 > repository to it and unbind it
 > again; and `keelline doctor`, which reports on the result. The hooks file that wires all of
 > it into a session ships too, so installing the plugin is enough to make the guards fire and
-> the memory bundles arrive. The first skills ship with them, and so do three command groups
-> meant for a machine rather than for you — `hook`, which dispatches one harness event,
-> `release check` and `release notes`, and `release hashes`. **Not yet:** `init`, `upgrade`,
+> the memory bundles arrive. The first skills ship with them, and so do two command groups
+> meant for a machine rather than for you — `hook`, which dispatches one harness event, and
+> `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
+> discipline. **Not yet:** `init`, `upgrade`,
 > `uninstall`, the project templates, `assess` and the adoption state machine — so today you
 > write `keelline.toml` by hand; the [Quickstart](#quickstart) shows the two keys it needs.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
@@ -64,9 +65,9 @@ the state machine.
 
 ## Install
 
-<!-- RELEASING.md step 2.11 replaces the paragraph below with exactly this, at the first
-release, with X.Y.Z the version that was tagged. Written here so that the release commit is an
-edit and not a composition:
+<!-- RELEASING.md section 2, step 5 replaces the paragraph below with exactly this, at the
+first release, with X.Y.Z the version that was tagged. Written here so that the release
+commit is an edit and not a composition:
 
 **Released as X.Y.Z.** Both commands below install that release. The plugin form takes the
 tag, and `uv tool install keelline` resolves from PyPI:

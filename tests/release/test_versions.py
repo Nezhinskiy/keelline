@@ -402,3 +402,31 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
     assert run(argv, parser=build_parser([register])) == 2
     assert "set the version everywhere first" in capsys.readouterr().err
+
+
+def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record(
+    tmp_path: Path,
+) -> None:
+    # `--root` defaults to `.`, so this gate runs in other people's repositories, and plenty of
+    # them have a `hooks/` directory — the first spelling of the guard asked exactly that and
+    # told them a record they never had was missing. Asked of the recorded files themselves
+    # now. Mutation (declared): probe `hooks/` again -> this reddens.
+    root = _repo(tmp_path)
+    (root / "hooks").mkdir()
+    (root / "hooks" / "hooks.json").write_text("{}\n", encoding="utf-8")
+    assert check(root) == []
+
+
+def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
+    tmp_path: Path,
+) -> None:
+    # The other direction, and the one DC5 is for: a tree that carries the three files the
+    # harness executes is a tree that owes a record of them. Without this the guard above could
+    # be narrowed to `if False` and nothing would notice.
+    from keelline.release.hashes import HASHED_FILES, RECORD
+
+    root = _repo(tmp_path)
+    for relative in HASHED_FILES:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
+    assert check(root) == [f"{RECORD} is missing; run `keelline release hashes`"]

@@ -78,7 +78,11 @@ to lag. That is the form `release.yml` runs.
    because `release notes` refuses a `--version` that is not the project's; after this step
    `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
 
-5. **Commit.**
+5. **Edit the README's install paragraph, then commit.** Replace the "**Nothing is released
+   yet.**" paragraph in `README.md` with the text in the HTML comment directly above it, which
+   carries the two tagged install forms — it is written there so this is an edit and not a
+   composition. Do it now: the commit below is the release commit, and after step 6 the tag
+   points at whatever this commit contains.
 
    ```bash
    git commit -am "chore(release): X.Y.Z"
@@ -129,11 +133,6 @@ to lag. That is the form `release.yml` runs.
     gh workflow run smoke-release.yml
     gh run watch <id> --exit-status
     ```
-
-11. **The README's install paragraph.** In the release commit (step 5), replace the "**Nothing
-    is released yet.**" paragraph in `README.md` with the text in the HTML comment directly
-    above it, which carries the two tagged install forms. It is written there so this step is
-    an edit and not a composition.
 
 ## 3. One-time setup
 

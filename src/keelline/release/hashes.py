@@ -67,10 +67,13 @@ def read_record(root: Path) -> dict[str, str] | None:
 
 
 def write_record(root: Path) -> None:
-    """Record every shipped file, or refuse: a partial record is worse than none.
+    """Record every shipped file, or refuse: a partial record is not a record of a release.
 
-    A record naming two of three files reads as a clean comparison for the third, which is
-    exactly the `None == None` match `drift` and `doctor files` walk both directions to avoid.
+    Not because a partial record would read as clean — both readers walk `HASHED_FILES` and
+    would flag the file it omits. It is refused because the alternative is a record that says
+    "these are the files the release shipped" while naming two of three, so every reader of it
+    afterwards is reporting drift against a claim nobody meant to make. The failure belongs at
+    the moment of writing, where the tree that is missing a file can still be fixed.
     """
     found = digests(root)
     if len(found) != len(HASHED_FILES):
