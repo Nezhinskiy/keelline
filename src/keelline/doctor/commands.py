@@ -17,10 +17,13 @@ vouched for, `files` again on a build that carries no release record, `attached`
 overlay recorded or an overlay that could not be asked, `pre-commit` with no overlay root
 recorded, `bundles` and `store-debris` with a store that does not resolve, `diagnostics` with
 no harness data root — and `run_checks` skips fourteen at once when `keelline.toml` is missing
-or will not load. Twelve skip arms in all, and **five of them carry a remedy**: a skip on a
-state of the machine names the command that changes the state, and only a skip nothing can be
-done about is silent. The plugin-root pair is the one that matters: it is the state in which
-every hook entry on the machine is silent, and it reports as two `skip` rows, so both carry
+or will not load. Twelve skip arms in all, and **five of them carry a remedy** — but not
+because they skip on a state: four state skips (`bundles`, `pre-commit`, `store-debris`,
+`diagnostics`) carry nothing, and `pre-commit`'s state is changed by the very command
+`checks._uncorroborated` names. The line is whether the skip is **itself worth acting on**, and
+`checks.Check`'s docstring is where that rule is stated. The plugin-root pair is the case that
+makes it: it is the state in which every hook entry on the machine is silent, nothing else in
+the report says so, and it reports as two quiet `skip` rows — so both carry
 `checks.PLUGIN_ROOT_REMEDY`.
 
 **The remedies live in `--json` and never in the summary.** §5.2 gives every command one line,

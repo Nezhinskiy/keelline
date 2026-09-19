@@ -4016,10 +4016,18 @@ reddens = [
 # over the pushed tree: `_replace_tree` writes only `OVERLAY_FILES`, so an assertion over what
 # was pushed is satisfied by that whitelist alone and survives this mutation — measured, with
 # every case in `tests/overlay` still green.
+#
+# **Both strip lines, and this is the second time this entry was wrong.** Removing only the
+# `remove_within` left `rmdir_within` pointed at a `.keelline/` that still held the manifest,
+# which raises `OSError: Directory not empty` — so all twelve cases in the module failed and
+# the oracle said `caught` for a reason with nothing to do with the ledger. It would have gone
+# on saying `caught` with the assertion this entry exists to prove deleted. Measured with both
+# lines replaced: exactly one case fails, and it fails on `.keelline/manifest.json` being in
+# the render.
 [[mutation]]
 name = "publish-template publishes the scaffold ledger"
 file = "src/keelline/overlay/publish.py"
-before = "        fsops.remove_within(rendered, str(MANIFEST_PATH))"
+before = "        fsops.remove_within(rendered, str(MANIFEST_PATH))\n        fsops.rmdir_within(rendered, str(MANIFEST_PATH.parent))"
 after = "        pass"
 reddens = [
   "tests/overlay/test_publish.py::test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger",
