@@ -161,7 +161,23 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def run_blocks(workflow: Path) -> list[str]:
-    """Every `run:` value in the file, block scalar or one-liner, as text."""
+    """Everything a `run:` key introduces, as text: every shape YAML gives it.
+
+    Four of them, and the reader was wrong about three before it was right about them. A `run:`
+    takes an inline one-liner, a block scalar (`|`, `>`, and their chomping variants), or an
+    indented plain scalar — a body on the following lines with no marker at all; and the key
+    itself may carry the list dash of a step that has no `name`. The fourth `run:` in a workflow
+    is not a script: `defaults: run:` is a mapping of `shell` and `working-directory`.
+
+    **Everything a `run:` introduces is collected, the mapping included, and the caller scans
+    all of it.** The earlier reader skipped the mapping to keep it out of the count, which was
+    right about the count and wrong about the scan — and left the indented plain scalar skipped
+    with it, by the same `if not rest`. Collecting both closes that, keeps the count honest
+    (nothing is counted that is not scanned, which was the whole of that objection), and needs
+    no rule for telling a mapping from a scalar — a rule whose failure mode would be a script
+    silently classified as settings, which is the hole all over again. An expression in a
+    `shell:` value is worth seeing anyway.
+    """
     lines = workflow.read_text(encoding="utf-8").splitlines()
     found: list[str] = []
     index = 0
@@ -178,20 +194,19 @@ def run_blocks(workflow: Path) -> list[str]:
         if not stripped.startswith("run:"):
             continue
         rest = stripped[len("run:") :].strip()
-        # `defaults: run:` is a mapping of shell settings and not a script. It contributed an
-        # empty string, which scanned clean and still counted toward the floor below — and that
-        # floor is the only thing making the scan non-vacuous, so it may count only what it
-        # scans.
-        if not rest:
-            continue
         # `>` and `>-` as well as `|`: a folded scalar is a script too, and sending one down the
         # one-liner path scanned the fold marker and let the whole body past. Nothing in the tree
         # uses `>` today, which is exactly why nobody would have noticed — and the body would
         # have gone on counting toward the floor while escaping the check.
-        if not rest.startswith(("|", ">")):
+        if rest and not rest.startswith(("|", ">")):
             found.append(rest)
             continue
-        indent = len(line) - len(line.lstrip())
+        # The KEY's column and not the line's: after the dash strip above, a `- run: |` measured
+        # at the dash swallows the step's sibling keys into the block — and `env:` is exactly
+        # where a `${{ }}` is supposed to live, so a no-name step with a block script would have
+        # reported its own `env:` as a finding. `line.index` is the key, because `stripped`
+        # already begins with it.
+        indent = line.index("run:")
         block: list[str] = []
         while index < len(lines):
             following = lines[index]
@@ -455,36 +470,51 @@ def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_fr
     assert "sub/project/keelline.toml is not on origin/main" in printed, printed
 
 
-def test_the_reader_sees_a_folded_script_and_not_a_shell_settings_mapping(tmp_path: Path) -> None:
-    # The two ways the scan above could have read a file and still checked nothing, on a
-    # synthetic workflow rather than on the tree — the tree is exactly where neither shape
-    # appears, which is why neither was noticed. Mutation (declared): narrow the reader back to
-    # `rest.startswith("|")` and the folded body walks through with an expression in it.
+def test_the_reader_sees_every_shape_a_run_key_takes(tmp_path: Path) -> None:
+    # Every shape YAML gives a `run:`, on a synthetic workflow rather than on the tree — the
+    # tree is exactly where none of them appears, which is why none of them was noticed. Each
+    # body carries an expression, so a shape the reader cannot see is a shape the scan above
+    # reports clean. Mutations (declared): narrow the reader back to `|` and the folded body
+    # walks through; drop the dash strip and three of these six vanish; measure the block's
+    # indent at the dash and the dashed step's own `env:` is swallowed into its script.
     workflow = tmp_path / "synthetic.yml"
     workflow.write_text(
         "jobs:\n"
         "  one:\n"
         "    defaults:\n"
         "      run:\n"
-        "        shell: bash\n"
+        "        shell: bash ${{ inputs.shell }}\n"
         "    steps:\n"
         "      - run: >\n"
         "          echo folded ${{ github.ref }}\n"
         "      - run: |\n"
-        "          echo literal\n"
-        "      - run: echo inline\n"
+        "          echo dashed-block ${{ github.actor }}\n"
+        "        env:\n"
+        "          SAFE: ${{ github.sha }}\n"
+        "      - run: echo inline ${{ github.job }}\n"
         "      - name: with a name of its own\n"
-        "        run: echo named\n",
+        "        run: echo named ${{ github.workflow }}\n"
+        "      - name: an indented plain scalar, which carries no marker at all\n"
+        "        run:\n"
+        "          echo plain ${{ github.run_id }}\n",
         encoding="utf-8",
     )
     blocks = run_blocks(workflow)
-    # Four scripts, and the `defaults: run:` mapping is not one of them — it scanned clean and
-    # counted toward the floor that exists to make the scan non-vacuous.
-    assert len(blocks) == 4, blocks
-    assert any("folded" in block and "${{" in block for block in blocks), blocks
-    assert any(block.strip() == "echo literal" for block in blocks), blocks
-    assert "echo inline" in blocks, blocks
-    assert "echo named" in blocks, blocks
+    # Six: the five scripts and the `defaults: run:` mapping, which is collected and scanned
+    # rather than skipped — nothing is counted that is not scanned, and no rule has to tell a
+    # mapping from a script.
+    assert len(blocks) == 6, blocks
+    for wanted in ("folded", "dashed-block", "inline", "named", "plain", "shell: bash"):
+        assert any(wanted in block for block in blocks), (wanted, blocks)
+    # Every one of them carries its expression into the scan, which is the property the guard
+    # above rests on: a shape collected but truncated is a shape that reports clean.
+    for block in blocks:
+        assert "${{" in block, block
+    # And the dashed block stops at its own `env:` rather than swallowing it — the direction
+    # that would have produced a spurious finding on `env:`, which is where an expression
+    # belongs.
+    dashed = next(block for block in blocks if "dashed-block" in block)
+    assert "SAFE" not in dashed, dashed
 
 
 # --- `check.yml`'s verdict step, run as the shell script it is --------------------------

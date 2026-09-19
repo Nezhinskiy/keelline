@@ -28,7 +28,7 @@ on:
         type: string
         default: ""
       path:
-        description: "the project root inside the caller's checkout"
+        description: "the project root inside the caller's checkout, as a plain relative path: letters, digits, '.', '_', '-' and '/' only, and no '..' component. A path with a space, a non-ASCII character or a shell metacharacter is refused, because this value reaches the run's own outputs"
         type: string
         default: "."
       python-version:

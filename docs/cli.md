@@ -1045,7 +1045,7 @@ jobs:
 | Input | Default | Meaning |
 |---|---|---|
 | `base` | `""` | the branch the gate's configuration is read from; empty means the pull request's base, and on a push the repository's default branch |
-| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture |
+| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs and those carry whether the gates enforce |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 
 It checks out the caller, checks out Keelline **at the commit the `uses:` line pins** — read

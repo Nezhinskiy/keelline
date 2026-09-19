@@ -3726,8 +3726,96 @@ reddens = [
 [[mutation]]
 name = "the workflow scan goes blind to a folded script"
 file = "tests/test_fixtures.py"
-before = '        if not rest.startswith(("|", ">")):'
-after = '        if not rest.startswith("|"):'
+before = '        if rest and not rest.startswith(("|", ">")):'
+after = '        if rest and not rest.startswith("|"):'
 reddens = [
-  "tests/test_fixtures.py::test_the_reader_sees_a_folded_script_and_not_a_shell_settings_mapping",
+  "tests/test_fixtures.py::test_the_reader_sees_every_shape_a_run_key_takes",
+]
+
+# The same reader, and the shape it could not see for the opposite reason: a step whose first
+# key is `run` carries the list dash on the same line, which is the ordinary spelling for a step
+# with no `name`. Drop the strip and every such step is invisible — a whole workflow written that
+# way reports no shell at all, and the per-file floor excuses it for having none.
+[[mutation]]
+name = "the workflow scan goes blind to a step with no name"
+file = "tests/test_fixtures.py"
+before = '        if stripped.startswith("- "):'
+after = "        if False:"
+reddens = [
+  "tests/test_fixtures.py::test_the_reader_sees_every_shape_a_run_key_takes",
+]
+
+# And the error in the other direction, which is the one that cries wolf: a block scalar's extent
+# is measured from the KEY's column. Measure it from the line's start instead and a dashed step's
+# block swallows the step's own sibling keys — `env:` among them, which is exactly where a
+# `${{ }}` is supposed to live, so the scan reports a finding on the remedy it exists to enforce.
+[[mutation]]
+name = "a dashed step's block scalar swallows its own env block"
+file = "tests/test_fixtures.py"
+before = '        indent = line.index("run:")'
+after = "        indent = len(line) - len(line.lstrip())"
+reddens = [
+  "tests/test_fixtures.py::test_the_reader_sees_every_shape_a_run_key_takes",
+]
+
+# The whole-tree gate's other silence, one step along from reading nothing: `_text` answering the
+# empty string for every file keeps the file count full and the undecodable count at zero, every
+# parametrised case scans `""` and passes, and the run looks identical to a clean tree. The
+# character floor is what tells those two apart.
+[[mutation]]
+name = "the whole-tree gate reads every file as empty"
+file = "tests/test_neutral.py"
+before = '        return path.read_text(encoding="utf-8")'
+after = '        return ""'
+reddens = [
+  "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
+]
+
+# `check.yml`'s verdict is three lines of shell that decide whether a failed gate fails the job,
+# which is the whole of D8's advisory rule. Pin the last line true and an installed project's
+# red gate reports green — the gate running is not the gate enforcing.
+[[mutation]]
+name = "the verdict stops failing the job for a failed gate"
+file = ".github/workflows/check.yml"
+before = '          [ "$ENFORCE" != true ] || [ "$failed" -eq 0 ]'
+after = "          true"
+reddens = [
+  "tests/test_fixtures.py::test_the_verdict_fails_the_job_only_where_the_base_says_installed",
+]
+
+# "Every gate ran, whatever the first one said" is the step's own claim and the reason the five
+# gate steps are `continue-on-error`. Shorten the loop to the first gate and a project fixing its
+# documents pays a round trip per finding, while every other assertion about the verdict still
+# holds.
+[[mutation]]
+name = "the verdict reports only the first gate"
+file = ".github/workflows/check.yml"
+before = '          for pair in "docs:$O_DOCS" "bugs:$O_BUGS" "plan:$O_PLAN" "commit:$O_COMMIT" "trail:$O_TRAIL"; do'
+after = '          for pair in "docs:$O_DOCS"; do'
+reddens = [
+  "tests/test_fixtures.py::test_every_gate_is_named_in_the_verdict_and_not_only_the_first",
+]
+
+# DC7's equality rule applies "on any branch but the base branch itself". A push to the base
+# branch IS the change, so dropping the exemption refuses every merge into it — the gate failing
+# closed on the one ref that can never satisfy it.
+[[mutation]]
+name = "the base branch is compared against itself"
+file = ".github/workflows/check.yml"
+before = '            if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then'
+after = '            if ! git diff --quiet "origin/$base" -- "$file"; then'
+reddens = [
+  "tests/test_fixtures.py::test_the_base_branch_itself_is_exempt_from_the_equality_rule",
+]
+
+# And D8's other half: while the base's state is `initialised` or `adopting` the branch may
+# change the configuration, and the run warns rather than refusing. Refuse there and a project
+# adopting the gate cannot land the pull request that adopts it.
+[[mutation]]
+name = "a differing configuration is refused before the base says installed"
+file = ".github/workflows/check.yml"
+before = '              if [ "$state" = installed ]; then'
+after = "              if true; then"
+reddens = [
+  "tests/test_fixtures.py::test_a_differing_configuration_under_a_base_that_is_not_installed_warns",
 ]

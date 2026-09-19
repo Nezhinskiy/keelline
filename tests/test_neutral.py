@@ -244,15 +244,20 @@ def test_the_gate_reads_the_whole_tree() -> None:
         assert wanted in names, wanted
     assert len(files) >= 200, len(files)
     assert THIS in files
-    # And that a file was actually READ. Every parametrised case below calls `_text` and skips
-    # on `None`, so a regression in `_text` — a changed encoding argument, a widened `except` —
-    # turns all of them into skips and the gate reports green over a tree that could name
-    # anything. Measured when this was written: 335 tracked files, none undecodable, so the skip
-    # arm is taken by nothing at all and `UNDECODABLE` is a number to move deliberately when a
-    # binary file is added rather than a silence to walk past.
-    readable = [path for path in files if path != THIS and _text(path) is not None]
-    assert len(readable) >= 200, len(readable)
-    assert len(files) - 1 - len(readable) == UNDECODABLE, (len(files), len(readable))
+    # And that a file was actually READ, and that reading it produced its CONTENT. Every
+    # parametrised case below calls `_text` and skips on `None`, so a regression in `_text` — a
+    # changed encoding argument, a widened `except` — turns all of them into skips, and a run of
+    # 334 skips and no failures is what a green gate looks like from the outside. Counting the
+    # files that decoded closes that; counting the characters closes the shape one step along,
+    # where `_text` answers `""` for everything, every case scans an empty string and passes,
+    # and the file count is still full. Measured when this was written: 335 tracked files, none
+    # undecodable, 4,667,131 characters. `UNDECODABLE` and the character floor are numbers
+    # somebody moves on purpose, not silences to walk past.
+    read = [_text(path) for path in files if path != THIS]
+    kept = [text for text in read if text is not None]
+    assert len(kept) >= 200, len(kept)
+    assert len(read) - len(kept) == UNDECODABLE, (len(read), len(kept))
+    assert sum(len(text) for text in kept) >= 2_000_000, sum(len(text) for text in kept)
 
 
 def test_the_two_tables_are_told_apart_by_the_file_they_are_for() -> None:
