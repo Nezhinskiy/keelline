@@ -324,9 +324,12 @@ def _write_user_settings(
     )
     try:
         # One write, through whichever root `path` named. With `--settings` the root is the
-        # owner's own directory and the walk is one component deep: a symlink AT the file is
-        # still refused, because a write through a link is what this flag exists to avoid
-        # guessing about.
+        # owner's own directory and the walk is one component deep — and that walk does NOT
+        # refuse a symlink at the file itself: `open_within` never opens the final name, and
+        # `os.replace` replaces a link entry rather than following it. This comment claimed it
+        # did; the measurement was a destroyed link and exit 0. `_check_settings_parent` is
+        # what refuses that link, above every write, and it asks `contained()` — the identical
+        # question `_check_settings_path` asks of `<home>/.claude/settings.json`.
         #
         # Without it this is the floor under `_check_settings_path`, and not dead: a component
         # that became a symlink, or stopped being a directory, between that check and this
@@ -449,14 +452,42 @@ def _check_settings_parent(settings: Path) -> None:
     one frame down, so this check adds no rule of its own. It moves the existing one earlier.
     A symlinked *home* stays fine, and is a different question — `_check_settings_path` answers
     that one, and `open_within` never applies `O_NOFOLLOW` to the root it is handed.
+
+    **And the file itself, which the write does not refuse.** With `--settings` the root is the
+    file's own directory and the walk is one component deep, so `open_within` never opens the
+    final name at all and `write_atomically_at` reaches `os.replace` — which *replaces* a
+    symlink entry rather than following it or refusing it. The link became a regular file and
+    the dotfiles copy kept its old bytes, with exit 0, while the comment beside that write, this
+    document's own `--settings` paragraph and the shipped changelog all said a link at the file
+    was refused. `contained(parent, settings.name)` is the identical question
+    `_check_settings_path` asks of `<home>/.claude/settings.json`, asked of the path this flag
+    names, and it is the only reason that sentence is true.
+
+    A directory at the file's own name is refused in the same breath: it passed both checks
+    above, and `_write_user_settings` then failed from `_read_document` with `Is a directory` —
+    a `Failure`, C5's exit 1, for a structural precondition — after `home.mkdir(parents=True)`
+    and after the machine configuration had been written.
     """
     parent = settings.parent
-    if parent.is_dir() and not parent.is_symlink():
-        return
-    raise Refusal(
-        f"{settings} cannot be written: its directory has to exist and be a real directory, "
-        f"because {_SYMLINKED_SETTINGS}"
-    )
+    if not (parent.is_dir() and not parent.is_symlink()):
+        raise Refusal(
+            f"{settings} cannot be written: its directory has to exist and be a real directory, "
+            f"because {_SYMLINKED_SETTINGS}"
+        )
+    try:
+        contained(parent, settings.name)
+    except PathEscape as exc:
+        raise Refusal(
+            f"{settings} is a symlink to {settings.resolve()}; {_SYMLINKED_SETTINGS}. A dotfiles "
+            f"manager is the usual reason — run `keelline setup --settings {settings.resolve()}`, "
+            f"which writes the file this link leads to, or replace the link with a real file"
+        ) from exc
+    # After the symlink refusal, so no link can be behind this answer.
+    if settings.is_dir():
+        raise Refusal(
+            f"{settings} is a directory; --settings names the settings file to write, not the "
+            f"directory to write it in"
+        )
 
 
 def _repository_of(path: Path) -> Path | None:

@@ -4208,3 +4208,27 @@ after = "    for tree in checkouts:\n        pass\n"
 reddens = [
   "tests/attach/test_detach.py::test_a_home_whose_claude_became_a_symlink_refuses_above_every_withdrawal",
 ]
+
+# `--settings` names the file, so `open_within` never opens the final component and
+# `write_atomically_at`'s `os.replace` replaces a symlink entry rather than refusing it. The
+# early check asked only about the directory, and three surfaces said the file was refused. One
+# entry per question the check now asks — the link, and the directory at the file's own name,
+# which failed from `_read_document` as a `Failure` after the home tree and the machine file had
+# been written.
+[[mutation]]
+name = "setup --settings asks about the directory and not the file"
+file = "src/keelline/setup/run.py"
+before = "        contained(parent, settings.name)"
+after = "        pass"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_survives",
+]
+
+[[mutation]]
+name = "setup --settings accepts a directory where the file goes"
+file = "src/keelline/setup/run.py"
+before = "    if settings.is_dir():"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written",
+]

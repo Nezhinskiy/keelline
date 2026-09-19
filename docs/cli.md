@@ -934,10 +934,14 @@ writes inside a repository and ignores both.
 links the *file*: `~/.claude/settings.json -> <dotfiles>/claude/settings.json`. No `--home`
 value names that target — `--home <dotfiles>/claude` writes
 `<dotfiles>/claude/.claude/settings.json`, a file no reader reads — and the refusal that used
-to print an unusable remedy now names this flag. The write still never follows a symlink: the
-root is the directory `PATH` names and the walk is one component deep, so a link *at* the file
-itself is refused rather than written through. `--settings` changes nothing else: the machine
-configuration file is still `--machine`'s, and the harness memory link is still under `--home`.
+to print an unusable remedy now names this flag. The write still never follows a symlink, and a
+link *at* the file itself is refused rather than written through — by a check above the first
+write, and not by the walk: the root is the directory `PATH` names and the walk is one component
+deep, so the walk never opens the final name and the rename underneath it would *replace* a link
+rather than refuse it. The refusal names the file the link leads to, which is the path to pass
+instead, and a directory at that path is refused in the same place. `--settings` changes nothing
+else: the machine configuration file is still `--machine`'s, and the harness memory link is still
+under `--home`.
 
 `setup` is not the only command that writes outside a repository, and two others say so in their
 own sections: `keelline memory trust` records approval in `~/.config/keelline/trust.json`, and

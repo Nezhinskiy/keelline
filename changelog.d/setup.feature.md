@@ -41,4 +41,5 @@ home directory and `~/.config/keelline/config.toml`, the same way every other co
 paths you name. `--machine` defaults to the file every reader reads, never to one
 `XDG_CONFIG_HOME` chose. `--settings <path>` writes the user-scope settings file where it really
 is, for a dotfiles tree that links `~/.claude/settings.json` into itself; the write still never
-follows a symlink. `--git-hooks` writes inside a repository and ignores all three.
+follows a symlink, and a link — or a directory — at the path you name is refused before anything
+is written, with the file the link leads to named as the path to pass instead. `--git-hooks` writes inside a repository and ignores all three.

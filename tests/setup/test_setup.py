@@ -1159,3 +1159,83 @@ def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_in
     # The file the link leads to is untouched: a refusal that had already written would be the
     # defect this one replaces, one step later.
     assert not (real / "settings.json").exists()
+
+
+def test_a_settings_path_that_is_itself_a_symlink_is_refused_and_the_link_survives(
+    tmp_path: Path,
+) -> None:
+    # The layout the flag is advertised for, with the path a person actually types: `stow`
+    # folds as far as it can, so with `~/.claude` already there it links the *file*, and
+    # `--settings ~/.claude/settings.json` names the link. `_check_settings_parent` asked only
+    # about the directory, and `fsops.write_within` reaches `os.replace`, which REPLACES a
+    # symlink entry rather than following or refusing it — so the link became a regular file,
+    # the dotfiles copy kept its old bytes, and the command exited 0. Three surfaces said it
+    # was refused: the comment beside the write, `docs/cli.md`, and the changelog.
+    #
+    # Measured before the fix: `is_symlink()` went `True -> False` and the dotfiles file was
+    # still `{"mine": true}`. Both assertions below are that measurement.
+    #
+    # Mutation (declared, "setup --settings asks about the directory and not the file"): the
+    # `contained` call goes -> the write lands, the link is replaced, and `pytest.raises`
+    # reddens with `DID NOT RAISE`.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    machine = tmp_path / "machine.toml"
+    real = tmp_path / "dotfiles" / "claude" / "settings.json"
+    real.parent.mkdir(parents=True)
+    real.write_text('{"mine": true}\n', encoding="utf-8")
+    link = home / USER_SETTINGS
+    link.symlink_to(real)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=link,
+        )
+    message = str(refused.value)
+    assert str(link) in message
+    # The way out names the file to pass instead, the way `_check_settings_path`'s does.
+    assert str(real) in message
+    assert link.is_symlink(), "the link was replaced rather than refused"
+    assert json.loads(real.read_text(encoding="utf-8")) == {"mine": True}
+    assert not machine.exists()
+
+
+def test_a_settings_path_that_is_an_existing_directory_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The mirror of the case above, and the standing defect class in the function whose
+    # docstring says it has been eliminated: a directory at `--settings` passed the early check
+    # — `parent.is_dir() and not parent.is_symlink()` is true of it — and failed from inside
+    # `_write_user_settings`, after `home.mkdir(parents=True)` and after the machine
+    # configuration had been written. The `Refusal` is therefore NOT what this case is about:
+    # the `except OSError` arm produces one either way, and what reddens under the declared
+    # mutation is the two `exists()` assertions.
+    #
+    # Mutation (declared, "setup --settings accepts a directory where the file goes"): the
+    # `is_dir()` refusal goes -> the run writes the home tree and the machine file before
+    # `os.replace` reports `IsADirectoryError`, and both assertions below redden.
+    home = tmp_path / "home"
+    machine = tmp_path / "machine.toml"
+    directory = tmp_path / "claude" / "settings.json"
+    directory.mkdir(parents=True)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=FakeRunner(),
+            yes=False,
+            overlay=None,
+            project_root=tmp_path / "project",
+            settings=directory,
+        )
+    assert str(directory) in str(refused.value)
+    assert "is a directory" in str(refused.value)
+    assert not home.exists(), sorted(p.name for p in home.rglob("*"))
+    assert not machine.exists()
