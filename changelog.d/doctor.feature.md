@@ -14,4 +14,5 @@ never by the ledger beside it, and is named by position rather than by its commi
 `keelline` resolves and not where, since `PATH` reaches it from a committed `env` block; and a
 file it could not read is a warning that names the file, never a red row a clone can force. It
 executes only a hook wrapper it derived from its own installation — a plugin root the
-environment named is read, reported and never run.
+environment named is read, reported and never run, and the `attached` row believes the
+overlay's record over a ledger file a clone could have committed.

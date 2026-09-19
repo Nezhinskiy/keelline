@@ -3206,8 +3206,8 @@ reddens = [
 [[mutation]]
 name = "doctor prints the PATH-derived location of the CLI"
 file = "src/keelline/doctor/checks.py"
-before = '    return Check("cli-path", OK, "`keelline` resolves on PATH")'
-after = '    return Check("cli-path", OK, f"`keelline` resolves on PATH at {found}")'
+before = '    return Row(OK, "`keelline` resolves on PATH")'
+after = '    return Row(OK, f"`keelline` resolves on PATH at {found}")'
 reddens = [
   "tests/doctor/test_checks.py::test_the_cli_resolving_by_name_is_green_and_never_prints_where",
 ]
@@ -3284,4 +3284,27 @@ after = """            delivered = bool(result.context) or result.decision == De
                 sink.mark(handler.once_key)"""
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery",
+]
+
+# DC3: the registry is the only place a check's name is spelled. A stray literal equal to a
+# registry key is exactly the state the refactor removed — a name a row could come to disagree
+# with — so the mutation re-introduces one rather than deleting a guard.
+[[mutation]]
+name = "a doctor check spells its own name again"
+file = "src/keelline/doctor/checks.py"
+before = 'WRAPPER = "hooks/run-hook.sh"'
+after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"files\""
+reddens = [
+  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
+]
+
+# R5: `.keelline/local/attach.json` is a file a clone can commit, so the row asks the overlay —
+# the trusted side — whether a binding stands behind it.
+[[mutation]]
+name = "a committed ledger counts as an attach again"
+file = "src/keelline/doctor/checks.py"
+before = "    if state == UNBOUND:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach",
 ]

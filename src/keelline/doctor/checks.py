@@ -64,6 +64,7 @@ import keelline
 from keelline.attach.api import (
     LEDGER,
     MISMATCH,
+    UNBOUND,
     Binding,
     ledger,
     overlay_entries,
@@ -173,6 +174,15 @@ class Check:
     remedy: str = ""
 
 
+@dataclass(frozen=True)
+class Row:
+    """What one check answers. The name is the registry's, stamped by `_guarded` (DC3)."""
+
+    status: Status
+    detail: str
+    remedy: str = ""
+
+
 @dataclass
 class Context:
     """Everything the fifteen checks read, resolved once.
@@ -251,27 +261,26 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     return _own_root() or _named_root(env)
 
 
-def _not_initialised(context: Context) -> Check:
+def _not_initialised(context: Context) -> Row:
     # Reached only when the configuration loaded, so this row is the green one; the red one is
     # built by `run_checks` before a context exists at all.
-    return Check("not-initialised", OK, f"{CONFIG_FILE} loads", "")
+    return Row(OK, f"{CONFIG_FILE} loads", "")
 
 
-def _versions(context: Context) -> Check:
+def _versions(context: Context) -> Row:
     running = keelline.__version__
     if context.config.keelline.version == running:
-        return Check("versions", OK, f"the project and this Keelline are both {running}", "")
+        return Row(OK, f"the project and this Keelline are both {running}", "")
     # The project's own string is repository-authored and is not quoted back; what is printed
     # is the version that is actually running, which is what the remedy needs anyway.
-    return Check(
-        "versions",
+    return Row(
         WARN,
         f"{CONFIG_FILE} declares a different Keelline version from the {running} running here",
         f"set [keelline] version to {running} in {CONFIG_FILE}",
     )
 
 
-def _files(context: Context) -> Check:
+def _files(context: Context) -> Row:
     """§5.9 and Task 1: the shipped files, and the bit that decides whether one can run.
 
     The hash half cannot run in this build — the release lane records the hashes — and inventing
@@ -281,8 +290,7 @@ def _files(context: Context) -> Check:
     """
     root = context.plugin_root
     if root is None:
-        return Check(
-            "files",
+        return Row(
             SKIP,
             "the plugin root is not readable from here, so its shipped files cannot be checked "
             "— and if nothing else finds it either, every hook entry on this machine is silent",
@@ -294,15 +302,13 @@ def _files(context: Context) -> Check:
     whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT
     wrapper = root / WRAPPER
     if not os.access(wrapper, os.X_OK):
-        return Check(
-            "files",
+        return Row(
             RED,
             f"{WRAPPER} is not executable, so every hook entry exits 126 and the harness reads "
             f"that as a non-blocking error{whose}",
             f"chmod +x {wrapper}",
         )
-    return Check(
-        "files",
+    return Row(
         SKIP,
         f"{WRAPPER} is executable; no release hashes are recorded in this build, so the "
         f"installed files cannot be compared against a release{whose}",
@@ -310,7 +316,7 @@ def _files(context: Context) -> Check:
     )
 
 
-def _wrapper(context: Context) -> Check:
+def _wrapper(context: Context) -> Row:
     """Execute the wrapper once, and report the token it printed.
 
     §8.4 does not name this check and it closes a measured blind spot. Under `open` policy a
@@ -339,15 +345,13 @@ def _wrapper(context: Context) -> Check:
     root = context.own_root
     if root is None:
         if context.plugin_root is None:
-            return Check(
-                "wrapper",
+            return Row(
                 SKIP,
                 "the plugin root is not readable from here, so there is nothing to run and "
                 "nothing here can say whether a hook entry would reach Keelline at all",
                 PLUGIN_ROOT_REMEDY,
             )
-        return Check(
-            "wrapper",
+        return Row(
             SKIP,
             "the only plugin root here is one the environment names, and a root this process "
             "cannot vouch for is never executed: its wrapper would run before any Keelline "
@@ -383,29 +387,26 @@ def _wrapper(context: Context) -> Check:
             stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return Check(
-            "wrapper",
+        return Row(
             RED,
             f"{WRAPPER} could not be run ({type(exc).__name__}), so no hook entry can fire",
             f"check that {root / WRAPPER} exists and is executable",
         )
     token = _TOKEN.search(done.stderr)
     if token is not None:
-        return Check(
-            "wrapper",
+        return Row(
             RED,
             f"{WRAPPER} refused with {token.group(0)} and exited {done.returncode}; under "
             f"`open` policy that exit code is 0 and nothing else reports it",
             "run `hooks/run-hook.sh open --version` and read its stderr",
         )
     if done.returncode != 0:
-        return Check(
-            "wrapper",
+        return Row(
             RED,
             f"{WRAPPER} exited {done.returncode} with no refusal token",
             "run `hooks/run-hook.sh open --version` and read its stderr",
         )
-    return Check("wrapper", OK, f"{WRAPPER} reached Keelline and exited 0", "")
+    return Row(OK, f"{WRAPPER} reached Keelline and exited 0", "")
 
 
 def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
@@ -427,7 +428,7 @@ def _attach_ledger_entries(root: Path) -> dict[str, str] | None:
         return None
 
 
-def _attached(context: Context) -> Check:
+def _attached(context: Context) -> Row:
     """Attach state, and the shape of the harness memory path (§8.4, §12).
 
     §6.3 prefers a symlink at `~/.claude/projects/<slug>/memory` "because a settings-file value
@@ -456,14 +457,11 @@ def _attached(context: Context) -> Check:
         # `memory.mode` is repository-authored and is safe to print for one reason only: the
         # loader holds it to a fixed set of three words, so what reaches this line is one of
         # Keelline's own labels rather than a string a clone chose.
-        return Check(
-            "attached", OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to"
-        )
+        return Row(OK, f"memory.mode is {config.memory.mode}; there is no overlay to bind to")
     recorded = (context.root / LEDGER).is_file()
     harness = harness_memory_path(context.root, context.home)
     if harness.is_dir() and not harness.is_symlink():
-        return Check(
-            "attached",
+        return Row(
             RED,
             "the harness memory path is a real directory rather than a link to the store, so "
             "this checkout looks attached and behaves like nothing",
@@ -473,16 +471,26 @@ def _attached(context: Context) -> Check:
             f"`keelline attach --store <overlay>/{PROJECTS}/<project>/memory`",
         )
     if not recorded:
-        return Check(
-            "attached",
+        return Row(
             WARN,
             f"memory.mode is overlay and {LEDGER} does not exist, so nothing records an attach",
             "run `keelline attach --store <overlay>/projects/<project>/memory --check`",
         )
     state = _binding_state(context)
+    # `UNBOUND` and never `None`: `_binding_state` answers `None` when the overlay could
+    # not be ASKED (no `git`, an unreadable ledger, a refused binding), and a row that
+    # accused the repository on that answer would be reporting on its own inputs.
+    if state == UNBOUND:
+        return Row(
+            WARN,
+            f"{LEDGER} records an attach, but the overlay this machine records has no binding "
+            f"for this project — a clone can commit that file, so it is not evidence of an "
+            f"attach",
+            "run `keelline attach --store <overlay>/projects/<project>/memory --check`; if this "
+            "checkout was never attached on this machine, remove the ledger",
+        )
     if state == MISMATCH:
-        return Check(
-            "attached",
+        return Row(
             RED,
             "the overlay records a different remote for this project, so this is not the "
             "repository it was bound to",
@@ -492,7 +500,7 @@ def _attached(context: Context) -> Check:
     detail = f"attached; the harness memory path is {shape}"
     if state is not None:
         detail = f"{detail}; the binding is {state}"
-    return Check("attached", status, detail, remedy)
+    return Row(status, detail, remedy)
 
 
 # The remedy every harness-memory-path row but the green one carries: one command puts the link
@@ -627,7 +635,7 @@ def _entry_commands(document: str) -> list[str]:
 _MACHINE_LABEL = f"~/{USER_SETTINGS}"
 
 
-def _hook_entries(context: Context) -> Check:
+def _hook_entries(context: Context) -> Row:
     """Every entry in every settings file, with provenance (§5.3, §12).
 
     Three provenances, and the third is the one §12 asks for. An entry whose marker id is in the
@@ -773,15 +781,14 @@ def _hook_entries(context: Context) -> Check:
         remedy = remedy or "check that each file named above is readable and is valid JSON"
     if status == OK:
         parts.append("all accounted for")
-    return Check("hook-entries", status, "; ".join(parts), remedy)
+    return Row(status, "; ".join(parts), remedy)
 
 
-def _codex_trust(context: Context) -> Check:
+def _codex_trust(context: Context) -> Row:
     # §5.3 asks for red while any Keelline hook is untrusted on Codex, and §10 lists the Codex
     # hook-trust hash under what these spikes did not measure. A check that returned green
     # because it could not look would be strictly worse than one that admits it cannot.
-    return Check(
-        "codex-trust",
+    return Row(
         SKIP,
         "whether a Keelline hook is trusted on Codex is unmeasured: nothing here knows how "
         "Codex records hook trust, and a measurement would need the file it writes it to and "
@@ -790,7 +797,7 @@ def _codex_trust(context: Context) -> Check:
     )
 
 
-def _budgets(context: Context) -> Check:
+def _budgets(context: Context) -> Row:
     """Every budget overriding the preset, and every one the ceiling clamps (D7, §9.5).
 
     A value above the preset's is ignored rather than refused, which is what makes lowering the
@@ -806,16 +813,15 @@ def _budgets(context: Context) -> Check:
     )
     overrides = sorted(budgets.overrides)
     if clamped:
-        return Check(
-            "budgets",
+        return Row(
             WARN,
             f"{len(clamped)} budget(s) are set above the preset and are clamped down to it: "
             f"{listed(clamped)}",
             f"lower these values in {CONFIG_FILE}, or delete them to take the preset's",
         )
     if overrides:
-        return Check("budgets", OK, f"{len(overrides)} budget(s) lowered: {listed(overrides)}")
-    return Check("budgets", OK, "every budget is the preset's")
+        return Row(OK, f"{len(overrides)} budget(s) lowered: {listed(overrides)}")
+    return Row(OK, "every budget is the preset's")
 
 
 # When a bundle's largest part counts as "reaching the cap", as a fraction of
@@ -829,7 +835,7 @@ def _budgets(context: Context) -> Check:
 NEARLY_FULL = 0.9
 
 
-def _bundles(context: Context) -> Check:
+def _bundles(context: Context) -> Row:
     """§9.5: a bundle whose notes do not fit its slots needs a human, not a wider cap.
 
     Raising a slot count edits `hooks/hooks.json`, which is a shipped file, so this is reported
@@ -837,7 +843,7 @@ def _bundles(context: Context) -> Check:
     one more sentence in one note and the bundle needs a slot that does not exist.
     """
     if context.store is None:
-        return Check("bundles", SKIP, "the note store does not resolve, so no bundle can be built")
+        return Row(SKIP, "the note store does not resolve, so no bundle can be built")
     ceiling = context.config.native_caps.hook_output_chars * NEARLY_FULL
     over: list[str] = []
     full: list[str] = []
@@ -853,23 +859,21 @@ def _bundles(context: Context) -> Check:
         if any(text is not None and len(text) >= ceiling for text in emitted):
             full.append(bundle.value)
     if over:
-        return Check(
-            "bundles",
+        return Row(
             RED,
             f"{len(over)} bundle(s) do not fit their session-start slots: {listed(over)}",
             "run `keelline memory fit`, then shorten or unflag the notes it names",
         )
     if full:
-        return Check(
-            "bundles",
+        return Row(
             WARN,
             f"{len(full)} bundle(s) have a part at the platform cap: {listed(full)}",
             "run `keelline memory fit`",
         )
-    return Check("bundles", OK, "every bundle fits its slots")
+    return Row(OK, "every bundle fits its slots")
 
 
-def _cli_path(context: Context) -> Check:
+def _cli_path(context: Context) -> Row:
     """§5.1 and Findings → S2: whether `keelline` resolves by name on this machine.
 
     Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content, so a skill that
@@ -898,14 +902,13 @@ def _cli_path(context: Context) -> Check:
     """
     found = shutil.which("keelline", path=context.env.get("PATH", ""))
     if found is None:
-        return Check(
-            "cli-path",
+        return Row(
             WARN,
             "`keelline` does not resolve on PATH, so a skill that invokes it by name fails on "
             "Codex, which performs no plugin-root substitution in skill content",
             "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",
         )
-    return Check("cli-path", OK, "`keelline` resolves on PATH")
+    return Row(OK, "`keelline` resolves on PATH")
 
 
 # The overlay's commit-time secret scan, and the hook `pre-commit install` writes (§6.4). The
@@ -916,7 +919,7 @@ PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = "pre-commit"
 
 
-def _pre_commit(context: Context) -> Check:
+def _pre_commit(context: Context) -> Row:
     """§6.4, §8.4: whether the overlay's own secret scan is armed on **this** machine.
 
     `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
@@ -925,10 +928,9 @@ def _pre_commit(context: Context) -> Check:
     """
     overlay = context.overlay
     if overlay is None or not overlay.is_dir():
-        return Check("pre-commit", SKIP, "no overlay root is recorded on this machine", "")
+        return Row(SKIP, "no overlay root is recorded on this machine", "")
     if not (overlay / PRE_COMMIT_CONFIG).is_file():
-        return Check(
-            "pre-commit",
+        return Row(
             WARN,
             f"the overlay has no {PRE_COMMIT_CONFIG}, so there is no commit-time secret scan "
             f"for the notes it holds",
@@ -940,22 +942,20 @@ def _pre_commit(context: Context) -> Check:
         # `git` is invoked, never imported, and a `git` that cannot answer is a reported finding
         # rather than a traceback -- and rather than a guess at `.git/hooks`, which is the thing
         # this row was getting wrong.
-        return Check(
-            "pre-commit",
+        return Row(
             WARN,
             "`git` could not name the overlay's hooks directory, so whether its commit-time "
             "secret scan is installed cannot be answered here",
             f"run `git -C {overlay} rev-parse --git-path hooks` and read what it says",
         )
     if not (hooks / PRE_COMMIT_HOOK).exists():
-        return Check(
-            "pre-commit",
+        return Row(
             WARN,
             "the overlay's commit-time secret scan is configured and not installed on this "
             "machine; the push-time scan still runs",
             f"run `pre-commit install` in {overlay}",
         )
-    return Check("pre-commit", OK, "the overlay's commit-time secret scan is installed")
+    return Row(OK, "the overlay's commit-time secret scan is installed")
 
 
 # git's own spelling for "run this program and talk to it": `ext::<command>` and, generally,
@@ -979,7 +979,7 @@ def _pre_commit(context: Context) -> Check:
 TRANSPORT_HELPER = re.compile(r"\A(?:[A-Za-z][A-Za-z0-9+.\-]*)?::")
 
 
-def _ci_ref(context: Context) -> Check:
+def _ci_ref(context: Context) -> Row:
     """§8.4: whether `[ci] ref` resolves, asked with `git ls-remote --exit-code`.
 
     The value is repository-authored, so it is passed to the runner after a `--` and is never
@@ -995,10 +995,9 @@ def _ci_ref(context: Context) -> Check:
     """
     ref = context.config.ci.ref
     if not ref:
-        return Check("ci-ref", SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
+        return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
     if TRANSPORT_HELPER.match(ref):
-        return Check(
-            "ci-ref",
+        return Row(
             RED,
             "[ci] ref names a git transport helper, which would hand `git ls-remote` a program "
             "this repository chose; it was not resolved",
@@ -1006,23 +1005,21 @@ def _ci_ref(context: Context) -> Check:
         )
     done = context.runner.run(["git", "ls-remote", "--exit-code", "--", ref], context.root)
     if done.code == 0:
-        return Check("ci-ref", OK, "[ci] ref resolves")
+        return Row(OK, "[ci] ref resolves")
     if done.code == 2:
-        return Check(
-            "ci-ref",
+        return Row(
             RED,
             "[ci] ref does not resolve, so the reusable workflow this project pins is not there",
             f"correct [ci] ref in {CONFIG_FILE}",
         )
-    return Check(
-        "ci-ref",
+    return Row(
         WARN,
         f"[ci] ref could not be checked (`git ls-remote` exited {done.code})",
         "check that `git` runs here and that the remote is reachable",
     )
 
 
-def _store_debris(context: Context) -> Check:
+def _store_debris(context: Context) -> Row:
     """§8.4: files in the note store that are not notes.
 
     Counted and not named. A filename in the store is repository-authored in `in-repo` and
@@ -1031,20 +1028,19 @@ def _store_debris(context: Context) -> Check:
     """
     store = context.store
     if store is None:
-        return Check("store-debris", SKIP, "the note store does not resolve", "")
+        return Row(SKIP, "the note store does not resolve", "")
     found = 0
     for target in store.groups.values():
         for path in target.rglob("*"):
             if path.is_file() and path.suffix != ".md" and not path.name.startswith("."):
                 found += 1
     if found:
-        return Check(
-            "store-debris",
+        return Row(
             WARN,
             f"{found} file(s) in the note store are not notes",
             "run `keelline memory inventory` to see them, and move or delete each one",
         )
-    return Check("store-debris", OK, "the note store holds notes and nothing else")
+    return Row(OK, "the note store holds notes and nothing else")
 
 
 def _is_record(line: bytes) -> bool:
@@ -1061,7 +1057,7 @@ def _is_record(line: bytes) -> bool:
     return isinstance(record, dict)
 
 
-def _diagnostics(context: Context) -> Check:
+def _diagnostics(context: Context) -> Row:
     """How many reasons the hook sink recorded. A count, and not one byte of the file (§5.3).
 
     **Nothing in this file is quoted, because nothing here can establish who wrote it.** The log
@@ -1088,8 +1084,7 @@ def _diagnostics(context: Context) -> Check:
     """
     data = context.env.get("CLAUDE_PLUGIN_DATA") or context.env.get("PLUGIN_DATA")
     if not data:
-        return Check(
-            "diagnostics",
+        return Row(
             SKIP,
             "no harness data root is set in this environment, so the hook sink cannot be read",
             "",
@@ -1103,8 +1098,7 @@ def _diagnostics(context: Context) -> Check:
         # installation. Unguarded it reached `_guarded`, which renders any exception red — so a
         # directory this process happens not to be able to list produced `diagnostics: red` and
         # exit 1 on an installation with nothing wrong with it.
-        return Check(
-            "diagnostics",
+        return Row(
             WARN,
             f"the hook sink's session markers could not be listed ({type(exc).__name__}), so "
             f"neither the session count nor the failure count below can be given",
@@ -1112,15 +1106,12 @@ def _diagnostics(context: Context) -> Check:
         )
     log = base / DIAGNOSTICS
     if not log.is_file():
-        return Check(
-            "diagnostics", OK, f"no hook failures are recorded; {sessions} session(s) seen"
-        )
+        return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
     try:
         with log.open("rb") as handle:
             raw = handle.read(DIAGNOSTICS_MAX_BYTES + 1)
     except OSError as exc:
-        return Check(
-            "diagnostics",
+        return Row(
             WARN,
             f"the hook sink's log is there and could not be read ({type(exc).__name__})",
             DIAGNOSTICS_REMEDY,
@@ -1128,12 +1119,9 @@ def _diagnostics(context: Context) -> Check:
     over = len(raw) > DIAGNOSTICS_MAX_BYTES
     count = sum(1 for line in raw.splitlines() if _is_record(line))
     if not count and not over:
-        return Check(
-            "diagnostics", OK, f"no hook failures are recorded; {sessions} session(s) seen"
-        )
+        return Row(OK, f"no hook failures are recorded; {sessions} session(s) seen")
     counted = f"{'at least ' if over else ''}{count} hook failure(s) recorded"
-    return Check(
-        "diagnostics",
+    return Row(
         WARN,
         f"{counted}; {sessions} session(s) seen. Not one line is quoted: {UNVOUCHED_LOG}",
         DIAGNOSTICS_REMEDY,
@@ -1146,12 +1134,11 @@ def _diagnostics(context: Context) -> Check:
 IGNORED_ENV = ("KEELLINE_CONFIG", "XDG_CONFIG_HOME")
 
 
-def _ignored_env(context: Context) -> Check:
+def _ignored_env(context: Context) -> Row:
     set_here = [name for name in IGNORED_ENV if context.env.get(name)]
     if not set_here:
-        return Check("ignored-env", OK, "no environment variable is being ignored")
-    return Check(
-        "ignored-env",
+        return Row(OK, "no environment variable is being ignored")
+    return Row(
         WARN,
         f"{listed(set_here)} is set and is not honoured on the hook path: the machine "
         f"configuration is ~/.config/keelline/config.toml and nothing else there",
@@ -1162,7 +1149,7 @@ def _ignored_env(context: Context) -> Check:
 # The fifteen, in the order §8.4 and its cross-references name them. The list is the report's
 # order and the only registry there is: a check added here needs no other edit, and a check
 # missing from it is a check nothing runs.
-CHECKS: tuple[tuple[str, Callable[[Context], Check]], ...] = (
+CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("not-initialised", _not_initialised),
     ("versions", _versions),
     ("files", _files),
@@ -1173,7 +1160,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Check]], ...] = (
     ("budgets", _budgets),
     ("bundles", _bundles),
     ("cli-path", _cli_path),
-    ("pre-commit", _pre_commit),
+    (PRE_COMMIT_HOOK, _pre_commit),
     ("ci-ref", _ci_ref),
     ("store-debris", _store_debris),
     ("diagnostics", _diagnostics),
@@ -1181,7 +1168,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Check]], ...] = (
 )
 
 
-def _guarded(name: str, check: Callable[[Context], Check], context: Context) -> Check:
+def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Check:
     """One check's answer, or a red row naming the exception type it died of.
 
     Never a traceback out of `run_checks`. The report is the thing the user has left when
@@ -1202,7 +1189,7 @@ def _guarded(name: str, check: Callable[[Context], Check], context: Context) -> 
     red, because that is what the row is for.
     """
     try:
-        return check(context)
+        row = check(context)
     except OSError as exc:  # the machine, not the installation
         return Check(
             name,
@@ -1217,6 +1204,7 @@ def _guarded(name: str, check: Callable[[Context], Check], context: Context) -> 
             f"this check could not run: {type(exc).__name__}",
             "report this, with the command you ran",
         )
+    return Check(name, row.status, row.detail, row.remedy)
 
 
 def _context(
@@ -1263,11 +1251,14 @@ def run_checks(
     `ignored-env` reads it, and `diagnostics` finds the harness data root in it.
     """
     env = os.environ if env is None else env
-    rest = [name for name, _ in CHECKS[1:]]
+    # The registry is the only place a name is spelled (DC3), and these two rows are built
+    # before a check function runs, so they read the first key out of it rather than repeating
+    # the word: a row that disagreed with its key would be a typo nothing could see.
+    first, *rest = [name for name, _ in CHECKS]
     if not (root / CONFIG_FILE).is_file():
         return [
             Check(
-                "not-initialised",
+                first,
                 RED,
                 f"there is no {CONFIG_FILE} here, so the plugin's hooks are silent in this "
                 f"repository",
@@ -1284,7 +1275,7 @@ def run_checks(
         # The message is not quoted: the loader builds it out of the file's own keys and values.
         return [
             Check(
-                "not-initialised",
+                first,
                 RED,
                 f"{CONFIG_FILE} is here and does not load ({type(exc).__name__}), so nothing "
                 f"else can be checked against it",

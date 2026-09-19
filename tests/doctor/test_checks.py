@@ -16,6 +16,7 @@ import os
 import pty
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,7 +26,7 @@ import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
-from keelline.doctor.api import SETTINGS_FILES, Check, run_checks
+from keelline.doctor.api import SETTINGS_FILES, WARN, Check, run_checks
 from keelline.doctor.checks import plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
@@ -34,6 +35,12 @@ from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from keelline.runner import Completed
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def module_checks() -> tuple[tuple[str, Callable[[checks.Context], checks.Row]], ...]:
+    """`checks.CHECKS`, reachable from a test whose own local `checks` shadows the module."""
+    return checks.CHECKS
+
 
 LOCAL_ONLY = """
 [keelline]
@@ -1285,10 +1292,10 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # Mutation: `mutations.toml`'s "doctor renders an unreadable file as a broken check".
     context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
 
-    def cannot_read(_: checks.Context) -> Check:
+    def cannot_read(_: checks.Context) -> checks.Row:
         raise PermissionError(13, "Permission denied")
 
-    def is_broken(_: checks.Context) -> Check:
+    def is_broken(_: checks.Context) -> checks.Row:
         raise ValueError("this check has a bug in it")
 
     warned = checks._guarded("files", cannot_read, context)
@@ -1491,3 +1498,59 @@ def test_an_ipv6_literal_in_a_ci_ref_is_not_a_transport_helper(tmp_path: Path) -
     assert runner.calls == [
         ["git", "ls-remote", "--exit-code", "--", "ssh://user@[2001:db8::1]/repo.git"]
     ]
+
+
+def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
+    # D2 (DC3): a check used to build `Check("files", ...)` on every one of its return paths,
+    # up to seven times, and the registry spelled the name an eighth time. A row that
+    # disagreed with its key was one typo away and nothing would have said so. Now a check
+    # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
+    # literal exactly once in this module: in `CHECKS`.
+    #
+    # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
+    # twice and this reddens naming it.
+    import ast
+
+    from keelline.doctor import checks as module
+
+    source = Path(module.__file__ or "").read_text(encoding="utf-8")
+    literals = [
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    names = [name for name, _ in module.CHECKS]
+    assert len(names) == 15
+    counted = {name: literals.count(name) for name in names}
+    assert counted == dict.fromkeys(names, 1), counted
+
+
+def test_every_row_run_checks_returns_carries_its_registry_key(tmp_path: Path) -> None:
+    # The two-line form of the same property, over the output rather than the source: the
+    # rows come back in registry order with registry names. No mutation of its own — with
+    # DC3 in place a row cannot be misnamed; this is the guard that outlives the refactor.
+    root = _initialised(tmp_path)
+    rows = _checks(tmp_path, root)
+    assert [row.name for row in rows] == [name for name, _ in module_checks()]
+
+
+def test_a_ledger_with_no_binding_in_the_overlay_is_a_warning_and_never_an_attach(
+    tmp_path: Path,
+) -> None:
+    # R5: `.keelline/local/attach.json` is a path a clone can commit, and `_attached` took its
+    # existence as "this checkout was attached". The overlay is the trusted side (DP3), so the
+    # row now asks it: a ledger with no `projects/<name>/project.toml` behind it is a warning
+    # that names the file, and the remedy says what to do in each of the two cases.
+    #
+    # Mutation (declared): `if state == UNBOUND:` -> `if False:` -> the row falls
+    # through to the harness-shape branch and this reddens on the sentence.
+    root = _attached(tmp_path)
+    overlay = _overlay(tmp_path)
+    record = overlay / PROJECTS / "p" / PROJECT_RECORD
+    assert record.is_file(), "the fixture must have recorded a binding for this to be a probe"
+    record.unlink()
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+    assert row.status == WARN
+    assert "has no binding for this project" in row.detail
+    assert "a clone can commit that file" in row.detail
+    assert "attach --store" in row.remedy and "remove the ledger" in row.remedy
