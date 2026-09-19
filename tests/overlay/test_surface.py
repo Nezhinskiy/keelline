@@ -40,6 +40,10 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "PLUGIN_MANIFEST",
         "MARKETPLACE_MANIFEST",
         "CODEX_PLUGIN_MANIFEST",
+        # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
+        # outside `src/`, and the one the wave-3 trim did not see because the boundary walk
+        # stopped at `src/`
+        "OVERLAY_FILES",
     }
     assert required == set(overlay.__all__)
 

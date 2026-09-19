@@ -14,7 +14,7 @@ from types import ModuleType
 
 import pytest
 
-from keelline.overlay.layout import OVERLAY_FILES
+from keelline.overlay.api import OVERLAY_FILES
 from keelline.scaffold import MANIFEST_PATH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_artifacts.py"

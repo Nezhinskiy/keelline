@@ -249,7 +249,9 @@ def _keys(value: object) -> set[str]:
 # --- the README that counts the files, checked against the files ------------------------------
 
 # The words this document could plausibly spell a file count with. Local rather than imported
-# from `tests/test_documents.py`, whose map stops at twelve for its own ten-principle sentence.
+# from `tests/test_documents.py` because that map stops at twelve and this one has to reach
+# past it — not because a cross-module import is forbidden; the test tree is an importable
+# package and nine of its modules import across it.
 _COUNT_WORDS = {
     "twelve": 12,
     "thirteen": 13,

@@ -31,7 +31,8 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-from keelline.overlay.layout import OVERLAY_FILES
+from keelline.overlay.api import OVERLAY_FILES
+from keelline.release.api import HASHED_FILES, RECORD
 from keelline.scaffold import MANIFEST_PATH
 
 WHEEL_MUST = (
@@ -43,17 +44,17 @@ WHEEL_MUST = (
 SDIST_MUST = (
     "tests/test_fsops.py",
     "CHANGELOG.md",
-    "scripts/keelline",
     "skills/README.md",
     "agents/code-navigator.md",
-    "hooks/run-hook.sh",
-    "hooks/hooks.json",
-    # Beside the three files it records, and for the same reason they are here: a build that
-    # dropped it would pass this checker while `doctor files` quietly degraded from a
-    # comparison to a `skip`, which is the one answer that looks like a healthy install and
-    # is not one. `pyproject.toml` carries it under `hooks/**`, so this is a claim about the
-    # build and not a new packaging rule.
-    "hooks/hashes.json",
+    # The three files the harness runs with no interpreter of ours in front of them, and the
+    # record they are checked against — `HASHED_FILES` and `RECORD`, not four string literals
+    # spelled here a second time. The record is in this list for the same reason the three are:
+    # a build that dropped it would pass this checker while `doctor files` quietly degraded
+    # from a comparison to a `skip`, which is the one answer that looks like a healthy install
+    # and is not one. `pyproject.toml` carries all four under `hooks/**` and `scripts/**`, so
+    # this is a claim about the build and not a new packaging rule.
+    *HASHED_FILES,
+    RECORD,
     "mutations.toml",
 )
 SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/keelline")

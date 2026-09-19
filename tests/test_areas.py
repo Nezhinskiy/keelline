@@ -174,11 +174,25 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     source = ROOT / "src" / "keelline"
     areas = _area_names(source)
     files = sorted(source.rglob("*.py"))
+    # `scripts/` is walked too, and the reason is the violation that merged green under a walk
+    # that was not: `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
+    # constant `overlay/api.py`'s docstring said had been trimmed *because* nothing outside the
+    # area imported it. A walk one directory narrower than the code that can break the rule is a
+    # walk that will eventually report nothing. The script paths are relative to `ROOT` rather
+    # than to `source`, so `here` is `scripts` — not an area, so every keelline import a script
+    # makes is a crossing and has to go through an `api.py`.
+    scripts = sorted((ROOT / "scripts").glob("*.py"))
     crossings: list[str] = []
     offences: list[str] = []
     for path in files:
         found, broken = _boundary_offences(
             str(path.relative_to(source)), path.read_text(encoding="utf-8"), areas
+        )
+        crossings += found
+        offences += broken
+    for path in scripts:
+        found, broken = _boundary_offences(
+            str(path.relative_to(ROOT)), path.read_text(encoding="utf-8"), areas
         )
         crossings += found
         offences += broken
@@ -188,6 +202,10 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # walk narrowed to `commands.py` alone finds 13.
     assert len(areas) == 10, areas
     assert len(files) >= 70, len(files)
+    # The script walk's own floor: without it a `glob` that stopped matching would take the
+    # `scripts/` half of this guard back to the state that hid the violation, and the crossing
+    # count below has enough headroom to absorb the loss.
+    assert len(scripts) >= 3, scripts
     assert len(crossings) >= 60, crossings
     # The exemption itself, in both directions. Nothing asserted its size, so a second entry
     # could be added and no test would move — measured, with the historical violation

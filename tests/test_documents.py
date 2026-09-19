@@ -6,8 +6,13 @@ does not resolve, a command row the parser does not accept, a command with no ro
 citation with no source, a source nothing cites, a principle with no statement of how well
 it is backed. None of these is a matter of taste, so none is left to review.
 
-No cross-module test imports (`tests/` is not a package): the three parser lines are the
-same three `tests/skills/test_skills.py` has, on purpose.
+The three parser lines are the same three `tests/skills/test_skills.py` has, on purpose:
+two modules asking the real parser the same question is two claims, and collapsing them would
+make one of the two documents provable only through the other. This used to forbid a cross-module
+import on the grounds that the test tree was not importable, which was false in both halves:
+`tests/__init__.py` is tracked, nine modules import across it, and `CONTRIBUTING.md` carries no
+such rule. `tests/snapshot.py` is where a helper two modules share
+belongs.
 """
 
 from __future__ import annotations
@@ -101,6 +106,42 @@ def _months(stamp: str) -> int:
 # would make every added source a test edit; the cited/citing tests below hold the content.
 SOURCES_FLOOR = 20
 PRINCIPLES_FLOOR = 8
+
+
+TESTS = ROOT / "tests"
+
+
+def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
+    """The sentence that authorised the duplication this module exists to end.
+
+    Three modules said, in as many words, that a helper was copied rather than imported
+    because the test tree was not importable as a package and CONTRIBUTING forbade a
+    cross-module import. Both halves are false: `tests/__init__.py` is tracked, `CONTRIBUTING.md`
+    carries no such rule,
+    and `tests/overlay/test_upgrade.py` imports the very class one of those comments said it
+    could not. What it cost, measured at the time: the hardened-`git` helper defined in 26
+    modules, six of them already drifted, while `tests/snapshot.py` published it.
+
+    In a tree whose whole discipline is that a comment is evidence, a false comment that
+    *authorises* a practice is worse than the practice. So the claim is a finding, and the
+    import that disproves it is asserted to still exist.
+    """
+    # Mutation: put the sentence back into `tests/test_documents.py` -> reddens naming it.
+    assert (TESTS / "__init__.py").is_file(), "tests/ stopped being a package"
+    modules = sorted(TESTS.rglob("test_*.py"))
+    # The walk's floor before anything is asserted about it: a glob that matched nothing would
+    # make both lists empty and the claim check vacuously true.
+    assert len(modules) >= 40, len(modules)
+    texts = {module: module.read_text(encoding="utf-8") for module in modules}
+    importers = sorted(m.name for m, text in texts.items() if "\nfrom tests." in text)
+    # And the disproof is live rather than remembered: eight or more modules really do import
+    # across the package today (nine when this was written).
+    assert len(importers) >= 8, importers
+    # Assembled rather than written out, because this module is inside the walk and a literal
+    # needle would match the line that holds it — the guard would then report itself for ever.
+    needle = "is not a " + "package"
+    claims = sorted(str(m.relative_to(TESTS)) for m, text in texts.items() if needle in text)
+    assert claims == [], claims
 
 
 def test_the_methodology_walks_are_not_empty() -> None:
@@ -449,6 +490,37 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     match = _PLAN_RULES_SENTENCE.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert match is not None, "docs/cli.md's `plan check` section no longer counts its rules"
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
+
+
+# The `doctor` check table: fifteen rows, each spelling a check name, and the one
+# code-restating table in this document the branch that built this binding mechanism did not
+# bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
+# `checks.py`, so the document's copy is a sixteenth spelling that guard cannot see and a
+# renamed check would leave this page green and wrong. That the unbound ones drift is not a
+# hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory over still said
+# fourteen.
+_DOCTOR_SECTION = re.compile(r"^## `keelline doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
+# `| `name` | what it answers | what it reads |` — the first cell only, backticked.
+_CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
+
+
+def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
+    # Mutation: rename one check in `docs/cli.md`'s table -> reddens naming the row. In order
+    # and not as a set, because the table's order is the report's order and the document says
+    # so.
+    from keelline.doctor.checks import CHECKS
+
+    section = _DOCTOR_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `keelline doctor` section"
+    rows = _CHECK_ROW.findall(section.group(1))
+    # The walk's floor before anything is compared, for the reason the Shared flags test gives:
+    # a regex that matched nothing would make the comparison below vacuously true, and a
+    # section that lost its table would look exactly like one that never had it.
+    assert len(rows) == len(CHECKS), rows
+    expected = [name for name, _ in CHECKS]
+    assert rows == expected, [
+        (row, name) for row, name in zip(rows, expected, strict=True) if row != name
+    ]
 
 
 # Fix round 1, item 3. The five verdict sentences are `VERDICTS` in

@@ -46,9 +46,14 @@ def _initialised_project(tmp_path: Path) -> Path:
 @dataclass
 class FakeRunner:
     """Records every argv `setup` would run, so an assertion is about the command and not a
-    mock's return value — the same shape `tests/overlay/test_create.py::FakeRunner` uses; not
-    imported from there because `tests/` is not a package (CONTRIBUTING, no cross-module test
-    imports)."""
+    mock's return value — the same shape `tests/overlay/test_create.py::FakeRunner` uses.
+
+    This used to say it was not imported from there because the test tree was not importable
+    and CONTRIBUTING forbade a cross-module import. No such rule exists, `tests/__init__.py` is
+    tracked, and `tests/overlay/test_upgrade.py` imports that very class from that very module.
+    The three recorders are still three because each answers to a different area's command; a
+    lane that wants one shared recorder puts it in `tests/snapshot.py` beside the `git` helper,
+    which is what that module is for."""
 
     answers: dict[str, Completed] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)

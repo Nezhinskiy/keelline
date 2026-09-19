@@ -22,12 +22,19 @@ Two names are here with no importer in `src/`, on purpose:
   still happening, one harness over". A consumer that checks the Claude manifests and cannot
   name the Codex one reproduces exactly that bug.
 
+`OVERLAY_FILES` is here for `scripts/check_artifacts.py`, which asks whether a built wheel
+carries every template file and can only answer that against this list. It is the one consumer
+outside `src/`, and the reason this docstring names it is that the wave-3 trim removed the
+export on the strength of "nothing outside this area imports it" while that script, added in the
+same branch, imported it out of `layout` — a sentence and a violation merged green together,
+because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
+
 **Trimmed, in the wave-3 boundary remediation.** `COMMON` and `COMMON_RULES` had no importer
-anywhere. `CAPABILITY_FILES`, `OVERLAY_FILES`, `template_root`, `templates`, `upgrade` and
-`OverlayUpgrade` had none outside this area: `upgrade` is driven by this area's own command
-module, and the template tree was published against a sentence — "the release lane will need the
-template tree" — about a lane that does not exist yet. That lane grows the list when it arrives,
-which is what this docstring asks of every other lane.
+anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
+none outside this area: `upgrade` is driven by this area's own command module, and the template
+tree was published against a sentence — "the release lane will need the template tree" — about a
+lane that does not exist yet. That lane grows the list when it arrives, which is what this
+docstring asks of every other lane.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -38,6 +45,7 @@ from keelline.overlay.layout import (
     COMMON_CODEX,
     COMMON_MEMORY,
     MARKETPLACE_MANIFEST,
+    OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
 
@@ -47,6 +55,7 @@ __all__ = [
     "COMMON_CODEX",
     "COMMON_MEMORY",
     "MARKETPLACE_MANIFEST",
+    "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
     "Created",
     "Initialised",

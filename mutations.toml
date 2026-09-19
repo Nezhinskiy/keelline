@@ -2728,9 +2728,9 @@ reddens = [
 ]
 
 # `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
-# overlay it created fourteen files — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
-# `.github/workflows/scan.yml` among them — reported them as work done and exited 0. Writing a
-# workflow file into a repository the owner may then commit is the concrete harm.
+# overlay it created the whole overlay — both plugin manifests, `hooks/hooks.json`, `.gitignore`
+# and `.github/workflows/scan.yml` among them — reported the files as work done and exited 0.
+# Writing a workflow file into a repository the owner may then commit is the concrete harm.
 [[mutation]]
 name = "overlay upgrade stops asking whether --root is an overlay"
 file = "src/keelline/overlay/upgrade.py"
@@ -4637,4 +4637,54 @@ before = "uv run python scripts/mutation_oracle.py    # every declared mutation 
 after = ""
 reddens = [
   "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# §4.5 item 1. `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
+# constant `overlay/api.py` said had been trimmed *because* nothing outside the area imported
+# it. The boundary walk stopped at `src/`, so the false docstring and the violation merged
+# green together. This is that import put back, against the widened walk.
+[[mutation]]
+name = "a script reaches past an area's api.py again"
+file = "scripts/check_artifacts.py"
+before = "from keelline.overlay.api import OVERLAY_FILES"
+after = "from keelline.overlay.layout import OVERLAY_FILES"
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# And the walk's own floor: a guard that silently stops walking reports no offences for exactly
+# the same reason a guard with nothing to report does. This is the `scripts/` half of the walk
+# narrowed to nothing, which is the state that hid the violation above.
+[[mutation]]
+name = "the boundary walk stops looking at scripts/"
+file = "tests/test_areas.py"
+before = 'scripts = sorted((ROOT / "scripts").glob("*.py"))'
+after = "scripts = []"
+reddens = [
+  "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
+]
+
+# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a sixteenth spelling of the check
+# names that `tests/doctor/test_checks.py` cannot see, in the branch that built this binding
+# for two other tables.
+[[mutation]]
+name = "docs/cli.md's doctor table is a second spelling of CHECKS"
+file = "docs/cli.md"
+before = "| `store-debris` | files in the note store"
+after = "| `store-junk` | files in the note store"
+reddens = [
+  "tests/test_documents.py::test_the_doctor_table_is_the_registry_and_not_a_second_spelling",
+]
+
+# §4.5 item 11. A false sentence — that the test tree could not be imported across, and that
+# CONTRIBUTING forbade it — was the stated cause of 26 copies of one helper, six already
+# drifted. In a tree whose discipline is that a comment is evidence, a false comment that
+# authorises a practice is the finding.
+[[mutation]]
+name = "a test module claims again that the test tree cannot share a helper"
+file = "tests/setup/test_setup.py"
+before = "because the test tree was not importable"
+after = "because `tests/` is not a package and"
+reddens = [
+  "tests/test_documents.py::test_no_module_claims_the_test_tree_cannot_share_a_helper",
 ]
