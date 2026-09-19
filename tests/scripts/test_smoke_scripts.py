@@ -28,12 +28,47 @@ def _load(name: str) -> ModuleType:
     return module
 
 
+def _plugin(tmp_path: Path, *, launcher: str | None = None, hooks: Path | None = None) -> Path:
+    """A plugin root: the shipped `hooks/`, and either the real launcher or a planted one."""
+    planted = tmp_path / "plugin"
+    shutil.copytree(hooks or ROOT / "hooks", planted / "hooks")
+    if launcher is None:
+        shutil.copytree(ROOT / "scripts", planted / "scripts")
+    else:
+        (planted / "scripts").mkdir()
+        (planted / "scripts" / "keelline").write_text(launcher, encoding="utf-8")
+    return planted
+
+
+# A launcher that performs the owner's trust act for real and answers everything else the way
+# a broken plugin does: something on stderr, exit 1. That is the shape the security seat ran —
+# a three-line `scripts/keelline` — and under it the wrapper's `closed` policy produces exit 2
+# with a `KL_` token on stderr, which is byte-for-byte what the security-bearing row used to
+# ask for. Trust is delegated so that the run reaches its rows at all.
+FAULTY = f"""
+import runpy, sys
+
+if sys.argv[1:3] == ["memory", "trust"]:
+    runpy.run_path({str(ROOT / "scripts" / "keelline")!r}, run_name="__main__")
+sys.stderr.write("boom\\n")
+sys.exit(1)
+"""
+
+
 @needs_git
-def test_every_hook_entry_answers_its_sample_event_through_the_checkout(tmp_path: Path) -> None:
+def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # S8's matrix lives in tests/hooks/test_wrapper.py; this is the positive row per entry:
     # every `hooks.json` command, fed the event it is filed under, exits as the policy says.
     # The closed `PreToolUse` entry is fed a leaking background command and must exit 2 with
     # a reason; every open entry exits 0.
+    #
+    # The summary line and not only the exit code: `main` returns 0 over a report with one row
+    # exactly as it does over a report with fourteen, and the sibling files in this same tree
+    # state their own count for that reason (`test_check_artifacts.py`, `test_mutation_oracle`).
+    # Mutations (declared): blind the entries-and-rows floor; stop recording the owner's trust,
+    # which empties every injection row.
     smoke = _load("smoke_hooks")
     code = smoke.main(
         [
@@ -45,7 +80,43 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(tmp_path
             str(tmp_path),
         ]
     )
-    assert code == 0
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "13 entries, 14 row(s), 0 failure(s)" in out, out
+
+
+@needs_git
+def test_a_launcher_fault_is_not_mistaken_for_a_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The row that proves the guard denies could not tell a genuine deny from any launcher
+    # fault at all: `hooks/run-hook.sh` maps a launcher `rc=1` under `closed` to exit 2 with a
+    # reason on stderr, which satisfied `expected_code=2` and `stderr_required=True` exactly.
+    # Measured against a `scripts/keelline` that writes to stderr and exits 1: thirteen of the
+    # fourteen rows green, including that one.
+    #
+    # Mutation (declared, "the hook smoke stops reading the refusal it was handed"): the
+    # `stderr_says` loop is emptied -> the first assertion below reddens.
+    smoke = _load("smoke_hooks")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(_plugin(tmp_path, launcher=FAULTY)),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "stderr does not say 'refused: bg-cleanup'" in out, out
+    # And the ten entries that carry repository bytes: they emitted nothing, which is what all
+    # ten of them did against the checkout before the fixture had a store at all.
+    #
+    # Mutation (declared, "the hook smoke stops reading what an injection entry injected"):
+    # the registry lookup answers `None` -> this reddens and the row above does not.
+    assert "injected nothing carrying '<<<keelline:repository-data'" in out, out
 
 
 @needs_git
@@ -115,13 +186,91 @@ def test_hooks_json_losing_an_event_fails_instead_of_running_fewer_rows(
 
 
 @needs_git
-def test_the_exfiltration_scenario_holds_against_the_checkout(tmp_path: Path) -> None:
+def test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The same question for the ten entries that carry repository bytes. `SAMPLES` is keyed by
+    # EVENT, so dropping one of the eleven `SessionStart` entries leaves every event still
+    # sampled, runs one row fewer and prints a green summary — the bundle stopped being
+    # smoke-tested and nothing said so.
+    #
+    # Mutation (declared, "the hook smoke stops noticing a bundle that lost its entry"): the
+    # `ungathered` set is emptied -> the run proceeds on ten entries and both assertions below
+    # redden.
+    smoke = _load("smoke_hooks")
+    planted = _plugin(tmp_path)
+    entries = planted / "hooks" / "hooks.json"
+    document = json.loads(entries.read_text(encoding="utf-8"))
+    groups = document["hooks"]["SessionStart"][0]["hooks"]
+    dropped = "--bundle index --part 3"
+    kept = [entry for entry in groups if dropped not in entry["command"]]
+    assert len(kept) == len(groups) - 1, "the fixture removes an entry that is there"
+    document["hooks"]["SessionStart"][0]["hooks"] = kept
+    entries.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(planted),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "hooks.json lost a bundle" in out, out
+
+
+@needs_git
+def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other side of the count, and the one neither event set can see: a duplicated entry
+    # changes no event and no bundle, runs a fifteenth row and prints a summary that reads
+    # green. The floor is the only thing that answers.
+    #
+    # Mutation (declared, "the hook smoke stops counting its own entries and rows"): the
+    # comparison against `EXPECTED_ENTRIES`/`EXPECTED_ROWS` is disabled -> `main` returns 0
+    # and both assertions below redden.
+    smoke = _load("smoke_hooks")
+    planted = _plugin(tmp_path)
+    entries = planted / "hooks" / "hooks.json"
+    document = json.loads(entries.read_text(encoding="utf-8"))
+    groups = document["hooks"]["SessionStart"][0]["hooks"]
+    groups.append(dict(groups[0]))
+    entries.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    code = smoke.main(
+        [
+            "--plugin-root",
+            str(planted),
+            "--fixture",
+            str(ROOT / "tests" / "fixtures" / "smoke-project"),
+            "--scratch",
+            str(tmp_path / "s"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 1, out
+    assert "14 entries and 15 rows, expected 13 and 14" in out, out
+
+
+@needs_git
+def test_the_exfiltration_scenario_holds_against_the_checkout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # S10 (§14): a hostile clone with in-repo memory at `startup: -1`, a `project.name`
     # naming another project, and a committed settings `env` block naming a machine
     # configuration inside the clone and a PATH into the clone. Asserted separately: nothing
     # untrusted reaches the session-start output, the hook ignored the clone's
     # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm
     # is not run: `mcp` is not in wave 3, and the script says so in its own output.
+    #
+    # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
+    # report holding one row satisfies `failures == 0` identically. Measured: with
+    # `report.rows = report.rows[:1]` before the summary, this file was still five green.
+    # Mutation (declared, "the exfiltration scenario stops recording the rows that passed"):
+    # `Report.row` banks only the failures, the report empties, and the floor is what notices.
     exfil = _load("smoke_exfiltration")
     code = exfil.main(
         [
@@ -133,7 +282,9 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(tmp_path: Path) ->
             str(tmp_path),
         ]
     )
-    assert code == 0
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "8 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
@@ -143,8 +294,10 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     # The same oracle for the other script, and the reason the scenario's first row is a
     # positive control: every other row asserts an ABSENCE, and a scenario whose pipeline is
     # broken prints the same absences. Here the canary note is emptied before the run, so the
-    # control — the note reaching a session that has trusted it — is the row that goes red,
-    # while the four negative rows stay green on a store with nothing in it.
+    # control — the note reaching a session that has trusted it — is the row that goes red.
+    # Row 4 goes red with it now that it carries its own control (the note restored and
+    # re-trusted must arrive before the record is deleted); the other four negative rows stay
+    # green on a store with nothing in it, which is the point.
     exfil = _load("smoke_exfiltration")
     fixture = tmp_path / "fixture"
     shutil.copytree(ROOT / "tests" / "fixtures" / "hostile-project", fixture)

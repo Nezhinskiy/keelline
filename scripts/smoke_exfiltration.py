@@ -38,6 +38,9 @@ DELIMITER = "<<<keelline:repository-data"
 # The remote the overlay records for `smoke`. The clone has no remote of its own and does not
 # choose this one, which is the whole of why `attach` can tell the two apart.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
+# How many rows this scenario declares. Asserted at the end, because six of the eight assert an
+# ABSENCE and a run that executed one of them prints an identically green last line.
+EXPECTED_ROWS = 8
 
 
 @dataclass
@@ -212,7 +215,8 @@ def main(argv: list[str]) -> int:
 
     # --- and the record lapses the moment the clone changes what it committed ---------------
     note = planted.clone / "docs" / "memory" / "developer" / "canary.md"
-    note.write_text(note.read_text(encoding="utf-8") + "\nAnd one more line.\n", encoding="utf-8")
+    committed = note.read_text(encoding="utf-8")
+    note.write_text(committed + "\nAnd one more line.\n", encoding="utf-8")
     lapsed = through_wrapper(wrapper, bundle, env, planted.clone)
     report.row(
         lapsed.returncode == 0 and CANARY not in lapsed.stdout,
@@ -246,12 +250,39 @@ def main(argv: list[str]) -> int:
         f"context={'additionalContext' in specific}, canary={CANARY in started.stdout}",
     )
 
+    # --- and with no record at all --------------------------------------------------------
+    # **The note is put back and the owner trusts it again first, and that is the whole of this
+    # row.** Row 2 changed `canary.md` and never restored it, so by this line the record had
+    # already lapsed and the unlink below could not change anything the next bundle would
+    # notice: the row printed the same absence row 2 had just printed, for row 2's reason.
+    # Measured: pointing `trust_record()` at a path that does not exist made the unlink a no-op
+    # and left `trust.json` 240 bytes on disk — and the row still reported ok. So the record is
+    # made real again, its presence is asserted before the unlink and its absence after, and
+    # the re-trusted store is shown to emit — this row's own positive control, because "the
+    # canary did not arrive" is also what a store that was never re-trusted prints.
+    note.write_text(committed, encoding="utf-8")
+    again = keelline(
+        plugin_root,
+        ["memory", "trust", "--in-repo-memory", "--root", str(planted.clone)],
+        env,
+        planted.clone,
+    )
+    restored = through_wrapper(wrapper, bundle, env, planted.clone)
+    had_record = trust_record(planted).exists()
     trust_record(planted).unlink(missing_ok=True)
     without = through_wrapper(wrapper, bundle, env, planted.clone)
     report.row(
-        without.returncode == 0 and CANARY not in without.stdout,
+        again.returncode == 0
+        and had_record
+        and not trust_record(planted).exists()
+        and CANARY in restored.stdout
+        and without.returncode == 0
+        and CANARY not in without.stdout,
         "with no record at all the note is never injected",
-        f"rc={without.returncode}, canary={CANARY in without.stdout}",
+        f"re-trusted rc={again.returncode}, record before={had_record}, "
+        f"after={trust_record(planted).exists()}, canary while recorded="
+        f"{CANARY in restored.stdout}, rc={without.returncode}, "
+        f"canary={CANARY in without.stdout}",
     )
 
     # --- the wrapper's containment, made reachable ------------------------------------------
@@ -312,13 +343,16 @@ def main(argv: list[str]) -> int:
     )
     rows = {row["name"]: row for row in json.loads(reported.stdout or "{}").get("checks", [])}
     ignored = rows.get("ignored-env", {})
-    report.row(
-        ignored.get("status") == "warn" and "KEELLINE_CONFIG" in ignored.get("detail", ""),
-        "the clone's machine configuration is named as ignored",
-        f"status={ignored.get('status')!r}, detail={ignored.get('detail', '')[:90]!r}",
-    )
 
     # --- and what `attach` does with a store the machine does not record --------------------
+    # Run here rather than below because the row above needs its refusal: `doctor`'s
+    # `ignored-env` row is emitted because the variable is SET and never checks that the value
+    # was ignored, so the sentence it prints stays true under the mutation it exists to catch.
+    # Measured: deleting the tty gate in `config/machine.py` — the gate that module's own
+    # docstring calls its whole security record — left that row reporting ok while the clone's
+    # configuration was being honoured. `attach` resolves the overlay through
+    # `machine_config_path`, and its refusal names the overlay it resolved, so which of the two
+    # files was read is a fact this scenario can read rather than assert.
     inside = planted.clone / "evil" / "overlay" / "projects" / "smoke" / "memory"
     attached = keelline(
         plugin_root,
@@ -326,6 +360,22 @@ def main(argv: list[str]) -> int:
         env,
         planted.clone,
     )
+    # The refusal names the overlay it resolved — "… the overlay this machine records --
+    # <root>/projects/…" — so the anchor is that clause and not the path anywhere in the line:
+    # the `--store` argument the refusal quotes back is itself a path inside the clone, and a
+    # bare substring test would find the clone's overlay in every run.
+    owners_overlay = f"records -- {planted.overlay}/" in attached.stderr
+    clones_overlay = f"records -- {planted.clone / 'evil' / 'overlay'}/" in attached.stderr
+    report.row(
+        ignored.get("status") == "warn"
+        and "KEELLINE_CONFIG" in ignored.get("detail", "")
+        and owners_overlay
+        and not clones_overlay,
+        "the clone's machine configuration is named as ignored, and was ignored",
+        f"status={ignored.get('status')!r}, the owner's overlay is the one in use="
+        f"{owners_overlay}, the clone's is={clones_overlay}",
+    )
+
     report.row(
         attached.returncode == 2
         and "--store must name this project's own directory" in attached.stderr,
@@ -348,7 +398,18 @@ def main(argv: list[str]) -> int:
     )
 
     print("skip  memory_search under an explicit project= — the mcp package is not in wave 3")
-    print(f"{len(report.rows)} row(s), {report.failures} failure(s)")
+    # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
+    # that executed one row prints the same green last line as a run that executed all eight —
+    # measured, with `report.rows[:1]` immediately before this print and the whole suite still
+    # green. The sibling script states its own count for the same reason.
+    ran = len(report.rows)
+    if ran != EXPECTED_ROWS:
+        report.row(
+            False,
+            "the scenario ran the rows it declares",
+            f"{ran} row(s), expected {EXPECTED_ROWS}",
+        )
+    print(f"{ran} row(s), {report.failures} failure(s)")
     return 1 if report.failures else 0
 
 

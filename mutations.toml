@@ -4296,3 +4296,106 @@ after = "          ENVIRONMENT: production"
 reddens = [
   "tests/test_fixtures.py::test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate",
 ]
+
+# §4.1 of the PR-14 review, the group that most qualifies a green smoke run. Six entries, and
+# they are six different ways a row can report on something it never looked at.
+#
+# The first is the headline: the row that proves the `PreToolUse` guard denies could not tell a
+# genuine deny from any launcher fault at all. `hooks/run-hook.sh` maps a launcher `rc=1` under
+# the `closed` policy to exit 2 with a `KL_` token on stderr, which is byte-for-byte what
+# `expected_code=2` and `stderr_required=True` ask for — measured against a three-line
+# `scripts/keelline`: thirteen of the fourteen rows green, that one among them.
+[[mutation]]
+name = "the hook smoke stops reading the refusal it was handed"
+file = "scripts/smoke_hooks.py"
+before = "    for phrase in sample.stderr_says:"
+after = "    for phrase in ():"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# Ten of the thirteen entries are `memory session-context` — the ones that carry repository
+# bytes toward the model — and they ran against a fixture with no memory store at all. Measured
+# on that fixture: ten rows, 0 bytes of stdout, every one green; they would have been
+# identically green if `session-context` were `/bin/false`.
+[[mutation]]
+name = "the hook smoke stops reading what an injection entry injected"
+file = "scripts/smoke_hooks.py"
+before = "    wanted = INJECTED.get(tail_of(command))"
+after = "    wanted = None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_launcher_fault_is_not_mistaken_for_a_refusal",
+]
+
+# The registry's converse, which is the direction that fails silently: `SAMPLES` is keyed by
+# EVENT, so dropping one of the eleven `SessionStart` entries leaves every event sampled, runs
+# one row fewer and prints a green summary.
+[[mutation]]
+name = "the hook smoke stops noticing a bundle that lost its entry"
+file = "scripts/smoke_hooks.py"
+before = "    ungathered = INJECTED.keys() - injecting"
+after = "    ungathered = INJECTED.keys() - INJECTED.keys()"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_losing_a_bundle_fails_instead_of_injecting_one_fewer",
+]
+
+# And the count itself, which neither event set nor bundle registry can see: a duplicated entry
+# changes no event and no bundle and runs a fifteenth row.
+[[mutation]]
+name = "the hook smoke stops counting its own entries and rows"
+file = "scripts/smoke_hooks.py"
+before = "    if (len(found), rows) != (EXPECTED_ENTRIES, EXPECTED_ROWS):"
+after = "    if False:"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run",
+]
+
+# The owner's own act, without which the injection rows are back to proving nothing: the store
+# is repository data and emits only once somebody has said so. `inventory` is a command that
+# does not take the store flags, so the run reports the failure instead of proceeding — which
+# is the behaviour under test, because a smoke run that could not trust the fixture must say so
+# rather than print ten green rows over empty output.
+[[mutation]]
+name = "the hook smoke stops recording the owner's trust"
+file = "scripts/smoke_hooks.py"
+before = """
+            "memory",
+            "trust",
+            "--in-repo-memory",
+"""
+after = """
+            "memory",
+            "inventory",
+            "--in-repo-memory",
+"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_every_hook_entry_answers_its_sample_event_through_the_checkout",
+]
+
+# The other script's floor. Six of its eight rows assert an ABSENCE, and a report holding one
+# row satisfies `failures == 0` identically — measured, with `report.rows[:1]` before the
+# summary and the whole test module still green. Banking only the failures is the same shape
+# said the other way round.
+[[mutation]]
+name = "the exfiltration scenario stops recording the rows that passed"
+file = "scripts/smoke_exfiltration.py"
+before = "        self.rows.append((ok, label, evidence))"
+after = "        self.rows.append((ok, label, evidence)) if not ok else None"
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]
+
+# Row 4 of the scenario — "with no record at all the note is never injected" — was row 2's
+# result read a second time: row 2 changed `canary.md` and never restored it, so the record had
+# already lapsed and the unlink could not change anything. Measured: pointing `trust_record()`
+# at a path that does not exist made the unlink a no-op, left `trust.json` 240 bytes on disk,
+# and the row still reported ok. It now restores the note, re-records, and asserts the record's
+# presence before and absence after.
+[[mutation]]
+name = "the exfiltration scenario deletes a trust record that was never there"
+file = "scripts/smoke_exfiltration.py"
+before = '    return planted.home / ".config" / "keelline" / "trust.json"'
+after = '    return planted.home / ".config" / "keelline" / "absent.json"'
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_the_exfiltration_scenario_holds_against_the_checkout",
+]

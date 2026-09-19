@@ -21,6 +21,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
+# The wrapper's own fault tokens all begin with this, and every one of them is a report about
+# the launcher rather than an answer from the dispatcher. A refusal that carries one is not a
+# refusal the guard made.
+FAULT = "KL_"
+DELIMITER = "<<<keelline:repository-data"
+# What `tests/fixtures/smoke-project`'s own store puts in front of the model, one marker per
+# bundle that renders anything on it.
+STANDING_RULE = "SMOKE-STANDING-RULE"
+VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
+# Keelline's own rules, from the shipped preset rather than from the repository — so this one
+# is the row that proves `preset-rules` still renders when the store is empty of them.
+PRESET_RULE = "### decision-forks"
+# Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
+# entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
+# that executes fewer rows prints an identically green summary — the shape `unsampled` and
+# `unentered` close for events and nothing closed for rows.
+EXPECTED_ENTRIES = 13
+EXPECTED_ROWS = 14
 
 
 @dataclass(frozen=True)
@@ -29,6 +47,14 @@ class Sample:
     expected_code: int
     stderr_required: bool
     label: str
+    # What the stderr must and must not say, because the exit code cannot tell a genuine deny
+    # from a launcher fault. `hooks/run-hook.sh` maps a launcher `rc=1` under the `closed`
+    # policy to exit 2 with a `KL_` token on stderr, which satisfies `expected_code=2` and
+    # `stderr_required=True` byte for byte. Measured 2026-09-19: a three-line
+    # `scripts/keelline` that writes to stderr and raises `SystemExit(1)` left the row that
+    # proves the guard denies GREEN, along with twelve of the other thirteen.
+    stderr_says: tuple[str, ...] = ()
+    stderr_never: tuple[str, ...] = ()
 
 
 SAMPLES: dict[str, tuple[Sample, ...]] = {
@@ -42,12 +68,15 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
             2,
             True,
             "a leaking background command is refused with a reason",
+            stderr_says=("refused: bg-cleanup", "backgrounded"),
+            stderr_never=(FAULT,),
         ),
         Sample(
             {"tool_name": "Bash", "tool_input": {"command": "ls"}},
             0,
             False,
             "an ordinary command is allowed",
+            stderr_never=(FAULT,),
         ),
     ),
     "PostToolUse": (
@@ -60,9 +89,43 @@ SAMPLES: dict[str, tuple[Sample, ...]] = {
             0,
             False,
             "a failed test run is annotated, never blocked",
+            stderr_never=(FAULT,),
         ),
     ),
 }
+
+# What each `memory session-context` entry must have put in front of the model, by the part of
+# its command after the wrapper. An empty tuple is the other claim and not an absence: that
+# part renders nothing on this fixture, so anything at all in its stdout is a finding.
+#
+# **Why this registry exists.** Before it, all ten of these rows ran against a project with no
+# memory store: `keelline` answered "no memory store", the wrapper degraded that to 0 under the
+# `open` policy, and each row asserted an exit code it would have had if `session-context` were
+# `/bin/false`. Measured 2026-09-19 on the storeless fixture: ten rows, 0 bytes of stdout, all
+# green. These are the entries that carry repository bytes toward the model, which is the one
+# thing the smoke scenario exists to watch.
+#
+# Measured 2026-09-19 against the fixture's store, trusted: preset-rules 3,176 characters,
+# standing-rules part 1 1,010, volatile-notes part 1 993, every other part empty. The index
+# bundle is empty on purpose — `memory session-context` renders it only under Codex, and this
+# run is not Codex — so those three rows assert that harness gate rather than a store.
+INJECTED: dict[str, tuple[str, ...]] = {
+    "open memory session-context --bundle preset-rules --part 1": (PRESET_RULE,),
+    "open memory session-context --bundle standing-rules --part 1": (DELIMITER, STANDING_RULE),
+    "open memory session-context --bundle standing-rules --part 2": (),
+    "open memory session-context --bundle standing-rules --part 3": (),
+    "open memory session-context --bundle volatile-notes --part 1": (DELIMITER, VOLATILE_NOTE),
+    "open memory session-context --bundle volatile-notes --part 2": (),
+    "open memory session-context --bundle volatile-notes --part 3": (),
+    "open memory session-context --bundle index --part 1": (),
+    "open memory session-context --bundle index --part 2": (),
+    "open memory session-context --bundle index --part 3": (),
+}
+
+
+def tail_of(command: str) -> str:
+    """The part of a `hooks.json` command after the wrapper — what the entry actually asks."""
+    return command.split("run-hook.sh")[-1].strip().lstrip('" ')
 
 
 def entries(plugin_root: Path) -> list[tuple[str, str]]:
@@ -92,17 +155,8 @@ def fixture_repository(fixture: Path, into: Path) -> Path:
     return into
 
 
-def check_entry(
-    event: str,
-    command: str,
-    sample: Sample,
-    *,
-    plugin_root: Path,
-    project: Path,
-    home: Path,
-    data: Path,
-) -> str | None:
-    argv = shlex.split(command.replace(PLACEHOLDER, str(plugin_root)))
+def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> dict[str, str]:
+    """The environment a hook entry meets, with this developer's own Keelline stripped out."""
     env = {
         k: v
         for k, v in os.environ.items()
@@ -116,6 +170,56 @@ def check_entry(
             "CLAUDE_PLUGIN_DATA": str(data),
         }
     )
+    return env
+
+
+def trust_the_store(plugin_root: Path, project: Path, env: dict[str, str]) -> str | None:
+    """Record the owner's trust for the fixture's own store, before any row runs.
+
+    The store is repository data and nothing reaches the model out of it until somebody says
+    so — which is the boundary these entries exist to exercise, and it cannot be exercised
+    from the outside of it. The owner's own act is performed here, once, the way
+    `smoke_exfiltration.py`'s positive control performs it, and the rows below then assert
+    what came through. A failure here is a failure of the run, not a row: the ten injection
+    rows after it would go green on empty output.
+    """
+    done = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(plugin_root / "scripts" / "keelline"),
+            "memory",
+            "trust",
+            "--in-repo-memory",
+            "--root",
+            str(project),
+        ],
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=project,
+        env=env,
+    )
+    if done.returncode != 0:
+        return (
+            f"could not record trust for the fixture's store, so the injection rows would "
+            f"prove nothing: rc={done.returncode}, stderr={done.stderr.strip()[:200]}"
+        )
+    return None
+
+
+def check_entry(
+    event: str,
+    command: str,
+    sample: Sample,
+    *,
+    plugin_root: Path,
+    project: Path,
+    home: Path,
+    data: Path,
+) -> str | None:
+    argv = shlex.split(command.replace(PLACEHOLDER, str(plugin_root)))
+    env = session_env(plugin_root=plugin_root, project=project, home=home, data=data)
     payload = {
         "session_id": "smoke",
         "cwd": str(project),
@@ -138,6 +242,23 @@ def check_entry(
         )
     if sample.stderr_required and not done.stderr.strip():
         return "refused with no reason on stderr"
+    # The reason itself, and not merely that there was one. Without these two clauses the
+    # security-bearing row cannot tell a deny the dispatcher made from any launcher fault at
+    # all — a missing interpreter, an import error, a syntax error in a handler — because the
+    # wrapper reports every one of them as exit 2 with something on stderr under `closed`.
+    for phrase in sample.stderr_says:
+        if phrase not in done.stderr:
+            return f"stderr does not say {phrase!r}: {done.stderr.strip()[:200]}"
+    for phrase in sample.stderr_never:
+        if phrase in done.stderr:
+            return f"stderr carries the launcher token {phrase!r}: {done.stderr.strip()[:200]}"
+    wanted = INJECTED.get(tail_of(command))
+    if wanted is not None:
+        for phrase in wanted:
+            if phrase not in done.stdout:
+                return f"injected nothing carrying {phrase!r} ({len(done.stdout)} characters)"
+        if not wanted and done.stdout.strip():
+            return f"this part renders nothing on the fixture, yet emitted {len(done.stdout)}"
     # Only the dispatcher's own entries (`… hook <event>`) speak JSON; the ten
     # `memory session-context` entries print a bundle as prose, which is how they inject it.
     if "hook" in argv and done.stdout.strip():
@@ -190,6 +311,28 @@ def main(argv: list[str]) -> int:
     if unentered:
         print(f"FAIL  no hook entry for {sorted(unentered)}; hooks.json lost an event")
         return 1
+    # The same two directions for the entries that inject. An injection entry with no registry
+    # line would be checked for its exit code alone, which is what all ten of them were;
+    # a registry line with no entry means `hooks.json` dropped a bundle and the run would
+    # simply stop testing it.
+    injecting = {tail_of(command) for _, command in found if "session-context" in command}
+    unregistered = injecting - INJECTED.keys()
+    if unregistered:
+        print(f"FAIL  no injection registered for {sorted(unregistered)}")
+        return 1
+    ungathered = INJECTED.keys() - injecting
+    if ungathered:
+        print(f"FAIL  no hook entry for {sorted(ungathered)}; hooks.json lost a bundle")
+        return 1
+    untrusted = trust_the_store(
+        args.plugin_root,
+        project,
+        session_env(plugin_root=args.plugin_root, project=project, home=home, data=data),
+    )
+    if untrusted:
+        print(f"FAIL  {untrusted}")
+        return 1
+    rows = 0
     for event, command in found:
         for sample in SAMPLES.get(event, ()):
             problem = check_entry(
@@ -201,12 +344,21 @@ def main(argv: list[str]) -> int:
                 home=home,
                 data=data,
             )
+            rows += 1
             mark = "ok  " if problem is None else "FAIL"
-            tail = command.split("run-hook.sh")[-1].strip().lstrip('" ')
             why = f" -> {problem}" if problem else ""
-            print(f"{mark}  {event:<13} {sample.label}: {tail}{why}")
+            print(f"{mark}  {event:<13} {sample.label}: {tail_of(command)}{why}")
             failures += problem is not None
-    print(f"{len(found)} entries, {failures} failure(s)")
+    # The floor, in both quantities, and after the rows so the summary reports it. A run that
+    # executed fewer rows prints the same green last line as a run that executed all of them,
+    # which is how a report proves less than it claims without anybody reading it wrong.
+    if (len(found), rows) != (EXPECTED_ENTRIES, EXPECTED_ROWS):
+        print(
+            f"FAIL  {len(found)} entries and {rows} rows, expected "
+            f"{EXPECTED_ENTRIES} and {EXPECTED_ROWS}"
+        )
+        failures += 1
+    print(f"{len(found)} entries, {rows} row(s), {failures} failure(s)")
     return 1 if failures else 0
 
 
