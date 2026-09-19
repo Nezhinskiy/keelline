@@ -88,6 +88,14 @@ FORBIDDEN = (
     (4, "dea22fd6c241"),
     (4, "188937a5982a"),
     (8, "4d1fd41cacbb"),
+    # Added 2026-09-19, and the only entry here that stands for a *shape* rather than for one
+    # string: the branches of the source repository that the copied plans still reached for
+    # share a slashed middle, so one entry covers the three that were standing and the siblings
+    # nobody has written yet. Its first character is load-bearing and it is a separator —
+    # without it the entry would also match this repository's own public document filenames,
+    # which are legitimate. Measured: three occurrences across two documents before this entry
+    # went in, none after, and nothing else in the tree carries it.
+    (15, "a2de6ee9ce61"),
 )
 _URL = re.compile(r"https?://\S+")
 # The arms that read the text with its URLs blanked out, and it is exactly one. A documentation
@@ -308,7 +316,7 @@ def test_the_two_tables_are_told_apart_by_the_file_they_are_for() -> None:
 def test_the_denylist_is_stored_as_digests() -> None:
     # The gate that hides a name must not publish it. This reddens if anyone replaces the
     # digests with the tokens, or empties the list on the way past.
-    assert len(FORBIDDEN) == 20
+    assert len(FORBIDDEN) == 21
     assert all(length >= 4 for length, _ in FORBIDDEN)
     assert all(re.fullmatch(r"[0-9a-f]{12}", digest) for _, digest in FORBIDDEN)
 
