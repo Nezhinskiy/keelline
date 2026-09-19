@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from keelline.errors import Failure
+from keelline.release.hashes import drift
 
 PYPROJECT = "pyproject.toml"
 LOCKFILE = "uv.lock"
@@ -176,4 +177,10 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
                     f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
                     "plugin.json is the only source (D12)"
                 )
+    # DC5: the record of the shipped files is held current here and not only at a tag, so a
+    # wrapper edited without `keelline release hashes` fails the gate the same commit. Only
+    # where there is a `hooks/` to record: `--root` defaults to `.`, and a user who runs this
+    # in their own project must not be told a record they never had is missing.
+    if (root / "hooks").is_dir():
+        problems += drift(root)
     return problems

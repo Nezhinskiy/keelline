@@ -16,3 +16,9 @@ file it could not read is a warning that names the file, never a red row a clone
 executes only a hook wrapper it derived from its own installation — a plugin root the
 environment named is read, reported and never run, and the `attached` row believes the
 overlay's record over a ledger file a clone could have committed.
+
+`doctor`'s `files` row no longer skips for want of release hashes. It compares the installed
+wrapper, hook entry table and launcher against the record the release shipped beside them: a
+match is green, a changed or missing file is red with the reinstall remedy, a record that is
+present and unreadable is red too, and a plugin built before the record existed still skips and
+says which it is.

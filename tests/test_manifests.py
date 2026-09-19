@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from keelline import __version__
+from keelline.release.api import drift
 from keelline.release.versions import check
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,13 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
 
 def test_the_repository_itself_passes_release_check() -> None:
     assert check(ROOT) == []
+
+
+def test_the_repository_itself_carries_a_current_release_record() -> None:
+    # DC5: the record is kept true on every commit and not only at a tag, which is what makes
+    # it a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
+    # `scripts/keelline` that forgot `keelline release hashes` reddens here and in the gate.
+    assert drift(ROOT) == []
 
 
 def test_no_top_level_bin_directory() -> None:

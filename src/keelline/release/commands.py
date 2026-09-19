@@ -6,12 +6,14 @@ from pathlib import Path
 from keelline.areas import SubParsers
 from keelline.command import ROOT_HELP
 from keelline.errors import Failure
+from keelline.release.hashes import HASHED_FILES, drift, write_record
 from keelline.release.notes import build
 from keelline.release.versions import check, collect
 from keelline.result import Result
 from keelline.runner import subprocess_runner
 
 TAG_HELP = "the tag this run was created from; the six sources and the changelog must agree with it"
+HASHES_CHECK_HELP = "report drift and write nothing"
 
 
 def run_check(args: argparse.Namespace) -> Result:
@@ -31,6 +33,17 @@ def run_notes(args: argparse.Namespace) -> Result:
     return Result(f"CHANGELOG.md carries {args.version}")
 
 
+def run_hashes(args: argparse.Namespace) -> Result:
+    root = Path(args.root)
+    if args.check:
+        problems = drift(root)
+        if problems:
+            raise Failure("release record drift: " + "; ".join(problems))
+        return Result(f"{len(HASHED_FILES)} shipped file(s) match the release record")
+    write_record(root)
+    return Result(f"recorded {len(HASHED_FILES)} shipped file(s)", {"files": sorted(HASHED_FILES)})
+
+
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("release", help="release discipline for the Keelline repository")
     sub = group.add_subparsers(dest="command", metavar="<command>")
@@ -43,3 +56,7 @@ def register(groups: SubParsers) -> None:
     notes.add_argument("--draft", action="store_true", help="render without writing")
     notes.add_argument("--root", default=".", help=ROOT_HELP)
     notes.set_defaults(func=run_notes)
+    hashes = sub.add_parser("hashes", help="record the shipped files' hashes for this release")
+    hashes.add_argument("--check", action="store_true", help=HASHES_CHECK_HELP)
+    hashes.add_argument("--root", default=".", help=ROOT_HELP)
+    hashes.set_defaults(func=run_hashes)

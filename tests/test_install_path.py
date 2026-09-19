@@ -39,7 +39,7 @@ import pytest
 
 import keelline
 from keelline.config.loader import CONFIG_FILE, load
-from keelline.doctor.api import RED, SKIP, run_checks
+from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
 from keelline.runner import Completed
 from tests.snapshot import (
@@ -523,17 +523,20 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
-    # Green meaning: no `red`, and the only `skip`s are the three this build cannot answer —
-    # the release's recorded hashes, the Codex hook-trust hash §10 lists as unmeasured, and a
-    # `[ci] ref` that `init` will write.
+    # Green meaning: no `red`, and the only `skip`s are the two this build cannot answer — the
+    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` will write.
+    # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
+    # walk runs against the checkout, so the row now compares the three shipped files against
+    # the record committed beside them and is green. A `files` back in this list means the
+    # record went stale — `uv run keelline release hashes` is what refreshes it.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
     assert [row["name"] for row in rows if row["status"] == SKIP] == [
-        "files",
         "codex-trust",
         "ci-ref",
     ]
+    assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
 # What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in

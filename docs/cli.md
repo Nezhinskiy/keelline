@@ -32,6 +32,7 @@ Three things hold everywhere:
 - [`keelline memory fit`](#keelline-memory-fit)
 - [`keelline release check [--tag TAG]`](#keelline-release-check---tag-tag)
 - [`keelline release notes --version X.Y.Z [--draft]`](#keelline-release-notes---version-xyz---draft)
+- [`keelline release hashes [--check]`](#keelline-release-hashes---check)
 - [`keelline hook <event>`](#keelline-hook-event)
 - [Hooks](#hooks)
 - [`keelline guard bg-cleanup`](#keelline-guard-bg-cleanup)
@@ -198,6 +199,30 @@ finding (`1`) that names it as the development dependency it is, rather than a t
 
 Without `--draft` the fragment files are consumed, which is a write to the repository; with it
 nothing is written and the rendered section is printed.
+
+## `keelline release hashes [--check]`
+
+Record the sha256 of every file the harness executes without Python, into `hooks/hashes.json`
+beside them.
+
+```bash
+keelline release hashes            # write the record
+keelline release hashes --check    # report drift, write nothing
+```
+
+Three files are recorded — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/keelline` —
+because those are the ones a harness runs directly; a wheel's own contents are the packaging
+tool's to attest. The record is refused rather than written when any of the three is missing: a
+record naming two of three reads as a clean comparison for the third.
+
+**Not a release-time command.** `keelline release check` compares the record to the tree on
+every run, so editing any of the three without re-recording fails the gate in the same commit
+rather than at a tag — which is what makes it a record somebody has watched fail. `doctor
+files` reads the installed record against the installed files, and reports post-install
+modification, a partial update or a broken checkout. An attacker who edits both the files and
+the record is not this check's threat; tag protection and the pinned SHA are.
+
+**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift.
 
 ## `keelline hook <event>`
 
@@ -982,7 +1007,7 @@ nobody sees, so that is where they all are.
 |---|---|---|
 | `not-initialised` | whether there is a `keelline.toml` here, and whether it loads | `keelline.toml` |
 | `versions` | whether the project's `[keelline] version` is the Keelline running | `keelline.toml`, the package |
-| `files` | the hook wrapper's executable bit, and the shipped files against the release's hashes | `hooks/run-hook.sh` |
+| `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/keelline`, `hooks/hashes.json` |
 | `wrapper` | whether the wrapper can actually reach Keelline on this machine | one `run-hook.sh open --version`, and only under the plugin root this Keelline is part of |
 | `attached` | the overlay binding, and the shape of the harness memory path | `.keelline/local/attach.json`, `~/.claude/projects/<slug>/memory` |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the Keelline marker and is in no ledger named by position | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
@@ -996,20 +1021,27 @@ nobody sees, so that is where they all are.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Eight of the fifteen have a `skip` arm: three always, and five more on a state of this
-machine.** A `skip` is **not** a finding and never reaches the exit code, so read the detail —
-each one says which measurement it is missing.
+**Nine of the fifteen have a `skip` arm — twelve arms between them: two always, and seven
+more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
+code, so read the detail — each one says which measurement it is missing.
 
-The three that skip on every correct installation are the ones this build cannot answer. `files` compares the installed
-plugin against the release's recorded hashes, which the release lane ships — until then it
-reports the wrapper's executable bit and skips the rest, because a check that compared a file
-against itself would be worse than one that says it cannot. `codex-trust` needs the hash Codex
-keys hook trust on, which no spike measured. `ci-ref` needs a `[ci] ref`, which `init` writes.
+The two that skip on every correct installation are the ones this build cannot answer.
+`codex-trust` needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs
+a `[ci] ref`, which `init` writes. `files` was the third of these and is not any more: it now
+compares the installed plugin against the hashes the release recorded beside it.
 
-The five that skip on a state are `wrapper`, when there is no plugin root this process can
-vouch for; `pre-commit`, when no overlay root is recorded on this machine; `bundles` and
-`store-debris`, when the note store does not resolve; and `diagnostics`, when no harness data
-root is set in the environment. `files` has a second skip arm for the same reason `wrapper` does.
+The seven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+process can vouch for; `attached`, when this machine records no overlay to check the ledger
+against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
+recorded on this machine; `bundles` and `store-debris`, when the note store does not resolve;
+and `diagnostics`, when no harness data root is set in the environment. `files` has a second
+state arm of its own — a plugin built before the release record existed carries none, and it
+says so rather than comparing anything.
+
+**A `skip` does not mean there is nothing to do.** Five of the twelve arms carry a remedy: the
+two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. What is empty is a
+remedy that would not help — an `ok` row, and a skip this build cannot answer, where no command
+a reader could run changes the answer.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,

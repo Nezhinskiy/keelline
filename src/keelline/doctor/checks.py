@@ -88,6 +88,7 @@ from keelline.memory.api import (
     render,
     resolve,
 )
+from keelline.release.api import HASHED_FILES, UnreadableRecord, digests, read_record
 from keelline.runner import Runner
 from keelline.scaffold import marker_id, owned_ids
 from keelline.setup.api import USER_SETTINGS
@@ -164,8 +165,12 @@ DIAGNOSTICS_REMEDY = (
 class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
-    `remedy` is empty for a row nothing can be done about — an `ok`, or a `skip` whose reason is
-    that this build cannot answer. A reader is never handed a command that would not help.
+    `remedy` is empty for a row nothing can be done about — an `ok`, or a `skip` this build
+    cannot answer, where no command a reader could run changes the answer. A `skip` is **not**
+    entitled to an empty remedy merely for being a skip: five of the twelve skip arms in this
+    module carry one, because a skip on a *state of this machine* names the command that
+    changes the state. A reader is never handed a command that would not help, and never
+    denied one that would.
     """
 
     name: str
@@ -281,12 +286,15 @@ def _versions(context: Context) -> Row:
 
 
 def _files(context: Context) -> Row:
-    """§5.9 and Task 1: the shipped files, and the bit that decides whether one can run.
+    """§5.9 and §8.4: the shipped files, and the bit that decides whether one can run.
 
-    The hash half cannot run in this build — the release lane records the hashes — and inventing
-    a source for them would produce a check that compares a file against itself. The executable
-    bit needs nothing but the file, so it runs regardless: a wrapper without `+x` exits 126, and
-    Claude Code reads every non-2 exit as a non-blocking error, which is permission.
+    Two halves. The executable bit needs nothing but the file, so it runs regardless: a wrapper
+    without `+x` exits 126, and Claude Code reads every non-2 exit as a non-blocking error,
+    which is permission. The hash half compares the INSTALLED copies against the INSTALLED
+    record the release wrote beside them (DC5) — post-install modification, a partial update, a
+    broken checkout. A determined attacker who edits both the files and the record is not this
+    check's threat; tag protection and the pinned SHA are (D16). A build that carries no record
+    at all — anything released before the record existed — still skips, and says which it is.
     """
     root = context.plugin_root
     if root is None:
@@ -308,12 +316,36 @@ def _files(context: Context) -> Row:
             f"that as a non-blocking error{whose}",
             f"chmod +x {wrapper}",
         )
-    return Row(
-        SKIP,
-        f"{WRAPPER} is executable; no release hashes are recorded in this build, so the "
-        f"installed files cannot be compared against a release{whose}",
-        "",
-    )
+    try:
+        recorded = read_record(root)
+    except UnreadableRecord:
+        return Row(
+            RED,
+            f"the release record beside {WRAPPER} is present and unreadable, so this plugin "
+            f"cannot be compared against what the release shipped{whose}",
+            "reinstall the plugin from its marketplace",
+        )
+    if recorded is None:
+        return Row(
+            SKIP,
+            f"{WRAPPER} is executable; this build carries no release record, so the installed "
+            f"files cannot be compared against one{whose}",
+        )
+    actual = digests(root)
+    # Both directions, exactly as `drift()` walks them: a file the record names and the
+    # installation lacks is a change, not a `None == None` match.
+    changed = [
+        name for name in HASHED_FILES if name not in actual or recorded.get(name) != actual[name]
+    ]
+    if changed:
+        return Row(
+            RED,
+            f"{listed(changed)} do(es) not match the release record, so this plugin is not "
+            f"the one the release shipped{whose}",
+            "reinstall the plugin from its marketplace; if you edited a shipped file on "
+            "purpose, doctor will stay red until you reinstall",
+        )
+    return Row(OK, f"the shipped files match the release record{whose}")
 
 
 def _wrapper(context: Context) -> Row:

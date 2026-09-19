@@ -3893,3 +3893,25 @@ after = "    if False:"
 reddens = [
   "tests/release/test_notes.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
 ]
+
+# Wave F, Task 17. `drift` walks the tree and the record and compares them. Compare the record
+# to itself and every answer is "no drift" — the shape the `files` check skipped for years
+# rather than ship, because a check that compares a file against itself is worse than none.
+[[mutation]]
+name = "the release record is compared against itself"
+file = "src/keelline/release/hashes.py"
+before = "    actual = digests(root)\n    problems = ["
+after = "    actual = recorded\n    problems = ["
+reddens = ["tests/release/test_hashes.py::test_a_written_record_has_no_drift_and_one_changed_byte_is_named"]
+
+# The same defect one area over, and the one that matters to a user: `doctor files` compares
+# the INSTALLED copies to the INSTALLED record. Compare the record to itself and a modified
+# plugin reports green.
+[[mutation]]
+name = "doctor files compares the record to itself"
+file = "src/keelline/doctor/checks.py"
+before = "        name for name in HASHED_FILES if name not in actual or recorded.get(name) != actual[name]"
+after = "        name for name in HASHED_FILES if name not in recorded or recorded.get(name) != recorded[name]"
+reddens = [
+  "tests/doctor/test_checks.py::test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red",
+]

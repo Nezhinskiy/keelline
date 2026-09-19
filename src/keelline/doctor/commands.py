@@ -3,21 +3,25 @@
 One command and not a group, the shape §5.2's contract row states and the shape the skill
 already invokes.
 
-**A `skip` is not a finding.** Three of the fifteen checks cannot be answered by this build —
-the release's recorded hashes, the Codex hook-trust hash §10 lists as unmeasured, and a `[ci]
-ref` that `init` has not shipped a writer for — so an exit code that counted skips would make
-`doctor` red on every correct installation until wave 5. Exit 1 is reserved for `red` (C5:
-findings), and `warn` does not reach it either: a budget lowered below the preset and a harness
-link the trust gate has not opened are both correct states somebody should still see.
+**A `skip` is not a finding.** Two of the fifteen checks cannot be answered by this build —
+the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` has not shipped
+a writer for — so an exit code that counted skips would make `doctor` red on every correct
+installation until wave 5. `files` was the third of the two until the release lane shipped the
+record it compares against. Exit 1 is reserved for `red` (C5: findings), and `warn` does not
+reach it either: a budget lowered below the preset and a harness link the trust gate has not
+opened are both correct states somebody should still see.
 
-**Three is the floor and not the count.** Five more rows have a skip arm that fires on a state
-of the machine rather than on this build — `wrapper` and a second arm of `files` when no plugin
-root can be vouched for, `pre-commit` with no overlay root recorded, `bundles` and
-`store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
-`run_checks` skips fourteen at once when `keelline.toml` is missing or will not load. The
-plugin-root pair is the one that matters: it is the state in which every hook entry on the
-machine is silent, and it reports as two `skip` rows, so both carry `checks.PLUGIN_ROOT_REMEDY`
-rather than the empty remedy a "this build cannot answer" skip is entitled to.
+**Two is the floor and not the count.** Seven more rows have a skip arm that fires on a state
+of the machine rather than on this build — `wrapper` and `files` when no plugin root can be
+vouched for, `files` again on a build that carries no release record, `attached` with no
+overlay recorded or an overlay that could not be asked, `pre-commit` with no overlay root
+recorded, `bundles` and `store-debris` with a store that does not resolve, `diagnostics` with
+no harness data root — and `run_checks` skips fourteen at once when `keelline.toml` is missing
+or will not load. Twelve skip arms in all, and **five of them carry a remedy**: a skip on a
+state of the machine names the command that changes the state, and only a skip nothing can be
+done about is silent. The plugin-root pair is the one that matters: it is the state in which
+every hook entry on the machine is silent, and it reports as two `skip` rows, so both carry
+`checks.PLUGIN_ROOT_REMEDY`.
 
 **The remedies live in `--json` and never in the summary.** §5.2 gives every command one line,
 and fifteen remedies do not fit in one; the skill relays each remedy verbatim from the report,

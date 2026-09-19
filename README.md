@@ -228,6 +228,7 @@ keelline release check                                # one version everywhere (
 keelline release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
 keelline release notes --version 1.2.3 --draft        # render the section towncrier would write
 keelline release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
+keelline release hashes --check                       # the shipped files still match the release record
 ```
 
 Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current

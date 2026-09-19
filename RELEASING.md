@@ -20,6 +20,12 @@ file is that, so the bus factor of the release process is not one.
 `.claude-plugin/marketplace.json` carries no version of its own and is checked for consistency
 rather than for a number.
 
+`hooks/hashes.json` is checked by the same command and is not a version. It is the record of
+the three files the harness runs without Python — `hooks/run-hook.sh`, `hooks/hooks.json` and
+`scripts/keelline` — and `keelline release check` fails while it is stale, so it is refreshed
+with `keelline release hashes` in whichever commit changed one of them. Nothing touches it at
+release time.
+
 **One version this file does not check, and somebody has to.** `.github/workflows/ci.yml` and
 `.github/workflows/smoke.yml` each `npm install -g @anthropic-ai/claude-code@<version>` — the
 validator the first one runs and the installer the second one runs are the same tool, and the

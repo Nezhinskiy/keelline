@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess (§8.4).
 
-Three of the fifteen checks cannot be answered by this build and say so rather than guessing;
+Two of the fifteen checks cannot be answered by this build and say so rather than guessing;
 one of them — `codex-trust` — is a platform question §10 lists as unmeasured, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 
@@ -26,12 +26,13 @@ import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
-from keelline.doctor.api import OK, SETTINGS_FILES, SKIP, WARN, Check, run_checks
+from keelline.doctor.api import OK, RED, SETTINGS_FILES, SKIP, WARN, Check, run_checks
 from keelline.doctor.checks import plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from keelline.release.api import HASHED_FILES
 from keelline.runner import Completed
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -447,25 +448,38 @@ def test_an_unmeasured_platform_question_reports_skip_and_names_why(tmp_path: Pa
     assert "unmeasured" in check.detail
 
 
-def test_the_two_other_checks_this_build_cannot_answer_skip_for_their_own_reasons(
+def test_the_other_check_this_build_cannot_answer_skips_for_its_own_reason(
     tmp_path: Path,
 ) -> None:
-    # `files` wants the release's recorded hashes, which the release lane ships, and `ci-ref`
-    # wants `[ci] ref`, which `init` writes. Neither is invented here: a check that compared a
-    # file against itself is worse than one that says it cannot look.
+    # `ci-ref` wants `[ci] ref`, which `init` writes, and `init` is a later wave. Not invented
+    # here: a check that compared a file against itself is worse than one that says it cannot
+    # look. `files` used to be the second of these and is not any more — Task 17 gave it the
+    # record to compare against, and the case below is what holds it.
     checks = _checks(tmp_path, _initialised(tmp_path))
-    assert _by_name(checks, "files").status == "skip"
-    assert "release hashes" in _by_name(checks, "files").detail
     assert _by_name(checks, "ci-ref").status == "skip"
 
 
+# The wrapper the fixture plants, as a (path, body) pair, because a case that wants to CHANGE
+# the wrapper has to write different bytes than these — writing the same bytes again records as
+# no change at all, which is a test that passes while measuring nothing.
+WRAPPER_BODY = ("hooks/run-hook.sh", "#!/bin/sh\nexit 0\n")
+
+
 def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
-    """A plugin root carrying a wrapper, and nothing else `plugin_root` looks at."""
+    """A plugin root carrying every file a release records, and nothing else `files` reads.
+
+    The wrapper alone was enough while `files` measured only a mode. It is not enough now that
+    the row compares the installed copies against the record: `write_record` refuses a tree
+    missing any shipped file, so a fixture that planted one of three could not be recorded at
+    all. `HASHED_FILES` is the list, read from the release lane rather than spelled here, so a
+    lane that ships a fourth executable file plants it in every case below without editing one.
+    """
     plugin = base / "plugin"
-    (plugin / "hooks").mkdir(parents=True)
-    wrapper = plugin / "hooks" / "run-hook.sh"
-    wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    wrapper.chmod(0o755 if executable else 0o644)
+    bodies = {WRAPPER_BODY[0]: WRAPPER_BODY[1]}
+    for relative in HASHED_FILES:
+        (plugin / relative).parent.mkdir(parents=True, exist_ok=True)
+        (plugin / relative).write_text(bodies.get(relative, f"# {relative}\n"), encoding="utf-8")
+    (plugin / WRAPPER_BODY[0]).chmod(0o755 if executable else 0o644)
     return plugin
 
 
@@ -1645,3 +1659,50 @@ def test_an_attached_checkout_the_overlay_confirms_is_still_green_and_says_the_b
     assert row.status == OK
     assert row.detail.startswith("attached;")
     assert "the binding is bound" in row.detail
+
+
+def test_installed_files_that_match_the_release_record_are_green_and_a_changed_one_is_red(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # K6 (§8.4, §5.9): `files` skipped for want of a record. With `hooks/hashes.json` beside
+    # the wrapper, the installed copies are compared to what the release recorded: a match
+    # is green, a changed wrapper is red with the reinstall remedy, and an older build with
+    # no record still skips. Mutation (declared): compare the record to itself -> the red
+    # arm never fires and the middle assertion reddens.
+    #
+    # `_own_root` is stood down for the reason the executable-bit case above gives: this suite
+    # runs from a checkout, which *is* a plugin root and now outranks the named variable, so
+    # without this the row would measure this repository instead of the planted tree.
+    from keelline.release.hashes import write_record
+
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    planted = _planted_plugin(tmp_path, executable=True)
+    write_record(planted)
+    root = _initialised(tmp_path)
+    green = _by_name(
+        _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
+    )
+    assert green.status == OK and "match the release record" in green.detail
+    # Different bytes from `WRAPPER_BODY`, deliberately: rewriting the fixture's own body would
+    # be a no-op the record cannot see, and the red arm would never be reached.
+    (planted / "hooks" / "run-hook.sh").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    red = _by_name(
+        _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
+    )
+    assert red.status == RED and "hooks/run-hook.sh" in red.detail and "reinstall" in red.remedy
+    # A shipped file that is MISSING is a change too, never a `None == None` match.
+    (planted / "scripts" / "keelline").unlink()
+    assert (
+        _by_name(
+            _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
+        ).status
+        == RED
+    )
+    # A record that is present and malformed is red, not the skip an absent record gets.
+    (planted / "hooks" / "hashes.json").write_text('{"format": 1, "files": []}\n', encoding="utf-8")
+    assert (
+        _by_name(
+            _checks(tmp_path, root, env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))), "files"
+        ).status
+        == RED
+    )
