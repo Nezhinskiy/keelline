@@ -1,0 +1,20 @@
+# A project every gate passes on: the smoke workflow's caller, and `check.yml`'s
+# same-repository and cross-repository forms both run against it. `init --yes` writes the
+# real one when the templates package ships; until then this is hand-written and its
+# version is whatever this Keelline is — `doctor` warns on drift and nothing fails.
+[keelline]
+version = "0.1.0"
+state = "installed"
+
+[project]
+name = "smoke"
+base_branch = "main"
+
+# A real store, so the ten `memory session-context` entries in `hooks/hooks.json` carry
+# repository bytes toward the model instead of exiting 0 on a project that has none.
+# `scripts/smoke_hooks.py` records the owner's trust for it and then asserts what each
+# bundle emitted; before this block every one of those rows was green against a store that
+# did not exist.
+[memory]
+mode = "in-repo"
+groups = ["developer", "volatile"]

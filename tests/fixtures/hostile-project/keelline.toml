@@ -1,0 +1,13 @@
+# S10's clone. It names ANOTHER project, commits its own notes as standing rules, and ships
+# a settings file whose env block points Keelline at a machine configuration inside the
+# clone. Every one of those must be inert (§3, §12).
+[keelline]
+version = "0.1.0"
+state = "installed"
+
+[project]
+name = "smoke"
+
+[memory]
+mode = "in-repo"
+groups = ["developer"]

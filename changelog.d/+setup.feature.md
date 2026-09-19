@@ -27,7 +27,8 @@ library can parse round-trip; a shape TOML cannot spell is refused naming the fi
 Comments do not survive, because the file is parsed and rewritten. The `[personal]` values are
 mirrored into `pluginConfigs` in `~/.claude/settings.json` and recomputed from the machine file
 on every run. A home directory managed by stow, chezmoi or a synced folder is refused naming the
-link and a `--home` that writes the real file, not reported as an internal error.
+link and a `--home` that writes the real file, not reported as an internal error; where the
+layout is the per-file one no `--home` can express, `--settings <path>` names the file itself.
 
 `keelline setup --git-hooks` installs the commit-message hook into this repository's own hooks
 directory (never `core.hooksPath`, which is global state this command has no business owning). A
@@ -38,4 +39,7 @@ hook already there is kept as `prepare-commit-msg.local` and chained to, never o
 home directory and `~/.config/keelline/config.toml`, the same way every other command here takes
 `--root`. They are a different destination and not a dry run: the same files are written, at the
 paths you name. `--machine` defaults to the file every reader reads, never to one
-`XDG_CONFIG_HOME` chose. `--git-hooks` writes inside a repository and ignores both.
+`XDG_CONFIG_HOME` chose. `--settings <path>` writes the user-scope settings file where it really
+is, for a dotfiles tree that links `~/.claude/settings.json` into itself; the write still never
+follows a symlink, and a link — or a directory — at the path you name is refused before anything
+is written, with the file the link leads to named as the path to pass instead. `--git-hooks` writes inside a repository and ignores all three.

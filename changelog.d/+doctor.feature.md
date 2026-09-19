@@ -14,4 +14,13 @@ never by the ledger beside it, and is named by position rather than by its commi
 `keelline` resolves and not where, since `PATH` reaches it from a committed `env` block; and a
 file it could not read is a warning that names the file, never a red row a clone can force. It
 executes only a hook wrapper it derived from its own installation — a plugin root the
-environment named is read, reported and never run.
+environment named is read, reported and never run, and the `attached` row believes the
+overlay's record over a ledger file a clone could have committed.
+
+`doctor`'s `files` row no longer skips for want of release hashes. It compares the installed
+wrapper, hook entry table and launcher against the record the release shipped beside them: a
+match is green, a changed or missing file is red with the reinstall remedy, a record that is
+present and unreadable is red too, and a plugin built before the record existed still skips and
+says which it is. A record that names a file this build does not ship is red as well, and that
+name is counted rather than printed: the record is read from the plugin root, so its keys are
+text the installation's author chose and `doctor` relays no such text to a model.

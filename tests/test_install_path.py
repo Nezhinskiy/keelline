@@ -5,35 +5,49 @@ order a person does, and it exists because the four packages' seams — the mach
 overlay root, the project record, the link tree, the ignore region — are each written by one
 package and read by another, and a stub on both sides of a seam agrees with itself.
 
-Nothing here touches the network, the real `~`, or any harness binary. `gh`, `claude`, `codex`
-and `pre-commit` reach the `Runner` stub below, which models the one effect `attach` goes on to
-read — the commit hook `pre-commit install` writes — rather than only recording that it was
-called. `git` is real, because a repository with no `origin` is not the thing being tested.
+**Every step runs the real launcher** (D4). Each one used to call a library function, so the
+argv wiring of eight commands — the flag names, the `--yes` gate reached through argparse, the
+`--machine` refusal from a pipe, the JSON `doctor` prints — was exercised by nothing that ran
+them in order. `_cli` below runs `scripts/keelline` in a subprocess, which is how a person and
+how a skill reach these commands.
 
-**`--machine` is driven as a parameter and never as a CLI flag on `attach`/`detach`.** Those two
-commands honour it only from an interactive shell and refuse otherwise, and pytest has no tty;
-the library functions take `machine=` for exactly this reason.
+Nothing here touches the network, the real `~`, or any harness binary. `HOME` is a scratch
+directory and every harness variable is dropped, and the binaries the CLI resolves through
+`PATH` on purpose — `gh`, `claude`, `codex` and `pre-commit`, the owner's own — are answered by
+a scratch `bin/` placed first on the subprocess's `PATH`. `pre-commit` there writes the commit
+hook `doctor` later asks about, rather than only recording that it was called. `git` is real,
+because a repository with no `origin` is not the thing being tested.
+
+**`--machine` is driven through a pseudo-terminal on `attach`/`detach`.** Those two commands
+honour it only from an interactive shell and refuse otherwise; `_cli(..., tty=True)` hands the
+child a pty as stdin, and one test below proves both halves of that gate through argv.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import pty
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 import keelline
-from keelline.attach.api import attach, detach
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load
-from keelline.doctor.api import RED, SKIP, run_checks
+from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
-from keelline.overlay.api import Completed, create
-from keelline.setup.api import setup
+from keelline.runner import Completed
+from tests.snapshot import (
+    assert_snapshot_changed,
+    assert_snapshot_unchanged,
+    git,
+    snapshot,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -61,32 +75,19 @@ groups = ["developer", "project-stable"]
 
 @dataclass
 class _Harness:
-    """A `Runner` that records argv and models the one effect a later step reads.
+    """A `Runner` that records argv and reaches no binary.
 
-    Recording alone would be a stub that agrees with itself: `attach` runs `pre-commit install`
-    and `doctor` then asks whether the overlay's commit hook is there, so a runner that answers
-    0 and writes nothing makes those two steps disagree for no reason a reader could see.
+    The one test in this module that still calls `run_checks` in this process needs a runner to
+    hand it, and `ci-ref` — the only row that would use one — skips on this fixture. Everything
+    else here reaches the CLI's own `subprocess_runner()` through the launcher, and the fakes
+    `_fake_binaries` writes are what answer it.
     """
 
     calls: list[list[str]] = field(default_factory=list)
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append(argv)
-        if argv[:2] == ["pre-commit", "install"]:
-            hook = cwd / ".git" / "hooks" / "pre-commit"
-            hook.parent.mkdir(parents=True, exist_ok=True)
-            hook.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         return Completed(0, "", "")
-
-
-def _git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def _project(tmp_path: Path, *, mode: str) -> Path:
@@ -95,8 +96,8 @@ def _project(tmp_path: Path, *, mode: str) -> Path:
     (root / CONFIG_FILE).write_text(
         CONFIG.format(version=keelline.__version__, project=PROJECT, mode=mode), encoding="utf-8"
     )
-    _git(root, "init", "-q", "-b", "main")
-    _git(root, "remote", "add", "origin", ORIGIN)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "remote", "add", "origin", ORIGIN)
     return root
 
 
@@ -110,62 +111,192 @@ class Walkthrough:
     home: Path
     data: Path
     store: Path
-    runner: _Harness
+    bin: Path
+
+
+def _fake_binaries(bin_dir: Path) -> None:
+    """The four binaries the CLI resolves through `PATH`, as the walkthrough may see them.
+
+    `pre-commit install` writes the hook `doctor` later asks about, so the fake writes it too —
+    a stub that answered 0 and wrote nothing would make two steps disagree for no reason a
+    reader could see (the `_Harness` runner this replaces said the same). `gh` must never be
+    reached on the `--local` path, so its fake exits 1 and the test asserts the log never names
+    it. `claude` and `codex` are here because `setup` installs the preset's plugins through
+    `subprocess_runner()`, which resolves them on `PATH`: the plan's own list named only the
+    first two, and without these the walkthrough would run the developer's real harness CLI,
+    which the Global Constraints forbid outright. Nothing later reads their effect, so they
+    record and exit 0.
+    """
+    bin_dir.mkdir()
+    log = bin_dir / "calls.log"
+    (bin_dir / "pre-commit").write_text(
+        "#!/bin/sh\n"
+        f'printf \'%s\\n\' "pre-commit $*" >> "{log}"\n'
+        "mkdir -p .git/hooks && printf '#!/bin/sh\\nexit 0\\n' > .git/hooks/pre-commit\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "gh").write_text(
+        f'#!/bin/sh\nprintf \'%s\\n\' "gh $*" >> "{log}"\nexit 1\n', encoding="utf-8"
+    )
+    for harness in ("claude", "codex"):
+        (bin_dir / harness).write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "{harness} $*" >> "{log}"\nexit 0\n',
+            encoding="utf-8",
+        )
+    for name in ("pre-commit", "gh", "claude", "codex"):
+        (bin_dir / name).chmod(0o755)
+
+
+def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.CompletedProcess[str]:
+    """One command, the way a person or a skill runs it: the launcher, argv, a pipe or a tty.
+
+    `tty=True` hands the child a pseudo-terminal as stdin, which is what `attach --machine`
+    and `detach --machine` require (they refuse from a pipe, and the test proves the pipe
+    refusal separately). Nothing here reads the developer's own `~`: `HOME` is the scratch
+    home and every harness variable is dropped.
+    """
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("CLAUDE_", "PLUGIN_", "KEELLINE_", "XDG_"))
+    }
+    env["HOME"] = str(walk.home)
+    env["PATH"] = f"{walk.bin}{os.pathsep}{env.get('PATH', '')}"
+    env["CLAUDE_PLUGIN_ROOT"] = str(ROOT)
+    env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
+    command = [sys.executable, str(ROOT / "scripts" / "keelline"), *argv]
+    if not tty:
+        return subprocess.run(
+            command,
+            cwd=walk.root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    parent, child = pty.openpty()
+    try:
+        return subprocess.run(
+            command,
+            cwd=walk.root,
+            stdin=child,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    finally:
+        os.close(child)
+        os.close(parent)
+
+
+def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
+    """The fifteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
+    done = _cli(
+        walk,
+        "doctor",
+        "--json",
+        "--root",
+        str(walk.root if root is None else root),
+        "--home",
+        str(walk.home),
+        "--machine",
+        str(walk.machine),
+    )
+    assert done.stdout, done.stderr
+    rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
+    assert len(rows) == 15, rows
+    return rows
 
 
 def _install_path(tmp_path: Path) -> Walkthrough:
-    """Steps 1-5: setup, overlay, a repository, attach, and a note in the overlay.
+    """Steps 1-5: the overlay, the machine layer, a repository, attach, and a note in it.
 
-    Step 2's overlay is created **outside** the project root on purpose: `setup` refuses to
-    record one inside it (R13/R14), because a path inside the project is exactly the shape of
-    tree a hostile clone can ship.
+    Every step is the real launcher with the real argv (D4). Step 1's overlay is created
+    **outside** the project root on purpose: `setup` refuses to record one inside it (R13/R14),
+    because a path inside the project is exactly the shape of tree a hostile clone can ship.
     """
     home = tmp_path / "home"
     data = tmp_path / "plugin-data"
     machine = tmp_path / "config" / "keelline" / "config.toml"
     machine.parent.mkdir(parents=True)
-    runner = _Harness()
+    bin_dir = tmp_path / "bin"
+    _fake_binaries(bin_dir)
 
     root = _project(tmp_path, mode="overlay")
-
-    # 1. the machine layer, into a scratch machine file and a scratch home.
-    first = setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        yes=True,
-        overlay=None,
-        project_root=root,
-    )
-    assert first.machine_written
-
-    # 2. the overlay, rendered from the shipped template with no network call; `setup` records it.
     overlays = tmp_path / "overlays"
     overlays.mkdir()
-    created = create(OWNER, "keelline-private", source="local", root=overlays, runner=runner)
-    second = setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        yes=True,
-        overlay=str(created.root),
-        project_root=root,
-    )
-    assert second.overlay is not None
+    # Where `overlay create --root <overlays> --name keelline-private` puts it, which
+    # `overlay.create.target_root` computes from the arguments alone.
+    overlay = overlays / "keelline-private"
+    store = overlay / PROJECTS / PROJECT / "memory"
+    walk = Walkthrough(root, overlay, machine, home, data, store, bin_dir)
 
-    # 4. attach: the binding record, the ignore region, the ledger, the link tree.
-    store = created.root / PROJECTS / PROJECT / "memory"
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=True,
-        trust_remote=True,
-        runner=runner,
-        home=home,
+    def step(*argv: str, tty: bool = False) -> subprocess.CompletedProcess[str]:
+        done = _cli(walk, *argv, tty=tty)
+        assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
+        return done
+
+    # 1. the overlay, rendered from the shipped template with no network call.
+    step(
+        "overlay",
+        "create",
+        "--owner",
+        OWNER,
+        "--name",
+        "keelline-private",
+        "--local",
+        "--root",
+        str(overlays),
     )
+    # 2. make it this owner's, and install its commit-time secret scan.
+    step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
+    # 3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
+    # the walkthrough had before it was converted: the first writes the machine file with no
+    # overlay in it, the second records one into a file that already exists. "A second `setup`
+    # records an overlay the first did not" is a merge seam between two lanes, and collapsing
+    # the two runs into one would have left it to `tests/setup/` alone -- which is the shape of
+    # gap this whole module exists to close. The assertion between them is what makes it a
+    # seam rather than two commands that happened to run.
+    step(
+        "setup",
+        "--preset",
+        "recommended",
+        "--home",
+        str(home),
+        "--machine",
+        str(machine),
+        "--root",
+        str(root),
+    )
+    assert str(overlay) not in machine.read_text(encoding="utf-8"), (
+        "the first `setup` named no overlay and must have recorded none"
+    )
+    step(
+        "setup",
+        "--preset",
+        "recommended",
+        "--home",
+        str(home),
+        "--machine",
+        str(machine),
+        "--overlay",
+        str(overlay),
+        "--root",
+        str(root),
+    )
+    assert str(overlay) in machine.read_text(encoding="utf-8"), (
+        "the second `setup` recorded the overlay into the file the first one wrote"
+    )
+    # 4. attach: the diff first, then the write. `--check` writes nothing and prints what the
+    # `--yes` run is consenting to, which is the order the attach skill walks.
+    previewed = step(
+        "attach", "--store", str(store), "--check", "--machine", str(machine), tty=True
+    )
+    assert previewed.stdout.strip(), "`attach --check` printed no diff to consent to"
+    step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
 
     # 5. a standing rule in this project's own share of the overlay.
     #
@@ -180,7 +311,7 @@ def _install_path(tmp_path: Path) -> Walkthrough:
         f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n",
         encoding="utf-8",
     )
-    return Walkthrough(root, created.root, machine, home, data, store, runner)
+    return walk
 
 
 def _session(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
@@ -238,6 +369,12 @@ def test_setup_then_overlay_then_attach_then_a_session_sees_memory(tmp_path: Pat
     assert RULE_BODY in done.stdout
     assert not done.stdout.lstrip().startswith("{")
     assert '"summary"' not in done.stdout
+    # The fakes on `PATH` were what ran, and `gh` was not among them: `--local` renders the
+    # shipped template and touches no network, so a `gh` line here would mean the walkthrough
+    # took the `--template` branch and only looked as if it had not.
+    calls = (walk.bin / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert "pre-commit install" in calls
+    assert not [line for line in calls if line.startswith("gh ")], calls
 
 
 def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
@@ -305,20 +442,11 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
         f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n",
         encoding="utf-8",
     )
-    code = run(
-        [
-            "memory",
-            "trust",
-            "--in-repo-memory",
-            "--root",
-            str(root),
-            "--machine",
-            str(machine),
-        ],
-        parser=build_parser(discover_registrars()),
-    )
-    assert code == 0
-    walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, _Harness())
+    bin_dir = tmp_path / "bin"
+    _fake_binaries(bin_dir)
+    walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
+    trusted = _cli(walk, "memory", "trust", "--in-repo-memory", "--machine", str(machine))
+    assert trusted.returncode == 0, trusted.stderr
     done = _bundle(walk, "standing-rules")
     assert done.returncode == 0, done.stderr
     assert RULE_BODY in done.stdout
@@ -331,172 +459,63 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     assert len(done.stdout) <= config.native_caps.hook_output_chars
 
 
-# The only `.git` paths a defect this guard cares about could actually land in: a hook dropped
-# into `.git/hooks/`, a rule written to `.git/config`, an ignore region added to
-# `.git/info/exclude`. Everything else under `.git` — `objects/`, `logs/`, `refs/`, a fresh
-# `commit-graph`, a pack, `gc.log`, `objects/maintenance.lock` — is git's own background
-# bookkeeping. The fixtures that build these repositories pin `GIT_CONFIG_GLOBAL` and
-# `GIT_CONFIG_SYSTEM` to `os.devnull`, which leaves `gc.auto` and `maintenance.auto` at their
-# defaults, so that bookkeeping can run — and does — between two snapshots taken moments apart.
-_STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
-
-
-def _stable_git_snapshot(root: Path) -> dict[str, bytes]:
-    """The narrow slice of `.git` this guard reads: the two named files, plus every file
-    under `hooks/`, by path relative to `root`."""
-    git = root / ".git"
-    files: dict[str, bytes] = {}
-    for relative in _STABLE_GIT_FILES:
-        candidate = git / relative
-        if candidate.is_file():
-            files[str(Path(".git") / relative)] = candidate.read_bytes()
-    hooks = git / "hooks"
-    if hooks.is_dir():
-        for path in sorted(hooks.iterdir()):
-            if path.is_file():
-                files[str(Path(".git") / "hooks" / path.name)] = path.read_bytes()
-    return files
-
-
-def _snapshot(root: Path) -> dict[str, bytes]:
-    """Every regular file under the root, by relative path.
-
-    `.git` is included deliberately — this is the walk that would catch an ignore region
-    written to `.git/info/exclude` or a hook dropped into `.git/hooks` — but narrowed to the
-    paths a defect could actually land in. See `_stable_git_snapshot` for why the rest of
-    `.git` is pruned rather than walked: it is a moving target, not a place this guard watches.
-    """
-    files: dict[str, bytes] = {}
-    for dirpath, dirnames, filenames in os.walk(root):
-        current = Path(dirpath)
-        if current == root:
-            dirnames[:] = [name for name in dirnames if name != ".git"]
-        for name in filenames:
-            path = current / name
-            if path.is_file():
-                files[str(path.relative_to(root))] = path.read_bytes()
-    files.update(_stable_git_snapshot(root))
-    return files
-
-
-def _describe_snapshot_diff(before: dict[str, bytes], after: dict[str, bytes]) -> str:
-    """A failure message a person can read: which paths came, went or changed, not a dump of
-    every file's bytes — which is what the bare `dict == dict` assertion this backs used to
-    print, `.git` object tree included, on the one CI job the race actually hit.
-    """
-    added = sorted(set(after) - set(before))
-    removed = sorted(set(before) - set(after))
-    changed = sorted(path for path in before.keys() & after.keys() if before[path] != after[path])
-    return f"snapshot differs: added={added} removed={removed} changed={changed}"
-
-
-def _assert_snapshot_unchanged(root: Path, before: dict[str, bytes]) -> None:
-    after = _snapshot(root)
-    assert after == before, _describe_snapshot_diff(before, after)
-
-
-def _assert_snapshot_changed(root: Path, before: dict[str, bytes]) -> dict[str, bytes]:
-    after = _snapshot(root)
-    assert after != before, "expected at least one file under the root to differ; none did"
-    return after
-
-
-def test_the_narrowed_git_walk_still_catches_a_write_to_each_stable_path(tmp_path: Path) -> None:
-    # The non-vacuity guard for the narrowing itself: `_snapshot` no longer walks all of
-    # `.git`, and a narrowing that stopped noticing a hook dropped into `.git/hooks/` or an
-    # ignore region added to `.git/info/exclude` would be a regression wearing a fix's clothes.
-    # Plant a file at each of the three stable spots the review named and require the snapshot
-    # to see every one of them, one path at a time.
-    root = tmp_path / "repo"
-    root.mkdir()
-    _git(root, "init", "-q", "-b", "main")
-    before = _snapshot(root)
-    assert before
-
-    (root / ".git" / "info" / "exclude").write_text("/planted-by-a-defect\n", encoding="utf-8")
-    after_exclude = _assert_snapshot_changed(root, before)
-    assert ".git/info/exclude" in after_exclude
-
-    with (root / ".git" / "config").open("a", encoding="utf-8") as handle:
-        handle.write('[planted]\n\tby = "a-defect"\n')
-    after_config = _assert_snapshot_changed(root, after_exclude)
-    assert ".git/config" in after_config
-
-    hooks = root / ".git" / "hooks"
-    hooks.mkdir(exist_ok=True)
-    (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    after_hook = _assert_snapshot_changed(root, after_config)
-    assert ".git/hooks/pre-commit" in after_hook
-
-
-def test_the_narrowed_git_walk_ignores_gits_own_background_bookkeeping(tmp_path: Path) -> None:
-    # The defect the review found: `checks (ubuntu-latest, 3.13)` failed because git's own
-    # background maintenance dropped `objects/maintenance.lock` between two snapshots, and the
-    # old, unrestricted walk over `.git` treated that as a write `attach`/`detach` had made.
-    # Plant the same artifacts by hand — a lock file, a gc log, a commit-graph — and require
-    # the narrowed walk to stay unaffected by all three.
-    root = tmp_path / "repo"
-    root.mkdir()
-    _git(root, "init", "-q", "-b", "main")
-    before = _snapshot(root)
-    assert before
-
-    objects = root / ".git" / "objects"
-    objects.mkdir(parents=True, exist_ok=True)
-    (objects / "maintenance.lock").write_bytes(b"")
-    (root / ".git" / "gc.log").write_text("warning: there are too many unreachable\n")
-    (objects / "info").mkdir(parents=True, exist_ok=True)
-    (objects / "info" / "commit-graph").write_bytes(b"CGPH")
-    _assert_snapshot_unchanged(root, before)
-
-
 def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     # The round trip over the whole path rather than over `attach`'s own ledger: snapshot every
     # file under the project root before the attach and compare after the detach. What the
     # overlay records is deliberately not on this list — `projects/<name>/project.toml` is the
     # owner's consent (§6.2) and outlives a detach on purpose.
+    #
+    # The walkthrough's own steps are repeated here rather than reused, because the snapshot has
+    # to be taken between `setup` and `attach` and `_install_path` runs both.
     home = tmp_path / "home"
     machine = tmp_path / "config" / "keelline" / "config.toml"
     machine.parent.mkdir(parents=True)
-    runner = _Harness()
+    bin_dir = tmp_path / "bin"
+    _fake_binaries(bin_dir)
     root = _project(tmp_path, mode="overlay")
-    setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        yes=True,
-        overlay=None,
-        project_root=root,
-    )
     overlays = tmp_path / "overlays"
     overlays.mkdir()
-    created = create(OWNER, "keelline-private", source="local", root=overlays, runner=runner)
-    setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        yes=True,
-        overlay=str(created.root),
-        project_root=root,
+    overlay = overlays / "keelline-private"
+    store = overlay / PROJECTS / PROJECT / "memory"
+    walk = Walkthrough(root, overlay, machine, home, tmp_path / "plugin-data", store, bin_dir)
+
+    def step(*argv: str, tty: bool = False) -> None:
+        done = _cli(walk, *argv, tty=tty)
+        assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
+
+    step(
+        "overlay",
+        "create",
+        "--owner",
+        OWNER,
+        "--name",
+        "keelline-private",
+        "--local",
+        "--root",
+        str(overlays),
     )
-    before = _snapshot(root)
-    # The mutation guard the Global Constraints ask for: `_snapshot` is a walk, so the
+    step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
+    step(
+        "setup",
+        "--preset",
+        "recommended",
+        "--home",
+        str(home),
+        "--machine",
+        str(machine),
+        "--overlay",
+        str(overlay),
+        "--root",
+        str(root),
+    )
+    before = snapshot(root)
+    # The mutation guard the Global Constraints ask for: `snapshot` is a walk, so the
     # comparison below passes vacuously the day the walk stops finding anything.
     assert before
-    attach(
-        root,
-        store=created.root / PROJECTS / PROJECT / "memory",
-        machine=machine,
-        confirmed=True,
-        trust_remote=True,
-        runner=runner,
-        home=home,
-    )
-    _assert_snapshot_changed(root, before)
-    detach(root, machine=machine, home=home)
-    _assert_snapshot_unchanged(root, before)
+    step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
+    assert_snapshot_changed(root, before)
+    step("detach", "--machine", str(machine), tty=True)
+    assert_snapshot_unchanged(root, before)
     # Stated rather than left to the file walk: `detach_main` withdraws the links and not the
     # directory that held them, because "withdrawing a link is not licence to delete a
     # directory". What is left is empty, and this is where that is written down.
@@ -504,23 +523,20 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
-    # Green meaning: no `red`, and the only `skip`s are the three this build cannot answer —
-    # the release's recorded hashes, the Codex hook-trust hash §10 lists as unmeasured, and a
-    # `[ci] ref` that `init` will write.
+    # Green meaning: no `red`, and the only `skip`s are the two this build cannot answer — the
+    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` will write.
+    # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
+    # walk runs against the checkout, so the row now compares the three shipped files against
+    # the record committed beside them and is green. A `files` back in this list means the
+    # record went stale — `uv run keelline release hashes` is what refreshes it.
     walk = _install_path(tmp_path)
-    checks = run_checks(
-        walk.root,
-        home=walk.home,
-        machine=walk.machine,
-        runner=_Harness(),
-        env=_doctor_env(walk),
-    )
-    assert [check.name for check in checks if check.status == RED] == []
-    assert [check.name for check in checks if check.status == SKIP] == [
-        "files",
+    rows = _doctor(walk)
+    assert [row["name"] for row in rows if row["status"] == RED] == []
+    assert [row["name"] for row in rows if row["status"] == SKIP] == [
         "codex-trust",
         "ci-ref",
     ]
+    assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
 # What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in
@@ -543,8 +559,13 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     #
     # `Popen` and not `subprocess.run`: `run` is a wrapper around it, so patching the lower of
     # the two counts a caller that reached past `run` as well. `ci-ref` is not among these — it
-    # goes through `overlay.api.Runner`, which the fixture stubs, and it is the only one that
-    # would leave the machine.
+    # goes through `keelline.runner.Runner`, which the stub below answers, and it is the only
+    # one that would leave the machine.
+    #
+    # **The one test here that keeps the library seam**, and the reason is the measurement
+    # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
+    # run as a subprocess launches its four in a process no patch of ours can see. Everything
+    # else in this module runs the launcher (D4); this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
     real = subprocess.Popen
@@ -579,13 +600,23 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     walk = _install_path(tmp_path)
     harness = harness_memory_path(walk.root, walk.home)
     harness.mkdir(parents=True, exist_ok=True)
-    checks = run_checks(
-        walk.root,
-        home=walk.home,
-        machine=walk.machine,
-        runner=_Harness(),
-        env=_doctor_env(walk),
+    attached = next(row for row in _doctor(walk) if row["name"] == "attached")
+    assert attached["status"] == RED
+    assert "real directory" in attached["detail"]
+
+
+def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_path: Path) -> None:
+    # The interactive-shell gate on `--machine`, reached through argv rather than through the
+    # `interactive=` seam: a pipe is refused with exit 2 and the sentence, a pseudo-terminal
+    # is honoured. The library-level tests prove the seam; this proves the launcher hands
+    # the command a stdin the gate can ask. No mutation of its own — the gate's own entry in
+    # mutations.toml (attach/commands.py) reddens the library test and, through this, the
+    # pipe half here; run it and say so.
+    walk = _install_path(tmp_path)
+    store = str(walk.overlay / PROJECTS / PROJECT / "memory")
+    piped = _cli(walk, "attach", "--store", store, "--check", "--machine", str(walk.machine))
+    assert piped.returncode == 2 and "interactive shell" in piped.stderr
+    tty = _cli(
+        walk, "attach", "--store", store, "--check", "--machine", str(walk.machine), tty=True
     )
-    attached = next(check for check in checks if check.name == "attached")
-    assert attached.status == RED
-    assert "real directory" in attached.detail
+    assert tty.returncode == 0, tty.stderr

@@ -57,6 +57,11 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "scan_paths",
         "suite_files",
         "contained_roots",
+        # the failure attribution, for assess: a red run it routes is one it has to
+        # attribute first, and VERDICTS is the table rather than five re-derived strings
+        "attribute",
+        "Attribution",
+        "VERDICTS",
     }
     assert required == set(guards.__all__)
 

@@ -13,12 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from keelline.attach.api import Attached, attach
+from keelline import fsops
+from keelline.attach.api import LEDGER, Attached, attach
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.errors import Refusal
 from keelline.memory.api import PartialLink, harness_memory_path
-from tests.attach.test_binding import CONFIG, _machine
+from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
 from tests.attach.test_write import FakeRunner
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -41,6 +44,13 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     """A committed repository in overlay mode, and the overlay that already records it."""
     root = tmp_path / "project"
     root.mkdir(parents=True)
+    # A home directory that is already there. Keelline finds the machine owner's home and
+    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
+    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
+    # anchor itself — so a home that is not there is a refusal, which
+    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
+    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
     (overlay / "common" / "memory" / "shared.md").write_text("x", encoding="utf-8")
@@ -52,7 +62,7 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     (overlay / "common" / "claude").mkdir(parents=True)
     (overlay / "common" / "codex").mkdir(parents=True)
     (root / "keelline.toml").write_text(CONFIG.format(name="p"), encoding="utf-8")
-    (root / ".gitignore").write_text("docs/memory/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n", encoding="utf-8")
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", "git@example.com:o/p.git")
     _git(root, "add", "-A")
@@ -106,17 +116,20 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    real = Path.symlink_to
+    # Patched at `fsops.symlink_within` and no longer at `Path.symlink_to`: the link tree
+    # creates every link through the contained walk, so the `Path` method it used to call is
+    # not on the path any more and patching it would simulate nothing. The root is what says
+    # which checkout the link is going into — it is the containment anchor `worktree._link`
+    # takes, and for a worktree's own links it is that worktree.
+    real = fsops.symlink_within
 
-    def refuse_inside_the_worktree(
-        self: Path, target: Path, target_is_directory: bool = False
-    ) -> None:
-        if str(self).startswith(str(side)):
+    def refuse_inside_the_worktree(root_of_the_link: Path, target: str, source: Path) -> None:
+        if str(root_of_the_link).startswith(str(side)):
             raise OSError("this filesystem refuses symlinks")
-        real(self, target, target_is_directory=target_is_directory)
+        real(root_of_the_link, target, source)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Path, "symlink_to", refuse_inside_the_worktree)
+        patch.setattr(fsops, "symlink_within", refuse_inside_the_worktree)
         with pytest.raises(PartialLink) as failed:
             _attach(root, store, machine, tmp_path / "home")
     # The owning checkout's tree exists — `attach_main` made it before the failing call — and
@@ -367,3 +380,37 @@ def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git
     attached = _attach(root, store, machine, tmp_path / "home")
     assert (root / "docs" / "memory" / "developer").is_symlink()
     assert not any(str(side) in str(path) for path in attached.links.created)
+
+
+def test_a_home_whose_claude_is_a_symlink_refuses_above_every_write(tmp_path: Path) -> None:
+    # The layout is stow's, chezmoi's, or any synced home: `~/.claude` is a link into a
+    # dotfiles tree. The walk under the home directory refuses to follow it — deliberately,
+    # and `worktree.harness_link_parts` cites `setup --settings` as the precedent — but the
+    # refusal used to be discovered from inside the link step, which runs after the ignore
+    # region, the Codex rule files, the settings merge, the ledger and the overlay's binding
+    # record. Measured then: `PartialLink` with three links already made, `detach` afterwards
+    # raising a raw `UnsafePath` as `internal error`, and no shipped command able to put the
+    # repository back.
+    #
+    # `attach`'s own docstring is the standard this holds it to: "All six refusals are above
+    # every write… A refusal that leaves a repository looking attached is not a refusal."
+    #
+    # Mutation (declared, "attach discovers the harness anchor from inside the link step"):
+    # the hoisted call goes -> the refusal still arrives, from `_apply_harness_link`, and
+    # `assert_snapshot_unchanged` reddens with the ledger and the region already written.
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    elsewhere = tmp_path / "dotfiles" / "claude"
+    elsewhere.mkdir(parents=True)
+    (home / ".claude").symlink_to(elsewhere, target_is_directory=True)
+    before = snapshot(root)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
+    with pytest.raises(Refusal) as refused:
+        _attach(root, store, machine, home, confirmed=True)
+    assert str(home / ".claude") in str(refused.value)
+    assert_snapshot_unchanged(root, before)
+    assert not (root / LEDGER).exists()
+    # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
+    # write that followed it.
+    assert list(elsewhere.iterdir()) == []

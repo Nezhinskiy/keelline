@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
+import tomllib
 from pathlib import Path
 
 from keelline import __version__
+from keelline.release.api import drift
 from keelline.release.versions import check
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +16,14 @@ def test_claude_manifest_names_the_plugin_its_version_and_titled_user_config() -
     manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert manifest["version"] == __version__
+    # The keys, before anything is asserted about their entries. `"x"` satisfies both
+    # assertions in the loop and `{}` satisfies the loop itself: measured, the three entries
+    # moved to an unread key and `userConfig` left empty, this module was 9 passed — a test
+    # named "…and titled user config" green on a plugin that offers none.
+    #
+    # Mutation: none of its own. The manifest is data and the oracle mutates source; the
+    # measurement above is by hand, like the fixture mutations in `tests/test_fixtures.py`.
+    assert set(manifest["userConfig"]) == {"reply_language", "artifact_language", "preset"}
     for key, entry in manifest["userConfig"].items():
         assert entry["title"], key
         assert entry["description"], key
@@ -46,5 +57,108 @@ def test_the_repository_itself_passes_release_check() -> None:
     assert check(ROOT) == []
 
 
+def test_the_repository_itself_carries_a_current_release_record() -> None:
+    # DC5: the record is kept true on every commit and not only at a tag, which is what makes
+    # it a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
+    # `scripts/keelline` that forgot `keelline release hashes` reddens here and in the gate.
+    assert drift(ROOT) == []
+
+
 def test_no_top_level_bin_directory() -> None:
     assert not (ROOT / "bin").exists()
+
+
+def _not_yet() -> list[str]:
+    """What `README.md` itself declares unshipped, read off the README and never restated here.
+
+    The README's own roadmap sentence is the authority: the day `assess` ships, its author
+    removes it from that sentence and the storefront is free to advertise it, with no second
+    list to remember. Restating the items here would be the drift this test exists to catch,
+    one file along.
+
+    A leading article is dropped, and that is the whole difference between a test that catches
+    this and one that does not: the README writes "the adoption state machine" and every one of
+    the four listings wrote "an adoption state machine", so an item kept with its article
+    matched nothing and the first draft of this test went green over the very strings it was
+    written for.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    sentence = readme.split("**Not yet:**", 1)[1].split("—", 1)[0]
+    flat = " ".join(sentence.replace(">", " ").replace("`", " ").split())
+    items = [part.strip(" .,") for part in re.split(r",| and ", flat)]
+    return [re.sub(r"^(?:the|an?) ", "", item) for item in items if item]
+
+
+# The four storefront strings — PyPI, the Claude Code plugin, the marketplace entry and the
+# Codex listing — in the order a prospective adopter meets them.
+def _storefront() -> dict[str, str]:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    claude = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    codex = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    (entry,) = market["plugins"]
+    return {
+        "pyproject.toml": pyproject["project"]["description"],
+        ".claude-plugin/plugin.json": claude["description"],
+        ".claude-plugin/marketplace.json": entry["description"],
+        ".codex-plugin/plugin.json": codex["description"],
+        ".codex-plugin/plugin.json interface.shortDescription": codex["interface"][
+            "shortDescription"
+        ],
+    }
+
+
+def test_the_readme_still_declares_what_has_not_shipped() -> None:
+    # The non-vacuity guard for the test below: a README that lost the sentence, or a sentence
+    # this parser stopped finding items in, would otherwise turn that test into an assertion
+    # over an empty list and leave the storefront free to advertise anything.
+    items = _not_yet()
+    assert len(items) >= 4, items
+    assert "assess" in items
+    assert "adoption state machine" in items
+
+
+def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> None:
+    """The listings a stranger reads before the README may not outrun it.
+
+    `pyproject.toml`'s description is the PyPI page; the two Claude manifests are the plugin
+    card and the marketplace row; the Codex listing is the third storefront. All four
+    advertised "an adoption state machine" while `keelline assess` did not exist and the
+    README listed it under **Not yet**, and nothing in `keelline release check` or
+    `RELEASING.md` looked. Mutation (declared): put the adoption state machine back into
+    `pyproject.toml`'s description -> reddens naming the file.
+
+    What this cannot see is a paraphrase. The Codex listing's `shortDescription` said "earned
+    enforcement", which is the state machine's effect under another name and matches no item
+    in the README's sentence; that one was caught by reading, and this test would not have
+    caught it.
+    """
+    items = _not_yet()
+    offending = [
+        (where, item)
+        for where, text in _storefront().items()
+        for item in items
+        if re.search(rf"\b{re.escape(item)}\b", text, re.IGNORECASE)
+    ]
+    assert offending == [], offending
+
+
+def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
+    """A fragment named without the `+` prints its slug in the release notes.
+
+    towncrier reads the part before `.<type>.md` as the fragment's issue reference and
+    `issue_format = "{issue}"` renders it in parentheses at the end of the bullet, so the 26
+    fragments assembled for 0.1.0 would each have published an internal lane slug — one of
+    them a wave number. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
+    reference and leaves the slug readable in the repository, and it is per-fragment, so a
+    fragment that one day names a real issue still renders its reference.
+
+    No `mutations.toml` entry: the invariant is over a set of file *names* and the oracle
+    applies a textual change to a file's *contents*, so there is no line for it to mutate.
+    The non-vacuity guard is the floor below.
+    """
+    fragments = sorted(
+        path.name for path in (ROOT / "changelog.d").iterdir() if path.name.endswith(".md")
+    )
+    assert len(fragments) >= 20, fragments
+    assert [name for name in fragments if not name.startswith("+")] == []

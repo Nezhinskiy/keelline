@@ -8,9 +8,8 @@ does not import a private module of this area.
 `require_overlay` and `overlay_fault`; `Created` and `Initialised` come with the first two,
 because a return type absent from this list is a value `setup` can hold and cannot declare.
 `attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
-`COMMON_CODEX`). `attach`, `doctor` and `setup` all run a harness binary through `Runner`, which
-CONTRIBUTING names as the seam a test stubs instead of shelling out, so `Runner`,
-`subprocess_runner` and the `Completed` a runner answers with are part of it.
+`COMMON_CODEX`). The runner is a leaf (`keelline.runner`), not this area's; it used to be
+published here on behalf of three other areas, which is the shape DC2 ended.
 
 Two names are here with no importer in `src/`, on purpose:
 
@@ -23,12 +22,19 @@ Two names are here with no importer in `src/`, on purpose:
   still happening, one harness over". A consumer that checks the Claude manifests and cannot
   name the Codex one reproduces exactly that bug.
 
+`OVERLAY_FILES` is here for `scripts/check_artifacts.py`, which asks whether a built wheel
+carries every template file and can only answer that against this list. It is the one consumer
+outside `src/`, and the reason this docstring names it is that the wave-3 trim removed the
+export on the strength of "nothing outside this area imports it" while that script, added in the
+same branch, imported it out of `layout` — a sentence and a violation merged green together,
+because `tests/test_areas.py` walked `src/` alone. It walks `scripts/` too now.
+
 **Trimmed, in the wave-3 boundary remediation.** `COMMON` and `COMMON_RULES` had no importer
-anywhere. `CAPABILITY_FILES`, `OVERLAY_FILES`, `template_root`, `templates`, `upgrade` and
-`OverlayUpgrade` had none outside this area: `upgrade` is driven by this area's own command
-module, and the template tree was published against a sentence — "the release lane will need the
-template tree" — about a lane that does not exist yet. That lane grows the list when it arrives,
-which is what this docstring asks of every other lane.
+anywhere. `CAPABILITY_FILES`, `template_root`, `templates`, `upgrade` and `OverlayUpgrade` had
+none outside this area: `upgrade` is driven by this area's own command module, and the template
+tree was published against a sentence — "the release lane will need the template tree" — about a
+lane that does not exist yet. That lane grows the list when it arrives, which is what this
+docstring asks of every other lane.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -39,9 +45,9 @@ from keelline.overlay.layout import (
     COMMON_CODEX,
     COMMON_MEMORY,
     MARKETPLACE_MANIFEST,
+    OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
-from keelline.overlay.runner import Completed, Runner, subprocess_runner
 
 __all__ = [
     "CODEX_PLUGIN_MANIFEST",
@@ -49,15 +55,13 @@ __all__ = [
     "COMMON_CODEX",
     "COMMON_MEMORY",
     "MARKETPLACE_MANIFEST",
+    "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
-    "Completed",
     "Created",
     "Initialised",
-    "Runner",
     "create",
     "init_instance",
     "overlay_fault",
     "require_overlay",
-    "subprocess_runner",
     "target_root",
 ]

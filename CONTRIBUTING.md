@@ -7,15 +7,21 @@ those rules.
 ## The short version
 
 ```bash
-uv sync                         # once
-uv run pytest -q                # the suite
+uv sync                                     # once
+uv run pytest --cov --cov-fail-under=92     # the suite, at CI's coverage floor
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
-uv run keelline release check   # version discipline
+uv run python scripts/mutation_oracle.py    # every declared mutation still reddens
+uv run keelline release check               # version discipline
 ```
 
-All four run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13. CI also
-measures coverage and fails below 92%.
+All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
+the mutation oracle, which is this project's headline obligation and not an optional extra, and
+the coverage floor, which is why `pytest -q` alone will give you a green tree and a red pull
+request. CI runs three more steps you can reproduce only from a build (`uv build`, then
+`scripts/check_artifacts.py dist` and an installed-wheel render) and one job you cannot
+reproduce without a global install of the harness CLI, the plugin-manifest validator; a failure
+in either is ours to diagnose, not yours.
 
 ## What this project is, and what that costs a change
 
@@ -106,8 +112,11 @@ Each entry names one file, one exact line to change, and the tests that must fai
 The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not `tests`, and
 `name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
-drifted is a finding rather than a skip. The oracle also refuses to mutate a tree with
-uncommitted changes, which is why a mutation run comes *after* the commit it is about.
+drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
+mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
+mutated file — **or any test file that a selected entry's `reddens` names** — has uncommitted
+changes, because that edit is work the run cannot see. Which is why a mutation run comes
+*after* the commit it is about, and why an uncommitted test edit mid-change stops it too.
 
 ```toml
 [[mutation]]
@@ -118,10 +127,20 @@ after = "        if part in (_HERE,):"
 reddens = ["tests/test_fsops.py::test_a_parent_component_never_leaves_the_root"]
 ```
 
-CI runs the whole set. Three things are findings: a mutation that *survives*; one whose `before`
-line no longer exists, because the assertion and the line it is about have drifted apart; and
-one whose named tests do not pass on a clean tree before the mutation is applied, because a test
-that is red, skipped or misspelled cannot prove anything about a guard. This is not a coverage
+The oracle sweeps before it runs. A killed run — `kill -9`, a CI timeout, a cancelled agent —
+cannot run its own cleanup, and `git worktree prune` does not collect what it leaves: prune only
+drops entries whose directory is gone, and a killed run leaves its directory standing. So the
+first thing a run does is drop every `keelline-oracle-*` checkout but its own, naming on stderr
+what it dropped.
+
+CI runs the whole set. Four things are findings: a mutation that *survives*; one whose `before`
+line no longer exists, because the assertion and the line it is about have drifted apart; one
+whose `before` line appears more than once in the file, because then the entry does not name a
+line; and one whose named tests do not pass on a clean tree before the mutation is applied,
+because a test that is red, skipped or misspelled cannot prove anything about a guard. A fifth is
+not a finding about your entry but about the mutation you chose: one that stops the named tests
+from *running* — an `after` that breaks the import, say — is reported as proving nothing, because
+pytest's non-zero exit there says only that something went wrong. This is not a coverage
 substitute; `--cov` is the breadth measure. It is the set of guards whose load-bearingness has
 to be proven rather than merely executed, which is exactly the distinction that let
 `fsops.open_within` be covered by twelve tests and contain nothing.
@@ -133,6 +152,30 @@ Name a test after the behaviour, not the function:
 
 Comment *why*, in the test. Most of this suite's comments name the defect the test exists to
 catch, which is what makes a later reader able to tell a load-bearing assertion from decoration.
+
+**The neutrality gate walks every tracked file.** `tests/test_neutral.py` holds the whole tree
+to a denylist and three shape rules: no string that identifies the repository these guards were
+extracted from, no personal email address, no bare abbreviated commit id, no vendor-prefixed
+branch name (`codex/…`, `claude/…`, `cursor/…`). The denylist is stored as digests rather than
+as the strings, because a gate that lists what it is hiding publishes it in the very repository
+the rule is about — so a hit reads `token be440e8c9338 at 812` and not the word you wrote.
+
+```bash
+uv run pytest tests/test_neutral.py
+uv run pytest "tests/test_neutral.py::test_no_tracked_file_carries_a_project_identifying_string[docs/cli.md]"
+```
+
+The second form is how you ask about one file: the walk is parametrised and the case id is the
+file's own path from the repository root.
+
+The number after `at` is the character offset of the first matching window in the lower-cased
+file, and the entry's own length is what you read from there: slice that many characters out of
+your file at that offset and you are looking at the string the gate refused. Characters and not
+bytes, because the sentence before this one is the instruction and an em dash is three bytes:
+the gate used to report the byte offset, and on a line in this repository's own house style the
+two differed by four. Two entries are four characters long, which is why the offset is printed
+at all — a four-character window is not something a contributor can guess. Rewrite the line;
+do not add an entry to the exemption.
 
 A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
@@ -147,7 +190,10 @@ Conventional-commit subjects (`feat(memory):`, `fix(scaffold):`, `docs(plans):`)
 from vanishing` is the house style; `fix: update worktree.py` is not.
 
 User-visible changes need a towncrier fragment in `changelog.d/`, named
-`<slug>.<type>.md` where type is `feature`, `fix` or `change`. Write it as a release note
+`+<slug>.<type>.md` where type is `feature`, `fix` or `change`. The leading `+` is towncrier's
+orphan prefix, and it is not decoration: without it towncrier reads the slug as an issue
+reference and prints it in parentheses at the end of the bullet, so the release notes everyone
+reads would carry the project's internal lane vocabulary. Write the fragment as a release note
 someone outside the project can read — not as a note to yourself about the lane.
 
 `uv run keelline release check` cross-checks the version across `pyproject.toml`, `uv.lock`,

@@ -123,6 +123,14 @@ def test_the_walk_finds_the_ported_skills() -> None:
     names = {path.parent.name for path in skills()}
     assert {"close-bug", "memory-sweep"} <= names
     assert {"init", "upgrade", "uninstall", "attach", "setup", "doctor"} <= names
+    assert {
+        "file-bug",
+        "sweep-defect-class",
+        "review-plan-three-lenses",
+        "attribute-failure",
+        "run-correctness-audit",
+        "retro-to-guard",
+    } <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
     # invocation cases with it, and so does a template tree that moves again.
     walked = documents()
@@ -145,6 +153,19 @@ def test_every_skill_has_a_name_matching_its_directory_and_a_description(path: P
 @pytest.mark.parametrize("path", entry_points(), ids=_id)
 def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
     assert len(path.read_text(encoding="utf-8").splitlines()) <= SKILL_MAX_LINES
+
+
+def test_the_tool_name_lint_matches_a_tool_name() -> None:
+    # Every use of `_TOOL` below is a NEGATIVE assertion, so a pattern that matches the empty
+    # set satisfies all of them. Measured: `_TOOL` replaced by `re.compile("ZZZNEVER")` left
+    # `tests/skills/` at 83 passed with Premise 14 checked against nothing.
+    #
+    # Mutation (declared): the pattern is made to match nothing.
+    assert _TOOL.search("use the Grep tool"), "the lint cannot match a tool name"
+    assert _TOOL.search("read it with Read first")
+    # And it is a word boundary and not a substring: `Agent` must not fire on `Agentic`, which
+    # is what the `\b` in the pattern is for and what a reader would otherwise have to assume.
+    assert _TOOL.search("an Agentic workflow") is None
 
 
 @pytest.mark.parametrize("path", entry_points(), ids=_id)

@@ -71,7 +71,7 @@ def test_a_section_that_is_not_a_table_is_rejected(tmp_path: Path) -> None:
         load(tmp_path, machine=tmp_path / "no-machine.toml")
 
 
-@pytest.mark.parametrize("name", ["../common", "Ai Daybook", "", "-leading", "a/b"])
+@pytest.mark.parametrize("name", ["../common", "Two Words", "", "-leading", "a/b"])
 def test_project_name_must_be_one_lowercase_path_segment(tmp_path: Path, name: str) -> None:
     write(tmp_path, MINIMAL.replace('"sample"', f'"{name}"'))
     with pytest.raises(ConfigError, match=r"project\.name"):

@@ -112,7 +112,6 @@ from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
 from keelline.gitenv import git_run
 from keelline.overlay.api import (
-    Runner,
     create,
     init_instance,
     overlay_fault,
@@ -120,6 +119,7 @@ from keelline.overlay.api import (
     target_root,
 )
 from keelline.presets import load_preset
+from keelline.runner import Runner
 from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 
 # `<plugin-name>@<marketplace-name>`, matching `.claude-plugin/plugin.json`'s `name` and
@@ -274,7 +274,11 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def _write_user_settings(
-    home: Path, deny_rules: Sequence[str], personal: Mapping[str, Any]
+    home: Path,
+    deny_rules: Sequence[str],
+    personal: Mapping[str, Any],
+    *,
+    settings: Path | None = None,
 ) -> bool:
     """Merge the preset's deny rules and the personal values into `<home>/<USER_SETTINGS>`.
 
@@ -282,8 +286,14 @@ def _write_user_settings(
     this run did not add may be recorded as if it had. Deny only — this never reads or writes
     `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
     `options`, so a value this run did not set survives a second one same as `write_machine`'s.
+
+    `settings` (R3) names the file itself, for the layout no `--home` can express: `stow` folds
+    a package as far as it can, so with `~/.claude` already there it links
+    `~/.claude/settings.json` into a dotfiles tree, and `--home <dotfiles>/claude` writes
+    `<dotfiles>/claude/.claude/settings.json` — a file no reader reads. When it is given, the
+    root of the write is the named file's own directory and the walk is one component deep.
     """
-    path = home / USER_SETTINGS
+    path = settings if settings is not None else home / USER_SETTINGS
     document, text = _read_document(path)
 
     permissions = document.get("permissions")
@@ -309,15 +319,38 @@ def _write_user_settings(
     new_text = json.dumps(document, indent=2, sort_keys=True) + "\n"
     if new_text == text:
         return False
+    root, relative = (
+        (settings.parent, settings.name) if settings is not None else (home, USER_SETTINGS)
+    )
     try:
-        fsops.write_within(home, USER_SETTINGS, new_text)
+        # One write, through whichever root `path` named. With `--settings` the root is the
+        # owner's own directory and the walk is one component deep — and that walk does NOT
+        # refuse a symlink at the file itself: `open_within` never opens the final name, and
+        # `os.replace` replaces a link entry rather than following it. This comment claimed it
+        # did; the measurement was a destroyed link and exit 0. `_check_settings_parent` is
+        # what refuses that link, above every write, and it asks `contained()` — the identical
+        # question `_check_settings_path` asks of `<home>/.claude/settings.json`.
+        #
+        # Without it this is the floor under `_check_settings_path`, and not dead: a component
+        # that became a symlink, or stopped being a directory, between that check and this
+        # write can only be refused here. `UnsafePath` is an `OSError`, and reaching `cli.run`'s
+        # final handler is what made the ordinary symlinked `~/.claude` an `internal error`.
+        fsops.write_within(root, relative, new_text)
     except UnsafePath as exc:
-        # The floor under `_check_settings_path`, and not dead: a component that became a
-        # symlink, or stopped being a directory, between that check and this write can only be
-        # refused here. `UnsafePath` is an `OSError`, and reaching `cli.run`'s final handler is
-        # what made the ordinary symlinked `~/.claude` an `internal error`.
+        raise Refusal(f"{path} cannot be written: {exc}; {_SYMLINKED_SETTINGS}") from exc
+    except OSError as exc:
+        # `UnsafePath` is not the only `OSError` reachable here, and the two that are not it
+        # used to leave this library and land on `cli.run`'s final handler as `keelline:
+        # internal error: FileNotFoundError`, exit 2, no remedy -- the exact rendering the
+        # paragraph above and `_check_settings_path` were written to remove. `write_within`
+        # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into `UnsafePath`,
+        # so a root that is not there and a root that is a symlink to a directory both arrive
+        # raw. `--settings` is what makes both ordinary: a typo in the directory component, and
+        # the whole-directory stow layout (`--settings ~/.claude/settings.json`) that the
+        # refusal below now advertises. One refusal, naming the path and both causes.
         raise Refusal(
-            f"{home / USER_SETTINGS} cannot be written: {exc}; {_SYMLINKED_SETTINGS}"
+            f"{path} cannot be written ({type(exc).__name__}: {exc}); its directory has to "
+            f"exist and be a real directory, because {_SYMLINKED_SETTINGS}"
         ) from exc
     return True
 
@@ -391,7 +424,8 @@ def _check_settings_path(home: Path) -> None:
             # equivalents) take a real file back afterwards.
             remedy = (
                 f"no --home can name it: this command writes <home>/{USER_SETTINGS} and nothing "
-                f"else, and {real} is not a {USER_SETTINGS} inside any directory. Either point "
+                f"else, and {real} is not a {USER_SETTINGS} inside any directory. "
+                f"`--settings {real}` writes that file directly. Otherwise point "
                 f"the link at a path ending in {USER_SETTINGS}, or take the link away, let this "
                 f"command write a real {kind}, and have your dotfiles manager adopt it"
             )
@@ -399,6 +433,61 @@ def _check_settings_path(home: Path) -> None:
             f"{link} is a symlink to {real}; {_SYMLINKED_SETTINGS}. A dotfiles manager or a "
             f"synced home is the usual reason — {remedy}"
         ) from exc
+
+
+def _check_settings_parent(settings: Path) -> None:
+    """Refuse a `--settings` whose directory cannot be written through — above the first write.
+
+    The other half of `_check_settings_path`, for the layout the flag exists for. `--settings`
+    names the file, so the root of the write is the file's own directory; `fsops.open_within`
+    opens that root with `O_NOFOLLOW` before the loop that wraps `ELOOP`/`ENOTDIR` into
+    `UnsafePath`, so a directory that is not there and a directory that is a symlink are both
+    refused there. Both were refused *late*: `_write_user_settings` runs after
+    `home.mkdir(parents=True)` and after `write_machine`, so
+    `keelline setup --settings /typo/settings.json` created the home tree, wrote the machine
+    configuration, and then exited 2. The same two conditions, asked here while nothing is on
+    disk — which is what the docstring above claims for every structural question.
+
+    `is_dir() and not is_symlink()` and not `exists()`: it is exactly the pair the write refuses
+    one frame down, so this check adds no rule of its own. It moves the existing one earlier.
+    A symlinked *home* stays fine, and is a different question — `_check_settings_path` answers
+    that one, and `open_within` never applies `O_NOFOLLOW` to the root it is handed.
+
+    **And the file itself, which the write does not refuse.** With `--settings` the root is the
+    file's own directory and the walk is one component deep, so `open_within` never opens the
+    final name at all and `write_atomically_at` reaches `os.replace` — which *replaces* a
+    symlink entry rather than following it or refusing it. The link became a regular file and
+    the dotfiles copy kept its old bytes, with exit 0, while the comment beside that write, this
+    document's own `--settings` paragraph and the shipped changelog all said a link at the file
+    was refused. `contained(parent, settings.name)` is the identical question
+    `_check_settings_path` asks of `<home>/.claude/settings.json`, asked of the path this flag
+    names, and it is the only reason that sentence is true.
+
+    A directory at the file's own name is refused in the same breath: it passed both checks
+    above, and `_write_user_settings` then failed from `_read_document` with `Is a directory` —
+    a `Failure`, C5's exit 1, for a structural precondition — after `home.mkdir(parents=True)`
+    and after the machine configuration had been written.
+    """
+    parent = settings.parent
+    if not (parent.is_dir() and not parent.is_symlink()):
+        raise Refusal(
+            f"{settings} cannot be written: its directory has to exist and be a real directory, "
+            f"because {_SYMLINKED_SETTINGS}"
+        )
+    try:
+        contained(parent, settings.name)
+    except PathEscape as exc:
+        raise Refusal(
+            f"{settings} is a symlink to {settings.resolve()}; {_SYMLINKED_SETTINGS}. A dotfiles "
+            f"manager is the usual reason — run `keelline setup --settings {settings.resolve()}`, "
+            f"which writes the file this link leads to, or replace the link with a real file"
+        ) from exc
+    # After the symlink refusal, so no link can be behind this answer.
+    if settings.is_dir():
+        raise Refusal(
+            f"{settings} is a directory; --settings names the settings file to write, not the "
+            f"directory to write it in"
+        )
 
 
 def _repository_of(path: Path) -> Path | None:
@@ -561,6 +650,7 @@ def setup(
     yes: bool,
     overlay: str | None,
     project_root: Path,
+    settings: Path | None = None,
 ) -> SetupReport:
     """Configure this machine from `preset`.
 
@@ -571,19 +661,31 @@ def setup(
 
     **Everything structural is asked before the first write**, and the order below is
     load-bearing rather than tidy: `--overlay` is parsed, probed and contained, and the settings
-    path is checked, while nothing is on disk and no repository exists on anyone's GitHub
+    path is checked — **both spellings of it**, the `<home>/.claude` walk and the directory
+    `--settings` names — while nothing is on disk and no repository exists on anyone's GitHub
     account. What is left after that is the work, and the one refusal that follows a write is
     the post-condition on a tree this run created.
     """
     planned_overlay = _requested_overlay(overlay, home=home, project_root=project_root, yes=yes)
-    _check_settings_path(home)
+    # `--settings` names the file, so the `<home>/.claude` walk `_check_settings_path` is about
+    # is not the walk that will run: asking it anyway would refuse the one layout the flag exists
+    # for. So the question is asked of whichever root the write will actually use. Both arms and
+    # not one: with only the first, `--settings` reached its refusal from `_write_user_settings`,
+    # after `home.mkdir` and after the machine file had been written, and a typo in the directory
+    # component left both of those behind on the way to exit 2.
+    if settings is None:
+        _check_settings_path(home)
+    else:
+        _check_settings_parent(settings)
 
-    # `home` is the root every write in this function lands under — the settings file through
-    # `fsops.write_within` below, and a created overlay through `overlay.create` further down —
-    # and it is not one this process was handed already existing, the way a project root or the
-    # overlay itself is. Created directly for the same reason `setup.machine`'s module
-    # docstring gives for `fsops.write_atomically` on the machine file: there is nothing for a
-    # contained walk to be relative to until this directory exists.
+    # `home` is the root every write in this function lands under **except the one `--settings`
+    # redirects** — the settings file through `fsops.write_within` below, whose root is the named
+    # file's own directory when the flag is given and `home` when it is not, and a created overlay
+    # through `overlay.create` further down. `home` is not a root this process was handed already
+    # existing, the way a project root or the overlay itself is. Created directly for the same
+    # reason `setup.machine`'s module docstring gives for `fsops.write_atomically` on the
+    # machine file: there is nothing for a contained walk to be relative to until this
+    # directory exists.
     # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
     # after the home tree had been created for it.
     data = load_preset(preset)
@@ -604,7 +706,9 @@ def setup(
     # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
     # overwritten by the machine file on the next `setup`, because one file has to win and the
     # machine file is the one every Keelline reader reads.
-    deny_written = _write_user_settings(home, deny_rules, _existing_personal(machine))
+    deny_written = _write_user_settings(
+        home, deny_rules, _existing_personal(machine), settings=settings
+    )
 
     installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
     notes = list(install_notes)

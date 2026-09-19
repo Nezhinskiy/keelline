@@ -78,13 +78,15 @@ def test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_writte
 ) -> None:
     # Review finding 10. `--root` defaults to `.` and was checked nowhere: in a directory
     # holding a `README.md` and a `src/main.py`, `keelline overlay upgrade --root .` created
-    # fourteen files — both plugin manifests, `hooks/hooks.json`, `common/**`, `.gitignore` and
-    # `.github/workflows/scan.yml` — printed `14 to create` and exited 0. Writing a workflow
-    # file into a repository the owner may then commit is the concrete harm.
+    # the whole overlay — both plugin manifests, `hooks/hooks.json`, `common/**`, `.gitignore`
+    # and `.github/workflows/scan.yml` — reported them as work done and exited 0. (Fourteen
+    # files when the finding was written; `OVERLAY_FILES` is sixteen now, which is why the
+    # count is not restated here.) Writing a workflow file into a repository the owner may then
+    # commit is the concrete harm.
     #
     # Mutation (`mutations.toml`, "overlay upgrade stops asking whether --root is an overlay"):
-    # the `require_overlay` call is removed → the fourteen files appear and this reddens on both
-    # the refusal and the tree.
+    # the `require_overlay` call is removed → the overlay's files appear and this reddens on
+    # both the refusal and the tree.
     project = tmp_path / "project"
     (project / "src").mkdir(parents=True)
     (project / "README.md").write_text("# a project, not an overlay\n", encoding="utf-8")
@@ -100,8 +102,8 @@ def test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overla
     tmp_path: Path,
 ) -> None:
     # The same finding through the command surface, which is where it was reproduced: the run
-    # that created fourteen files reported them as work done and exited 0, so nothing about the
-    # outcome said anything had gone wrong.
+    # that created the overlay's files reported them as work done and exited 0, so nothing
+    # about the outcome said anything had gone wrong.
     (tmp_path / "README.md").write_text("# not an overlay\n", encoding="utf-8")
     parser = build_parser(discover_registrars())
     assert run(["overlay", "upgrade", "--root", str(tmp_path)], parser=parser) == 2

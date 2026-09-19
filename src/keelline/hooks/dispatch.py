@@ -244,8 +244,14 @@ def dispatch(
             # handler's malformed return destroyed an earlier handler's deny.
             if not isinstance(result, HookResult):
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
-            if handler.once_key is not None:
-                sink.mark(handler.once_key)
+            # Delivery is DECIDED here and BANKED below (Premise 2). A handler that answered
+            # with an empty result has said nothing, and spending its one delivery on that
+            # would make the first unrelated Bash call of a session consume a notice meant for
+            # the first failing test run. A deny is a delivery too: it reached the harness.
+            # Computed here because it reads the result's fields, so it must follow the type
+            # check above; the `sink.mark` that acts on it is below both validations, because
+            # a result either of them rejects is a result nobody received.
+            delivered = bool(result.context) or result.decision == Decision.DENY
             # The decision is read before anything else that can fail this handler. A deny is
             # the one thing a neighbouring bug must never cost, and it travels on one channel;
             # banking it here means a malformed `context` on the same result costs that handler
@@ -264,6 +270,20 @@ def dispatch(
             # handler's own policy.
             if result.context is not None and not isinstance(result.context, str):
                 raise _UnrecognisedContext(result.context)
+            # The delivery is banked here, past every check that can discard this result, and
+            # that placement is the whole point: marking above the two validations spent a
+            # once-per-context handler's single delivery on a result that then raised into the
+            # `except` below, so the context never reached `contexts`, never reached stdout,
+            # and the notice was gone for the session. Above the `if` below, not inside it: a
+            # deny with no context is a delivery that never appends anything, and marking at
+            # the append would stop marking it. One accepted loss remains, stated rather than
+            # hidden: when a NEIGHBOURING handler denies in the same dispatch, `contexts` is
+            # discarded with the refusal and this handler's context never reaches the harness
+            # although its delivery is spent. The alternative — marking after the join for the
+            # contexts that survived into stdout — is the foundation's redesign, not this
+            # line's.
+            if handler.once_key is not None and delivered:
+                sink.mark(handler.once_key)
             if result.context:
                 contexts.append(result.context)
         except BaseException as exc:  # judged by the handler's own policy

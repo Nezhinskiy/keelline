@@ -10,16 +10,16 @@ Codex, one Python package with **no runtime dependencies**.
 > writes files into a repository; the guards over a shell call, a commit message and a test
 > run; the bug ledger; the documentation and plan lints; `keelline setup`, which configures a
 > machine from a preset; the private overlay — `overlay create`, `overlay init`,
-> `overlay upgrade` — and `attach`/`detach`, which bind a repository to it and unbind it
+> `overlay upgrade`, `overlay publish-template` — and `attach`/`detach`, which bind a
+> repository to it and unbind it
 > again; and `keelline doctor`, which reports on the result. The hooks file that wires all of
 > it into a session ships too, so installing the plugin is enough to make the guards fire and
 > the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
-> `release check`. **Not yet:** `init`, `upgrade`, `uninstall`, the project templates, `assess`
-> and the adoption state machine — so today you write `keelline.toml` by hand; the
-> [Quickstart](#quickstart) shows the two keys it needs. Nor the lane that
-> publishes the overlay *template* repository, so `overlay create --local` is the source that
-> works today and `--template` waits on it.
+> `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
+> discipline. **Not yet:** `init`, `upgrade`,
+> `uninstall`, the project templates, `assess` and the adoption state machine — so today you
+> write `keelline.toml` by hand; the [Quickstart](#quickstart) shows the two keys it needs.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -41,7 +41,7 @@ adds:
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
-  earned them. Designed; the assessment engine is a later work package.
+  earned them. Designed; the assessment engine ships later.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
@@ -65,6 +65,34 @@ the state machine.
 
 ## Install
 
+<!-- RELEASING.md section 2, step 5 replaces EVERYTHING between the two
+`release-install` markers below — not just the first paragraph — with exactly the text in this
+comment, at the first release, with X.Y.Z the version that was tagged. The extent is marked
+rather than described because the replacement carries its own two code blocks: swapping only
+the opening paragraph would leave the untagged install commands and the "From the first
+release on" promise standing underneath it, so the released README would name two different
+install commands and make a forward reference that the release itself had just falsified.
+Written here so that the release commit is an edit and not a composition:
+
+**Released as X.Y.Z.** Both commands below install that release. The plugin form takes the
+tag, and `uv tool install keelline` resolves from PyPI:
+
+As a Claude Code plugin:
+
+```
+/plugin marketplace add Nezhinskiy/keelline@vX.Y.Z
+/plugin install keelline@keelline-marketplace
+```
+
+As a command-line tool:
+
+```bash
+uv tool install keelline
+```
+-->
+
+<!-- release-install:begin -->
+
 **Nothing is released yet.** There is no version tag, so nothing is on PyPI and both commands
 below install the repository's default branch as it stands rather than a release. `uv tool
 install keelline` does not resolve today; the form that does is here.
@@ -87,15 +115,20 @@ From the first release on, the same command takes the tag —
 with no resolver to run at hook time that [principle 9](docs/methodology/principles.md)
 describes, and the published package makes the bare name work.
 
+<!-- release-install:end -->
+
+In CI, a project calls the reusable workflow at a commit SHA;
+[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the three lines.
+
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
 `O_NOFOLLOW` and `O_DIRECTORY`, which have no Windows equivalent.
 
 ## Quickstart
 
-Two keys in a `keelline.toml` at the root of a repository are enough; every other key takes the
-`recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all of them,
-annotated.
+Three keys in a `keelline.toml` at the root of a repository start a project; every other key
+takes the `recommended` preset's default, and [docs/cli.md](docs/cli.md#configuration) lists all
+of them, annotated.
 
 ```toml
 [keelline]
@@ -103,6 +136,9 @@ version = "0.1.0"
 
 [project]
 name = "widget"          # one lowercase path segment
+
+[memory]
+groups = ["developer"]   # the preset names four; the store below has one
 ```
 
 The default memory mode keeps notes under `.keelline/local/memory/`, git-ignored, one
@@ -117,8 +153,14 @@ keelline doctor            # fifteen checks over this installation, one line; --
 ```
 
 `memory index` will tell you the notes reach no session until you say
-`keelline memory trust --in-repo-memory` once — that is the trust gate, and the next section
-says why it exists. Add `.keelline/local/` to `.gitignore` if it is not there already.
+`keelline memory trust --in-repo-memory` once — that is the trust gate, and
+[The threat model, in one paragraph](#the-threat-model-in-one-paragraph) says why it exists.
+Add `.keelline/local/` to `.gitignore` if it is not there already.
+
+The other commands in [Commands](#commands) expect more of a repository than those three keys
+create: `docs check` wants an `AGENTS.md`, `docs trail` a `docs/roadmap.md`, `bugs check` a
+ledger entry. Until `keelline init` ships, add each path as you start using the command that
+reads it; [docs/cli.md](docs/cli.md#configuration) lists every default.
 
 ## What it writes, and where
 
@@ -126,7 +168,7 @@ Keelline writes files. Being specific about which is the point of this section.
 
 | Path | What it is | Written by |
 |---|---|---|
-| `keelline.toml` | Your project's configuration, committed | you, or a later `init` lane |
+| `keelline.toml` | Your project's configuration, committed | you, until `keelline init` ships |
 | `docs/memory/` (configurable) | The note store, in `in-repo` and `overlay` mode | `keelline memory index` |
 | `.keelline/local/memory/` | The note store in `local-only` mode, the default — git-ignored | `keelline memory index` |
 | `<store>/MEMORY.md` | The rendered routing index. **Generated — do not hand-edit** | `keelline memory index` |
@@ -166,7 +208,7 @@ parser, and every registered command has a line — a test holds both.
 # Memory
 keelline memory index                                 # render MEMORY.md from the notes
 keelline memory index --check                         # report drift, write nothing
-keelline memory trust --in-repo-memory                # approve a repository's committed notes
+keelline memory trust --in-repo-memory                # approve the notes inside this repository
 keelline memory inventory                             # what a memory sweep reads
 keelline memory fit                                   # whether each injection bundle fits its hook slots
 keelline memory session-context --bundle standing-rules --part 1
@@ -193,12 +235,15 @@ keelline commit check --range origin/main..HEAD       # attribution lines in com
 keelline commit strip .git/COMMIT_EDITMSG             # take the attribution block out of a message file
 keelline test hygiene                                 # the faults that make a red run unattributable
 keelline test audit-entrypoints                       # tests that never exercise what they name
+keelline test attribute --command "uv sync --locked && uv run pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
-keelline overlay create --owner you --name keelline-private --local   # render one here, no network — the working source today
-keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template on GitHub, which nothing publishes yet
+keelline overlay create --owner you --name keelline-private --local   # render one here, no network call at all
+keelline overlay create --owner you --name keelline-private --template  # from <owner>/keelline-overlay-template, which you publish yourself
 keelline overlay init --owner you --root ../keelline-private   # name it after you; install the secret scan
 keelline overlay upgrade --root ../keelline-private --dry-run  # what a release would refresh
+keelline overlay publish-template --owner you                  # what it would create, mark and push; nothing leaves yet
+keelline overlay publish-template --owner you --yes            # publish the template repository from this checkout
 
 # Binding a repository to the overlay
 keelline attach --store ../keelline-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
@@ -210,6 +255,7 @@ keelline detach                                       # remove what attach added
 keelline setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 keelline setup --preset recommended --overlay ../keelline-private   # record an existing overlay; no --yes needed
 keelline setup --preset recommended --overlay create:you/keelline-private --yes  # create one on GitHub; --yes is the consent
+keelline setup --preset recommended --settings ~/dotfiles/claude/settings.json   # a linked settings file, written where it really is
 keelline setup --git-hooks                             # install the commit-message hook into this repository
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 
@@ -220,6 +266,10 @@ keelline doctor --json                                # every check with its sta
 # Internal and release
 keelline hook SessionStart                            # dispatch one harness hook event (internal)
 keelline release check                                # one version everywhere (this repository's own)
+keelline release check --tag v1.2.3                   # and the tag agrees, with nothing left in changelog.d
+keelline release notes --version 1.2.3 --draft        # render the section towncrier would write
+keelline release notes --version 1.2.3                # assemble CHANGELOG.md from changelog.d
+keelline release hashes --check                       # the shipped files still match the release record
 ```
 
 Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current
@@ -227,14 +277,16 @@ directory) and `--machine` (read a machine configuration file other than the def
 `memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
 exception: its `--root` names the directory an overlay is created in or the overlay itself,
 not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and
-prints one machine-readable object instead of one line; a list of findings is under
-`findings` whatever the summary calls them.
+prints one machine-readable object instead of one line. The commands that report a list of
+findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
+all spell it `findings`, whatever their summary line calls them; every other command's keys
+are its own and are listed with it in [docs/cli.md](docs/cli.md).
 
 Exit codes are the same everywhere: **0** success, **1** findings, **2** a refusal or an
 internal error. A caller must never read 2 as permission. Two commands are deliberately
 outside that rule. `keelline test audit-entrypoints` exits **0** even when it has findings,
 and lists them under `--json`, because its candidates are for triage and gating on them
-belongs to a lane that has not shipped. And `keelline hook` refuses with **2** on an internal
+is not shipped yet. And `keelline hook` refuses with **2** on an internal
 error only for `PreToolUse`, the one event a harness blocks on; everywhere else it degrades
 open with **0**, because on `UserPromptSubmit` an exit 2 erases what you typed and a bug in
 Keelline must not cost you that. A handler's own deny is a decision, not a breakage, and
@@ -281,9 +333,12 @@ Run `uv add`, not `pip install`. The lockfile is committed and CI runs `uv sync 
 note's `index:` line. A second writer appending entries to `MEMORY.md` is expected, and
 `memory index` harvests those back into the notes before it re-renders.
 
-`memory.mode` decides where the store is: `local-only` (the default — `.keelline/local/memory`,
-git-ignored, yours), `in-repo` (committed, and therefore behind the trust gate), or `overlay`
-(a directory of links into a machine-level overlay shared across your projects).
+`memory.mode` decides where the store is. `local-only` (the default — `.keelline/local/memory`,
+git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
+behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
+your projects) puts them outside it, and notes that are yours need no approval. The gate keys on
+where a note actually sits, never on what the repository's own `keelline.toml` declares — a clone
+that wrote `mode = "local-only"` would otherwise gate itself.
 
 ## The bug ledger, in one paragraph
 
@@ -298,11 +353,14 @@ key. The `close-bug` skill walks the closing of an entry through these commands.
 
 ## Skills and agents
 
-`skills/` ships `close-bug`, `memory-sweep`, and thin wrappers for commands that have not
-landed yet; `agents/` ships a read-only `code-navigator`. Every skill is written in action
+`skills/` ships two ported skills (`close-bug`, `memory-sweep`), six authored ones
+(`file-bug`, `sweep-defect-class`, `review-plan-three-lenses`, `attribute-failure`,
+`run-correctness-audit`, `retro-to-guard`), and thin wrappers for the commands the CLI
+registers; `agents/` ships a read-only `code-navigator`. Every skill is written in action
 language — never a harness tool's name — with the per-harness mapping in
-[skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is parsed
-against the real parser by a test.
+[skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is
+parsed against the real parser by a test. Three wrappers (`init`, `upgrade`, `uninstall`)
+describe commands that ship later, and the test that holds them says which.
 
 ## Contributing
 

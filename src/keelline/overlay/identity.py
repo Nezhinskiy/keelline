@@ -4,7 +4,7 @@ The question was spelled two and a half ways before this module existed, and non
 excluded much. `setup._validate_overlay_root` asked whether two manifest *files* existed — which
 the Keelline checkout itself satisfies, and which any Claude Code plugin repository satisfies,
 so the "carries the overlay's own layout" half of the machine's trust anchor was worth almost
-nothing. `overlay upgrade` asked nothing at all, and wrote fifteen files — a plugin manifest, a
+nothing. `overlay upgrade` asked nothing at all, and wrote every shipped file — a plugin manifest, a
 hooks file and a GitHub Actions workflow among them — into whatever `--root` named, which
 defaults to `.`. And `create._populated` asks whether `.claude-plugin/` is a directory, which is
 a third question again.

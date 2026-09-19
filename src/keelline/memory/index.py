@@ -108,8 +108,8 @@ class Reconciliation:
     refused_publish: list[str] = field(default_factory=list)
     # The `memory.index_extra` entries the same gate refused, kept apart from the note names
     # above. They were appended to the same list, and `run_index`'s message renders that list as
-    # notes — so a refused pointer read as "`alpha, docs/architecture/overview.md` took no line
-    # in …", one note name and one path in a sentence that calls both of them notes. Two kinds
+    # notes — so a refused pointer read as "`alpha, docs/overview.md` took no line in …",
+    # one note name and one path in a sentence that calls both of them notes. Two kinds
     # of thing, two lists, two sentences.
     refused_extra: list[str] = field(default_factory=list)
 

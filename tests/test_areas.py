@@ -27,6 +27,32 @@ def test_commands_modules_are_found_in_area_name_order() -> None:
     assert "keelline.release.commands" in names
 
 
+def test_the_runner_is_a_leaf_and_not_an_area() -> None:
+    # DC2: `runner.py` sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports nothing
+    # from `keelline`. Pinned as an import check rather than by walking the tree, because the
+    # tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
+    # import to a leaf is a review finding the import-boundary test does not catch, and this
+    # is the one line that does.
+    import ast
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "src" / "keelline" / "runner.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    imported = [
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
+    ] + [
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    ]
+    # The walk states it is non-empty first: an `imported` that came back empty — a parse that
+    # found no imports at all, or a filter that stopped matching — satisfies the filter below
+    # without reading a single name. `runner.py` imports five stdlib modules.
+    assert imported
+    assert not [name for name in imported if name.startswith("keelline")], imported
+
+
 def test_the_cli_registry_reads_the_same_discovery_as_the_helper() -> None:
     assert [registrar.__module__ for registrar in discover_registrars()] == [
         module.__name__ for module in area_modules("commands")
@@ -148,11 +174,25 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     source = ROOT / "src" / "keelline"
     areas = _area_names(source)
     files = sorted(source.rglob("*.py"))
+    # `scripts/` is walked too, and the reason is the violation that merged green under a walk
+    # that was not: `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
+    # constant `overlay/api.py`'s docstring said had been trimmed *because* nothing outside the
+    # area imported it. A walk one directory narrower than the code that can break the rule is a
+    # walk that will eventually report nothing. The script paths are relative to `ROOT` rather
+    # than to `source`, so `here` is `scripts` — not an area, so every keelline import a script
+    # makes is a crossing and has to go through an `api.py`.
+    scripts = sorted((ROOT / "scripts").glob("*.py"))
     crossings: list[str] = []
     offences: list[str] = []
     for path in files:
         found, broken = _boundary_offences(
             str(path.relative_to(source)), path.read_text(encoding="utf-8"), areas
+        )
+        crossings += found
+        offences += broken
+    for path in scripts:
+        found, broken = _boundary_offences(
+            str(path.relative_to(ROOT)), path.read_text(encoding="utf-8"), areas
         )
         crossings += found
         offences += broken
@@ -162,7 +202,22 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # walk narrowed to `commands.py` alone finds 13.
     assert len(areas) == 10, areas
     assert len(files) >= 70, len(files)
+    # The script walk's own floor: without it a `glob` that stopped matching would take the
+    # `scripts/` half of this guard back to the state that hid the violation, and the crossing
+    # count below has enough headroom to absorb the loss.
+    assert len(scripts) >= 3, scripts
     assert len(crossings) >= 60, crossings
+    # The exemption itself, in both directions. Nothing asserted its size, so a second entry
+    # could be added and no test would move — measured, with the historical violation
+    # `("memory/commands.py", "keelline.hooks.dispatch")` added to it: 6 passed, because
+    # `crossings` still counts the crossing and only the offence is suppressed. And nothing
+    # asserted the one crossing it names is still real, so the exemption would outlive the
+    # import it excuses.
+    #
+    # Mutation (declared): a second live crossing joins the exemption.
+    assert len(SURFACE_EXEMPT) == 1, sorted(SURFACE_EXEMPT)
+    for where, module in SURFACE_EXEMPT:
+        assert f"{where} -> {module}" in crossings, (where, module)
     assert not offences, "an area reached past another area's api.py:\n" + "\n".join(offences)
 
 

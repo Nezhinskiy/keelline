@@ -21,11 +21,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # No mutation entry: the mutation is adding an export, which is two lines in `api.py` (the
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
     # re-exporting `layout.COMMON` reddens this test and this test alone.
+    # The runner is a leaf now (`keelline.runner`); an area's surface does not re-export a
+    # leaf, which is why the three names this list used to carry are absent from it.
     required = {
-        # the seam every harness call goes through, for attach, doctor and setup
-        "Runner",
-        "subprocess_runner",
-        "Completed",  # what a runner answers with; every stub in the suite builds one
         # creating an overlay and making it this owner's, for setup
         "create",
         "Created",
@@ -42,6 +40,10 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "PLUGIN_MANIFEST",
         "MARKETPLACE_MANIFEST",
         "CODEX_PLUGIN_MANIFEST",
+        # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
+        # outside `src/`, and the one the wave-3 trim did not see because the boundary walk
+        # stopped at `src/`
+        "OVERLAY_FILES",
     }
     assert required == set(overlay.__all__)
 

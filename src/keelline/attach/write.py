@@ -73,13 +73,14 @@ from keelline.memory.api import (
     PartialLink,
     attach_main,
     detach_main,
+    harness_anchor,
     harness_link_needed,
     harness_memory_path,
     link,
     main_checkout,
     resolve,
 )
-from keelline.overlay.api import Runner
+from keelline.runner import Runner
 from keelline.scaffold import (
     EntriesError,
     Style,
@@ -135,10 +136,10 @@ _INSIDE = ".keep"
 #
 # There are exactly three writes that create a directory here, and each one's parents are on
 # this list: `LEDGER` under `.keelline/local/`, the rule copies under `.codex/rules/`, and
-# `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, ordinarily
-# `docs/memory/`) is deliberately **not** here: it is repository-configured, may be a directory
-# the project already keeps for its own reasons, and `worktree.detach_main` settled that
-# question the other way — "withdrawing a link is not licence to delete a directory".
+# `LOCAL_SETTINGS` under `.claude/`. The link tree's directory (`paths.memory`, wherever the
+# project configures it) is deliberately **not** here: it is repository-configured, may be a
+# directory the project already keeps for its own reasons, and `worktree.detach_main` settled
+# that question the other way — "withdrawing a link is not licence to delete a directory".
 #
 # Closed because a ledger is a file a clone can commit. `detach` iterates this tuple and keeps
 # only the members the ledger names, so the ledger can shorten the list and never extend it,
@@ -857,6 +858,19 @@ def attach(
     # writes while what it reads is loaded below them.
     config = load(root, machine=machine)
     _check_groups(binding, config)
+    # The seventh, and the one that is not about this repository at all: the anchor for the
+    # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
+    # below every write here — so a home directory that is not there, and the ordinary
+    # dotfiles layout that links `~/.claude` elsewhere, were discovered after the ignore
+    # region, the rule files, the settings merge, the ledger and the binding record. Measured:
+    # `PartialLink` with three links made, then a `detach` that could not undo it.
+    #
+    # Asked for `root` and not for every checkout, because `_checkouts` needs `git` and is
+    # read below: every checkout shares `.claude/projects` under one home, which is the
+    # component a dotfiles manager links, so the layout that reaches production is refused
+    # here for all of them. A `<slug>` component that is itself a symlink is left to the
+    # per-call floor in `harness_anchor`, which is a `Refusal` either way.
+    harness_anchor(root, home)
     previous = _existing_ledger(root)
     # Above every write, because the first of them creates `.keelline/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -1067,7 +1081,16 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     # `git` that cannot run is knowable at the start. It used to be asked between the settings
     # withdrawal and the link trees, so a machine whose `git` was gone got exit 1 with the
     # settings file and the `.codex/rules/` copies already removed and every link still in place.
+    #
+    # The anchor for each checkout's harness link is the same shape and is asked in the same
+    # breath, with this list as its argument: `detach_main` asks it per checkout from inside the
+    # withdrawal, so a home whose `.claude` became a symlink after the attach — a dotfiles
+    # manager adopting it is the ordinary way — let a raw `UnsafePath` out of `detach` as
+    # `internal error`, with the rule files already deleted and every later run failing at the
+    # same line.
     checkouts = _checkouts(root)
+    for tree in checkouts:
+        harness_anchor(tree, home)
     ignore_remainder = _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
