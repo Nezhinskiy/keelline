@@ -1,6 +1,7 @@
 # The reusable workflow a project calls (§5.8). It checks out the caller, checks out Keelline
-# at THIS FILE's own commit — no resolver, no build backend, no network beyond the two
-# checkouts — and runs the documentation, ledger, plan, commit-message and trail gates with
+# at THIS FILE's own commit — no resolver and no build backend; the network is the two
+# checkouts and whatever `setup-python` below fetches when the runner has no matching
+# interpreter cached — and runs the documentation, ledger, plan, commit-message and trail gates with
 # `python3 -m keelline`. The gate's configuration is read from the base ref (§8.3): the
 # base's own copy of `keelline.toml` decides the state, and on any branch but the base itself
 # the tree's copy must equal it. While the base's state is not `installed`, every check is

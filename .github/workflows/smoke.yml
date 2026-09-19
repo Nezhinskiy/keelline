@@ -1,7 +1,9 @@
 # §5.8's smoke: the plugin installed from this checkout with the real harness CLI under a
 # temporary configuration directory, every hook entry fed a sample event through the
-# INSTALLED wrapper, the reusable workflow called in both forms, and the clone-to-
-# exfiltration scenario (S10). Weekly as well as on every change, because the harness CLI
+# INSTALLED wrapper, the reusable workflow called in the same-repository form — the two
+# `owner/repo/…@ref` forms are `smoke-release.yml`'s, for the reason `same-repository-form`
+# below states — and the clone-to-exfiltration scenario (S10). Weekly as well as on every
+# change, because the harness CLI
 # moves under this repository and only a run can say whether an install still works.
 #
 # Every value that reaches a shell arrives through `env:`, including the installed plugin's

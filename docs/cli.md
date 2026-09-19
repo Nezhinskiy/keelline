@@ -1161,7 +1161,8 @@ It checks out the caller, checks out Keelline **at the commit the `uses:` line p
 off the platform's own record of which reusable workflow is running, never off the caller's
 inputs, and asserted against `git rev-parse HEAD` before anything else runs — and runs
 `docs check`, `bugs check`, `plan check`, `commit check` and `docs trail --check` with
-`python3 -m keelline`. No resolver, no build backend and no network beyond the two checkouts.
+`python3 -m keelline`. No resolver and no build backend; the network is the two checkouts and
+whatever `setup-python` fetches when the runner has no matching interpreter cached.
 
 **Where the configuration comes from, and why it is not the tree under review.** The state the
 gate enforces on is read from `keelline.toml` **on the base ref**, and on any branch but the
