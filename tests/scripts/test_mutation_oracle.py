@@ -567,9 +567,25 @@ def test_the_housekeeping_sweep_leaves_the_lock_alone(tmp_path: Path) -> None:
     # and nothing stated it — a sweep that took the lock with it would let the next run in while
     # the first was still working, which is the hazard with one more step in it.
     #
+    # **`root` is a throwaway and not this checkout, and the first version of this test got that
+    # wrong.** `sweep_stale_scratch` has two halves: the `tempdir` glob, which `tempdir=` aims
+    # wherever a caller says, and a walk over `git worktree list` run in `ROOT`, which `tempdir=`
+    # does not scope at all. With `ROOT` left at the real repository, the second half removed
+    # every registered `keelline-oracle-*/tree` — including the live checkout of the oracle
+    # running this very test. It passed locally, where no oracle was running, and CI reported
+    # `0 test(s) ran` on the clean tree: this test destroyed the run that was executing it, which
+    # is precisely the hazard the lock it is testing exists to prevent. The loader above states
+    # the rule — every test here points `ROOT` at a throwaway directory — and a sweep is the one
+    # function in this module where breaking it is not merely untidy.
+    #
+    # A plain directory and not a repository: `_git` runs with `check=False`, so the worktree
+    # half finds nothing and the `tempdir` half — the half this test is about — is what runs.
+    #
     # Mutation (declared): the `is_dir()` arm drops out of the sweep -> the lock is reported
     # dropped and the last two assertions redden.
-    module = oracle()
+    root = tmp_path / "elsewhere"
+    root.mkdir()
+    module = oracle(root=root)
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     lock = scratch / module.LOCK_NAME
