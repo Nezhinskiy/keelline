@@ -25,6 +25,7 @@ from keelline.memory.worktree import (
     linked_names,
 )
 from keelline.presets import load_preset
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -1190,3 +1191,45 @@ def test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind(tmp_path: P
     assert linked_names(nothing) == (INDEX_NAME,)
     assert link(tree, store, nothing, home=a_home(tmp_path)).created == []
     assert not (tree / "docs" / "memory").exists()
+
+
+def test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all(
+    tmp_path: Path,
+) -> None:
+    # The third caller of the same rule, and the one `attach` and `detach` do not cover. The
+    # case above asserts that `link` refuses; this one asserts *where*. `link` used to run its
+    # whole group loop and only then call `_apply_harness_link`, which is where the anchor is
+    # asked about — so on the ordinary stow / chezmoi / synced home the note links were made
+    # and the refusal arrived after them. Nothing removes them afterwards: `detach_main`
+    # refuses above every withdrawal, correctly by its own contract, so no shipped command
+    # will take them out. And the reachable caller is `SessionStart`, which catches the
+    # `Refusal` and reports `NOT_LINKED` — so the session told the model the notes were not
+    # linked while three links had just been made.
+    #
+    # Asserting only that a `Refusal` is raised is what the case above already does and is
+    # what the defective code already satisfied. The assertion that carries this one is that
+    # the worktree is byte-for-byte as it was.
+    #
+    # Mutation (declared, "the session link step discovers the harness anchor after it has
+    # written"): the hoisted call goes -> the refusal still arrives, from
+    # `_apply_harness_link`, and the base-directory assertion reddens with the group links and
+    # the index link already made.
+    root, store, config = a_checkout(tmp_path)
+    tree = a_worktree(root, tmp_path / "wt")
+    home = a_home(tmp_path)
+    elsewhere = _a_linked_claude(home, tmp_path)
+    record(store, config)
+    before = snapshot(tree)
+    # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
+    assert before
+    with pytest.raises(Refusal) as refused:
+        link(tree, store, config, home=home)
+    assert str(home / ".claude") in str(refused.value)
+    # `snapshot` reaches the index link, which resolves to a file; it does not descend a
+    # symlink to a directory, so the group links are asserted by the base directory the first
+    # of them would have created.
+    assert_snapshot_unchanged(tree, before)
+    assert not (tree / "docs" / "memory").exists()
+    # Nothing reached the dotfiles tree either: the refusal is in front of the link, not a
+    # write that followed it.
+    assert list(elsewhere.iterdir()) == []

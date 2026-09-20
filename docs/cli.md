@@ -846,8 +846,9 @@ arises when Keelline's own key was the file's entire contents.
 **The harness memory link is written under a walk that follows no symlink.** The home
 directory itself is found and never created — a missing one is a refusal — and every component
 below it has to be a real directory: a `~/.claude` linked into a dotfiles tree is refused by
-name, above `attach`'s first write and above `detach`'s first withdrawal, rather than written
-through. The refusal names the component and the way out, which is the same one `--settings`
+name, above `attach`'s first write, above `detach`'s first withdrawal and above the first note
+link a session makes in a worktree, rather than written through. The refusal names the component
+and the way out, which is the same one `--settings`
 exists for on the `setup` side: make the directory real and have your dotfiles manager adopt the
 files inside it.
 
