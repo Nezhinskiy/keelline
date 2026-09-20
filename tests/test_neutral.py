@@ -169,20 +169,22 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
     # is about twelve passes over 4.8 M characters, 13 s of the suite on the machine this was
     # measured on (2026-09-20), and it runs on three interpreters in CI.
     #
-    # A two-stage prefilter is the obvious repair and it is **not constructible here**, which
-    # is worth writing down so the next reader does not re-derive it. Every cheap first stage —
-    # a first-byte set, a two-byte prefix digest, a rolling hash — needs a key computed from
-    # each *token*, and this repository deliberately holds no token: `FORBIDDEN` is six-byte
-    # digests of whole tokens, by the ruling the module docstring makes, and a digest says
-    # nothing about a prefix. Generating any prefilter table means holding the token list,
-    # which is a change to what is stored rather than to how it is scanned.
+    # A two-stage prefilter is the obvious repair, and **the measurement is what rules it out**
+    # rather than any argument about what can be built. A first stage needs a cheap key per
+    # token; one could be stored — a second, shorter derived column, produced by the same
+    # `digest_of` an author already runs to add a token, revealing no more than the six-byte
+    # digest beside it. What it would buy is the number below.
     #
-    # The constant-factor alternatives were measured on the largest file in the tree and are
-    # flat: `.digest()` bytes instead of `.hexdigest()`, 0.636 s against 0.655 s; hashing only
-    # the distinct windows per width, 0.711 s (61% of windows are distinct at these widths);
-    # `memoryview` slices, 0.690 s. Even a hypothetical perfect one-byte prefilter measures
-    # 0.286 s — 2.3x, not the twelve the pass count suggests. Do not spend a lane on this
-    # without changing what the table stores.
+    # Measured on the largest file in the tree: the current scan, 0.655 s. `.digest()` bytes
+    # instead of `.hexdigest()`, 0.636 s. Hashing only the distinct windows per width, 0.711 s,
+    # because 61% of windows at these widths are already distinct. `memoryview` slices, 0.690 s.
+    # And a **hypothetical perfect one-byte prefilter**, which no real table could beat: 0.286 s.
+    # That is the ceiling on the whole idea — 2.3x, not the twelvefold the pass count suggests —
+    # against 13 s of a suite that runs in about 170 s. A second stored column, and a second way
+    # for the table to fall out of step with itself, does not buy 7 s.
+    #
+    # Note also what this is not. The bound on CI is the oracle job, not this gate; the two are
+    # unrelated and must not be traded against each other.
     raw = text.lower().encode("utf-8")
     found: list[str] = []
     for width in sorted({width for width, _ in forbidden}):

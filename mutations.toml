@@ -5034,3 +5034,45 @@ after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-lat
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
 ]
+
+# --- One oracle at a time --------------------------------------------------------------------
+# `sweep_stale_scratch` has always assumed a single writer and said so in its own docstring, and
+# nothing enforced it. During the wave-4 review a filtered run started beside an unfiltered one
+# removed its scratch checkout, and every mutation after that point reported FINDING — 138 of
+# them, all false, on a clean tree. `O_EXCL` is the whole mechanism: the create either wins or
+# raises, with no window between the test and the write.
+[[mutation]]
+name = "a second oracle takes the lock instead of refusing"
+file = "scripts/mutation_oracle.py"
+before = '            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)'
+after = '            handle = os.open(lock, os.O_CREAT | os.O_WRONLY, 0o600)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout",
+]
+
+# And the other direction, which has to hold or the cure is worse than the disease: a `SIGKILL`
+# runs no `finally`, so a lock outliving its writer is the ordinary aftermath of an interrupted
+# run. One that refused for ever would need a person with a shell before the oracle ran again.
+[[mutation]]
+name = "a lock left by a dead process refuses for ever"
+file = "scripts/mutation_oracle.py"
+before = '''    except ProcessLookupError:
+        return None'''
+after = '''    except ProcessLookupError:
+        return "a process that has gone"'''
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed",
+]
+
+# The lock shares the scratch prefix, so the sweep's glob finds it and only the `is_dir()` arm
+# spares it. That is an invariant between two functions and nothing stated it: a sweep that took
+# the lock with it would let the next run in while the first was still working, which is the
+# hazard above with one more step in it.
+[[mutation]]
+name = "the housekeeping sweep takes the lock with it"
+file = "scripts/mutation_oracle.py"
+before = '        if str(stale) in dropped or not stale.is_dir():'
+after = '        if str(stale) in dropped:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
+]
