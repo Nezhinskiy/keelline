@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import cast
 
@@ -11,6 +10,7 @@ import pytest
 
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, NullSink, Policy
 from keelline.hooks.dispatch import TRUNCATION_MARK, Recorder, _git_toplevel, dispatch, parse_event
+from tests.gitfixture import git
 
 CLAUDE_ENV = {"CLAUDE_PROJECT_DIR": "/p", "CLAUDE_PLUGIN_ROOT": "/r"}
 
@@ -347,6 +347,66 @@ def test_a_once_per_context_handler_that_raises_is_not_marked() -> None:
     assert "boom" in dispatch(event(), [once], None, sink=recorder).stderr
 
 
+@pytest.mark.parametrize(
+    "rejected",
+    [
+        HookResult(context=cast(str, 42)),
+        HookResult(context="A", decision=cast(Decision, "block")),
+    ],
+    ids=["non-string-context", "unrecognised-decision"],
+)
+def test_a_once_per_context_handler_whose_result_is_rejected_keeps_its_one_delivery(
+    rejected: HookResult,
+) -> None:
+    # The delivery used to be banked above the two validations that can discard the result. A
+    # truthy non-string `context`, or an unrecognised decision alongside a context, marked
+    # `once_key` and then raised into the per-handler `except`: the context never reached
+    # `contexts`, never reached stdout, and the handler was skipped for the rest of the
+    # session — its one notice spent on a result nobody received. Both arms are parametrised
+    # because the two validations are separate branches and a fix to one is not a fix to both.
+    #
+    # Asserted from both sides, because "not marked" alone is satisfied by a handler that
+    # never ran: the rejected dispatch records the failure and marks nothing, and the NEXT
+    # dispatch still delivers, which is the property the mark exists to protect.
+    #
+    # Mutation (declared): mark immediately after `delivered` is computed -> the first
+    # dispatch marks `ledger-notes`, the second is skipped, and the last two assertions
+    # redden on both arms.
+    recorder = Recorder()
+    results = [rejected, HookResult(context="A")]
+
+    def run(ev: HookEvent, config: object) -> HookResult:
+        return results.pop(0)
+
+    once = Handler(
+        name="a", event="PreToolUse", policy=Policy.OPEN, run=run, once_key="ledger-notes"
+    )
+    first = dispatch(event(), [once], None, sink=recorder)
+    assert "unrecognised" in first.stderr, first.stderr
+    assert recorder.marks == set()
+    second = dispatch(event(), [once], None, sink=recorder)
+    assert json.loads(second.stdout)["hookSpecificOutput"]["additionalContext"] == "A"
+    assert recorder.marks == {"ledger-notes"}
+
+
+def test_a_deny_that_carries_no_context_is_still_a_delivery() -> None:
+    # The mark sits above `if result.context:`, not inside it, and this is the assertion that
+    # holds it there: a deny with no context appends nothing, so a mark written at the append
+    # would stop marking the one case the `or result.decision == Decision.DENY` half of
+    # `delivered` exists for. A deny reached the harness; it spent the delivery.
+    #
+    # No mutation entry of its own: moving the mark inside the `if` is the mutation, and it is
+    # a change of indentation rather than a substituted line. Measured by hand instead — see
+    # the fix report.
+    recorder = Recorder()
+    once = handler(
+        "a", Policy.OPEN, HookResult(decision=Decision.DENY, reason="no"), once_key="ledger-notes"
+    )
+    outcome = dispatch(event(), [once], None, sink=recorder)
+    assert outcome.exit_code == 2
+    assert recorder.marks == {"ledger-notes"}
+
+
 def test_one_handler_cannot_blank_what_the_next_one_reads() -> None:
     seen: list[object] = []
 
@@ -498,23 +558,9 @@ def test_an_inherited_git_dir_never_reaches_the_hook_paths_git(
     # `_git_toplevel` directly, and a `cwd` with no `.git` above it: `project_root` tries
     # `_walk_to_git_root` first and would find the answer without ever asking `git`.
     import shutil
-    import subprocess as sp
 
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
-
-    def git(root: Path, *args: str) -> None:
-        sp.run(
-            ["git", *args],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_CONFIG_SYSTEM": os.devnull,
-            },
-        )
 
     victim = tmp_path / "victim"
     victim.mkdir()

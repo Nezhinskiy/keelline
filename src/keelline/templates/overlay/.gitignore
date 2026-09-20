@@ -1,0 +1,6 @@
+# Nothing in this repository is worth a leaked credential. Environment files never enter it,
+# whatever they are called, and the secret scans are the other half of that promise.
+.env
+.env.*
+*.env
+.DS_Store

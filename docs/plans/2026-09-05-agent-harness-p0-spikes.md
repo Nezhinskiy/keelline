@@ -8,9 +8,9 @@
 
 **Tech Stack:** bash and zsh, python3 (3.13.0 at `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3` and `/usr/local/bin/python3`, 3.9.6 at `/usr/bin/python3` — the difference is itself under test), `claude` 2.1.259, `codex` CLI (npm `@openai/codex` 0.153.4, not yet installed on this machine), `gh` 2.93.0, `uv` 0.11.19. The `claude` pin is the version this plan was written against and the one the 2026-09-05 `strings` measurement below names; the recorded runs used 2.1.261 on 2026-09-05 and 2.1.263 on 2026-09-06, each stated where it applies.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-agent-harness-extraction-design.md` — §14 lists the spikes; §5.1 and §2 D11 consume S2; §5.3, §9.5 and §10 consume S1, S2, S7 and S8; §5.8 consumes S4; §6.1 consumes S6; §6.4 consumes S3 and S5; §7.4 consumes S9; §13 consumes S10; §2 D5 consumes S3.
+**Spec:** the agent-harness extraction design, at the source's spec path — a private repository; it cannot be opened from this one — §14 lists the spikes; §5.1 and §2 D11 consume S2; §5.3, §9.5 and §10 consume S1, S2, S7 and S8; §5.8 consumes S4; §6.1 consumes S6; §6.4 consumes S3 and S5; §7.4 consumes S9; §13 consumes S10; §2 D5 consumes S3.
 
-**Scope:** package `spikes` (§15.2); consumes no contract; produces the recorded answers that `foundation` (S1, S2, S4, S7), `hooks-core` (S1, S2, S7, S8), `scaffold` (S9), `overlay` (S6), `attach` (S6, S10), `setup` (S5, S6), `memory-engine` (S3) and `workflows` (S10) cite. A change belongs to this plan iff it is a scratch experiment answering one of S1–S10 or an edit to the Findings section of this file; no Keelline source, no ai-daybook source, and nothing committed outside this plan file.
+**Scope:** package `spikes` (§15.2); consumes no contract; produces the recorded answers that `foundation` (S1, S2, S4, S7), `hooks-core` (S1, S2, S7, S8), `scaffold` (S9), `overlay` (S6), `attach` (S6, S10), `setup` (S5, S6), `memory-engine` (S3) and `workflows` (S10) cite. A change belongs to this plan iff it is a scratch experiment answering one of S1–S10 or an edit to the Findings section of this file; no Keelline source, none in the source project, and nothing committed outside this plan file.
 
 ## Global Constraints
 
@@ -27,7 +27,7 @@
 ### Task 0: Scratch root and helper library
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (the Findings section at the end)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (the Findings section at the end)
 
 **Interfaces:**
 - Produces: the scratch library at `$SPIKE/lib.sh` (not committed) with `mkcfg NAME`, `require_under_spike PATH`, `mkplugin DIR NAME`, `install_plugin DIR NAME CFG`, `installed_root NAME CFG`, `run_claude CFG PROJECT ARGS…`, `hook_records CFG`, `persisted_outputs CFG`, used by every later task.
@@ -156,7 +156,7 @@ Append to Findings → Environment: the outputs of `claude --version`, `python3 
 ### Task 1: S1 — Codex plugin hooks
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S1)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S1)
 
 **Interfaces:**
 - Produces: for `foundation`, the environment variable or stdin field that identifies Codex (the plan's `detect_harness()` is provisional until this lands) and whether extra keys in a shared hook entry are tolerated; for `hooks-core`, the tool names Codex reports in `PreToolUse`; for §5.1, which marketplace file Codex reads.
@@ -250,7 +250,7 @@ Under Findings → S1, each with the command and the observed line: (1) the envi
 ### Task 2: S2 — plugin-root substitution and executable bits
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S2)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S2)
 
 **Interfaces:**
 - Produces: for `foundation` and `hooks-core`, whether `${CLAUDE_PLUGIN_ROOT}` is substituted in hook commands and in skill content on each harness, and whether the installed copy keeps file modes.
@@ -320,7 +320,7 @@ Record under Findings → S2 whether Codex substituted the variable in skill con
 ### Task 3: S3 — Codex `/import` scope for Claude memories
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S3)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S3)
 
 **Interfaces:**
 - Produces: for §2 D5, whether Codex's import carries Claude memory notes at all; if it does, §6.4 gains one sentence, otherwise nothing changes.
@@ -374,7 +374,7 @@ Under Findings → S3: which canary strings landed where (index line, note body,
 ### Task 4: S4 — `claude plugin validate --strict` per manifest path
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S4)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S4)
 
 **Interfaces:**
 - Produces: for `foundation` Task 9 and Task 10, the exact `validate` invocations that report a defect in each manifest and in the plugin's skills and agents, and every warning the §5.1 layout produces.
@@ -443,7 +443,7 @@ Under Findings → S4: the sixteen exit codes; for the broken tree, which invoca
 ### Task 5: S5 — background refresh of a private SSH marketplace
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S5)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S5)
 
 **Interfaces:**
 - Produces: for §6.4 and the `setup` lane, whether a private marketplace over SSH updates at session start, whether HTTPS falls back to a re-clone or fails, and whether `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` changes the HTTPS outcome.
@@ -509,7 +509,7 @@ OWNER=$(cat "$SPIKE/owner"); gh repo delete "$OWNER/keelline-spike-s5" --yes || 
 ### Task 6: S6 — `gh repo create --template` race and marketplace renaming
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S6)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S6)
 
 **Interfaces:**
 - Produces: for the `overlay` lane, whether `--template --clone` races GitHub's asynchronous generation and therefore how `overlay create` must retry; for `attach`, whether a renamed overlay marketplace installs.
@@ -583,7 +583,7 @@ gh repo delete "$OWNER/keelline-spike-template" --yes || echo "owner deletes kee
 ### Task 7: S7 — the 10,000-character cap, per entry or per event
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S7)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S7)
 
 **Interfaces:**
 - Produces: for `memory-engine` and `hooks-core`, whether §9.5's one-entry-per-bundle remedy holds (the cap applies per hook entry) and the largest single entry that is not spilled; for `foundation`, the value behind the preset's `hook_output_chars`.
@@ -648,7 +648,7 @@ Under Findings → S7: per arm, the stderr size line, the hook record's stdout l
 ### Task 8: S8 — the fail-closed matrix through the wrapper
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S8)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S8)
 
 **Interfaces:**
 - Produces: the measured `(row, payload) → (exit code, blocked?, attributed reason)` table the `hooks-core` lane turns into a permanent wrapper test, and the first draft of the wrapper itself, kept under `$SPIKE/s8` until that lane adopts it.
@@ -742,7 +742,7 @@ The wrapper is correct if, on the pristine copy, DENY gives rc 2 with `KL_DENY` 
 ### Task 9: S9 — path containment fixture (design only)
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S9)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S9)
 
 **Interfaces:**
 - Produces: the fixture the `scaffold` lane implements as a containment test with `plan()` from contract C2.
@@ -780,7 +780,7 @@ with the memory path created as a symlink to a directory outside the fixture roo
 ### Task 10: S10 — clone-to-exfiltration scenario (design only)
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S10)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → S10)
 
 **Interfaces:**
 - Produces: the scenario the `workflows` lane implements in the smoke workflow, with fixtures from the `attach` and `memory-engine` lanes.
@@ -796,7 +796,7 @@ Under Findings → S10: a fixture repository with in-repo memory mode, a note ca
 ### Task 11: Close the record
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → Summary)
+- Modify: `docs/plans/2026-09-05-agent-harness-p0-spikes.md` (Findings → Summary)
 
 - [ ] **Step 1: Fill the summary table** — one row per spike: answer in one line, the design section it feeds, and whether the design changes (`as designed` / `amend §…`).
 
@@ -804,7 +804,7 @@ Under Findings → S10: a fixture repository with in-repo memory mode, a note ca
 
 ```bash
 if grep -nE "$HOME|$(cat "$HOME/.cache/keelline-spikes/owner" 2>/dev/null || echo NO_OWNER_RECORDED)" \
-     docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md; then
+     docs/plans/2026-09-05-agent-harness-p0-spikes.md; then
   echo "LEAK: rewrite the lines above before committing" >&2; exit 1
 fi
 echo "record carries no home path and no login"
@@ -825,7 +825,7 @@ rm -rf "$HOME/.cache/keelline-spikes"
 - [ ] **Step 4: Commit the record**
 
 ```bash
-git add docs/superpowers/plans/2026-09-05-agent-harness-p0-spikes.md
+git add docs/plans/2026-09-05-agent-harness-p0-spikes.md
 git commit -m "docs(plans): record the Keelline P0 spike answers"
 ```
 
@@ -835,7 +835,7 @@ git commit -m "docs(plans): record the Keelline P0 spike answers"
 
 Filled in during execution; every entry names the command that produced it and quotes what it printed. Written in the past tense. Paths are relative to the scratch root; environment variables are named, never valued.
 
-**Artifact survival, by era.** The 2026-09-05 arms' artifacts under `$SPIKE` do not survive: the scratch root was deleted after each of that day's review rounds, so nothing those entries quote can be re-read from disk by anyone who did not run it — every such quote is testimony, not a reference. The 2026-09-06 continuation rebuilt the root, and the artifacts its own entries cite — the scratch `CODEX_HOME` with its plugin caches, S1's and S2's rebuilt fixtures and probe logs, and S3's seeded memory store — did still exist under it when this record was written; the 2026-09-05 Task 11 that deleted the first root had already run by then, and the deletion still pending — the 2026-09-06 continuation's own Task 8 Step 4, deferred while S3 is open — takes all of them. Of the `.superpowers/sdd/2026-09-05-agent-harness-p0-spikes/` scripts and logs this record cites, **two survive**: finding A2(b)'s log `a2b-exec-bit-measurement.log` and the script that wrote it, `a2b_exec_bit_probe.py`. They are gitignored rather than committed, so they are re-readable only from the `harness/agent-harness-p0-spikes` worktree that produced them — not from this branch's worktree, and not by anyone reading only this file. Every other `taskN_*.py` and `*.log` artifact this record names is gone; those quotes are testimony on the same footing as the deleted `$SPIKE` ones, and whether they ever existed is not recoverable from here either. Each entry discloses per quote which artifact it came from, so a reader can tell what kind of evidence backs any one line.
+**Artifact survival, by era.** The 2026-09-05 arms' artifacts under `$SPIKE` do not survive: the scratch root was deleted after each of that day's review rounds, so nothing those entries quote can be re-read from disk by anyone who did not run it — every such quote is testimony, not a reference. The 2026-09-06 continuation rebuilt the root, and the artifacts its own entries cite — the scratch `CODEX_HOME` with its plugin caches, S1's and S2's rebuilt fixtures and probe logs, and S3's seeded memory store — did still exist under it when this record was written; the 2026-09-05 Task 11 that deleted the first root had already run by then, and the deletion still pending — the 2026-09-06 continuation's own Task 8 Step 4, deferred while S3 is open — takes all of them. Of the `.superpowers/sdd/2026-09-05-agent-harness-p0-spikes/` scripts and logs this record cites, **two survive**: finding A2(b)'s log `a2b-exec-bit-measurement.log` and the script that wrote it, `a2b_exec_bit_probe.py`. They are gitignored rather than committed, so they are re-readable only from the worktree in the source project that produced them — not from this branch's worktree, and not by anyone reading only this file. Every other `taskN_*.py` and `*.log` artifact this record names is gone; those quotes are testimony on the same footing as the deleted `$SPIKE` ones, and whether they ever existed is not recoverable from here either. Each entry discloses per quote which artifact it came from, so a reader can tell what kind of evidence backs any one line.
 
 **The Task 11 scrub, and what it covers.** Step 2 ran and printed no home path and no login;
 the same pattern was re-run by the 2026-09-06 continuation's Task 8 over this record and its
@@ -1565,11 +1565,11 @@ grep -Hn 'ROOT=' {} \;` found one installed copy and printed
 from. `ls "$SPIKE/codex-home/sessions" | tail -3` printed `2026`, and `grep -rl
 'CLAUDE_PLUGIN_ROOT' "$SPIKE/codex-home/sessions"` matched two rollout transcripts, both under
 `$SPIKE/codex-home/sessions/2026/09/06/`:
-`rollout-2026-09-06T17-53-00-01a0776c-…jsonl` and
-`rollout-2026-09-06T18-07-30-01a07779-…jsonl` (session ids elided past their first segment;
+`rollout-2026-09-06T17-53-00-01a0776-…jsonl` and
+`rollout-2026-09-06T18-07-30-01a0777-…jsonl` (session ids elided past their first segment;
 the two differ there, which is all the argument below uses them for). `head -c 400
 "$SPIKE/s2/codex-result.txt"` printed this run's own header, ending in a `session id:` whose
-first segment was `01a07779` — the 18:07 file's own session id, not the 17:53 file's,
+first segment was `01a0777` — the 18:07 file's own session id, not the 17:53 file's,
 so the transcript this run created was the 18:07 file. The 17:53 file's own timestamp preceded
 it by fourteen minutes; it was left by an interrupted earlier attempt at this same Step 4 that
 this task did not run — the same attempt whose incomplete, uncommitted rewrite of this

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +18,7 @@ from keelline.memory.store import (
     refusal_reason,
     resolve,
 )
+from tests.gitfixture import git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -47,19 +47,6 @@ REMOTE = "git@example.com:acme/widget.git"
 def a_config(root: Path, mode: str, groups: str = '["developer", "project-stable"]') -> Config:
     (root / CONFIG_FILE).write_text(CONFIG.format(mode=mode, groups=groups), encoding="utf-8")
     return load(root, machine=root / "absent.toml")
-
-
-def git(root: Path, *args: str) -> None:
-    # The developer's own git configuration must not reach these runs: `commit.gpgsign`,
-    # `core.hooksPath` and `init.templateDir` can each hang or fail a commit that has nothing
-    # to do with the code under test.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def a_repo(root: Path, remote: str | None = REMOTE) -> None:
@@ -268,8 +255,8 @@ def test_overlay_mode_refuses_a_symlinked_paths_memory_into_another_project(
 def test_a_group_name_that_escapes_the_store_is_refused(tmp_path: Path) -> None:
     root = tmp_path / "project"
     a_repo(root)
-    # `"../../secret"` from the store (`root/docs/memory`) resolves to `root/secret`, two
-    # levels up — not to `tmp_path/secret`, which is a level further still. The leak has to
+    # `"../../secret"` from the store (`root` plus `paths.memory`) resolves to `root/secret`,
+    # two levels up — not to `tmp_path/secret`, which is a level further still. The leak has to
     # exist at the location the group name actually resolves to, or a mutation that drops the
     # containment guard would be masked by the ordinary "not in the store" / `exists()` check
     # instead of exposing the escape.

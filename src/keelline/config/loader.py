@@ -11,6 +11,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
+from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import validate_paths
 from keelline.config.schema import (
@@ -53,6 +54,18 @@ T = TypeVar("T")
 
 class ConfigError(Failure):
     """A keelline.toml that cannot be trusted as written."""
+
+
+class MachineConfigError(ConfigError):
+    """The **machine** file could not be read, which is not `keelline.toml`'s doing.
+
+    A subclass and not a message, because the one caller that has to tell them apart must not
+    do it by reading the text: `doctor` deliberately never quotes a loader message — the loader
+    builds it out of the file's own keys and values — so its only way to say which of the two
+    files is broken was the type. It said `keelline.toml is here and does not load` for a
+    `~/.config/keelline/config.toml` with a stray bracket in it, and sent the owner to edit a
+    file with nothing wrong with it.
+    """
 
 
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
@@ -134,13 +147,21 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
 
 def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    if machine.is_file():
-        try:
-            raw = tomllib.loads(machine.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"{machine} is not valid TOML: {exc}") from None
+    if not machine.is_file():
+        # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
+        # else. A fault here would be the preset's, not a machine's, and must not be relabelled.
+        return _build(Personal, "personal", values)
+    try:
+        raw = tomllib.loads(machine.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None
+    try:
         values.update(_table(raw, "personal"))
-    return _build(Personal, "personal", values)
+        return _build(Personal, "personal", values)
+    except ConfigError as exc:
+        # Everything from here is this file's doing: what `values` gained between the arm above
+        # and this one is exactly its `[personal]` table.
+        raise MachineConfigError(f"{machine}: {exc}") from None
 
 
 def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:
@@ -226,3 +247,40 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     )
     validate_paths(config, root)
     return config
+
+
+def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
+    """A `Config` built from a preset's `[defaults.*]` alone, for a directory that has no
+    `keelline.toml` and never will.
+
+    The overlay is a repository Keelline writes into and does not manage: it has no project
+    configuration, and the scaffold engine needs one (it reads `keelline.profile` and
+    `artifacts.local`, and nothing else). `init --yes` will want the same constructor for the
+    first write into a project, before the file it would load exists.
+
+    `keelline.version` is the one value the preset does not carry and `_build` requires: the
+    engine stamps it into every manifest `Record`, so it comes from `keelline.__version__`
+    rather than from a default that would record an empty string.
+
+    `validate_paths` is deliberately not called. It is about a project root this caller does
+    not have, and the `[paths]` values it would check are the preset's own defaults pointing at
+    documents an overlay does not carry.
+    """
+    raw = load_preset(preset)
+    defaults = dict(raw.get("defaults", {}))
+    head = {**defaults.get("keelline", {}), "preset": preset, "version": __version__}
+    return Config(
+        keelline=_build(Keelline, "keelline", head),
+        project=_build(Project, "project", {**defaults.get("project", {}), "name": project}),
+        paths=_build(Paths, "paths", defaults.get("paths", {})),
+        memory=_build(Memory, "memory", defaults.get("memory", {})),
+        budgets=Budgets(preset=dict(raw.get("budgets", {}))),
+        native_caps=_build(NativeCaps, "native_caps", dict(raw.get("native_caps", {}))),
+        ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
+        artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
+        ci=_build(Ci, "ci", defaults.get("ci", {})),
+        commit_messages=_build(
+            CommitMessages, "commit_messages", defaults.get("commit_messages", {})
+        ),
+        personal=_build(Personal, "personal", defaults.get("personal", {})),
+    )

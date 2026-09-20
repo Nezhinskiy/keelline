@@ -1,0 +1,13 @@
+# The forward track in machine-readable form: one theme, and a declared state per document so
+# that `keelline docs trail` writes the listing without having to default anything to
+# `delivered`. A document that enters the listing with no declared state is written as
+# delivered and reported, which is a finding for the person who added it — here there is
+# nobody to report to, so every row is declared.
+[[theme]]
+label = "The fixture"
+pattern = ".*"
+
+[states]
+"plans/README.md" = "delivered"
+"plans/2026-09-19-the-fixtures-own-plan.md" = "delivered"
+"specs/README.md" = "delivered"

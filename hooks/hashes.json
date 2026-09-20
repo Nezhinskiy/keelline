@@ -1,0 +1,8 @@
+{
+  "files": {
+    "hooks/hooks.json": "18bfa057c3eecf158086fab19dcda4c5bc75ac00e4984e386e62027e23ce97f3",
+    "hooks/run-hook.sh": "e2b5a41599b9e0a75fe9bd1453add1e16fcd794e76301764be1fcdd78c22ddda",
+    "scripts/keelline": "69d5c3e5781960ba20bec44f4ae7afb19109cacc0b1ddd5dbe5db93b7bf59de8"
+  },
+  "format": 1
+}

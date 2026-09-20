@@ -1,7 +1,7 @@
 [project]
 name = "keelline"
 version = "0.1.0"
-description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and an adoption state machine, packaged as one plugin for Claude Code and Codex."
+description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -52,6 +52,14 @@ source-include = [
   # ships a test module that cannot pass.
   "skills/**",
   "agents/**",
+  # The same rule for the plugin root's two static files: `tests/hooks/test_wrapper.py` and
+  # `tests/hooks/test_hooks_json.py` read them directly, and `hooks/run-hook.sh` is the file
+  # both harnesses actually execute — an sdist without it ships a plugin that cannot fire.
+  # `hooks/` and not `templates/`: the harness reads this tree from the plugin root and Python
+  # never does, so the sdist is the only artifact that has to be told about it. The overlay
+  # template is the other way round — `overlay create --local` reads it at runtime, so it lives
+  # under the module root beside `presets/` and the wheel carries it without a line here.
+  "hooks/**",
   "CHANGELOG.md",
   "SECURITY.md",
   "docs/**",

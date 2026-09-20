@@ -157,7 +157,52 @@ def test_the_cli_command_exits_one_on_version_drift(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
     assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
-    assert "version drift" in capsys.readouterr().err
+    # stdout, and that is the change rather than an accident: this area used to report a
+    # finding by raising `Failure`, which the frame prints to stderr under a `keelline: failed:`
+    # prefix and which drops `Result.data`. Every other area returns its findings.
+    assert "version drift" in capsys.readouterr().out
+
+
+def test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The whole of why this area stopped raising. A `Failure` becomes
+    # `{"error": "failed", "summary": "failed: ..."}` and `Result.data` never reaches the
+    # output — so a consumer that read `versions` on a clean run had nothing to read on the run
+    # it cared about, and the machine-readable shape flipped on exactly the condition being
+    # tested for. Asserted as the key sets being equal AND as the drifted run carrying the
+    # data: "both objects are empty" would satisfy the first on its own.
+    #
+    # Mutation (declared): the drift arm returns `{}` for its data, which is what raising
+    # produced -> the key sets differ and this reddens naming them.
+    clean = repo(
+        tmp_path / "a",
+        pyproject="0.1.0",
+        init="0.1.0",
+        claude="0.1.0",
+        codex="0.1.0",
+        changelog="0.1.0",
+    )
+    drifted = repo(
+        tmp_path / "b",
+        pyproject="0.1.0",
+        init="0.2.0",
+        claude="0.1.0",
+        codex="0.1.0",
+        changelog="0.1.0",
+    )
+    parser = build_parser([register])
+    assert run(["release", "check", "--root", str(clean), "--json"], parser=parser) == 0
+    on_success = json.loads(capsys.readouterr().out)
+    assert run(["release", "check", "--root", str(drifted), "--json"], parser=parser) == 1
+    on_drift = json.loads(capsys.readouterr().out)
+
+    assert set(on_success) == set(on_drift) == {"summary", "problems", "versions"}
+    assert on_success["problems"] == []
+    assert on_drift["problems"] == [
+        "src/keelline/__init__.py says '0.2.0'; pyproject.toml says '0.1.0'"
+    ]
+    assert on_drift["versions"]["src/keelline/__init__.py"] == "0.2.0"
 
 
 def test_the_cli_command_reports_the_agreed_version_on_success(
@@ -334,3 +379,136 @@ def test_the_cli_command_exits_one_on_a_malformed_source(
     (root / "uv.lock").write_text("not = = toml")
     assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
     assert "uv.lock is not valid TOML" in capsys.readouterr().err
+
+
+def _at(tmp_path: Path, version: str) -> Path:
+    """The module's `_repo` with every source at one version.
+
+    The plan named a `_repository(tmp_path, version=…)` fixture this module has never had;
+    `_repo` is the one that exists and it takes a keyword per source, so the two tests below
+    say the version once through here rather than five times each.
+    """
+    return _repo(
+        tmp_path,
+        pyproject=version,
+        init=version,
+        claude=version,
+        codex=version,
+        changelog=version,
+    )
+
+
+def test_a_tag_that_names_another_version_is_drift(tmp_path: Path) -> None:
+    # The release workflow used to compare the tag to the package in shell; the gate that
+    # exists to say "one version everywhere" now takes the tag as a seventh source. Both
+    # tag shapes are accepted — `vX.Y.Z` (the workflow's trigger) and the platform's
+    # `keelline--vX.Y.Z` — because either may be the one the run was created from.
+    # Mutation (declared): accept any tag -> the first assertion reddens.
+    root = _at(tmp_path, "1.2.3")
+    assert check(root, tag="v1.2.4") == [
+        "tag v1.2.4 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+    assert check(root, tag="v1.2.3") == []
+    assert check(root, tag="keelline--v1.2.3") == []
+
+
+def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version(
+    tmp_path: Path,
+) -> None:
+    # The message used to be derived with `tag.split("v", 1)[-1]` — a split on the first `v`
+    # anywhere in the string, not a parse — so it named a version the tag does not carry.
+    # Measured on this repository before the fix:
+    #
+    #   --tag 0.1.0          -> tag 0.1.0 names 0.1.0; pyproject.toml says '0.1.0'
+    #   --tag keelline-v0.1.0 -> tag keelline-v0.1.0 names 0.1.0; …says '0.1.0'
+    #   --tag dev-v0.1.0     -> tag dev-v0.1.0 names -v0.1.0; …says '0.1.0'
+    #
+    # The first asserts that two identical strings disagree, which is the failure the comment
+    # above `check` was written to end. Both of the first two are the slips `RELEASING.md`
+    # invites: a human types this flag by hand right after a tool prints `keelline--vX.Y.Z`.
+    # The tags the older case exercised (`v1.2.4`, `v9.9.9`) all begin with `v` and carry no
+    # earlier one, so the split happened to be right and the tests passed for that reason.
+    #
+    # Mutation (declared): the derived `named` comes back -> all three assertions redden.
+    root = _at(tmp_path, "1.2.3")
+    # A bare version, which is the tag `git tag 1.2.3` makes and the one that read as agreeing
+    # with itself.
+    assert check(root, tag="1.2.3") == [
+        "tag 1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+    # One hyphen short of the platform's own tag.
+    assert check(root, tag="keelline-v1.2.3") == [
+        "tag keelline-v1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+    # And a prefix carrying an earlier `v`, where the split produced `-v1.2.3` — a string that
+    # is not a version at all.
+    assert check(root, tag="dev-v1.2.3") == [
+        "tag dev-v1.2.3 is neither v1.2.3 nor keelline--v1.2.3; pyproject.toml says '1.2.3'"
+    ]
+
+
+def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
+    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a lane's fragment is
+    # written before the release assembles it. AT a tag there is nothing left to assemble:
+    # a fragment still pending means the changelog the users read is not the one the tag
+    # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
+    root = _at(tmp_path, "1.2.3")
+    (root / "changelog.d" / "late.feature.md").write_text("late\n", encoding="utf-8")
+    assert check(root) == []
+    problems = check(root, tag="v1.2.3")
+    assert problems == [
+        "changelog.d still holds 1 fragment(s); run "
+        "`keelline release notes --version 1.2.3` before tagging"
+    ]
+
+
+def test_the_cli_passes_the_tag_through_to_the_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # That the flag exists is held by the README row walk, which parses every row against the
+    # real parser; that its value reaches `check` is held here and nowhere else. Mutation:
+    # `check(root, tag=args.tag)` -> `check(root)` -> exit 0 and this reddens.
+    root = _at(tmp_path, "1.2.3")
+    argv = ["release", "check", "--root", str(root), "--tag", "v9.9.9"]
+    assert run(argv, parser=build_parser([register])) == 1
+    assert "tag v9.9.9 is neither v1.2.3 nor" in capsys.readouterr().out
+
+
+def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
+    # so this walks the registered command end to end without shelling out — which the global
+    # constraints forbid a test to do. The write path stays a unit test over the stub.
+    root = _at(tmp_path, "1.2.3")
+    argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
+    assert run(argv, parser=build_parser([register])) == 2
+    assert "set the version everywhere first" in capsys.readouterr().err
+
+
+def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record(
+    tmp_path: Path,
+) -> None:
+    # `--root` defaults to `.`, so this gate runs in other people's repositories, and plenty of
+    # them have a `hooks/` directory — the first spelling of the guard asked exactly that and
+    # told them a record they never had was missing. Asked of the recorded files themselves
+    # now. Mutation (declared): probe `hooks/` again -> this reddens.
+    root = _repo(tmp_path)
+    (root / "hooks").mkdir()
+    (root / "hooks" / "hooks.json").write_text("{}\n", encoding="utf-8")
+    assert check(root) == []
+
+
+def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
+    tmp_path: Path,
+) -> None:
+    # The other direction, and the one DC5 is for: a tree that carries the three files the
+    # harness executes is a tree that owes a record of them. Without this the guard above could
+    # be narrowed to `if False` and nothing would notice.
+    from keelline.release.hashes import HASHED_FILES, RECORD
+
+    root = _repo(tmp_path)
+    for relative in HASHED_FILES:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
+    assert check(root) == [f"{RECORD} is missing; run `keelline release hashes`"]

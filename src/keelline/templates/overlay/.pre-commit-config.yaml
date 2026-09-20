@@ -1,0 +1,8 @@
+# The first of two secret scans. A private repository on a personal plan is not scanned for
+# you, so this hook is what stands between a pasted token and a commit. The revision is pinned
+# on purpose: an unpinned one lets somebody else choose what runs on your machine.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

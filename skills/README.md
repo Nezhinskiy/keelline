@@ -27,3 +27,6 @@ absent ("do the work inline").
 Skills reference the CLI by name (`keelline …`): the plugin root placeholder is not substituted
 in skill content under Codex, so a path to the launcher would break there. Detail beyond a
 short procedure goes in `<skill>/references/`.
+
+The six authored skills wrap the methodology rather than a command: each names the commands it
+runs and the reference that carries its detail, and each ends by saying what it does not do.

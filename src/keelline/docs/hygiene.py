@@ -74,7 +74,7 @@ def roadmap_prose(text: str) -> str:
     return TRAIL_MARKER_LINE.split(text, 1)[0]
 
 
-def _normalize_target(raw: str) -> str:
+def _normalise_target(raw: str) -> str:
     """A markdown link target reduced to its path: no wrapper, anchor, or query."""
     target = raw.strip().strip("<>")
     if target.startswith(_IGNORED_LINK_PREFIXES):
@@ -83,7 +83,7 @@ def _normalize_target(raw: str) -> str:
 
 
 def local_markdown_targets(text: str) -> list[str]:
-    targets = (_normalize_target(m.group(1)) for m in _MARKDOWN_LINK.finditer(text))
+    targets = (_normalise_target(m.group(1)) for m in _MARKDOWN_LINK.finditer(text))
     return [target for target in targets if target]
 
 

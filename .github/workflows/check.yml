@@ -1,0 +1,243 @@
+# The reusable workflow a project calls (§5.8). It checks out the caller, checks out Keelline
+# at THIS FILE's own commit — no resolver and no build backend; the network is the two
+# checkouts and whatever `setup-python` below fetches when the runner has no matching
+# interpreter cached — and runs the documentation, ledger, plan, commit-message and trail gates with
+# `python3 -m keelline`. The gate's configuration is read from the base ref (§8.3): the
+# base's own copy of `keelline.toml` decides the state, and on any branch but the base itself
+# the tree's copy must equal it. While the base's state is not `installed`, every check is
+# advisory and annotates. Every value that reaches a shell here arrives through `env:`; a
+# `${{ }}` spliced into `run:` is a command injection waiting for a ref name that permits it.
+#
+# **Anchor provenance, said once.** The base ref comes from the caller's `with:`, from the
+# pull request's base, or from the repository's default branch as the platform reports it —
+# never from the tree under review. The Keelline that runs comes from the platform's own
+# record of which reusable workflow is executing (`job.workflow_repository`,
+# `job.workflow_sha`), never from the caller's inputs. The design's §5.8 names a
+# `github.job_workflow_sha` property; the platform documents no such property on the
+# `github` context (an undefined property is the empty string, and `actions/checkout` with
+# an empty `ref` checks out the DEFAULT BRANCH — a pin silently turned into a floating ref),
+# so this file departs from the design on that point of fact and asserts the checkout it got.
+# The `job.workflow_*` properties it uses instead are the documented ones, and the platform's
+# own reference shows this exact checkout as their purpose.
+name: keelline-check
+
+on:
+  workflow_call:
+    inputs:
+      base:
+        description: "the branch the gate's configuration is read from; empty means the pull request's base, or the repository's default branch on a push"
+        type: string
+        default: ""
+      path:
+        description: "the project root inside the caller's checkout, as a plain relative path: letters, digits, '.', '_', '-' and '/' only, and no '..' component. A path with a space, a non-ASCII character or a shell metacharacter is refused, because this value reaches the run's own outputs"
+        type: string
+        default: "."
+      python-version:
+        description: "the interpreter Keelline runs on; 3.11 is the floor"
+        type: string
+        default: "3.13"
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: The caller's repository
+        # `fetch-depth: 0` is not a convenience: the base ref, the merge base `plan check`
+        # reads and the commit range `commit check` reads all come out of this checkout, and
+        # `persist-credentials: false` means there is no token to fetch them with afterwards.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: project
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Keelline, at this workflow's own commit
+        # The `job.workflow_*` properties are unavailable on GitHub Enterprise Server.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: keelline
+          persist-credentials: false
+      - name: The checkout is the commit this workflow file is at
+        # The assertion that would have caught an empty `ref`: a default-branch checkout
+        # answers a different sha. It is also the only thing that turns the Enterprise Server
+        # gap above into a refusal rather than into a floating Keelline.
+        env:
+          EXPECTED: ${{ job.workflow_sha }}
+        run: |
+          actual="$(git -C keelline rev-parse HEAD)"
+          [ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow's own $EXPECTED"; exit 1; }
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Keelline runs at all
+        # **The one step with no `continue-on-error`, and the reason it exists.** Every gate
+        # below carries it, so while the base is not `installed` a Keelline that cannot even
+        # import produced five `::warning`s and a green job — for every adopting project, which
+        # by design is every project's first weeks. The five failures look exactly like "your
+        # documents have findings". Advisory means "your findings do not fail the job"; it does
+        # not mean "our harness not running does not fail the job", and nothing outside the
+        # advisory arm proved the harness ran at all.
+        #
+        # A bad checkout, a renamed module, or an interpreter below the 3.11 floor (which
+        # `inputs.python-version` can name and nothing validates) all land here instead.
+        env:
+          PYTHONPATH: keelline/src
+        run: python3 -m keelline --version
+      - name: The base ref, and the configuration it carries
+        id: base
+        working-directory: project
+        env:
+          INPUT_BASE: ${{ inputs.base }}
+          INPUT_PATH: ${{ inputs.path }}
+          PR_BASE: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          set -o pipefail
+          case "$INPUT_PATH" in
+            ""|.|./) p="" ;;
+            *) p="${INPUT_PATH#./}"; p="${p%/}" ;;
+          esac
+          # `p` is appended to `$GITHUB_OUTPUT` below, which the runner parses line by line — so
+          # a `path:` carrying a newline writes further `key=value` lines of its own, and the
+          # keys the next steps read are `base`, `state` and `enforce`. `enforce` is the whole of
+          # the base-ref rule's teeth. The caller already chooses `base:` by design, so this is
+          # not an escalation of what it may decide; it is a value on a control channel, and a
+          # value on a control channel is checked before it is written. A plain relative path is
+          # all `path:` has ever meant, and `..` is refused with it so `root=` below is provably
+          # inside the caller's own checkout.
+          case "$p" in
+            *[!A-Za-z0-9._/-]*)
+              echo "::error::path: must be a plain relative path — letters, digits, '.', '_', '-' and '/'"
+              exit 1
+              ;;
+            ..|../*|*/..|*/../*)
+              echo "::error::path: must not leave the checkout"
+              exit 1
+              ;;
+          esac
+          file="${p:+$p/}keelline.toml"
+          # **On a pull request the platform's answer wins, and a `base:` that disagrees is
+          # refused rather than preferred.** The workflow file a `pull_request` run executes
+          # comes from the merge commit — the author's copy — and `with: base:` lives in it. So
+          # `base:` naming a branch the author pushed whose `keelline.toml` says
+          # `state = "initialised"` used to yield `enforce=false` without the tree's
+          # `keelline.toml` being touched, which means the byte-equality rule below never
+          # fires and every gate becomes one `::warning`. This costs a legitimate caller
+          # nothing: on a pull request `github.base_ref` is already the right answer, so
+          # `base:` only ever decides anything on `push` and `workflow_dispatch`.
+          #
+          # `path:` is the remaining half and cannot be closed the same way, because the
+          # platform reports no answer to compare against. What protects the call site is
+          # CODEOWNERS on `/.github/` plus a required review — which is what `docs/cli.md`
+          # now says, rather than claiming the mechanism does it alone.
+          if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then
+            echo "::error::base: says '$INPUT_BASE' but this pull request's base is '$PR_BASE'; the gate's configuration is read from the base the platform reports"
+            exit 1
+          fi
+          base="$INPUT_BASE"
+          [ -n "$base" ] || base="$PR_BASE"
+          [ -n "$base" ] || base="$DEFAULT_BRANCH"
+          [ -n "$base" ] || { echo "::error::no base ref: pass 'base:'"; exit 1; }
+          git check-ref-format --branch "$base" >/dev/null
+          # The tracking ref first, because `fetch-depth: 0` has already fetched every branch
+          # and `persist-credentials: false` leaves no token for a second fetch on a private
+          # caller. The fetch is the fallback, and its failure is an error naming the remedy —
+          # never a default, because "no base ref" and "state is not installed" are the same
+          # silence and only one of them is a project that has not adopted the gate yet.
+          git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null ||
+            git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" ||
+            { echo "::error::origin/$base is not in this checkout — check out with fetch-depth: 0, or name a base that exists"; exit 1; }
+          # Three states of the base's copy, each named. Absent: an adopting project whose
+          # base branch carries no configuration yet (the bootstrap; D8 says it is not
+          # installed). Present and readable: the gate's configuration. Present and
+          # unreadable: a failure, never a default — `git show | python` without pipefail
+          # turned a failed `git show` into `state=initialised`, which is the gate reporting
+          # green with nothing enforced.
+          if git cat-file -e "origin/$base:$file" 2>/dev/null; then
+            state="$(git show "origin/$base:$file" | python3 -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"
+            if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then
+              if [ "$state" = installed ]; then
+                echo "::error file=$file::keelline.toml differs from origin/$base; a pull request may not change an installed project's gate configuration (the keys a pull request may change arrive with assess)"
+                exit 1
+              fi
+              echo "::warning file=$file::keelline.toml differs from origin/$base; advisory while the base's state is $state"
+            fi
+          else
+            echo "::notice::$file is not on origin/$base; treating this project as not yet installed"
+            state=absent
+          fi
+          {
+            echo "base=$base"
+            echo "root=project/${p:-.}"
+            echo "state=$state"
+            echo "enforce=$([ "$state" = installed ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+      - name: docs check
+        id: docs
+        continue-on-error: true
+        env:
+          PYTHONPATH: keelline/src
+          ROOT: ${{ steps.base.outputs.root }}
+        run: python3 -m keelline docs check --root "$ROOT"
+      - name: bugs check
+        id: bugs
+        continue-on-error: true
+        env:
+          PYTHONPATH: keelline/src
+          ROOT: ${{ steps.base.outputs.root }}
+        run: python3 -m keelline bugs check --root "$ROOT"
+      - name: plan check
+        id: plan
+        continue-on-error: true
+        env:
+          PYTHONPATH: keelline/src
+          ROOT: ${{ steps.base.outputs.root }}
+          BASE: ${{ steps.base.outputs.base }}
+        run: python3 -m keelline plan check --root "$ROOT" --base "origin/$BASE"
+      - name: commit check
+        id: commit
+        continue-on-error: true
+        env:
+          PYTHONPATH: keelline/src
+          ROOT: ${{ steps.base.outputs.root }}
+          BASE: ${{ steps.base.outputs.base }}
+        run: python3 -m keelline commit check --root "$ROOT" --range "origin/$BASE..HEAD"
+      - name: docs trail
+        id: trail
+        continue-on-error: true
+        env:
+          PYTHONPATH: keelline/src
+          ROOT: ${{ steps.base.outputs.root }}
+        run: python3 -m keelline docs trail --check --root "$ROOT"
+      - name: Verdict
+        # Every gate ran, whatever the first one said — a project fixing gates one round
+        # trip at a time was the alternative. Enforcing: any failed gate fails the job.
+        # Advisory (D8: `initialised`, `adopting`, or no configuration on the base yet):
+        # each failed gate is one warning, and the job is green.
+        env:
+          ENFORCE: ${{ steps.base.outputs.enforce }}
+          STATE: ${{ steps.base.outputs.state }}
+          O_DOCS: ${{ steps.docs.outcome }}
+          O_BUGS: ${{ steps.bugs.outcome }}
+          O_PLAN: ${{ steps.plan.outcome }}
+          O_COMMIT: ${{ steps.commit.outcome }}
+          O_TRAIL: ${{ steps.trail.outcome }}
+        run: |
+          failed=0
+          for pair in "docs:$O_DOCS" "bugs:$O_BUGS" "plan:$O_PLAN" "commit:$O_COMMIT" "trail:$O_TRAIL"; do
+            name="${pair%%:*}"; outcome="${pair#*:}"
+            if [ "$outcome" = failure ]; then
+              failed=$((failed + 1))
+              if [ "$ENFORCE" = true ]; then echo "::error::$name failed"; else echo "::warning::$name failed, advisory while the base's state is $STATE"; fi
+            fi
+          done
+          [ "$ENFORCE" != true ] || [ "$failed" -eq 0 ]

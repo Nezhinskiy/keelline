@@ -3,7 +3,47 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from keelline.command import common_flags, root_and_config
+from keelline.cli import build_parser, discover_registrars
+from keelline.command import (
+    ATTACH_CHECK_HELP,
+    CHECK_HELP,
+    DRY_RUN_HELP,
+    HOME_HELP,
+    INSTANCE_DIR_HELP,
+    MACHINE_HELP,
+    OVERLAY_ROOT_HELP,
+    ROOT_HELP,
+    SETUP_MACHINE_HELP,
+    SETUP_ROOT_HELP,
+    STORE_HELP,
+    common_flags,
+    root_and_config,
+)
+
+SHARED = {
+    "--root": ROOT_HELP,
+    "--machine": MACHINE_HELP,
+    "--store": STORE_HELP,
+    "--dry-run": DRY_RUN_HELP,
+    "--home": HOME_HELP,
+    "--check": CHECK_HELP,
+}
+# The commands that mean something else by a shared name, each with the sentence it uses. A new
+# entry here is a decision, not a convenience: it says the flag means something else.
+# The exceptional sentences are constants in `command.py` too (`OVERLAY_ROOT_HELP`,
+# `INSTANCE_DIR_HELP`, `SETUP_ROOT_HELP`, `SETUP_MACHINE_HELP`, `ATTACH_CHECK_HELP`), so each
+# is spelled once in its parser and named here — never spelled a second time by hand in a test.
+EXCEPTIONS = {
+    ("overlay", "create", "--root"): INSTANCE_DIR_HELP,
+    ("overlay", "init", "--root"): OVERLAY_ROOT_HELP,
+    ("overlay", "upgrade", "--root"): OVERLAY_ROOT_HELP,
+    ("setup", None, "--root"): SETUP_ROOT_HELP,
+    ("setup", None, "--machine"): SETUP_MACHINE_HELP,
+    # `attach --check` reports the same way `bugs index`, `docs trail`, `memory index` and
+    # `release hashes` do, and exits differently on purpose: its 1 is a binding mismatch and
+    # not a non-empty diff. `command.ATTACH_CHECK_HELP` carries the argument.
+    ("attach", None, "--check"): ATTACH_CHECK_HELP,
+}
 
 CONFIG = """
 [keelline]
@@ -42,3 +82,48 @@ def test_root_and_config_resolves_the_root_and_loads_under_the_named_machine_fil
     )
     resolved, config = root_and_config(args)
     assert resolved == root.resolve() and config.project.name == "widget"
+
+
+def _flags() -> list[tuple[str, str | None, str, str | None]]:
+    """`(group, command, flag, help)` for every shared flag the real parser registers."""
+    parser = build_parser(discover_registrars())
+    found: list[tuple[str, str | None, str, str | None]] = []
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for group, sub in action.choices.items():
+            nested = [a for a in sub._actions if isinstance(a, argparse._SubParsersAction)]
+            targets: list[tuple[str | None, argparse.ArgumentParser]] = [(None, sub)] + [
+                (name, inner) for n in nested for name, inner in n.choices.items()
+            ]
+            for command, target in targets:
+                for flag_action in target._actions:
+                    for flag in flag_action.option_strings:
+                        if flag in SHARED:
+                            found.append((group, command, flag, flag_action.help))
+    return found
+
+
+def test_every_shared_flag_carries_the_one_help_string_or_a_named_exception() -> None:
+    # D3 (DC4): `--root` and `--machine` were spelled by hand in three parsers and drifted from
+    # `common_flags`' sentence, and `--home` had two sentences in two areas, one saying "read"
+    # and the other "write". `--dry-run` and `--store` were each spelled once and are here for
+    # the property rather than for a defect: this walk is what stops the second spelling from
+    # ever being written. One constant per flag in `command.py`, and this holds every
+    # occurrence to it.
+    #
+    # The floor is the walk's own non-emptiness, asserted before anything is filtered out of it:
+    # a `_flags()` that found nothing would make the comparison below vacuously true. Measured
+    # on this tree the walk finds 55 occurrences; the floor is deliberately well under that, so
+    # that a later wave registering a command does not have to edit an unrelated number.
+    #
+    # Mutation (declared): `common_flags`' `help=MACHINE_HELP` -> `help="machine file"` ->
+    # every `--machine` diverges and this reddens listing them.
+    flags = _flags()
+    assert len(flags) >= 30, flags
+    wrong = [
+        (group, command, flag, text)
+        for group, command, flag, text in flags
+        if text != EXCEPTIONS.get((group, command, flag), SHARED[flag])
+    ]
+    assert wrong == [], wrong

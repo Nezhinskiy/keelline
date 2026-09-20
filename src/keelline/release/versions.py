@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from keelline.errors import Failure
+from keelline.release.hashes import HASHED_FILES, RECORD, drift
 
 PYPROJECT = "pyproject.toml"
 LOCKFILE = "uv.lock"
@@ -127,7 +128,12 @@ def pending_fragments(root: Path) -> bool:
     return any(_is_fragment(entry.name, types) for entry in directory.iterdir())
 
 
-def check(root: Path) -> list[str]:
+def tag_for(version: str) -> tuple[str, str]:
+    """The two tags one release carries: the workflow's `vX.Y.Z` and the platform's own."""
+    return f"v{version}", f"{PACKAGE}--v{version}"
+
+
+def check(root: Path, *, tag: str | None = None) -> list[str]:
     # Four different conditions used to share one wrong message, so a user who typoed --root,
     # or ran the command in their own project (--root defaults to "."), was told their
     # pyproject.toml lacked a version key. A path that exists but is not a directory needs its
@@ -145,8 +151,32 @@ def check(root: Path) -> list[str]:
     if canonical is None:
         return [f"{PYPROJECT} has no [project].version"]
     problems: list[str] = []
+    if tag is not None:
+        if tag not in tag_for(canonical):
+            # **Say what was checked, do not re-derive a version from the tag.** This used to
+            # be `tag.split("v", 1)[-1]` — a split on the first `v` anywhere in the string and
+            # not a parse — so `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3; pyproject.toml
+            # says '1.2.3'`, two identical strings asserted to disagree, and `--tag dev-v1.2.3`
+            # reported `names -v1.2.3`. The membership test above is exact and was always
+            # right; only the sentence was invented. Both slips are the ones `RELEASING.md`
+            # invites, because a human types this flag by hand right after a tool prints
+            # `keelline--vX.Y.Z`. The existing cases passed by accident: every tag they
+            # exercised began with `v` and carried no earlier one.
+            workflow_tag, platform_tag = tag_for(canonical)
+            problems.append(
+                f"tag {tag} is neither {workflow_tag} nor {platform_tag}; "
+                f"{PYPROJECT} says {canonical!r}"
+            )
+        if pending_fragments(root):
+            count = sum(
+                _is_fragment(e.name, fragment_types(root)) for e in (root / "changelog.d").iterdir()
+            )
+            problems.append(
+                f"changelog.d still holds {count} fragment(s); run `keelline release notes "
+                f"--version {canonical}` before tagging"
+            )
     for name, value in found.items():
-        if name == "CHANGELOG.md" and pending_fragments(root):
+        if name == "CHANGELOG.md" and tag is None and pending_fragments(root):
             continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
@@ -159,4 +189,15 @@ def check(root: Path) -> list[str]:
                     f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
                     "plugin.json is the only source (D12)"
                 )
+    # DC5: the record of the shipped files is held current here and not only at a tag, so a
+    # wrapper edited without `keelline release hashes` fails the gate the same commit.
+    #
+    # Asked of the recorded files themselves and not of a `hooks/` directory. `--root` defaults
+    # to `.`, and a user who runs this in their own project must not be told a record they
+    # never had is missing — and plenty of projects have a `hooks/` directory, which is what
+    # the first spelling of this actually tested. Either the record is here, or every file it
+    # would name is: the first keeps a tree whose wrapper was deleted honest, the second is how
+    # a checkout with no record yet is told to write one.
+    if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):
+        problems += drift(root)
     return problems

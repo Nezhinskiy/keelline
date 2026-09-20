@@ -16,12 +16,15 @@ pass it.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from keelline.areas import SubParsers
+from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
 from keelline.memory.index import (
@@ -289,6 +292,31 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
+    # §9.5: "On Codex the handler also injects the index, because Codex has no native
+    # auto-memory." Here rather than in `bundles.render`, which is a library function with no
+    # environment to read; `detect_harness` is the hook area's own answer to the same question.
+    #
+    # **No payload is passed, so only the environment half of that answer is in play here.**
+    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
+    # which the dispatcher does and this call site does not: there is no stdin payload at a
+    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and also
+    # sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing (S1) and neither
+    # "claude" nor "unknown" reaches the render.
+    #
+    # **This is the one shipped command whose output depends on the ambient environment**, and
+    # it is deliberate rather than incidental: the bundle exists for the harness that has no
+    # native auto-memory, and the only thing that knows which harness this is, is the process's
+    # own environment. The cost is that a test asserting this bundle is empty proves nothing
+    # about the gate it was written for unless it names the harness first — see
+    # `tests/memory/test_commands.py::_under_codex`, which every such case now goes through.
+    #
+    # After `_store` and not before it, so every refusal this command already makes — a store
+    # that will not resolve, a `--store` outside the overlay — is still made for this bundle on
+    # both harnesses. What the branch skips is the render, which is what it is about.
+    if bundle is Bundle.INDEX and detect_harness(os.environ) != "codex":
+        return Result(
+            summary="", data={"bundle": bundle.value, "part": args.part, "skipped": "harness"}
+        )
     text = render(bundle, store, config, part=args.part)
     return Result(text if text is not None else "")
 
@@ -387,27 +415,26 @@ def run_refs(args: argparse.Namespace) -> Result:
     return Result("; ".join(parts), data, exit_code=1)
 
 
-def _with_common(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument("--root", default=".", help="project root (default: current directory)")
-    parser.add_argument("--store", default=None, help="resolve the store at this path")
-    parser.add_argument("--machine", default=None, help="machine configuration file to read")
-    return parser
-
-
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("memory", help="the working-memory store")
     sub = group.add_subparsers(dest="command", metavar="<command>")
 
-    index = _with_common(sub.add_parser("index", help="render MEMORY.md from the notes"))
-    index.add_argument("--check", action="store_true", help="report drift instead of writing")
+    index = common_flags(
+        sub.add_parser("index", help="render MEMORY.md from the notes"), store=True
+    )
+    index.add_argument("--check", action="store_true", help=CHECK_HELP)
     index.set_defaults(func=run_index)
 
-    context = _with_common(sub.add_parser("session-context", help="render one injection bundle"))
+    context = common_flags(
+        sub.add_parser("session-context", help="render one injection bundle"), store=True
+    )
     context.add_argument("--bundle", required=True, help=", ".join(b.value for b in Bundle))
     context.add_argument("--part", type=int, default=1, help="which numbered slot to render")
     context.set_defaults(func=run_session_context)
 
-    trusted = _with_common(sub.add_parser("trust", help="trust notes committed to this repository"))
+    trusted = common_flags(
+        sub.add_parser("trust", help="trust notes committed to this repository"), store=True
+    )
     trusted.add_argument(
         "--in-repo-memory",
         action="store_true",
@@ -425,13 +452,17 @@ def register(groups: SubParsers) -> None:
     )
     trusted.set_defaults(func=run_trust)
 
-    listing = _with_common(sub.add_parser("inventory", help="what a memory sweep reads"))
+    listing = common_flags(
+        sub.add_parser("inventory", help="what a memory sweep reads"), store=True
+    )
     listing.set_defaults(func=run_inventory)
 
-    fitting = _with_common(sub.add_parser("fit", help="whether each bundle fits its hook slots"))
+    fitting = common_flags(
+        sub.add_parser("fit", help="whether each bundle fits its hook slots"), store=True
+    )
     fitting.set_defaults(func=run_doctor_bundles)
 
-    refs = _with_common(
-        sub.add_parser("refs", help="backticked paths in notes that no longer resolve")
+    refs = common_flags(
+        sub.add_parser("refs", help="backticked paths in notes that no longer resolve"), store=True
     )
     refs.set_defaults(func=run_refs)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -14,6 +13,7 @@ from keelline.guards import bgcleanup
 from keelline.guards.hooks import register
 from keelline.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
 from keelline.hooks.dispatch import Recorder, dispatch
+from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = """
@@ -227,19 +227,8 @@ def dirty_project(tmp_path: Path) -> Path:
     root = a_project(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "m.py").write_text("x = 1\n", encoding="utf-8")
-    env = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(tmp_path),
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.com",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.com",
-    }
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "chore: seed"]):
-        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
+        git(root, *args, home=tmp_path)
     (root / "src" / "m.py").write_text("x = 2\n", encoding="utf-8")
     return root
 
@@ -324,21 +313,11 @@ def test_a_hygiene_failure_is_recorded_and_never_costs_the_call(
 
 
 @needs_git
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Premise 2: dispatch marks once_key on any run; foundation owns marking on delivery, "
-        "and the commit that fixes it must delete this marker (xfail_strict is global)"
-    ),
-)
 def test_an_unrelated_call_does_not_consume_the_one_delivery(tmp_path: Path) -> None:
-    # No mutation of its own: it pins an intended semantics this tree does not have yet, so it
-    # is red by construction and `xfail_strict` is what keeps that honest. `dispatch` calls
-    # `sink.mark(handler.once_key)` after EVERY successful run, including one that returned an
-    # empty `HookResult`, so once a durable sink exists the first unrelated Bash call of a
-    # session silently spends this handler's single delivery. The one-line fix — mark only
-    # when the result carried something — belongs to `foundation`, and the commit that makes
-    # it must delete this marker in the same change, or the fixed test reddens as an XPASS.
+    # The defect this pins: `dispatch` used to call `sink.mark(handler.once_key)` after EVERY
+    # successful run, including one that returned an empty `HookResult`, so once a durable
+    # sink exists the first unrelated Bash call of a session silently spends this handler's
+    # single delivery.
     root = dirty_project(tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
     recorder = Recorder()

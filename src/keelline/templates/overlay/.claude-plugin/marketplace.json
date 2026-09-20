@@ -1,0 +1,11 @@
+{
+  "name": "keelline-overlay-marketplace",
+  "description": "One private overlay, published from its own repository.",
+  "plugins": [
+    {
+      "name": "keelline-overlay",
+      "source": "./",
+      "description": "A private overlay for Keelline: personal standing rules, cross-project notes, and the per-project records that bind a repository to them."
+    }
+  ]
+}

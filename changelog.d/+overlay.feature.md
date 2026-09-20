@@ -1,0 +1,32 @@
+Keelline can now create your private overlay — the repository that holds your own standing
+rules, your cross-project notes, and one record per repository bound to them. `keelline overlay
+create` renders it on your machine with `--local` and no network call at all, or generates it on
+GitHub from a template with `--template`, private from the first moment; neither source is a
+default, so an omitted flag never creates a repository on your account. `--template` generates from
+`<owner>/keelline-overlay-template`, which `keelline overlay publish-template` publishes to your
+own account, and a `gh` that is missing or fails is reported with its own exit code and message.
+
+`keelline overlay publish-template` is that command. It renders the shipped template into a
+scratch directory, strips the scaffold ledger so a generated overlay does not read as
+hand-edited, makes sure the repository exists, is public and is marked as a template, and
+pushes the tree as one commit — all of it from your own authenticated checkout, so no CI
+credential anywhere can write a second repository. `--yes` gates all three outward-facing acts;
+without it the command reports what it would create, mark and push and makes no call that
+writes. A repository under that name that is not public is refused rather than flipped. The
+template now also ships `.github/dependabot.yml`, so the commit shas its scan workflow pins
+stop rotting in silence.
+
+`keelline overlay init` names the overlay after you — all three plugin manifests, the Codex one
+included — so two overlays never collide in one harness, installs the commit-time secret scan the
+template ships alongside a push-time one, and re-stamps what it rewrites so a later `upgrade`
+still refreshes those files. `keelline overlay upgrade` refreshes the files you have not edited
+after a release, leaves the ones you have alone and says so, and always names the two files that
+can grant a capability — a matching hash is not consent for a permission rule or a hook entry, so
+you are told to read them whatever their hashes say. Run it with `--dry-run` first if you want
+that list before anything moves; without the flag it is printed after the refresh, which is safe
+only because the shipped template grants nothing. The template itself ships deny-only permissions
+and no hooks, and a test fails the release if that ever stops being true.
+
+Both `init` and `upgrade` refuse a `--root` that is not an overlay before touching it: the flag
+defaults to `.`, and pointed at a project or at the Keelline checkout itself they would have
+renamed its manifests or created the overlay's files there.

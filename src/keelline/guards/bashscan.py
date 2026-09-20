@@ -89,7 +89,7 @@ operator can see it.
 Tokenizing is built on `shlex.shlex` directly rather than `shlex.split`: `punctuation_chars`
 is a constructor argument of `shlex.shlex`, not a parameter of the `split()` convenience
 function, so `shlex.split(..., punctuation_chars=True)` raises `TypeError`. Constructing the
-lexer directly, with `whitespace_split = True`, keeps `punctuation_chars`' behavior of
+lexer directly, with `whitespace_split = True`, keeps `punctuation_chars`' behaviour of
 surfacing redirects and separators (`>`, `&&`, `||`, `;`, `|`, `&`) as their own tokens.
 
 The heredoc-recognition regex intentionally accepts a narrower shape than bash's full

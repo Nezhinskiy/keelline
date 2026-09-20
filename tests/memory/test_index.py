@@ -58,7 +58,7 @@ def note(name: str, *, index: str = "", startup: str = "", group: str = "", orde
     return "---\n" + "\n".join([*head, *meta]) + "\n---\n\nBody.\n"
 
 
-def a_store(tmp_path: Path, *, extra: str = '["docs/runbooks/ledger.md"]') -> tuple[Store, Config]:
+def a_store(tmp_path: Path, *, extra: str = '["docs/handbooks/ledger.md"]') -> tuple[Store, Config]:
     root = tmp_path / "project"
     base = root / "docs" / "memory"
     for group in GROUPS:
@@ -193,7 +193,7 @@ def test_the_volatile_section_carries_its_lead(tmp_path: Path) -> None:
 
 
 def test_index_extra_entries_are_rendered(tmp_path: Path) -> None:
-    assert "docs/runbooks/ledger.md" in rendered(tmp_path)
+    assert "docs/handbooks/ledger.md" in rendered(tmp_path)
 
 
 def test_an_empty_group_gets_no_heading(tmp_path: Path) -> None:
@@ -323,10 +323,10 @@ def test_index_extra_entries_that_leave_the_project_root_are_dropped(tmp_path: P
     # cover and assigns the check to the lane that consumes them. These strings land verbatim
     # in `MEMORY.md`, which the `index` bundle injects.
     store, config = a_store(
-        tmp_path, extra='["docs/runbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
+        tmp_path, extra='["docs/handbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
     )
     text = render_index(reconcile(store, config, write=False), config, store)
-    assert "docs/runbooks/ledger.md" in text
+    assert "docs/handbooks/ledger.md" in text
     assert "../../secret.md" not in text
     assert "/etc/passwd" not in text
 
@@ -414,9 +414,9 @@ def test_index_extra_is_rendered_as_the_path_it_was_validated_as(tmp_path: Path)
     # Validated as a path and consumed as text was the whole defect: the string that reaches
     # `MEMORY.md` is now the one `contained` returned, relative to the store root, not the one
     # `keelline.toml` happened to spell.
-    store, config = a_store(tmp_path, extra='["./docs/runbooks//ledger.md"]')
+    store, config = a_store(tmp_path, extra='["./docs/handbooks//ledger.md"]')
     text = render_index(reconcile(store, config, write=False), config, store)
-    assert "- [docs/runbooks/ledger.md](docs/runbooks/ledger.md)" in text
+    assert "- [docs/handbooks/ledger.md](docs/handbooks/ledger.md)" in text
     assert "./docs" not in text
 
 
@@ -457,7 +457,7 @@ def test_an_index_extra_entry_that_merely_ends_in_a_line_break_is_dropped(tmp_pa
     # one rode into `MEMORY.md` and put a line ending inside the very `- [title](target)`
     # shape `entries_in` reads back out and the harvest writes into a note's one-line
     # `index:`. `notes.is_one_line` is the single answer both ends of that round trip use.
-    store, config = a_store(tmp_path, extra='["""docs/runbooks/ledger.md\n"""]')
+    store, config = a_store(tmp_path, extra='["""docs/handbooks/ledger.md\n"""]')
     assert config.memory.index_extra[0].endswith("\n")  # the value really did survive the loader
     text = render_index(reconcile(store, config, write=False), config, store)
     assert EXTRA_TITLE not in text
@@ -611,7 +611,7 @@ def test_index_extra_is_not_published_to_machine_state(tmp_path: Path) -> None:
     assert EXTRA_TITLE not in text
     # `refused_extra`, not `refused_publish`: a `memory.index_extra` entry is a pointer in
     # `keelline.toml`, not a note, and the two used to share one list that `run_index`
-    # renders as notes — "alpha, docs/architecture/overview.md took no line in …".
+    # renders as notes — "alpha, docs/overview.md took no line in …".
     assert payload in reconciled.refused_extra
     assert reconciled.refused_publish == []
 

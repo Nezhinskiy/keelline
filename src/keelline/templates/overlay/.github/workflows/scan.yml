@@ -1,0 +1,29 @@
+# The second secret scan, so that `--no-verify` is not the last word. The pre-commit hook can
+# be skipped; a push cannot.
+name: scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      # Both actions are pinned at a full-length commit sha, for the reason
+      # `.pre-commit-config.yaml` one directory up gives about `rev:`: a tag is a name its owner
+      # can move, and `v4` or `v2` resolving to different code tomorrow is somebody else choosing
+      # what runs against a repository holding your rules and your notes, with a token. The
+      # trailing comment is the release each sha is; `.github/dependabot.yml` keeps both current.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      # A personal account needs no licence key; an organisation-owned repository does, and adds
+      # `GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}` here (the action's own README).
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -10,7 +10,18 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    # Semver tags only, and deliberately not `v*`: the floating `v1` alias matches `v*`, so
+    # every alias move would start a run that `release check --tag v1` fails — for the life of
+    # the project. The alias points at a release this workflow already published.
+    #
+    # Finals only, and the prerelease pattern that stood beside this one is gone. It admitted
+    # `v0.1.0-rc1` while `gh release create` below carries no `--prerelease`, so an rc would
+    # have become the repository's "Latest" Release; and it could not have got that far anyway,
+    # because `release check --tag` compares the tag to `pyproject.toml`'s literal version and
+    # `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the six-source rule then reads as
+    # two different versions. A trigger for a release this project cannot cut is a trigger that
+    # only fires by accident. RELEASING.md §2 step 6 says the same thing to the person tagging.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 permissions:
   contents: read
@@ -19,6 +30,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Named here because the attestation moved into this job: `attest-build-provenance` signs
+    # through the OIDC token and writes an attestation, so the two write scopes have to travel
+    # with it. They were `publish`'s while the step was, and the top-level default is read.
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -28,42 +46,127 @@ jobs:
       - name: Install
         run: uv sync --locked
       - name: Version discipline, against the tag
-        # The tag is the claim; these six files are what the claim has to agree with. A tag that
+        # The tag is the claim; the six sources, the changelog and the hash record are what
+        # the claim has to agree with, and `release check --tag` holds all of them. A tag that
         # names a version no source carries is the one release mistake PyPI will not let you undo.
-        run: |
-          uv run keelline release check
-          tagged="${GITHUB_REF_NAME#v}"
-          built="$(uv run python -c 'import keelline; print(keelline.__version__)')"
-          test "$tagged" = "$built" || {
-            echo "tag $GITHUB_REF_NAME does not match package version $built" >&2
-            exit 1
-          }
+        run: uv run keelline release check --tag "$GITHUB_REF_NAME"
       - name: Tests
         run: uv run pytest -q
       - name: Build
         run: uv build
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        # Attested here rather than in `publish`, because this is the job that produced
+        # `dist/*`: the artefacts a GitHub Release carries say where they came from whether or
+        # not PyPI is in the picture, and a declined PyPI no longer costs the provenance.
+        with:
+          subject-path: "dist/*"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: dist/
 
+  # The one gate on this file's two irreversible acts that is not prose. GitHub **auto-creates**
+  # an environment a job names and the repository does not have, with no protection rules on it,
+  # so `environment: pypi` below reads like a human gate whether or not one exists: a first
+  # release cut before RELEASING.md §3 would upload to PyPI — which cannot be retracted — and
+  # publish a GitHub Release, with nobody asked and nothing failing. A sentence in RELEASING.md
+  # is the wrong medium for that, so here it is as a check.
+  #
+  # One job rather than a first step copied into each of the two that name the environment. Two
+  # byte-identical scripts in one file drift, and the property that has to hold is not "this job
+  # checked" but "every job that names the environment waited for the check" — which is a claim
+  # about the file, is asserted over the file in `tests/test_fixtures.py`, and covers the third
+  # such job nobody has written yet. The check runs before any approval is asked for, which is
+  # the only time it can run at all: the case it exists for is the one where GitHub asks nobody.
+  environment-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: The pypi environment is a gate and not a name GitHub invented
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          # The environment this gate is about. `tests/test_fixtures.py` holds it equal to the
+          # `environment:` every gated job names, so renaming one and not the other reddens
+          # rather than leaving this job checking a name nothing uses.
+          ENVIRONMENT: pypi
+          # The fallback, and the one question it is allowed to answer.
+          # `GET /repos/OWNER/REPO/environments/NAME` is not readable by every default
+          # token, and a gate that fails closed on a permission it may never be granted is a
+          # gate that blocks every release forever. So a repository variable — which only an
+          # administrator can set and no pull request can write — may stand in for the READ,
+          # and never for the ANSWER: an environment that reads back with zero rules fails
+          # below whatever this says.
+          DECLARED: ${{ vars.PYPI_ENVIRONMENT_PROTECTED }}
+        run: |
+          rules="$(gh api "repos/$REPOSITORY/environments/$ENVIRONMENT" \
+            --jq '.protection_rules | length' 2>/dev/null || true)"
+          case "$rules" in
+            ''|*[!0-9]*)
+              if [ "$DECLARED" = "true" ]; then
+                echo "::warning::$ENVIRONMENT's protection rules could not be read; the repository variable PYPI_ENVIRONMENT_PROTECTED stands in for the read"
+                exit 0
+              fi
+              echo "::error::$ENVIRONMENT's protection rules could not be read, and the repository variable PYPI_ENVIRONMENT_PROTECTED does not say it is a gate; see RELEASING.md section 3"
+              exit 1
+              ;;
+          esac
+          if [ "$rules" -eq 0 ]; then
+            echo "::error::the $ENVIRONMENT environment has no protection rules, so GitHub created it on the spot and nothing is waiting for an approval; see RELEASING.md section 3"
+            exit 1
+          fi
+          echo "$ENVIRONMENT has $rules protection rule(s); the gate is real"
+
   publish:
-    needs: build
+    needs: [build, environment-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The last human gate. A tag pushed by mistake waits for an approval here instead of
-    # becoming a permanent PyPI release.
+    # becoming a permanent PyPI release — and `environment-gate` above is what makes that
+    # true rather than hopeful, because an environment with no rules asks nobody.
     environment: pypi
     permissions:
       id-token: write       # Trusted Publishing: no stored API token anywhere
-      attestations: write
       contents: read
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist
           path: dist/
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: "dist/*"
       - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+
+  # Independent of `publish`, so a declined or failed PyPI upload does not cost the Release —
+  # and behind the same `pypi` environment, because the environment is the one human gate this
+  # file has and a mistaken tag must not become a public Release either.
+  github-release:
+    needs: [build, environment-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi   # the same human gate as publish: a mistaken tag waits here too
+    permissions:
+      contents: write   # the one job that writes: a Release attached to vX.Y.Z, never to v1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+      - name: The release's own changelog section
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 - "$version" <<'PY' > "$RUNNER_TEMP/notes.md"
+          import re, sys
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          version = sys.argv[1]
+          match = re.search(rf"^## {re.escape(version)} .*?(?=^## |\Z)", text, re.S | re.M)
+          assert match, f"CHANGELOG.md has no section for {version}"
+          print(match.group(0).strip())
+          PY
+      - name: The GitHub Release, attached to this tag only (§5.9)
+        # Never attached to the floating `v1`: GitHub's immutable releases would freeze the
+        # alias at whatever it pointed to, and the alias exists to move.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "keelline ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md" dist/*
