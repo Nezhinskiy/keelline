@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -24,6 +23,7 @@ from keelline.ledger.scan import (
     mention_roots,
     scannable,
 )
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -56,19 +56,6 @@ def write(root: Path, relative: str, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
-
-
-def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env
-    ).stdout
 
 
 def test_mention_roots_are_the_top_level_plus_the_contained_code_roots(tmp_path: Path) -> None:

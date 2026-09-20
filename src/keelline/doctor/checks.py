@@ -70,7 +70,8 @@ from keelline.attach.api import (
     overlay_entries,
     read_binding,
 )
-from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.loader import CONFIG_FILE, MachineConfigError, load
+from keelline.config.machine import machine_config_path
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.findings import listed
@@ -368,10 +369,30 @@ def _files(context: Context) -> Row:
     # Counted and not dropped, which is what keeps the union above load-bearing: what makes a
     # partial update visible is that the record names a file this build does not ship, never
     # what that name says.
+    # **Three causes, and they were one sentence.** `changed` is "this name did not compare
+    # equal", and a name gets in for three different reasons: the file is absent from the
+    # installation, the record does not name it, or the bytes differ. A file that is present
+    # and byte-for-byte what the release shipped was being reported as "does not match the
+    # release record" whenever the record was the partial half — which is a real state
+    # `release.hashes` anticipates in as many words ("a record naming two of three reads as a
+    # clean comparison for the third"). Telling the owner their file is wrong when the record
+    # is the wrong one sends them to reinstall over the one artifact that is correct.
+    #
+    # All three lists are drawn from `HASHED_FILES`, which is Keelline's own constant, so
+    # printing their names is this lane's own text — the rule the `theirs` count below keeps.
     mine = [name for name in changed if name in HASHED_FILES]
+    absent = [name for name in mine if name not in actual]
+    unrecorded = [name for name in mine if name in actual and name not in recorded]
+    modified = [name for name in mine if name in actual and name in recorded]
     theirs = len(changed) - len(mine)
     if changed:
-        problems = [f"{listed(mine)} do(es) not match the release record"] if mine else []
+        problems = []
+        if modified:
+            problems.append(f"{listed(modified)} do(es) not match the release record")
+        if absent:
+            problems.append(f"{listed(absent)} is/are absent from this installation")
+        if unrecorded:
+            problems.append(f"{listed(unrecorded)} is/are shipped here and not in the record")
         if theirs:
             problems.append(f"{theirs} name(s) the record adds that this build does not ship")
         return Row(
@@ -584,6 +605,12 @@ _RELINK = f"run `keelline attach --store <overlay>/{PROJECTS}/<project>/memory`"
 UNRESOLVED: Final = "unresolved"
 NO_OVERLAY: Final = "no-overlay"
 UNASKABLE: Final = "unaskable"
+# The fourth, and it is about the repository rather than about this machine. A ledger that is
+# there and will not parse used to answer `UNASKABLE` with the other two, so the row said
+# "no `git`, or a record this process could not read" and the remedy said "run `keelline doctor`
+# again where `git` runs" — about a file in the checkout the reader is standing in. `skip` never
+# reaches the exit code, so a repository's own committed, malformed ledger was also silent.
+UNREADABLE_LEDGER: Final = "unreadable-ledger"
 # Said by every row that meets a ledger the overlay has not confirmed, because it is the whole
 # reason those rows exist: §6.2's consent lives in the overlay, and this file does not.
 _NOT_EVIDENCE = f"a clone can commit {LEDGER}, so on its own it is not evidence of an attach"
@@ -600,6 +627,11 @@ def _uncorroborated(reason: str) -> Row:
     reaches the exit code, so using it for the repository's own doing would be the defect this
     function was written to remove, and using `warn` for a machine where `setup` has never run
     would make `doctor` warn on every correct fresh install. Neither row ever says "attached".
+
+    **Four reasons and not three.** A ledger that is there and will not parse was answering
+    with the machine-side two, so the row it got blamed `git` for a malformed file in the
+    reader's own checkout and offered a remedy — run this somewhere `git` works — that could
+    not fix it. By this function's own rule it is the repository's doing and warns.
     """
     if reason == UNRESOLVED:
         return Row(
@@ -607,6 +639,14 @@ def _uncorroborated(reason: str) -> Row:
             f"{LEDGER} records an attach, and the store it names is not this project's "
             f"directory inside the overlay this machine records — {_NOT_EVIDENCE}",
             _RE_ATTACH,
+        )
+    if reason == UNREADABLE_LEDGER:
+        return Row(
+            WARN,
+            f"{LEDGER} is here and cannot be read as a ledger, so nothing in it can be "
+            f"corroborated and this checkout's attach state is unknown — {_NOT_EVIDENCE}",
+            f"remove {LEDGER}, then run `keelline attach --store "
+            f"<overlay>/projects/<project>/memory --check`",
         )
     if reason == NO_OVERLAY:
         return Row(
@@ -620,8 +660,8 @@ def _uncorroborated(reason: str) -> Row:
     return Row(
         SKIP,
         f"{LEDGER} records an attach and the overlay could not be asked about it here — no "
-        f"`git`, or a record this process could not read — so whether this checkout is "
-        f"attached could not be answered; {_NOT_EVIDENCE}",
+        f"`git`, or an overlay record this process could not read — so whether this checkout "
+        f"is attached could not be answered; {_NOT_EVIDENCE}",
         "run `keelline doctor` again where `git` runs and the overlay is readable",
     )
 
@@ -691,7 +731,10 @@ def _binding_answer(context: Context) -> Binding | str:
     try:
         store = Path(ledger(context.root).store)
     except (Failure, Refusal):
-        return UNASKABLE
+        # This one is the repository's file and not our inputs, so it does not join the other
+        # two: a clone can commit `.keelline/local/attach.json`, and a file that will not parse
+        # is a fact about the checkout the reader is standing in.
+        return UNREADABLE_LEDGER
     try:
         return read_binding(context.root, store=store, machine=context.machine)
     except Refusal:
@@ -1412,6 +1455,28 @@ def run_checks(
         ]
     try:
         config = load(root, machine=machine)
+    except MachineConfigError:
+        # **Not `keelline.toml`'s fault, and the row says whose it is.** `load` reads two files
+        # and this arm used to blame the first one for either — telling an owner whose
+        # `~/.config/keelline/config.toml` had a stray bracket in it to fix a repository file
+        # with nothing wrong with it, and marking the fault as the repository's when it is this
+        # machine's. Told apart by the exception's type and never by its text, because the
+        # loader builds that text out of the file's own keys and values.
+        #
+        # The machine file's path is the machine owner's own and may be printed: it is not
+        # repository-authored, and `keelline setup --machine`'s own help spells the default.
+        where = machine if machine is not None else machine_config_path()
+        blamed = "the machine configuration file"
+        return [
+            Check(
+                first,
+                RED,
+                f"{blamed} does not load, so nothing here can be checked against a "
+                f"configuration — {CONFIG_FILE} itself was not the problem",
+                f"run `keelline doctor` again after fixing {where}",
+            ),
+            *(Check(name, SKIP, f"{blamed} does not load", "") for name in rest),
+        ]
     except (Failure, Refusal) as exc:
         # The message is not quoted: the loader builds it out of the file's own keys and values.
         return [

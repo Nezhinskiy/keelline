@@ -13,6 +13,7 @@ import pytest
 from keelline.errors import Refusal
 from keelline.guards.commit import offending_lines
 from keelline.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
+from tests import gitfixture
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -48,27 +49,15 @@ def env(tmp_path: Path) -> dict[str, str]:
             encoding="utf-8",
         )
         shim.chmod(0o755)
-    return {
-        "PATH": f"{bin_dir}:/usr/bin:/bin",
-        "HOME": str(tmp_path),
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.com",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.com",
-    }
+    # `tests/gitfixture.py`'s sealed environment plus the one difference that is this module's
+    # own: `PATH` leads with the shim, because the `git commit` below has to run the
+    # commit-msg hook this test just installed, and that hook is what invokes `keelline`.
+    return gitfixture.env(tmp_path, PATH=f"{bin_dir}:{os.environ.get('PATH', '')}")
 
 
 def git(tmp_path: Path, root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(root), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env(tmp_path),
-    ).stdout
+    """The shared fixture `git`, given this module's shim `PATH` and its `tmp_path` as `HOME`."""
+    return gitfixture.git(root, *args, home=tmp_path, PATH=env(tmp_path)["PATH"])
 
 
 def repo(tmp_path: Path) -> Path:
@@ -92,12 +81,10 @@ def committing(tmp_path: Path, root: Path, message: str) -> subprocess.Completed
     """Stage a change and commit it, returning the whole run so its streams can be read."""
     (root / "a.txt").write_text(message + "\n", encoding="utf-8")
     git(tmp_path, root, "add", "-A")
-    return subprocess.run(
-        ["git", "-C", str(root), "commit", "-q", "-m", message],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env(tmp_path),
+    # `run_git`: the hook under test is what rejects this commit, so the exit code is the
+    # subject and not a failure.
+    return gitfixture.run_git(
+        root, "commit", "-q", "-m", message, home=tmp_path, PATH=env(tmp_path)["PATH"]
     )
 
 

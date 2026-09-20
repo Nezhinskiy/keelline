@@ -6,9 +6,7 @@ is `worktree.link`'s, unchanged. This module asserts that `attach` reaches both.
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,19 +19,10 @@ from keelline.errors import Refusal
 from keelline.memory.api import PartialLink, harness_memory_path
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
 from tests.attach.test_write import FakeRunner
+from tests.gitfixture import git as _git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-
-def _git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def _config(root: Path, machine: Path) -> Config:

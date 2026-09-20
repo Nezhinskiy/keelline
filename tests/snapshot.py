@@ -1,25 +1,15 @@
-"""The tree-snapshot helpers three test modules share.
+"""The tree-snapshot helpers five test modules share.
 
 Here rather than in `tests/test_install_path.py`, because two `attach` test modules importing
-an installer-focused module's private names was S3 of the install-path review.
+an installer-focused module's private names was S3 of the install-path review. The `git` this
+module used to publish beside them is `tests/gitfixture.py`'s now: running `git` and reading a
+tree back are two concerns, and only one of them was duplicated twenty-three times.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
-
-
-def git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
-
 
 # The only `.git` paths a defect this guard cares about could actually land in: a hook dropped
 # into `.git/hooks/`, a rule written to `.git/config`, an ignore region added to
@@ -34,8 +24,6 @@ _STABLE_GIT_FILES = (Path("config"), Path("info") / "exclude")
 def stable_git_snapshot(root: Path) -> dict[str, bytes]:
     """The narrow slice of `.git` this guard reads: the two named files, plus every file
     under `hooks/`, by path relative to `root`."""
-    # `git_dir`, not `git`: this module publishes a `git(root, *args)` helper, and a local
-    # named `git` shadows it for the rest of the function.
     git_dir = root / ".git"
     files: dict[str, bytes] = {}
     for relative in _STABLE_GIT_FILES:

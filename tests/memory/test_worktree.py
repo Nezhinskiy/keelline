@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,6 +24,7 @@ from keelline.memory.worktree import (
     linked_names,
 )
 from keelline.presets import load_preset
+from tests.gitfixture import git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -60,19 +60,6 @@ def a_machine_file(tmp_path: Path) -> Path:
     path = tmp_path / "machine.toml"
     path.write_text("", encoding="utf-8")
     return path
-
-
-def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    done = subprocess.run(
-        ["git", *args], cwd=root, check=True, capture_output=True, text=True, env=env
-    )
-    return done.stdout
 
 
 def _a_repo(tmp_path: Path) -> Path:

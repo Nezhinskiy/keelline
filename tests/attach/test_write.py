@@ -9,9 +9,7 @@ model compliance is not a gate.
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +26,9 @@ from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import _git, _machine, _project_and_store
+from tests.attach.test_binding import _machine, _project_and_store
+from tests.gitfixture import git as _git
+from tests.gitfixture import run_git
 
 # The walk-based snapshot guard, owned at the top level rather than duplicated here and in
 # tests/test_install_path.py: it used to exist twice, verbatim including its docstring, and the
@@ -117,13 +117,9 @@ def _attachable(
 
 
 def _check_ignore(root: Path, relative: str) -> bool:
-    done = subprocess.run(
-        ["git", "check-ignore", "-q", "--", relative],
-        cwd=root,
-        capture_output=True,
-        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull},
-    )
-    return done.returncode == 0
+    # `run_git` and not `git`: `check-ignore` answers 1 for "nothing matched", which is an
+    # answer and not a failure — the same distinction `keelline.gitenv.git_run` makes.
+    return run_git(root, "check-ignore", "-q", "--", relative).returncode == 0
 
 
 def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
@@ -738,7 +734,7 @@ def test_a_repository_with_no_origin_remote_has_nothing_to_record(tmp_path: Path
     # Mutation: move the `if binding.remote is None` guard in `attach` back below
     # `_write_ignore_region`, and this reddens on the snapshot while `pytest.raises` stays green.
     root, store, machine = _attachable(tmp_path, codex="# a standing rule\n")
-    subprocess.run(["git", "remote", "remove", "origin"], cwd=root, capture_output=True)
+    run_git(root, "remote", "remove", "origin")
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before

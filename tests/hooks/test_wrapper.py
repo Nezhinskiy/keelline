@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.gitfixture import git
 from tests.test_launcher import _old_python
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -397,7 +398,7 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
     here, there = tmp_path / "here", tmp_path / "there"
     for repository in (here, there):
         repository.mkdir()
-        subprocess.run(["git", "init", "-q", str(repository)], check=True, capture_output=True)
+        git(repository, "init", "-q")
     root = _plugin_root(tmp_path, 0, echo_cwd=True)
     env = _env(root, None, None)
     env["GIT_DIR"] = str(there / ".git")
@@ -533,7 +534,7 @@ def _clone_shipping_a_git(tmp_path: Path, answer: Path) -> tuple[Path, Path]:
     """
     clone = tmp_path / "clone"
     clone.mkdir(exist_ok=True)
-    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    git(clone, "init", "-q")
     ran = tmp_path / "planted-git-ran"
     planted = clone / "git"
     planted.write_text(
@@ -583,7 +584,7 @@ def test_an_interpreter_in_the_git_root_is_refused_although_the_environment_name
     # is measured against the UNION of both anchors, and after the pinning above one of them is
     # the answer of a binary the clone does not choose.
     clone, _shipped, ran = _clone_shipping_an_interpreter(tmp_path)
-    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    git(clone, "init", "-q")
     outside = tmp_path / "outside"
     outside.mkdir()
     plugin = _plugin_root(tmp_path, 0, echo_cwd=True)

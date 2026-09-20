@@ -5,6 +5,8 @@ from pathlib import Path
 
 from keelline.cli import build_parser, discover_registrars
 from keelline.command import (
+    ATTACH_CHECK_HELP,
+    CHECK_HELP,
     DRY_RUN_HELP,
     HOME_HELP,
     INSTANCE_DIR_HELP,
@@ -24,18 +26,23 @@ SHARED = {
     "--store": STORE_HELP,
     "--dry-run": DRY_RUN_HELP,
     "--home": HOME_HELP,
+    "--check": CHECK_HELP,
 }
-# The commands whose `--root` is not a project root, each with the sentence it uses. A new
+# The commands that mean something else by a shared name, each with the sentence it uses. A new
 # entry here is a decision, not a convenience: it says the flag means something else.
 # The exceptional sentences are constants in `command.py` too (`OVERLAY_ROOT_HELP`,
-# `INSTANCE_DIR_HELP`, `SETUP_ROOT_HELP`, `SETUP_MACHINE_HELP`), so each is spelled once
-# in its parser and named here — never spelled a second time by hand in a test.
+# `INSTANCE_DIR_HELP`, `SETUP_ROOT_HELP`, `SETUP_MACHINE_HELP`, `ATTACH_CHECK_HELP`), so each
+# is spelled once in its parser and named here — never spelled a second time by hand in a test.
 EXCEPTIONS = {
     ("overlay", "create", "--root"): INSTANCE_DIR_HELP,
     ("overlay", "init", "--root"): OVERLAY_ROOT_HELP,
     ("overlay", "upgrade", "--root"): OVERLAY_ROOT_HELP,
     ("setup", None, "--root"): SETUP_ROOT_HELP,
     ("setup", None, "--machine"): SETUP_MACHINE_HELP,
+    # `attach --check` reports the same way `bugs index`, `docs trail`, `memory index` and
+    # `release hashes` do, and exits differently on purpose: its 1 is a binding mismatch and
+    # not a non-empty diff. `command.ATTACH_CHECK_HELP` carries the argument.
+    ("attach", None, "--check"): ATTACH_CHECK_HELP,
 }
 
 CONFIG = """

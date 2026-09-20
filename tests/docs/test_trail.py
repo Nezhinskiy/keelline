@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -22,6 +20,7 @@ from keelline.docs.trail import (
     undeclared_new_documents,
 )
 from keelline.errors import Failure
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -51,19 +50,6 @@ pattern = "gadget|gizmo"
 """
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-
-def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=env
-    ).stdout
 
 
 def corpus(

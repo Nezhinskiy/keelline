@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -29,6 +27,7 @@ from keelline.memory.trust import (
     store_digest,
     wrap,
 )
+from tests.gitfixture import git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -52,16 +51,6 @@ index_extra = []
 """
 
 NOTE = '---\nname: a\ndescription: d\nindex: "t → a"\nmetadata:\n  startup: -100\n---\n\nBody.\n'
-
-
-def git(root: Path, *args: str) -> None:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def a_store(

@@ -5,7 +5,6 @@ import json
 import os
 import py_compile
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -13,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from tests.gitfixture import git
 
 
 def invoke(argv: list[str]) -> int:
@@ -82,26 +82,6 @@ release_branch = "main"
 """
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-
-def git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(root), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        env={
-            "PATH": os.environ["PATH"],
-            "HOME": str(root.parent),
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_SYSTEM": os.devnull,
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@example.com",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@example.com",
-        },
-    ).stdout
 
 
 def repo(tmp_path: Path, *messages: str) -> Path:

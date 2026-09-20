@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.gitfixture import git
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
     describe_snapshot_diff,
-    git,
     snapshot,
 )
 

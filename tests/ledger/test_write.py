@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,6 +19,7 @@ from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import render_index
 from keelline.ledger.scan import FIXTURE_MARKER
 from keelline.ledger.write import file_entry, next_identifier, renumber
+from tests.gitfixture import git
 
 CONFIG = """
 [keelline]
@@ -62,23 +62,6 @@ def seed(root: Path, config: Config, *numbers: int) -> None:
     (root / "docs" / "bug-reports.md").write_text(
         render_index(load_entries(root, config), config), encoding="utf-8"
     )
-
-
-def git(root: Path, *args: str) -> str:
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_TERMINAL_PROMPT": "0",
-        "HOME": str(root.parent),
-    }
-    return subprocess.run(
-        ["git", "-C", str(root), *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    ).stdout
 
 
 def commit_all(root: Path, message: str = "seed") -> None:

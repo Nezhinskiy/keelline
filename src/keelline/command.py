@@ -25,6 +25,12 @@ MACHINE_HELP = "machine configuration file to read"
 STORE_HELP = "resolve the memory store at this path"
 DRY_RUN_HELP = "report what would change and write nothing"
 HOME_HELP = "the home directory to read and write under (default: the real one)"
+# `--check` was registered five times with five sentences — "fail if the index is stale", "fail
+# if the listing is stale", "report drift instead of writing", "report drift and write nothing",
+# "report the binding and the diff, and write nothing" — in the tree that built this machinery
+# for the five above. Four of the five mean one thing: read, report, write nothing, and fail if
+# anything differs. The fifth is a real exception and is below.
+CHECK_HELP = "report drift instead of writing, and fail if there is any"
 # The named exceptions: each is one sentence, spelled here and used by exactly one parser,
 # and `tests/test_command.py` holds the parser to it by name. An entry is a decision that the
 # flag means something other than the shared thing, not a convenience for a sentence someone
@@ -39,6 +45,14 @@ SETUP_MACHINE_HELP = (
     "the machine configuration file to write (default: ~/.config/keelline/config.toml, the "
     "file every reader reads)"
 )
+# `attach --check` reports the same way the four above do and **exits differently on purpose**.
+# Its exit 1 is a binding mismatch, not a non-empty diff: a diff with allow rules in it is the
+# ordinary state of a first attach, and it is what the `--yes` gate exists for — the refusal
+# `write.attach` raises names this flag as the way to read the diff before passing `--yes`
+# ("Read the diff with `keelline attach --check` and pass --yes"). A `--check` that failed
+# whenever the run would widen would make the documented remedy itself a failure, and the skill
+# that runs check -> relay -> ask would begin with one.
+ATTACH_CHECK_HELP = "report the binding and the diff, and write nothing"
 
 
 def common_flags(

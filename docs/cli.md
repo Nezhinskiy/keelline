@@ -173,6 +173,11 @@ Writes nothing.
 Cross-checks the version across `pyproject.toml`, `uv.lock`, `src/keelline/__init__.py`, both
 plugin manifests and `CHANGELOG.md`. Exits `1` naming every source that disagrees.
 
+The `--json` object carries `summary`, `versions` (every source and what it says) and
+`problems` (empty on a clean run), and it carries all three **whether or not there is drift** —
+the drift is in `problems`, not in the shape. A source this gate cannot parse at all is still a
+refusal and prints `error` instead, which is the difference between a finding and a failure.
+
 `--tag` adds the tag as a further source, and it is what the release workflow runs. Both tag
 shapes are accepted — `vX.Y.Z`, which is the workflow's trigger, and the platform's own
 `keelline--vX.Y.Z` — because either may be the ref a run was created from. Under `--tag` one
@@ -225,7 +230,9 @@ files` reads the installed record against the installed files, and reports post-
 modification, a partial update or a broken checkout. An attacker who edits both the files and
 the record is not this check's threat; tag protection and the pinned SHA are.
 
-**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift.
+**Writes** `hooks/hashes.json`, and nothing under `--check`. Exits `0`, `1` on drift. Under
+`--check --json` the object carries `summary`, `files` and `problems`, in both outcomes, for
+the reason `release check` above gives.
 
 ## `keelline hook <event>`
 
@@ -1234,7 +1241,7 @@ reach a token.
 
 ## Shared flags
 
-Five flags mean the same thing wherever they appear, and each has exactly one sentence. Both
+Six flags mean the same thing wherever they appear, and each has exactly one sentence. Both
 tables below are held to `keelline.command`'s own constants, row by row, by
 `tests/test_documents.py` — so a sentence cannot be spelled by hand here any more than it can be
 in a parser, which is the whole point of the rule.
@@ -1246,10 +1253,15 @@ in a parser, which is the whole point of the rule.
 | `--store` | resolve the memory store at this path |
 | `--dry-run` | report what would change and write nothing |
 | `--home` | the home directory to read and write under (default: the real one) |
+| `--check` | report drift instead of writing, and fail if there is any |
 
-Four commands mean something else by a shared name. Each is a **named exception** — a decision
+`--check` is the CI half of `--dry-run`: both read and write nothing, and `--check` fails when
+anything differs. `keelline bugs index`, `keelline docs trail`, `keelline memory index` and
+`keelline release hashes` all take it with that meaning.
+
+Five commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant
-beside the five above:
+beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
@@ -1257,6 +1269,13 @@ beside the five above:
 | `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
 | `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
 | `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
+| `keelline attach --check` | report the binding and the diff, and write nothing |
+
+`attach --check` reports the way the other four do and exits differently on purpose: its `1` is
+a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state
+of a first attach and is exactly what the `--yes` gate exists for — the refusal `attach` raises
+names this flag as the way to read that diff first. A `--check` that failed whenever the run
+would widen would make the documented remedy itself a failure.
 
 ---
 

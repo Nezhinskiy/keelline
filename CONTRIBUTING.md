@@ -133,7 +133,19 @@ drops entries whose directory is gone, and a killed run leaves its directory sta
 first thing a run does is drop every `keelline-oracle-*` checkout but its own, naming on stderr
 what it dropped.
 
-CI runs the whole set. Four things are findings: a mutation that *survives*; one whose `before`
+CI runs the whole set in a job of its own, called `oracle`, on one configuration —
+`ubuntu-latest` with Python 3.13 — while the tests go on running on all four. The oracle proves
+that a mutation reddens a test, which is a property of the code and of the tests rather than of
+the platform, and at 657 to 751 s a run it was 76% of the `checks` job and had pushed it past
+its fifteen-minute bound. Its own job has its own budget, and `ci.yml` says what that budget
+buys in further entries; `test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits`
+reddens when the set outgrows it, so you find that out here rather than from a cancelled job.
+
+Say plainly what narrowed: your local run is still the full check, and CI's guarantee is now
+that the set holds on Linux under 3.13. A mutation that holds there and not on macOS would
+reach `main`, where before it would have been caught in the pull request.
+
+Four things are findings: a mutation that *survives*; one whose `before`
 line no longer exists, because the assertion and the line it is about have drifted apart; one
 whose `before` line appears more than once in the file, because then the entry does not name a
 line; and one whose named tests do not pass on a clean tree before the mutation is applied,

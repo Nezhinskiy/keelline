@@ -9,9 +9,7 @@ makes run 2 and run 3 "synced" — so the tool is the same for every stack.
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,6 +19,7 @@ from keelline.errors import Failure
 from keelline.gitenv import GIT_TIMEOUT_SECONDS, git_run
 from keelline.guards.attribute import VERDICTS, attribute
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed
+from tests import gitfixture
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -44,15 +43,8 @@ class _Coded:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(
-        ["git", *args],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull},
-    )
-    return done.stdout.strip()
+    """The shared fixture `git`, stripped: every call site here compares a single ref or sha."""
+    return gitfixture.git(root, *args).strip()
 
 
 def _repo(tmp_path: Path) -> Path:

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from keelline import fsops
 from keelline.areas import SubParsers
-from keelline.command import common_flags, root_and_config
+from keelline.command import CHECK_HELP, common_flags, root_and_config
 from keelline.findings import labels
 from keelline.result import Result
 
@@ -147,7 +147,7 @@ def register(groups: SubParsers) -> None:
     trail = common_flags(
         docs_sub.add_parser("trail", help="regenerate the design-and-plan trail in the roadmap")
     )
-    trail.add_argument("--check", action="store_true", help="fail if the listing is stale")
+    trail.add_argument("--check", action="store_true", help=CHECK_HELP)
     trail.set_defaults(func=run_docs_trail)
 
     plan = groups.add_parser("plan", help="implementation-plan lint")
