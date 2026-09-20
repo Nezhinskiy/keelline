@@ -79,7 +79,98 @@ class WorktreeUnavailable(RuntimeError):
     """`git worktree add` did not produce a checkout; the message is git's own stderr."""
 
 
+class ConcurrentRun(RuntimeError):
+    """Another oracle holds the lock; the message names it and the process that does."""
+
+
+def _holder(lock: Path) -> str | None:
+    """What is written in the lock file if the process that wrote it is still alive.
+
+    **Unreadable is treated as alive, and that is the conservative direction.** The failure this
+    lock prevents is one run deleting another's checkout, and the cost of being wrong the other
+    way is a message telling a person which file to remove. A lock whose contents this process
+    cannot parse is far more likely to be a live run on a filesystem doing something odd than a
+    dead one, so it refuses and says where to look.
+    """
+    try:
+        content = lock.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "a process this one cannot ask about"
+    pid = content.partition(" ")[0]
+    if not pid.isdigit():
+        return content or "a process this one cannot name"
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        # Alive and owned by somebody else, which is still alive.
+        return content
+    except OSError:
+        return content
+    return content
+
+
+@contextlib.contextmanager
+def single_run(tempdir: Path | None = None) -> Iterator[Path]:
+    """Hold the one-oracle-at-a-time lock, or refuse naming what holds it.
+
+    **`sweep_stale_scratch` assumes a single writer and nothing enforced it.** Its own docstring
+    states the assumption — "a second run started while the first is working would sweep the
+    first's checkout out from under it" — and that is exactly what happened during the wave-4
+    review: a filtered run started beside an unfiltered one removed its checkout, and every
+    mutation after that point reported `FINDING`. 138 of them, all false, on a tree with nothing
+    wrong with it. A comment naming a hazard does not stop the hazard; this does.
+
+    `O_CREAT | O_EXCL` is the whole mechanism: the create either wins or raises, with no window
+    between the test and the write. A lock whose writer has died is taken over rather than
+    obeyed, because a `SIGKILL` runs no `finally` and a stale lock that refused for ever would
+    be a worse failure than the one this prevents. The retry is bounded at one: losing the race
+    twice means another run really is starting, and that is a refusal rather than a spin.
+    """
+    lock = (tempdir or TEMPDIR) / LOCK_NAME
+    mine = f"{os.getpid()} {ROOT}"
+    for attempt in range(2):
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            holder = _holder(lock)
+            if holder is not None:
+                raise ConcurrentRun(
+                    f"another mutation oracle is running ({holder}); this one refuses rather "
+                    f"than sweeping its scratch checkout out from under it. Wait for it, or "
+                    f"remove {lock} if you are sure it is gone"
+                ) from None
+            if attempt:
+                raise ConcurrentRun(
+                    f"{lock} changed hands while a stale one was being cleared; another run is "
+                    f"starting"
+                ) from None
+            lock.unlink(missing_ok=True)
+            continue
+        with os.fdopen(handle, "w", encoding="utf-8") as writing:
+            writing.write(mine)
+        try:
+            yield lock
+        finally:
+            # Only if it is still ours: a run that took this one over as stale owns it now, and
+            # unlinking its lock on the way out would be this function doing the very thing it
+            # was written to stop.
+            try:
+                held = lock.read_text(encoding="utf-8").strip()
+            except OSError:
+                held = ""
+            if held == mine:
+                lock.unlink(missing_ok=True)
+        return
+
+
 SCRATCH_PREFIX = "keelline-oracle-"
+# The one-run-at-a-time lock, beside the scratch checkouts it exists to protect. A **file** and
+# not a directory, which is what keeps it out of `sweep_stale_scratch`'s own housekeeping: that
+# walk globs this prefix and removes directories, and the `is_dir()` arm is what spares this.
+# Asserted rather than assumed — `tests/scripts/test_mutation_oracle.py` holds the sweep to it.
+LOCK_NAME = f"{SCRATCH_PREFIX}lock"
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -422,6 +513,20 @@ def main(argv: list[str]) -> int:
         print(dirty, file=sys.stderr)
         return 1
 
+    # The lock is taken before the sweep and held to the end, because the sweep is the
+    # destructive half: `sweep_stale_scratch` removes every scratch checkout but this run's, and
+    # "but this run's" is only safe while there is one run. A second oracle refuses here rather
+    # than deleting the first one's tree.
+    try:
+        with single_run():
+            return _prove(mutations)
+    except ConcurrentRun as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+
+def _prove(mutations: list[Mutation]) -> int:
+    """Sweep, then apply every mutation in one scratch checkout. Called holding the lock."""
     # Housekeeping before the run, not after it: a `SIGKILL` runs no `finally`, so the entries
     # an earlier killed run left behind are cleared here or never. `git worktree prune` alone
     # does not do it — it only drops entries whose directory is gone, and these leave theirs.

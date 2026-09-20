@@ -448,6 +448,8 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
     #
     # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
     from keelline.command import (
+        ATTACH_CHECK_HELP,
+        CHECK_HELP,
         DRY_RUN_HELP,
         HOME_HELP,
         INSTANCE_DIR_HELP,
@@ -465,10 +467,12 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
         "`--store`": STORE_HELP,
         "`--dry-run`": DRY_RUN_HELP,
         "`--home`": HOME_HELP,
+        "`--check`": CHECK_HELP,
         "`keelline overlay create --root`": INSTANCE_DIR_HELP,
         "`keelline overlay init --root`, `keelline overlay upgrade --root`": OVERLAY_ROOT_HELP,
         "`keelline setup --root`": SETUP_ROOT_HELP,
         "`keelline setup --machine`": SETUP_MACHINE_HELP,
+        "`keelline attach --check`": ATTACH_CHECK_HELP,
     }
     section = _SHARED_FLAGS_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
     assert section is not None, "docs/cli.md has no `## Shared flags` section"

@@ -31,7 +31,7 @@ import argparse
 from pathlib import Path
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags
+from keelline.command import ATTACH_CHECK_HELP, common_flags
 from keelline.config.machine import override_is_honoured
 from keelline.errors import Refusal
 from keelline.result import Result
@@ -154,9 +154,7 @@ def register(groups: SubParsers) -> None:
         groups.add_parser("attach", help="bind this repository to the overlay and link its notes"),
         store=True,
     )
-    attach.add_argument(
-        "--check", action="store_true", help="report the binding and the diff, and write nothing"
-    )
+    attach.add_argument("--check", action="store_true", help=ATTACH_CHECK_HELP)
     attach.add_argument(
         "--trust-remote",
         action="store_true",

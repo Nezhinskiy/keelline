@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +16,7 @@ from keelline.presets import load_preset
 from keelline.runner import Completed
 from keelline.setup.api import USER_SETTINGS, setup
 from keelline.setup.machine import read_machine, write_machine
+from tests.gitfixture import git as _git
 
 # The minimal `keelline.toml` `attach.read_binding` needs (a project name and nothing else),
 # the same shape `tests/setup/test_machine.py::_initialised_project` uses for `load()`.
@@ -593,18 +592,6 @@ def _wrote_anything(home: Path, machine: Path) -> list[str]:
     proves nothing unless the same fixture, unrefused, writes something.
     """
     return [str(path) for path in (machine, home / USER_SETTINGS) if path.is_file()]
-
-
-def _git(root: Path, *args: str) -> None:
-    # The developer's own git configuration must not reach these runs (`commit.gpgsign`,
-    # `core.hooksPath`), the same precaution `tests/memory/test_store.py::git` takes.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path) -> None:

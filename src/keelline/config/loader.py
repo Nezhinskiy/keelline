@@ -56,6 +56,18 @@ class ConfigError(Failure):
     """A keelline.toml that cannot be trusted as written."""
 
 
+class MachineConfigError(ConfigError):
+    """The **machine** file could not be read, which is not `keelline.toml`'s doing.
+
+    A subclass and not a message, because the one caller that has to tell them apart must not
+    do it by reading the text: `doctor` deliberately never quotes a loader message — the loader
+    builds it out of the file's own keys and values — so its only way to say which of the two
+    files is broken was the type. It said `keelline.toml is here and does not load` for a
+    `~/.config/keelline/config.toml` with a stray bracket in it, and sent the owner to edit a
+    file with nothing wrong with it.
+    """
+
+
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name, {})
     if not isinstance(value, dict):
@@ -135,13 +147,21 @@ def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
 
 def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     values: dict[str, Any] = dict(preset.get("defaults", {}).get("personal", {}))
-    if machine.is_file():
-        try:
-            raw = tomllib.loads(machine.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"{machine} is not valid TOML: {exc}") from None
+    if not machine.is_file():
+        # No machine file, so `values` is the preset's own `[personal]` defaults and nothing
+        # else. A fault here would be the preset's, not a machine's, and must not be relabelled.
+        return _build(Personal, "personal", values)
+    try:
+        raw = tomllib.loads(machine.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None
+    try:
         values.update(_table(raw, "personal"))
-    return _build(Personal, "personal", values)
+        return _build(Personal, "personal", values)
+    except ConfigError as exc:
+        # Everything from here is this file's doing: what `values` gained between the arm above
+        # and this one is exactly its `[personal]` table.
+        raise MachineConfigError(f"{machine}: {exc}") from None
 
 
 def load(root: Path, *, machine: Path | None = None, interactive: bool | None = False) -> Config:

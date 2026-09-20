@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags
+from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -422,7 +422,7 @@ def register(groups: SubParsers) -> None:
     index = common_flags(
         sub.add_parser("index", help="render MEMORY.md from the notes"), store=True
     )
-    index.add_argument("--check", action="store_true", help="report drift instead of writing")
+    index.add_argument("--check", action="store_true", help=CHECK_HELP)
     index.set_defaults(func=run_index)
 
     context = common_flags(

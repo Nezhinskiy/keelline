@@ -22,6 +22,7 @@ from keelline.scaffold.regions import RegionError, Style, markers
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
+from tests.gitfixture import git
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -138,19 +139,10 @@ def test_detach_withdraws_the_harness_link(tmp_path: Path) -> None:
 def test_detach_withdraws_the_link_tree_from_every_worktree(tmp_path: Path) -> None:
     # `attach` links into every existing worktree, so a detach that only cleaned the owning
     # checkout would leave every other one reading an overlay it is no longer bound to.
-    import os
-    import subprocess
-
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     side = tmp_path / "side"
-    subprocess.run(
-        ["git", "worktree", "add", "-q", str(side), "-b", "side"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull},
-    )
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
     home = tmp_path / "home"
     _attach(root, store, machine, home)
     assert (side / "docs" / "memory" / "developer").is_symlink()

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
@@ -31,28 +32,20 @@ PLAN = "docs/plans/2026-09-19-the-fixtures-own-plan.md"
 def _copy_as_repository(tmp_path: Path) -> Path:
     root = tmp_path / "project"
     shutil.copytree(SMOKE, root)
-    env = {
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "PATH": "/usr/bin:/bin",
-    }
 
     # Two commits, so that `commit check --range HEAD~1..HEAD` checks one message rather than
     # an empty range that proves nothing. The second one touches the fixture's own plan rather
     # than being empty, for the same reason one step further on: `plan check --base HEAD~1`
     # lints the plans that range touches, and a range that touches none exits 0 having linted
     # nothing. `test_plan_check_on_the_fixture_lints_the_plan_it_touched` is what says so.
-    def git(*args: str) -> None:
-        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, env=env)
-
-    git("init", "-q", "-b", "main")
-    git("add", "-A")
-    git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "chore: the fixture")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "chore: the fixture")
     plan = root / PLAN
     added = plan.read_text(encoding="utf-8") + "\nA line the second commit adds.\n"
     plan.write_text(added, encoding="utf-8")
-    git("add", "-A")
-    git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "docs: a second one")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs: a second one")
     return root
 
 
@@ -296,6 +289,113 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
 
 
+ORACLE_COMMAND = "scripts/mutation_oracle.py"
+ORACLE_JOB = "oracle"
+# Measured on the last green `checks (ubuntu-latest, 3.13)`: 751 s for the 372 entries
+# `mutations.toml` held that day. Re-measure it from the `oracle` job's own runs; it is here as
+# a number rather than as prose so that the budget below is checked rather than described.
+ORACLE_SECONDS_PER_ENTRY = 751 / 372
+# Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
+# is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
+# runner, which also carries lint, types, the test run, the build and a wheel install.
+ORACLE_SETUP_SECONDS = 60
+
+
+def _ci_jobs() -> dict[str, list[str]]:
+    """Every job in `ci.yml`, as the raw lines underneath it.
+
+    Indentation arithmetic and not a YAML parser, for the reason `_release_jobs` gives further
+    down and `_scan` gives at length: this repository ships no runtime dependency and
+    `tests/test_import_boundary.py` is why none arrives through a test either. A job is a key at
+    indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to it.
+    """
+    jobs: dict[str, list[str]] = {}
+    current: str | None = None
+    inside = False
+    for line in CI_WORKFLOW.read_text(encoding="utf-8").splitlines():
+        if line.rstrip() == "jobs:":
+            inside = True
+            continue
+        if not inside:
+            continue
+        bare = line.lstrip()
+        opens_job = len(line) - len(bare) == 2 and line.rstrip().endswith(":")
+        if bare and not bare.startswith("#") and opens_job:
+            current = line.strip().rstrip(":")
+            jobs[current] = []
+            continue
+        if current is not None:
+            jobs[current].append(line)
+    return jobs
+
+
+@needs_ci_workflow
+def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> None:
+    """The oracle runs once, in a job nothing can skip, under a bound that fits the set.
+
+    It used to be a step of `checks`, where it was 76% of the job: 751 s of 879 s on Linux
+    against a 900 s bound, on all four configurations at once, and the branch that took
+    `mutations.toml` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
+    it on one configuration was necessary and not sufficient — `timeout-minutes` is a per-job
+    bound, so paying once instead of four times gave 751 s back to the three configurations that
+    stopped running it and nothing to the one that still did.
+
+    **Three things are asserted, and each is a way this has already gone wrong or could go
+    quiet.** That exactly one job runs the oracle, because a second copy would pay twice again
+    and a zeroth would be the set silently switched off. That the job carries no `if:` and no
+    `strategy:`, because a skipped job reports as green — the "reads as coverage" failure in the
+    costume of a condition — and because a matrix would reintroduce the multiplication. And that
+    the budget still fits the set it has to prove.
+
+    **The budget assertion is the one that earns its place.** The oracle grows by construction:
+    the rule is that every new assertion ships with the mutation that reddens it, so the entry
+    count only goes up, at about two seconds each. Projecting the cost from the live entry count
+    means the next branch to outgrow the bound reddens *here*, in a contributor's own test run,
+    rather than as a cancelled job fifteen minutes into CI. That is the whole difference between
+    arithmetic somebody can act on and arithmetic somebody discovers.
+
+    No mutation travels with `ORACLE_SECONDS_PER_ENTRY` itself: lowering it weakens the
+    projection without reddening anything, so there is nothing for an entry to catch. It is a
+    measurement, and the comment beside it says to re-measure it from this job's own runs.
+    """
+    # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
+    # skip it. Both redden this case.
+    import tomllib
+
+    jobs = _ci_jobs()
+    # The walk first: an empty reading would make every "exactly one" below come out zero for a
+    # reason that is not about the workflow.
+    assert len(jobs) >= 2, jobs
+    holding = [name for name, body in jobs.items() if any(ORACLE_COMMAND in x for x in body)]
+    assert holding == [ORACLE_JOB], holding
+
+    body = jobs[ORACLE_JOB]
+    skippable = [x for x in body if x.strip().startswith("if:")]
+    assert skippable == [], (
+        f"the {ORACLE_JOB!r} job can be skipped, and a skipped job reports as a green check",
+        skippable,
+    )
+    multiplied = [x for x in body if x.strip().startswith(("strategy:", "matrix:"))]
+    assert multiplied == [], (
+        f"the {ORACLE_JOB!r} job runs a matrix, which is the four-fold cost this shape removed",
+        multiplied,
+    )
+
+    bounds = [x for x in body if x.strip().startswith("timeout-minutes:")]
+    assert len(bounds) == 1, bounds
+    budget = int(bounds[0].split(":", 1)[1].strip()) * 60
+    entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
+    assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
+    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS
+    assert budget >= projected, (
+        f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "
+        f"raise `timeout-minutes` on the {ORACLE_JOB!r} job, and say in the comment what the "
+        "new number buys in entries",
+        budget,
+        projected,
+    )
+
+
 WORKFLOWS = ROOT / ".github" / "workflows"
 # The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
 # cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and
@@ -310,7 +410,9 @@ SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
 # which is why it is 0 here rather than exempt from the walk.
 EXPECTED_BLOCKS = {
     "check.yml": 10,
-    "ci.yml": 12,
+    # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
+    # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
+    "ci.yml": 13,
     "release.yml": 7,
     "smoke-release.yml": 0,
     "smoke.yml": 6,
@@ -324,7 +426,8 @@ EXPECTED_CHARACTERS = {
     # Kept level with the measurement rather than left where it was, because a floor with a
     # thousand characters of headroom under it is a floor a truncation walks past.
     "check.yml": 6503,
-    "ci.yml": 882,
+    # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
+    "ci.yml": 899,
     "release.yml": 1683,
     "smoke-release.yml": 0,
     "smoke.yml": 3042,
@@ -506,10 +609,14 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # collects the right NUMBER of bodies and truncates each of them to its first line passes a
     # count and fails a size. The per-file assertions above are what do the work now; these are
     # the whole-set restatement, at the measured values rather than at half of them.
-    # Measured 2026-09-19: 34 bodies, 10,637 characters (check.yml 5,030, ci.yml 882,
-    # release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0).
+    # Re-measured when the oracle got a job of its own: 36 bodies, 12,127 characters (check.yml
+    # 6,503, ci.yml 899, release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0). The figure
+    # stood at 10,637 from 2026-09-19 while `check.yml` grew from 5,030 to 6,503 underneath it,
+    # so the whole-set floor had picked up about 1,500 characters of slack — which is exactly
+    # the truncation headroom its own comment two paragraphs up argues against. Moved level with
+    # the measurement rather than left where it was.
     assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 10_637, sum(len(block) for block in read)
+    assert sum(len(block) for block in read) >= 12_127, sum(len(block) for block in read)
 
 
 def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
@@ -635,15 +742,6 @@ def step_script(workflow: Path, step_name: str) -> str:
 
 def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
     """A clone whose `origin/main` carries `on_base` as `keelline.toml`, or carries none."""
-    env = {
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "PATH": "/usr/bin:/bin",
-    }
-
-    def git(where: Path, *args: str) -> None:
-        subprocess.run(["git", "-C", str(where), *args], check=True, capture_output=True, env=env)
-
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     git(upstream, "init", "-q", "-b", "main")
@@ -651,10 +749,9 @@ def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
     if on_base is not None:
         (upstream / "keelline.toml").write_text(on_base, encoding="utf-8")
     git(upstream, "add", "-A")
-    git(upstream, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "chore: base")
+    git(upstream, "commit", "-qm", "chore: base")
     project = tmp_path / "project"
-    clone = ["git", "clone", "-q", str(upstream), str(project)]
-    subprocess.run(clone, check=True, capture_output=True, env=env)
+    git(tmp_path, "clone", "-q", str(upstream), str(project))
     return project
 
 

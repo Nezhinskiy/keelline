@@ -6,43 +6,37 @@ first, so a re-export list in `__init__.py` would pull this whole area into ever
 call and reddens `tests/test_areas.py`. Keeping the surface one level down costs a consumer six
 characters and keeps discovery cheap.
 
-Everything a consumer lane needs is re-exported here, and the list is chosen from what those
-lanes actually reach for: `hooks-core` needs nothing to import — its handlers are discovered —
-but reads `LEAK_REASON` and `SLEEP_REASON` in its smoke assertions; `setup` needs `install`,
-`uninstall`, `Installed`, `Removed` and `HOOK_NAME` to offer and undo the git hook; `attach` and
-`doctor` need `hooks_dir` alone, to ask where an overlay's hooks really live rather than assume
-`.git/hooks` — an overlay with `core.hooksPath` set, or one that is a worktree or a submodule,
-keeps them somewhere else, and both lanes had the same wrong spelling hardcoded; `assess`
-needs the commit rules (`offending_lines`, `check_range`, `Report`, `Violation`, `Offence`,
-`ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `contained_roots`,
-`Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`) and the scanner any later
-guard is built on (`Heredoc`, `tokenize`, `segments`, `operator_pieces`, `command_words`),
-and now the failure attribution beside them (`attribute`, `Attribution`, `VERDICTS`) — a red
-run `assess` has to route is a red run it has to attribute first, and the five sentences are
-the table it would otherwise re-derive; and the judge itself (`judge`, `Verdict`, `ALLOW`). A
-lane that needs something absent from this list grows it deliberately, in a commit that says
+The list is what consumers outside this area actually reach for, and the whole of it is the git
+hook plus one shared rule:
+
+- `setup` offers and undoes the git hook (`install`, `uninstall`, `HOOK_NAME`), and `Installed`
+  and `Removed` come with the two verbs, because a return type absent from this list is a value
+  `setup` can hold and cannot declare.
+- `attach`, `doctor` and `setup`'s own tests ask where an overlay's hooks really live rather
+  than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
+  or one that is a worktree or a submodule, keeps them somewhere else, and both lanes had the
+  same wrong spelling hardcoded.
+- `ledger.scan` and `memory.refs` both ask which roots a configuration's paths may reach
+  (`contained_roots`), and two spellings of that would be two answers.
+
+A lane that needs something absent from this list grows it deliberately, in a commit that says
 which lane and why.
+
+**Trimmed, in the wave-4 surface remediation.** Twenty-nine names went, and every one of them
+was published against `assess` — a lane that does not exist: the commit rules
+(`offending_lines`, `check_range`, `strip_message`, `Report`, `Violation`, `Offence`,
+`ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `red_exit`,
+`Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`), the scanner any later guard
+would be built on (`Heredoc`, `tokenize`, `segments`, `operator_pieces`, `command_words`), the
+failure attribution (`attribute`, `Attribution`, `VERDICTS`) and the background-cleanup judge
+(`judge`, `Verdict`, `ALLOW`, `LEAK_REASON`, `SLEEP_REASON`, `RESTORE_HINT`, the last three
+against "hooks-core's smoke assertions", which import none of them). Each is still where it was
+written and is reachable by its own module; what went is the claim that another area reads it.
+`overlay/api.py` made the same ruling about a template tree published against "the release lane
+will need it": that lane grows the list when it arrives, which is what this docstring asks of
+every other lane.
 """
 
-from keelline.guards.attribute import VERDICTS, Attribution, attribute
-from keelline.guards.audit import SHAPES, Finding, import_roots, scan_paths, suite_files
-from keelline.guards.bashscan import (
-    Heredoc,
-    command_words,
-    operator_pieces,
-    segments,
-    tokenize,
-)
-from keelline.guards.bgcleanup import ALLOW, LEAK_REASON, RESTORE_HINT, SLEEP_REASON, Verdict, judge
-from keelline.guards.commit import (
-    ATTRIBUTION_LABELS,
-    Offence,
-    Report,
-    Violation,
-    check_range,
-    offending_lines,
-    strip_message,
-)
 from keelline.guards.githooks import (
     HOOK_MARKER,
     HOOK_NAME,
@@ -52,45 +46,15 @@ from keelline.guards.githooks import (
     install,
     uninstall,
 )
-from keelline.guards.hygiene import Hygiene, inspect, red_exit
 from keelline.guards.roots import contained_roots
 
 __all__ = [
-    "ALLOW",
-    "ATTRIBUTION_LABELS",
     "HOOK_MARKER",
     "HOOK_NAME",
-    "LEAK_REASON",
-    "RESTORE_HINT",
-    "SHAPES",
-    "SLEEP_REASON",
-    "VERDICTS",
-    "Attribution",
-    "Finding",
-    "Heredoc",
-    "Hygiene",
     "Installed",
-    "Offence",
     "Removed",
-    "Report",
-    "Verdict",
-    "Violation",
-    "attribute",
-    "check_range",
-    "command_words",
     "contained_roots",
     "hooks_dir",
-    "import_roots",
-    "inspect",
     "install",
-    "judge",
-    "offending_lines",
-    "operator_pieces",
-    "red_exit",
-    "scan_paths",
-    "segments",
-    "strip_message",
-    "suite_files",
-    "tokenize",
     "uninstall",
 ]

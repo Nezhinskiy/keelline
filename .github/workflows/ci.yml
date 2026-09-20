@@ -76,16 +76,6 @@ jobs:
         env:
           KEELLINE_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
         run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
-      - name: The mutation oracle
-        # The plans ask that "every new assertion ships with the mutation that reddens it", and
-        # those mutations existed only as English sentences inside multi-thousand-line plan
-        # documents: a contributor could satisfy the rule only by hand-editing source and
-        # reverting, and a reviewer had no way to check they had. `mutations.toml` is that set as
-        # data, and this step is the check. Not a general mutation tester — coverage is the
-        # breadth measure; this proves a curated set of guards is load-bearing rather than merely
-        # executed, which is the distinction that let `open_within` be fully covered and contain
-        # nothing.
-        run: uv run python scripts/mutation_oracle.py
       - name: Version discipline
         run: uv run keelline release check
       - name: Build
@@ -103,6 +93,71 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl
           "$RUNNER_TEMP/wheel/bin/keelline" overlay create --owner ci --name rendered --local --root "$RUNNER_TEMP"
           uv run python scripts/check_artifacts.py rendered "$RUNNER_TEMP/rendered"
+
+  # The mutation oracle, in a job of its own and on one configuration.
+  #
+  # The plans ask that "every new assertion ships with the mutation that reddens it", and those
+  # mutations existed only as English sentences inside multi-thousand-line plan documents: a
+  # contributor could satisfy the rule only by hand-editing source and reverting, and a reviewer
+  # had no way to check they had. `mutations.toml` is that set as data, and this job is the
+  # check. Not a general mutation tester — coverage is the breadth measure; this proves a
+  # curated set of guards is load-bearing rather than merely executed, which is the distinction
+  # that let `open_within` be fully covered and contain nothing.
+  #
+  # **Why it is not a step of `checks` any more.** Measured on the last green run, it was 76% of
+  # that job: 657 s of an 869 s job on macOS, 751 s of 879 s on Linux, against a 900 s bound. So
+  # every configuration sat inside a minute of the cliff, and the branch that took
+  # `mutations.toml` from 372 to 382 entries — about +20 s on a 751 s step — pushed
+  # `checks (macos-latest, 3.13)` over it at 15m18s. Running it on one configuration instead of
+  # four is right and is not sufficient on its own: `timeout-minutes` is a PER-JOB bound, so
+  # paying once rather than four times returns 657-751 s to the three configurations that stop
+  # running it and nothing at all to the one that still does. That job stayed at ~903 s of 900 s.
+  # A job of its own is the only shape where the arithmetic closes, and it also returns the
+  # `checks` legs in ~130-210 s instead of ~900 s, with the oracle running beside them rather
+  # than inside them.
+  #
+  # **Why one configuration is enough**, which is the half that had to be checked rather than
+  # assumed. The oracle proves "this mutation reddens this test" — a property of the code and of
+  # the tests, not of the platform. The matrix comment above argues the OS axis is load-bearing
+  # and it is right, but that argument is about the *tests*: `fsops.open_within` branches on
+  # `ELOOP` (Linux) against `ENOTDIR` (macOS). Every one of the 401 `reddens` targets, across 68
+  # test modules, was resolved to its function and read for skip gates before this was written.
+  # The only gates that exist are `shutil.which("git")`, `shutil.which("bash")`, a workflow
+  # file's presence, and `os.geteuid() == 0` — none platform-dependent, all satisfied here — and
+  # `sys.platform` and `platform.system()` appear nowhere under `tests/`, `src/` or `scripts/`.
+  # The errno divergence is absorbed inside one branch rather than by skipping a test, and no
+  # entry targets that line.
+  #
+  # And if a platform gate is ever added to a `reddens` target, this goes red rather than quiet:
+  # `_check` runs the clean tree first and demands `Outcome.passed`, which is
+  # `code == 0 and executed > 0`, where `executed` subtracts skips and errors. A `reddens` set
+  # that does not run here is a finding on the clean run, before the mutation is applied. It is
+  # never banked as a proof, which is the failure that would matter.
+  oracle:
+    runs-on: ubuntu-latest
+    # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
+    # measured), so the 387 entries `mutations.toml` now holds cost ~782 s; checkout, `setup-uv`
+    # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
+    # to ~60 s, which is the figure to re-measure from this job's first run. Call the shape
+    # ~842 s.
+    #
+    # 19 minutes is 1140 s, so the margin is ~298 s. Sixty of that absorbs runner variance — a
+    # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
+    # leaves ~238 s, or roughly **118 further mutation entries** before this number has to move.
+    # At the rate the rule that every assertion ships with its mutation generates them, that is
+    # the figure to watch; when it is reached, exactly one job's budget changes and nothing else
+    # is hostage to it, which is the third reason this is a job rather than a step.
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: Install
+        run: uv sync --locked
+      - name: The mutation oracle
+        run: uv run python scripts/mutation_oracle.py
 
   plugin:
     runs-on: ubuntu-latest

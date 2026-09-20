@@ -20,6 +20,9 @@ from types import ModuleType
 
 import pytest
 
+from tests import gitfixture
+from tests.gitfixture import git as _git
+
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "mutation_oracle.py"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -225,23 +228,9 @@ def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_ta
     Mutation (declared): the sweep's `worktree remove` is dropped -> the entry survives and
     this reddens.
     """
-    import subprocess
-
-    env = {
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-    }
 
     def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", str(repository), *args],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        return gitfixture.run_git(repository, *args)
 
     repository = tmp_path / "repo"
     repository.mkdir()
@@ -345,21 +334,6 @@ def test_a_git_that_cannot_be_launched_is_refused_not_assumed_clean(
     refusal = module._uncommitted({tmp_path / "subject.py"})
     assert refusal is not None
     assert "could not be run" in refusal
-
-
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", *args],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env={
-            **os.environ,
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_SYSTEM": os.devnull,
-            "GIT_TERMINAL_PROMPT": "0",
-        },
-    )
 
 
 # --- the scratch checkout, which is why the working tree is never written --------------------
@@ -507,3 +481,121 @@ def test_an_uncommitted_reddens_test_file_is_refused_like_an_uncommitted_source_
     )
     assert module.main([]) == 1
     assert "uncommitted changes" in capsys.readouterr().err
+
+
+# --- one oracle at a time -----------------------------------------------------------------
+
+
+def _a_reaped_pid() -> int:
+    """A process id that has certainly exited: one this test started and waited for.
+
+    Pid reuse between the `wait()` and the assertion is theoretically possible and fails in the
+    safe direction — the lock would read as live, `main` would refuse, and the test would go red
+    saying so rather than passing while measuring nothing.
+    """
+    finished = subprocess.Popen([sys.executable, "-c", ""])
+    finished.wait()
+    return finished.pid
+
+
+@needs_git
+def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `sweep_stale_scratch` has always assumed a single writer and its own docstring says so —
+    # "a second run started while the first is working would sweep the first's checkout out from
+    # under it". Nothing enforced it, and during the wave-4 review exactly that happened: a
+    # filtered run started beside an unfiltered one removed its checkout, and every mutation
+    # after that point reported FINDING. 138 of them, all false, on a clean tree. A comment
+    # naming a hazard does not stop the hazard.
+    #
+    # The assertion is the *checkout surviving*, not the exit code: a refusal that still swept
+    # would exit 1 too, and exit 1 is what this oracle returns for a finding as well.
+    #
+    # Mutation (declared): `O_EXCL` drops out of the open -> the second run takes the lock, the
+    # sweep runs, the planted checkout is gone and both assertions redden.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    scratch = Path(module.TEMPDIR)
+    lock = scratch / module.LOCK_NAME
+    # This process is alive by construction, which is the whole of what the lock reads.
+    lock.write_text(f"{os.getpid()} a run that is still going", encoding="utf-8")
+    standing = scratch / f"{module.SCRATCH_PREFIX}first-run"
+    standing.mkdir()
+
+    assert module.main([]) == 1
+    assert standing.is_dir(), "the second run swept the first run's scratch checkout"
+    error = capsys.readouterr().err
+    assert "another mutation oracle is running" in error
+    # And it says which file to remove, because the other half of a lock is the way out of one.
+    assert str(lock) in error
+
+
+@needs_git
+def test_a_lock_left_by_a_dead_process_is_taken_over_rather_than_obeyed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other direction, and it has to hold or the cure is worse than the disease: a `SIGKILL`
+    # runs no `finally`, so a lock outliving its writer is the ordinary aftermath of an
+    # interrupted run — and one that refused for ever would need a person with a shell before
+    # the oracle could be run again.
+    #
+    # Mutation (declared): `_holder` reports every lock as held -> this run refuses instead of
+    # taking the stale lock over, `main` returns 1 and the first assertion reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    lock = Path(module.TEMPDIR) / module.LOCK_NAME
+    lock.write_text(f"{_a_reaped_pid()} a run that is gone", encoding="utf-8")
+
+    assert module.main([]) == 0
+    # And the run that took it over released it, so the next one does not inherit a stale lock
+    # from a process that exited cleanly.
+    assert not lock.exists()
+
+
+def test_the_housekeeping_sweep_leaves_the_lock_alone(tmp_path: Path) -> None:
+    # The lock lives beside the scratch checkouts and shares their prefix, so the sweep's glob
+    # finds it; what spares it is the `is_dir()` arm. That is an invariant between two functions
+    # and nothing stated it — a sweep that took the lock with it would let the next run in while
+    # the first was still working, which is the hazard with one more step in it.
+    #
+    # **`root` is a throwaway and not this checkout, and the first version of this test got that
+    # wrong.** `sweep_stale_scratch` has two halves: the `tempdir` glob, which `tempdir=` aims
+    # wherever a caller says, and a walk over `git worktree list` run in `ROOT`, which `tempdir=`
+    # does not scope at all. With `ROOT` left at the real repository, the second half removed
+    # every registered `keelline-oracle-*/tree` — including the live checkout of the oracle
+    # running this very test. It passed locally, where no oracle was running, and CI reported
+    # `0 test(s) ran` on the clean tree: this test destroyed the run that was executing it, which
+    # is precisely the hazard the lock it is testing exists to prevent. The loader above states
+    # the rule — every test here points `ROOT` at a throwaway directory — and a sweep is the one
+    # function in this module where breaking it is not merely untidy.
+    #
+    # A plain directory and not a repository: `_git` runs with `check=False`, so the worktree
+    # half finds nothing and the `tempdir` half — the half this test is about — is what runs.
+    #
+    # Mutation (declared): the `is_dir()` arm drops out of the sweep -> the lock is reported
+    # dropped and the last two assertions redden.
+    root = tmp_path / "elsewhere"
+    root.mkdir()
+    module = oracle(root=root)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    lock = scratch / module.LOCK_NAME
+    lock.write_text("1 a live run", encoding="utf-8")
+    leaked = scratch / f"{module.SCRATCH_PREFIX}leaked"
+    leaked.mkdir()
+
+    dropped = module.sweep_stale_scratch(tempdir=scratch)
+    # The walk states it found something before anything is asserted about what it spared: a
+    # sweep that stopped sweeping spares the lock too, and would pass the two lines below.
+    assert str(leaked) in dropped, dropped
+    assert str(lock) not in dropped, dropped
+    assert lock.is_file()

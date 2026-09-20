@@ -15,7 +15,6 @@ import json
 import os
 import pty
 import shutil
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +33,7 @@ from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from keelline.release.api import HASHED_FILES
 from keelline.runner import Completed
+from tests.gitfixture import git as _git
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -130,19 +130,6 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
     `PATH` measures nothing.
     """
     return {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path / "home"), **extra}
-
-
-def _git(root: Path, *args: str) -> None:
-    # The developer's own git configuration must not reach these runs, for the reason
-    # `tests/attach/test_binding.py` gives: a signing key or a hooks path can fail a fixture
-    # that has nothing to do with the code under test.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env=env)
 
 
 def _initialised(tmp_path: Path, *, template: str = LOCAL_ONLY) -> Path:
@@ -1786,3 +1773,109 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     unreadable = files_row()
     assert unreadable.status == RED
     assert "present and unreadable" in unreadable.detail
+
+
+# --- Wave 4: four rows that named the wrong cause ---------------------------------------------
+
+
+def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A byte-correct file, reported as "does not match the release record". `changed` is "this
+    # name did not compare equal", and a name gets in for three reasons; the row had one
+    # sentence for all three. A record that names two of three is a state `release.hashes`
+    # anticipates in as many words, and when it happens the file is the correct artifact and
+    # the record is the wrong one — so sending the owner to reinstall over the file is advice
+    # about the wrong half.
+    #
+    # Mutation (declared): `unrecorded` folds back into `modified` -> the row says "do(es) not
+    # match" about a file whose bytes are exactly right, and both assertions below redden.
+    from keelline.release.hashes import write_record
+
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    planted = _planted_plugin(tmp_path, executable=True)
+    write_record(planted)
+    record_path = planted / "hooks" / "hashes.json"
+    document = json.loads(record_path.read_text(encoding="utf-8"))
+    dropped = "scripts/keelline"
+    assert dropped in document["files"], document["files"]
+    del document["files"][dropped]
+    record_path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "files")
+
+    assert row.status == RED
+    assert f"{dropped} is/are shipped here and not in the record" in row.detail
+    assert "do(es) not match the release record" not in row.detail
+
+
+def test_a_shipped_file_that_is_absent_is_named_as_absent_and_not_as_a_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The second of the three causes. A file that is not there cannot have failed a comparison,
+    # and "does not match the release record" told the owner to look at its contents.
+    #
+    # Mutation (declared): `absent` folds back into `modified` -> the sentence is the mismatch
+    # one and both assertions below redden.
+    from keelline.release.hashes import write_record
+
+    monkeypatch.setattr(checks, "_own_root", lambda: None)
+    planted = _planted_plugin(tmp_path, executable=True)
+    write_record(planted)
+    gone = "scripts/keelline"
+    (planted / gone).unlink()
+    env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(planted))
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "files")
+
+    assert row.status == RED
+    assert f"{gone} is/are absent from this installation" in row.detail
+    assert "do(es) not match the release record" not in row.detail
+
+
+def test_a_ledger_that_cannot_be_read_is_this_repositorys_doing_and_never_blamed_on_git(
+    tmp_path: Path,
+) -> None:
+    # `_binding_answer` had three answers and needed four. A ledger that is there and will not
+    # parse was joining "no overlay" and "no git" under `unaskable`, so the row said "no `git`,
+    # or a record this process could not read" and the remedy said "run `keelline doctor` again
+    # where `git` runs" — about a file in the checkout the reader is standing in. `skip` never
+    # reaches the exit code either, so a clone's committed, malformed ledger was silent, which
+    # is the split `_uncorroborated`'s own docstring exists to make.
+    #
+    # Mutation (declared): the unreadable ledger answers `UNASKABLE` again -> the row is `skip`,
+    # blames `git`, and every assertion below reddens.
+    root = _attached(tmp_path)
+    (root / LEDGER).write_text("this is not json", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "attached")
+
+    assert row.status == WARN
+    assert f"{LEDGER} is here and cannot be read as a ledger" in row.detail
+    assert "`git`" not in row.detail and "`git`" not in row.remedy
+    assert LEDGER in row.remedy
+
+
+def test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml(tmp_path: Path) -> None:
+    # `load` reads two files and this arm blamed the first for either, so an owner whose
+    # `~/.config/keelline/config.toml` had a stray bracket in it was told to fix a repository
+    # file with nothing wrong with it — and the fault was marked as the repository's.
+    # Told apart by `MachineConfigError`'s type and never by the loader's text, which `doctor`
+    # does not quote because the loader builds it out of the file's own keys and values.
+    #
+    # Mutation (declared): `_personal` raises the base `ConfigError` again -> `doctor` takes
+    # the `keelline.toml` arm and every assertion below reddens.
+    root = _initialised(tmp_path)
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[personal\n", encoding="utf-8")
+    rows = _checks(tmp_path, root, machine=machine)
+    first = rows[0]
+
+    assert first.status == RED
+    assert "the machine configuration file does not load" in first.detail
+    assert f"{CONFIG_FILE} itself was not the problem" in first.detail
+    assert str(machine) in first.remedy
+    # And every other row skips rather than being checked against a configuration that is not
+    # there — the same shape the `keelline.toml` arm beside it has. Asserted non-empty first.
+    assert len(rows) > 1
+    assert all(row.status == SKIP for row in rows[1:]), [
+        (row.name, row.status) for row in rows[1:] if row.status != SKIP
+    ]
