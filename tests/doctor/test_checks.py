@@ -25,8 +25,8 @@ import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
-from keelline.doctor.api import OK, RED, SETTINGS_FILES, SKIP, WARN, Check, run_checks
-from keelline.doctor.checks import plugin_root
+from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
+from keelline.doctor.checks import SETTINGS_FILES, plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
