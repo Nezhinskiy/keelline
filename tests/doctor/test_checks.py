@@ -25,8 +25,8 @@ import keelline
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
-from keelline.doctor.api import OK, RED, SETTINGS_FILES, SKIP, WARN, Check, run_checks
-from keelline.doctor.checks import plugin_root
+from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
+from keelline.doctor.checks import SETTINGS_FILES, plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
@@ -1775,7 +1775,7 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     assert "present and unreadable" in unreadable.detail
 
 
-# --- Wave 4: four rows that named the wrong cause ---------------------------------------------
+# --- The wave-3 refactor pass: four rows that named the wrong cause ---------------------------
 
 
 def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(

@@ -4895,7 +4895,7 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_loader_aims_every_deletion_this_module_drives_at_its_own_scratch",
 ]
 
-# --- Wave 4: the one fixture `git` -----------------------------------------------------------
+# --- The wave-3 refactor pass: the one fixture `git` -----------------------------------------
 # Twenty-three test modules each carried a copy of this helper, protected by five different
 # subsets of the same precaution. The collapse moves the precaution to one place, which is only
 # worth doing if that one place is proven load-bearing: restoring the inheriting environment is
@@ -4923,7 +4923,7 @@ reddens = [
   "tests/test_gitfixture.py::test_no_test_module_runs_a_git_of_its_own",
 ]
 
-# --- Wave 4: one sentence per `--check` ------------------------------------------------------
+# --- The wave-3 refactor pass: one sentence per `--check` ------------------------------------
 # `--check` was registered five times with five sentences in the tree that built `command.py`'s
 # machinery for `--root`, `--machine`, `--store`, `--dry-run` and `--home`. The mutation is the
 # drift itself, restored: one parser spelling its own sentence again.
@@ -4954,7 +4954,7 @@ reddens = [
 # The exception is held by `tests/test_command.py`'s `EXCEPTIONS` table, which the entry above
 # already proves load-bearing.
 
-# --- Wave 4: release returns its findings like every other area ------------------------------
+# --- The wave-3 refactor pass: release returns its findings like every other area ------------
 # This was the one area reporting a finding by raising `Failure`, and the cost was in `--json`:
 # the frame turns a `Failure` into `{"error": "failed", ...}` and drops `Result.data`, so the
 # machine-readable object changed shape on exactly the condition a consumer runs the command to
@@ -4977,7 +4977,7 @@ reddens = [
   "tests/release/test_hashes.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
 
-# --- Wave 4: four doctor rows that named the wrong cause --------------------------------------
+# --- The wave-3 refactor pass: four doctor rows that named the wrong cause --------------------
 # These are the sentences a person reads when something is wrong, so a row that names the wrong
 # cause sends them to fix the wrong thing. Each mutation restores exactly the sentence that was
 # there.
@@ -5047,9 +5047,9 @@ reddens = [
 
 # --- One oracle at a time --------------------------------------------------------------------
 # `sweep_stale_scratch` has always assumed a single writer and said so in its own docstring, and
-# nothing enforced it. During the wave-4 review a filtered run started beside an unfiltered one
-# removed its scratch checkout, and every mutation after that point reported FINDING — 138 of
-# them, all false, on a clean tree. `O_EXCL` is the whole mechanism: the create either wins or
+# nothing enforced it. During the wave-3 refactor pass's review a filtered run started beside an
+# unfiltered one removed its scratch checkout, and every mutation after that point reported
+# FINDING — 138 of them, all false, on a clean tree. `O_EXCL` is the whole mechanism: the create either wins or
 # raises, with no window between the test and the write.
 [[mutation]]
 name = "a second oracle takes the lock instead of refusing"

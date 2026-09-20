@@ -22,8 +22,8 @@ hook plus one shared rule:
 A lane that needs something absent from this list grows it deliberately, in a commit that says
 which lane and why.
 
-**Trimmed, in the wave-4 surface remediation.** Twenty-nine names went, and every one of them
-was published against `assess` — a lane that does not exist: the commit rules
+**Trimmed, in the first half of the wave-3 refactor pass.** Twenty-nine names went, and every
+one of them was published against `assess` — a lane that does not exist: the commit rules
 (`offending_lines`, `check_range`, `strip_message`, `Report`, `Violation`, `Offence`,
 `ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `red_exit`,
 `Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`), the scanner any later guard

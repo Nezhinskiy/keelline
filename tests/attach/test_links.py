@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 
 from keelline import fsops
-from keelline.attach.api import LEDGER, Attached, attach
+from keelline.attach.api import LEDGER
+from keelline.attach.write import Attached, attach
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
@@ -281,7 +282,7 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     # The mirror shape, and it had the mirror defect: `detach_main` was applied to `--root` and
     # the loop skipped the owner, so a detach run from a worktree withdrew that worktree's tree
     # twice and left the owning checkout's — and its harness link — in place.
-    from keelline.attach.api import detach
+    from keelline.attach.write import detach
 
     root, store, machine = _bound(tmp_path)
     side = tmp_path / "side"

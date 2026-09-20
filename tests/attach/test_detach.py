@@ -13,8 +13,8 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from keelline.attach.api import LEDGER, Detached, detach
-from keelline.attach.write import GITIGNORE, IGNORE_REGION
+from keelline.attach.api import LEDGER
+from keelline.attach.write import GITIGNORE, IGNORE_REGION, Detached, detach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record

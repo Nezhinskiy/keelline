@@ -19,6 +19,11 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # wave-3 review found it holding twelve names with no consumer at all, three of which are
     # below with the argument for keeping them and three of which left.
     #
+    # Four more left in the wave-3 refactor pass — `attach`, `detach`, `Attached`, `Detached`.
+    # They were kept by a sentence saying this walkthrough "drives `attach` and `detach`":
+    # `tests/test_install_path.py` drives the argument parser and imports two surfaces,
+    # `keelline.doctor.api` and `keelline.memory.api`, neither of them this one.
+    #
     # No mutation entry: the mutation is adding an export, which is two lines in `api.py` (the
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
     # re-exporting `permissions.check` reddens this test and this test alone.
@@ -32,11 +37,6 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "MISMATCH",
         "overlay_entries",
         "LOCAL_SETTINGS",  # the file those entries live in
-        # the two verbs and their results, for tests/test_install_path.py's walkthrough
-        "attach",
-        "Attached",
-        "detach",
-        "Detached",
         # the rest of `Binding.state`'s closed vocabulary: doctor branches on MISMATCH, and a
         # consumer that can recognise the bad state and cannot name the good ones is the reason
         # this set is the export rather than the member that had a caller first

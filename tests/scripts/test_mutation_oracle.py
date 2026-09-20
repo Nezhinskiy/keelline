@@ -504,8 +504,9 @@ def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
 ) -> None:
     # `sweep_stale_scratch` has always assumed a single writer and its own docstring says so —
     # "a second run started while the first is working would sweep the first's checkout out from
-    # under it". Nothing enforced it, and during the wave-4 review exactly that happened: a
-    # filtered run started beside an unfiltered one removed its checkout, and every mutation
+    # under it". Nothing enforced it, and during the wave-3 refactor pass's review exactly that
+    # happened: a filtered run started beside an unfiltered one removed its checkout, and every
+    # mutation
     # after that point reported FINDING. 138 of them, all false, on a clean tree. A comment
     # naming a hazard does not stop the hazard.
     #

@@ -30,6 +30,5 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # the report and the row it is made of
         "run_checks",
         "Check",
-        "SETTINGS_FILES",
     }
     assert required == set(doctor.__all__)

@@ -117,8 +117,9 @@ def single_run(tempdir: Path | None = None) -> Iterator[Path]:
 
     **`sweep_stale_scratch` assumes a single writer and nothing enforced it.** Its own docstring
     states the assumption — "a second run started while the first is working would sweep the
-    first's checkout out from under it" — and that is exactly what happened during the wave-4
-    review: a filtered run started beside an unfiltered one removed its checkout, and every
+    first's checkout out from under it" — and that is exactly what happened during the wave-3
+    refactor pass's review: a filtered run started beside an unfiltered one removed its checkout,
+    and every
     mutation after that point reported `FINDING`. 138 of them, all false, on a tree with nothing
     wrong with it. A comment naming a hazard does not stop the hazard; this does.
 
