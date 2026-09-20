@@ -5011,24 +5011,26 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml",
 ]
 
-# The oracle's own `if:`, from both sides. A condition that selects nothing switches the whole
-# set off and reports it by going green — the step vanishes from the job rather than failing in
-# it — and a condition that selects two is the timeout this change exists to end. Neither shows
-# up in a passing run, so both are declared here rather than left to be noticed.
+# The oracle's own job, from the two sides that go quiet rather than loud. A budget that no
+# longer fits the set it has to prove is the failure this shape exists to end, and it is worth
+# catching in a test run rather than fifteen minutes into a cancelled job. A job that can be
+# skipped is worse: GitHub reports a skipped job as a green check, so the whole set switches off
+# and says nothing. `before` carries two lines in a basic string, because a literal string would
+# make `\n` two characters and the entry would match nothing.
 [[mutation]]
-name = "the oracle's condition names a runner the matrix does not list"
+name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'"
-after = "        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.13'"
+before = "    timeout-minutes: 19"
+after = "    timeout-minutes: 5"
 reddens = [
-  "tests/test_fixtures.py::test_the_mutation_oracle_runs_on_exactly_one_configuration",
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
 ]
 
 [[mutation]]
-name = "the oracle's condition widens back to every operating system"
+name = "the oracle's job becomes one a condition can skip"
 file = ".github/workflows/ci.yml"
-before = "        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'"
-after = "        if: matrix.python == '3.13'"
+before = "  oracle:\n    runs-on: ubuntu-latest"
+after = "  oracle:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest"
 reddens = [
-  "tests/test_fixtures.py::test_the_mutation_oracle_runs_on_exactly_one_configuration",
+  "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
 ]

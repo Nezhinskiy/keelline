@@ -289,110 +289,111 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
 
 
-ORACLE_STEP = "The mutation oracle"
-# `matrix.<key> == '<value>'`, which is the whole of the shape the condition is allowed to be.
-# Single quotes because that is what an Actions expression uses; a condition written some other
-# way yields nothing here and the case below refuses it rather than reading it as unconditional.
-_MATRIX_COMPARISON = re.compile(r"matrix\.(\w+)\s*==\s*'([^']*)'")
+ORACLE_COMMAND = "scripts/mutation_oracle.py"
+ORACLE_JOB = "oracle"
+# Measured on the last green `checks (ubuntu-latest, 3.13)`: 751 s for the 372 entries
+# `mutations.toml` held that day. Re-measure it from the `oracle` job's own runs; it is here as
+# a number rather than as prose so that the budget below is checked rather than described.
+ORACLE_SECONDS_PER_ENTRY = 751 / 372
+# Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
+# is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
+# runner, which also carries lint, types, the test run, the build and a wheel install.
+ORACLE_SETUP_SECONDS = 60
 
 
-def _matrix_include(workflow: Path) -> list[dict[str, str]]:
-    """The `include:` list of the first matrix in the file, one mapping per configuration.
+def _ci_jobs() -> dict[str, list[str]]:
+    """Every job in `ci.yml`, as the raw lines underneath it.
 
-    Indentation and nothing else, for the reason `_scan` gives one screen down: this repository
-    ships no YAML parser and adds no dependency to read its own continuous integration. The
-    list begins at the line that is exactly `include:` and ends at the first later line indented
-    no further; inside it a `- ` opens an entry and every `key: value` joins the entry open at
-    the time. Quotes are stripped because `python: "3.13"` and `os: ubuntu-latest` are the same
-    kind of scalar to everything that reads them.
+    Indentation arithmetic and not a YAML parser, for the reason `_release_jobs` gives further
+    down and `_scan` gives at length: this repository ships no runtime dependency and
+    `tests/test_import_boundary.py` is why none arrives through a test either. A job is a key at
+    indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to it.
     """
-    entries: list[dict[str, str]] = []
-    lines = workflow.read_text(encoding="utf-8").splitlines()
-    start = next((i for i, line in enumerate(lines) if line.strip() == "include:"), None)
-    if start is None:
-        return entries
-    opened = lines[start].index("include:")
-    for line in lines[start + 1 :]:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+    jobs: dict[str, list[str]] = {}
+    current: str | None = None
+    inside = False
+    for line in CI_WORKFLOW.read_text(encoding="utf-8").splitlines():
+        if line.rstrip() == "jobs:":
+            inside = True
             continue
-        if len(line) - len(line.lstrip()) <= opened:
-            break
-        # `removeprefix` and not a `startswith` branch, because `_scan` below carries that
-        # line verbatim and `mutations.toml` names it as the unique `before` of the entry that
-        # proves the workflow reader sees an unnamed step. A second copy in this module makes
-        # that entry ambiguous, which the oracle reports as a finding — measured here, not
-        # guessed: `its 'before' line appears 2 times; make it unique`.
-        item = stripped.removeprefix("- ")
-        if item != stripped:
-            entries.append({})
-        stripped = item
-        if ":" in stripped and entries:
-            key, _, value = stripped.partition(":")
-            entries[-1][key.strip()] = value.strip().strip("\"'")
-    return entries
-
-
-def _step_condition(workflow: Path, step_name: str) -> str | None:
-    """The named step's `if:`, or `None` where it carries none — never another step's.
-
-    The step's own keys sit at one indent; the `- ` of the next step sits two columns inside
-    that, so a line indented less than the first key ends the step. Returning the first `if:`
-    in the file instead would let this case pass while reading a condition belonging to some
-    other step entirely, which is the failure a reader like this actually has.
-    """
-    lines = workflow.read_text(encoding="utf-8").splitlines()
-    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {step_name}")
-    keys = lines[start].index("- name:") + len("- ")
-    for line in lines[start + 1 :]:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not inside:
             continue
-        if len(line) - len(line.lstrip()) < keys:
-            return None
-        if stripped.startswith("if:"):
-            return stripped[len("if:") :].strip()
-    return None
+        bare = line.lstrip()
+        opens_job = len(line) - len(bare) == 2 and line.rstrip().endswith(":")
+        if bare and not bare.startswith("#") and opens_job:
+            current = line.strip().rstrip(":")
+            jobs[current] = []
+            continue
+        if current is not None:
+            jobs[current].append(line)
+    return jobs
 
 
 @needs_ci_workflow
-def test_the_mutation_oracle_runs_on_exactly_one_configuration() -> None:
-    """The oracle's `if:` picks out one configuration of the matrix — not none, and not two.
+def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> None:
+    """The oracle runs once, in a job nothing can skip, under a bound that fits the set.
 
-    The oracle costs 657 to 751 s of a 900 s job, so running it on all four configurations put
-    every one of them within a minute of the bound and took `checks (macos-latest, 3.13)` over
-    it. It now runs once, because "this mutation reddens this test" is a property of the code
-    and of the tests and not of the platform.
+    It used to be a step of `checks`, where it was 76% of the job: 751 s of 879 s on Linux
+    against a 900 s bound, on all four configurations at once, and the branch that took
+    `mutations.toml` past 380 entries took `checks (macos-latest, 3.13)` over the bound. Running
+    it on one configuration was necessary and not sufficient — `timeout-minutes` is a per-job
+    bound, so paying once instead of four times gave 751 s back to the three configurations that
+    stopped running it and nothing to the one that still did.
 
-    **Why a condition needs an assertion at all.** A condition that selects *nothing* — one
-    stale runner label is enough, `ubuntu-24.04` for `ubuntu-latest` — switches the oracle off
-    across the whole matrix and reports it by going green, which is the "reads as coverage"
-    failure this repository exists to prevent: the step disappears from the job rather than
-    failing in it. A condition that selects *two* is the timeout coming back. Neither is
-    visible in a passing run, so neither is left to be noticed.
+    **Three things are asserted, and each is a way this has already gone wrong or could go
+    quiet.** That exactly one job runs the oracle, because a second copy would pay twice again
+    and a zeroth would be the set silently switched off. That the job carries no `if:` and no
+    `strategy:`, because a skipped job reports as green — the "reads as coverage" failure in the
+    costume of a condition — and because a matrix would reintroduce the multiplication. And that
+    the budget still fits the set it has to prove.
 
-    Bound to the matrix rather than compared against a string: the condition is matched against
-    the `include:` list the job actually runs, so a configuration renamed in one place and not
-    the other reddens here instead of quietly selecting nothing.
+    **The budget assertion is the one that earns its place.** The oracle grows by construction:
+    the rule is that every new assertion ships with the mutation that reddens it, so the entry
+    count only goes up, at about two seconds each. Projecting the cost from the live entry count
+    means the next branch to outgrow the bound reddens *here*, in a contributor's own test run,
+    rather than as a cancelled job fifteen minutes into CI. That is the whole difference between
+    arithmetic somebody can act on and arithmetic somebody discovers.
+
+    No mutation travels with `ORACLE_SECONDS_PER_ENTRY` itself: lowering it weakens the
+    projection without reddening anything, so there is nothing for an entry to catch. It is a
+    measurement, and the comment beside it says to re-measure it from this job's own runs.
     """
-    # Mutations (declared): the condition renamed to a runner the matrix does not list -> 0
-    # selected; the `matrix.os` half dropped -> 2 selected. Both redden this case.
-    include = _matrix_include(CI_WORKFLOW)
-    # The walk first: an empty include list would satisfy nothing below and every `all()` over
-    # it vacuously, so the count would be 0 for a reason that is not about the condition.
-    assert len(include) >= 2, include
-    condition = _step_condition(CI_WORKFLOW, ORACLE_STEP)
-    assert condition is not None, (
-        f"the {ORACLE_STEP!r} step carries no `if:`, so it runs on every configuration of the "
-        "matrix and the job goes back over its bound"
+    # Mutations (declared): the budget cut below the projection; the job given an `if:` that can
+    # skip it. Both redden this case.
+    import tomllib
+
+    jobs = _ci_jobs()
+    # The walk first: an empty reading would make every "exactly one" below come out zero for a
+    # reason that is not about the workflow.
+    assert len(jobs) >= 2, jobs
+    holding = [name for name, body in jobs.items() if any(ORACLE_COMMAND in x for x in body)]
+    assert holding == [ORACLE_JOB], holding
+
+    body = jobs[ORACLE_JOB]
+    skippable = [x for x in body if x.strip().startswith("if:")]
+    assert skippable == [], (
+        f"the {ORACLE_JOB!r} job can be skipped, and a skipped job reports as a green check",
+        skippable,
     )
-    wanted = dict(_MATRIX_COMPARISON.findall(condition))
-    assert wanted, (
-        f"nothing in {condition!r} compares a `matrix.` key, so this case cannot tell which "
-        "configurations it selects and will not guess"
+    multiplied = [x for x in body if x.strip().startswith(("strategy:", "matrix:"))]
+    assert multiplied == [], (
+        f"the {ORACLE_JOB!r} job runs a matrix, which is the four-fold cost this shape removed",
+        multiplied,
     )
-    selected = [entry for entry in include if all(entry.get(k) == v for k, v in wanted.items())]
-    assert len(selected) == 1, (condition, wanted, selected, include)
+
+    bounds = [x for x in body if x.strip().startswith("timeout-minutes:")]
+    assert len(bounds) == 1, bounds
+    budget = int(bounds[0].split(":", 1)[1].strip()) * 60
+    entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
+    assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
+    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS
+    assert budget >= projected, (
+        f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "
+        f"raise `timeout-minutes` on the {ORACLE_JOB!r} job, and say in the comment what the "
+        "new number buys in entries",
+        budget,
+        projected,
+    )
 
 
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -409,7 +410,9 @@ SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
 # which is why it is 0 here rather than exempt from the walk.
 EXPECTED_BLOCKS = {
     "check.yml": 10,
-    "ci.yml": 12,
+    # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
+    # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
+    "ci.yml": 13,
     "release.yml": 7,
     "smoke-release.yml": 0,
     "smoke.yml": 6,
@@ -423,7 +426,8 @@ EXPECTED_CHARACTERS = {
     # Kept level with the measurement rather than left where it was, because a floor with a
     # thousand characters of headroom under it is a floor a truncation walks past.
     "check.yml": 6503,
-    "ci.yml": 882,
+    # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
+    "ci.yml": 899,
     "release.yml": 1683,
     "smoke-release.yml": 0,
     "smoke.yml": 3042,
@@ -605,10 +609,14 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # collects the right NUMBER of bodies and truncates each of them to its first line passes a
     # count and fails a size. The per-file assertions above are what do the work now; these are
     # the whole-set restatement, at the measured values rather than at half of them.
-    # Measured 2026-09-19: 34 bodies, 10,637 characters (check.yml 5,030, ci.yml 882,
-    # release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0).
+    # Re-measured when the oracle got a job of its own: 36 bodies, 12,127 characters (check.yml
+    # 6,503, ci.yml 899, release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0). The figure
+    # stood at 10,637 from 2026-09-19 while `check.yml` grew from 5,030 to 6,503 underneath it,
+    # so the whole-set floor had picked up about 1,500 characters of slack — which is exactly
+    # the truncation headroom its own comment two paragraphs up argues against. Moved level with
+    # the measurement rather than left where it was.
     assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 10_637, sum(len(block) for block in read)
+    assert sum(len(block) for block in read) >= 12_127, sum(len(block) for block in read)
 
 
 def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
