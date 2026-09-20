@@ -296,19 +296,24 @@ before = '            os.fsync(stream.fileno())'
 after = ''
 reddens = ["tests/test_fsops.py::test_the_bytes_are_fsynced_before_the_rename"]
 
-# Two other tests redden with this one — `required` names `Links` and the export list is
-# compared against the imports — and that is the point rather than a weakness: those two are
-# the ones that *missed* the original omission, because both are the surface restating itself.
-# What no mutation of this file can express is the change that actually happened: a signature
-# in `worktree.py` growing a type this list does not carry. The derived test is what covers
-# that direction, and this entry is what proves the derived test is load-bearing at all.
+# Two other tests redden with this one — `tests/memory/test_surface.py`'s `required` names
+# `Links`, and the export list is compared against the imports — and that is the point rather
+# than a weakness: those two are the ones that *missed* the original omission, because both are
+# the surface restating itself. What no mutation of this file can express is the change that
+# actually happened: a signature in `worktree.py` growing a type this list does not carry. The
+# derived test is what covers that direction, and this entry is what proves the derived test is
+# load-bearing at all.
+#
+# The derived test is `tests/test_surfaces.py`'s now, parametrised over every area rather than
+# copied into six of the ten. The entry follows it: an unfiltered run is what caught this one,
+# because the refactor that moved the test could not see an entry naming its old home.
 [[mutation]]
 name = "a type the surface names in a signature drops off the surface"
 file = "src/keelline/memory/api.py"
 before = '    "Links",'
 after = ''
 reddens = [
-  "tests/memory/test_surface.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface",
+  "tests/test_surfaces.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface[memory]",
 ]
 
 # A `#` opens a comment only at the start of a word. `shlex`'s own `commenters` ends a token
