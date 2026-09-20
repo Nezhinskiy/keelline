@@ -11,6 +11,23 @@ So the rule this area follows is the other half of the same rule: **a name two a
 defined here.** `detect_harness` and the four names of the sink's on-disk layout live here for
 exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
 CONTRIBUTING records the exception.
+
+**Three names below have no importer outside this area**, and the wave-4 surface trim left all
+three, with the reason beside each rather than the silence that made that pass necessary:
+
+- `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
+  `memory/hooks.py` build, and a lane that holds one before registering it — a table of
+  handlers, a decorator, a test double — cannot annotate the callable without this name.
+- `Sink` is the protocol `dispatch.py` takes and `sink.py` implements, and `NullSink` is the
+  degradation it falls back to when there is no harness data root. `doctor` reports on the tree
+  those two write (`DIRECTORY`, `MARKERS`, `DIAGNOSTICS`), so the layout is published and the
+  writer's own shape should be nameable beside it.
+
+For this area, removing a name from `__all__` is not a trim in any case: `api.py` defines these
+and `tests/test_surfaces.py` holds `DEFINES_ITS_OWN` areas to `imported | defined == __all__`,
+so a defined name absent from the list reddens the contract. Trimming one is a decision to move
+its definition into a private module, which is a different change with a different argument, and
+one this pass does not make.
 """
 
 from __future__ import annotations
