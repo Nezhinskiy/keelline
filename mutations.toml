@@ -4177,9 +4177,10 @@ reddens = [
 # refuses a symlinked component — intended, and `harness_link_parts` cites `setup --settings` as
 # the precedent — but `_link` and `_unlink` caught `NotASymlink` and `FileNotFoundError` and not
 # `UnsafePath`, so the ordinary stow / chezmoi layout half-attached a repository on the way in
-# and crashed `detach` on the way out. Four entries, because the guard is four decisions: the
+# and crashed `detach` on the way out. Five entries, because the guard is five decisions: the
 # question itself, the floor under it for the component that changes after it is asked, and the
-# two hoists that make the refusal precede the first write and the first withdrawal.
+# three hoists that make the refusal precede the first write — `attach`'s, `detach`'s first
+# withdrawal, and the worktree link step every `SessionStart` runs.
 [[mutation]]
 name = "the harness anchor stops asking whether the walk can reach it"
 file = "src/keelline/memory/worktree.py"
@@ -4196,6 +4197,15 @@ before = "        # one checkout's odd home from being a `detach` that cannot fi
 after = "        raise"
 reddens = [
   "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",
+]
+
+[[mutation]]
+name = "the session link step discovers the harness anchor after it has written"
+file = "src/keelline/memory/worktree.py"
+before = "    harness_anchor(worktree, home)\n    created: list[Path] = []"
+after = "    created: list[Path] = []"
+reddens = [
+  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_leaves_a_worktree_with_no_links_at_all",
 ]
 
 [[mutation]]

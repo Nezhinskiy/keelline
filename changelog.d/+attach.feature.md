@@ -10,9 +10,12 @@ entry that leaves this project's share of the overlay, a home directory the harn
 cannot be put under — happens before its first write.
 
 **The path to that link is walked and never followed.** A `~/.claude` that is a symlink into a
-dotfiles tree — stow, chezmoi, a synced home — is refused by name, above `attach`'s first write
-and above `detach`'s first withdrawal, rather than written through: the home directory is the
-only thing Keelline takes on trust there, and every component below it has to be real. The
+dotfiles tree — stow, chezmoi, a synced home — is refused by name, above `attach`'s first write,
+above `detach`'s first withdrawal and above the first note link a session makes in a worktree,
+rather than written through: the home directory is the only thing Keelline takes on trust there,
+and every component below it has to be real. A refused session therefore reports that the notes
+were not linked and has linked nothing, where it used to make the note links and report that it
+had not. The
 refusal says which component and what to do about it. This is the same rule `keelline setup`
 applies to `~/.claude/settings.json`, and the way out is the same one: make the directory real
 and let your dotfiles manager adopt the files inside it.

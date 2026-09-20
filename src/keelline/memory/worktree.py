@@ -421,6 +421,20 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     """
     if main_checkout(worktree).resolve() == worktree.resolve():
         return Links()
+    # Above the loop, for the reason `attach` hoists the same call above its own first write:
+    # the anchor is the one question here that can refuse, and discovered from inside
+    # `_apply_harness_link` it was discovered *after* the note links were made. On the
+    # ordinary stow / chezmoi / synced home that left three links in the worktree and no way
+    # to take them out — `detach_main` refuses above every withdrawal, correctly, so no
+    # shipped command will. `SessionStart` then caught the `Refusal` and told the model the
+    # notes were not linked while they were.
+    #
+    # Below the early return and never above it. On the main checkout `link` does nothing at
+    # all, so asking the question there would start refusing a call that has no write to put
+    # the refusal in front of. `_apply_harness_link` asks the same question again as its first
+    # statement, above its own gate, which is what keeps it correct when `attach_main` calls
+    # it on its own; asked twice, it is the same answer.
+    harness_anchor(worktree, home)
     created: list[Path] = []
     revoked: list[Path] = []
     try:
