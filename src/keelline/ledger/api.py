@@ -6,30 +6,48 @@ submodule it wants, so a re-export list in `__init__.py` would pull this whole a
 it the configuration layer — into every `discover()` call. `tests/ledger/test_surface.py`
 asserts the `__init__` imports nothing at all.
 
-The list is chosen from what the consuming lanes actually reach for. `assess` needs the rule
-vocabulary and the inertness rule (`problems`, `uninitialised`, `STATUSES`, `SEVERITIES`,
-`FIXTURE_MARKER`) and the two refusal messages it reports under its own headings
-(`ENTRIES_MISSING`, `FOREIGN_CONTENT`); `templates` needs the generated-index artifact
-(`render_index`, `is_generated_index`) and the entry reader behind it (`Entry`, `parse_entry`,
-`load_entries`, `LedgerError`); the writing half (`next_identifier`, `file_entry`, `renumber`)
-is what a lane that files or moves an entry without going through the command calls.
-`workflows` imports nothing — it runs the command. A lane that needs something absent from
-this list grows it deliberately, in a commit that says which lane and why.
+**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
+and `tests/` — not one, and that was true of the nineteen names this list used to hold as well.
+So every name below is here on an argument rather than on a caller, and the argument is written
+beside it.
 
-`Allocation`, `Filed` and `Renumbered` are here because the three writing verbs return them,
-and a return type absent from this list is a value a consumer can hold and cannot declare —
-the one thing a surface exists to prevent. They were missing until
-`tests/test_surfaces.py` began asking every area the derived question rather than the six
-areas that happened to have a copy of it.
+What is left is the two artifacts this area leaves on a project's disk, which outlive any lane
+that reads them:
 
-**Measured, and not acted on.** Nothing outside this area imports any name on this list — not
-one, in `src/`, `scripts/` or `tests/`. Every justification above names `assess` or
-`templates`, lanes that do not exist yet, which is the shape `overlay/api.py` ruled out when it
-trimmed a template tree published against "the release lane will need it". Trimming to that
-ruling empties the list, and an empty surface reddens `test_every_type_the_surface_names_in_a_
-signature_is_on_the_surface`'s own non-emptiness floor — so what is left is not a trim but the
-structural question of whether this area publishes at all, which is the owner's and not a
-refactor's.
+- the entry file's grammar — `parse_entry`, `load_entries` and the `Entry` they yield, with
+  `LedgerError` for a file that will not parse. A `raise` is not a signature, so
+  `tests/test_surfaces.py` does not derive `LedgerError`; it is here for the reason that check's
+  own comment gives about a class reachable only by writing it down.
+- the generated index — `render_index`, which writes it from `Entry`s, and
+  `is_generated_index`, which recognises one already on disk rather than overwriting a file a
+  person wrote. A tool that touches `docs/bug-reports.md` and cannot ask that question is the
+  bug this pair exists to prevent.
+
+`Entry` is also what keeps this surface above `tests/test_surfaces.py`'s own floor, which
+refuses a surface exporting no function or record at all.
+
+**Trimmed, in the wave-4 surface trim: thirteen names.** `problems`, `uninitialised`,
+`STATUSES`, `SEVERITIES`, `FIXTURE_MARKER`, `ENTRIES_MISSING` and `FOREIGN_CONTENT` were
+published against `assess` — "the rule vocabulary and the inertness rule, and the two refusal
+messages it reports under its own headings". `next_identifier`, `file_entry` and `renumber`
+were "what a lane that files or moves an entry without going through the command calls", and
+`Allocation`, `Filed` and `Renumbered` came with them as their return types. No such lane
+exists, and no document says which of these names one would reach for. That is the ruling
+`overlay/api.py` made about a template tree published against "the release lane will need it"
+and `guards/api.py` made again over twenty-nine names published against `assess`: a lane that
+does not exist grows this list when it arrives, in a commit that says which lane and why.
+
+The three return types went with their verbs rather than being kept as orphans. The surface
+contract requires a type a *published* signature names; with `file_entry`, `next_identifier` and
+`renumber` gone, no published signature names `Filed`, `Allocation` or `Renumbered`, and a type
+on a surface whose verb is not is a value nobody can be handed. Each is still where it was
+written and is reachable from `keelline.ledger.write`, which is what `ledger/commands.py` and
+this area's own tests already do.
+
+**What is left is a smaller version of the same question, and it is the owner's.** The six below
+have no importer either. Whether this area publishes at all is a structural decision and not a
+refactor's — the previous pass measured that and said so, and this one acts as far as the rule
+reaches and leaves the floor standing rather than emptying a list a test forbids to be empty.
 
 The identifier grammar and the finding shape are **not** here: they are leaves
 (`keelline.identifiers`, `keelline.findings`) that three areas share, and a consumer imports
@@ -37,49 +55,14 @@ them from there. The surface test pins every export to this area's own modules, 
 re-exporting a leaf would redden it.
 """
 
-from keelline.ledger.check import problems, uninitialised
-from keelline.ledger.entries import (
-    SEVERITIES,
-    STATUSES,
-    Entry,
-    LedgerError,
-    load_entries,
-    parse_entry,
-)
-from keelline.ledger.index import (
-    ENTRIES_MISSING,
-    FOREIGN_CONTENT,
-    is_generated_index,
-    render_index,
-)
-from keelline.ledger.scan import FIXTURE_MARKER
-from keelline.ledger.write import (
-    Allocation,
-    Filed,
-    Renumbered,
-    file_entry,
-    next_identifier,
-    renumber,
-)
+from keelline.ledger.entries import Entry, LedgerError, load_entries, parse_entry
+from keelline.ledger.index import is_generated_index, render_index
 
 __all__ = [
-    "ENTRIES_MISSING",
-    "FIXTURE_MARKER",
-    "FOREIGN_CONTENT",
-    "SEVERITIES",
-    "STATUSES",
-    "Allocation",
     "Entry",
-    "Filed",
     "LedgerError",
-    "Renumbered",
-    "file_entry",
     "is_generated_index",
     "load_entries",
-    "next_identifier",
     "parse_entry",
-    "problems",
     "render_index",
-    "renumber",
-    "uninitialised",
 ]

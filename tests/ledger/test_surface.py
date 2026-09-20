@@ -9,28 +9,22 @@ import keelline.ledger.api as ledger
 def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # An equality, for the reason tests/guards/test_surface.py gives: a subset let an export
     # arrive unnoticed. No mutation entry: the mutation is adding an export (two lines).
+    # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this
+    # test alone.
+    #
+    # Thirteen names left in the wave-4 surface trim: the `assess` vocabulary and the writing
+    # half with the three return types that came with it. Nothing outside this area imports any
+    # name on this list — the six below included — so what stays, stays on the argument written
+    # beside it in `api.py`: the two artifacts this area leaves on a project's disk.
     required = {
+        # the entry file's grammar, and the error a file that will not parse raises
         "Entry",
-        "LedgerError",
-        # the three writing verbs' return types: a value a consumer can hold and cannot
-        # declare is the one thing a surface exists to prevent, and these were missing until
-        # `tests/test_surfaces.py` asked every area the derived question instead of six of them
-        "Allocation",
-        "Filed",
-        "Renumbered",
-        "STATUSES",
-        "SEVERITIES",
-        "FIXTURE_MARKER",
-        "ENTRIES_MISSING",
-        "FOREIGN_CONTENT",
         "parse_entry",
         "load_entries",
+        "LedgerError",
+        # the generated index: writing one, and recognising one already there rather than
+        # overwriting a file a person wrote
         "render_index",
         "is_generated_index",
-        "uninitialised",
-        "problems",
-        "next_identifier",
-        "file_entry",
-        "renumber",
     }
     assert required == set(ledger.__all__)
