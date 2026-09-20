@@ -6,49 +6,56 @@ before it imports the submodule it wants, so a re-export list in `__init__.py` w
 whole area — and with it the configuration layer — into every `discover()` call.
 `tests/docs/test_surface.py` asserts the `__init__` imports nothing at all.
 
-The list is chosen from what the consuming lanes actually reach for. `assess` runs every check
-as a library call rather than as a subprocess and therefore needs `check_budgets`,
-`check_links`, `check_memory_graph` and `lint` with the `Lint` it returns; `templates` writes
-the roadmap skeleton and the first `trail.toml`, so it needs the markers and the file name
-(`TRAIL_MARKER`, `STATUS_HEADING`, `END_MARKER`, `TRAIL_FILE`) and the regeneration path
-(`read_trail`, `trail_path`, `render_listing`, `rebuild`, `undeclared_new_documents`, `Trail`).
-`workflows` imports nothing — it runs the commands. A lane that needs something absent from
-this list grows it deliberately, in a commit that says which lane and why.
+**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
+and `tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
+`keelline.docs.graph` and `keelline.docs.trail` directly, and every other lane runs the
+commands. So every name below is here on an argument rather than on a caller, and the argument
+is written beside it — a surface that survives a trim with no explanation is what made the trim
+necessary.
 
-`Finding` and `labels` are **not** here: they are `keelline.findings`', a leaf three areas
-share, and a consumer imports them from there. The marker is exported once, as `TRAIL_MARKER`
-— `docs.trail`'s `MARKER` is a local alias for the same constant, and putting both on this
-list would offer two names for one literal.
+What is left is the four checks this area *is*, one call each, and the one record one of them
+returns:
+
+- `check_budgets`, `check_links` and `check_memory_graph` each answer one question about the
+  documentation tree and return `Finding`s from `keelline.findings`, the leaf three areas
+  share — a consumer imports the finding shape from there, not from here.
+- `lint` and the `Lint` it returns. A return type absent from this list is a value a consumer
+  can hold and cannot declare, and `tests/test_surfaces.py` derives that rule rather than
+  restating it; `Lint` is also what keeps this surface above that test's own floor, which
+  refuses a surface exporting no function or record at all.
+
+`Finding` and `labels` are **not** here: they are `keelline.findings`', and a consumer imports
+them from there.
+
+**Trimmed, in the wave-4 surface trim: the trail half, ten names.** `TRAIL_MARKER`,
+`STATUS_HEADING`, `END_MARKER`, `TRAIL_FILE`, `Trail`, `read_trail`, `trail_path`,
+`render_listing`, `rebuild` and `undeclared_new_documents` were published in one sentence —
+"`templates` writes the roadmap skeleton and the first `trail.toml`, so it needs the markers and
+the file name and the regeneration path". `templates` does not exist;
+`docs/plans/2026-09-17-wave-3-install-path.md` says the lane that would have shipped one "is out
+of scope", and no document anywhere says which of these names it would reach for. That is the
+ruling `overlay/api.py` made about a template tree published against "the release lane will need
+it", and `guards/api.py` made again over twenty-nine names published against `assess`: a lane
+that does not exist yet grows this list when it arrives, in a commit that says which lane and
+why. Each of the ten is still where it was written and is reachable from `keelline.docs.trail`,
+which is what `docs/commands.py` and this area's own tests already do; what went is the claim
+that another area reads it.
+
+**What is left is a smaller version of the same question, and it is the owner's.** The five
+below have no importer either, and they survive this pass on an argument about shape — one call
+per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s floor. Whether
+this area publishes at all is a structural decision, not a refactor's; `ledger/api.py` records
+the same finding about its own list.
 """
 
 from keelline.docs.graph import check_memory_graph
-from keelline.docs.hygiene import STATUS_HEADING, TRAIL_MARKER, check_budgets, check_links
+from keelline.docs.hygiene import check_budgets, check_links
 from keelline.docs.plans import Lint, lint
-from keelline.docs.trail import (
-    END_MARKER,
-    TRAIL_FILE,
-    Trail,
-    read_trail,
-    rebuild,
-    render_listing,
-    trail_path,
-    undeclared_new_documents,
-)
 
 __all__ = [
-    "END_MARKER",
-    "STATUS_HEADING",
-    "TRAIL_FILE",
-    "TRAIL_MARKER",
     "Lint",
-    "Trail",
     "check_budgets",
     "check_links",
     "check_memory_graph",
     "lint",
-    "read_trail",
-    "rebuild",
-    "render_listing",
-    "trail_path",
-    "undeclared_new_documents",
 ]

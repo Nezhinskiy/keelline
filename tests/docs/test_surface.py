@@ -1,26 +1,30 @@
+"""What this area publishes. The three checks every surface is held to are
+`tests/test_surfaces.py`'s; this list is the one thing that is this area's own."""
+
 from __future__ import annotations
 
 import keelline.docs.api as docs
 
 
 def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
-    # The marker is here once, as `TRAIL_MARKER`: `docs.trail`'s `MARKER` is a module-local
-    # alias for the same literal, and exporting both would put two names on one constant.
+    # An equality and not a subset, for the reason tests/guards/test_surface.py gives: a subset
+    # lets an export arrive unnoticed. No mutation entry: the mutation is adding an export,
+    # which is two lines in `api.py` (the import and the `__all__` entry) and not one
+    # substituted line. Measured by hand instead — re-exporting `trail.TRAIL_FILE` reddens this
+    # test and this test alone.
+    #
+    # Ten names left in the wave-4 surface trim: the trail half, published in one sentence
+    # about `templates`, a lane `docs/plans/2026-09-17-wave-3-install-path.md` puts out of
+    # scope. Nothing outside this area imports any name on this list — the five below included
+    # — so what stays, stays on the argument written beside it in `api.py`.
     required = {
-        "TRAIL_MARKER",
-        "STATUS_HEADING",
-        "END_MARKER",
-        "TRAIL_FILE",
-        "Trail",
-        "Lint",
+        # the four checks this area is, one call each
         "check_budgets",
         "check_links",
         "check_memory_graph",
-        "read_trail",
-        "trail_path",
-        "render_listing",
-        "rebuild",
-        "undeclared_new_documents",
         "lint",
+        # what `lint` returns: a value a consumer can hold and cannot declare is the one thing
+        # a surface exists to prevent
+        "Lint",
     }
     assert required == set(docs.__all__)
