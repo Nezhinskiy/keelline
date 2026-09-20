@@ -26,7 +26,7 @@ reads the same `Result`"; `src/keelline/setup/` imports nothing from `keelline.a
 permission-diff half of the area — `check`, `diff_permissions` and the `PermissionDiff` it
 returns — was published on the strength of that sentence and left when the sentence did.
 
-**Trimmed, in the wave-4 surface trim: `attach`, `detach`, `Attached` and `Detached`.** They
+**Trimmed, in the wave-3 refactor pass: `attach`, `detach`, `Attached` and `Detached`.** They
 were published against a second sentence of the same kind — "`tests/test_install_path.py`, the
 walkthrough that runs the four packages in the order a person does, is the other consumer, and
 it drives `attach` and `detach`, whose returns are `Attached` and `Detached`". That walkthrough
@@ -38,8 +38,8 @@ are this area's own command module's, and their results are read where they are 
 The claim is the same shape as the one this docstring corrected two paragraphs up, and as the
 one `setup/api.py` corrected about its own `setup` and `SetupReport` — three of them now, all
 naming a test that runs a command rather than a module that imports a name. A published surface
-argued from prose is a surface nobody measured: the wave-4 pass counted `src/`, `scripts/` and
-`tests/` and never read the sentence, and the sentence is what kept the names.
+argued from prose is a surface nobody measured: this pass's first half counted `src/`,
+`scripts/` and `tests/` and never read the sentence, and the sentence is what kept the names.
 """
 
 from keelline.attach.binding import BOUND, MISMATCH, STATES, UNBOUND, Binding, read_binding

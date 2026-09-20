@@ -1775,7 +1775,7 @@ def test_installed_files_that_match_the_release_record_are_green_and_a_changed_o
     assert "present and unreadable" in unreadable.detail
 
 
-# --- Wave 4: four rows that named the wrong cause ---------------------------------------------
+# --- The wave-3 refactor pass: four rows that named the wrong cause ---------------------------
 
 
 def test_a_shipped_file_the_record_does_not_name_is_not_called_a_mismatch(

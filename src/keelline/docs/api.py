@@ -27,7 +27,7 @@ returns:
 `Finding` and `labels` are **not** here: they are `keelline.findings`', and a consumer imports
 them from there.
 
-**Trimmed, in the wave-4 surface trim: the trail half, ten names.** `TRAIL_MARKER`,
+**Trimmed, in the wave-3 refactor pass: the trail half, ten names.** `TRAIL_MARKER`,
 `STATUS_HEADING`, `END_MARKER`, `TRAIL_FILE`, `Trail`, `read_trail`, `trail_path`,
 `render_listing`, `rebuild` and `undeclared_new_documents` were published in one sentence —
 "`templates` writes the roadmap skeleton and the first `trail.toml`, so it needs the markers and

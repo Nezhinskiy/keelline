@@ -49,7 +49,7 @@ kept in silence is what made this pass necessary:
   the one group on this list where the cost of being wrong is a repository's bytes reaching a
   model unwrapped.
 
-**Trimmed, in the wave-4 surface trim: thirty-three names**, every one of them with no importer
+**Trimmed, in the wave-3 refactor pass: thirty-three names**, every one of them with no importer
 in `src/`, `scripts/` or `tests/`, no published signature naming it, and no reader reaching it
 by string. Nothing was deleted: each is still where it was written and is reachable from this
 area's own module, which is what `memory/commands.py`, `memory/hooks.py` and this area's tests

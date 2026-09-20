@@ -15,7 +15,7 @@ def test_the_c3_surface_carries_what_every_downstream_lane_reaches_for() -> None
     # `__all__` and had never been justified here, and "adding ten justifications for exports
     # this plan did not ship would be this list claiming a review it never had". That is the
     # honest form of a list nobody had audited — and it is also what let the surface reach
-    # seventy names, forty-five of them with no importer anywhere. The wave-4 surface trim is
+    # seventy names, forty-five of them with no importer anywhere. The wave-3 refactor pass is
     # that review: every name below now has its argument, in `api.py` or beside it here, so the
     # assertion can be the one every other area is held to. A subset lets an export arrive
     # unnoticed, which is the hole `tests/guards/test_surface.py` names.

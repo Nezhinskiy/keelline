@@ -20,7 +20,7 @@ with no explanation is what made the trim necessary:
 the one test that reads it takes it from `keelline.doctor.checks`, which is its own area's
 module and nobody else's business.
 
-**Trimmed, in the wave-4 surface trim.** `SETTINGS_FILES` — the three settings files
+**Trimmed, in the wave-3 refactor pass.** `SETTINGS_FILES` — the three settings files
 `_hook_entries` walks — had no importer outside this area in `src/`, `scripts/` or `tests/`, no
 exported signature naming it, and no reader reaching it by string. It was grouped on this list
 under "the report and the row it is made of" and is neither: it is the walk's own input, read

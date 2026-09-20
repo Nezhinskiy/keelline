@@ -12,9 +12,9 @@ did was false.** It named `tests/test_install_path.py` — "the walkthrough that
 packages in the order a person does, drives `setup` itself" — and that walkthrough drives the
 argument parser, `["setup", ...]`, which is the point of it: the commands' argv wiring is what
 it exists to exercise. It reaches no name on this list. The claim is the same shape as the one
-the wave-3 trim removed from this very docstring, two paragraphs down, and it survived the
-wave-4 surface pass because the measurement behind that pass counted `src/` and `scripts/` and
-`tests/` and never read the prose.
+the wave-3 boundary remediation removed from this very docstring, two paragraphs down, and it
+survived the first half of the wave-3 refactor pass because the measurement behind that half
+counted `src/` and `scripts/` and `tests/` and never read the prose.
 
 They stay, and the reason is the one `docs/api.py` and `ledger/api.py` record for their own
 lists. Trimming to `USER_SETTINGS` alone leaves a surface with no exported callable or record on

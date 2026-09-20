@@ -19,7 +19,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # wave-3 review found it holding twelve names with no consumer at all, three of which are
     # below with the argument for keeping them and three of which left.
     #
-    # Four more left in the wave-4 surface trim — `attach`, `detach`, `Attached`, `Detached`.
+    # Four more left in the wave-3 refactor pass — `attach`, `detach`, `Attached`, `Detached`.
     # They were kept by a sentence saying this walkthrough "drives `attach` and `detach`":
     # `tests/test_install_path.py` drives the argument parser and imports two surfaces,
     # `keelline.doctor.api` and `keelline.memory.api`, neither of them this one.

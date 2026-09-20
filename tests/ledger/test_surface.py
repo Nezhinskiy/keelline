@@ -12,7 +12,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this
     # test alone.
     #
-    # Thirteen names left in the wave-4 surface trim: the `assess` vocabulary and the writing
+    # Thirteen names left in the wave-3 refactor pass: the `assess` vocabulary and the writing
     # half with the three return types that came with it. Nothing outside this area imports any
     # name on this list — the six below included — so what stays, stays on the argument written
     # beside it in `api.py`: the two artifacts this area leaves on a project's disk.

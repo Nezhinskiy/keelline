@@ -26,7 +26,7 @@ that reads them:
 `Entry` is also what keeps this surface above `tests/test_surfaces.py`'s own floor, which
 refuses a surface exporting no function or record at all.
 
-**Trimmed, in the wave-4 surface trim: thirteen names.** `problems`, `uninitialised`,
+**Trimmed, in the wave-3 refactor pass: thirteen names.** `problems`, `uninitialised`,
 `STATUSES`, `SEVERITIES`, `FIXTURE_MARKER`, `ENTRIES_MISSING` and `FOREIGN_CONTENT` were
 published against `assess` — "the rule vocabulary and the inertness rule, and the two refusal
 messages it reports under its own headings". `next_identifier`, `file_entry` and `renumber`

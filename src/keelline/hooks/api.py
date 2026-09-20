@@ -12,7 +12,7 @@ defined here.** `detect_harness` and the four names of the sink's on-disk layout
 exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
 CONTRIBUTING records the exception.
 
-**Three names below have no importer outside this area**, and the wave-4 surface trim left all
+**Three names below have no importer outside this area**, and the wave-3 refactor pass left all
 three, with the reason beside each rather than the silence that made that pass necessary:
 
 - `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
