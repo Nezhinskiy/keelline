@@ -85,6 +85,24 @@ jobs:
         # breadth measure; this proves a curated set of guards is load-bearing rather than merely
         # executed, which is the distinction that let `open_within` be fully covered and contain
         # nothing.
+        #
+        # **One configuration, while the tests stay on all four.** The oracle proves "this
+        # mutation reddens this test" — a property of the code and of the tests, not of the
+        # platform. Running it on four configurations pays four times for one answer. The
+        # matrix comment above argues the OS axis is load-bearing and it is right, but that
+        # argument is about the *tests*: `fsops.open_within` branches on `ELOOP` (Linux) versus
+        # `ENOTDIR` (macOS), and no mutation in `mutations.toml` names a test that is skipped on
+        # either — checked entry by entry, and the oracle refuses a `reddens` set that does not
+        # run rather than banking the skip as a proof, so a gate appearing later is loud here.
+        #
+        # Measured on the last green run: 657 s of an 869 s job on macOS, 751 s of 879 s on
+        # Linux, against a 900 s bound — every configuration was inside a minute of the cliff
+        # and `checks (macos-latest, 3.13)` went over it. This returns roughly 770 s to three of
+        # the four; it returns none to the one that keeps it, which stays at roughly 900 s of
+        # the 900 s. So this ends the timeout on three configurations and leaves the fourth
+        # exactly where it was: the next decision — a job of its own, or a larger bound — is the
+        # one that buys headroom, and `if:` alone cannot, because the bound is per job.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
         run: uv run python scripts/mutation_oracle.py
       - name: Version discipline
         run: uv run keelline release check

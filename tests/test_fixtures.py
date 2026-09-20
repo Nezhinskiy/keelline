@@ -289,6 +289,112 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
         assert all(gate in ci for gate in required), [g for g in required if g not in ci]
 
 
+ORACLE_STEP = "The mutation oracle"
+# `matrix.<key> == '<value>'`, which is the whole of the shape the condition is allowed to be.
+# Single quotes because that is what an Actions expression uses; a condition written some other
+# way yields nothing here and the case below refuses it rather than reading it as unconditional.
+_MATRIX_COMPARISON = re.compile(r"matrix\.(\w+)\s*==\s*'([^']*)'")
+
+
+def _matrix_include(workflow: Path) -> list[dict[str, str]]:
+    """The `include:` list of the first matrix in the file, one mapping per configuration.
+
+    Indentation and nothing else, for the reason `_scan` gives one screen down: this repository
+    ships no YAML parser and adds no dependency to read its own continuous integration. The
+    list begins at the line that is exactly `include:` and ends at the first later line indented
+    no further; inside it a `- ` opens an entry and every `key: value` joins the entry open at
+    the time. Quotes are stripped because `python: "3.13"` and `os: ubuntu-latest` are the same
+    kind of scalar to everything that reads them.
+    """
+    entries: list[dict[str, str]] = []
+    lines = workflow.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == "include:"), None)
+    if start is None:
+        return entries
+    opened = lines[start].index("include:")
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= opened:
+            break
+        # `removeprefix` and not a `startswith` branch, because `_scan` below carries that
+        # line verbatim and `mutations.toml` names it as the unique `before` of the entry that
+        # proves the workflow reader sees an unnamed step. A second copy in this module makes
+        # that entry ambiguous, which the oracle reports as a finding — measured here, not
+        # guessed: `its 'before' line appears 2 times; make it unique`.
+        item = stripped.removeprefix("- ")
+        if item != stripped:
+            entries.append({})
+        stripped = item
+        if ":" in stripped and entries:
+            key, _, value = stripped.partition(":")
+            entries[-1][key.strip()] = value.strip().strip("\"'")
+    return entries
+
+
+def _step_condition(workflow: Path, step_name: str) -> str | None:
+    """The named step's `if:`, or `None` where it carries none — never another step's.
+
+    The step's own keys sit at one indent; the `- ` of the next step sits two columns inside
+    that, so a line indented less than the first key ends the step. Returning the first `if:`
+    in the file instead would let this case pass while reading a condition belonging to some
+    other step entirely, which is the failure a reader like this actually has.
+    """
+    lines = workflow.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {step_name}")
+    keys = lines[start].index("- name:") + len("- ")
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) < keys:
+            return None
+        if stripped.startswith("if:"):
+            return stripped[len("if:") :].strip()
+    return None
+
+
+@needs_ci_workflow
+def test_the_mutation_oracle_runs_on_exactly_one_configuration() -> None:
+    """The oracle's `if:` picks out one configuration of the matrix — not none, and not two.
+
+    The oracle costs 657 to 751 s of a 900 s job, so running it on all four configurations put
+    every one of them within a minute of the bound and took `checks (macos-latest, 3.13)` over
+    it. It now runs once, because "this mutation reddens this test" is a property of the code
+    and of the tests and not of the platform.
+
+    **Why a condition needs an assertion at all.** A condition that selects *nothing* — one
+    stale runner label is enough, `ubuntu-24.04` for `ubuntu-latest` — switches the oracle off
+    across the whole matrix and reports it by going green, which is the "reads as coverage"
+    failure this repository exists to prevent: the step disappears from the job rather than
+    failing in it. A condition that selects *two* is the timeout coming back. Neither is
+    visible in a passing run, so neither is left to be noticed.
+
+    Bound to the matrix rather than compared against a string: the condition is matched against
+    the `include:` list the job actually runs, so a configuration renamed in one place and not
+    the other reddens here instead of quietly selecting nothing.
+    """
+    # Mutations (declared): the condition renamed to a runner the matrix does not list -> 0
+    # selected; the `matrix.os` half dropped -> 2 selected. Both redden this case.
+    include = _matrix_include(CI_WORKFLOW)
+    # The walk first: an empty include list would satisfy nothing below and every `all()` over
+    # it vacuously, so the count would be 0 for a reason that is not about the condition.
+    assert len(include) >= 2, include
+    condition = _step_condition(CI_WORKFLOW, ORACLE_STEP)
+    assert condition is not None, (
+        f"the {ORACLE_STEP!r} step carries no `if:`, so it runs on every configuration of the "
+        "matrix and the job goes back over its bound"
+    )
+    wanted = dict(_MATRIX_COMPARISON.findall(condition))
+    assert wanted, (
+        f"nothing in {condition!r} compares a `matrix.` key, so this case cannot tell which "
+        "configurations it selects and will not guess"
+    )
+    selected = [entry for entry in include if all(entry.get(k) == v for k, v in wanted.items())]
+    assert len(selected) == 1, (condition, wanted, selected, include)
+
+
 WORKFLOWS = ROOT / ".github" / "workflows"
 # The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
 # cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and

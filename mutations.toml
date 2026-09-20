@@ -5010,3 +5010,25 @@ after = '        raise ConfigError(f"{machine} is not valid TOML: {exc}") from N
 reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml",
 ]
+
+# The oracle's own `if:`, from both sides. A condition that selects nothing switches the whole
+# set off and reports it by going green — the step vanishes from the job rather than failing in
+# it — and a condition that selects two is the timeout this change exists to end. Neither shows
+# up in a passing run, so both are declared here rather than left to be noticed.
+[[mutation]]
+name = "the oracle's condition names a runner the matrix does not list"
+file = ".github/workflows/ci.yml"
+before = "        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'"
+after = "        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.13'"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_runs_on_exactly_one_configuration",
+]
+
+[[mutation]]
+name = "the oracle's condition widens back to every operating system"
+file = ".github/workflows/ci.yml"
+before = "        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'"
+after = "        if: matrix.python == '3.13'"
+reddens = [
+  "tests/test_fixtures.py::test_the_mutation_oracle_runs_on_exactly_one_configuration",
+]
