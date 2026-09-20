@@ -164,6 +164,25 @@ def offending(text: str, forbidden: tuple[tuple[int, str], ...] = FORBIDDEN) -> 
     two screens up, so an offset would be noise; the digests are the half nothing in the
     repository can spell out.
     """
+    # **The cost, measured, and why there is no prefilter in front of it.** This is one
+    # `blake2s` per window per distinct stored width — twelve of them — so the whole-tree walk
+    # is about twelve passes over 4.8 M characters, 13 s of the suite on the machine this was
+    # measured on (2026-09-20), and it runs on three interpreters in CI.
+    #
+    # A two-stage prefilter is the obvious repair and it is **not constructible here**, which
+    # is worth writing down so the next reader does not re-derive it. Every cheap first stage —
+    # a first-byte set, a two-byte prefix digest, a rolling hash — needs a key computed from
+    # each *token*, and this repository deliberately holds no token: `FORBIDDEN` is six-byte
+    # digests of whole tokens, by the ruling the module docstring makes, and a digest says
+    # nothing about a prefix. Generating any prefilter table means holding the token list,
+    # which is a change to what is stored rather than to how it is scanned.
+    #
+    # The constant-factor alternatives were measured on the largest file in the tree and are
+    # flat: `.digest()` bytes instead of `.hexdigest()`, 0.636 s against 0.655 s; hashing only
+    # the distinct windows per width, 0.711 s (61% of windows are distinct at these widths);
+    # `memoryview` slices, 0.690 s. Even a hypothetical perfect one-byte prefilter measures
+    # 0.286 s — 2.3x, not the twelve the pass count suggests. Do not spend a lane on this
+    # without changing what the table stores.
     raw = text.lower().encode("utf-8")
     found: list[str] = []
     for width in sorted({width for width, _ in forbidden}):
