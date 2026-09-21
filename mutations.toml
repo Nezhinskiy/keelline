@@ -5149,3 +5149,17 @@ after = "    named = list(unknown)"
 reddens = [
   "tests/config/test_loader.py::test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
+
+# The one count in the session-start lines that is computed from repository-authored bytes.
+# `memory.groups` is bounded by no grammar (`config/paths.py` names it as one of four such
+# fields), so a group name is instruction-shaped text a clone chose -- and `HookResult.context`
+# becomes `additionalContext`, model input with no delimiter and no trust record. The length of
+# the list prints; the list does not.
+[[mutation]]
+name = "the overlay-status line names the memory groups instead of counting them"
+file = "src/keelline/attach/hooks.py"
+before = "            lines.append(REAL_DIRECTORIES.format(count=len(real)))"
+after = '            lines.append(REAL_DIRECTORIES.format(count=", ".join(real)))'
+reddens = [
+  "tests/attach/test_hooks.py::test_real_directories_are_counted_and_a_group_name_never_reaches_the_context",
+]
