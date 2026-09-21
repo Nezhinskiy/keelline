@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 import keelline
+from keelline import REPOSITORY_URL
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
@@ -76,11 +77,12 @@ class _Stub:
     """A `Runner` that records argv and answers, so no test reaches a real binary."""
 
     code: int = 0
+    stdout: str = ""
     calls: list[list[str]] = field(default_factory=list)
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append(argv)
-        return Completed(self.code, "", "")
+        return Completed(self.code, self.stdout, "")
 
 
 def _stub(code: int = 0) -> _Stub:
@@ -1018,44 +1020,6 @@ def test_an_overlay_git_cannot_answer_about_is_a_warning_and_never_a_red_row(
     assert "hooks directory" in check.detail
 
 
-def test_a_recorded_ci_ref_is_asked_of_the_remote_through_the_runner(tmp_path: Path) -> None:
-    # §8.4 names the mechanism — `git ls-remote --exit-code` — and the runner is the seam that
-    # keeps it out of a test's way. The ref itself is repository-authored and is never printed.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__) + '\n[ci]\nref = "o/r/.github/w.yml@v1"\n',
-        encoding="utf-8",
-    )
-    runner = _stub(code=2)
-    check = _by_name(
-        _checks(tmp_path, root, runner=runner),
-        "ci-ref",
-    )
-    assert check.status == "red"
-    assert runner.calls == [["git", "ls-remote", "--exit-code", "--", "o/r/.github/w.yml@v1"]]
-    assert "o/r" not in check.detail
-
-
-def test_a_ci_ref_naming_a_transport_helper_never_reaches_git(tmp_path: Path) -> None:
-    # `[ci] ref` is type-checked as `str` and nothing more, and it is the sole variable argument
-    # this area hands `git`. `--` stops it becoming an *option*; it does not stop it becoming a
-    # *transport*, and `ext::<command>` makes `git ls-remote` run a program the repository
-    # chose. git 2.54 refuses `ext::` under its default `protocol.ext.allow` (verified locally),
-    # which is git's guard and not this project's: it is absent on an older git and off under
-    # `protocol.ext.allow=always`. The answer must not depend on which git is installed.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__)
-        + '\n[ci]\nref = "ext::sh -c touch% /tmp/pwned"\n',
-        encoding="utf-8",
-    )
-    runner = _stub()
-    check = _by_name(_checks(tmp_path, root, runner=runner), "ci-ref")
-    assert check.status == "red"
-    assert runner.calls == []
-    assert "sh -c" not in check.detail and "ext::" not in check.detail
-
-
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
     # D7: "a project may lower a budget below the preset and never raise it". A value above the
     # preset is ignored rather than refused, so without this check nothing ever says that the
@@ -1166,24 +1130,6 @@ def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path
     assert _by_name(_checks(tmp_path, _initialised(tmp_path)), "budgets").detail == (
         "every budget is the preset's"
     )
-
-
-def test_a_ci_ref_git_could_not_be_asked_about_is_a_warning_and_never_a_red_row(
-    tmp_path: Path,
-) -> None:
-    # `git ls-remote --exit-code` answers 2 for "the ref is not there" and 0 for "it is". Every
-    # other exit code is `git` itself having failed — no network, no binary, a credential prompt
-    # that timed out — which is a fact about this machine and not about `[ci] ref`. Calling it
-    # red makes `doctor` exit 1 on an aeroplane. The arm existed and nothing ran it.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__) + '\n[ci]\nref = "o/r/.github/w.yml@v1"\n',
-        encoding="utf-8",
-    )
-    check = _by_name(_checks(tmp_path, root, runner=_stub(code=128)), "ci-ref")
-    assert check.status == "warn"
-    assert "128" in check.detail
-    assert "o/r" not in check.detail
 
 
 def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
@@ -1475,31 +1421,6 @@ def test_the_wrapper_probe_never_inherits_this_process_stdin(
         for descriptor in (saved, master, slave):
             os.close(descriptor)
     assert saw.read_text(encoding="utf-8").strip() == "closed"
-
-
-def test_an_ipv6_literal_in_a_ci_ref_is_not_a_transport_helper(tmp_path: Path) -> None:
-    # `TRANSPORT_HELPER` was `"::"`, asked with `in` — and `::` is also how a legal IPv6 literal
-    # is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red as "names a git
-    # transport helper" and the remedy told the machine owner to replace a URL that was already
-    # correct. A false finding is more expensive in this command than anywhere else: `doctor`'s
-    # entire value is that what it reports is true. git decides this in `transport_get` by
-    # taking a helper only when `::` follows the leading run of URL-scheme characters, which is
-    # the parse now matched.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__)
-        + '\n[ci]\nref = "ssh://user@[2001:db8::1]/repo.git"\n',
-        encoding="utf-8",
-    )
-    runner = _stub()
-    check = _by_name(_checks(tmp_path, root, runner=runner), "ci-ref")
-    # Which arm answered, not merely that it is not red: the ref must have reached the runner,
-    # because "refused before the runner sees it" is the behaviour being denied here.
-    assert check.status != "red"
-    assert runner.calls, "the ref never reached `git ls-remote`, so it was refused after all"
-    assert runner.calls == [
-        ["git", "ls-remote", "--exit-code", "--", "ssh://user@[2001:db8::1]/repo.git"]
-    ]
 
 
 def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
@@ -1925,3 +1846,76 @@ def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_p
     checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
     assert _by_name(checks, "versions").status == OK
     assert len(checks) == 16
+
+
+# The two shas a listing can carry and one it cannot: `RELEASED` is what `v0.1.0` names,
+# `ALIAS_SHA` is what the mutable `v1` names, and `UNRELEASED` is named by no tag at all.
+RELEASED, UNRELEASED, ALIAS_SHA = "c" * 40, "d" * 40, "e" * 40
+LISTING = f"{RELEASED}\trefs/tags/v0.1.0\n{ALIAS_SHA}\trefs/tags/v1\n"
+# Not 2: `git ls-remote --exit-code` exits 2 for "no matching refs", which `released` reads as
+# "no tags", an answer. 128 is `git` itself having failed, which is the arm that warns.
+GIT_FAILED = 128
+
+
+def _configured(tmp_path: Path, ref: str, *, workflow_ref: str | None = None) -> Path:
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        (root / CONFIG_FILE).read_text(encoding="utf-8") + f'\n[ci]\nref = "{ref}"\n',
+        encoding="utf-8",
+    )
+    if workflow_ref is not None:
+        (root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        (root / ".github" / "workflows" / "keelline.yml").write_text(
+            f"jobs:\n  check:\n    uses: o/r/.github/workflows/check.yml@{workflow_ref} # v0.1.0\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def test_a_released_commit_is_ok_and_an_unreleased_one_is_red(tmp_path: Path) -> None:
+    # Mutation (oracle): `if not is_a_release` -> `if is_a_release` -> both arms swap.
+    stub = _stub()
+    stub.stdout = LISTING
+    ok = _checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub)
+    assert _by_name(ok, "ci-ref").status == OK
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, UNRELEASED), runner=stub), "ci-ref")
+    assert row.status == RED and "released" in row.detail
+    assert stub.calls[0] == ["git", "ls-remote", "--exit-code", REPOSITORY_URL, "refs/tags/v*"]
+
+
+def test_a_value_that_is_neither_a_sha_nor_the_alias_is_red_without_a_subprocess(
+    tmp_path: Path,
+) -> None:
+    stub = _stub()
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, "ext::sh -c id"), runner=stub), "ci-ref")
+    assert row.status == RED and "40-character" in row.detail and stub.calls == []
+    # And the value is not quoted back on the way out: it is repository-authored, and this is
+    # the arm a repository reaches by writing something `git` would have run as a program.
+    assert "ext::" not in row.detail and "ext::" not in row.remedy
+
+
+def test_the_alias_is_a_warning_that_names_it_mutable(tmp_path: Path) -> None:
+    stub = _stub()
+    stub.stdout = LISTING
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, "v1"), runner=stub), "ci-ref")
+    assert row.status == WARN and "mutable" in row.detail
+    stub = _stub(code=GIT_FAILED)
+    unaskable = _checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub)
+    assert _by_name(unaskable, "ci-ref").status == WARN
+
+
+def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
+    # The pin GitHub acts on is the file. Mutation (comment): skip the workflow comparison ->
+    # this reddens.
+    stub = _stub()
+    stub.stdout = LISTING
+    row = _by_name(
+        _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref="main"), runner=stub),
+        "ci-ref",
+    )
+    assert row.status == RED and "workflow pins a different ref" in row.detail
+    row = _by_name(
+        _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref=RELEASED), runner=stub),
+        "ci-ref",
+    )
+    assert row.status == OK

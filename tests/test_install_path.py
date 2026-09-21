@@ -524,7 +524,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Green meaning: no `red`, and the only `skip`s are the two this build cannot answer — the
-    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` will write.
+    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` this fixture records none of.
     # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
     # walk runs against the checkout, so the row now compares the three shipped files against
     # the record committed beside them and is green. A `files` back in this list means the

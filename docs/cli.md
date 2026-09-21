@@ -1059,8 +1059,8 @@ Sixteen checks over one installation. It **reports and never repairs**: every fi
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
 **Several subprocesses are run and every one of them only asks.** Keelline's own
-`hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the remote `[ci] ref`
-names, only when one is set; and the `git` queries the other rows need — where the overlay keeps
+`hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
+repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other rows need — where the overlay keeps
 its hooks, what its `origin` is, and where the note store resolves to. Four launches on a green
 attached installation, measured. Exactly one of them, `ci-ref`, leaves this machine.
 
@@ -1085,7 +1085,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies | the overlay's `.claude-plugin/plugin.json` |
-| `ci-ref` | whether `[ci] ref` resolves | `git ls-remote --exit-code` |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref | `git ls-remote --exit-code` over the public repository's tags; *.github/workflows/keelline.yml* |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
@@ -1339,7 +1339,8 @@ local = []               # scaffold template ids whose artifact is written under
 
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
-ref = ""                 # a remote `doctor`'s `ci-ref` row resolves with `git ls-remote`
+ref = ""                 # the commit of the Keelline release the workflow is pinned to;
+                         # `init` writes it; `v1` is the documented mutable opt-in
 gate_branch = "main"     # the branch a gate reads its configuration from
 
 [commit_messages]

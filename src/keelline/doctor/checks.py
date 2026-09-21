@@ -91,7 +91,14 @@ from keelline.memory.api import (
     resolve,
 )
 from keelline.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
-from keelline.release.api import HASHED_FILES, UnreadableRecord, digests, read_record
+from keelline.release.api import (
+    HASHED_FILES,
+    UnreadableRecord,
+    digests,
+    is_released,
+    read_record,
+    released,
+)
 from keelline.runner import Runner
 from keelline.scaffold import marker_id, owned_ids
 from keelline.setup.api import USER_SETTINGS
@@ -1176,65 +1183,108 @@ def _overlay_requires(context: Context) -> Row:
     return Row(OK, f"the overlay requires Keelline {spec}, which {running} satisfies")
 
 
-# git's own spelling for "run this program and talk to it": `ext::<command>` and, generally,
-# `<helper>::<address>`. `--` stops an argument becoming an *option*; it does not stop it
-# becoming a *transport*, and `[ci] ref` is the one variable argument this area hands `git`.
-# git 2.54 refuses `ext::` under its default `protocol.ext.allow` (verified locally), which is
-# git's guard rather than this project's: it does not hold on an older git and it is off
-# entirely under `protocol.ext.allow=always`. Refused here so the answer does not depend on
-# which git the machine owner installed.
-#
-# **git's parse and not a substring test.** This was `"::"`, asked with `in` — and `::` is also
-# how a legal IPv6 literal is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red
-# as naming a transport helper. A false finding is expensive here in a way it is not elsewhere:
-# `doctor`'s whole value is that what it reports is true, and the remedy it printed told the
-# machine owner to replace a URL that was already correct.
-#
-# git decides this in `transport_get`: it walks the leading run of URL-scheme characters and
-# takes a helper only when `::` comes *immediately* after it. So the helper name is anchored at
-# the start and is scheme-shaped, which `ssh://…[…::1]/…` is not — its run stops at `:/`. The
-# empty name (`::address`) is matched too, because git takes that as a helper as well.
-TRANSPORT_HELPER = re.compile(r"\A(?:[A-Za-z][A-Za-z0-9+.\-]*)?::")
+# §7.1 makes `[ci] ref` a commit, and the documented opt-in is the mutable `v1` alias. Both are
+# judged against the public repository's own tags, which is why neither ever reaches a
+# subprocess: a sha cannot be asked for by name, so the row asks `git ls-remote` about a constant
+# URL and a constant pattern (`release.pins`) and compares in Python.
+_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
+ALIAS = "v1"
+# The rendered workflow, which is the pin GitHub actually acts on.
+WORKFLOW = ".github/workflows/keelline.yml"
+# Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
+_USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")
+CI_REF_REMEDY = (
+    f"set [ci] ref in {CONFIG_FILE} to a released commit and rewrite the workflow's uses: line "
+    f"to match; keelline upgrade (ships later) will move both"
+)
+# `git` itself having failed is a fact about this machine, not about `[ci] ref`, so it warns --
+# the same split `_guarded` makes and for the same reason: red gates the exit code.
+CI_REF_UNASKABLE = "[ci] ref could not be checked against the public repository's tags"
+
+
+def _ref_is_released(context: Context, ref: str) -> Row:
+    """What the public repository's tags say about `[ci] ref`, in one `git ls-remote`.
+
+    The alias arm asks for the tag listing and the sha arm asks the release area's own rule
+    (`is_released`, which filters to `vX.Y.Z` so the mutable alias cannot make a commit look
+    released); the two arms are exclusive, so either way the row launches `git` exactly once.
+    """
+    if ref == ALIAS:
+        tags = released(context.runner, cwd=context.root)
+        if tags is None:
+            return Row(WARN, CI_REF_UNASKABLE, CI_REF_REMEDY)
+        if ALIAS not in tags:
+            return Row(
+                RED,
+                f"[ci] ref is the {ALIAS} alias and the public repository carries no such tag",
+                CI_REF_REMEDY,
+            )
+        return Row(
+            WARN,
+            f"[ci] ref is the {ALIAS} alias, a mutable opt-in; a released commit is the "
+            f"immutable form",
+            CI_REF_REMEDY,
+        )
+    if _SHA.match(ref):
+        is_a_release = is_released(ref, context.runner, cwd=context.root)
+        if is_a_release is None:
+            return Row(WARN, CI_REF_UNASKABLE, CI_REF_REMEDY)
+        if not is_a_release:
+            return Row(
+                RED, "[ci] ref is not the commit of any released Keelline tag", CI_REF_REMEDY
+            )
+        return Row(OK, "[ci] ref is a released Keelline commit")
+    return Row(
+        RED,
+        f"[ci] ref is neither a 40-character commit sha nor the {ALIAS} alias, so it was not "
+        f"checked against anything",
+        CI_REF_REMEDY,
+    )
 
 
 def _ci_ref(context: Context) -> Row:
-    """§8.4: whether `[ci] ref` resolves, asked with `git ls-remote --exit-code`.
+    """§8.4, D16: whether `[ci] ref` is the commit of a released Keelline, and whether the
+    rendered workflow pins the same ref.
 
-    The value is repository-authored, so it is passed to the runner after a `--` and is never
-    printed — not in the detail, not in the remedy. `init` is the lane that writes it (wave 5),
-    so an empty value is `skip` rather than red: nothing in this build has had a chance to set
-    one, and calling that a fault would make `doctor` red on every correct installation.
+    **The value never reaches a subprocess.** §7.1 makes it a sha, and a sha cannot be asked for
+    by name, so the row asks the release area which commits the public repository's `v*` tags
+    name -- a constant URL, a constant pattern -- and compares in Python. The alias is reported
+    as what it is, a mutable opt-in; and the rendered workflow is read because the pin GitHub
+    acts on is the file, not the configuration beside it.
 
-    **It is also the one value in this area that chooses a program rather than a destination**,
-    which is why `TRANSPORT_HELPER` is refused before the runner sees it, and why
-    `overlay.Runner` closes stdin and sets `GIT_TERMINAL_PROMPT=0`: without those a
-    repository-chosen URL could hold this read-only diagnostic on a credential prompt for the
-    whole of `NETWORK_TIMEOUT_SECONDS`.
+    `init` is the lane that writes both, so an empty value is `skip` rather than red: a
+    repository that has not been initialised has had no chance to set one, and calling that a
+    fault would make `doctor` red on every correct installation.
+
+    The value is repository-authored and is never printed -- not in the detail, not in the
+    remedy, and not in an argument list.
     """
     ref = context.config.ci.ref
     if not ref:
         return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
-    if TRANSPORT_HELPER.match(ref):
+    row = _ref_is_released(context, ref)
+    if row.status == RED:
+        return row
+    try:
+        rendered = (context.root / WORKFLOW).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return row
+    except OSError as exc:
+        return Row(
+            WARN,
+            f"{WORKFLOW} is there and could not be read ({type(exc).__name__}), so whether it "
+            f"pins the same ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    pinned = _USES.search(rendered)
+    if pinned is not None and pinned.group(1) != ref:
         return Row(
             RED,
-            "[ci] ref names a git transport helper, which would hand `git ls-remote` a program "
-            "this repository chose; it was not resolved",
-            f"set [ci] ref in {CONFIG_FILE} to a plain remote URL",
+            "the workflow pins a different ref from [ci] ref, so the gate that runs is not the "
+            "one recorded",
+            CI_REF_REMEDY,
         )
-    done = context.runner.run(["git", "ls-remote", "--exit-code", "--", ref], context.root)
-    if done.code == 0:
-        return Row(OK, "[ci] ref resolves")
-    if done.code == 2:
-        return Row(
-            RED,
-            "[ci] ref does not resolve, so the reusable workflow this project pins is not there",
-            f"correct [ci] ref in {CONFIG_FILE}",
-        )
-    return Row(
-        WARN,
-        f"[ci] ref could not be checked (`git ls-remote` exited {done.code})",
-        "check that `git` runs here and that the remote is reachable",
-    )
+    return row
 
 
 def _store_debris(context: Context) -> Row:
@@ -1481,7 +1531,7 @@ def run_checks(
                 RED,
                 f"there is no {CONFIG_FILE} here, so the plugin's hooks are silent in this "
                 f"repository",
-                "run `keelline init` once it ships, or write keelline.toml by hand",
+                "run `keelline init --yes`",
             ),
             *(
                 Check(name, SKIP, f"there is no {CONFIG_FILE} to check against", "")

@@ -4,9 +4,9 @@ One command and not a group, the shape §5.2's contract row states and the shape
 already invokes.
 
 **A `skip` is not a finding.** Two of the sixteen checks cannot be answered by this build —
-the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` has not shipped
-a writer for — so an exit code that counted skips would make `doctor` red on every correct
-installation until wave 5. `files` was the third of the two until the release lane shipped the
+the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that no repository has
+recorded yet — so an exit code that counted skips would make `doctor` red on every correct
+installation. `files` was the third of the two until the release lane shipped the
 record it compares against. Exit 1 is reserved for `red` (C5: findings), and `warn` does not
 reach it either: a budget lowered below the preset and a harness link the trust gate has not
 opened are both correct states somebody should still see.

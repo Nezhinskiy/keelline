@@ -13,9 +13,9 @@ description: Diagnose a Keelline installation — hooks, memory store, budgets, 
    variable that is set and ignored.
 2. Relay each finding with the remedy the report names, verbatim. Do not change settings or
    hook entries on the user's behalf — name the command that would.
-3. A `skip` is not a fault, and it is not always harmless either. Two checks cannot be
-   answered by this build at all — whether a hook is trusted on Codex, and a `[ci]` reference
-   nothing writes yet. Eight more skip on a state of the machine: `wrapper` and `files` when no
+3. A `skip` is not a fault, and it is not always harmless either. One check cannot be
+   answered by this build at all — whether a hook is trusted on Codex — and `ci-ref` skips
+   while no `[ci] ref` is recorded. Eight more skip on a state of the machine: `wrapper` and `files` when no
    plugin root can be vouched for, `files` again on a build with no release record, `attached`
    when no overlay is recorded or the overlay cannot be asked, `pre-commit` with no overlay
    root recorded, `overlay-requires` with no overlay root recorded or no requirement declared,

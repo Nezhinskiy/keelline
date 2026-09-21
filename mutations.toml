@@ -2068,19 +2068,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
 
-# `[ci] ref` is the sole variable argument this area hands `git`, and `--` stops it becoming an
-# option, not a transport. `ext::<command>` makes `git ls-remote` run a program the repository
-# chose; git 2.54's default `protocol.ext.allow` refuses it, which is git's guard and not this
-# project's -- absent on an older git, off under `protocol.ext.allow=always`.
-[[mutation]]
-name = "a ci-ref naming a git transport helper reaches git again"
-file = "src/keelline/doctor/checks.py"
-before = "    if TRANSPORT_HELPER.match(ref):"
-after = "    if False:"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_ci_ref_naming_a_transport_helper_never_reaches_git",
-]
-
 # I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's
 # `--machine` gate -- a flag is a third member of the equivalence class `config/machine.py`
 # gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the
@@ -5162,4 +5149,17 @@ before = "            lines.append(REAL_DIRECTORIES.format(count=len(real)))"
 after = '            lines.append(REAL_DIRECTORIES.format(count=", ".join(real)))'
 reddens = [
   "tests/attach/test_hooks.py::test_real_directories_are_counted_and_a_group_name_never_reaches_the_context",
+]
+
+# `[ci] ref` is repository-authored and §7.1 makes it the commit of a released Keelline. Which
+# commits those are is the release area's own rule (`is_released`, semver tags only), and the
+# row's verdict is what a reader acts on: a ref no released tag names is a project pinned to a
+# gate nobody shipped, reported green.
+[[mutation]]
+name = "a ci-ref that is no released commit is reported as a released commit"
+file = "src/keelline/doctor/checks.py"
+before = "        if not is_a_release:"
+after = "        if is_a_release:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_released_commit_is_ok_and_an_unreleased_one_is_red",
 ]

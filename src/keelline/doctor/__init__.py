@@ -5,7 +5,8 @@ this one reads.
 
 **It runs several subprocesses, and every one of them only asks.** The count used to be given
 here as "exactly two" and that was wrong: besides Keelline's own hook wrapper with `--version`
-and `git ls-remote --exit-code` against the remote `[ci] ref` names, `pre-commit` asks
+and `git ls-remote --exit-code` over the public repository's tags, which is how `[ci] ref` is
+judged, `pre-commit` asks
 `guards.api.hooks_dir` where the overlay keeps its hooks, `attached` reaches `read_binding`,
 which asks `git` for `origin`, and resolving the note store in overlay mode asks again — four
 launches on the green end-to-end fixture, measured. What is true of all of them is the part
