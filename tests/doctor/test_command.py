@@ -69,8 +69,10 @@ def test_a_clean_installation_exits_zero_with_one_line(
 
 
 def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Three checks skip in this build by construction (release hashes, Codex trust, [ci] ref).
-    # If a skip exited 1, `doctor` would be red on every correct installation until wave 5.
+    # Two checks skip in this build by construction: the Codex hook-trust hash §10 lists as
+    # unmeasured, and a `[ci] ref` no repository has recorded. (`files` was a third until the
+    # release lane shipped the record it compares against.) If a skip exited 1, `doctor`
+    # would be red on every correct installation.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     assert code == 0

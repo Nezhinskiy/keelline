@@ -1083,8 +1083,9 @@ carries the command that would fix it, and not one of them is run for you. Nothi
 
 **Several subprocesses are run and every one of them only asks.** Keelline's own
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
-repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other rows need — where the overlay keeps
-its hooks, what its `origin` is, and where the note store resolves to. Four launches on a green
+repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
+rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
+resolves to. Four launches on a green
 attached installation, measured. Exactly one of them, `ci-ref`, leaves this machine.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
@@ -1107,7 +1108,7 @@ nobody sees, so that is where they all are.
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies | the overlay's `.claude-plugin/plugin.json` |
+| `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref | `git ls-remote --exit-code` over the public repository's tags; *.github/workflows/keelline.yml* |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
@@ -1127,19 +1128,19 @@ process can vouch for; `attached`, when this machine records no overlay to check
 against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
 recorded on this machine; `overlay-requires`, when no overlay root is recorded or the overlay
 declares no Keelline requirement; `bundles` and `store-debris`, when the note store does not
-resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has a second
-state arm of its own — a plugin built before the release record existed carries none, and it
-says so rather than comparing anything.
+resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has a
+second state arm of its own — a plugin built before the release record existed carries none,
+and it says so rather than comparing anything.
 
-**A `skip` does not mean there is nothing to do.** Five of the fourteen arms carry a remedy: the
-two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing line
-is not "always" versus "on a state" — `bundles`, `pre-commit`, `overlay-requires`,
-`store-debris` and `diagnostics` all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
-five report something wrong that no other row will tell you: a plugin root nothing can find, a
-root that will be read and never executed, a recorded attach the overlay could not confirm. The
-other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
-requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to
-ask Codex — and no command in that row's gift changes it.
+**A `skip` does not mean there is nothing to do.** Five of the fourteen arms carry a remedy:
+the two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing
+line is not "always" versus "on a state" — `bundles`, `pre-commit`, `overlay-requires`,
+`store-debris` and `diagnostics` all skip on a state and carry nothing. It is whether the skip
+is itself worth acting on. Those five report something wrong that no other row will tell you: a
+plugin root nothing can find, a root that will be read and never executed, a recorded attach
+the overlay could not confirm. The other nine report a measurement that is simply unavailable —
+no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
+record in this build, no way to ask Codex — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,

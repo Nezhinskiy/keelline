@@ -1815,12 +1815,40 @@ def _recorded_overlay(tmp_path: Path, requires: object) -> Path:
     return machine
 
 
-def test_overlay_requires_is_red_when_the_overlay_needs_a_newer_keelline(tmp_path: Path) -> None:
-    # Mutation (comment; an advisory row): `if not verdict` -> `if verdict` -> this and the
-    # next case swap verdicts.
+UNMET = "the overlay requires Keelline >=99.0.0 and {running} does not satisfy it"
+
+
+def test_overlay_requires_is_red_when_a_bound_project_needs_a_newer_keelline(
+    tmp_path: Path,
+) -> None:
+    # Red because this project keeps its notes in the overlay, so the floor it declares is this
+    # installation's business. Mutation (comment; the verdict's own arm): `if not verdict` ->
+    # `if verdict` -> this and the ok case swap verdicts. The red-versus-warn split below has an
+    # oracle entry of its own.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    root = _initialised(tmp_path, template=OVERLAY)
+    row = _by_name(_checks(tmp_path, root, machine=machine), "overlay-requires")
+    assert row.status == RED
+    assert row.detail == UNMET.format(running=keelline.__version__)
+    assert "uv tool install" in row.remedy
+
+
+def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor(
+    tmp_path: Path,
+) -> None:
+    # DC2's own sentence, which is why this requirement has a row of its own rather than being
+    # folded into `versions`: "a `local-only` project on a machine that records an overlay must
+    # not go red for a requirement it has no relationship with". The finding is the same finding
+    # and says the same thing; only the level moves, because red gates the exit code and wave 5's
+    # `assess` is planned to gate on it. Asserted as the level AND the whole text, so this case
+    # cannot pass for the red case's reason or vice versa.
+    #
+    # Mutation (declared): `unmet = RED if ... else WARN` -> `unmet = RED`.
     machine = _recorded_overlay(tmp_path, ">=99.0.0")
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == RED and ">=99.0.0" in row.detail and "uv tool install" in row.remedy
+    assert row.status == WARN
+    assert row.detail == UNMET.format(running=keelline.__version__)
+    assert "uv tool install" in row.remedy
 
 
 def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overlay(
@@ -1842,9 +1870,15 @@ def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None
 def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
     # DC2's reason for a row of its own: the verdict is the machine's, so the `versions` row
     # stays about the project and never goes red for this.
+    #
+    # And the consequence the decision is actually about, asserted over the whole report rather
+    # than over one row: `doctor` does not exit 1 here. `overlay-requires` was measured as the
+    # only red row this fixture produced while the unmet arm was unconditional, so this
+    # assertion is the exit code and not a restatement of the case above.
     machine = _recorded_overlay(tmp_path, ">=99.0.0")
     checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
     assert _by_name(checks, "versions").status == OK
+    assert [check.name for check in checks if check.status == RED] == []
     assert len(checks) == 16
 
 
@@ -1919,3 +1953,35 @@ def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
         "ci-ref",
     )
     assert row.status == OK
+    # `finditer` and not `search`: a recognisable pin that follows an unrecognised `uses:` line
+    # is still the pin GitHub acts on, and a `search` that stopped at the first line would report
+    # a workflow that agrees as one that does not.
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    (root / ".github" / "workflows" / "keelline.yml").write_text(
+        "jobs:\n  lint:\n    uses: o/r/.github/workflows/other.yml@main\n"
+        f"  check:\n    uses: o/r/.github/workflows/check.yml@{RELEASED} # v0.1.0\n",
+        encoding="utf-8",
+    )
+    assert _by_name(_checks(tmp_path, root, runner=stub), "ci-ref").status == OK
+
+
+def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
+    tmp_path: Path,
+) -> None:
+    # A file that was read and not recognised used to leave the ref's own verdict standing, which
+    # a reader takes for "the workflow agrees" -- the false green the `OSError` arm beside it
+    # already refuses to produce.
+    #
+    # Advisory rather than an oracle entry: the arm warns, and `warn` reaches neither the exit
+    # code nor anything downstream that reads a verdict as permission. Mutation (comment): return
+    # `row` instead of the warning -> this reddens on the status.
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref="main")
+    (root / ".github" / "workflows" / "keelline.yml").write_text(
+        "jobs:\n  check:\n    uses: o/r/.github/workflows/other.yml@main\n", encoding="utf-8"
+    )
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "no `uses:` line this build recognises" in row.detail
+    # The file is repository-authored and none of it is quoted back.
+    assert "o/r" not in row.detail and "other.yml" not in row.detail

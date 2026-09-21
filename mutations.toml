@@ -5163,3 +5163,19 @@ after = "        if is_a_release:"
 reddens = [
   "tests/doctor/test_checks.py::test_a_released_commit_is_ok_and_an_unreleased_one_is_red",
 ]
+
+# DC2's own argument for giving the overlay's declared floor a row rather than folding it into
+# `versions`: a `local-only` project on a machine that records an overlay must not go red for a
+# requirement it has no relationship with. `red` is what gates the exit code, and wave 5's
+# `assess` is planned to gate on it too, so the level here is a verdict something downstream
+# reads -- an unconditional red makes `doctor` exit 1 in a repository that never opens the
+# overlay. `memory.mode` is the gate, and it is compared and never printed.
+[[mutation]]
+name = "an unrelated overlay's declared floor reddens a project that never reads it"
+file = "src/keelline/doctor/checks.py"
+before = '        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN'
+after = "        unmet: Status = RED"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor",
+  "tests/doctor/test_checks.py::test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor",
+]

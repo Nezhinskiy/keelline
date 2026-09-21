@@ -1157,8 +1157,9 @@ def _overlay_requires(context: Context) -> Row:
 
     A row of its own, gated on a recorded overlay exactly as `pre-commit` is (DC2): the
     subject is this machine's overlay, not this project, so a `local-only` project on a
-    machine that records one is never red for it. The spec string is the owner's own and is
-    printed as `requires_of` normalised it.
+    machine that records one is never red for it -- it is warned instead, which is where the
+    unmet arm below splits. The spec string is the owner's own and is printed as `requires_of`
+    normalised it.
     """
     overlay = context.overlay
     if overlay is None or not overlay.is_dir():
@@ -1175,8 +1176,18 @@ def _overlay_requires(context: Context) -> Row:
             f"write keelline.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
         )
     if not verdict:
+        # **Red only when this project consults the overlay**, which is DC2's own argument for
+        # giving this requirement a row rather than folding it into `versions`: "a `local-only`
+        # project on a machine that records an overlay must not go red for a requirement it has
+        # no relationship with". `memory.mode` is what says whether this repository keeps its
+        # notes in the overlay, and red is a statement that *this installation* is wrong -- it
+        # gates the exit code and wave 5's `assess` is planned to gate on it too. The machine
+        # owner is still told, at the level `pre-commit` uses in its analogous machine-scoped
+        # state. `memory.mode` is compared and never printed, exactly as `_attached` compares it
+        # one screen up; the literal is that comparison's second site and not a new vocabulary.
+        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
         return Row(
-            RED,
+            unmet,
             f"the overlay requires Keelline {spec} and {running} does not satisfy it",
             f"install a Keelline that satisfies {spec}: uv tool install git+{REPOSITORY_URL}@<tag>",
         )
@@ -1276,8 +1287,21 @@ def _ci_ref(context: Context) -> Row:
             f"pins the same ref as [ci] ref was not checked",
             CI_REF_REMEDY,
         )
-    pinned = _USES.search(rendered)
-    if pinned is not None and pinned.group(1) != ref:
+    # `finditer` and not `search`: the first `uses:` in the file may belong to another job, and
+    # a recognisable pin after it is still the pin GitHub acts on. Every recognisable one is
+    # compared, so a second job pinning something else is a finding too.
+    pinned = {match.group(1) for match in _USES.finditer(rendered)}
+    if not pinned:
+        # Read and not recognised. Returning the ref's own verdict here would read as "the
+        # workflow agrees", which is the false green the `OSError` arm beside it already refuses
+        # to produce. None of the file's bytes is printed -- it is a repository-authored file.
+        return Row(
+            WARN,
+            f"{WORKFLOW} is there and carries no `uses:` line this build recognises, so whether "
+            f"it pins the same ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    if pinned != {ref}:
         return Row(
             RED,
             "the workflow pins a different ref from [ci] ref, so the gate that runs is not the "
