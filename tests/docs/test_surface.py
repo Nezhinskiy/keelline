@@ -26,5 +26,8 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # what `lint` returns: a value a consumer can hold and cannot declare is the one thing
         # a surface exists to prevent
         "Lint",
+        # the lane that used to be absent, present now (wave 4): `project` ships `trail.toml`
+        # beside the roadmap and must put it where `docs trail` reads it
+        "trail_path",
     }
     assert required == set(docs.__all__)

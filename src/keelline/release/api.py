@@ -12,6 +12,11 @@ committed record current.
 `write_record` is deliberately absent. Writing the record is the release lane's own act, and
 `release hashes` is the one caller; a surface that published it would invite a lane to record
 a release it is not responsible for.
+
+`Pin`, `Resolution`, `released`, `resolve_pin` and `is_released` are published for `init`, which
+writes the pin, and `doctor`'s `ci-ref` row, which judges it — both ask this area because
+"which commit is release X" is the release lane's own question. `released` is published so the
+row can ask the remote once for the sha and the alias both.
 """
 
 from keelline.release.hashes import (
@@ -22,12 +27,18 @@ from keelline.release.hashes import (
     drift,
     read_record,
 )
+from keelline.release.pins import Pin, Resolution, is_released, released, resolve_pin
 
 __all__ = [
     "HASHED_FILES",
     "RECORD",
+    "Pin",
+    "Resolution",
     "UnreadableRecord",
     "digests",
     "drift",
+    "is_released",
     "read_record",
+    "released",
+    "resolve_pin",
 ]

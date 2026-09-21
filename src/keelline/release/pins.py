@@ -1,0 +1,68 @@
+"""Which commit a release is, asked of the public repository (D16, §5.8).
+
+The sha `init` writes into a project's workflow has to be one a release actually is, and
+`doctor` has to be able to say whether a recorded one still is: one `git ls-remote` over
+`refs/tags/v*`, annotated tags peeled to the commit they name. The repository is
+`keelline.REPOSITORY_URL` and the pattern is a constant, which is what lets either stand in a
+subprocess's argument list (§3). Three answers are kept apart because three callers print
+three different sentences: no such tag, no tags at all, and could not ask.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from keelline import REPOSITORY_URL
+from keelline.release.versions import tag_for
+from keelline.runner import Runner
+
+TAGS = "refs/tags/v*"
+NO_MATCH = 2
+_LINE = re.compile(r"^([0-9a-f]{40})\trefs/tags/(v[0-9][0-9A-Za-z.-]*?)(\^\{\})?$")
+_SEMVER = re.compile(r"^v\d+\.\d+\.\d+$")
+
+
+@dataclass(frozen=True)
+class Pin:
+    tag: str
+    sha: str
+
+
+@dataclass(frozen=True)
+class Resolution:
+    pin: Pin | None
+    asked: bool
+
+
+def released(runner: Runner, *, cwd: Path) -> dict[str, str] | None:
+    done = runner.run(["git", "ls-remote", "--exit-code", REPOSITORY_URL, TAGS], cwd)
+    if done.code == NO_MATCH and not done.stdout.strip():
+        return {}
+    if done.code != 0:
+        return None
+    plain: dict[str, str] = {}
+    peeled: dict[str, str] = {}
+    for line in done.stdout.splitlines():
+        match = _LINE.match(line.strip())
+        if match is None:
+            continue
+        sha, tag, is_peeled = match.groups()
+        (peeled if is_peeled else plain)[tag] = sha
+    return {**plain, **peeled}
+
+
+def resolve_pin(version: str, runner: Runner, *, cwd: Path) -> Resolution:
+    pins = released(runner, cwd=cwd)
+    if pins is None:
+        return Resolution(None, False)
+    tag = tag_for(version)[0]
+    return Resolution(Pin(tag, pins[tag]) if tag in pins else None, True)
+
+
+def is_released(sha: str, runner: Runner, *, cwd: Path) -> bool | None:
+    pins = released(runner, cwd=cwd)
+    if pins is None:
+        return None
+    return any(value == sha for tag, value in pins.items() if _SEMVER.match(tag))

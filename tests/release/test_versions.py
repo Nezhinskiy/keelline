@@ -9,6 +9,8 @@ from keelline.cli import build_parser, run
 from keelline.release.commands import register
 from keelline.release.versions import MalformedSource, check, collect, pending_fragments
 
+ROOT = Path(__file__).resolve().parents[2]
+
 # The fragment predicate reads the types towncrier itself is configured with, so a fixture
 # repository has to declare them exactly as the real one does.
 PYPROJECT = """[project]
@@ -512,3 +514,12 @@ def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missin
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
     assert check(root) == [f"{RECORD} is missing; run `keelline release hashes`"]
+
+
+def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
+    # `keelline.REPOSITORY_SLUG` and `keelline.REPOSITORY_URL` (Task 4) sit in
+    # `src/keelline/__init__.py` beside `__version__`; `_INIT`'s regex is anchored on
+    # `__version__` alone, so the two new lines must not change what this reads.
+    from keelline import __version__
+
+    assert collect(ROOT)["src/keelline/__init__.py"] == __version__

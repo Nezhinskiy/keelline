@@ -46,11 +46,17 @@ below have no importer either, and they survive this pass on an argument about s
 per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s floor. Whether
 this area publishes at all is a structural decision, not a refactor's; `ledger/api.py` records
 the same finding about its own list.
+
+**`trail_path` returns, in wave 4.** The lane the wave-3 trim named as absent now exists: the
+`project` area ships `trail.toml` beside the roadmap template and must put it where `docs
+trail` reads it. The other nine trimmed names have no consumer yet and stay where they were
+written, reachable from `keelline.docs.trail`.
 """
 
 from keelline.docs.graph import check_memory_graph
 from keelline.docs.hygiene import check_budgets, check_links
 from keelline.docs.plans import Lint, lint
+from keelline.docs.trail import trail_path
 
 __all__ = [
     "Lint",
@@ -58,4 +64,5 @@ __all__ = [
     "check_links",
     "check_memory_graph",
     "lint",
+    "trail_path",
 ]
