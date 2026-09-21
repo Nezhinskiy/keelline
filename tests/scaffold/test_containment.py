@@ -83,8 +83,12 @@ def load_at(root: Path) -> Config:
 
 
 def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
+    # `architecture = "/etc"` is refused by the `[paths]` grammar (P10, Task 1) before
+    # `contained()` ever sees the rest of this fixture's `..` values — both guards are the
+    # loader's, so either message is "the loader refuses this", which is the whole of what
+    # this test is pinning.
     write_config(tmp_path, HOSTILE_PATHS)
-    with pytest.raises(PathEscape, match=r"\.\."):
+    with pytest.raises(PathEscape):
         load_at(tmp_path)
 
 

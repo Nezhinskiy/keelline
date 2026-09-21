@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.loader import CONFIG_FILE, load, loads
 from keelline.config.paths import PathEscape, contained, validate_paths
-from keelline.config.schema import Config, Paths
+from keelline.config.schema import PATH_VALUE, Config, Paths
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -165,3 +165,19 @@ def test_the_final_symlink_exemption_holds_for_memory_and_for_no_other_path(
         return
     with pytest.raises(PathEscape, match="symlink"):
         validate_paths(config, root)
+
+
+def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path: Path) -> None:
+    # P10. A multi-line value loads today and `render_report` would print it raw. Mutation
+    # (oracle): drop the `PATH_VALUE` check from `validate_paths` -> this reddens.
+    text = (
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[paths]\nspecs = """docs/\n\n=== NOTICE ===\nspecs"""\n'
+    )
+    with pytest.raises(PathEscape) as caught:
+        loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    assert "paths.specs" in str(caught.value) and "NOTICE" not in str(caught.value)
+    for value in ("docs/specs", "design/specs.v2", ".keelline/local/x", "AGENTS.md"):
+        assert PATH_VALUE.match(value), value
+    for value in ("docs/ specs", "docs/spécs", "-docs", "docs/`x`", "docs/x\n"):
+        assert PATH_VALUE.match(value) is None, value

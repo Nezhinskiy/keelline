@@ -8,13 +8,17 @@
 strings under `[paths]` are refused. Until that changes, the ledger and memory lanes must call
 `contained()` themselves on the fields they consume; widening the guard here would change
 `Config`'s shape, so it belongs with the lane that first reads those fields.
+
+Two rules, not one: `PATH_VALUE` is the charset half — the grammar a value must match before it
+may be printed anywhere, a report included — and `contained()` is the shape half, deciding
+whether the value may be written. The same four unguarded fields above are unguarded by both.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from keelline.config.schema import Config
+from keelline.config.schema import PATH_VALUE, Config
 from keelline.errors import Refusal
 
 
@@ -57,6 +61,12 @@ def contained(
 
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
     resolved_root = root.resolve()
+    for name, relative in config.paths.as_dict().items():
+        if not PATH_VALUE.match(relative):
+            # Named and never quoted: this is the value a report would otherwise print.
+            raise PathEscape(
+                f"paths.{name} is not a plain relative path matching {PATH_VALUE.pattern}"
+            )
     return {
         name: contained(
             root,

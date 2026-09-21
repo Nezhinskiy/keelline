@@ -5086,3 +5086,12 @@ after = '        if str(stale) in dropped:'
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
 ]
+
+[[mutation]]
+name = "the [paths] grammar check is dropped"
+file = "src/keelline/config/paths.py"
+before = "        if not PATH_VALUE.match(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]

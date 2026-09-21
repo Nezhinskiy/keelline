@@ -197,9 +197,23 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     """
     path = root / CONFIG_FILE
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+    return loads(text, root, machine=machine, interactive=interactive)
+
+
+def loads(
+    text: str, root: Path, *, machine: Path | None = None, interactive: bool | None = False
+) -> Config:
+    """Build a `Config` from `text` as `keelline.toml`'s contents, without reading a file.
+
+    `load` is "read the file, then `loads`"; `init --yes` needs a `Config` for a document it
+    has not written to disk yet, so the parse-and-validate half is this function on its own.
+    """
+    path = root / CONFIG_FILE
+    try:
+        raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
@@ -217,8 +231,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
         raise ConfigError(
-            "project.name must be one lowercase path segment matching "
-            f"{PROJECT_NAME.pattern}; got {project.name!r}"
+            f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
         )
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
     memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))
