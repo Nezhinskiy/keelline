@@ -15,8 +15,10 @@ from pathlib import Path
 import pytest
 
 from keelline.attach.api import Binding, read_binding
+from keelline.attach.binding import UNBOUND, binding_for, unlinked_groups
 from keelline.attach.permissions import diff_permissions
-from keelline.config.loader import CONFIG_FILE, ConfigError
+from keelline.config.loader import CONFIG_FILE, ConfigError, load
+from keelline.config.paths import PathEscape
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD, PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
@@ -331,3 +333,45 @@ def test_check_refuses_the_allow_list_shape_the_real_run_refuses(tmp_path: Path)
     (root / ".claude" / "settings.local.json").unlink()
     with pytest.raises(EntriesError):
         diff_permissions(root, binding)
+
+
+def test_binding_for_takes_the_config_it_is_handed_and_read_binding_still_checks_the_store(
+    tmp_path: Path,
+) -> None:
+    # The mismatch here against the plan's own snippet: `_project_and_store` returns a
+    # `(root, store)` pair, not a triple — `machine` is a separate helper (`_machine`), as
+    # every other test in this module already calls it. The keyword set the brief names
+    # (`recorded`, `origin`, `name`) is unchanged; only the return arity differs from the plan.
+    root, _ = _project_and_store(
+        tmp_path, recorded=None, origin="git@github.com:o/p.git", name="widget"
+    )
+    machine = _machine(tmp_path, overlay=tmp_path / "overlay")
+    config = load(root, machine=machine)
+    assert binding_for(root, config, machine=machine).state == UNBOUND
+    with pytest.raises(Refusal, match="--store"):
+        read_binding(root, store=tmp_path / "elsewhere", machine=machine)
+
+
+def test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not(tmp_path: Path) -> None:
+    # Mutation (oracle): drop `and not target.is_symlink()` -> the linked group is listed too.
+    root, _ = _project_and_store(tmp_path, recorded=None, origin="x", name="widget")
+    machine = _machine(tmp_path, overlay=tmp_path / "overlay")
+    memory = root / DEFAULT_MEMORY
+    (memory / "project-stable").mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    (memory / "developer").symlink_to(tmp_path / "elsewhere")
+    assert unlinked_groups(root, load(root, machine=machine)) == ("project-stable",)
+
+
+def test_an_absent_group_is_not_listed_and_an_escaping_one_is_refused(tmp_path: Path) -> None:
+    # A5 of the review: `paths.memory` may itself be a symlink (`validate_paths` allows the
+    # final component), and then every group escapes. Swallowing that made two guards silent
+    # at once; raising makes it `attach`'s eighth refusal and the handler's fixed line.
+    root, _ = _project_and_store(tmp_path, recorded=None, origin="x", name="widget")
+    machine = _machine(tmp_path, overlay=tmp_path / "overlay")
+    assert unlinked_groups(root, load(root, machine=machine)) == ()
+    (tmp_path / "outside").mkdir()
+    (root / DEFAULT_MEMORY).parent.mkdir(parents=True, exist_ok=True)
+    (root / DEFAULT_MEMORY).symlink_to(tmp_path / "outside")
+    with pytest.raises(PathEscape):
+        unlinked_groups(root, load(root, machine=machine))

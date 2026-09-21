@@ -5095,3 +5095,12 @@ after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
 ]
+
+[[mutation]]
+name = "unlinked_groups stops excluding a linked group"
+file = "src/keelline/attach/binding.py"
+before = "        if target.is_dir() and not target.is_symlink():"
+after = "        if target.is_dir():"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not",
+]

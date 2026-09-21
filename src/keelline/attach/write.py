@@ -99,6 +99,10 @@ IGNORE_REGION = "ignore"
 # §7.1 lists both: the ledger's directory, and the assessment file `assess` will write.
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
+# The region body, spelled once. `init` (wave 4, the `project` area) records this same region
+# as a scaffold artifact, and a second spelling would let `init` and `attach` each report the
+# other's region as hand-edited.
+IGNORE_BODY = "\n".join((IGNORE_NOTE, *IGNORED))
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 # The hook's *name*; where it lives is `guards.hooks_dir`'s answer and not `.git/hooks`. An
 # overlay with `core.hooksPath` set -- a common global dotfiles setting -- or one that is a
@@ -326,7 +330,7 @@ def _write_ignore_region(root: Path) -> None:
             f"untracked — and writing the attach ledger into a tracked path would publish "
             f"your personal allow rules to every collaborator"
         ) from exc
-    updated = upsert(text, IGNORE_REGION, "\n".join((IGNORE_NOTE, *IGNORED)), Style.HASH)
+    updated = upsert(text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
     if updated == text:
         return
     try:

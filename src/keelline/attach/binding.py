@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.config.loader import load
+from keelline.config.paths import contained
+from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import (
     PROJECT_RECORD,
@@ -48,6 +50,12 @@ STATES = (UNBOUND, BOUND, MISMATCH)
 # it; this spelling exists so the `--store` refusal below can state the shape of the path it
 # wants without printing the project name it would otherwise embed.
 STORE_DIR = "memory"
+# One sentence, said by both `binding_for` and `read_binding`: neither reads an overlay root
+# that was not recorded through `keelline setup`.
+NO_OVERLAY = (
+    "no overlay root is recorded in the machine configuration, so there is nothing to bind "
+    "this repository to; run `keelline setup` first"
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,22 @@ def _state(recorded: str | None, origin: str | None) -> str:
     return BOUND
 
 
+def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
+    """The binding this repository stands in, for a `Config` the caller already holds.
+
+    The session-start handler is handed its `Config` by the dispatcher and must not load it a
+    second time; `read_binding` is the command-line wrapper that loads and checks `--store`.
+    """
+    overlay = overlay_root(machine)
+    if overlay is None:
+        raise Refusal(NO_OVERLAY)
+    project = config.project.name
+    store = permitted_roots(overlay, project)[1]
+    recorded = _recorded(overlay, project)
+    origin = origin_remote(root)
+    return Binding(project, overlay, store, origin, recorded, _state(recorded, origin))
+
+
 def read_binding(root: Path, *, store: Path, machine: Path | None) -> Binding:
     """The binding this repository would attach under, or a refusal that it may not.
 
@@ -120,14 +144,10 @@ def read_binding(root: Path, *, store: Path, machine: Path | None) -> Binding:
     protecting against, and the name becomes a directory under the overlay's `projects/`).
     """
     config = load(root, machine=machine)
-    project = config.project.name
     overlay = overlay_root(machine)
     if overlay is None:
-        raise Refusal(
-            "no overlay root is recorded in the machine configuration, so there is nothing to "
-            "bind this repository to; run `keelline setup` first"
-        )
-    expected = permitted_roots(overlay, project)[1]
+        raise Refusal(NO_OVERLAY)
+    expected = permitted_roots(overlay, config.project.name)[1]
     if store.resolve() != expected.resolve():
         # The shape and never `expected`, which embeds `project.name` (see `_recorded`).
         raise Refusal(
@@ -136,6 +156,27 @@ def read_binding(root: Path, *, store: Path, machine: Path | None) -> Binding:
             f"{store} is not it. The overlay root comes from the machine configuration and never "
             f"from an argument"
         )
-    recorded = _recorded(overlay, project)
-    origin = origin_remote(root)
-    return Binding(project, overlay, store, origin, recorded, _state(recorded, origin))
+    return binding_for(root, config, machine=machine)
+
+
+def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
+    """The `memory.groups` entries that are real directories under `paths.memory` (§6.3, §12).
+
+    The anchor is `root` — the checkout the command was pointed at or the hook was handed,
+    never a value the repository chose — and a group `contained` refuses against it is raised,
+    not skipped: `paths.memory` may itself be a symlink (`validate_paths` allows the final
+    component), and then every group escapes at once. `attach` turns that into a refusal above
+    its first write; the handler turns it into one fixed line.
+    """
+    resolved = root.resolve()
+    found: list[str] = []
+    for group in config.memory.groups:
+        target = contained(
+            root,
+            f"{config.paths.memory}/{group}",
+            allow_final_symlink=True,
+            resolved_root=resolved,
+        )
+        if target.is_dir() and not target.is_symlink():
+            found.append(group)
+    return tuple(found)
