@@ -3,7 +3,7 @@
 One command and not a group, the shape §5.2's contract row states and the shape the skill
 already invokes.
 
-**A `skip` is not a finding.** Two of the fifteen checks cannot be answered by this build —
+**A `skip` is not a finding.** Two of the sixteen checks cannot be answered by this build —
 the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` has not shipped
 a writer for — so an exit code that counted skips would make `doctor` red on every correct
 installation until wave 5. `files` was the third of the two until the release lane shipped the
@@ -11,25 +11,25 @@ record it compares against. Exit 1 is reserved for `red` (C5: findings), and `wa
 reach it either: a budget lowered below the preset and a harness link the trust gate has not
 opened are both correct states somebody should still see.
 
-**Two is the floor and not the count.** Seven more rows have a skip arm that fires on a state
-of the machine rather than on this build — `wrapper` and `files` when no plugin root can be
-vouched for, `files` again on a build that carries no release record, `attached` with no
-overlay recorded or an overlay that could not be asked, `pre-commit` with no overlay root
-recorded, `bundles` and `store-debris` with a store that does not resolve, `diagnostics` with
-no harness data root — and `run_checks` skips fourteen at once when `keelline.toml` is missing
-or will not load. Twelve skip arms in all, and **five of them carry a remedy** — but not
-because they skip on a state: four state skips (`bundles`, `pre-commit`, `store-debris`,
-`diagnostics`) carry nothing, and `pre-commit`'s state is changed by the very command
-`checks._uncorroborated` names. The line is whether the skip is **itself worth acting on**, and
-`checks.Check`'s docstring is where that rule is stated. The plugin-root pair is the case that
-makes it: it is the state in which every hook entry on the machine is silent, nothing else in
-the report says so, and it reports as two quiet `skip` rows — so both carry
-`checks.PLUGIN_ROOT_REMEDY`.
+**Two is the floor and not the count.** Eight more rows have a skip arm that fires on a state of
+the machine rather than on this build — `wrapper` and `files` when no plugin root can be vouched
+for, `files` again on a build that carries no release record, `attached` with no overlay recorded
+or an overlay that could not be asked, `pre-commit` with no overlay root recorded,
+`overlay-requires` with no overlay root recorded or no requirement declared, `bundles` and
+`store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
+`run_checks` skips fifteen at once when `keelline.toml` is missing or will not load. Fourteen skip
+arms in all, and **five of them carry a remedy** — but not because they skip on a state: five state
+skips (`bundles`, `pre-commit`, `overlay-requires`, `store-debris`, `diagnostics`) carry nothing,
+and `pre-commit`'s state is changed by the very command `checks._uncorroborated` names. The line is
+whether the skip is **itself worth acting on**, and `checks.Check`'s docstring is where that rule
+is stated. The plugin-root pair is the case that makes it: it is the state in which every hook
+entry on the machine is silent, nothing else in the report says so, and it reports as two quiet
+`skip` rows — so both carry `checks.PLUGIN_ROOT_REMEDY`.
 
 **The remedies live in `--json` and never in the summary.** §5.2 gives every command one line,
-and fifteen remedies do not fit in one; the skill relays each remedy verbatim from the report,
+and sixteen remedies do not fit in one; the skill relays each remedy verbatim from the report,
 so a remedy absent from `--json` is a remedy the user never sees. The summary renders through
-`findings.listed`, which caps at `LISTED_LIMIT` — an unbounded list of fifteen names pushes the
+`findings.listed`, which caps at `LISTED_LIMIT` — an unbounded list of sixteen names pushes the
 repairing command off the end of the line, which is the defect that constant exists for.
 
 **`--machine` is not gated behind an interactive shell here**, unlike `attach`/`detach`'s. That
@@ -52,8 +52,8 @@ from keelline.result import Result
 def summarise(checks: list[Check]) -> str:
     """One line: the counts, and the names of whichever status most needs reading.
 
-    Red first, then warn, and nothing when neither: a reader who has fifteen green rows does
-    not need fifteen names to say so, and a reader who has one red does not need the warnings
+    Red first, then warn, and nothing when neither: a reader who has sixteen green rows does
+    not need sixteen names to say so, and a reader who has one red does not need the warnings
     in front of it.
     """
     red = [check.name for check in checks if check.status == RED]

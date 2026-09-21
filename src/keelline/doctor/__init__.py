@@ -22,7 +22,7 @@ A check that cannot be answered says `skip` and names what a measurement would n
 check that returned green because it could not look would be strictly worse than one that admits
 it. **Three is the floor and not the count**, and `doctor/commands.py` has the whole of it:
 three checks cannot be answered by this build at all, five more skip on a state of the machine,
-and `run_checks` skips fourteen at once when `keelline.toml` is missing or will not load. The
+and `run_checks` skips fifteen at once when `keelline.toml` is missing or will not load. The
 third of those is easy to meet by hand — `diagnostics` skips whenever no harness data root is
 set, which is every `keelline doctor` run from a terminal rather than from a hook.
 """

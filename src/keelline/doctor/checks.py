@@ -1,4 +1,4 @@
-"""The fifteen checks an installation is judged by (§8.4), and the context they share.
+"""The sixteen checks an installation is judged by (§8.4), and the context they share.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label is "what this lane computed" while the detail "may quote the
@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 import keelline
+from keelline import REPOSITORY_URL
 from keelline.attach.api import (
     LEDGER,
     MISMATCH,
@@ -89,6 +90,7 @@ from keelline.memory.api import (
     render,
     resolve,
 )
+from keelline.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
 from keelline.release.api import HASHED_FILES, UnreadableRecord, digests, read_record
 from keelline.runner import Runner
 from keelline.scaffold import marker_id, owned_ids
@@ -167,17 +169,17 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: five of this module's twelve skip arms carry one.
-    The line is not "always" versus "on a state" — four state skips (`bundles`, `pre-commit`,
-    `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is changed by the very
-    command `_uncorroborated` names. It is whether **the skip is itself worth acting on**: the
-    two rows that report a plugin root nothing can find, which is every hook entry on this
-    machine silent; `wrapper`'s row for a root it will read and never execute; and the two ways
-    a ledger's recorded attach cannot be corroborated. Those five say what to do. The other
-    seven report a measurement that is simply not available — no store, no overlay, no harness
-    data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no
-    command in that row's gift changes it. A reader is never handed a command that would not
-    help, and never denied one that would.
+    an empty remedy merely for being a skip: five of this module's fourteen skip arms carry one.
+    The line is not "always" versus "on a state" — five state skips (`bundles`, `pre-commit`,
+    `overlay-requires`, `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is
+    changed by the very command `_uncorroborated` names. It is whether **the skip is itself worth
+    acting on**: the two rows that report a plugin root nothing can find, which is every hook entry
+    on this machine silent; `wrapper`'s row for a root it will read and never execute; and the two
+    ways a ledger's recorded attach cannot be corroborated. Those five say what to do. The other
+    nine report a measurement that is simply not available — no store, no overlay, no overlay
+    requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to
+    ask Codex — and no command in that row's gift changes it. A reader is never handed a command
+    that would not help, and never denied one that would.
     """
 
     name: str
@@ -197,7 +199,7 @@ class Row:
 
 @dataclass
 class Context:
-    """Everything the fifteen checks read, resolved once.
+    """Everything the sixteen checks read, resolved once.
 
     Built by `run_checks` after `not-initialised` has passed, so `config` is never `None` here:
     a repository whose configuration does not load has nothing else worth asking about, and the
@@ -1142,6 +1144,38 @@ def _pre_commit(context: Context) -> Row:
     return Row(OK, "the overlay's commit-time secret scan is installed")
 
 
+def _overlay_requires(context: Context) -> Row:
+    """§6.1's "refuses to run without it", as the verdict it can be now that an overlay runs
+    nothing (P1): does the Keelline running satisfy the floor the overlay declares.
+
+    A row of its own, gated on a recorded overlay exactly as `pre-commit` is (DC2): the
+    subject is this machine's overlay, not this project, so a `local-only` project on a
+    machine that records one is never red for it. The spec string is the owner's own and is
+    printed as `requires_of` normalised it.
+    """
+    overlay = context.overlay
+    if overlay is None or not overlay.is_dir():
+        return Row(SKIP, "no overlay root is recorded on this machine", "")
+    spec = requires_of(overlay)
+    if spec is None:
+        return Row(SKIP, "the overlay declares no Keelline requirement", "")
+    running = keelline.__version__
+    verdict = satisfies(spec, running)
+    if verdict is None:
+        return Row(
+            WARN,
+            "the overlay's keelline.requires is not a >=X.Y.Z form this Keelline reads",
+            f"write keelline.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
+        )
+    if not verdict:
+        return Row(
+            RED,
+            f"the overlay requires Keelline {spec} and {running} does not satisfy it",
+            f"install a Keelline that satisfies {spec}: uv tool install git+{REPOSITORY_URL}@<tag>",
+        )
+    return Row(OK, f"the overlay requires Keelline {spec}, which {running} satisfies")
+
+
 # git's own spelling for "run this program and talk to it": `ext::<command>` and, generally,
 # `<helper>::<address>`. `--` stops an argument becoming an *option*; it does not stop it
 # becoming a *transport*, and `[ci] ref` is the one variable argument this area hands `git`.
@@ -1330,7 +1364,7 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The fifteen, in the order §8.4 and its cross-references name them. The list is the report's
+# The sixteen, in the order §8.4 and its cross-references name them. The list is the report's
 # order and the only registry there is: a check added here needs no other edit, and a check
 # missing from it is a check nothing runs.
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
@@ -1345,6 +1379,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("bundles", _bundles),
     ("cli-path", _cli_path),
     (PRE_COMMIT_HOOK, _pre_commit),
+    ("overlay-requires", _overlay_requires),
     ("ci-ref", _ci_ref),
     ("store-debris", _store_debris),
     ("diagnostics", _diagnostics),
@@ -1362,7 +1397,7 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
 
     `Exception` and not `BaseException`: what was asked for is that a check which *raises*
     becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
-    one `Ctrl-C` into fifteen red rows and a report, instead of stopping.
+    one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
     `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it too, so a
@@ -1422,7 +1457,7 @@ def run_checks(
     runner: Runner,
     env: Mapping[str, str] | None = None,
 ) -> list[Check]:
-    """The fifteen rows, always fifteen, whatever state the machine is in.
+    """The sixteen rows, always sixteen, whatever state the machine is in.
 
     Four keyword parameters, which is what the plan's `Interfaces:` block names. A fifth,
     `candidates`, used to thread `KEELLINE_PYTHON_CANDIDATES` into the `wrapper` check's

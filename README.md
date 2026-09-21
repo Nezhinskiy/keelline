@@ -149,7 +149,7 @@ mkdir -p .keelline/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .keelline/local/memory/developer/first-note.md
 keelline memory index      # renders .keelline/local/memory/MEMORY.md from the notes
-keelline doctor            # fifteen checks over this installation, one line; --json has the remedies
+keelline doctor            # sixteen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you say
@@ -260,7 +260,7 @@ keelline setup --git-hooks                             # install the commit-mess
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 
 # Diagnosing an installation
-keelline doctor                                       # fifteen checks over this installation, one line
+keelline doctor                                       # sixteen checks over this installation, one line
 keelline doctor --json                                # every check with its status, detail and remedy
 
 # Internal and release

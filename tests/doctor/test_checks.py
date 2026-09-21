@@ -1,6 +1,6 @@
 """What `doctor` answers about an installation, and what it refuses to guess (§8.4).
 
-Two of the fifteen checks cannot be answered by this build and say so rather than guessing;
+Two of the sixteen checks cannot be answered by this build and say so rather than guessing;
 one of them — `codex-trust` — is a platform question §10 lists as unmeasured, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
 
@@ -30,10 +30,11 @@ from keelline.doctor.checks import SETTINGS_FILES, plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.trust import record
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
 from keelline.release.api import HASHED_FILES
 from keelline.runner import Completed
 from tests.gitfixture import git as _git
+from tests.overlay.test_requires import overlay_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -245,7 +246,7 @@ def _attached(tmp_path: Path) -> Path:
 def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_rest(
     tmp_path: Path,
 ) -> None:
-    # §12: "No keelline.toml → plugin hooks silent; doctor reports 'not initialised'." Fifteen
+    # §12: "No keelline.toml → plugin hooks silent; doctor reports 'not initialised'." Sixteen
     # red checks for a repository that never heard of Keelline is noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
@@ -257,7 +258,7 @@ def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
     # A check that raises takes the whole report with it, and a report that cannot run is worth
     # less than a report with one skip line in it.
     checks = _checks(tmp_path, _initialised(tmp_path))
-    assert len(checks) == 15
+    assert len(checks) == 16
     assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
 
 
@@ -1434,7 +1435,7 @@ def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     # Non-vacuous: the report ran and answered about every row.
-    assert len(rows) == 15
+    assert len(rows) == 16
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"
     ]
@@ -1521,7 +1522,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     ]
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 15
+    assert len(names) == 16
     counted = {name: literals.count(name) for name in names}
     assert counted == dict.fromkeys(names, 1), counted
 
@@ -1879,3 +1880,48 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml(tmp_pa
     assert all(row.status == SKIP for row in rows[1:]), [
         (row.name, row.status) for row in rows[1:] if row.status != SKIP
     ]
+
+
+def _recorded_overlay(tmp_path: Path, requires: object) -> Path:
+    """A machine file recording an overlay whose manifest declares `requires`.
+
+    The manifest writer is `tests/overlay/test_requires.py::overlay_with`, shared rather than
+    respelled: one spelling of the declaration the two readers of it are tested against.
+    """
+    overlay = overlay_with(tmp_path / "overlay", requires)
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    return machine
+
+
+def test_overlay_requires_is_red_when_the_overlay_needs_a_newer_keelline(tmp_path: Path) -> None:
+    # Mutation (comment; an advisory row): `if not verdict` -> `if verdict` -> this and the
+    # next case swap verdicts.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == RED and ">=99.0.0" in row.detail and "uv tool install" in row.remedy
+
+
+def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overlay(
+    tmp_path: Path,
+) -> None:
+    machine = _recorded_overlay(tmp_path, " >=0.0.1 ")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == OK and ">=0.0.1" in row.detail and " >=0.0.1 " not in row.detail
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
+    assert row.status == SKIP
+
+
+def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
+    machine = _recorded_overlay(tmp_path, "~=1.0")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == WARN and PLUGIN_MANIFEST in row.remedy
+
+
+def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
+    # DC2's reason for a row of its own: the verdict is the machine's, so the `versions` row
+    # stays about the project and never goes red for this.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
+    assert _by_name(checks, "versions").status == OK
+    assert len(checks) == 16

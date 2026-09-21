@@ -1055,7 +1055,7 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 
 ## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Fifteen checks over one installation. It **reports and never repairs**: every finding
+Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
 **Several subprocesses are run and every one of them only asks.** Keelline's own
@@ -1084,12 +1084,13 @@ nobody sees, so that is where they all are.
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
+| `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies | the overlay's `.claude-plugin/plugin.json` |
 | `ci-ref` | whether `[ci] ref` resolves | `git ls-remote --exit-code` |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Nine of the fifteen have a `skip` arm — twelve arms between them: two always, and seven
+**Ten of the sixteen have a `skip` arm — fourteen arms between them: two always, and eight
 more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
 code, so read the detail — each one says which measurement it is missing.
 
@@ -1098,23 +1099,24 @@ The two that skip on every correct installation are the ones this build cannot a
 a `[ci] ref`, which `init` writes. `files` was the third of these and is not any more: it now
 compares the installed plugin against the hashes the release recorded beside it.
 
-The seven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The eight that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
-recorded on this machine; `bundles` and `store-debris`, when the note store does not resolve;
-and `diagnostics`, when no harness data root is set in the environment. `files` has a second
+recorded on this machine; `overlay-requires`, when no overlay root is recorded or the overlay
+declares no Keelline requirement; `bundles` and `store-debris`, when the note store does not
+resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has a second
 state arm of its own — a plugin built before the release record existed carries none, and it
 says so rather than comparing anything.
 
-**A `skip` does not mean there is nothing to do.** Five of the twelve arms carry a remedy: the
+**A `skip` does not mean there is nothing to do.** Five of the fourteen arms carry a remedy: the
 two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing line
-is not "always" versus "on a state" — `bundles`, `pre-commit`, `store-debris` and `diagnostics`
-all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
+is not "always" versus "on a state" — `bundles`, `pre-commit`, `overlay-requires`,
+`store-debris` and `diagnostics` all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
 five report something wrong that no other row will tell you: a plugin root nothing can find, a
 root that will be read and never executed, a recorded attach the overlay could not confirm. The
-other seven report a measurement that is simply unavailable — no store, no overlay, no harness
-data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no command
-in that row's gift changes it.
+other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
+requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to
+ask Codex — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -1123,7 +1125,7 @@ plugin's own Keelline so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces fourteen of them: with no `keelline.toml` in `--root`,
+One more case is not a skip but produces fifteen of them: with no `keelline.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
 The red row is the one to act on.
 

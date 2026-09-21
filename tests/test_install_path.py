@@ -193,7 +193,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The fifteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
+    """The sixteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
     done = _cli(
         walk,
         "doctor",
@@ -207,7 +207,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 15, rows
+    assert len(rows) == 16, rows
     return rows
 
 

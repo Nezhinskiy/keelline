@@ -10,11 +10,11 @@ that way — a pre-commit hook and a workflow on every push.
 
 **It is not Keelline.** The tool ships separately, as a public plugin and a command-line
 program. This repository carries no code: it carries content Keelline reads, and it depends on
-a Keelline recent enough to understand this layout. That dependency is *declared*, in
-`.claude-plugin/plugin.json` under `keelline.requires` — and **nothing enforces it yet**. No
-code in Keelline or in either harness reads that field, so an older Keelline pointed at this
-overlay will not refuse; it will misread it. Until a release enforces it, the field is a record
-of intent, and `keelline doctor` is what tells you which Keelline you are actually running.
+a Keelline recent enough to understand this layout. That dependency is declared, in
+`.claude-plugin/plugin.json` under `keelline.requires`, and two things read it: `keelline
+doctor` reports red when the Keelline running does not satisfy it, and a session in a bound
+repository says so once at its start. Neither harness reads it, so an older Keelline is told
+rather than stopped.
 
 ## What is where
 
@@ -36,7 +36,7 @@ And these are the machinery. Leave them alone unless you know why:
 | Path | What it holds |
 |---|---|
 | `hooks/hooks.json` | **this repository's own** hook entries as a plugin — not the same file as `common/claude/hooks.json`, which is what `attach` merges into *other* repositories. Both ship as `{"hooks": {}}`; this one fires here, that one fires there. |
-| `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` | what makes this repository installable as a Claude Code plugin, and the one-plugin marketplace that publishes it. `keelline overlay init` suffixes both names with your account. `version` is **this overlay's** own, not Keelline's, and starts at `0.0.0` because you have not released it; `keelline.requires` is the Keelline this layout needs, and is not enforced (above). |
+| `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` | what makes this repository installable as a Claude Code plugin, and the one-plugin marketplace that publishes it. `keelline overlay init` suffixes both names with your account. `version` is **this overlay's** own, not Keelline's, and starts at `0.0.0` because you have not released it; `keelline.requires` is the Keelline this layout needs, and is what `keelline doctor` and a session's first lines read (above). |
 | `.codex-plugin/plugin.json` | the same manifest for Codex. |
 | `.pre-commit-config.yaml` | the gitleaks hook, pinned at a revision: the commit-time half of "no credential enters this repository". `keelline overlay init` installs it. |
 | `.github/workflows/scan.yml` | the push-time half, with every action pinned to a commit sha. |
