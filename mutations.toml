@@ -5113,3 +5113,33 @@ after = "    return {**peeled, **plain}"
 reddens = [
   "tests/release/test_pins.py::test_an_annotated_tag_resolves_to_its_commit_not_its_tag_object",
 ]
+
+[[mutation]]
+name = "unlinked_groups stops refusing an escaping group name with a fixed sentence"
+file = "src/keelline/attach/binding.py"
+before = '''        except PathEscape as exc:
+            # `group` and `config.paths.memory` are repository-authored, so the combined path
+            # `contained` refuses is refused again, fixed text and never quoted back.
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc'''
+after = "        except PathEscape:\n            raise"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_sentence",
+]
+
+[[mutation]]
+name = "is_released stops filtering to semver tags, so the v1 alias counts as a release"
+file = "src/keelline/release/pins.py"
+before = "    return any(value == sha for tag, value in pins.items() if _SEMVER.match(tag))"
+after = "    return any(value == sha for tag, value in pins.items())"
+reddens = [
+  "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
+]
+
+[[mutation]]
+name = "an unknown section's name is no longer bounded before it prints"
+file = "src/keelline/config/loader.py"
+before = "    named = [name for name in unknown if SECTION_NAME.match(name)]"
+after = "    named = list(unknown)"
+reddens = [
+  "tests/config/test_loader.py::test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them",
+]

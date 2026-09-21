@@ -29,7 +29,7 @@ HOSTILE_PATHS = (
     + """
 [paths]
 agents_md = "../../AGENTS.md"
-architecture = "/etc"
+architecture = "../etc"
 runbooks = "../runbooks"
 adr = "../../adr"
 specs = "../specs"
@@ -83,13 +83,21 @@ def load_at(root: Path) -> Config:
 
 
 def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
-    # `architecture = "/etc"` is refused by the `[paths]` grammar (P10, Task 1) before
-    # `contained()` ever sees the rest of this fixture's `..` values — both guards are the
-    # loader's, so either message is "the loader refuses this", which is the whole of what
-    # this test is pinning.
     write_config(tmp_path, HOSTILE_PATHS)
-    with pytest.raises(PathEscape):
+    with pytest.raises(PathEscape, match=r"\.\."):
         load_at(tmp_path)
+
+
+def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_reached() -> None:
+    # Finding 5, fix round 1: with the `[paths]` grammar loop (P10, Task 1) running before any
+    # `contained()` call, an absolute value like the one this fixture used to carry for
+    # `architecture` is refused by the grammar first — `contained()`'s own `..`-shaped message
+    # never fires for it, and folding it into `HOSTILE_PATHS` let one guard silently cover for
+    # the other. Asserted directly against the grammar instead, so `HOSTILE_PATHS` above stays
+    # every value `contained()` itself refuses.
+    from keelline.config.schema import PATH_VALUE
+
+    assert PATH_VALUE.match("/etc") is None
 
 
 def test_the_loader_refuses_a_project_name_that_is_a_path(tmp_path: Path) -> None:

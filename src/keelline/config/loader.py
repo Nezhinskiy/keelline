@@ -18,6 +18,7 @@ from keelline.config.schema import (
     CI_MODES,
     MEMORY_MODES,
     PROJECT_NAME,
+    SECTION_NAME,
     STATES,
     Artifacts,
     Budgets,
@@ -134,6 +135,19 @@ def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
         raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")
 
 
+def _named(unknown: list[str]) -> str:
+    """`unknown`, bounded before it may print (P10): a plain-named table is echoed, anything
+    else is counted and never quoted — a `keelline.toml` table name is repository-authored the
+    same way a `[paths]` value is, so this is `PATH_VALUE`'s rule read onto a second grammar."""
+    named = [name for name in unknown if SECTION_NAME.match(name)]
+    unnamed = len(unknown) - len(named)
+    parts = list(named)
+    if unnamed:
+        verb = "is" if unnamed == 1 else "are"
+        parts.append(f"{unnamed} more that {verb} not plain section names")
+    return ", ".join(parts)
+
+
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     configured = _table(raw, "budgets")
     unknown = sorted(set(configured) - set(Budgets.NAMES))
@@ -218,7 +232,7 @@ def loads(
         raise ConfigError(f"{path} is not valid TOML: {exc}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
-        raise ConfigError(f"{path} has unknown section(s): {', '.join(unknown)}")
+        raise ConfigError(f"{path} has unknown section(s): {_named(unknown)}")
 
     head = _table(raw, "keelline")
     preset_name = str(head.get("preset", "recommended"))

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.config.loader import load
-from keelline.config.paths import contained
+from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import (
@@ -55,6 +55,17 @@ STORE_DIR = "memory"
 NO_OVERLAY = (
     "no overlay root is recorded in the machine configuration, so there is nothing to bind "
     "this repository to; run `keelline setup` first"
+)
+# `memory.groups` is one of the four fields `config.paths`' own docstring names as bounded by no
+# grammar, so a group name is repository-authored bytes the same way `project.name` is (Task 1,
+# DC6) — refused rather than quoted back. Fixed text, naming the two keys and never the value.
+# Distinct from `attach.write.GROUP_ESCAPES`, which is the same shape for a different escape (a
+# group leaving the *overlay's* share, at write time); this one is `unlinked_groups`' own, so
+# the handler this seam exists for (Task 6) and `unlinked_groups`' own caller cannot spell it
+# twice between them.
+MEMORY_GROUP_ESCAPES = (
+    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
+    "rather than counted"
 )
 
 
@@ -166,17 +177,26 @@ def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
     never a value the repository chose — and a group `contained` refuses against it is raised,
     not skipped: `paths.memory` may itself be a symlink (`validate_paths` allows the final
     component), and then every group escapes at once. `attach` turns that into a refusal above
-    its first write; the handler turns it into one fixed line.
+    its first write; the handler turns it into one fixed line. `PathEscape` propagates as the
+    refusal it is (Task 6, Task 14 both catch this type), but its message does not: `group` and
+    `paths.memory` are repository-authored, one of the four fields `config.paths` names as
+    bounded by no grammar, so `contained`'s own message — which would print the whole escaping
+    path — is replaced with `MEMORY_GROUP_ESCAPES` before it propagates.
     """
     resolved = root.resolve()
     found: list[str] = []
     for group in config.memory.groups:
-        target = contained(
-            root,
-            f"{config.paths.memory}/{group}",
-            allow_final_symlink=True,
-            resolved_root=resolved,
-        )
+        try:
+            target = contained(
+                root,
+                f"{config.paths.memory}/{group}",
+                allow_final_symlink=True,
+                resolved_root=resolved,
+            )
+        except PathEscape as exc:
+            # `group` and `config.paths.memory` are repository-authored, so the combined path
+            # `contained` refuses is refused again, fixed text and never quoted back.
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc
         if target.is_dir() and not target.is_symlink():
             found.append(group)
     return tuple(found)

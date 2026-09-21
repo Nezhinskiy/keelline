@@ -14,6 +14,10 @@ PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
 # The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
 # decides whether it may be written, and a shape rule cannot bound a charset.
 PATH_VALUE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z")
+# The grammar an unknown top-level section's name must match before a refusal may print it: a
+# `keelline.toml` table name is repository-authored the same way a `[paths]` value is, and the
+# loader's own refusal used to echo it back whole, newlines and all (P10, fix round 1, finding 2).
+SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 STATES = ("initialised", "adopting", "installed")
 MEMORY_MODES = ("overlay", "in-repo", "local-only")
 CI_MODES = ("reusable", "uvx", "none")
