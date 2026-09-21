@@ -45,7 +45,8 @@ adds:
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
-  nothing reads that declaration yet, so it is a record and not a precondition.
+  `keelline doctor` reads it and reports red when the Keelline running is too old, and a
+  session in a bound repository says so once at its start.
 
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not

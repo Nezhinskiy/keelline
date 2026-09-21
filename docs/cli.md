@@ -343,6 +343,29 @@ is silent rather than closed. The wrapper cannot defend its own mode, so `keelli
 what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
 it after anything that rewrites the plugin directory.
 
+**What a session hears about the overlay it is bound to: `overlay-status`.** The `attach` area
+registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks once per session
+rather than again on every `resume`, `clear` and `compact` the matcher above covers — and it says
+nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
+count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
+**could not be asked** about, which is a machine configuration file that will not parse; this
+repository **not attached** to that overlay, or the overlay recording **a different remote**
+under this project's name; **a memory path refused**, so the notes were not examined at all; how
+many note groups are **real directories** rather than links into the overlay; the overlay's
+`keelline.requires` in **a form this Keelline cannot read**, or naming **a floor this Keelline
+does not meet**; and — only when none of those fired — the overlay's branch having **no
+upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
+up-to-date repository on a satisfied Keelline hears nothing. Not one byte a repository wrote
+reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
+read and none is quoted back, because the field these lines land in is `additionalContext` —
+model input with no delimiter and no trust record. The last two lines cost two `git` calls at two
+seconds each and are skipped whenever an earlier line already asks for an action, which is what
+keeps the handler inside the entry's own ten-second budget alongside the one `origin` query the
+binding needs. And the overlay is never a plugin Keelline executes anything from — its
+`hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
+`projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
+merge.
+
 ## `keelline guard bg-cleanup`
 
 Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
