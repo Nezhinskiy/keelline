@@ -4674,7 +4674,7 @@ reddens = [
   "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
 ]
 
-# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a sixteenth spelling of the check
+# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check
 # names that `tests/doctor/test_checks.py` cannot see, in the branch that built this binding
 # for two other tables.
 [[mutation]]

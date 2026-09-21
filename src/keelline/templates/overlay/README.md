@@ -11,10 +11,10 @@ that way — a pre-commit hook and a workflow on every push.
 **It is not Keelline.** The tool ships separately, as a public plugin and a command-line
 program. This repository carries no code: it carries content Keelline reads, and it depends on
 a Keelline recent enough to understand this layout. That dependency is declared, in
-`.claude-plugin/plugin.json` under `keelline.requires`, and two things read it: `keelline
-doctor` reports red when the Keelline running does not satisfy it, and a session in a bound
-repository says so once at its start. Neither harness reads it, so an older Keelline is told
-rather than stopped.
+`.claude-plugin/plugin.json` under `keelline.requires`, and two things read it:
+`keelline doctor` reports red when the Keelline running does not satisfy it, and a session
+in a bound repository says so once at its start. Neither harness reads it, so an older
+Keelline is told rather than stopped.
 
 ## What is where
 
