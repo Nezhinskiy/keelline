@@ -25,14 +25,13 @@ repository-root walk would have found it.
 from __future__ import annotations
 
 from functools import partial
-from importlib import resources
 from pathlib import Path
 
 from keelline.errors import Failure
 from keelline.overlay.layout import OVERLAY_FILES
 from keelline.scaffold import Kind, Template
+from keelline.templates import tree
 
-TEMPLATES = "templates"
 OVERLAY = "overlay"
 
 
@@ -41,14 +40,13 @@ def template_root() -> Path:
 
     A path is always returned, existing or not, so a caller that cannot find the tree can name
     where it looked instead of handling a `None`. `templates()` is the one place that becomes a
-    refusal a user can act on.
+    refusal a user can act on. `keelline.templates.tree` is the one resolver both this tree and
+    `project/`'s answer through (DC9), so the two cannot come to disagree about where "shipped"
+    is — `resources.files` answers a `Path` for every filesystem install, which is every install
+    this project supports; `fsops` contains writes with `dir_fd=` and `O_NOFOLLOW`, so a
+    zip-imported Keelline could not write an overlay in any case.
     """
-    package = resources.files("keelline").joinpath(TEMPLATES, OVERLAY)
-    # `resources.files` answers a `Path` for every filesystem install, which is every install
-    # this project supports — `fsops` contains writes with `dir_fd=` and `O_NOFOLLOW`, so a
-    # zip-imported Keelline could not write an overlay in any case. Anything else is named
-    # rather than guessed at: the result will not be a directory, and `templates()` says so.
-    return package if isinstance(package, Path) else Path(str(package))
+    return tree(OVERLAY)
 
 
 def _render(path: Path) -> str:

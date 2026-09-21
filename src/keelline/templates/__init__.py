@@ -1,0 +1,23 @@
+"""Where the shipped template trees are, for the two areas that render one.
+
+`overlay create --local` renders `overlay/` and `init` renders `project/`; both are read at
+runtime, so the copy that answers is the one an installed Keelline carries under its module
+root (`overlay/template.py` records why there is no checkout fallback). One resolver, so the
+two areas cannot come to disagree about where "shipped" is.
+"""
+
+from __future__ import annotations
+
+from importlib import resources
+from pathlib import Path
+
+ROOT = "templates"
+
+
+def tree(name: str) -> Path:
+    """The directory `keelline/templates/<name>/` resolves to for this installation.
+
+    Existing or not, so a caller that cannot find the tree can name where it looked.
+    """
+    package = resources.files("keelline").joinpath(ROOT, name)
+    return package if isinstance(package, Path) else Path(str(package))

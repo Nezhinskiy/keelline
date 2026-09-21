@@ -35,6 +35,11 @@ none outside this area: `upgrade` is driven by this area's own command module, a
 tree was published against a sentence — "the release lane will need the template tree" — about a
 lane that does not exist yet. That lane grows the list when it arrives, which is what this
 docstring asks of every other lane.
+
+`requires_of`, `satisfies`, `Sync` and `overlay_sync` are published for `doctor` (the
+`overlay-requires` row) and the `attach` area's session-start handler, which arrived with
+wave 4; the floor is one grammar and two readers, and the overlay's sync state is the
+overlay's question, asked where the overlay is owned.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -48,6 +53,8 @@ from keelline.overlay.layout import (
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
+from keelline.overlay.requires import requires_of, satisfies
+from keelline.overlay.sync import Sync, overlay_sync
 
 __all__ = [
     "CODEX_PLUGIN_MANIFEST",
@@ -59,9 +66,13 @@ __all__ = [
     "PLUGIN_MANIFEST",
     "Created",
     "Initialised",
+    "Sync",
     "create",
     "init_instance",
     "overlay_fault",
+    "overlay_sync",
     "require_overlay",
+    "requires_of",
+    "satisfies",
     "target_root",
 ]

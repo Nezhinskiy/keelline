@@ -44,5 +44,13 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # outside `src/`, and the one the wave-3 trim did not see because the boundary walk
         # stopped at `src/`
         "OVERLAY_FILES",
+        # the floor an overlay declares and whether a running Keelline meets it, for `doctor`'s
+        # `overlay-requires` row (wave 4)
+        "requires_of",
+        "satisfies",
+        # the overlay repository's own sync state, for the `attach` area's session-start
+        # handler (wave 4, DC1, DC12)
+        "Sync",
+        "overlay_sync",
     }
     assert required == set(overlay.__all__)
