@@ -174,7 +174,9 @@ def init(
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
         config = loads(HEADER + dumps(tables), root, machine=machine)
     document = HEADER + dumps(tables)
-    prepared = project_templates(root, config, resolution=resolution, document=document)
+    prepared = project_templates(
+        root, config, resolution=resolution, document=document, adopted=existing is not None
+    )
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.

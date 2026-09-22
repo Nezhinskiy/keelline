@@ -724,6 +724,16 @@ and the only one `init` renders — the documented mutable `v1` alias is a file 
 and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
 sets `[ci] mode = "none"` in the document and asks no remote anything.
 
+**The two states about the remote are reported only on a run that creates the document.** On the
+adoption path the answer is the fifth one whatever the remote said, because it is the whole
+reason: a pin this run resolved would be written into a create-once file that is already there,
+so nothing would record it. Reporting "run `keelline init --yes` again with the network
+reachable" there would send you to the network for a file you have to edit by hand — and by the
+time you read it, `.keelline/manifest.json` exists and `init` refuses to run again at all. Write
+a released commit into `[ci] ref` **before** you initialise the repository and `init` renders the
+workflow around it; afterwards the workflow is yours to write, or `keelline upgrade` (ships
+later) writes it.
+
 **Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
 detected values and for the public repository's tags, and every file an artifact targets.
 **Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the

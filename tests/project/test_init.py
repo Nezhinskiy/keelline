@@ -43,7 +43,7 @@ class _Git:
 
 def _repo(tmp_path: Path) -> Path:
     root = tmp_path / "widget"
-    root.mkdir()
+    root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
     git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
     return root
@@ -246,6 +246,40 @@ def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path)
     assert report.ref == "" and not (root / ".github").exists()
     assert report.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ""
+
+
+@needs_git
+def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
+    tmp_path: Path,
+) -> None:
+    """The flag has to travel, and it did not: `init` held `existing is None` and passed none of
+    it to `project_templates`, so `_ci` could not tell an adoption from a creation.
+
+    This is the ordinary adoption path — a hand-written `keelline.toml`, the preset's
+    `[ci] mode = "reusable"`, no `[ci] ref` — with the remote unreachable (`git` exits 128,
+    which `released` reads as "could not ask") and with it answering that no tag matches. Both
+    used to print a sentence about the network; neither is the reason, and running again cannot
+    help, because `.keelline/manifest.json` is on disk after this run and `init` refuses a
+    repository that has one.
+
+    Mutation (oracle): drop `adopted=existing is not None` back to a literal `False` -> both
+    cases print the resolution's own sentence and redden.
+    """
+    for code, stdout in ((128, ""), (2, "")):
+        root = _repo(tmp_path / f"case-{code}")
+        (root / CONFIG_FILE).write_text(
+            '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+        )
+        report = _init(root, tmp_path, runner=_Git(stdout=stdout, code=code))
+        assert report.adopted and report.ref == "" and not (root / ".github").exists()
+        reason = report.skipped["ci-workflow"]
+        assert reason.startswith("the keelline.toml this repository already"), (code, reason)
+        assert "network reachable" not in reason and "no released Keelline tag" not in reason
+    # And the manifest the run just wrote is what makes "run `init` again" the wrong remedy, so
+    # the sentence does not give it: this is the state an operator is actually left in.
+    assert (root / MANIFEST_PATH).is_file()
+    with pytest.raises(Refusal, match="re-running `init` is"):
+        _init(root, tmp_path)
 
 
 @needs_git

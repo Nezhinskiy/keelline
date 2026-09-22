@@ -14,7 +14,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
-from keelline.project.templates import PATH_KEYS, fill, read
+from keelline.project.templates import NO_REF, PATH_KEYS, fill, read
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
@@ -28,9 +28,18 @@ PINNED = Resolution(Pin("v0.1.0", SHA), True)
 
 
 def _prepared(
-    config: Config, *, resolution: Resolution = NO_PIN, root: Path = Path("/nonexistent/root")
+    config: Config,
+    *,
+    resolution: Resolution = NO_PIN,
+    root: Path = Path("/nonexistent/root"),
+    adopted: bool = False,
 ) -> Prepared:
-    return project_templates(root, config, resolution=resolution, document=DOCUMENT)
+    """This file's default is the run that *creates* `keelline.toml`, which is the path on which
+    the three "why there is no ref" sentences are the answers. `adopted=True` is the other kind
+    of run, and it has one answer; the case below holds that."""
+    return project_templates(
+        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted
+    )
 
 
 def _recording(config: Config, ref: str = SHA) -> Config:
@@ -148,9 +157,10 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     )
     skipped = _prepared(config, resolution=Resolution(None, False), root=tmp_path).skipped
     assert "could not be asked" in skipped["ci-workflow"]
-    # A pin resolved and the document records no ref: the adoption path, where nothing this run
-    # resolved reaches the file. No workflow, and the reason says which of the three it is.
-    no_ref = _prepared(config, resolution=PINNED, root=tmp_path)
+    # A pin resolved and the document records no ref. On a run that creates the document this is
+    # unreachable — `init` records the pin it resolved — so the case is stated on the adoption
+    # path, where it is the ordinary one.
+    no_ref = _prepared(config, resolution=PINNED, root=tmp_path, adopted=True)
     assert "ci-workflow" not in {t.id for t in no_ref.footprint}
     assert no_ref.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
     footprint = _prepared(_recording(config), resolution=PINNED, root=tmp_path).footprint
@@ -173,6 +183,42 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
         "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
     )
     assert "rm -rf" not in pinned_hostile.skipped["ci-workflow"]
+
+
+def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit(
+    tmp_path: Path,
+) -> None:
+    """`_ci`'s own docstring states the rule, and the code had the inverse of it.
+
+    `project_templates` took no adoption flag, so `_ci` saw only a `Resolution` and could not
+    tell which kind of run it was in. Under the preset's `[ci] mode = "reusable"`, on a
+    repository with a hand-written `keelline.toml` and no `[ci] ref` — the ordinary adoption
+    path — an unreachable remote printed "run `keelline init --yes` again with the network
+    reachable" and a pre-release Keelline printed "no released Keelline tag matches the version
+    running". Neither is why there is no workflow, and running again cannot produce one:
+    `keelline.toml` is a `Kind.ONCE` artifact already on disk, so no pin any run resolves is ever
+    recorded and the workflow is skipped again, for ever.
+
+    All three states are one answer here, and the same one. Asserted as the whole text and not a
+    prefix, so a run that reached `NO_REF` through a different arm cannot pass for this.
+
+    Mutation (oracle): `if adopted:` -> `if False:` -> the first two cases fall through to the
+    resolution's own arms and redden.
+    """
+    config = preset_defaults("widget")
+    for resolution in (Resolution(None, False), NO_PIN, PINNED):
+        prepared = _prepared(config, resolution=resolution, root=tmp_path, adopted=True)
+        assert "ci-workflow" not in {t.id for t in prepared.footprint}, resolution
+        assert prepared.skipped["ci-workflow"] == NO_REF, resolution
+    # And the network's own answers still print on the run that creates the document, which is
+    # the only run they are the reason for: a pin written there does reach the file.
+    assert (
+        "could not be asked"
+        in _prepared(config, resolution=Resolution(None, False), root=tmp_path).skipped[
+            "ci-workflow"
+        ]
+    )
+    assert _prepared(config, root=tmp_path).skipped["ci-workflow"].startswith("no released")
 
 
 def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line(
@@ -279,7 +325,7 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     for this module to raise something other than its own refusal."""
     config = _recording(preset_defaults("widget"))
     prepared = project_templates(
-        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT
+        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT, adopted=False
     )
     ids = {t.id for t in (*prepared.once, *prepared.footprint)}
     # The walk is stated non-empty first, and at its full size: a `Prepared` that built nothing

@@ -30,7 +30,9 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
     shutil.copytree(SMOKE, root)
     config = load(root, machine=tmp_path / "absent.toml")
     document = (root / CONFIG_FILE).read_text(encoding="utf-8")
-    prepared = project_templates(root, config, resolution=Resolution(None, True), document=document)
+    prepared = project_templates(
+        root, config, resolution=Resolution(None, True), document=document, adopted=True
+    )
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)
     # The walk is stated non-empty first: an empty artifact list would satisfy both assertions

@@ -82,11 +82,27 @@ NO_CI = "[ci] mode is none"
 # document is a create-once artifact that is already there, so a pin this run resolved would be
 # recorded nowhere, and a workflow pinned to it would be the ref `doctor` reports as disagreeing
 # with `[ci] ref` on the very next run.
+#
+# It answers that whole path and not one case of it, so the second sentence says what the first
+# one leaves open: the remote's answer is not the reason and asking again is not the remedy.
+# Without it the wording reads as "a pin resolved and nothing recorded it", and the two states
+# that reach here with no pin — the remote unreachable, no released tag — were reported with
+# `NOT_ASKED` and `NO_TAG`, both of which send the operator to the network for a file they have
+# to edit by hand.
+#
+# The remedy names the one run that can still act on it. "Run `keelline init --yes` again" was
+# already dead where this sentence prints from a completed run: `apply` persists
+# `.keelline/manifest.json`, and `init` refuses a repository that has one ("re-running `init` is
+# `keelline upgrade`, which ships later"). Measured on a repository adopted with no `[ci] ref`:
+# the second run is a refusal, not a workflow. So the sentence says which run the pin has to be
+# in place for, and who writes the file after that.
 NO_REF = (
     "the keelline.toml this repository already had records no [ci] ref, and `init` does not "
-    "write into a document it did not create — so a workflow would pin a ref nothing records; "
-    "write a released commit into [ci] ref by hand and run `keelline init --yes` again, or wait "
-    "for `keelline upgrade` (ships later)"
+    "write into a document it did not create — so a workflow would pin a ref nothing records. "
+    "That is the whole reason, whatever this run could or could not resolve from the public "
+    "repository: write a released commit into [ci] ref by hand, and `keelline init --yes` "
+    "renders the workflow around it on a repository it has not initialised yet; on one it "
+    "already has, the workflow is yours to write, or wait for `keelline upgrade` (ships later)"
 )
 BAD_REF = (
     "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; the "
@@ -209,7 +225,9 @@ def _template(
     )
 
 
-def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | None]:
+def _ci(
+    config: Config, resolution: Resolution, *, adopted: bool
+) -> tuple[Template | None, str | None]:
     """The rendered workflow, or the one sentence saying why this configuration gets none.
 
     The ref rendered is `config.ci.ref` and never `resolution.pin` — see the module docstring's
@@ -217,6 +235,16 @@ def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | 
     there is none: "the remote could not be asked" and "no released tag matches" are different
     findings from "the document this repository already had records none", and a run that
     collapsed them would send an operator to the network for a file they have to edit.
+
+    **`adopted` is read before `resolution` is, and that order is the rule above.** This
+    function had the inverse of its own docstring: it could not see which kind of run it was in,
+    so on a repository with a hand-written `keelline.toml` — the ordinary adoption path, under
+    the preset's `[ci] mode = "reusable"` — an unreachable remote was reported as `NOT_ASKED`
+    ("run `keelline init --yes` again with the network reachable") and a pre-release Keelline as
+    `NO_TAG`. Running again cannot help either one: `keelline.toml` is a `Kind.ONCE` artifact
+    already on disk, so no pin this run or any later run resolves is ever recorded, and the
+    workflow is skipped again for ever. The remote's answer is not what is missing here, and
+    `NO_REF` is the sentence that says what is.
     """
     if config.ci.mode == "none":
         return None, NO_CI
@@ -224,6 +252,8 @@ def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | 
         return None, UVX_LATER
     ref = config.ci.ref
     if not ref:
+        if adopted:
+            return None, NO_REF
         if not resolution.asked:
             return None, NOT_ASKED
         if resolution.pin is None:
@@ -293,12 +323,17 @@ def _one_target_each(templates: Sequence[Template]) -> None:
 
 
 def project_templates(
-    root: Path, config: Config, *, resolution: Resolution, document: str
+    root: Path, config: Config, *, resolution: Resolution, document: str, adopted: bool
 ) -> Prepared:
     """The footprint this configuration asks for, split into the engine's two passes (DC3).
 
     `trail_path` contains its answer against `root`, so `relative_to(root)` hands the engine
     the relative target it re-contains rather than an absolute one it would refuse.
+
+    `adopted` says whether this run read a `keelline.toml` it did not write, and it is threaded
+    rather than derived: `_ci` cannot tell the two kinds of run apart from a `Config` and a
+    `Resolution`, and every sentence it can print about a missing `[ci] ref` is wrong for one of
+    them. It has no default, because a caller that forgot one would silently get the wrong half.
     """
     p = config.paths
     once = (
@@ -361,7 +396,7 @@ def project_templates(
         ),
     ]
     skipped: dict[str, str] = {}
-    workflow, reason = _ci(config, resolution)
+    workflow, reason = _ci(config, resolution, adopted=adopted)
     if workflow is not None:
         footprint.append(workflow)
     elif reason is not None:

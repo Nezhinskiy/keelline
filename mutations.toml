@@ -5601,3 +5601,33 @@ after = '                LINES=_budget(config, "agents_md_words"),'
 reddens = [
   "tests/project/test_templates.py::test_the_skeleton_states_the_budgets_this_project_will_be_held_to",
 ]
+
+# `_ci`'s docstring states the rule this restores — "a run that collapsed them would send an
+# operator to the network for a file they have to edit" — and the code had the inverse of it,
+# because `project_templates` took no adoption flag and `_ci` could not tell the two kinds of
+# run apart. Under the preset's `[ci] mode = "reusable"` on a repository with a hand-written
+# `keelline.toml`, an unreachable remote printed "run `keelline init --yes` again with the
+# network reachable". Running again cannot help: `keelline.toml` is a `Kind.ONCE` artifact
+# already on disk, so no pin is ever recorded and the workflow is skipped again for ever.
+[[mutation]]
+name = "the adoption path is sent back to the network for a file it has to edit by hand"
+file = "src/keelline/project/templates.py"
+before = '''        if adopted:
+            return None, NO_REF'''
+after = '''        if False:
+            return None, NO_REF'''
+reddens = [
+  "tests/project/test_templates.py::test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit",
+  "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
+
+# The other half: the flag exists and has to travel. `init` held `existing is None` and passed
+# none of it, which is how the branch above came to be unreachable in the first place.
+[[mutation]]
+name = "init stops telling project_templates which kind of run this is"
+file = "src/keelline/project/init.py"
+before = "adopted=existing is not None"
+after = "adopted=False"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
