@@ -5525,3 +5525,49 @@ reddens = [
   "tests/config/test_paths.py::test_contained_refuses_every_spelling_the_write_would_refuse",
   "tests/scaffold/test_containment.py::test_a_target_that_survives_plan_is_one_apply_can_write",
 ]
+
+# B2. A containment ruling and its anchor's provenance. Nothing reserved git's control
+# directory: `PATH_VALUE` admits a leading dot, and `contained()` and this walk each refused an
+# absolute path, `..` and a symlink — a control directory is none of those. So a clone could aim
+# a `MANAGED_REGION` artifact at `.git/hooks/pre-commit`, which the engine's "exists and
+# Keelline did not write it" guard exempts, and `_mode_of` then carried the developer's 0755
+# onto the replacement. The anchor is the project root the CLI resolved and `.git` is git's own
+# name inside it, so the clone — which authors the path string and nothing else — cannot move
+# the directory being reserved. Measured: with the check dropped here, `write_within` creates
+# `.git/keelline-roadmap.md` and rewrites an existing executable `pre-commit` in place at 0755.
+[[mutation]]
+name = "the walk writes inside git's control directory again"
+file = "src/keelline/fsops.py"
+before = "    if names_control_directory(relative):"
+after = "    if False:"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/test_fsops.py::test_an_existing_git_hook_is_never_rewritten_in_place",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+]
+
+# The same rule where it can name the key instead of quoting the value. Separate from the walk's
+# copy because the refusal a user reads for a `[paths]` value must not print that value back,
+# and because a guard proven only through the layer beneath it is a guard that can be deleted
+# with nothing going red.
+[[mutation]]
+name = "a [paths] value may name git's control directory again"
+file = "src/keelline/config/paths.py"
+before = "        if names_control_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted",
+]
+
+# The case half, on its own. A rule that matched `.git` exactly would be green on every test
+# above that does not spell `.GIT`, and the default filesystem on macOS is case-insensitive, so
+# `.GIT/hooks/pre-commit` reaches the developer's hook there.
+[[mutation]]
+name = "the control-directory rule stops folding case, so .GIT reaches the same directory"
+file = "src/keelline/fsops.py"
+before = "    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+after = "    return any(part == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+]

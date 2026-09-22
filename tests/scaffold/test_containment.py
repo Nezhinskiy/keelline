@@ -220,6 +220,57 @@ def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None
     assert sorted(p.name for p in tmp_path.iterdir()) == [CONFIG_FILE]
 
 
+# --- git's control directory ------------------------------------------------------------------
+
+
+def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
+    tmp_path: Path,
+) -> None:
+    # B2, end to end through the table a clone actually commits, and with the developer's own
+    # hook on disk so the assertion is about the file and not only about the exception. The
+    # `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
+    # not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried
+    # the existing 0755 onto the replacement.
+    root = tmp_path / "project"
+    (root / ".git" / "hooks").mkdir(parents=True)
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho real hook\n", encoding="utf-8")
+    hook.chmod(0o755)
+    write_config(
+        root,
+        VALID_HEAD + '\n[paths]\nagents_md = ".git/hooks/pre-commit"\n',
+    )
+    with pytest.raises(PathEscape, match="control directory"):
+        load_at(root)
+    assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho real hook\n"
+    assert not (root / ".keelline").exists()
+    assert sorted(p.name for p in (root / ".git").iterdir()) == ["hooks"]
+
+
+def test_the_engine_refuses_a_control_directory_target_the_loader_never_sees(
+    tmp_path: Path,
+) -> None:
+    # The second guard, on its own. A template target is not a `[paths]` value — the engine
+    # builds it from `Location` and the artifact's own name — so it never passes through
+    # `validate_paths`, and `contained()` is the only thing between it and the walk. Asserted
+    # with a plan rather than through `load`, so this arm cannot be satisfied by the grammar
+    # loop above it.
+    write_config(tmp_path, VALID_HEAD)
+    templates = [
+        Template(
+            id="hook",
+            kind=Kind.TEMPLATE,
+            target=".git/hooks/pre-commit",
+            source="t",
+            render=lambda: "x",
+        )
+    ]
+    result = plan(tmp_path, load_at(tmp_path), templates)
+    assert result.actions == ()
+    assert [r.artifact_id for r in result.refusals] == ["hook"]
+    assert "control directory" in result.refusals[0].reason
+
+
 # --- the two fields nobody guards yet ---------------------------------------------------------
 
 

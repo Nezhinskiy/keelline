@@ -57,10 +57,45 @@ NEW_FILE_MODE = 0o644
 _DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _PARENT = ".."
 _HERE = "."
+# Git's control directory, reserved at every depth and in any case.
+#
+# **Where the anchor comes from.** The rule is "no component of a path *relative to a root* may
+# be git's control directory", and the root is the checkout a person handed the CLI — resolved
+# by `project.detect`, or passed on the command line. `.git` is git's own name inside that
+# root. So the party being contained is the clone, which authors the path string and can author
+# nothing else here: it cannot move `.git`, cannot choose the root, and cannot rename the
+# directory out from under this check.
+#
+# **Case-insensitively**, because the default filesystem on macOS is case-insensitive and
+# `.GIT/hooks/pre-commit` reaches the same file there; **at every depth**, because a `.git`
+# below the top is a submodule's control directory and is exactly as off-limits.
+#
+# **`.git` and not "a leading dot".** `.github/workflows/keelline.yml` is an artifact this
+# project ships and `.keelline/manifest.json` is its own ledger, so a leading-dot rule would
+# refuse Keelline's own footprint. `.gitignore`, `.gitattributes` and `.gitkeep` are ordinary
+# files and are untouched by an equality test on the whole component.
+#
+# The one place Keelline does write inside `.git` is `guards.githooks.install`, and it does not
+# come through here: git itself names the directory (`rev-parse --git-path hooks`), the result
+# is an absolute path this process computed, and the write is `write_atomically`, the plain-path
+# form for a caller that already holds a trusted path. No repository-authored string reaches it.
+CONTROL_DIRECTORY = ".git"
 
 
 class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
+
+
+def names_control_directory(relative: str) -> bool:
+    """Whether any component of `relative` is git's control directory, spelled in any case.
+
+    Public and separate from the walk, because two callers need the same answer and must not
+    each write their own version of it: `checked_components` refuses on it, and
+    `config.paths.validate_paths` asks it a key at a time so its refusal can name the key
+    without printing the repository-authored value. See `CONTROL_DIRECTORY` for the rule and
+    for where its anchor comes from.
+    """
+    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split("/"))
 
 
 def checked_components(relative: str) -> tuple[str, ...]:
@@ -88,7 +123,15 @@ def checked_components(relative: str) -> tuple[str, ...]:
     * `..`, which walks out one component at a time; and `.`, and an empty segment (`a//b`, a
       trailing slash), which are merely odd rather than dangerous — refused because this
       function's answer is what five later lanes will read as "contained", and a surface that
-      quietly rewrites its argument is a surface whose guarantee has to be restated per caller.
+      quietly rewrites its argument is a surface whose guarantee has to be restated per caller;
+    * and git's control directory, at any depth and in any case — see `CONTROL_DIRECTORY`.
+      Staying inside the root is not the whole of containment for a repository-scoped tool:
+      `.git/hooks/pre-commit` is inside every root Keelline is ever handed, and a clone that
+      pointed a `MANAGED_REGION` artifact at it had the developer's executable hook rewritten
+      in place, because `_mode_of` carries an existing file's 0755 onto the replacement. This
+      is the last line before the write, under `contained()` rather than instead of it, and it
+      covers the callers that never had a configured string to check — `attach`, `overlay` and
+      `hooks-core` all pass paths that `contained()` never sees.
     """
     if relative.startswith("/"):
         raise UnsafePath(f"{relative!r} is absolute; a path here must stay inside the root")
@@ -102,6 +145,11 @@ def checked_components(relative: str) -> tuple[str, ...]:
             raise UnsafePath(
                 f"{relative!r} contains {part!r}; a path here must stay inside the root"
             )
+    if names_control_directory(relative):
+        raise UnsafePath(
+            f"{relative!r} names {CONTROL_DIRECTORY!r}; git's control directory is not a "
+            "repository-scoped tool's to write into"
+        )
     return parts
 
 

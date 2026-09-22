@@ -244,3 +244,50 @@ def test_contained_refuses_every_spelling_the_write_would_refuse(tmp_path: Path)
     for value in REFUSED:
         with pytest.raises(PathEscape):
             contained(tmp_path, value)
+
+
+def test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted(
+    tmp_path: Path,
+) -> None:
+    # B2. `.git` was reserved by nothing: the grammar admits a leading dot, and `contained()`
+    # refused an absolute path, `..` and a symlink but not a control directory. The `agents-md`
+    # artifact is a `MANAGED_REGION`, so it is exempt from the engine's "exists and Keelline did
+    # not write it" guard and takes the `region_update` path — and `fsops._mode_of` carries the
+    # existing 0755 onto the replacement, so a clone got the developer's own pre-commit hook
+    # rewritten in place by choosing one string in its own `keelline.toml`.
+    #
+    # The refusal names the key and never the value, which is the rule `validate_paths` already
+    # follows for the charset. Mutation (oracle): drop the check from `validate_paths`.
+    text = (
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[paths]\nagents_md = ".git/hooks/pre-commit"\n'
+    )
+    with pytest.raises(PathEscape) as caught:
+        loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    assert "paths.agents_md" in str(caught.value)
+    assert "pre-commit" not in str(caught.value) and "hooks" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [".git/hooks/pre-commit", ".GIT/config", "vendor/lib/.git/hooks/pre-commit", ".git"],
+)
+def test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case(
+    tmp_path: Path, value: str
+) -> None:
+    # `contained()` is the function every configured path and every lane-supplied path goes
+    # through above the first write, so the rule has to hold here and not only in the grammar
+    # loop: `ledger`, `memory` and `docs` all call it with strings `validate_paths` never sees.
+    # The case arm is not decoration — the default filesystem on macOS is case-insensitive, so
+    # `.GIT` reaches the same directory — and the depth arm is a submodule's control directory.
+    with pytest.raises(PathEscape, match="control directory"):
+        contained(tmp_path, value)
+
+
+def test_keellines_own_dotted_footprint_is_not_refused(tmp_path: Path) -> None:
+    # The ruling this rule is narrow for: `.github/workflows/keelline.yml` is an artifact this
+    # branch ships and `.keelline/` holds the manifest, so "refuse a leading dot" would refuse
+    # Keelline's own footprint. Pinned so a later widening of the rule fails here rather than in
+    # a user's repository.
+    for value in (".github/workflows/keelline.yml", ".keelline/manifest.json", ".gitignore"):
+        assert contained(tmp_path, value) == tmp_path.joinpath(*value.split("/"))

@@ -30,7 +30,7 @@ from pathlib import Path
 
 from keelline.config.schema import PATH_VALUE, Config
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, checked_components
+from keelline.fsops import UnsafePath, checked_components, names_control_directory
 
 
 class PathEscape(Refusal):
@@ -53,6 +53,12 @@ def contained(
         parts = checked_components(relative)
     except UnsafePath as exc:
         raise PathEscape(str(exc)) from exc
+    # Git's control directory is refused by the call above, at every depth and in any case, and
+    # this is where that matters for a *configured* path: `contained()` is the function every
+    # `[paths]` value and every lane-supplied path goes through, above the first write.
+    # `validate_paths` asks the same question one key at a time so its refusal can name the key;
+    # the rule itself is `fsops.names_control_directory` in both places, because a guard stated
+    # twice is the defect this module was just repaired for.
     target = root.joinpath(*parts)
     for ancestor in [target, *target.parents]:
         if ancestor == root:
@@ -79,6 +85,22 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # Named and never quoted: this is the value a report would otherwise print.
             raise PathEscape(
                 f"paths.{name} is not a plain relative path matching {PATH_VALUE.pattern}"
+            )
+        if names_control_directory(relative):
+            # Named and never quoted, for the same reason. Nothing reserved git's control
+            # directory: the grammar admits a leading dot, and `contained()` refused an
+            # absolute path, `..` and a symlink but not a directory. So a clone could set
+            # `agents_md = ".git/hooks/pre-commit"` — a `MANAGED_REGION`, exempt from the
+            # engine's "exists and Keelline did not write it" guard — and have its own
+            # executable pre-commit hook rewritten in place, mode and all.
+            #
+            # The anchor is the project root the CLI resolved, and `.git` is git's own name
+            # inside it; the clone authors this value and nothing else, so it cannot move the
+            # directory being reserved. `.git` and not "a leading dot", because
+            # `.github/workflows/` and `.keelline/` are Keelline's own footprint.
+            raise PathEscape(
+                f"paths.{name} names git's control directory, which is git's and not "
+                "Keelline's to write into"
             )
     return {
         name: contained(
