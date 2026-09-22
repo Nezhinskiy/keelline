@@ -369,8 +369,16 @@ each, and they are reached **only when nothing above them found anything wrong**
 short-circuits them. So the repository that pays all three, nine seconds against the entry's own
 ten-second budget shared with `worktree-link`, is the bound, linked, up-to-date one that then
 hears nothing; and because the `once_key` marker is banked only on a line actually delivered,
-that is also the repository asked again on every resume. A repository with a finding pays five
-seconds, hears its line, and is not asked again. And the overlay is never a plugin Keelline
+that is also the repository asked again on every event the matcher covers. A repository with a
+finding pays five seconds, hears its line, and is not asked again.
+
+Which is why those last two `git` calls are gated on the event's own `source`: on a **resume** or
+a **compact** — one conversation continuing, under the session id the marker is filed under — they
+are skipped, so a healthy repository costs five seconds there and not nine. `startup`, `fork`,
+`clear` and a payload carrying no `source` all pay, because an invocation Keelline cannot place in
+a context is treated as a new one rather than as one already answered. The cost is that an overlay
+which becomes unpushed *during* a session that started clean is not reported until the next
+session; `keelline doctor` answers on demand. And the overlay is never a plugin Keelline
 executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered

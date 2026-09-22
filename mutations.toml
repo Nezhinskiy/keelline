@@ -5961,6 +5961,53 @@ reddens = [
   "tests/attach/test_hooks.py::test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wrong",
 ]
 
+# The budget this handler shares with the one that links the note store. A healthy repository
+# delivers nothing, so `dispatch` banks no `once_key` marker and this handler is asked again on
+# every event the matcher covers -- and it is the healthy path that pays, because `overlay_sync`
+# sits under `if not lines:`. Four of nine seconds against an entry whose `timeout` is ten, re-paid
+# on every resume and every compaction, in a process that also runs `worktree-link`: a timeout
+# there costs the store link and not merely this nudge. With the set emptied, every invocation pays
+# again, which is the state this gate was measured against.
+[[mutation]]
+name = "a resumed session re-pays the overlay sync"
+file = "src/keelline/attach/hooks.py"
+before = 'CONTINUED = frozenset({"resume", "compact"})'
+after = "CONTINUED = frozenset()"
+reddens = [
+  "tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync",
+]
+
+# §5.3's floor for this area, spelled in this module: an open handler never costs a session, and
+# the blanket backstop is what makes that true of a failure no `except` here foresaw. Every other
+# case in this module reaches a path with an explicit `except` of its own, so the backstop survived
+# deletion green until the case beside this entry existed. It is also what keeps this module's
+# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and the entry below
+# is the other one.
+[[mutation]]
+name = "an open session handler lets an unforeseen failure out"
+file = "src/keelline/attach/hooks.py"
+before = """    except Exception:
+        return HookResult()"""
+after = """    except Exception:
+        raise"""
+reddens = [
+  "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
+]
+
+# The mirror of "the background guard fails open again", over the one handler that must not fail
+# closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel a refusal
+# travels -- the state D11 reserves for a guard that could not judge -- out of a handler that reads
+# two git remotes and a manifest and protects nothing. Asserted through the real dispatcher, not by
+# reading the constant back off the handler it was passed to.
+[[mutation]]
+name = "the overlay-status handler refuses a session when it fails"
+file = "src/keelline/attach/hooks.py"
+before = "            policy=Policy.OPEN,"
+after = "            policy=Policy.CLOSED,"
+reddens = [
+  "tests/attach/test_hooks.py::test_the_registration_is_what_the_dispatcher_acts_on",
+]
+
 # The delivery rule `attach/hooks.py`'s corrected docstring rests on. Banking a `once_key` for a
 # result that said nothing would spend a handler's single delivery on silence -- and the
 # consequence, which no test stated until now, is that a handler whose healthy answer IS silence

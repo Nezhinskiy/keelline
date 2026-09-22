@@ -8,6 +8,7 @@ denies directly.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,7 @@ from keelline.attach.hooks import (
     register,
 )
 from keelline.config.loader import CONFIG_FILE, load
-from keelline.hooks.api import EVENTS, HookEvent, Policy
+from keelline.hooks.api import EVENTS, HookEvent, HookResult, Policy
 from keelline.hooks.registry import discover
 from tests.gitfixture import git, needs_git
 from tests.overlay.test_requires import overlay_with
@@ -39,8 +40,18 @@ CONFIG = (
 )
 
 
-def _event(root: Path) -> HookEvent:
-    return HookEvent("SessionStart", "s1", None, None, {}, root, root, "claude")
+def _event(root: Path, source: str | None = None) -> HookEvent:
+    """A `SessionStart` event, optionally carrying the `source` the matcher keys on.
+
+    `raw` is where the harness's `source` arrives and where `hooks.dispatch` hands the handler its
+    own deep copy of the payload, so a case that wants to be a resume says so there and nowhere
+    else. `None` is the payload that carries no `source` at all, which is the shape every case
+    written before the sync was gated already used.
+    """
+    raw: dict[str, object] = {"hook_event_name": "SessionStart"}
+    if source is not None:
+        raw["source"] = source
+    return HookEvent("SessionStart", "s1", None, None, {}, root, root, "claude", raw)
 
 
 def _machine_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -68,12 +79,14 @@ def _bind(overlay: Path, remote: str = ORIGIN) -> None:
     record.write_text(f'remote = "{remote}"\n', encoding="utf-8")
 
 
-def _run(root: Path, machine: Path, machine_text: str | None) -> str | None:
+def _run(
+    root: Path, machine: Path, machine_text: str | None, *, source: str | None = None
+) -> str | None:
     if machine_text is not None:
         machine.write_text(machine_text, encoding="utf-8")
     config = load(root, machine=root / "absent.toml")
     (handler,) = register()
-    return handler.run(_event(root), config).context
+    return handler.run(_event(root, source), config).context
 
 
 def _recorded(
@@ -287,9 +300,11 @@ def test_the_budget_this_module_documents_is_the_one_it_pays(
     `worktree-link` -- is the bound, linked, pushed, satisfied one that then hears nothing.
 
     A false statement about a budget is worse than the budget, so the measurement is the test and
-    the two documents are held to it. The behaviour is deliberately unchanged: making a silent
-    handler stop re-running is `hooks/dispatch.py`'s `once_key` semantics, which every area's
-    handlers share.
+    the two documents are held to it. The handler still *runs* on every event the matcher covers —
+    that is `hooks/dispatch.py`'s `once_key` semantics and every area's handlers share them — but
+    the two `git` calls it used to re-pay are gated on the event's own `source` now, which
+    `test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync` holds. This case carries
+    no `source` at all, which is the invocation that pays.
     """
     from keelline.attach import hooks as attach_hooks
     from keelline.overlay import api as overlay_api
@@ -324,3 +339,143 @@ def test_the_budget_this_module_documents_is_the_one_it_pays(
     assert attach_hooks.__doc__ is not None and claim not in attach_hooks.__doc__
     reference = Path(__file__).resolve().parents[2] / "docs" / "cli.md"
     assert claim not in reference.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate the budget above buys, and the cost it accepts.
+
+    A healthy repository delivers nothing, so `dispatch` banks no `once_key` marker and this
+    handler is asked again on every `startup`, `resume`, `clear`, `compact` and `fork` the matcher
+    covers. Re-asking is cheap for the lines that are already known and costs two more `git` calls
+    at two seconds each for the last two — four of the nine seconds in an entry whose `timeout` is
+    ten and which it shares with `worktree-link`, the handler that links the note store.
+
+    So the sync is gated on the event's own `source`, here and not in `dispatch.py`, whose
+    `once_key` semantics belong to every area's handlers. `resume` and `compact` are one context
+    asking again; `startup`, `fork`, `clear` and a payload with no `source` are new ones and pay.
+    The `git` calls are counted rather than timed: a wall-clock assertion in a suite that runs
+    beside other work measures the machine, not the gate.
+
+    Mutation: `mutations.toml`'s "a resumed session re-pays the overlay sync".
+    """
+    from keelline.overlay import api as overlay_api
+
+    asked: list[Path] = []
+    real = overlay_api.overlay_sync
+
+    def counted(overlay: Path, **kwargs: object) -> object:
+        asked.append(overlay)
+        return real(overlay, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(overlay_api, "overlay_sync", counted)
+    root, overlay, machine = _recorded(tmp_path, monkeypatch)
+    bare = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(overlay, "init", "-q", "-b", "main")
+    _bind(overlay)
+    git(overlay, "add", "-A")
+    git(overlay, "commit", "-qm", "chore: overlay")
+    git(overlay, "remote", "add", "origin", str(bare))
+    git(overlay, "push", "-q", "-u", "origin", "main")
+    # A context that has already been asked: silence, and nothing paid for it.
+    for asked_before in ("resume", "compact"):
+        assert _run(root, machine, None, source=asked_before) is None, asked_before
+    assert asked == []
+    # A context that has not: the same silence, and the two calls are what found that out.
+    fresh: tuple[str | None, ...] = ("startup", "fork", "clear", None)
+    for source in fresh:
+        assert _run(root, machine, None, source=source) is None, source
+    assert asked == [overlay] * len(fresh)
+    # The cost, asserted rather than only documented: work that arrives mid-session is not
+    # reported to that session's own resume. `keelline doctor` is what answers on demand.
+    (overlay / "later.md").write_text("more\n", encoding="utf-8")
+    assert _run(root, machine, None, source="resume") is None
+    # The overlay has an upstream here and is level with it, so the knowable half is the dirty
+    # count: the same state a `startup` reports and a `resume` does not go looking for.
+    assert _run(root, machine, None, source="startup") == UNPUSHED.format(ahead=0, dirty=1)
+
+
+@needs_git
+def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The blanket backstop, which every other case in this module leaves standing.
+
+    `except Exception` is what keeps an open handler from costing a session (§5.3), and every case
+    above reaches a path with an explicit `except` of its own — `Failure`, `Refusal`, `PathEscape`
+    — so the blanket one could be deleted with this module green.
+    `tests/memory/test_hooks.py::test_a_link_failure_is_silence_not_an_exception` is the sibling
+    and its comment says the same thing about its own guard: the obvious test passes identically
+    with the `try/except` removed, so the call the handler makes has to be forced to fail outright.
+
+    `unlinked_groups` is that call here. Only `PathEscape` is caught around it, and the handler
+    imports it from `keelline.attach.binding` inside its own body, so the module attribute is the
+    seam a monkeypatch reaches. The assertion is silence, and this is deliberately the case where
+    the backstop *loses* a line: `NOT_ATTACHED` is already in `lines` and goes with the result,
+    which is the cost §5.3 accepts and the reason this is a floor and not a filter — the same
+    repository is told `NOT_ATTACHED` by
+    `test_an_unattached_overlay_project_is_told_to_attach` when nothing raises.
+
+    Mutation: `mutations.toml`'s "an open session handler lets an unforeseen failure out".
+    """
+    from keelline.attach import binding as binding_module
+
+    def raising(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("something no except of its own covers")
+
+    root, _, _ = _recorded(tmp_path, monkeypatch)
+    monkeypatch.setattr(binding_module, "unlinked_groups", raising)
+    (handler,) = register()
+    result = handler.run(_event(root), load(root, machine=root / "absent.toml"))
+    assert result.context is None and result.decision is None
+
+
+def test_the_registration_is_what_the_dispatcher_acts_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`policy` and `event` through the dispatcher, rather than read back off the same literals.
+
+    `test_the_handler_is_discovered_open_once_per_session_and_only_on_session_start` compares
+    `Handler.policy` and `Handler.event` with the constants `register()` passes, which holds
+    whatever those constants are — so what each one buys is asserted here instead, against the
+    real `dispatch`.
+
+    **`Policy.OPEN`**: a failure of this handler is recorded and named on stderr and the run is not
+    a refusal. `Policy.CLOSED` would turn a failed overlay lookup into a deny on the one channel a
+    refusal travels — the state D11 reserves for a guard that could not judge — out of a handler
+    that reads two git remotes and a manifest and protects nothing. `_overlay_status` is patched
+    to raise, because with the module's own backstop in place the handler cannot fail from inside;
+    that backstop has its own case above, and this one is about what happens when something gets
+    past it.
+
+    **`event`**: no other event in `EVENTS` reaches the handler at all. Asserted rather than given
+    an oracle entry, because `event` is a name the dispatcher matches and not a guard —
+    `registry.discover` already refuses a value outside `EVENTS`, and a valid-but-wrong one is
+    what this assertion is for.
+    """
+    from keelline.attach import hooks as attach_hooks
+    from keelline.hooks.dispatch import Recorder, dispatch
+
+    seen: list[str] = []
+
+    def failing(event: HookEvent, config: object) -> HookResult:
+        seen.append(event.name)
+        raise RuntimeError("past every except in the module")
+
+    monkeypatch.setattr(attach_hooks, "_overlay_status", failing)
+    handlers = register()
+    sink = Recorder()
+    outcome = dispatch(_event(tmp_path), handlers, None, sink=sink)
+    assert seen == ["SessionStart"]
+    assert outcome.exit_code == 0 and outcome.decision is None
+    assert "overlay-status: RuntimeError" in outcome.stderr
+    assert sink.records == [
+        {"event": "SessionStart", "handler": "overlay-status", "error": "RuntimeError"}
+    ]
+    for name in (event for event in EVENTS if event != "SessionStart"):
+        other = replace(_event(tmp_path), name=name)
+        assert dispatch(other, handlers, None, sink=Recorder()).exit_code == 0, name
+    assert seen == ["SessionStart"]

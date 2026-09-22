@@ -13,25 +13,39 @@ bounded too, but a line that reaches the model is written where it is read, and 
 because both are fixed.
 
 **At most once per session (`once_key`), and what it actually costs.** The matcher fires on
-`startup`, `resume`, `clear` and `compact`, and this handler runs ahead of `worktree-link` in
-area-name order inside an entry whose `timeout` is ten seconds for both of them.
+`startup`, `resume`, `clear`, `compact` and `fork`, and this handler runs ahead of
+`worktree-link` in area-name order inside an entry whose `timeout` is ten seconds for both of
+them.
 
 `hooks/dispatch.py` banks a `once_key` only `if handler.once_key is not None and delivered`, and
 `delivered` is `bool(result.context) or result.decision == Decision.DENY`. So the marker is laid
 down exactly when this handler had something to say. A session that hears a line hears it once;
 a **healthy** repository -- bound, linked, pushed, satisfied -- returns an empty result, banks
-nothing, and is asked again on every one of those four events.
+nothing, and is asked again on every one of those events.
 
 And it is the healthy path that pays for the `git`, which is the opposite of what this docstring
 said for three rounds. `binding_for` asks `origin_remote` on every run, at `gitenv`'s five-second
 cap; `overlay_sync`'s `git status` and `git rev-list` are two seconds each and sit under `if not
 lines:`, so they are reached exactly when nothing above them found anything wrong. Nine seconds
-against the entry's ten, on the repository with nothing to report, re-asked on every resume. The
-skip is real but it is the other way round: a repository with a finding pays five seconds and
-not nine, because the finding short-circuits the sync.
+against the entry's ten, on the repository with nothing to report. The skip is real but it is
+the other way round: a repository with a finding pays five seconds and not nine, because the
+finding short-circuits the sync.
 
-Changing that is `dispatch.py`'s to change, not this module's -- `once_key`'s semantics are
-shared by every area's handlers -- so the note is here and the behaviour is not touched.
+**So the sync is gated here, per context, rather than by changing what `once_key` means.**
+`CONTINUED` says which invocations are one context asking again: on a `resume` or a `compact` the
+two extra `git` calls are not paid and the handler answers on what the lines above already know,
+so a healthy repository costs five seconds there instead of nine. Every other `source` pays --
+`startup`, `fork`, `clear`, and a payload carrying none -- so an invocation this module cannot
+place in a context is treated as a new one and the nudge is never lost by default.
+`dispatch.py`'s `once_key` semantics belong to every area's handlers and are untouched; the
+five-second `origin_remote` is not gated either, because it is what decides three of the lines
+above, and skipping it would drop them rather than defer them.
+
+The cost, stated rather than hidden: an overlay that becomes unpushed *during* a session whose
+`startup` found nothing to say is not reported on that session's later `resume` or `compact`.
+`keelline doctor` answers on demand, and the alternative is a pair of `git` calls re-run on every
+compaction of a repository with nothing wrong with it, inside a budget shared with the handler
+that links the note store.
 
 Every import below the vocabulary is inside the handler body: `tests/test_areas.py` asserts
 that discovery in a clean interpreter leaves `keelline.config`, `keelline.presets` and
@@ -48,6 +62,20 @@ if TYPE_CHECKING:
     from keelline.config.schema import Config
 
 OVERLAY_MODE = "overlay"
+# `SessionStart.source` values that are one context asking again, and the only thing this module
+# reads the payload for.
+#
+# `resume` and `compact` are the same conversation continuing under the same session id -- which
+# is the name the `once_key` marker is filed under, so a handler that said nothing on this
+# session's `startup` is being asked a question it has already answered. `startup` and `fork`
+# begin a context and are absent on purpose; so is `clear`, which begins a fresh conversation
+# whose payload may carry a session id this handler has never answered for. A value not in this
+# set, and a payload with no `source` at all, pays the two `git` calls: losing four seconds is
+# recoverable and losing the one nudge a context gets is not.
+#
+# The value is the harness's, it is compared against these two constants, and it is never printed
+# -- so nothing here touches the rule about what may reach `additionalContext`.
+CONTINUED = frozenset({"resume", "compact"})
 NO_OVERLAY = (
     "keelline: memory.mode is overlay and this machine records no overlay; "
     "run `keelline setup --preset recommended --overlay <path>`"
@@ -100,6 +128,16 @@ UNPUSHED = (
 # is the authority on what to build; it is not the authority on whether a sentence is true.
 
 
+def _asked_before(event: HookEvent) -> bool:
+    """Whether this invocation is a context that has already been asked (see `CONTINUED`).
+
+    A module-level function and not an expression inside the handler, so that the one thing this
+    module reads off the raw payload is in one place and named.
+    """
+    source = event.raw.get("source")
+    return isinstance(source, str) and source in CONTINUED
+
+
 def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
     if config is None or event.project_root is None or config.memory.mode != OVERLAY_MODE:
         return HookResult()
@@ -141,7 +179,7 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
                 lines.append(REQUIRES_UNREADABLE)
             elif not verdict:
                 lines.append(REQUIRES.format(spec=spec, running=keelline.__version__))
-        if not lines:
+        if not lines and not _asked_before(event):
             sync = overlay_sync(overlay)
             if sync.asked:
                 if sync.ahead is None:
