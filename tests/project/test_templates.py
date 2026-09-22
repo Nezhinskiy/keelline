@@ -89,9 +89,17 @@ def test_the_ci_workflow_is_offered_only_with_a_pin_and_says_why_otherwise(tmp_p
         varied = replace(config, ci=replace(config.ci, mode=mode))
         prepared = _prepared(varied, resolution=PINNED, root=tmp_path)
         assert phrase in prepared.skipped["ci-workflow"], mode
+    # The hostile arm is reached AFTER the pin resolved, which is why the skip reason matters as
+    # much as the missing artifact: `commands.py` used to key its CI line on the pin, so this
+    # state printed `CI: <tag>@<sha>` for a run that planned no workflow. `skipped` is what the
+    # command reads now, so this asserts the key is there and says why.
     hostile = replace(config, ci=replace(config.ci, gate_branch="main'; rm -rf"))
-    hostile_ids = {t.id for t in _prepared(hostile, resolution=PINNED, root=tmp_path).footprint}
-    assert "ci-workflow" not in hostile_ids
+    pinned_hostile = _prepared(hostile, resolution=PINNED, root=tmp_path)
+    assert "ci-workflow" not in {t.id for t in pinned_hostile.footprint}
+    assert pinned_hostile.skipped["ci-workflow"] == (
+        "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
+    )
+    assert "rm -rf" not in pinned_hostile.skipped["ci-workflow"]
 
 
 def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares(

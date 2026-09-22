@@ -5,6 +5,7 @@ The machine config (§5.4) is merged too, but it contributes `[personal]` and no
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import fields
 from functools import cache
@@ -37,6 +38,19 @@ from keelline.errors import Failure
 from keelline.presets import load_preset
 
 CONFIG_FILE = "keelline.toml"
+# Where `tomllib` stopped, and nothing else it had to say (P10). Every `TOMLDecodeError` this
+# package can raise is about a document somebody else wrote — a project's `keelline.toml`, the
+# machine file `--machine` named — and `tomllib` builds its message as `f"{msg} (at line N,
+# column M)"`, where `msg` embeds the source for at least five of its own faults: `Cannot
+# declare ('x',) twice`, `Duplicate inline table key 'k'`, `Cannot redefine namespace k`,
+# `Found invalid character 'c'`, `Cannot overwrite a value`. A TOML key is arbitrary quoted
+# text, so interpolating the exception whole puts unbounded repository bytes into a refusal a
+# skill is instructed to relay to a model. The position is the actionable half and it is
+# Keelline-shaped: two integers, or the parser's end-of-document form. Measured against CPython
+# 3.11 and 3.12; the suffix is what `tomllib` appends, not what its `msg` says, so a `msg`
+# reworded upstream does not move it.
+_TOML_POSITION = re.compile(r"\((?:at line \d+, column \d+|at end of document)\)\Z")
+NO_POSITION = "(at a position tomllib did not report)"
 SECTIONS = (
     "keelline",
     "project",
@@ -67,6 +81,22 @@ class MachineConfigError(ConfigError):
     `~/.config/keelline/config.toml` with a stray bracket in it, and sent the owner to edit a
     file with nothing wrong with it.
     """
+
+
+def toml_position(exc: tomllib.TOMLDecodeError) -> str:
+    """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
+
+    One extractor for every caller in this package that reports a document it did not write,
+    so that "what may print out of a parse failure" is one decision rather than one per site.
+    See `_TOML_POSITION` for which of `tomllib`'s own messages embed the source and why that
+    makes the whole exception unprintable.
+
+    A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
+    stopped appending a position would otherwise take this guard with it silently, which is the
+    shape every other bounded value in this file refuses.
+    """
+    found = _TOML_POSITION.search(str(exc))
+    return found.group(0) if found is not None else NO_POSITION
 
 
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
@@ -168,7 +198,7 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     try:
         raw = tomllib.loads(machine.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None
+        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
         values.update(_table(raw, "personal"))
         return _build(Personal, "personal", values)
@@ -229,7 +259,7 @@ def loads(
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path} is not valid TOML: {exc}") from None
+        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
         raise ConfigError(f"{path} has unknown section(s): {_named(unknown)}")

@@ -5239,3 +5239,24 @@ after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_says_upgrade_ships_later",
 ]
+
+# P10, and the third leak of this family this branch closes. `tomllib` builds its message as
+# `f"{msg} (at line N, column M)"` and `msg` embeds the source for at least five of its own
+# faults — a duplicate table, a duplicate inline-table key, a redefined namespace, an invalid
+# character, an overwritten value. A TOML key is arbitrary quoted text, so interpolating the
+# exception whole put unbounded repository bytes into a `ConfigError` and, through
+# `project.init._existing`, into a refusal the `init` skill is instructed to relay to a model
+# and stop on. Only the position prints, and the fallback reports an absent suffix rather than
+# the message — a fallback to `str(exc)` is the one change that would reopen this silently.
+# Wave A closed the sibling leak in the same loader function (the unknown-section list, bounded
+# to `SECTION_NAME`); this completes it, and one extractor serves all three call sites.
+[[mutation]]
+name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
+file = "src/keelline/config/loader.py"
+before = "    return found.group(0) if found is not None else NO_POSITION"
+after = "    return str(exc)"
+reddens = [
+  "tests/config/test_loader.py::test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped",
+  "tests/config/test_loader.py::test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_message",
+  "tests/project/test_init.py::test_a_configuration_that_will_not_parse_never_quotes_its_own_keys",
+]

@@ -3,13 +3,26 @@
 One command and not a group, the shape §5.2's contract row states and the shape the skill
 already invokes.
 
-**The summary is counts and Keelline's own vocabulary, and nothing else.** Both count lines
-come from `scaffold.render_report`, which interpolates numbers; the CI line is one of this
-area's own fixed sentences, or a tag and a commit the *release* area resolved from the public
-repository's tags. The project's own name, its paths and its `[ci]` values are the repository's
-bytes and stay out of the line. The two full reports — every artifact with its verb, and the
-REFUSED section when there is one — are in `--json` under `once` and `footprint`, which is
-where the skill relays them from.
+**The summary is both rendered reports, the way `overlay upgrade`'s is.** It was four lines of
+counts, with every artifact's verb and the whole REFUSED section reachable only under `--json`
+— so the skill that tells a relayer to pass on "both reports" and "every refused line" was
+describing output the command did not print, and the exit-1 path is the one a person meets
+without a flag. `scaffold.render_report` is the renderer, and the same text goes into `--json`
+under `once` and `footprint`, so the two cannot disagree.
+
+That is safe on the repository-bytes rule, and the reason is `scaffold.report`'s own format
+string: a line is `{verb} {target} ({reason})`, where the target is a `config.paths` value the
+loader has bounded to `PATH_VALUE` plus a file name this area chose, and the reason is the
+engine's own fixed vocabulary. The CI line beside them is one of this area's fixed sentences,
+or a tag and a commit the *release* area resolved from the public repository's own tags. The
+project's name and its `[ci]` values reach neither.
+
+**The workflow is claimed only when nothing skipped it.** `_ci` reaches its `GATE_BRANCH` check
+*after* the pin has resolved, so a repository with a resolved tag and a `gate_branch` outside
+the grammar has a pin and no workflow. Keying the CI line on the pin told that repository
+`CI: <tag>@<sha>` while `skipped["ci-workflow"]` said the opposite in `--json` — a success line
+for the one hostile-value arm this lane built. The key in `skipped` is the authority: `_ci`
+returns a template or a reason and never both.
 
 **Exit 1 on a refusal, not 2.** A refused artifact is a finding the report names, and `apply`
 was never reached: nothing was written, there is no manifest, and re-running after the fix is
@@ -29,19 +42,21 @@ from keelline.result import Result
 from keelline.scaffold import render_report
 
 NO_CI_HELP = 'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none"'
+# `(refused, dry_run)` -> the opening line. Three states and not two: a refused run wrote
+# nothing, and it used to open `initialised:` above a REFUSED section saying the opposite. That
+# was invisible while the summary was four count lines; printing the report is what made the
+# header a claim a reader checks. A dry run that also refuses is reported as the refusal,
+# because that is the finding the operator has to act on before either sentence is true.
+HEADINGS = {
+    (True, True): "refused, and nothing would be written:",
+    (True, False): "refused, and nothing was written:",
+    (False, True): "would initialise:",
+    (False, False): "initialised:",
+}
 YES_HELP = (
     "accept the detected defaults and write the footprint; without it nothing is written and "
     "the command refuses, naming the lane that ships the questions"
 )
-
-
-def _counts(report: str) -> str:
-    """The last line of a rendered plan report: the six numbers, from the same renderer.
-
-    Sliced off the report rather than recomputed, so the line in the summary and the report in
-    `--json` cannot disagree about what was planned.
-    """
-    return report.splitlines()[-1]
 
 
 def run_init(args: argparse.Namespace) -> Result:
@@ -60,18 +75,25 @@ def run_init(args: argparse.Namespace) -> Result:
     )
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
-    if pin is not None:
+    skipped = report.skipped.get("ci-workflow")
+    if skipped is None and pin is not None:
         ci_line = f"CI: {pin.tag}@{pin.sha}"
     else:
-        ci_line = f"CI: skipped — {report.skipped.get('ci-workflow', 'no workflow was planned')}"
+        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"
+    refused = bool(report.once.refusals or report.footprint.refusals)
     lines = [
-        "would initialise:" if report.dry_run else "initialised:",
-        f"  write-once: {_counts(once)}",
-        f"  footprint: {_counts(footprint)}",
-        f"  {ci_line}",
+        HEADINGS[(refused, report.dry_run)],
+        "",
+        "write-once:",
+        once,
+        "",
+        "footprint:",
+        footprint,
+        "",
+        ci_line,
     ]
     if report.note:
-        lines.append(f"  note: {report.note}")
+        lines.append(f"note: {report.note}")
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -83,7 +105,6 @@ def run_init(args: argparse.Namespace) -> Result:
         "asked": report.resolution.asked,
         "note": report.note,
     }
-    refused = bool(report.once.refusals or report.footprint.refusals)
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
 

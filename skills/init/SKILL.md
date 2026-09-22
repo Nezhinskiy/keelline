@@ -15,17 +15,20 @@ defaults", so the dry run is how the user sees them before anything is written.
 
 ## Walk
 
-1. Show the plan first. Run `keelline init --yes --dry-run` and relay, unchanged:
-   - both reports — the write-once files and the footprint are planned separately, and each
-     one names every file with its verdict;
-   - the CI line, which is either the release the workflow would be pinned to or one sentence
+1. Show the plan first. Run `keelline init --yes --dry-run` and relay what it prints,
+   unchanged. It prints, in this order:
+   - an opening line saying whether anything would be written;
+   - two reports under `write-once:` and `footprint:` — the two passes are planned separately,
+     and each report names every file with its verdict and ends with its own counts;
+   - a `CI:` line, which is either the release the workflow would be pinned to or one sentence
      saying why no workflow was planned;
-   - the note, when there is one.
+   - a `note:` line, when there is one.
 2. Ask whether to proceed. Nothing has been written at this point.
 3. On a yes, run `keelline init --yes`. Add `--no-ci` instead if the user does not want a CI
    workflow and does not want the public repository asked for a pin.
-4. Relay what was written and what was skipped, each with the reason the report gives. A
-   skipped file is one that was already there; the run left it alone.
+4. Relay the same four parts again. The second report is the one that says what happened: a
+   file listed as skipped was already there and the run left it alone, with the reason beside
+   it.
 5. Tell the user how to undo it: `git checkout -- .` restores the files that were already
    tracked, and the files the run created have to be deleted, `.keelline/manifest.json`
    among them. There is no undo command yet — `keelline uninstall` ships later.
@@ -43,9 +46,13 @@ defaults", so the dry run is how the user sees them before anything is written.
 - **A repository that already carries `.keelline/manifest.json` is refused**, and that is
   correct: refreshing a footprint is `keelline upgrade`, which ships later. Relay the refusal
   and stop; do not delete the manifest to get past it.
-- **Nothing is written when anything is refused.** An exit of 1 means the report carries a
-  REFUSED section, no file was touched and no manifest exists. Relay every refused line, fix
+- **Nothing is written when anything is refused.** An exit of 1 opens with a line saying so
+  and carries a `REFUSED` section inside whichever report the refusal landed in, naming each
+  artifact and why. No file was touched and no manifest exists. Relay every refused line, fix
   the cause with the user, and run the command again.
+- **A `CI:` line that says the workflow was skipped is the whole answer about CI.** The
+  workflow is named only when one was planned; a skipped one says why in the same line, and
+  there is nothing else to look for.
 - **Never hand-edit `[keelline] version`, `[keelline] state` or `.keelline/manifest.json`.**
   Those are the tool's own, and a manifest a person has altered makes every later run judge
   the wrong files.

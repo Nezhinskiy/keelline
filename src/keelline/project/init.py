@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import keelline
-from keelline.config.loader import CONFIG_FILE, loads
+from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.templates import project_templates
@@ -78,9 +78,13 @@ class InitReport:
 def _existing(root: Path) -> dict[str, object] | None:
     """The `keelline.toml` already in the repository, parsed, or `None`.
 
-    A file that will not parse is a `Failure` naming the file and never quoting it: the parser's
-    own message carries a line and column, which is what makes it actionable, and the bytes
-    around them are the repository's.
+    A file that will not parse is a `Failure` naming the file and the position `tomllib`
+    stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
+    source for several of its faults — a duplicate table or inline-table key is reported with
+    the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
+    `config.loader.toml_position` before any of it prints. The file is `keelline.toml`, which
+    P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
+    instructed to relay and stop on.
     """
     path = root / CONFIG_FILE
     if not path.is_file():
@@ -88,7 +92,7 @@ def _existing(root: Path) -> dict[str, object] | None:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise Failure(f"{CONFIG_FILE} is not valid TOML: {exc}") from None
+        raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
 
 def _tables(

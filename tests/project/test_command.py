@@ -1,10 +1,12 @@
 """`keelline init` through the real parser: the flags, the exit codes and the `--json` keys.
 
-Every case passes `--no-ci`, and that is what keeps this module offline: with `[ci] mode` set
-to `none` the run never asks the release area to resolve a pin, so `subprocess_runner()` — the
-runner `commands.py` builds, and the one thing here that is not a stub — is never handed a
-`git ls-remote` against the public repository. `tests/project/test_init.py` drives the pinned
-half in-process with a stub runner instead.
+Nothing here reaches the network, and it is kept out two ways. Every case but one goes through
+`_invoke`, which appends `--no-ci`: with `[ci] mode` set to `none` the run never asks the release
+area to resolve a pin, so the `subprocess_runner()` `commands.py` builds is never handed a `git
+ls-remote` against the public repository. The one case that must resolve a pin — the hostile
+`gate_branch` arm, which exists precisely because `_ci` reaches that check *after* the pin —
+stubs `subprocess_runner` at the seam `commands.py` builds it from and answers one released tag
+from a string.
 """
 
 from __future__ import annotations
@@ -12,12 +14,25 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.runner import Completed
 from tests.gitfixture import git, needs_git
+
+
+@dataclass
+class _Listing:
+    """A `Runner` that answers `ls-remote` from a string and reaches no network."""
+
+    stdout: str
+
+    def run(self, argv: list[str], cwd: Path) -> Completed:
+        return Completed(0, self.stdout, "")
+
 
 JSON_KEYS = {"dry_run", "adopted", "once", "footprint", "writes", "skipped", "pin", "asked", "note"}
 
@@ -30,12 +45,17 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
-def _invoke(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
+def _run(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
     parser = build_parser(discover_registrars())
     flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
     with redirect_stdout(io.StringIO()) as out:
-        code = run(["init", *argv, "--no-ci", *flags], parser=parser)
+        code = run(["init", *argv, *flags], parser=parser)
     return code, out.getvalue()
+
+
+def _invoke(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
+    """`_run` with `--no-ci`, which is what keeps the network out of it."""
+    return _run(root, tmp_path, *argv, "--no-ci")
 
 
 @needs_git
@@ -68,12 +88,18 @@ def test_a_dry_run_prints_both_reports_and_says_it_wrote_nothing(tmp_path: Path)
 
 
 @needs_git
-def test_a_real_run_summarises_both_passes_and_the_ci_line(tmp_path: Path) -> None:
+def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) -> None:
+    # Fix round 1, finding 2: the summary was four count lines, so a person without `--json` was
+    # told how many files there were and never which. The skill relays "both reports … each one
+    # names every file with its verdict", which it could not do from counts.
     root = _repo(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
     assert printed.startswith("initialised:")
     assert "write-once:" in printed and "footprint:" in printed
+    # Per-artifact lines, from both passes, with their verbs — not just the counts.
+    assert "create         CLAUDE.md  (new)" in printed
+    assert "create         docs/adr/0000-template.md  (new)" in printed
     assert "CI: skipped — [ci] mode is none" in printed
     assert (root / ".keelline" / "manifest.json").is_file()
 
@@ -89,3 +115,39 @@ def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
     data = json.loads(printed)
     assert "REFUSED" in data["footprint"] and "REFUSED" not in data["once"]
     assert not (root / ".keelline").exists()
+    # And in plain text, which is the output a person meets on this path: the REFUSED section
+    # with the artifact and the engine's reason, and a heading that does not claim otherwise.
+    code, plain = _invoke(root, tmp_path, "--yes")
+    assert code == 1
+    assert plain.startswith("refused, and nothing was written:")
+    assert "REFUSED — nothing will be written" in plain
+    assert "AGENTS.md  (region 'harness' has an end marker with no beginning" in plain
+
+
+@needs_git
+def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fix round 1, finding 1, end to end. `[ci] mode` stays `reusable` here — this is the one
+    # case in this module that does not pass `--no-ci` — so the command really reaches the
+    # release area; the runner it would use is stubbed at the seam `commands.py` builds it from,
+    # so no network call is made and the answer is one released tag.
+    from keelline import runner as runner_module
+
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[ci]\ngate_branch = "main\'; rm -rf"\n',
+        encoding="utf-8",
+    )
+    sha = "c" * 40
+    monkeypatch.setattr(
+        runner_module,
+        "subprocess_runner",
+        lambda: _Listing(f"{sha}\trefs/tags/v0.1.0\n"),
+    )
+    code, printed = _run(root, tmp_path, "--yes")
+    assert code == 0, printed
+    assert "CI: skipped — [ci] gate_branch is not a plain branch name" in printed
+    assert sha not in printed and "v0.1.0@" not in printed
+    assert not (root / ".github").exists()
