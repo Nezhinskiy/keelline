@@ -200,9 +200,11 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: seven of this module's sixteen skip arms carry one.
-    The line is not "always" versus "on a state" — five state skips (`bundles`, `pre-commit`,
-    `overlay-requires`, `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is
+    an empty remedy merely for being a skip: seven of this module's sixteen skip arms carry one,
+    counting `_overlay_absent`'s two once for each of the two rows that reach them.
+    The line is not "always" versus "on a state" — eight state arms over seven rows are empty
+    (`_files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
+    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is
     changed by the very command `_uncorroborated` names. It is whether **the skip is itself worth
     acting on**: the two rows that report a plugin root nothing can find, which is every hook entry
     on this machine silent; `wrapper`'s row for a root it will read and never execute; the two

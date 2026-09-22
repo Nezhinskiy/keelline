@@ -21,8 +21,10 @@ Codex, one Python package with **no runtime dependencies**.
 > discipline. **Not yet:** `upgrade`,
 > `uninstall`, `assess` and the adoption state machine — so nothing refreshes or removes a
 > footprint once `init` has written it, and the gates stay advisory until you set
-> `[keelline] state` yourself; the [Quickstart](#quickstart) shows the three keys `init` writes
-> for you, or that you write by hand and it reads as your answers.
+> `[keelline] state` yourself; the [Quickstart](#quickstart) shows the three keys that are enough
+> to start a project by hand, which `init` reads as your answers — a run that writes the file
+> itself writes six, `[keelline] version`, `state` and `agents` beside `[project] name`,
+> `base_branch` and `release_branch`, and no `[memory]` table at all.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -48,8 +50,9 @@ adds:
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
-  `keelline doctor` reads it and reports red when the Keelline running is too old, and a
-  session in a bound repository says so once at its start.
+  `keelline doctor` reads it and reports it when the Keelline running is too old — red when
+  this project keeps its notes in that overlay, a warning when it does not — and a session in a
+  bound repository says so once at its start.
 
 Two more practices ride along and are named as such: every assertion ships with the
 mutation that reddens it, and working memory is a routing table of hand-written lines, not
@@ -187,8 +190,9 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/memory/` (configurable) | The note store, in `in-repo` and `overlay` mode | `keelline memory index` |
 | `.keelline/local/memory/` | The note store in `local-only` mode, the default — git-ignored | `keelline memory index` |
 | `<store>/MEMORY.md` | The rendered routing index. **Generated — do not hand-edit** | `keelline memory index` |
-| `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline bugs new`, `bugs index`, `bugs renumber` |
-| `docs/roadmap.md` (configurable) | Only the design-and-plan trail between its two markers | `keelline docs trail` |
+| `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline init` writes the empty index and `docs/bugs/audits/README.md`; `keelline bugs new`, `bugs index` and `bugs renumber` after |
+| `docs/roadmap.md` and `docs/roadmap-history.md` (configurable) | The forward track and the closed phases; in the roadmap, `docs trail` owns only the listing between its two markers | `keelline init` writes both files; `keelline docs trail` rewrites the listing |
+| `docs/trail.toml` (beside the roadmap) | Which theme each design or plan document belongs to, and which are not plainly delivered. Read by `docs trail`, never written by it | `keelline init`, once; you after |
 | `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` (ships later) refreshes what you have not touched | `keelline init` |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `keelline setup` |

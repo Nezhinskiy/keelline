@@ -43,7 +43,14 @@ from keelline.command import DRY_RUN_HELP, common_flags
 from keelline.result import Result
 from keelline.scaffold import render_report
 
-NO_CI_HELP = 'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none"'
+# What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
+# and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
+# `skip_modified`, never rewritten — so the file goes on saying `reusable` and the flag is spent
+# on this run alone. Saying "sets [ci] mode" flat sent an operator looking for a key nothing wrote.
+NO_CI_HELP = (
+    'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none" in the document '
+    "this run builds, which on a repository that already has a keelline.toml is this run only"
+)
 # `(refused, dry_run)` -> the opening line. Three states and not two: a refused run wrote
 # nothing, and it used to open `initialised:` above a REFUSED section saying the opposite. That
 # was invisible while the summary was four count lines; printing the report is what made the

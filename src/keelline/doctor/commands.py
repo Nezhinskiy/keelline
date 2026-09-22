@@ -3,25 +3,33 @@
 One command and not a group, the shape §5.2's contract row states and the shape the skill
 already invokes.
 
-**A `skip` is not a finding.** Two of the sixteen checks cannot be answered by this build —
-the Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that no repository has
-recorded yet — so an exit code that counted skips would make `doctor` red on every correct
-installation. `files` was the third of the two until the release lane shipped the
-record it compares against. Exit 1 is reserved for `red` (C5: findings), and `warn` does not
-reach it either: a budget lowered below the preset and a harness link the trust gate has not
-opened are both correct states somebody should still see.
+**A `skip` is not a finding.** One of the sixteen checks cannot be answered by this build at
+all — the Codex hook-trust hash §10 lists as unmeasured — so an exit code that counted skips
+would make `doctor` red on every correct installation. Two others were counted here and are
+not: `files` until the release lane shipped the record it compares against, and `ci-ref` until
+`init` shipped the writer of `[ci] ref`. `ci-ref`'s skip is now a *state* — this repository
+records no ref — and which state is ordinary moves with the release history and not with any
+code here, so nothing in this module asserts a number about it: before a released tag matches
+the Keelline running there is no commit for `init` to record, and after one there is. Exit 1 is
+reserved for `red` (C5: findings), and `warn` does not reach it either: a budget lowered below
+the preset and a harness link the trust gate has not opened are both correct states somebody
+should still see.
 
-**Two is the floor and not the count.** Eight more rows have a skip arm that fires on a state of
-the machine rather than on this build — `wrapper` and `files` when no plugin root can be vouched
-for, `files` again on a build that carries no release record, `attached` with no overlay recorded
-or an overlay that could not be asked, `pre-commit` and `overlay-requires` with no overlay root
-recorded — and again, each, with a root recorded that is not a directory — `overlay-requires`
-once more with no requirement declared, `bundles` and
-`store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
+**One is the floor and not the count.** Nine more rows have a skip arm that fires on a state of
+the machine or of the repository rather than on this build — `wrapper` and `files` when no plugin
+root can be vouched for, `files` again on a build that carries no release record, `attached` with
+no overlay recorded or an overlay that could not be asked, `pre-commit` and `overlay-requires`
+with no overlay root recorded — and again, each, with a root recorded that is not a directory —
+`overlay-requires` once more with no requirement declared, `bundles` and
+`store-debris` with a store that does not resolve, `diagnostics` with no harness data root,
+`ci-ref` with no `[ci] ref` recorded — and
 `run_checks` skips fifteen at once when `keelline.toml` is missing or will not load. Sixteen skip
-arms in all, and **seven of them carry a remedy** — but not because they skip on a state: five state
-skips (`bundles`, `pre-commit`, `overlay-requires`, `store-debris`, `diagnostics`) carry nothing,
-and `pre-commit`'s state is changed by the very command `checks._uncorroborated` names. The line is
+arms in all, counting `checks._overlay_absent`'s two once for each of the two rows that reach
+them, and **seven of them carry a remedy** — but not because they skip on a state: eight state
+arms over seven rows carry nothing (`files` on a build with no release record, `bundles`,
+`store-debris`, `diagnostics`, `ci-ref`, `overlay-requires` twice — no root recorded, and no
+requirement declared — and `pre-commit` with no root recorded), and `pre-commit`'s state is
+changed by the very command `checks._uncorroborated` names. The line is
 whether the skip is **itself worth acting on**, and `checks.Check`'s docstring is where that rule
 is stated. The plugin-root pair is the case that makes it: it is the state in which every hook
 entry on the machine is silent, nothing else in the report says so, and it reports as two quiet

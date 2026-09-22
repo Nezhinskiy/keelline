@@ -609,8 +609,10 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
-    # Green meaning: no `red`, and the only `skip`s are the two this build cannot answer — the
-    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` this fixture records none of.
+    # Green meaning: no `red`, and the only `skip`s are the one this build cannot answer — the
+    # Codex hook-trust hash §10 lists as unmeasured — and `ci-ref`, which skips on a state this
+    # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
+    # released tag matches the Keelline running here for `init` to have pinned.
     # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
     # walk runs against the checkout, so the row now compares the three shipped files against
     # the record committed beside them and is green. A `files` back in this list means the
@@ -626,8 +628,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 
 
 # What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in
-# `docs/cli.md`: four subprocesses on a green attached installation. Written as a number rather
-# than as a set of argv lists so the failure reads as "the count moved", which is the claim.
+# `docs/cli.md`: four subprocesses on a green attached installation *besides* the `ci-ref` row,
+# which the stub runner below answers in process rather than launching — so four here and five
+# in production on a repository that records a `[ci] ref`, which is what both documents now say.
+# Written as a number rather than as a set of argv lists so the failure reads as "the count
+# moved", which is the claim.
 DOCTOR_LAUNCHES = 4
 
 

@@ -1,8 +1,10 @@
 """What `doctor` answers about an installation, and what it refuses to guess (§8.4).
 
-Two of the sixteen checks cannot be answered by this build and say so rather than guessing;
-one of them — `codex-trust` — is a platform question §10 lists as unmeasured, and a check that
+One of the sixteen checks cannot be answered by this build and says so rather than guessing:
+`codex-trust`, a platform question §10 lists as unmeasured, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
+`ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
+the repository and not a limit of this build.
 
 `git` is required by the fixtures below rather than by the code under test: an attached
 repository is one whose `origin` the overlay recorded, and `read_binding` compares the two.

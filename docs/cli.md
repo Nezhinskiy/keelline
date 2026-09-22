@@ -739,7 +739,10 @@ this repository already had records no `[ci] ref`, so there is nothing a workflo
 anything records; `[ci] ref` is not a full-length commit sha, which is the only immutable form
 and the only one `init` renders — the documented mutable `v1` alias is a file you write by hand;
 and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
-sets `[ci] mode = "none"` in the document and asks no remote anything.
+puts `[ci] mode = "none"` into the document this run builds and asks no remote anything. **On a
+repository that already has a `keelline.toml` the flag governs this run and nothing more** — that
+document is a create-once artifact, reported `skip_modified`, so the file still says whatever it
+said and the next `init` would ask the remote again. Writing `none` there is yours to do.
 
 **The two states about the remote are reported only on a run that creates the document.** On the
 adoption path the answer is the fifth one whatever the remote said, because it is the whole
@@ -758,13 +761,20 @@ table above, `.github/workflows/keelline.yml` where a ref is recorded, and
 `.keelline/manifest.json` — every one of them through the scaffold engine, so every target goes
 through the containment walk and none may leave the project root or pass through a symlink.
 
-Exits `0` on success, `1` when either plan carries refusals — the report's REFUSED section names
-each, nothing was written and no manifest exists — and `2` on a refusal above the plans: no
-`--yes`, a repository already initialised, or a detected name outside the grammar. `--json`
-carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered report),
-`writes` (both plans' targets), `skipped`, `pin` (the release this run resolved, `{tag, sha}` or
-`null`), `asked`, `note`, and `ref` — what `[ci] ref` says on disk after the run and so what the
-workflow pins, empty when no workflow was planned.
+Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED
+section names each, nothing was written and no manifest exists — or a `keelline.toml` that is not
+valid TOML, or the merged document the loader itself refuses (an unknown section or key, a
+`[project] name` outside its grammar, a value of the wrong type, a machine configuration file
+that does not load). `2` on a refusal above the plans: no `--yes`, a repository already
+initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
+grammar or naming git's control directory — both refused by the loader before a plan exists —
+and two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
+keys to separate.
+
+`--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
+report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
+`{tag, sha}` or `null`), `asked`, `note`, and `ref` — what `[ci] ref` says on disk after the run
+and so what the workflow pins, empty when no workflow was planned.
 
 ---
 
@@ -1026,12 +1036,16 @@ It also runs `pre-commit install` in the overlay when the overlay carries a pre-
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
-Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
+Exits `0` on success; `1` under `--check` on a mismatch **or** on a non-zero count of memory
+groups that are still real directories, which are the two findings the paragraphs above explain
+and the same number for both; `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
 with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
-overlay, a memory group that is still a real directory rather than a link into it, or a
-`--machine` outside an interactive shell. Every one of those refusals happens
+overlay, a `memory.groups` entry that does not name a subdirectory of this project's
+`paths.memory` — a refusal distinct from that one, and the reason the count below is a count of
+groups that stayed inside — a memory group that is still a real directory rather than a link into
+it, or a `--machine` outside an interactive shell. Every one of those refusals happens
 before the first write, so a refused attach leaves both the repository and the overlay as they
 were. A write that itself fails also exits `2`, and is the one kind that can leave part of a run
 behind: an unwritable `.gitignore`, or a path inside the overlay that is not a directory — or
@@ -1241,8 +1255,11 @@ carries the command that would fix it, and not one of them is run for you. Nothi
 `hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
 repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
 rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
-resolves to. Four launches on a green
-attached installation, measured. Exactly one of them, `ci-ref`, leaves this machine.
+resolves to. Four of those are measured on a green attached installation — the wrapper probe and
+three `git` questions — and not one of the four leaves this machine. The `ci-ref` row's
+`git ls-remote` is a fifth on a repository that records a `[ci] ref` at all, and it is the only
+one that does leave: it goes through the `Runner` seam, which is what lets the case that pins the
+four answer it in process instead of launching it.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
@@ -1270,37 +1287,43 @@ nobody sees, so that is where they all are.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Ten of the sixteen have a `skip` arm — sixteen arms between them: two always, and eight
-more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
-code, so read the detail — each one says which measurement it is missing.
+**Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
+and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
+never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
-The two that skip on every correct installation are the ones this build cannot answer.
-`codex-trust` needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs
-a `[ci] ref`, which `init` writes. `files` was the third of these and is not any more: it now
-compares the installed plugin against the hashes the release recorded beside it.
+The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
+no spike measured. `ci-ref` was counted beside it and is not any more, and neither is `files`.
+`init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
+none — and which state is the ordinary one moves with the release history rather than with any
+code here: while no released tag matches the Keelline running there is no commit to pin, so
+`init` records nothing and the row skips on a correct installation; once a release exists, a
+repository `init` set up carries a ref and the row answers. `files` compares the installed
+plugin against the hashes the release recorded beside it, and skips only on a build carrying no
+such record.
 
-The eight that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
 and then moved it is not a machine that recorded none; `overlay-requires` again when the
 overlay declares no Keelline requirement; `bundles` and `store-debris`, when the note store does
-not resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has
-a second state arm of its own — a plugin built before the release record existed carries none,
-and it says so rather than comparing anything.
+not resolve; `diagnostics`, when no harness data root is set in the environment; and `ci-ref`,
+when no `[ci] ref` is recorded. `files` has a second state arm of its own — a plugin built
+before the release record existed carries none, and it says so rather than comparing anything.
 
 **A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
 moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
-versus "on a state" — `bundles`, `store-debris` and `diagnostics` all skip on a state and carry
-nothing, and so do the *no overlay recorded* arms of the two overlay rows. It is whether the
-skip is itself worth acting on. Those seven report something wrong that no other row will tell
-you: a plugin root nothing can find, a root that will be read and never executed, a recorded
-attach the overlay could not confirm, an overlay root recorded and not there. The other nine
-report a measurement that is simply unavailable —
-no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
-record in this build, no way to ask Codex — and no command in that row's gift changes it.
+versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
+`store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
+rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. It
+is whether the skip is itself worth acting on. Those seven report something wrong that no other
+row will tell you: a plugin root nothing can find, a root that will be read and never executed,
+a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
+other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
+requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to ask
+Codex — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
