@@ -18,7 +18,7 @@ import pytest
 
 from keelline import fsops
 from keelline.attach.api import ledger
-from keelline.attach.write import GROUP_ESCAPES, attach
+from keelline.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -540,8 +540,9 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     # than against the overlay -- so "memory.groups is in the message" no longer says which of
     # the two fired. The identity does, and it is what keeps the hoisted call proven: without
     # it this case passed with `_check_groups` deleted, on the never-moved check's refusal.
+    # (`GROUP_ESCAPES` names `memory.groups`, which is what a reader needs from it; asserting
+    # that here would be an assertion about a literal that no behaviour change can redden.)
     assert str(refusal.value) == GROUP_ESCAPES
-    assert "memory.groups" in GROUP_ESCAPES
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
@@ -1068,7 +1069,10 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
     # The walks' own floor, for the reason the mismatch case above states: `snapshot` is a walk,
     # and two empty dictionaries compare equal however much was written between them.
     assert before and overlay_before
-    with pytest.raises(Refusal, match="real directories"):
+    # The identity and not a substring, for the reason the escaping-group case above now gives:
+    # a refusal added beside this one makes a substring match stop saying which fired, and this
+    # one already sits one line from a containment whose message shares most of its words.
+    with pytest.raises(Refusal) as refusal:
         attach(
             root,
             store=store,
@@ -1078,6 +1082,7 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
+    assert str(refusal.value) == REAL_DIRECTORIES.format(count=1)
     assert_snapshot_unchanged(root, before)
     assert_snapshot_unchanged(store.parents[2], overlay_before)
     # The owner's act, and the only one that clears the refusal: the notes move into this

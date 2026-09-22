@@ -817,7 +817,7 @@ def attach(
 ) -> Attached:
     """Bind this repository to the overlay, merge what the overlay grants, and link the notes in.
 
-    The order is the order the refusals have to happen in: read the binding, which already
+    The order below is the order they are enumerated in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
     without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
     `origin`; read the existing ledger, which refuses one no attach could have written; refuse a
@@ -826,9 +826,14 @@ def attach(
     then write, `.gitignore` first, so the ledger is never in a tracked path even for an
     instant.
 
-    The ordinals in the body number this enumeration, not the line order: the ledger's refusal
-    is read a few lines below the two that need the `Config`, and this one is asked in the
-    same breath as the containment that reads the same `memory.groups` list.
+    The ordinals in the body number that enumeration and not the line order, and two of them
+    fire out of it: the ledger's refusal is read a few lines below the two that need the
+    `Config`, and the never-moved check is asked **before** the harness anchor rather than
+    after it. The reason is the `Config`: `_check_groups` has just loaded it, and the
+    never-moved check reads the same `memory.groups` and the same `paths.memory` — so the two
+    containments over one repository-authored list stay in one place, and the anchor, which
+    needs neither, follows. Nothing writes between them; every one of the eight is above the
+    first write, which is the property that matters and the one the tests assert.
 
     **All eight refusals are above every write, and three of them were not.** The no-`origin` one
     lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in

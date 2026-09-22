@@ -102,14 +102,17 @@ class _Harness:
 def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
     """The repository the walkthrough starts from; `initialised`, the shape the owner's has.
 
-    Not a fresh clone: a project that already keeps its notes in `paths.memory` as real
-    directories, with a history that predates Keelline. `[ci] mode = "none"` because this
-    repository wants no workflow — a `ci` mode that asked for one would have `init` reach for
-    the release pin and a remote, which is a different lane's test.
+    **`initialised` does not run `init` here.** It builds the repository `init` is run *over*:
+    notes already in `paths.memory` as real directories, `[ci] mode = "none"`, and one commit,
+    so the history predates Keelline. `keelline init --yes` is `_install_path`'s step 0, which
+    is where the launcher environment lives. The flag keeps the name the plan gives it in both
+    fixtures, because renaming one of the pair would split them.
 
-    The commit is what makes the history predate Keelline: `init` then writes its footprint on
-    top of a tree that was already committed, which is the order an adopting project meets it
-    in, and the notes it moves later are notes that were tracked before it arrived.
+    `[ci] mode = "none"` because this repository wants no workflow — a `ci` mode that asked for
+    one would have `init` reach for the release pin and a remote, which is a different lane's
+    test. The commit matters because `init` then writes its footprint on top of a tree that was
+    already committed, which is the order an adopting project meets it in, and the notes moved
+    later are notes that were tracked before Keelline arrived.
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)

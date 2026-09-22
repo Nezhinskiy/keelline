@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 
@@ -327,3 +328,35 @@ def test_check_counts_the_groups_that_never_moved_and_exits_one(
     (root / DEFAULT_MEMORY / "developer").rmdir()
     assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["real_directories"] == 0
+
+
+def test_check_reads_each_of_its_two_documents_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `check`'s own docstring says a `--check` whose two halves read different documents is
+    # "exactly what it exists to rule out", and the single load is what makes that true: the
+    # binding takes the `Config` the group count is taken under rather than loading a second
+    # one. Without a counter that claim was unguarded — deleting `config=config` restored two
+    # loads and the whole suite still passed.
+    #
+    # Counted at `binding.load`, the name `read_binding` resolves, and not at
+    # `keelline.config.loader.load`: `permissions` binds its own reference at import time, so a
+    # patch there would also count the load `check` is supposed to make. Zero is the assertion.
+    #
+    # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
+    from keelline.config.loader import load as real_load
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    loads: list[Path] = []
+
+    def counted(target: Path, **kwargs: object) -> Config:
+        loads.append(target)
+        return real_load(target, **kwargs)  # type: ignore[arg-type]
+
+    # Patched by name rather than through the module object, which is the same seam and does not
+    # read an attribute the module never exported.
+    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
+    assert loads == []
