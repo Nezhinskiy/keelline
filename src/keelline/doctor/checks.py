@@ -1211,6 +1211,17 @@ CI_REF_REMEDY = (
 # `git` itself having failed is a fact about this machine, not about `[ci] ref`, so it warns --
 # the same split `_guarded` makes and for the same reason: red gates the exit code.
 CI_REF_UNASKABLE = "[ci] ref could not be checked against the public repository's tags"
+# A recorded ref and no workflow at all. Fixed text carrying this module's own `WORKFLOW`
+# constant and nothing else: no byte of any repository-authored path reaches it.
+NO_WORKFLOW = (
+    f'[ci] mode is "reusable" and [ci] ref is recorded, and {WORKFLOW} is not there at all, so '
+    f"no Keelline gate runs on this repository"
+)
+NO_WORKFLOW_REMEDY = (
+    f'write {WORKFLOW} with a uses: line pinned to [ci] ref, or set [ci] mode = "none" if this '
+    f"repository is not meant to run the Keelline gate; keelline upgrade (ships later) will "
+    f"write it for you"
+)
 
 
 def _ref_is_released(context: Context, ref: str) -> Row:
@@ -1267,6 +1278,13 @@ def _ci_ref(context: Context) -> Row:
     repository that has not been initialised has had no chance to set one, and calling that a
     fault would make `doctor` red on every correct installation.
 
+    **Three ways the workflow can fail to agree, and none of them is `ok`.** It can disagree
+    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one
+    returned the ref's own verdict, so a repository with a released sha recorded and no workflow
+    reported "[ci] ref is a released Keelline commit", which a reader takes for "my gate is
+    pinned correctly". `[ci] mode` is what makes the absent file a finding rather than the
+    configuration working: only `reusable` renders one.
+
     The value is repository-authored and is never printed -- not in the detail, not in the
     remedy, and not in an argument list.
     """
@@ -1279,6 +1297,15 @@ def _ci_ref(context: Context) -> Row:
     try:
         rendered = (context.root / WORKFLOW).read_text(encoding="utf-8")
     except FileNotFoundError:
+        # No file at all, which is not agreement either. `return row` here reported `ok` — "[ci]
+        # ref is a released Keelline commit" — for a repository with no gate in it, and a reader
+        # takes that for "my gate is pinned correctly". It is the same false green the `not
+        # pinned` arm below refuses by name, and this is the state `init` itself leaves whenever
+        # it reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the
+        # file. `mode` is what tells the cases apart: under `none` or `uvx` this build renders no
+        # workflow, so an absent one is the configuration working.
+        if context.config.ci.mode == "reusable":
+            return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
     except OSError as exc:
         return Row(

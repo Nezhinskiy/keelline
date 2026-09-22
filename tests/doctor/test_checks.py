@@ -27,9 +27,10 @@ from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
-from keelline.doctor.checks import SETTINGS_FILES, plugin_root
+from keelline.doctor.checks import SETTINGS_FILES, WORKFLOW, plugin_root
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
+from keelline.memory.store import overlay_root
 from keelline.memory.trust import record
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
 from keelline.release.api import HASHED_FILES
@@ -104,11 +105,22 @@ def _checks(
     and a case that forgets it hands the developer's real `HOME` to the `wrapper` check's
     subprocess and their real `${CLAUDE_PLUGIN_DATA}` to `diagnostics`. Defaulting it here is
     what makes forgetting impossible rather than merely discouraged.
+
+    **`machine` is defaulted here for the same reason, and it was the hole that rule was written
+    to close.** `None` does not mean "no machine file" to the code under test: `_context` hands
+    it to `overlay_root`, which resolves `None` as `Path.home()/.config/keelline/config.toml` —
+    the *process* `HOME`, which the `env` dict above cannot reach. On any machine that has run
+    `keelline setup --overlay`, and this project's own developers are exactly those machines,
+    every case that omitted `machine` read the developer's real overlay: `context.overlay` was
+    their overlay root, `overlay-requires` read its real manifest, and `bundles`, `store-debris`
+    and `attached` resolved against their real note store. Those cases passed here and in CI
+    only because neither machine happens to have a machine configuration. A path under
+    `tmp_path` that does not exist is what `None` was meant to mean, and now says it.
     """
     return run_checks(
         root,
         home=tmp_path / "home" if home is None else home,
-        machine=machine,
+        machine=tmp_path / "no-machine.toml" if machine is None else machine,
         runner=_stub() if runner is None else runner,
         env=_env(tmp_path) if env is None else env,
     )
@@ -1861,6 +1873,43 @@ def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overl
     assert row.status == SKIP
 
 
+def test_no_case_here_can_read_the_developers_own_machine_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_checks`'s hermetic defaults, proved on the one that was missing.
+
+    `machine` defaulted to `None`, and `None` is not "no machine file" to the code under test:
+    `_context` hands it to `overlay_root`, which resolves `None` as
+    `Path.home()/.config/keelline/config.toml` — the **process** `HOME`, which the `env` dict
+    this helper passes cannot reach. So on any machine that has run `keelline setup --overlay`,
+    and this project's own intended users are exactly those machines, every case that omitted
+    `machine` read the developer's real overlay: `context.overlay` was their overlay root,
+    `overlay-requires` read its real manifest — the shipped template declares a floor — and
+    `bundles`, `store-debris` and `attached` resolved against their real note store. Those cases
+    passed here and in CI only because neither machine happens to have a machine configuration.
+
+    Asserted so that the default coming back would redden it: a real machine configuration is
+    planted at a `HOME` this test owns, `machine_config_path` is asked to confirm that `None`
+    really would resolve to it, and the row that would change its answer is then required to
+    skip. `_checks` is called with no `machine=`, which is the shape every case in the list
+    above has.
+    """
+    from keelline.config.machine import machine_config_path
+
+    home = tmp_path / "developer-home"
+    (home / ".config" / "keelline").mkdir(parents=True)
+    overlay = overlay_with(tmp_path / "their-overlay", ">=0.0.1")
+    (home / ".config" / "keelline" / "config.toml").write_text(
+        f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("HOME", str(home))
+    expected = home / ".config" / "keelline" / "config.toml"
+    assert machine_config_path(interactive=False) == expected, "the planted file is not reachable"
+    assert overlay_root(expected) == overlay, "the planted file records no overlay"
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
+    assert row.status == SKIP, row
+
+
 def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
     machine = _recorded_overlay(tmp_path, "~=1.0")
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
@@ -1891,10 +1940,13 @@ LISTING = f"{RELEASED}\trefs/tags/v0.1.0\n{ALIAS_SHA}\trefs/tags/v1\n"
 GIT_FAILED = 128
 
 
-def _configured(tmp_path: Path, ref: str, *, workflow_ref: str | None = None) -> Path:
+def _configured(
+    tmp_path: Path, ref: str, *, workflow_ref: str | None = None, mode: str = "reusable"
+) -> Path:
     root = _initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
-        (root / CONFIG_FILE).read_text(encoding="utf-8") + f'\n[ci]\nref = "{ref}"\n',
+        (root / CONFIG_FILE).read_text(encoding="utf-8")
+        + f'\n[ci]\nmode = "{mode}"\nref = "{ref}"\n',
         encoding="utf-8",
     )
     if workflow_ref is not None:
@@ -1910,7 +1962,9 @@ def test_a_released_commit_is_ok_and_an_unreleased_one_is_red(tmp_path: Path) ->
     # Mutation (oracle): `if not is_a_release` -> `if is_a_release` -> both arms swap.
     stub = _stub()
     stub.stdout = LISTING
-    ok = _checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub)
+    # The workflow is written here and not left out: a repository with no workflow file has its
+    # own row below, and this case is about what the public repository's tags say.
+    ok = _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref=RELEASED), runner=stub)
     assert _by_name(ok, "ci-ref").status == OK
     row = _by_name(_checks(tmp_path, _configured(tmp_path, UNRELEASED), runner=stub), "ci-ref")
     assert row.status == RED and "released" in row.detail
@@ -1931,11 +1985,14 @@ def test_a_value_that_is_neither_a_sha_nor_the_alias_is_red_without_a_subprocess
 def test_the_alias_is_a_warning_that_names_it_mutable(tmp_path: Path) -> None:
     stub = _stub()
     stub.stdout = LISTING
-    row = _by_name(_checks(tmp_path, _configured(tmp_path, "v1"), runner=stub), "ci-ref")
+    root = _configured(tmp_path / "alias", "v1", workflow_ref="v1")
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
     assert row.status == WARN and "mutable" in row.detail
     stub = _stub(code=GIT_FAILED)
-    unaskable = _checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub)
+    root = _configured(tmp_path / "unaskable", RELEASED, workflow_ref=RELEASED)
+    unaskable = _checks(tmp_path, root, runner=stub)
     assert _by_name(unaskable, "ci-ref").status == WARN
+    assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
 
 
 def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
@@ -1963,6 +2020,34 @@ def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _by_name(_checks(tmp_path, root, runner=stub), "ci-ref").status == OK
+
+
+def test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green(tmp_path: Path) -> None:
+    """A missing file is no more evidence of agreement than an unrecognised one.
+
+    The `FileNotFoundError` arm returned the ref's own verdict, so a repository with
+    `[ci] mode = "reusable"`, a released sha recorded and no `.github/workflows/keelline.yml`
+    reported `ok`: "[ci] ref is a released Keelline commit". A reader takes that for "my gate is
+    pinned correctly" when no gate exists at all — the same false green the `not pinned` arm
+    eleven lines below already refuses by name. It is the state `init` itself leaves whenever it
+    reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the file.
+
+    `[ci] mode` is what tells the cases apart, and the `none` arm is asserted beside it: under a
+    mode this build renders no workflow for, an absent workflow is the configuration working.
+
+    Mutation (oracle): `if context.config.ci.mode == "reusable":` -> `if False:` -> the first
+    case goes back to `ok` and reddens.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub), "ci-ref")
+    assert row.status == WARN, row
+    assert WORKFLOW in row.detail and "is not there at all" in row.detail
+    assert row.remedy and WORKFLOW in row.remedy
+    # No byte of this repository's own configuration is quoted back, ref included.
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+    quiet = _configured(tmp_path / "off", RELEASED, mode="none")
+    assert _by_name(_checks(tmp_path, quiet, runner=stub), "ci-ref").status == OK
 
 
 def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(

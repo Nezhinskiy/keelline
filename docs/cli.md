@@ -1241,7 +1241,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
-| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref | `git ls-remote --exit-code` over the public repository's tags; *.github/workflows/keelline.yml* |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row | `git ls-remote --exit-code` over the public repository's tags; *.github/workflows/keelline.yml* |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |

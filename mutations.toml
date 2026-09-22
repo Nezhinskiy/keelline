@@ -5147,13 +5147,16 @@ reddens = [
   "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
 ]
 
+# One helper, two readers: the section list and, since round 2, the unknown-key lists inside a
+# known table. Dropping the filter reddens both, which is the point of their sharing it.
 [[mutation]]
-name = "an unknown section's name is no longer bounded before it prints"
+name = "an unknown name is no longer bounded before it prints"
 file = "src/keelline/config/loader.py"
 before = "    named = [name for name in unknown if SECTION_NAME.match(name)]"
 after = "    named = list(unknown)"
 reddens = [
   "tests/config/test_loader.py::test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them",
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
 ]
 
 # The one count in the session-start lines that is computed from repository-authored bytes.
@@ -5630,4 +5633,58 @@ before = "adopted=existing is not None"
 after = "adopted=False"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
+
+# The call site, which is what regressed. A TOML key is arbitrary quoted text, so this message
+# joined a repository's own bytes straight into a `ConfigError` — raw ESC and raw newlines into
+# a terminal and into a refusal the `init` skill is instructed to relay to a model. Reachable on
+# all nine tables, and two functions from the helper written in that file for this rule. The
+# *missing*-key message beside it is built from schema field names and is deliberately not
+# bounded.
+[[mutation]]
+name = "an unknown key in a known table is echoed back raw"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# `[budgets]` is a second reader with a second message and its own name list, so it is a second
+# entry rather than a second assertion under the one above.
+[[mutation]]
+name = "an unknown budget key is echoed back raw"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# A verdict a reader acts on. With `[ci] mode = "reusable"`, a released sha recorded and no
+# `.github/workflows/keelline.yml`, the row reported `ok` — "[ci] ref is a released Keelline
+# commit" — for a repository with no gate in it at all. That is the false green the `not pinned`
+# arm eleven lines below already refuses by name, and it is the state `init` itself leaves
+# whenever it reports `ci-workflow` under `skipped`. The mutation puts the false green back.
+[[mutation]]
+name = "doctor reports a pinned ref as ok with no workflow file to pin it in"
+file = "src/keelline/doctor/checks.py"
+before = '        if context.config.ci.mode == "reusable":'
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green",
+]
+
+# The hermetic default the helper's own docstring promises. `machine=None` is not "no machine
+# file" to the code under test: it resolves to `Path.home()/.config/keelline/config.toml`, the
+# process `HOME`, which the `env` dict this helper passes cannot reach. Every case that omitted
+# `machine` read the developer's real overlay on any machine that has run `keelline setup
+# --overlay`, and passed only because neither this machine nor CI has one.
+[[mutation]]
+name = "the doctor test helper defaults machine back to the process home"
+file = "tests/doctor/test_checks.py"
+before = '        machine=tmp_path / "no-machine.toml" if machine is None else machine,'
+after = "        machine=machine,"
+reddens = [
+  "tests/doctor/test_checks.py::test_no_case_here_can_read_the_developers_own_machine_configuration",
 ]

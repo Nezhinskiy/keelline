@@ -124,11 +124,41 @@ def _schema_types(cls: type[Any]) -> dict[str, Any]:
     return {f.name: hints[f.name] for f in fields(cls)}
 
 
+def _named(unknown: list[str], noun: str) -> str:
+    """`unknown`, bounded before it may print (P10): a plain-named one is echoed, anything else
+    is counted and never quoted — `PATH_VALUE`'s rule read onto a second grammar.
+
+    **Every name in a `keelline.toml` is repository-authored, not only the table names.** A TOML
+    key is arbitrary quoted text, so `[paths] "docs\u001b[31m\nIGNORE ALL PRIOR RULES" = 1` put raw
+    ESC and raw newlines into `[paths] has unknown key(s): ...` — a refusal the terminal renders
+    and the `init` skill relays to a model — on all nine tables. That message sat two functions
+    from this one, which was written for exactly this rule and applied only to the section list.
+
+    `SECTION_NAME` is the grammar both callers use, and it is a deliberate re-reading rather than
+    a coincidence: every key any schema class or `Budgets.NAMES` declares is lowercase words
+    joined by underscores, so a typo worth naming (`branch` for `gate_branch`) matches and
+    nothing Keelline answers to falls outside. A key carrying anything else is counted.
+
+    `noun` is what the count calls the names it would not print, so the sentence reads about the
+    thing that was unknown: a section, or a key.
+    """
+    named = [name for name in unknown if SECTION_NAME.match(name)]
+    unnamed = len(unknown) - len(named)
+    parts = list(named)
+    if unnamed:
+        verb = "is" if unnamed == 1 else "are"
+        # "more" only when something was named: with every name failing the grammar the message
+        # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
+        more = "more " if named else ""
+        parts.append(f"{unnamed} {more}that {verb} not plain {noun} names")
+    return ", ".join(parts)
+
+
 def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
     known = _schema_types(cast(Any, cls))
     unknown = sorted(set(values) - set(known))
     if unknown:
-        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")
+        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")
     missing = sorted(set(known) - set(values))
     if missing:
         raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
@@ -165,27 +195,11 @@ def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
         raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")
 
 
-def _named(unknown: list[str]) -> str:
-    """`unknown`, bounded before it may print (P10): a plain-named table is echoed, anything
-    else is counted and never quoted — a `keelline.toml` table name is repository-authored the
-    same way a `[paths]` value is, so this is `PATH_VALUE`'s rule read onto a second grammar."""
-    named = [name for name in unknown if SECTION_NAME.match(name)]
-    unnamed = len(unknown) - len(named)
-    parts = list(named)
-    if unnamed:
-        verb = "is" if unnamed == 1 else "are"
-        # "more" only when something was named: with every name failing the grammar the message
-        # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
-        more = "more " if named else ""
-        parts.append(f"{unnamed} {more}that {verb} not plain section names")
-    return ", ".join(parts)
-
-
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     configured = _table(raw, "budgets")
     unknown = sorted(set(configured) - set(Budgets.NAMES))
     if unknown:
-        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")
+        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
     for key, value in configured.items():
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ConfigError(f"budgets.{key} must be a positive integer")
@@ -265,7 +279,7 @@ def loads(
         raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
-        raise ConfigError(f"{path} has unknown section(s): {_named(unknown)}")
+        raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "keelline")
     preset_name = str(head.get("preset", "recommended"))

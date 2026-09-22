@@ -33,9 +33,13 @@ PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
 PATH_VALUE = re.compile(
     r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"
 )
-# The grammar an unknown top-level section's name must match before a refusal may print it: a
-# `keelline.toml` table name is repository-authored the same way a `[paths]` value is, and the
-# loader's own refusal used to echo it back whole, newlines and all (P10, fix round 1, finding 2).
+# The grammar an unknown *name* in a `keelline.toml` must match before a refusal may print it —
+# a top-level section's, and a key's inside a known table. Both are repository-authored the same
+# way a `[paths]` value is, and both of the loader's refusals echoed them back whole, newlines
+# and all (P10, fix round 1, finding 2; the key half, round 2). A TOML key is arbitrary quoted
+# text, so the two are one grammar and not two: every name Keelline itself answers to — every
+# schema field, every `Budgets.NAMES` entry, every section — is lowercase words joined by
+# underscores, and anything else is counted rather than quoted.
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 STATES = ("initialised", "adopting", "installed")
 MEMORY_MODES = ("overlay", "in-repo", "local-only")
