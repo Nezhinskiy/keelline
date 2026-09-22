@@ -26,7 +26,7 @@ from pathlib import Path
 from keelline.areas import SubParsers
 from keelline.command import DRY_RUN_HELP, common_flags
 from keelline.result import Result
-from keelline.scaffold import Plan, render_report
+from keelline.scaffold import render_report
 
 NO_CI_HELP = 'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none"'
 YES_HELP = (
@@ -35,9 +35,13 @@ YES_HELP = (
 )
 
 
-def _counts(planned: Plan) -> str:
-    """The last line of the plan's own report: the six numbers, from the same renderer."""
-    return render_report(planned).splitlines()[-1]
+def _counts(report: str) -> str:
+    """The last line of a rendered plan report: the six numbers, from the same renderer.
+
+    Sliced off the report rather than recomputed, so the line in the summary and the report in
+    `--json` cannot disagree about what was planned.
+    """
+    return report.splitlines()[-1]
 
 
 def run_init(args: argparse.Namespace) -> Result:
@@ -54,6 +58,7 @@ def run_init(args: argparse.Namespace) -> Result:
         dry_run=args.dry_run,
         ci=args.ci,
     )
+    once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
     if pin is not None:
         ci_line = f"CI: {pin.tag}@{pin.sha}"
@@ -61,8 +66,8 @@ def run_init(args: argparse.Namespace) -> Result:
         ci_line = f"CI: skipped — {report.skipped.get('ci-workflow', 'no workflow was planned')}"
     lines = [
         "would initialise:" if report.dry_run else "initialised:",
-        f"  write-once: {_counts(report.once)}",
-        f"  footprint: {_counts(report.footprint)}",
+        f"  write-once: {_counts(once)}",
+        f"  footprint: {_counts(footprint)}",
         f"  {ci_line}",
     ]
     if report.note:
@@ -70,8 +75,8 @@ def run_init(args: argparse.Namespace) -> Result:
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
-        "once": render_report(report.once),
-        "footprint": render_report(report.footprint),
+        "once": once,
+        "footprint": footprint,
         "writes": [*report.once.writes, *report.footprint.writes],
         "skipped": dict(report.skipped),
         "pin": None if pin is None else {"tag": pin.tag, "sha": pin.sha},
