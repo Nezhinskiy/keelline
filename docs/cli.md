@@ -345,8 +345,10 @@ what catches it: the `files` row goes **red** on a cleared bit and hands you the
 it after anything that rewrites the plugin directory.
 
 **What a session hears about the overlay it is bound to: `overlay-status`.** The `attach` area
-registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks once per session
-rather than again on every `resume`, `clear` and `compact` the matcher above covers — and it says
+registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks **at most** once
+per session: the marker is banked only when the handler had something to say, so a session that
+hears a line hears it once, and a repository with nothing to report is asked again on every
+`startup`, `resume`, `clear` and `compact` the matcher above covers — and it says
 nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
 count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
 **could not be asked** about, which is a machine configuration file that will not parse; this
@@ -359,10 +361,17 @@ upstream**, and the counts of its **unpushed commits and uncommitted changes**. 
 up-to-date repository on a satisfied Keelline hears nothing. Not one byte a repository wrote
 reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
 read and none is quoted back, because the field these lines land in is `additionalContext` —
-model input with no delimiter and no trust record. The last two lines cost two `git` calls at two
-seconds each and are skipped whenever an earlier line already asks for an action, which is what
-keeps the handler inside the entry's own ten-second budget alongside the one `origin` query the
-binding needs. And the overlay is never a plugin Keelline executes anything from — its
+model input with no delimiter and no trust record.
+
+**What it costs, and on which repository.** The binding's own `origin` query runs on every
+invocation, at git's five-second cap. The last two lines cost two more `git` calls at two seconds
+each, and they are reached **only when nothing above them found anything wrong** — a finding
+short-circuits them. So the repository that pays all three, nine seconds against the entry's own
+ten-second budget shared with `worktree-link`, is the bound, linked, up-to-date one that then
+hears nothing; and because the `once_key` marker is banked only on a line actually delivered,
+that is also the repository asked again on every resume. A repository with a finding pays five
+seconds, hears its line, and is not asked again. And the overlay is never a plugin Keelline
+executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
 merge.

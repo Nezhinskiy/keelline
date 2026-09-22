@@ -164,14 +164,51 @@ def test_a_bound_linked_pushed_and_satisfied_project_hears_nothing(
 def test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wrong(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A branch with no upstream is one line, and it is not the line that says zero.
+
+    `Sync.ahead` is `None` when `git rev-list @{upstream}..HEAD` could not be answered, which on a
+    branch with no upstream means every commit on it is unpushed -- the count is unknown, not
+    zero. The two lines used to be appended by two independent `if`s with `ahead=sync.ahead or 0`
+    under the second, so this exact state produced "nothing backs it up" immediately followed by
+    "0 unpushed commit(s)": the sentence carrying the number said the opposite of the one above
+    it. They are mutually exclusive now, and `NO_UPSTREAM` carries the dirty count, which is the
+    half that is knowable here.
+
+    Mutation: `mutations.toml`'s "a session with no upstream is told it has 0 unpushed commits".
+    """
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     git(overlay, "init", "-q", "-b", "main")
     git(overlay, "add", "-A")
     git(overlay, "commit", "-qm", "chore: overlay")
     _bind(overlay)  # written after the commit, so the binding record is untracked: dirty 1
-    assert _run(root, machine, None) == NO_UPSTREAM + "\n" + UNPUSHED.format(ahead=0, dirty=1)
+    context = _run(root, machine, None)
+    assert context == NO_UPSTREAM.format(dirty=1)
+    # The half the old condition got wrong, said as the assertion it is: no count of unpushed
+    # commits is reported for a branch whose unpushed count is unknown.
+    assert "unpushed commit(s)" not in (context or "")
     _bind(overlay, "git@github.com:someone/else.git")
     assert _run(root, machine, None) == REMOTE_MISMATCH  # the sync half is skipped
+
+
+@needs_git
+def test_an_upstream_that_is_behind_still_reports_both_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side of the `elif`: with an upstream, `ahead` is a real number and `UNPUSHED` is
+    # the line -- so making the two exclusive did not cost the case that reports both counts.
+    root, overlay, machine = _recorded(tmp_path, monkeypatch)
+    bare = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(overlay, "init", "-q", "-b", "main")
+    git(overlay, "add", "-A")
+    git(overlay, "commit", "-qm", "chore: overlay")
+    git(overlay, "remote", "add", "origin", str(bare))
+    git(overlay, "push", "-q", "-u", "origin", "main")
+    _bind(overlay)  # untracked after the push: dirty 1, ahead 0
+    (overlay / "later.md").write_text("more\n", encoding="utf-8")
+    git(overlay, "add", "later.md")
+    git(overlay, "commit", "-qm", "chore: later")  # ahead 1
+    assert _run(root, machine, None) == UNPUSHED.format(ahead=1, dirty=1)
 
 
 @needs_git
@@ -234,3 +271,56 @@ def test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result(
     """
     root, _, machine = _recorded(tmp_path, monkeypatch, requires=">=" + "9" * 5000 + ".0.0")
     assert _run(root, machine, None) == NOT_ATTACHED + "\n" + REQUIRES_UNREADABLE
+
+
+@needs_git
+def test_the_budget_this_module_documents_is_the_one_it_pays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `git` calls fall on the healthy path, and both documents used to say the reverse.
+
+    This module's docstring and `docs/cli.md` both said the sync calls were "skipped whenever an
+    earlier line already asks for an action". The skip is real and it is the other way round:
+    `overlay_sync` sits under `if not lines:`, so it is reached exactly when nothing above it
+    found anything wrong. The repository that pays `origin_remote` (five seconds) plus `git
+    status` and `git rev-list` (two each) -- nine against the entry's ten, shared with
+    `worktree-link` -- is the bound, linked, pushed, satisfied one that then hears nothing.
+
+    A false statement about a budget is worse than the budget, so the measurement is the test and
+    the two documents are held to it. The behaviour is deliberately unchanged: making a silent
+    handler stop re-running is `hooks/dispatch.py`'s `once_key` semantics, which every area's
+    handlers share.
+    """
+    from keelline.attach import hooks as attach_hooks
+    from keelline.overlay import api as overlay_api
+
+    asked: list[Path] = []
+    real = overlay_api.overlay_sync
+
+    def counted(overlay: Path, **kwargs: object) -> object:
+        asked.append(overlay)
+        return real(overlay, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(overlay_api, "overlay_sync", counted)
+
+    root, overlay, machine = _recorded(tmp_path, monkeypatch)
+    # A finding above the sync: the two extra `git` calls are the ones NOT paid here.
+    assert _run(root, machine, None) == NOT_ATTACHED
+    assert asked == []
+
+    bare = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(overlay, "init", "-q", "-b", "main")
+    _bind(overlay)
+    git(overlay, "add", "-A")
+    git(overlay, "commit", "-qm", "chore: overlay")
+    git(overlay, "remote", "add", "origin", str(bare))
+    git(overlay, "push", "-q", "-u", "origin", "main")
+    # Nothing to say, and the sync is exactly what it paid to find that out.
+    assert _run(root, machine, None) is None
+    assert asked == [overlay]
+
+    claim = "skipped whenever an earlier line already asks for an action"
+    assert attach_hooks.__doc__ is not None and claim not in attach_hooks.__doc__
+    reference = Path(__file__).resolve().parents[2] / "docs" / "cli.md"
+    assert claim not in reference.read_text(encoding="utf-8")

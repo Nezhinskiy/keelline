@@ -5822,3 +5822,36 @@ after = '''    if skipped is not None or not report.ref:
 reddens = [
   "tests/project/test_command.py::test_the_ci_line_has_no_arm_no_run_can_reach",
 ]
+
+# `Sync.ahead` is `None` when the count is UNKNOWN -- a branch with no upstream has every commit
+# unpushed -- and the two lines were appended by two independent `if`s with `ahead=sync.ahead or 0`
+# under the second. So a session heard "nothing backs it up" and "0 unpushed commit(s)" in one
+# breath, with the number on the sentence that was false. Parked twice as "the plan specified that
+# condition exactly"; the plan is not the authority on whether a sentence is true.
+[[mutation]]
+name = "a session with no upstream is told it has 0 unpushed commits"
+file = "src/keelline/attach/hooks.py"
+before = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                elif sync.dirty > 0 or sync.ahead > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead, dirty=sync.dirty))'''
+after = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                if sync.dirty > 0 or (sync.ahead or 0) > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead or 0, dirty=sync.dirty))'''
+reddens = [
+  "tests/attach/test_hooks.py::test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wrong",
+]
+
+# The delivery rule `attach/hooks.py`'s corrected docstring rests on. Banking a `once_key` for a
+# result that said nothing would spend a handler's single delivery on silence -- and the
+# consequence, which no test stated until now, is that a handler whose healthy answer IS silence
+# runs on every matching event and pays its `git` calls every time.
+[[mutation]]
+name = "a silent handler spends its one delivery"
+file = "src/keelline/hooks/dispatch.py"
+before = "            if handler.once_key is not None and delivered:"
+after = "            if handler.once_key is not None:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
+]
