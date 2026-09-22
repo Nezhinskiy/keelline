@@ -1259,7 +1259,19 @@ resolves to. Four of those are measured on a green attached installation — the
 three `git` questions — and not one of the four leaves this machine. The `ci-ref` row's
 `git ls-remote` is a fifth on a repository that records a `[ci] ref` at all, and it is the only
 one that does leave: it goes through the `Runner` seam, which is what lets the case that pins the
-four answer it in process instead of launching it.
+four answer it in process instead of launching it. That one is bounded at **30 seconds**, and not
+at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
+clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
+five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
+this area's own thirty.
+
+**The rendered workflow is read as a regular file, and to a bound.** That path is the
+repository's: a clone chooses what sits at `.github/workflows/keelline.yml`. Anything there that
+is not a regular file — a directory, a symlink to a FIFO, a dangling link — is a warning naming
+the path and never the ref's own verdict, and so is a file past 256 KiB, the same bound the
+`diagnostics` row reads its log under. Not one byte of the file is printed on any arm, and a byte
+that is not UTF-8 is replaced rather than raised: it used to reach the report as a red row saying
+the check could not run, which is a red a clone could force.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
@@ -1282,7 +1294,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
-| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row | `git ls-remote --exit-code` over the public repository's tags; *.github/workflows/keelline.yml* |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |

@@ -140,6 +140,16 @@ _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
 # interpreter probe and nothing about it is a project's to tune. Wide enough for a cold
 # interpreter start on a loaded machine, narrow enough that a hung probe does not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
+# Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
+# `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
+# with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
+# repo create --clone` waiting on GitHub to instantiate a template, then a clone down the wire —
+# but this row reads one tag listing, and `init` recording a ref is what made a five-minute block
+# reachable from a command documented as a one-line diagnostic. The number is the wrapper probe's
+# above, deliberately: both bound one bounded question that a hung peer must not turn into a hung
+# `doctor`, and the module's other `git` calls go through `gitenv`'s five seconds. D7's shipped
+# file: none — nothing about it is a project's to tune.
+CI_REF_TIMEOUT_SECONDS = 30
 # Said by `files` about a wrapper it measured under a root the environment named, so nobody
 # reads "executable" as "this installation is sound". The sentence is a constant because both
 # of that check's rows carry it and a lane that changes one must change the other.
@@ -1262,8 +1272,20 @@ _SHA = re.compile(r"\A[0-9a-f]{40}\Z")
 ALIAS = "v1"
 # The rendered workflow, which is the pin GitHub actually acts on.
 WORKFLOW = ".github/workflows/keelline.yml"
+# Bound on the read of that file, which a repository authors. `DIAGNOSTICS_MAX_BYTES` is the same
+# number for the same reason one function down, and D7 asks a cap to name the shipped file that
+# must change with it: `templates/project/keelline.yml`, which renders to well under 2 KiB. Two
+# orders of magnitude above it leaves room for a project that adds jobs of its own around the
+# call, and still refuses to read a file no `init` could have written into a one-line diagnostic.
+WORKFLOW_MAX_BYTES = 256 * 1024
 # Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
 _USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")
+# Said of a path that is there and is not a regular file: a directory, a device, a FIFO, or a
+# symlink to any of those. Fixed text, and the file's own bytes are never reached.
+WORKFLOW_NOT_A_FILE = (
+    f"{WORKFLOW} is there and is not a regular file, so whether it pins the same ref as [ci] ref "
+    f"was not checked"
+)
 CI_REF_REMEDY = (
     f"set [ci] ref in {CONFIG_FILE} to a released commit and rewrite the workflow's uses: line "
     f"to match; keelline upgrade (ships later) will move both"
@@ -1354,9 +1376,22 @@ def _ci_ref(context: Context) -> Row:
     row = _ref_is_released(context, ref)
     if row.status == RED:
         return row
-    try:
-        rendered = (context.root / WORKFLOW).read_text(encoding="utf-8")
-    except FileNotFoundError:
+    workflow = context.root / WORKFLOW
+    # **A regular file, and a bounded read of it — the two guards its siblings in this module
+    # already have.** `_hook_entries` asks `is_file()` of every settings file before it opens one
+    # and `_diagnostics` reads its log to a cap; this path had neither, and it is
+    # repository-authored in the same sense: a clone chooses what sits at
+    # `.github/workflows/keelline.yml`. A committed symlink to a FIFO there made `read_text` block
+    # with nothing to read, so `doctor` — one line, documented as a diagnostic — never returned
+    # at all. Measured before this guard on a real FIFO: the row did not come back.
+    #
+    # None of the file's bytes is printed on any arm, so this is containment hygiene rather than a
+    # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
+    # and used to reach the `OSError` one below, naming `IsADirectoryError`; the arm's own
+    # sentence says what a reader needs and carries no platform's spelling of the fault.
+    if not workflow.is_file():
+        if workflow.exists() or workflow.is_symlink():
+            return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
         # No file at all, which is not agreement either. `return row` here reported `ok` — "[ci]
         # ref is a released Keelline commit" — for a repository with no gate in it, and a reader
         # takes that for "my gate is pinned correctly". It is the same false green the `not
@@ -1367,6 +1402,9 @@ def _ci_ref(context: Context) -> Row:
         if context.config.ci.mode == "reusable":
             return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
         return row
+    try:
+        with workflow.open("rb") as handle:
+            raw = handle.read(WORKFLOW_MAX_BYTES + 1)
     except OSError as exc:
         return Row(
             WARN,
@@ -1374,6 +1412,23 @@ def _ci_ref(context: Context) -> Row:
             f"pins the same ref as [ci] ref was not checked",
             CI_REF_REMEDY,
         )
+    if len(raw) > WORKFLOW_MAX_BYTES:
+        # Over the cap is itself an answer, the way it is for the hook sink's log: this is not a
+        # file `init` rendered, and a `uses:` line past the cap would be compared against bytes
+        # that were never read. Never the ref's own verdict, for the reason the arms around it
+        # give.
+        return Row(
+            WARN,
+            f"{WORKFLOW} is larger than {WORKFLOW_MAX_BYTES} bytes, so whether it pins the same "
+            f"ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    # `errors="replace"` and not a strict decode: a stray byte in a repository-authored file used
+    # to raise `UnicodeDecodeError`, which is a `ValueError` and so escaped to `_guarded` as a red
+    # row saying the check could not run — a red a clone could force, on a row whose own rule is
+    # that a file it cannot account for is named and never absolved. A replaced byte cannot forge
+    # a sha: `_USES` bounds what is compared, and nothing read here is printed.
+    rendered = raw.decode("utf-8", errors="replace")
     # `finditer` and not `search`: the first `uses:` in the file may belong to another job, and
     # a recognisable pin after it is still the pin GitHub acts on. Every recognisable one is
     # compared, so a second job pinning something else is a finding too.

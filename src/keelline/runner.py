@@ -86,8 +86,23 @@ class Runner(Protocol):
     def run(self, argv: list[str], cwd: Path) -> Completed: ...
 
 
+@dataclass(frozen=True)
 class _SubprocessRunner:
+    """The real runner, optionally with a narrower wall-clock bound than the module's.
+
+    `timeout=None` means `NETWORK_TIMEOUT_SECONDS`, read at call time rather than captured here,
+    which is what keeps `tests/test_runner.py`'s case able to lower the module constant — and
+    what keeps the default one number in one place. A caller passes a smaller one when the
+    question it asks is smaller than the ones this cap was written for: `doctor` asks the public
+    repository for a tag listing on a command documented as a one-line diagnostic, and blocking
+    it for five minutes is not a diagnostic (`doctor.checks.CI_REF_TIMEOUT_SECONDS`). Nobody may
+    pass a *larger* one without saying why here; the cap is for a hung process, not a slow link.
+    """
+
+    timeout: float | None = None
+
     def run(self, argv: list[str], cwd: Path) -> Completed:
+        bound = NETWORK_TIMEOUT_SECONDS if self.timeout is None else self.timeout
         env = {key: value for key, value in os.environ.items() if key not in _ENV_DROP}
         env.update(_ENV_FORCE)
         try:
@@ -98,22 +113,27 @@ class _SubprocessRunner:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=NETWORK_TIMEOUT_SECONDS,
+                timeout=bound,
                 env=env,
                 # Closed, not inherited. See `_ENV_FORCE`: a prompt on an inherited stdin is
                 # invisible behind `capture_output` and outlasts nothing.
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired:
-            return Completed(
-                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"
-            )
+            return Completed(TIMED_OUT, "", f"{argv[0]} did not finish within {bound}s")
         except (OSError, subprocess.SubprocessError) as exc:
             return Completed(NOT_FOUND, "", f"{argv[0]} could not be run: {exc}")
         return Completed(done.returncode, done.stdout, done.stderr)
 
 
-def subprocess_runner() -> Runner:
+def subprocess_runner(*, timeout: float | None = None) -> Runner:
     """The real one. List form, never `shell=True`, and every repository- or argument-derived
-    value passed after a `--` so a name shaped like an option cannot become one (§3)."""
-    return _SubprocessRunner()
+    value passed after a `--` so a name shaped like an option cannot become one (§3).
+
+    `timeout` is the wall-clock bound on each call this runner makes, defaulting to
+    `NETWORK_TIMEOUT_SECONDS`. It is a keyword and it is on the factory rather than on the
+    `Runner` protocol, so no stub in the suite has to grow a parameter it would ignore: what a
+    caller bounds is the real launcher it asks for, and every test that substitutes a runner is
+    already bounding it at nothing.
+    """
+    return _SubprocessRunner(timeout=timeout)

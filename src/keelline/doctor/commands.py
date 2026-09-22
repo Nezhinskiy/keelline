@@ -53,7 +53,7 @@ from pathlib import Path
 
 from keelline.areas import SubParsers
 from keelline.command import HOME_HELP, common_flags
-from keelline.doctor.checks import RED, SKIP, WARN, Check, run_checks
+from keelline.doctor.checks import CI_REF_TIMEOUT_SECONDS, RED, SKIP, WARN, Check, run_checks
 from keelline.findings import listed
 from keelline.result import Result
 
@@ -80,6 +80,9 @@ def run_doctor(args: argparse.Namespace) -> Result:
     from keelline.runner import subprocess_runner
 
     root = Path(args.root).resolve()
+    # The bound, asked for here because this is where the real runner is built. It applies to the
+    # one call in this area that leaves the machine — the `ci-ref` row's `git ls-remote` — and
+    # `checks.CI_REF_TIMEOUT_SECONDS` carries the argument for the number.
     checks = run_checks(
         root,
         # `None` means the machine owner's own, said out loud rather than defaulted — the rule
@@ -87,7 +90,7 @@ def run_doctor(args: argparse.Namespace) -> Result:
         # resolver without one reads the developer's real `~`.
         home=Path(args.home).expanduser() if args.home else None,
         machine=Path(args.machine) if args.machine else None,
-        runner=subprocess_runner(),
+        runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),
     )
     data = {
         "checks": [

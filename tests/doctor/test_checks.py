@@ -18,6 +18,7 @@ import json
 import os
 import pty
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +31,12 @@ from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
-from keelline.doctor.checks import SETTINGS_FILES, WORKFLOW, plugin_root
+from keelline.doctor.checks import (
+    SETTINGS_FILES,
+    WORKFLOW,
+    WORKFLOW_MAX_BYTES,
+    plugin_root,
+)
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
 from keelline.memory.store import overlay_root
@@ -2041,19 +2047,26 @@ def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_pa
     assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
 
 
-def test_a_workflow_that_cannot_be_read_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
-    """A file that is there and cannot be opened is no evidence of agreement.
+# The join the FIFO case gives the row, and the only wall-clock number in this module. Six seconds
+# rather than one: it separates "answered" from "never answers", so it needs to be long enough that
+# no amount of machine load reads as the defect and short enough that the defect is not a hung
+# suite. The guarded row answers in milliseconds.
+_FIFO_CEILING_SECONDS = 6.0
 
-    Uncovered before this case, measured the same way as the alias arms above: the `OSError` arm
-    of the workflow read. A directory where the workflow should be is the shape a repository
-    reaches it with — the file's own bytes are never read, so none of them can be printed, and
-    what the row names is Python's exception type and this module's own `WORKFLOW` constant.
+
+def test_a_workflow_that_is_not_a_regular_file_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """A path that is there and is not a file is no evidence of agreement.
+
+    A directory where the workflow should be is the shape a repository reaches this with, and it
+    used to arrive through the `OSError` arm naming `IsADirectoryError` — an assertion on one
+    platform's spelling of the fault, which this project's CI (Linux and macOS) happened to make
+    true. The `is_file()` guard answers it above the open instead, so what the row names is this
+    module's own sentence and its own `WORKFLOW` constant, and nothing about the host.
 
     Advisory rather than an oracle entry, for the reason
     `test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence` gives beside it:
     the arm warns, and `warn` reaches neither the exit code nor anything downstream that reads a
-    verdict as permission. Mutation (comment): return `row` instead of the warning -> this
-    reddens on the status.
+    verdict as permission. The guard itself has an oracle entry, reddening the case below.
     """
     stub = _stub()
     stub.stdout = LISTING
@@ -2062,10 +2075,137 @@ def test_a_workflow_that_cannot_be_read_is_not_the_refs_own_verdict(tmp_path: Pa
     workflow.unlink()
     workflow.mkdir()
     row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
-    assert row.status == WARN and "could not be read" in row.detail
-    assert "IsADirectoryError" in row.detail and WORKFLOW in row.detail
+    assert row.status == WARN and "is not a regular file" in row.detail
+    assert WORKFLOW in row.detail
     # The ref is repository-authored and is not quoted back on this arm either.
     assert RELEASED not in row.detail and RELEASED not in row.remedy
+    # And a dangling symlink is the same arm: `exists()` follows the link and answers False, so
+    # `is_symlink()` is what keeps it out of the "no workflow at all" sentence one line below.
+    workflow.rmdir()
+    workflow.symlink_to(root / "nowhere.yml")
+    dangling = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert dangling.status == WARN and "is not a regular file" in dangling.detail
+
+
+def test_a_workflow_that_cannot_be_opened_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """The `OSError` arm, which the `is_file()` guard leaves for a regular file that will not open.
+
+    Reached with a mode rather than with a type, which is the one shape left: `is_file()` is true
+    and the open fails. **Platform-dependent on purpose, and guarded rather than assumed** — this
+    project's CI is Linux and macOS, where a 0o000 file is unreadable by its non-root owner, but a
+    run as root or on a filesystem that ignores the mode can read it anyway, and the case says so
+    by asking `os.access` instead of believing the `chmod`.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.chmod(0o000)
+    if os.access(workflow, os.R_OK):
+        workflow.chmod(0o644)
+        pytest.skip("this process can read a 0o000 file, so the unopenable arm is not reachable")
+    try:
+        row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    finally:
+        workflow.chmod(0o644)
+    assert row.status == WARN and "could not be read" in row.detail
+    assert WORKFLOW in row.detail
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+
+
+def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> None:
+    """A committed symlink to a FIFO at the workflow path used to stop `doctor` returning.
+
+    `read_text` on a FIFO with no writer blocks for ever, and this path is repository-authored:
+    a clone chooses what sits at `.github/workflows/keelline.yml`. Measured before the
+    `is_file()` guard, on a real FIFO in a thread with a six-second join: the row did not come
+    back. `doctor` is documented as a one-line diagnostic and has no timeout of its own, so the
+    guard is the whole of the fix.
+
+    The ceiling is wall-clock, which the repository keeps for the case it cannot avoid
+    (`tests/guards/test_bgcleanup.py` says so of its own three seconds). It only has to separate
+    "returned" from "never returns": the guarded row answers in milliseconds, and the unguarded
+    one answers at no time at all, so load on the machine cannot move the verdict. The row is
+    run in a daemon thread because a test that hangs is not a test that fails.
+
+    Mutation (oracle entry "doctor reads the rendered workflow without asking what it is"): the
+    `is_file()` guard is removed -> this case fails on the join.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.unlink()
+    target = root / ".github" / "workflows" / "pipe"
+    os.mkfifo(target)
+    workflow.symlink_to(target)
+    answered: list[Check] = []
+    thread = threading.Thread(
+        target=lambda: answered.append(_by_name(_checks(tmp_path, root, runner=stub), "ci-ref")),
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout=_FIFO_CEILING_SECONDS)
+    assert not thread.is_alive(), (
+        f"the ci-ref row did not return within {_FIFO_CEILING_SECONDS}s with a FIFO at {WORKFLOW}"
+    )
+    assert answered[0].status == WARN and "is not a regular file" in answered[0].detail
+
+
+def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """Over the bound is an answer, and it is not "the workflow agrees".
+
+    The read is `WORKFLOW_MAX_BYTES + 1` bytes, the shape `_diagnostics` reads its log with: a
+    file past the cap is not one `init` rendered, and a `uses:` line beyond it would be compared
+    against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can only be
+    the cap — a file that agrees would otherwise be green either way.
+
+    What this case pins is the *arm* and not the number of bytes held to reach it: a bounded read
+    and an unbounded one answer `len(raw) > WORKFLOW_MAX_BYTES` alike, so no assertion here can
+    tell them apart. Measured, not assumed — the oracle entry's first spelling replaced
+    `handle.read(WORKFLOW_MAX_BYTES + 1)` with `handle.read()` and survived. The entry is on the
+    comparison instead, and says so.
+
+    Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
+    comparison is deleted -> this case fails on the status.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8") + "#" + "p" * WORKFLOW_MAX_BYTES + "\n",
+        encoding="utf-8",
+    )
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "larger than" in row.detail
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+    # Non-vacuous: one byte under the cap is read, and the same file is green.
+    under = _configured(tmp_path / "under", RELEASED, workflow_ref=RELEASED)
+    padded = under / WORKFLOW
+    body = padded.read_text(encoding="utf-8")
+    padded.write_text(body + "#" + "p" * (WORKFLOW_MAX_BYTES - len(body) - 2) + "\n", "utf-8")
+    assert len(padded.read_bytes()) == WORKFLOW_MAX_BYTES
+    assert _by_name(_checks(tmp_path, under, runner=stub), "ci-ref").status == OK
+
+
+def test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared(tmp_path: Path) -> None:
+    """A strict decode made a repository able to force a red row that said nothing.
+
+    `read_text(encoding="utf-8")` raises `UnicodeDecodeError`, a `ValueError`, which no arm here
+    caught: it reached `_guarded` as `ci-ref: red — this check could not run
+    (UnicodeDecodeError)` and exit 1, from a file the row's own rule says must be named rather
+    than absolved. The read is bytes and the decode replaces, so the pin is still compared and
+    the stray byte cannot forge a sha — `_USES` bounds what is compared and nothing read is
+    printed.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.write_bytes(workflow.read_bytes() + b"# \xff\xfe not utf-8\n")
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == OK and "released" in row.detail
 
 
 def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:

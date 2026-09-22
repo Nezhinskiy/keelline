@@ -1758,12 +1758,13 @@ reddens = ["tests/test_runner.py::test_the_variables_that_redirect_git_are_dropp
 
 # `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
 # arrived as NOT_FOUND -- which every caller reads as "gh is not installed". A wrong finding is
-# worse than a slow one, and the two have different remedies.
+# worse than a slow one, and the two have different remedies. Repointed when the bound became the
+# caller's to narrow: the sentence now names the bound that was applied rather than the module's.
 [[mutation]]
 name = "a command that hangs is reported as one that is not installed"
 file = "src/keelline/runner.py"
-before = '                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
-after = '                NOT_FOUND, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+before = '            return Completed(TIMED_OUT, "", f"{argv[0]} did not finish within {bound}s")'
+after = '            return Completed(NOT_FOUND, "", f"{argv[0]} did not finish within {bound}s")'
 reddens = [
   "tests/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
 ]
@@ -6019,4 +6020,83 @@ before = "            if handler.once_key is not None and delivered:"
 after = "            if handler.once_key is not None:"
 reddens = [
   "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
+]
+
+# The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
+# `.github/workflows/keelline.yml`. This row read it with neither of the guards its two siblings in
+# the same module have -- `_hook_entries` asks `is_file()` of every settings file before it opens
+# one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
+# `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
+# timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
+# back. None of the bytes reaches the report either way, so this is containment hygiene rather than
+# a leak, which is why it is a guard and not a refusal.
+[[mutation]]
+name = "doctor reads the rendered workflow without asking what it is"
+file = "src/keelline/doctor/checks.py"
+before = """    if not workflow.is_file():
+        if workflow.exists() or workflow.is_symlink():"""
+after = """    if False:
+        if workflow.exists() or workflow.is_symlink():"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_is_not_a_file_does_not_hang_the_row",
+]
+
+# Over the bound is itself an answer, which is the sibling rule of "doctor reads an
+# environment-named log with no bound of its own" one function down: a workflow `init` rendered is
+# under 2 KiB, a file a clone committed there has no cap at all, and a `uses:` line past the bound
+# would be compared against bytes nobody read. So the arm must not fall through to the ref's own
+# verdict, which is what this entry breaks.
+#
+# **What has no entry, and why: the `+ 1` on the read itself.** `handle.read(WORKFLOW_MAX_BYTES + 1)`
+# and `handle.read()` answer `len(raw) > WORKFLOW_MAX_BYTES` identically -- the difference is how
+# many bytes were held to answer it, and no assertion at a testable file size can see that.
+# Measured rather than assumed: this entry's `after` was `raw = handle.read()` on its first run and
+# the oracle reported it survived, which is the finding that produced this paragraph. The sibling
+# `_diagnostics` entry does redden, because that row counts records *inside* what it read and an
+# unbounded read counts more of them; this row returns above its count.
+[[mutation]]
+name = "doctor reads the rendered workflow with no bound of its own"
+file = "src/keelline/doctor/checks.py"
+before = "    if len(raw) > WORKFLOW_MAX_BYTES:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_over_the_cap_is_not_the_refs_own_verdict",
+]
+
+# The strict decode was a red a *clone* could force. `read_text(encoding="utf-8")` raises
+# `UnicodeDecodeError`, a `ValueError`, which no arm of this row caught: it reached `_guarded` as
+# "this check could not run" and exit 1, out of the one row whose own rule is that a file it cannot
+# account for is named rather than absolved. A replaced byte cannot forge a sha -- `_USES` bounds
+# what is compared and nothing read here is printed.
+[[mutation]]
+name = "a workflow byte that is not utf-8 makes the ci-ref row a broken check"
+file = "src/keelline/doctor/checks.py"
+before = '    rendered = raw.decode("utf-8", errors="replace")'
+after = '    rendered = raw.decode("utf-8")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared",
+]
+
+# The one call this area makes that leaves the machine, and the five-minute cap it inherited.
+# `NETWORK_TIMEOUT_SECONDS` is written for `gh repo create --clone` and the clone behind it; the
+# `ci-ref` row reads one tag listing, on a command §5.2 gives one line of output and `docs/cli.md`
+# calls a diagnostic. `keelline init` recording a `[ci] ref` is what made the block reachable at
+# all. Two entries, because the choice and the honouring of it are in different modules: without the
+# second, a caller's bound is accepted and ignored.
+[[mutation]]
+name = "doctor asks the public repository with no bound of its own"
+file = "src/keelline/doctor/commands.py"
+before = "        runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),"
+after = "        runner=subprocess_runner(),"
+reddens = [
+  "tests/doctor/test_command.py::test_the_runner_this_command_builds_is_bounded_for_a_diagnostic",
+]
+
+[[mutation]]
+name = "the runner ignores the bound its caller asked for"
+file = "src/keelline/runner.py"
+before = "                timeout=bound,"
+after = "                timeout=NETWORK_TIMEOUT_SECONDS,"
+reddens = [
+  "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]
