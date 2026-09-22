@@ -135,9 +135,13 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     from keelline import runner as runner_module
 
     root = _repo(tmp_path)
+    # A recorded ref as well: the branch check is reached only once there is a ref to render,
+    # and it is deliberately not the sha the stub listing resolves, so the assertions below can
+    # tell the two sources apart.
+    recorded = "e" * 40
     (root / "keelline.toml").write_text(
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
-        '[ci]\ngate_branch = "main\'; rm -rf"\n',
+        f'[ci]\nref = "{recorded}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
     sha = "c" * 40
@@ -151,3 +155,38 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     assert "CI: skipped — [ci] gate_branch is not a plain branch name" in printed
     assert sha not in printed and "v0.1.0@" not in printed
     assert not (root / ".github").exists()
+
+
+@needs_git
+def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The summary's third arm, and the one the invariant needs: a workflow was planned, but from
+    # the ref `keelline.toml` already recorded rather than from the pin this run resolved. Naming
+    # the resolved release here would assert that the gate GitHub runs is that release's, which
+    # is exactly what `doctor`'s `ci-ref` row would then report as red.
+    from keelline import runner as runner_module
+
+    root = _repo(tmp_path)
+    recorded = "e" * 40
+    (root / "keelline.toml").write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        f'[ci]\nmode = "reusable"\nref = "{recorded}"\n',
+        encoding="utf-8",
+    )
+    sha = "c" * 40
+    monkeypatch.setattr(
+        runner_module, "subprocess_runner", lambda: _Listing(f"{sha}\trefs/tags/v0.1.0\n")
+    )
+    # The dry run first, because it writes nothing and leaves the repository fresh for the real
+    # one below: `--json` is where a caller reads which ref the workflow will carry.
+    code, printed = _run(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert code == 0, printed
+    data = json.loads(printed)
+    assert data["ref"] == recorded and data["pin"] == {"tag": "v0.1.0", "sha": sha}
+    code, plain = _run(root, tmp_path, "--yes")
+    assert code == 0, plain
+    assert "CI: the workflow pins the [ci] ref this repository already recorded" in plain
+    assert f"v0.1.0@{sha}" not in plain
+    workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    assert f"check.yml@{recorded}" in workflow and sha not in workflow

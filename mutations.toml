@@ -5392,3 +5392,35 @@ after = '        raise Failure(f"{where} is not valid TOML: {exc}") from exc'
 reddens = [
   "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
 ]
+
+# One invariant, enforced from both ends: the workflow's `uses:` ref is what `[ci] ref` says on
+# disk after the run, and `doctor`'s `ci-ref` row reports red when the two disagree. On the
+# adoption path `keelline.toml` is a create-once artifact already on disk, so a pin recorded
+# into the in-memory tables reaches no file — and the workflow written beside it then pins a sha
+# the document does not carry. Measured before this guard: an adopted `ref = "aaa…"`, a listing
+# resolving `bbb…`, the workflow pinning `bbb…`, `keelline.toml` still saying `aaa…`, `skipped`
+# empty, and the run printing `CI: v0.1.0@bbb…` as a success.
+[[mutation]]
+name = "init records a resolved pin in a document it did not create, so the workflow outruns [ci] ref"
+file = "src/keelline/project/init.py"
+before = "    if resolution.pin is not None and existing is None:"
+after = "    if resolution.pin is not None:"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewritten",
+  "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
+  "tests/project/test_command.py::test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release",
+]
+
+# `[ci] ref` is repository-authored — on the adoption path it is whatever `keelline.toml`
+# already carried, and the loader bounds it to "a string" and nothing more — and it lands in the
+# `uses:` line of a YAML file GitHub executes. `GATE_BRANCH`'s rule, read onto the second value
+# this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
+# nothing a repository writes can move, and a value outside it costs the artifact, not the run.
+[[mutation]]
+name = "a [ci] ref outside the grammar is rendered into the workflow's uses line"
+file = "src/keelline/project/templates.py"
+before = "    if not CI_REF.match(ref):"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line",
+]

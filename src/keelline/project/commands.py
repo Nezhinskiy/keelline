@@ -17,12 +17,14 @@ engine's own fixed vocabulary. The CI line beside them is one of this area's fix
 or a tag and a commit the *release* area resolved from the public repository's own tags. The
 project's name and its `[ci]` values reach neither.
 
-**The workflow is claimed only when nothing skipped it.** `_ci` reaches its `GATE_BRANCH` check
-*after* the pin has resolved, so a repository with a resolved tag and a `gate_branch` outside
-the grammar has a pin and no workflow. Keying the CI line on the pin told that repository
-`CI: <tag>@<sha>` while `skipped["ci-workflow"]` said the opposite in `--json` — a success line
-for the one hostile-value arm this lane built. The key in `skipped` is the authority: `_ci`
-returns a template or a reason and never both.
+**The workflow is claimed only when nothing skipped it, and the ref it names is the one on
+disk.** `_ci` reaches its `GATE_BRANCH` check *after* the pin has resolved, so a repository with
+a resolved tag and a `gate_branch` outside the grammar has a pin and no workflow; keying the CI
+line on the pin told that repository `CI: <tag>@<sha>` while `skipped["ci-workflow"]` said the
+opposite in `--json`. The key in `skipped` is the authority — `_ci` returns a template or a
+reason and never both — and `report.ref` is the second half: on the adoption path the workflow
+pins the ref `keelline.toml` already carried rather than one this run resolved, so the line says
+that instead of naming a release the file does not record.
 
 **Exit 1 on a refusal, not 2.** A refused artifact is a finding the report names, and `apply`
 was never reached: nothing was written, there is no manifest, and re-running after the fix is
@@ -76,10 +78,12 @@ def run_init(args: argparse.Namespace) -> Result:
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
     skipped = report.skipped.get("ci-workflow")
-    if skipped is None and pin is not None:
+    if skipped is not None or not report.ref:
+        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"
+    elif pin is not None and pin.sha == report.ref:
         ci_line = f"CI: {pin.tag}@{pin.sha}"
     else:
-        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"
+        ci_line = "CI: the workflow pins the [ci] ref this repository already recorded"
     refused = bool(report.once.refusals or report.footprint.refusals)
     lines = [
         HEADINGS[(refused, report.dry_run)],
@@ -104,6 +108,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "pin": None if pin is None else {"tag": pin.tag, "sha": pin.sha},
         "asked": report.resolution.asked,
         "note": report.note,
+        "ref": report.ref,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

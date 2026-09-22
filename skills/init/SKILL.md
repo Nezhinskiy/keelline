@@ -52,7 +52,10 @@ defaults", so the dry run is how the user sees them before anything is written.
   the cause with the user, and run the command again.
 - **A `CI:` line that says the workflow was skipped is the whole answer about CI.** The
   workflow is named only when one was planned; a skipped one says why in the same line, and
-  there is nothing else to look for.
+  there is nothing else to look for. A repository that already had a `keelline.toml` gets a
+  workflow pinned to the `[ci] ref` that file records, and none at all when it records none —
+  the ref a workflow pins and the one `keelline.toml` carries are always the same, and
+  `keelline doctor` reports red if they ever differ.
 - **Never hand-edit `[keelline] version`, `[keelline] state` or `.keelline/manifest.json`.**
   Those are the tool's own, and a manifest a person has altered makes every later run judge
   the wrong files.

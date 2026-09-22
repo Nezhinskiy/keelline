@@ -8,6 +8,12 @@ manifest; the dry run reports both plans and writes nothing.
 A repository that already holds a `keelline.toml` and no manifest is adopted (P4). One that
 holds a manifest is refused: re-running `init` is `upgrade` (§7.3), which ships later.
 
+**The workflow and `[ci] ref` are one value.** A resolved pin is written into the document
+only when this run is the one that creates it, and `templates._ci` renders the workflow from
+`config.ci.ref` — so the `uses:` ref and what `keelline.toml` says on disk cannot come apart.
+`doctor`'s `ci-ref` row reports red when they do, which is why this is the invariant rather than
+a convenience.
+
 **Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact, and DC3 says
 what that kind is: created when absent, never looked inside again. So on a repository that
 already carries one the engine reports `skip_modified` — "create-once, and the file is already
@@ -73,6 +79,9 @@ class InitReport:
     adopted: bool
     dry_run: bool
     note: str = ""
+    # What `[ci] ref` says on disk after the run, which is what the rendered workflow pins;
+    # empty when no workflow was planned. One field for both, because they are one value.
+    ref: str = ""
 
 
 def _existing(root: Path) -> dict[str, object] | None:
@@ -154,17 +163,34 @@ def init(
         if config.ci.mode == "reusable"
         else Resolution(None, True)
     )
-    if resolution.pin is not None:
+    # `existing is None` and not just "a pin resolved": on the adoption path `config` is a
+    # create-once artifact that is already on disk, so nothing written into `tables` here ever
+    # reaches a file. Recording the pin anyway made `config.ci.ref` — which is what `_ci`
+    # renders the workflow from — disagree with `keelline.toml`, and the workflow was written
+    # pinned to a sha the document did not carry. `doctor`'s `ci-ref` row reports exactly that
+    # as red, so `init` said it had worked and the next `doctor` said it had not.
+    if resolution.pin is not None and existing is None:
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
         config = loads(HEADER + dumps(tables), root, machine=machine)
     document = HEADER + dumps(tables)
     prepared = project_templates(root, config, resolution=resolution, document=document)
+    # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
+    # when no workflow was planned. The two are one value by construction, which is the
+    # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
+    ref = "" if "ci-workflow" in prepared.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
-            once, footprint, prepared.skipped, resolution, existing is not None, dry_run, note
+            once,
+            footprint,
+            prepared.skipped,
+            resolution,
+            existing is not None,
+            dry_run,
+            note,
+            ref,
         )
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
@@ -174,5 +200,5 @@ def init(
     footprint = plan(root, config, prepared.footprint)
     apply(root, footprint)
     return InitReport(
-        once, footprint, prepared.skipped, resolution, existing is not None, False, note
+        once, footprint, prepared.skipped, resolution, existing is not None, False, note, ref
     )

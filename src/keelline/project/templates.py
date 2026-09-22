@@ -4,8 +4,17 @@ Under the module root beside `templates/overlay/` and resolved by `keelline.temp
 (DC9). The three write-once files are `Kind.ONCE` artifacts in a pass of their own (DC3);
 everything else is the footprint pass. Every target is a `config.paths` value, which the
 loader has bounded to `PATH_VALUE` (P10) and contained; what this module adds is a file name
-under it. A value that reaches a rendered file (`gate_branch` into YAML) is quoted there and
-held to `GATE_BRANCH` besides, and a value outside it costs the artifact rather than the run.
+under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAML) is quoted or
+shape-checked there — `GATE_BRANCH`, `CI_REF` — and a value outside its grammar costs the
+artifact rather than the run.
+
+**One invariant governs the workflow: its `uses:` ref is always what `[ci] ref` says on disk
+after the run.** That is what `doctor`'s `ci-ref` row enforces from the other side — "the
+workflow pins a different ref from `[ci] ref`, so the gate that runs is not the one recorded" —
+and it is why the workflow is rendered from `config.ci.ref` and never from the resolution
+directly. `init` writes a resolved pin into the document only when it is the run that creates
+the document, so on the adoption path `config.ci.ref` is the repository's own recorded value and
+the workflow pins that; where the adopted document records none, no workflow is written at all.
 """
 
 from __future__ import annotations
@@ -37,6 +46,15 @@ CI_WORKFLOW = ".github/workflows/keelline.yml"
 # list and a shell-free `${{ }}` default — so it is quoted there *and* held to a shape here:
 # quoting alone would still admit a newline, which closes the list and writes further keys.
 GATE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
+# The grammar `[ci] ref` must match before it is written into the rendered workflow's `uses:`
+# line, for the same reason `GATE_BRANCH` exists and with the same provenance: the value is
+# repository-authored — on the adoption path it is whatever `keelline.toml` already carried —
+# and it lands in a YAML file GitHub executes. A full-length sha and nothing else: it is the
+# only immutable reference a reusable workflow can take (D16), it is the only form `doctor`'s
+# `ci-ref` row can resolve against the public repository's tags, and the documented mutable
+# `v1` alias is a file a project writes by hand rather than one `init` renders. The anchor is
+# this constant in the installed package; nothing a repository writes can move it.
+CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
     "no released Keelline tag matches the version running, so there is no commit to pin; "
@@ -52,6 +70,20 @@ UVX_LATER = (
     "Keelline renders"
 )
 NO_CI = "[ci] mode is none"
+# Both fixed text, and neither carries the value. `NO_REF` is the adoption path's own state: the
+# document is a create-once artifact that is already there, so a pin this run resolved would be
+# recorded nowhere, and a workflow pinned to it would be the ref `doctor` reports as disagreeing
+# with `[ci] ref` on the very next run.
+NO_REF = (
+    "the keelline.toml this repository already had records no [ci] ref, and `init` does not "
+    "write into a document it did not create — so a workflow would pin a ref nothing records; "
+    "write a released commit into [ci] ref by hand and run `keelline init --yes` again, or wait "
+    "for `keelline upgrade` (ships later)"
+)
+BAD_REF = (
+    "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; the "
+    "mutable `v1` alias is documented and is yours to write by hand"
+)
 # Named and never quoted: the value is repository-authored, so the refusal names the key and
 # the grammar and leaves the bytes where they were (DC6).
 BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
@@ -117,18 +149,35 @@ def _template(
 
 
 def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | None]:
-    """The rendered workflow, or the one sentence saying why this configuration gets none."""
+    """The rendered workflow, or the one sentence saying why this configuration gets none.
+
+    The ref rendered is `config.ci.ref` and never `resolution.pin` — see the module docstring's
+    invariant. `resolution` is still read, but only to say *why* there is no ref to render when
+    there is none: "the remote could not be asked" and "no released tag matches" are different
+    findings from "the document this repository already had records none", and a run that
+    collapsed them would send an operator to the network for a file they have to edit.
+    """
     if config.ci.mode == "none":
         return None, NO_CI
     if config.ci.mode == "uvx":
         return None, UVX_LATER
-    if not resolution.asked:
-        return None, NOT_ASKED
-    if resolution.pin is None:
-        return None, NO_TAG
+    ref = config.ci.ref
+    if not ref:
+        if not resolution.asked:
+            return None, NOT_ASKED
+        if resolution.pin is None:
+            return None, NO_TAG
+        return None, NO_REF
+    if not CI_REF.match(ref):
+        return None, BAD_REF
     if not GATE_BRANCH.match(config.ci.gate_branch):
         return None, BAD_BRANCH
-    pin, gate, version = resolution.pin, config.ci.gate_branch, keelline.__version__
+    # The trailing comment names the release when this run is the one that resolved the ref, and
+    # says where the ref came from otherwise — a `# v0.1.0` beside a ref the repository recorded
+    # would assert that some other release's commit is this one.
+    gate = config.ci.gate_branch
+    resolved = resolution.pin is not None and resolution.pin.sha == ref
+    note = f"# v{keelline.__version__}" if resolved else "# from [ci] ref"
     return (
         _template(
             "ci-workflow",
@@ -137,8 +186,8 @@ def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | 
             render=lambda: fill(
                 read("keelline.yml"),
                 SLUG=keelline.REPOSITORY_SLUG,
-                SHA=pin.sha,
-                VERSION=version,
+                REF=ref,
+                PIN_NOTE=note,
                 GATE_BRANCH=gate,
             ),
         ),

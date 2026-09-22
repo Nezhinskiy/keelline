@@ -704,22 +704,30 @@ either way.
 | `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's Keelline uses |
 | `ci-workflow` | footprint | template | `.github/workflows/keelline.yml` | the pinned call to the reusable gate |
 
-**The CI workflow needs a release to pin, and says so when there is none.** The rendered file
-calls [the reusable workflow](#the-reusable-workflow) at the commit of the Keelline release that
-wrote it, and that sha is asked of the public repository's own `v*` tags. Five states cost the
-artifact rather than the run, each reported under `skipped` with one sentence: `[ci] mode` is
-`none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later lane; the public
-repository could not be asked for its tags; no released tag matches the Keelline running, which
-is every repository's state before the first release; and `[ci] gate_branch` is not a plain
-branch name, so no workflow was rendered around it. `--no-ci` is the first of those on purpose:
-it sets `[ci] mode = "none"` in the document and asks no remote anything. A resolved pin is
-written to `[ci] ref` as well, so `keelline doctor`'s `ci-ref` row can judge it — in a
-repository whose `keelline.toml` this run created, which is the only one it writes.
+**The workflow pins what `[ci] ref` says, and nothing else.** The rendered file calls
+[the reusable workflow](#the-reusable-workflow) at the ref `keelline.toml` carries *after this
+run*, and those two are one value by construction — which is the invariant `keelline doctor`'s
+`ci-ref` row enforces from the other side ("the workflow pins a different ref from `[ci] ref`,
+so the gate that runs is not the one recorded"). On a repository this run creates the document
+for, the ref is the commit of the Keelline release running, asked of the public repository's own
+`v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
+`keelline.toml`, that document is not rewritten — so the workflow pins the ref **it** records,
+and `doctor` judges whether that is a released commit, which is its job.
+
+Seven states cost the artifact rather than the run, each reported under `skipped` with one
+sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later
+lane; the public repository could not be asked for its tags; no released tag matches the
+Keelline running, which is every repository's state before the first release; the `keelline.toml`
+this repository already had records no `[ci] ref`, so there is nothing a workflow could pin that
+anything records; `[ci] ref` is not a full-length commit sha, which is the only immutable form
+and the only one `init` renders — the documented mutable `v1` alias is a file you write by hand;
+and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
+sets `[ci] mode = "none"` in the document and asks no remote anything.
 
 **Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
 detected values and for the public repository's tags, and every file an artifact targets.
 **Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the
-table above, `.github/workflows/keelline.yml` where a pin resolved, and
+table above, `.github/workflows/keelline.yml` where a ref is recorded, and
 `.keelline/manifest.json` — every one of them through the scaffold engine, so every target goes
 through the containment walk and none may leave the project root or pass through a symlink.
 
@@ -727,7 +735,9 @@ Exits `0` on success, `1` when either plan carries refusals — the report's REF
 each, nothing was written and no manifest exists — and `2` on a refusal above the plans: no
 `--yes`, a repository already initialised, or a detected name outside the grammar. `--json`
 carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered report),
-`writes` (both plans' targets), `skipped`, `pin` (`{tag, sha}` or `null`), `asked` and `note`.
+`writes` (both plans' targets), `skipped`, `pin` (the release this run resolved, `{tag, sha}` or
+`null`), `asked`, `note`, and `ref` — what `[ci] ref` says on disk after the run and so what the
+workflow pins, empty when no workflow was planned.
 
 ---
 
@@ -1357,8 +1367,11 @@ documents does not pay a round trip per finding.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1`
 and `@dev` are a moving Keelline running against your repository (D16). `keelline init` writes
-that pin: a full-length sha, and the commit of the released Keelline that wrote the file, read
-off the public repository's own `v*` tags rather than off anything the project says.
+that pin, and writes it from `[ci] ref` in `keelline.toml` so that the file and the
+configuration cannot come apart: on a repository it initialises from scratch that value is the
+commit of the released Keelline running, read off the public repository's own `v*` tags rather
+than off anything the project says; on one that already had a `keelline.toml`, it is the ref
+that file records.
 `keelline upgrade` (ships later) is what moves it; until then the file says so in its own first
 three lines. **A project with no release to pin gets no workflow at all** — before the first
 Keelline tag there is no commit to name, so `init` reports the workflow skipped with the reason,

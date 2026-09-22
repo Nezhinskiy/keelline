@@ -21,6 +21,10 @@ from tests.gitfixture import git, needs_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
+# A ref a repository already recorded, and deliberately not the one the listing resolves:
+# the invariant these tests hold is that the workflow pins what `keelline.toml` says on
+# disk, and two values that happened to be equal could not tell the two sources apart.
+ADOPTED = "a" * 40
 LISTING = f"{SHA}\trefs/tags/v0.1.0\n"
 
 
@@ -197,6 +201,54 @@ def test_an_existing_agents_file_keeps_every_byte_outside_the_region(tmp_path: P
 
 
 @needs_git
+def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewritten(
+    tmp_path: Path,
+) -> None:
+    """The invariant: the `uses:` ref equals what `[ci] ref` says on disk after the run.
+
+    Measured before this held: an adopted `keelline.toml` recording one sha, a listing resolving
+    another, and `init` writing the workflow pinned to the *resolved* one while the document — a
+    create-once artifact already on disk — kept the recorded one. `doctor`'s `ci-ref` row then
+    reports red ("the workflow pins a different ref from [ci] ref") on a repository whose `init`
+    had printed a success line. Not reachable before the first release exists, which is why no
+    wave's own review could see it.
+
+    Mutation (oracle): drop `and existing is None` from the pin-writing guard -> the workflow
+    pins the resolved sha again and the first assertion reddens.
+    """
+    root = _repo(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        f'[ci]\nmode = "reusable"\nref = "{ADOPTED}"\n',
+        encoding="utf-8",
+    )
+    report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
+    workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
+    assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
+    assert report.ref == ADOPTED and report.resolution.pin == Pin("v0.1.0", SHA)
+    assert "ci-workflow" not in report.skipped
+    # And the comment beside the ref does not name a release this document does not record.
+    assert "# from [ci] ref" in workflow and "v0.1.0" not in workflow
+
+
+@needs_git
+def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path) -> None:
+    # The other half of the same invariant. A pin resolves, but nothing this run resolved can
+    # reach a create-once document that is already there — so a workflow pinned to it would name
+    # a ref `keelline.toml` does not record, which is the state `doctor` reports as red.
+    root = _repo(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+    )
+    report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
+    assert report.resolution.pin == Pin("v0.1.0", SHA)
+    assert report.ref == "" and not (root / ".github").exists()
+    assert report.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
+    assert load(root, machine=tmp_path / "absent.toml").ci.ref == ""
+
+
+@needs_git
 def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     tmp_path: Path,
 ) -> None:
@@ -205,8 +257,12 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     report = _init(root, tmp_path, runner=runner)
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
-    workflow = root / ".github" / "workflows" / "keelline.yml"
-    assert SHA in workflow.read_text(encoding="utf-8")
+    body = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
+    # The bare path, unchanged by the adoption fix: this run created the document, so the
+    # resolved sha is what it records and what the workflow pins, and the trailing comment names
+    # the release it really is.
+    assert f"check.yml@{SHA} # v0.1.0" in body
+    assert report.ref == SHA
 
 
 @needs_git
@@ -215,15 +271,17 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
     # has resolved, so this repository has a pin, no workflow, and a `skipped` entry. All three
     # are asserted, because it is the combination that made the summary lie.
     root = _repo(tmp_path)
+    # A recorded ref as well, because the branch check is reached only once there is a ref to
+    # render: without one the run stops at "the document records no [ci] ref" instead.
     (root / CONFIG_FILE).write_text(
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
-        '[ci]\ngate_branch = "main\'; rm -rf"\n',
+        f'[ci]\nref = "{ADOPTED}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
     report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert report.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch name")
-    assert not (root / ".github").exists()
+    assert report.ref == "" and not (root / ".github").exists()
 
 
 @needs_git
