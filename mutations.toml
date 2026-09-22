@@ -4260,12 +4260,17 @@ reddens = [
 # The test above reads its expectation out of the README's own roadmap sentence, which is what
 # keeps the rule in one place — and is also what makes it vacuous the moment that sentence stops
 # yielding items. Shorten the list to one and the storefront may advertise anything the other
-# five names cover.
+# names cover.
+#
+# Re-pointed in wave 4, when `init` and the project templates shipped and left that sentence
+# holding exactly the four items the test's floor requires. The entry quotes two lines of prose
+# verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
+# caught it is reading every entry's `before` back out of its file and counting.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `init`, `upgrade`,\n> `uninstall`, the project templates, `assess` and the adoption state machine \u2014 so today you"
-after = "> discipline. **Not yet:** `init` \u2014 so today you"
+before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess` and the adoption state machine \u2014 so nothing refreshes or removes a"
+after = "> discipline. **Not yet:** `upgrade` \u2014 so nothing refreshes or removes a"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -5008,8 +5013,8 @@ reddens = [
 [[mutation]]
 name = "a broken machine file is blamed on keelline.toml again"
 file = "src/keelline/config/loader.py"
-before = '        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None'
-after = '        raise ConfigError(f"{machine} is not valid TOML: {exc}") from None'
+before = '        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise ConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml",
 ]
