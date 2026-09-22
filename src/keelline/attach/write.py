@@ -1018,6 +1018,25 @@ def _ignore_region_remainder(root: Path) -> str | None:
     return None if remaining == text else remaining
 
 
+def _footprint_owns_region(root: Path) -> bool:
+    """Whether `keelline init`'s footprint, and not this attach, put the ignore region there.
+
+    DC4, and it is an ownership rule rather than a last-writer one. `init` records the same
+    `keelline:ignore` block as a scaffold artifact, with the body imported from this module
+    rather than respelled -- a second spelling would let each command report the other's region
+    as hand-edited -- and that block is **committed**. Withdrawing it would take a line out of a
+    tracked file this command never wrote, and leave `upgrade` reading the footprint as
+    hand-edited on a repository nobody edited. `attach`'s own write stays and is idempotent;
+    only the withdrawal asks this.
+
+    The manifest and not a new ledger field: the ledger is untracked and per-checkout, while
+    "whose region is this" has to answer the same for every clone of the project. A repository
+    with no manifest is one no `init` has set up -- the state every attach before `init` shipped
+    leaves behind -- and its region is withdrawn exactly as it always was.
+    """
+    return Manifest.read(root).get("gitignore") is not None
+
+
 def _withdraw_ignore_region(root: Path, remaining: str | None) -> bool:
     if remaining is None:
         return False
@@ -1096,10 +1115,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     That is not licence to *discover* a precondition late. Everything structural this function
     can know before its first withdrawal is asked before it: the ledger (which refuses one no
     attach could have written), the configuration (whose loader validates `paths.*`), the
-    settings document's own shape through `owned_ids`, and `_checkouts`, which is the only thing
-    here that needs `git`. What is left after the first withdrawal is exactly what cannot precede
-    it — a write that fails, and a component of the tree that changed between the check and the
-    removal.
+    settings document's own shape through `owned_ids`, whether the footprint owns the ignore
+    region, and `_checkouts`, which is the only thing here that needs `git`. What is left after
+    the first withdrawal is exactly what cannot precede it — a write that fails, and a component
+    of the tree that changed between the check and the removal.
 
     **It needs the ledger in the checkout it is run from, and that is a limitation rather than a
     defect.** `.keelline/local/` is untracked and per-checkout, so a sibling worktree does not
@@ -1126,17 +1145,7 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    # DC4: the region goes only when nothing else owns it. `keelline init` records the same
-    # `keelline:ignore` block as a footprint artifact, with the body imported from here rather
-    # than respelled, and a region the footprint owns is committed: withdrawing it would take a
-    # line out of a tracked file this command never wrote, and leave `upgrade` reading the
-    # footprint as hand-edited on a repository nobody edited. Ownership and not last writer,
-    # and the manifest rather than a new ledger field -- the ledger is untracked and
-    # per-checkout, while the question "whose region is this" has to answer the same for every
-    # clone. A repository with no manifest is the state every attach before `init` shipped
-    # leaves behind, and it withdraws as it always did.
-    owned_by_footprint = Manifest.read(root).get("gitignore") is not None
-    ignore_remainder = None if owned_by_footprint else _ignore_region_remainder(root)
+    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
     for rule in recorded.rules:

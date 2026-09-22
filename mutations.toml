@@ -1798,9 +1798,13 @@ file = "src/keelline/attach/binding.py"
 # `overlay = overlay_root(machine)` line, so the old one-line `before` stopped being unique in
 # this file — the oracle refuses rather than mutating an ambiguous match, so this went uncaught
 # until a broader sweep than the entry's own filter string surfaced it.
-before = '''    config = load(root, machine=machine)
+#
+# Re-pointed again in wave 4: `read_binding` now takes an optional `config` and loads only when
+# the caller holds none, so the first of the two lines is spelled differently. The mutation is
+# unchanged -- the second line is the guard -- and the first is here only for uniqueness.
+before = '''    config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)'''
-after = '''    config = load(root, machine=machine)
+after = '''    config = load(root, machine=machine) if config is None else config
     overlay = store.parents[2]'''
 reddens = [
   "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
@@ -2611,12 +2615,16 @@ reddens = [
 [[mutation]]
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/keelline/attach/write.py"
+# Re-pointed in wave 4: DC4 put the manifest's answer between the anchor loop and the region
+# read, so the block this moves is two lines longer. What it proves is unchanged -- `git` is
+# asked before the first withdrawal, and a `git` that cannot run must not strand a half-detached
+# repository.
 before = '''    checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    ignore_remainder = _ignore_region_remainder(root)
+    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)'''
-after = '''    ignore_remainder = _ignore_region_remainder(root)
+after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     checkouts = _checkouts(root)
     for tree in checkouts:
@@ -3172,7 +3180,10 @@ reddens = ["tests/hooks/test_sink.py::test_a_relative_data_root_is_no_sink_at_al
 [[mutation]]
 name = "detach stops reading the ignore region before its first withdrawal"
 file = "src/keelline/attach/write.py"
-before = "    ignore_remainder = _ignore_region_remainder(root)"
+# Re-pointed in wave 4: the read is now conditional on what the manifest records (DC4). The
+# mutation still takes the read away entirely, which is what leaves a region that cannot be
+# withdrawn to be discovered after everything else is gone.
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
 after = "    ignore_remainder = None"
 reddens = [
   "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
@@ -5299,7 +5310,7 @@ reddens = [
 [[mutation]]
 name = "detach withdraws a region the footprint owns"
 file = "src/keelline/attach/write.py"
-before = "    ignore_remainder = None if owned_by_footprint else _ignore_region_remainder(root)"
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
 after = "    ignore_remainder = _ignore_region_remainder(root)"
 reddens = [
   "tests/attach/test_detach.py::test_a_region_init_recorded_survives_a_detach",
