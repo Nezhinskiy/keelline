@@ -1,0 +1,18 @@
+# Written by `keelline init`. The ref below is the commit of the Keelline release that wrote
+# it — a full-length sha, the only immutable reference for a reusable workflow. Do not
+# replace it with a branch name; `keelline upgrade` (ships later) moves it.
+name: keelline
+
+on:
+  pull_request:
+  push:
+    branches: ["%%GATE_BRANCH%%"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: %%SLUG%%/.github/workflows/check.yml@%%SHA%% # v%%VERSION%%
+    with:
+      base: ${{ github.base_ref || '%%GATE_BRANCH%%' }}
