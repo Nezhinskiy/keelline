@@ -11,10 +11,10 @@ import pytest
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.loader import preset_defaults
 from keelline.config.schema import Config
-from keelline.errors import Refusal
+from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
-from keelline.project.templates import PATH_KEYS
+from keelline.project.templates import PATH_KEYS, fill, read
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
@@ -234,3 +234,43 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     # would make the comparison below vacuous in both directions.
     assert len(ids) == 16, sorted(ids)
     assert ids == set(PATH_KEYS), (sorted(ids ^ set(PATH_KEYS)),)
+
+
+def test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shipping() -> None:
+    """`fill` refuses text still carrying a `%%KEY%%`, and nothing proved it did.
+
+    Measured: with `left = _SENTINEL.search(text)` replaced by `left = None`, `tests/project`
+    was 39 passed — so the guard whose absence puts `check.yml@%%SHA%%` into an adopting
+    project's CI, and `# %%NAME%%` at the head of the file every session loads, was executed by
+    the suite and asserted by none of it.
+
+    The sentinel's own name prints: it is a string from a template this package ships, which is
+    Keelline's own text and not a repository's.
+
+    Mutation (oracle): the search is made to answer `None` -> the first assertion reddens.
+    """
+    assert fill("a %%ONE%% b", ONE="1") == "a 1 b"
+    with pytest.raises(Failure, match=re.escape("%%SHA%%")):
+        fill("uses: x/check.yml@%%SHA%%")
+    # Filling one and leaving the other is the real shape of the fault: a `fill` call that has
+    # grown a sentinel its caller does not pass yet.
+    with pytest.raises(Failure, match=re.escape("%%GATE_BRANCH%%")):
+        fill("@%%SHA%% on %%GATE_BRANCH%%", SHA="a" * 40)
+
+
+def test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it() -> None:
+    """The containment check in `read`, which nothing proved either.
+
+    Measured: with `if name not in PROJECT_FILES:` replaced by `if False:`, `tests/project` was
+    39 passed. The anchor is `PROJECT_FILES` — a constant in the wheel beside the files it names
+    — and the party contained is a caller inside this package, which is why the check is before
+    the join and not after: `name` decides which file under the tree is opened.
+
+    Mutation (oracle): the membership check is dropped -> the traversal name reaches
+    `read_text` and raises `OSError` instead of this module's own `Failure`.
+    """
+    for name in ("../../../etc/passwd", "keelline.toml", ".", ""):
+        with pytest.raises(Failure, match="is not a shipped project template"):
+            read(name)
+    # And a name it does ship is read, so the check is not simply refusing everything.
+    assert read("claude.md") == "@AGENTS.md\n"

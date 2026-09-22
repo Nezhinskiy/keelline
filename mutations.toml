@@ -5441,3 +5441,50 @@ after = ""
 reddens = [
   "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
 ]
+
+# The highest-value new guard in the `project` area, and it had a test and no entry.
+# `[ci] gate_branch` is repository-authored and is interpolated into two positions of a YAML file
+# GitHub executes — a `branches:` list and a `${{ }}` default — so it is quoted there *and* held
+# to a shape here, because quoting alone still admits a newline, which closes the list and lets
+# further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
+# the installed package; the party bounded is the repository, which cannot move it. A value
+# outside the grammar costs the artifact rather than the run, and the sentence names the key and
+# the grammar and never the value.
+[[mutation]]
+name = "a gate_branch outside the grammar is interpolated into the rendered workflow"
+file = "src/keelline/project/templates.py"
+before = "    if not GATE_BRANCH.match(config.ci.gate_branch):"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
+  "tests/project/test_init.py::test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow",
+  "tests/project/test_command.py::test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin",
+]
+
+# Without it a `%%SHA%%` survives into an adopting project's `uses:` line and a `%%NAME%%` into
+# the head of the file every session loads. Measured before the test beside it existed: the guard
+# was executed by `tests/project` and asserted by none of it — 39 passed with the search made to
+# answer `None`.
+[[mutation]]
+name = "a template sentinel left unfilled is written into a project's file"
+file = "src/keelline/project/templates.py"
+before = "    left = _SENTINEL.search(text)"
+after = "    left = None"
+reddens = [
+  "tests/project/test_templates.py::test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shipping",
+]
+
+# A containment check whose docstring names its anchor's provenance, with nothing proving it:
+# `name` decides which file under the shipped tree is opened, so the membership test is before the
+# join and not after. The anchor is `PROJECT_FILES`, a constant in the wheel beside the files it
+# names, and the party contained is a caller inside this package. Measured before the test beside
+# it existed: 39 passed with the check dropped; with it, the traversal name reaches `read_text`
+# and raises `OSError` instead of this module's own `Failure`.
+[[mutation]]
+name = "read joins a name this package does not ship"
+file = "src/keelline/project/templates.py"
+before = "    if name not in PROJECT_FILES:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it",
+]
