@@ -63,9 +63,20 @@ NO_OVERLAY = (
 # group leaving the *overlay's* share, at write time); this one is `unlinked_groups`' own, so
 # the handler this seam exists for (Task 6) and `unlinked_groups`' own caller cannot spell it
 # twice between them.
+#
+# **"does not name a subdirectory of" and not "does not stay inside".** The rule `contained`
+# reads off the combined `<paths.memory>/<group>` is `fsops.checked_components`, and since that
+# rule started refusing an empty component and `.` there are four refusable spellings the old
+# sentence was simply false about: `""` and `"."` resolve to `paths.memory` itself, and `"a/"`
+# and `"a//b"` land squarely inside it. Each of those is an entry an owner mistypes, and each
+# was told its entry had left a directory it had not left -- so the one action the sentence
+# suggested, moving the group back inside `paths.memory`, was already done. What every refusable
+# spelling does have in common is that it is not the name of a directory under `paths.memory`:
+# not the escaping ones, not the odd ones, and not `paths.memory` itself, which is where the
+# notes live rather than a group in them.
 MEMORY_GROUP_ESCAPES = (
-    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
-    "rather than counted"
+    "a memory.groups entry does not name a subdirectory of this project's paths.memory, so it "
+    "is refused rather than counted"
 )
 
 

@@ -445,3 +445,21 @@ def test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them(
         loads(hostile, tmp_path, machine=tmp_path / "absent.toml")
     assert "2 that are not plain section names" in str(both.value)
     assert "more" not in str(both.value)
+
+
+def test_a_repeated_memory_group_is_one_group(tmp_path: Path) -> None:
+    """The list four lanes read as a count is deduplicated in the order it was written.
+
+    `_build` coerced it with `tuple(value)` and nothing else, so `["a", "a"]` made
+    `unlinked_groups` walk one directory twice: `attach` refused naming two groups that never
+    moved, `attach --check` reported `real_directories: 2`, and the session line said two -- for
+    one directory, and every one of those is a number a user is asked to act on.
+
+    Mutation: `mutations.toml`'s "a repeated memory group is counted twice again".
+    """
+    write(
+        tmp_path,
+        MINIMAL + '\n[memory]\ngroups = ["developer", "specs", "developer", "specs"]\n',
+    )
+    config = load(tmp_path, machine=tmp_path / "absent.toml")
+    assert config.memory.groups == ("developer", "specs")

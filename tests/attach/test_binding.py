@@ -445,3 +445,34 @@ def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_senten
         unlinked_groups(tmp_path, config)
     assert str(caught.value) == MEMORY_GROUP_ESCAPES
     assert "ignore-prior-rules" not in str(caught.value)
+
+
+@pytest.mark.parametrize("group", ["", ".", "a/", "a//b"])
+def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true(
+    tmp_path: Path, group: str
+) -> None:
+    """A refusal a person is meant to act on has to describe what they wrote.
+
+    Since `fsops.checked_components` became the one component rule, `contained` refuses an
+    empty component and a `.` as well as a `..` -- so four of the spellings this raises for are
+    entries that never left `paths.memory` at all: `""` and `"."` name the notes directory
+    itself, and `"a/"` and `"a//b"` land inside it. Each was told its entry "does not stay
+    inside this project's paths.memory", which is false of all four, and whose one implied
+    remedy -- move the group back under `paths.memory` -- was already done.
+
+    The value is never in the line either way; what changes is that the line is now true of
+    every entry it is raised for. Asserted about the refusal a repository or an owner can
+    provoke, and not about a crash.
+
+    Mutation: `mutations.toml`'s "the memory-group refusal describes an escape again".
+    """
+    text = (
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        f'[memory]\nmode = "overlay"\ngroups = ["{group}"]\nindex_extra = []\n'
+    )
+    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True, exist_ok=True)
+    with pytest.raises(PathEscape) as caught:
+        unlinked_groups(tmp_path, config)
+    assert str(caught.value) == MEMORY_GROUP_ESCAPES
+    assert "subdirectory" in str(caught.value) and "stay inside" not in str(caught.value)

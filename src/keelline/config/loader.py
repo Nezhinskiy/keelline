@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import fields
+from dataclasses import fields, replace
 from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
@@ -210,6 +210,33 @@ def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
         raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")
 
 
+def _deduplicated(memory: Memory) -> Memory:
+    """`memory.groups` with each entry kept once, in the order the document wrote them.
+
+    `_build` coerced the list with `tuple(value)` and nothing else, and it is the one
+    repository-authored list four separate lanes report as a **count** a user is asked to act
+    on. `groups = ["developer", "developer"]` made `attach.binding.unlinked_groups` walk one
+    directory twice, so `attach` refused naming two groups that never moved into the overlay,
+    `attach --check` printed `real_directories: 2`, and the session line told the model two --
+    all about one directory, and with the remedy ("move them into the overlay") already done
+    for the only one there is.
+
+    `dict.fromkeys` and not `set`, because the order is the owner's: the link tree is built in
+    it, and a refusal that reorders the list a person is reading is a worse answer than one
+    that does not.
+
+    **Deduplication only, and the containment stays where it is.** `config/paths.py` names
+    `memory.groups` one of four repository-writable fields this loader deliberately does not
+    contain, and hands each to the lane that first reads it -- because the anchor differs per
+    lane: `unlinked_groups` contains a group against the checkout, `attach._check_groups`
+    against the overlay, `memory.store` against the store. A grammar check here would refuse a
+    spelling those three already refuse, one layer above the guard that knows what it is
+    anchored to, and would take the reachable arm of each of them with it. What this function
+    fixes is the one thing none of them can: a count taken over a list with a duplicate in it.
+    """
+    return replace(memory, groups=tuple(dict.fromkeys(memory.groups)))
+
+
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     configured = _table(raw, "budgets")
     unknown = sorted(set(configured) - set(Budgets.NAMES))
@@ -310,7 +337,7 @@ def loads(
             f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
         )
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
-    memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))
+    memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
     ledger = _build(Ledger, "ledger", _merged(raw, defaults, "ledger"))
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))

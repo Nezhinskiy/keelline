@@ -84,6 +84,7 @@ from keelline.runner import Runner
 from keelline.scaffold import (
     EntriesError,
     Manifest,
+    ManifestError,
     Style,
     apply_entries,
     drop,
@@ -862,7 +863,17 @@ def attach(
     a convention, which is the thing the rule exists to replace: while this wave was being
     written, every call that omitted `home` computed a path under the real home directory.
     """
-    binding = read_binding(root, store=store, machine=machine)
+    # One load for the whole run, handed to `read_binding` rather than left for it to make a
+    # second of. `permissions.check` took this ruling for `--check` -- "two loads could
+    # disagree, and a `--check` whose two halves read different documents is exactly what it
+    # exists to rule out" -- and the writing command has the stronger version of that argument:
+    # a `--check` that read two documents reports the wrong thing, while an `attach` that reads
+    # two writes under the wrong one. `read_binding` loads on the line it is called from, so
+    # nothing moves in the order the refusals happen in; what changes is that `project.name`,
+    # `memory.groups` and `paths.memory` are read once and the refusals below are about the
+    # same document the binding was read under.
+    config = load(root, machine=machine)
+    binding = read_binding(root, store=store, machine=machine, config=config)
     diff = diff_permissions(root, binding)
     if diff.widens and not confirmed:
         raise Refusal(
@@ -888,10 +899,10 @@ def attach(
     # `.codex/rules/*` and merge `.claude/settings.local.json` before exiting 2, with the
     # committed ledger still on disk for `doctor._attached` to read as "attached", and with
     # `attach --check` reporting clean beforehand because it does not read the ledger at all.
-    # Loaded here rather than after the binding record, which is where it used to be: the
-    # `memory.groups` refusal below needs the configuration, and a check cannot happen above the
-    # writes while what it reads is loaded below them.
-    config = load(root, machine=machine)
+    # The `Config` the two checks below read is loaded at the top of this function, which is
+    # where the binding needs it anyway; it used to be loaded here, and before that after the
+    # binding record, where a check could not happen above the writes while what it reads was
+    # loaded below them.
     _check_groups(binding, config)
     # The eighth, and the one whose remedy is an act no command performs: `attach` **links**,
     # so a group that is still a real directory under `paths.memory` has its notes in the
@@ -1045,8 +1056,31 @@ def _footprint_owns_region(root: Path) -> bool:
     "whose region is this" has to answer the same for every clone of the project. A repository
     with no manifest is one no `init` has set up -- the state every attach before `init` shipped
     leaves behind -- and its region is withdrawn exactly as it always was.
+
+    **A manifest this cannot read answers "not mine", and that is the whole of the ruling.**
+    `.keelline/manifest.json` is **tracked** -- `IGNORE_BODY` covers `.keelline/local/` and
+    `.keelline/assessment.json` and nothing else -- so a clone commits it, and `Manifest.read`
+    raises `ManifestError` for one that is unreadable, is not a JSON object, or declares a
+    `format` past this Keelline's. `attach` never reads the file, so such a clone attached
+    cleanly, merged the owner's allow rules and hook entries, and then made the **withdrawal**
+    exit 2 on every run for ever: a repository a clone chose could keep the command that undoes
+    an attach from ever completing. Nothing destructive had happened first, because this
+    question is asked above every withdrawal -- which is exactly why refusing here is the wrong
+    answer. The remedy would be to delete a tracked file out of somebody else's repository, and
+    a `detach` that cannot run until you do that is still a `detach` a repository disabled.
+
+    So an unreadable manifest is not a claim of ownership this command will act on, and it is
+    not a claim of ownership this command will act *against* either: it leaves the region where
+    it is -- the conservative half, since the block may well be the footprint's -- and finishes
+    the detach. `Detached.ignore_region_removed` is `False`, which `run_detach` reports, and no
+    sentence anywhere says *why* it was left, so nothing here becomes untrue. The remaining
+    cost is one block in `.gitignore` that `keelline init` or a hand edit clears, against a
+    withdrawal that now always completes.
     """
-    return Manifest.read(root).get("gitignore") is not None
+    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except ManifestError:
+        return True
 
 
 def _withdraw_ignore_region(root: Path, remaining: str | None) -> bool:

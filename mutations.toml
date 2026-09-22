@@ -2154,12 +2154,15 @@ reddens = [
 # escaping entry got five artifacts written and exit 2, and `doctor` then reported the
 # repository attached and the binding *bound*, because the record had been written too. The
 # mutation takes the hoisted call away and leaves only the write-time one.
+#
+# Anchored on the call and not on the `load` above it, which is where it used to be anchored and
+# which moved to the top of `attach` when the second load of the run was removed. The guard is
+# that this check is asked, and the line that asks it is the one this entry should break.
 [[mutation]]
 name = "the memory.groups containment is asked at write time only"
 file = "src/keelline/attach/write.py"
-before = '''    config = load(root, machine=machine)
-    _check_groups(binding, config)'''
-after = '''    config = load(root, machine=machine)'''
+before = "    _check_groups(binding, config)"
+after = "    pass  # `_check_groups` is not asked"
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
@@ -5717,4 +5720,60 @@ reddens = [
   "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
   "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
   "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
+]
+
+# The mirror of "check loads the configuration twice again", over the half that writes. `attach`
+# called `read_binding` without a `Config` and then loaded a second one for its own
+# `memory.groups` refusals, so one run read `keelline.toml` and the machine file twice and the
+# two halves were free to disagree about `project.name`, `memory.groups` and `paths.memory`.
+[[mutation]]
+name = "attach loads the configuration twice again"
+file = "src/keelline/attach/write.py"
+before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
+after = "    binding = read_binding(root, store=store, machine=machine)"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_reads_each_of_its_two_documents_once_too",
+]
+
+# `.keelline/manifest.json` is tracked, `attach` never reads it, and `Manifest.read` refuses an
+# unreadable one -- so a clone committing `{"format": 99}` attached cleanly and then made every
+# later `detach` exit 2, for ever, above every withdrawal. The mutation restores the propagation.
+[[mutation]]
+name = "an unreadable manifest blocks the detach again"
+file = "src/keelline/attach/write.py"
+before = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except ManifestError:
+        return True'''
+after = '    return Manifest.read(root).get("gitignore") is not None'
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The one list four lanes report as a count, and the one fault none of those lanes can fix for
+# itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
+# counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
+# line -- about one directory whose remedy was already done.
+[[mutation]]
+name = "a repeated memory group is counted twice again"
+file = "src/keelline/config/loader.py"
+before = '    memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))'
+after = '    memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))'
+reddens = [
+  "tests/config/test_loader.py::test_a_repeated_memory_group_is_one_group",
+]
+
+# The verdict half of the same finding. Since `checked_components` became the one component
+# rule, `contained` refuses `""`, `"."`, a trailing slash and a doubled separator as well as a
+# `..` -- and the first four of those never left `paths.memory`, so the old sentence told four
+# kinds of owner a thing about their own document that was not true, with a remedy already done.
+[[mutation]]
+name = "the memory-group refusal describes an escape again"
+file = "src/keelline/attach/binding.py"
+before = '''    "a memory.groups entry does not name a subdirectory of this project's paths.memory, so it "
+    "is refused rather than counted"'''
+after = '''    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
+    "rather than counted"'''
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true",
 ]

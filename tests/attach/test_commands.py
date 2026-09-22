@@ -360,3 +360,34 @@ def test_check_reads_each_of_its_two_documents_once(
     monkeypatch.setattr("keelline.attach.binding.load", counted)
     assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
     assert loads == []
+
+
+def test_attach_reads_each_of_its_two_documents_once_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same counter over the writing half, which has the stronger version of the argument
+    # above: a `--check` that read two documents reports the wrong thing, while an `attach`
+    # that reads two *writes* under the wrong one. `attach` called `read_binding` without a
+    # `Config` and then loaded a second time for its own `memory.groups` refusals, so
+    # `keelline.toml` and the machine file were read twice per run with the two halves free to
+    # disagree.
+    #
+    # Counted at `binding.load` and zero is the assertion, for the reason the test above gives.
+    # A real attach and not a `--check`, so the count covers the whole run.
+    #
+    # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
+    from keelline.config.loader import load as real_load
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    loads: list[Path] = []
+
+    def counted(target: Path, **kwargs: object) -> Config:
+        loads.append(target)
+        return real_load(target, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
+    assert loads == []

@@ -18,7 +18,7 @@ from keelline.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detache
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
-from keelline.scaffold import Kind, Location, Manifest, Record, digest
+from keelline.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
 from keelline.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
@@ -590,3 +590,41 @@ def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
     assert removed.ignore_region_removed is False
     assert text.startswith("node_modules/\n")
     assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY
+
+
+def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(tmp_path: Path) -> None:
+    """A repository may not disable the command that undoes an attach.
+
+    `.keelline/manifest.json` is **tracked** -- the ignore region covers `.keelline/local/` and
+    `.keelline/assessment.json` and nothing else -- so a clone commits whatever it likes there,
+    and `Manifest.read` refuses one that is unreadable, is not an object, or declares a `format`
+    past this Keelline's. `attach` never reads the file, so a clone shipping `{"format": 99}`
+    attached cleanly, merged the owner's allow rules and hook entries, and then made `detach`
+    exit 2 on every run for ever: the ownership question is asked above every withdrawal, so
+    nothing was half-undone and nothing could ever be undone either.
+
+    Refusing with a better sentence is not the answer, because the act it would name is
+    "delete a tracked file out of somebody else's repository". An unreadable manifest is read
+    as no claim this command will act on and no claim it will act against: the region stays,
+    which is the conservative half, and the detach finishes. Everything else comes back, which
+    is what the settings file and the ledger assert here.
+
+    Mutation: `mutations.toml`'s "an unreadable manifest blocks the detach again".
+    """
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / LEDGER).is_file()
+    # Written after the attach, exactly as a clone's committed one is there before a later
+    # `detach` and never read by the run that wrote the ledger.
+    manifest = root / MANIFEST_PATH
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
+    removed = _detach(root, machine, home)
+    assert not (root / LEDGER).exists()
+    assert removed.allow_removed == (RULE,)
+    # The conservative half: ownership could not be established, so the block is left alone and
+    # the result says so rather than claiming a withdrawal it did not make.
+    assert removed.ignore_region_removed is False
+    assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
