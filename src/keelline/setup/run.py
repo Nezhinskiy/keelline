@@ -127,8 +127,10 @@ from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 # Code keys `pluginConfigs` by this pair, not by the plugin name alone.
 PLUGIN_ID = "keelline@keelline-marketplace"
 # The release tag scheme (`vX.Y.Z`, §5.9); `uv tool install` has no `--from`, so the positional
-# git URL form is the one D2 permits (`git+https://…@<tag>`).
-INSTALL_COMMAND = "uv tool install git+" + REPOSITORY_URL + "@v{version}"
+# git URL form is the one D2 permits (`git+https://…@<tag>`). An f-string with a doubled brace,
+# because the concatenation it replaces read as somebody having forgotten one: `{version}` is
+# meant to survive into the template and be filled by the caller, and `{{version}}` says so.
+INSTALL_COMMAND = f"uv tool install git+{REPOSITORY_URL}@v{{version}}"
 # One verb pair per harness, fixed here rather than in the preset: which CLI verb installs a
 # plugin is a property of the harness, never of any one plugin, and the two differ (measured,
 # Fix round 1 item 3's docstring paragraph above).

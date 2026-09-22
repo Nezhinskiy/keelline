@@ -65,13 +65,23 @@ OVERLAY_MODE = "overlay"
 # `SessionStart.source` values that are one context asking again, and the only thing this module
 # reads the payload for.
 #
-# `resume` and `compact` are the same conversation continuing under the same session id -- which
-# is the name the `once_key` marker is filed under, so a handler that said nothing on this
-# session's `startup` is being asked a question it has already answered. `startup` and `fork`
-# begin a context and are absent on purpose; so is `clear`, which begins a fresh conversation
-# whose payload may carry a session id this handler has never answered for. A value not in this
-# set, and a payload with no `source` at all, pays the two `git` calls: losing four seconds is
-# recoverable and losing the one nudge a context gets is not.
+# **What the gate rests on, and how much of it is established.** The `once_key` marker is filed
+# under the session id -- `hooks/commands.py` builds the sink from `event.session_id` -- so "this
+# context has already been asked" is true exactly when the invocation carries the id the marker was
+# filed under. `resume` and `compact` are in the set because they name the harness continuing one
+# conversation; `startup` and `fork` begin one and are out of it; `clear` is out of it because a
+# fresh conversation may carry a session id this handler has never answered for.
+#
+# **Those last two are assumptions about the harness, and this repository establishes neither.**
+# `session_id` is read and passed through untouched (`hooks/dispatch.py` types it `str | None` and
+# interprets nothing), no fixture here drives a real `/clear` or a real resume, and no field
+# documented to this code says how ids are allocated. What they cost if they are wrong is not
+# symmetric, which is why the set is drawn this way: if a `resume` arrived under a *new* id, the
+# gate would skip the sync for a context that had never been asked and that resume would lose the
+# nudge; if a `clear` keeps the id, the whole cost is two `git` calls re-paid on a clear. So the set
+# is as small as the saving allows, and a value not in it -- including a payload with no `source` at
+# all -- pays: losing four seconds is recoverable and losing the one nudge a context gets is not.
+# Whoever can measure the harness should replace this paragraph with the answer.
 #
 # The value is the harness's, it is compared against these two constants, and it is never printed
 # -- so nothing here touches the rule about what may reach `additionalContext`.

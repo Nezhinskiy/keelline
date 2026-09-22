@@ -26,9 +26,11 @@ defaults", so the dry run is how the user sees them before anything is written.
 2. Ask whether to proceed. Nothing has been written at this point.
 3. On a yes, run `keelline init --yes`. Add `--no-ci` instead if the user does not want a CI
    workflow and does not want the public repository asked for a pin.
-4. Relay the same four parts again. The second report is the one that says what happened: a
-   file listed as skipped was already there and the run left it alone, with the reason beside
-   it.
+4. Relay the same four parts again, from **this** run — the real one. Its opening line is the
+   one that says what happened, and the two reports under it say it per file. A file listed as
+   skipped was already there and the run left it alone, with the reason beside it: in the
+   `write-once:` report that reason is "create-once, and the file is already there", which is
+   what an adopted `keelline.toml` gets.
 5. Tell the user how to undo it: `git checkout -- .` restores the files that were already
    tracked, and the files the run created have to be deleted, `.keelline/manifest.json`
    among them. There is no undo command yet — `keelline uninstall` ships later.

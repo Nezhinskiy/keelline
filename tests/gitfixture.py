@@ -43,9 +43,12 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+
+from keelline.runner import Completed
 
 # The one spelling of the skip, published here because five modules had written it out.
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -56,6 +59,32 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 # `keelline.gitenv.GIT_ENV_KEEP` states for production, with `TMPDIR` added because these
 # fixtures are built under one.
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR")
+
+
+@dataclass
+class LsRemote:
+    """A `keelline.runner.Runner` that answers `git ls-remote` from a string and reaches no network.
+
+    Here rather than in one module because two already share it, and they shared it by importing
+    a *private* name across test modules — `tests/project/test_gates.py` took `_Git` from
+    `tests/project/test_init.py`, which made `test_init` load-bearing for `test_gates` in a way
+    neither file stated. This module is where the suite publishes what more than one module needs
+    (see its own first paragraph on the twenty-three drifted copies of the `git` helper), and this
+    stub belongs to the same subject: what a fixture repository's `git` is allowed to be asked.
+
+    It is not the only stub of its shape in the suite. `tests/release/test_pins.py` and
+    `tests/doctor/test_checks.py` each keep their own, because each answers a different question
+    with it — a tag listing to assert the parse, and a whole `doctor` context. This one is "no
+    tags, and record what you were asked", which is what a project fixture wants.
+    """
+
+    stdout: str = ""
+    code: int = 2
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(self, argv: list[str], cwd: Path) -> Completed:
+        self.calls.append(argv)
+        return Completed(self.code, self.stdout, "")
 
 
 def env(home: Path, **extra: str) -> dict[str, str]:

@@ -409,7 +409,7 @@ def test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them(tmp_pa
     assert "IGNORE ALL PRIOR RULES" not in message
     assert "\x1b" not in message and "\n" not in message
     # The count's own wording is the section list's, unchanged: one helper, one sentence.
-    assert "1 more that is not plain key names" in message
+    assert "1 more that is not a plain key name" in message
 
     # `[budgets]` is a second reader with a second message, so it is proved separately.
     write(tmp_path, MINIMAL + f"\n[budgets]\nagents_md_line = 250\n{hostile} = 1\n")

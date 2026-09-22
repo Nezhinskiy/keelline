@@ -16,8 +16,7 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.project.init import init
-from tests.gitfixture import git, needs_git
-from tests.project.test_init import _Git
+from tests.gitfixture import LsRemote, git, needs_git
 
 GATES = (
     ["docs", "check"],
@@ -43,7 +42,7 @@ def _initialised(tmp_path: Path) -> Path:
     init(
         root,
         machine=tmp_path / "absent.toml",
-        runner=_Git(),
+        runner=LsRemote(),
         yes=True,
         dry_run=False,
         ci=False,

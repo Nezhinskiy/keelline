@@ -192,7 +192,7 @@ def fill(text: str, **values: str) -> str:
     """Replace every `%%KEY%%` sentinel, and refuse a template with one left in it.
 
     A sentinel that survives would be written into a project's file verbatim — a `uses:` line
-    pinned to the literal `%%SHA%%`, or an instruction file headed `%%NAME%%`. Refusing costs
+    pinned to the literal `%%REF%%`, or an instruction file headed `%%NAME%%`. Refusing costs
     the artifact; writing it costs the project's CI.
     """
     for key, value in values.items():

@@ -146,11 +146,13 @@ def _named(unknown: list[str], noun: str) -> str:
     unnamed = len(unknown) - len(named)
     parts = list(named)
     if unnamed:
-        verb = "is" if unnamed == 1 else "are"
+        # The noun agrees with the count, for the reason the verb already did: one unnamed key
+        # produced "1 more that is not plain key names", which is the common case of this arm.
+        tail = f"is not a plain {noun} name" if unnamed == 1 else f"are not plain {noun} names"
         # "more" only when something was named: with every name failing the grammar the message
         # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
         more = "more " if named else ""
-        parts.append(f"{unnamed} {more}that {verb} not plain {noun} names")
+        parts.append(f"{unnamed} {more}that {tail}")
     return ", ".join(parts)
 
 

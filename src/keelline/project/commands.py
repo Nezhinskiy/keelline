@@ -131,8 +131,10 @@ def run_init(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    init = common_flags(groups.add_parser("init", help="write this repository's footprint"))
-    init.add_argument("--yes", action="store_true", help=YES_HELP)
-    init.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
-    init.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
-    init.set_defaults(func=run_init, ci=True)
+    # `parser` and not `init`: the name `init` in this module is the command, and the function
+    # `run_init` imports from `keelline.project.init`.
+    parser = common_flags(groups.add_parser("init", help="write this repository's footprint"))
+    parser.add_argument("--yes", action="store_true", help=YES_HELP)
+    parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
+    parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
+    parser.set_defaults(func=run_init, ci=True)

@@ -54,10 +54,13 @@ HEADER = (
     "# Written by `keelline init`. Every key you leave out takes the preset's default;\n"
     "# `[keelline] version` and `state` are Keelline's to rewrite, the rest are yours.\n\n"
 )
+# The pair is spelled literally because the intended reader is an agent relaying this sentence,
+# and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
+# them first" reads as two alternatives, one of which does not work.
 NEEDS_YES = (
     "`keelline init` asks its questions through the onboarding lane, which ships later; today "
-    "it takes the detected defaults — pass --yes to accept them, and --dry-run to read them "
-    "first"
+    "it takes the detected defaults — pass --yes to accept them, or --yes --dry-run to read "
+    "them first"
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "

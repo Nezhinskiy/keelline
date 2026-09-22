@@ -61,6 +61,18 @@ class Location(StrEnum):
 
 @dataclass(frozen=True)
 class Record:
+    """One artifact as the run that wrote it left it.
+
+    `template` is where the bytes came from, and it carries **two namespaces**. `<area>/<name>`
+    names a file the wheel ships and `read` can open — `project/roadmap.md`. `computed/<id>` says
+    there is no shipped file at all and the bytes were built by the area: `project.templates`
+    spells it `COMPUTED` and uses it for the rendered `keelline.toml`, the empty bug index and the
+    ignore block. Nothing reads the field yet; `upgrade` is the lane that will, and the choice is
+    recorded here rather than left for it to rediscover, because the manifests it will read are
+    being committed now. A reader tells "built" from "shipped" without asking the wheel, and no
+    record claims a file that is not there — which is what three of them did until `7f5a007`.
+    """
+
     id: str
     kind: Kind
     location: Location

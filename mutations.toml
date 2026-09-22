@@ -3121,8 +3121,8 @@ reddens = [
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/keelline/templates/overlay/README.md"
-before = "`keelline overlay create` renders seventeen files here."
-after = "`keelline overlay create` renders sixteen files here."
+before = "`keelline overlay create` renders seventeen files here:"
+after = "`keelline overlay create` renders sixteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
 ]
@@ -5480,7 +5480,7 @@ reddens = [
   "tests/project/test_command.py::test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin",
 ]
 
-# Without it a `%%SHA%%` survives into an adopting project's `uses:` line and a `%%NAME%%` into
+# Without it a `%%REF%%` survives into an adopting project's `uses:` line and a `%%NAME%%` into
 # the head of the file every session loads. Measured before the test beside it existed: the guard
 # was executed by `tests/project` and asserted by none of it — 39 passed with the search made to
 # answer `None`.

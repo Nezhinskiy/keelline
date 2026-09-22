@@ -4,8 +4,15 @@ The sha `init` writes into a project's workflow has to be one a release actually
 `doctor` has to be able to say whether a recorded one still is: one `git ls-remote` over
 `refs/tags/v*`, annotated tags peeled to the commit they name. The repository is
 `keelline.REPOSITORY_URL` and the pattern is a constant, which is what lets either stand in a
-subprocess's argument list (§3). Three answers are kept apart because three callers print
-three different sentences: no such tag, no tags at all, and could not ask.
+subprocess's argument list (§3).
+
+`released` distinguishes three states — could not ask (`None`), no tags at all (`{}`), and a
+listing that may or may not hold the tag asked for — and **its callers tell two of them apart, not
+three.** `resolve_pin` answers `Resolution(None, True)` for "no such tag" and for "no tags at all"
+alike, and `project.templates._ci` prints one sentence for both (`NO_TAG`) and another for the
+failed ask (`NOT_ASKED`); `doctor`'s `ci-ref` row splits the same two ways. The `{}` arm exists so
+that `git ls-remote --exit-code`'s non-zero exit for "nothing matched" cannot be read as a failed
+ask, which is the distinction every caller does depend on.
 """
 
 from __future__ import annotations

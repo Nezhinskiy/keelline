@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -15,9 +14,8 @@ from keelline.config.loader import CONFIG_FILE, load
 from keelline.errors import Failure, Refusal
 from keelline.project.init import InitReport, init
 from keelline.release.api import Pin
-from keelline.runner import Completed
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
-from tests.gitfixture import git, needs_git
+from tests.gitfixture import LsRemote, git, needs_git
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
@@ -26,19 +24,6 @@ SHA = "b" * 40
 # disk, and two values that happened to be equal could not tell the two sources apart.
 ADOPTED = "a" * 40
 LISTING = f"{SHA}\trefs/tags/v0.1.0\n"
-
-
-@dataclass
-class _Git:
-    """Answers `ls-remote` from a string; records every argv; reaches no network."""
-
-    stdout: str = ""
-    code: int = 2
-    calls: list[list[str]] = field(default_factory=list)
-
-    def run(self, argv: list[str], cwd: Path) -> Completed:
-        self.calls.append(argv)
-        return Completed(self.code, self.stdout, "")
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -53,7 +38,7 @@ def _init(
     root: Path,
     tmp_path: Path,
     *,
-    runner: _Git | None = None,
+    runner: LsRemote | None = None,
     yes: bool = True,
     dry_run: bool = False,
     ci: bool = True,
@@ -61,7 +46,7 @@ def _init(
     return init(
         root,
         machine=tmp_path / "absent.toml",
-        runner=_Git() if runner is None else runner,
+        runner=LsRemote() if runner is None else runner,
         yes=yes,
         dry_run=dry_run,
         ci=ci,
@@ -222,7 +207,7 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
         f'[ci]\nmode = "reusable"\nref = "{ADOPTED}"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
     workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
     assert f"check.yml@{ADOPTED}" in workflow and SHA not in workflow
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
@@ -241,7 +226,7 @@ def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path)
     (root / CONFIG_FILE).write_text(
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
-    report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert report.ref == "" and not (root / ".github").exists()
     assert report.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
@@ -270,7 +255,7 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
         (root / CONFIG_FILE).write_text(
             '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
         )
-        report = _init(root, tmp_path, runner=_Git(stdout=stdout, code=code))
+        report = _init(root, tmp_path, runner=LsRemote(stdout=stdout, code=code))
         assert report.adopted and report.ref == "" and not (root / ".github").exists()
         reason = report.skipped["ci-workflow"]
         assert reason.startswith("the keelline.toml this repository already"), (code, reason)
@@ -287,7 +272,7 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     tmp_path: Path,
 ) -> None:
     root = _repo(tmp_path)
-    runner = _Git(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING, code=0)
     report = _init(root, tmp_path, runner=runner)
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
@@ -312,7 +297,7 @@ def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_pat
         f'[ci]\nref = "{ADOPTED}"\ngate_branch = "main\'; rm -rf"\n',
         encoding="utf-8",
     )
-    report = _init(root, tmp_path, runner=_Git(stdout=LISTING, code=0))
+    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
     assert report.resolution.pin == Pin("v0.1.0", SHA)
     assert report.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch name")
     assert report.ref == "" and not (root / ".github").exists()
@@ -341,7 +326,7 @@ def test_a_configuration_that_will_not_parse_never_quotes_its_own_keys(tmp_path:
 @needs_git
 def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
     root = _repo(tmp_path)
-    runner = _Git(stdout=LISTING, code=0)
+    runner = LsRemote(stdout=LISTING, code=0)
     _init(root, tmp_path, runner=runner, ci=False)
     assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
     assert runner.calls == []

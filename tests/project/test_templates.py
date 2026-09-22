@@ -379,12 +379,13 @@ def test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shippi
     """`fill` refuses text still carrying a `%%KEY%%`, and nothing proved it did.
 
     Measured: with `left = _SENTINEL.search(text)` replaced by `left = None`, `tests/project`
-    was 39 passed — so the guard whose absence puts `check.yml@%%SHA%%` into an adopting
-    project's CI, and `# %%NAME%%` at the head of the file every session loads, was executed by
-    the suite and asserted by none of it.
+    was 39 passed — so the guard whose absence puts `check.yml@%%REF%%` into an adopting
+    project's CI (`%%REF%%` is the workflow template's own sentinel), and `# %%NAME%%` at the head
+    of the file every session loads, was executed by the suite and asserted by none of it.
 
     The sentinel's own name prints: it is a string from a template this package ships, which is
-    Keelline's own text and not a repository's.
+    Keelline's own text and not a repository's. The names below are deliberately *not* ones this
+    package ships — the subject is any unfilled sentinel, not the two real ones.
 
     Mutation (oracle): the search is made to answer `None` -> the first assertion reddens.
     """

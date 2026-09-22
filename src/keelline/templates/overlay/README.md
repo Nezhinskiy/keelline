@@ -18,8 +18,9 @@ Keelline is told rather than stopped.
 
 ## What is where
 
-`keelline overlay create` renders seventeen files here. These are the ones that are
-yours to fill in:
+`keelline overlay create` renders seventeen files here: the sixteen this layout ships, and
+`.keelline/manifest.json`, which the scaffold engine writes beside them and which the last table
+below accounts for. These are the ones that are yours to fill in:
 
 | Path | What it holds |
 |---|---|
