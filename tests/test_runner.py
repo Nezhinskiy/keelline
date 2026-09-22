@@ -29,8 +29,12 @@ PROBE = [
 def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Path) -> None:
     # Every call here runs with output captured, so a `git` or `gh` that asks for a credential
     # on an inherited stdin is invisible and blocks for the whole of NETWORK_TIMEOUT_SECONDS.
-    # `doctor`'s `ci-ref` row is what makes it a finding rather than an annoyance: the URL it
-    # resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+    # What makes that a finding rather than an annoyance is which callers reach the network
+    # through this seam: `overlay create --template` launches `gh` with the machine owner's own
+    # authentication, and `release.pins.released` runs `git ls-remote` for `keelline init` and
+    # for `doctor`'s `ci-ref` row — a write meant to be non-interactive and a read-only
+    # diagnostic. (This used to cite that row's URL as repository-authored; it is
+    # `keelline.REPOSITORY_URL`, a module constant. See `keelline.runner._ENV_FORCE`.)
     #
     # The pty is the point of the case: without it this process's own stdin is already not a
     # terminal under pytest, and the assertion would pass with the guard deleted.

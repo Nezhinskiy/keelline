@@ -58,9 +58,20 @@ _ENV_DROP = (
 )
 # Forced rather than inherited, and the reason the cap above means anything. `git` and `gh` ask
 # for a credential on stdin, and every call here runs with output captured -- so a prompt is
-# invisible and blocks for the whole of `NETWORK_TIMEOUT_SECONDS`. `doctor`'s `ci-ref` row is
-# the case that makes it a finding rather than an annoyance: the URL it resolves is
-# repository-authored, and a read-only diagnostic must not be holdable by one.
+# invisible and blocks for the whole of `NETWORK_TIMEOUT_SECONDS`, which a caller cannot tell
+# from a hang. What makes that a finding rather than an annoyance is which callers reach the
+# network through here: `overlay create --template` launches `gh repo create` and a clone, whose
+# authentication is the machine owner's and which prompts when it is missing, and
+# `release.pins.released` runs `git ls-remote` against the public repository for `keelline init`
+# and for `doctor`'s `ci-ref` row -- a write meant to run non-interactively and a read-only
+# diagnostic, neither of them something a person is sitting in front of waiting to type a
+# password.
+#
+# **This used to say the `ci-ref` row resolves a repository-authored URL, and it does not.** That
+# row has asked about `keelline.REPOSITORY_URL`, a module constant, since the wave-4 lane that
+# gave it one. The control is unchanged and still needed; what was wrong was the sentence
+# explaining it, which named the one caller it had stopped applying to -- and a false rationale on
+# a hardening is how a later lane concludes the hardening is unnecessary.
 _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
 
 

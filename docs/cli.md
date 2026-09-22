@@ -959,7 +959,11 @@ stayed empty — with the binding record, the settings merge and the ledger alre
 one goes: `<overlay>/projects/<name>/memory/<group>`, and `common/memory` for the shared group.
 Moving the notes is yours to do; no command does it for you. The containment that count is taken
 under is anchored on the checkout you pointed the command at, not on any path the repository
-configures, so a repository cannot move the directory being counted.
+configures, so a repository cannot move the directory being counted. **And that containment is a
+refusal of its own**, distinct from the two above it: a `memory.groups` entry that does not stay
+inside this project's `paths.memory` is refused (`2`) rather than counted — `paths.memory` may
+itself be a symlink, and then every group leaves the root at once. Its sentence names neither the
+group nor the path, both being repository-authored.
 
 **Reads** the overlay's `common/claude/permissions.json` and `common/claude/hooks.json`, this
 project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and

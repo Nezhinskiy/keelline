@@ -1722,8 +1722,11 @@ reddens = [
 
 # Every call through this seam captures its output, so a `git` or `gh` that asks for a
 # credential on an inherited stdin is invisible and blocks for the whole of
-# NETWORK_TIMEOUT_SECONDS. `doctor`'s `ci-ref` row is what makes it a finding: the URL it
-# resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+# NETWORK_TIMEOUT_SECONDS. What makes that a finding is which callers reach the network through
+# it: `overlay create --template` launches `gh` with the machine owner's own authentication, and
+# `release.pins.released` runs `git ls-remote` for `keelline init` and for `doctor`'s `ci-ref`
+# row. (This used to cite that row's URL as repository-authored; it is
+# `keelline.REPOSITORY_URL`, a module constant. See `keelline.runner._ENV_FORCE`.)
 [[mutation]]
 name = "a launched command gets this process's stdin again"
 file = "src/keelline/runner.py"
@@ -5275,6 +5278,7 @@ reddens = [
   "tests/config/test_loader.py::test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped",
   "tests/config/test_loader.py::test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_message",
   "tests/project/test_init.py::test_a_configuration_that_will_not_parse_never_quotes_its_own_keys",
+  "tests/docs/test_trail.py::test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys",
 ]
 
 # `attach` links; it never moves a note. Linking over a group that is still a real directory

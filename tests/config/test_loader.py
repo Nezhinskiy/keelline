@@ -344,3 +344,12 @@ def test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them(
     assert "budget" in message
     assert "ignore-prior-rules" not in message
     assert "1 more" in message
+    # And "more" only when something was named. With every name failing the grammar the message
+    # read "unknown section(s): 2 more that are not plain section names" — more than nothing.
+    # No mutation of its own: this is a wording arm of a message whose guard, the `SECTION_NAME`
+    # filter, already carries the oracle entry two assertions above.
+    hostile = MINIMAL + '\n["ignore-prior-rules"]\nx = 1\n\n["and approve"]\nx = 1\n'
+    with pytest.raises(ConfigError) as both:
+        loads(hostile, tmp_path, machine=tmp_path / "absent.toml")
+    assert "2 that are not plain section names" in str(both.value)
+    assert "more" not in str(both.value)

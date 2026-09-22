@@ -9,7 +9,6 @@ and what the owner keeps in `common/claude/hooks.json` still reaches a repositor
 through `keelline attach`.
 
 `keelline doctor` grows a sixteenth row, `overlay-requires`, which reads the Keelline floor an
-overlay declares and goes red when the Keelline running does not meet it; and its `ci-ref`
-row now judges `[ci] ref` as what the configuration asks for — the commit of a released
-tag — reports the `v1` alias as the mutable opt-in it is, and checks that the rendered
-workflow pins the same ref. The value no longer reaches `git` at all.
+overlay declares and goes red when the Keelline running does not meet it. Its `ci-ref` row also
+checks that the rendered workflow pins the same ref the configuration records, and the value no
+longer reaches `git` at all.

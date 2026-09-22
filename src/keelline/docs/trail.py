@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
+from keelline.config.loader import toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
@@ -101,7 +102,12 @@ def read_trail(path: Path) -> Trail:
     try:
         raw: dict[str, Any] = tomllib.loads(read_document(path, path))
     except tomllib.TOMLDecodeError as exc:
-        raise Failure(f"{path} is not valid TOML: {exc}") from None
+        # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
+        # several of its faults — a duplicate table is reported with the table's name in it —
+        # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files
+        # `keelline init` ships, so after this branch every repository `init` touches has one
+        # that this function parses, which is what makes the leak newly reachable here.
+        raise Failure(f"{path} is not valid TOML {toml_position(exc)}") from None
     themes: list[tuple[str, re.Pattern[str]]] = []
     # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is
     # repository-authored, and `theme = 1` would otherwise be iterated straight into a

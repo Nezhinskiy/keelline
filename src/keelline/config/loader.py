@@ -174,7 +174,10 @@ def _named(unknown: list[str]) -> str:
     parts = list(named)
     if unnamed:
         verb = "is" if unnamed == 1 else "are"
-        parts.append(f"{unnamed} more that {verb} not plain section names")
+        # "more" only when something was named: with every name failing the grammar the message
+        # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
+        more = "more " if named else ""
+        parts.append(f"{unnamed} {more}that {verb} not plain section names")
     return ", ".join(parts)
 
 

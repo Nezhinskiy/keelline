@@ -835,7 +835,14 @@ def attach(
     needs neither, follows. Nothing writes between them; every one of the eight is above the
     first write, which is the property that matters and the one the tests assert.
 
-    **All eight refusals are above every write, and three of them were not.** The no-`origin` one
+    **A ninth refusal is above every write and is not one of the eight**, because it is not a
+    check this function makes: `unlinked_groups` contains each `<paths.memory>/<group>` against
+    `root` before it counts, and a `PathEscape` out of it propagates as the refusal it already
+    is — `paths.memory` may itself be a symlink, and then every group escapes at once. It is
+    enumerated nowhere because it has no ordinal of its own; it is named here so that the count
+    above reads as "eight checks" rather than as "eight ways this can refuse".
+
+    **All eight checks are above every write, and three of them were not.** The no-`origin` one
     lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in
     `_prepare_store` — which runs after the ignore region, the Codex rule files, the settings
     merge, the ledger *and* the overlay's binding record. Each could exit 2 having written three,
