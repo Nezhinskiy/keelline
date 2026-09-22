@@ -5212,7 +5212,7 @@ file = "src/keelline/project/templates.py"
 before = "    if resolution.pin is None:"
 after = "    if False:"
 reddens = [
-  "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_pin_and_says_why_otherwise",
+  "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
 ]
 
 # DC6, and the second half of one rule: a remote URL's last path segment and a checkout's
