@@ -414,9 +414,23 @@ def test_index_extra_is_rendered_as_the_path_it_was_validated_as(tmp_path: Path)
     # Validated as a path and consumed as text was the whole defect: the string that reaches
     # `MEMORY.md` is now the one `contained` returned, relative to the store root, not the one
     # `keelline.toml` happened to spell.
-    store, config = a_store(tmp_path, extra='["./docs/handbooks//ledger.md"]')
+    store, config = a_store(tmp_path, extra='["docs/handbooks/ledger.md"]')
     text = render_index(reconcile(store, config, write=False), config, store)
     assert "- [docs/handbooks/ledger.md](docs/handbooks/ledger.md)" in text
+
+
+def test_an_index_extra_entry_that_needs_normalising_is_held_back_rather_than_tidied(
+    tmp_path: Path,
+) -> None:
+    # `contained()` used to normalise a leading `./` and a doubled `//` away — `Path(...).parts`
+    # drops both — and this loop then published the tidied string. It no longer does: the
+    # component rule is `fsops`' now, and `fsops` refuses those spellings at the write, so
+    # `contained()` refuses them here too and the entry joins the class this loop already holds
+    # back (`..`, an absolute path, a symlinked component). A repository-authored value is not
+    # rewritten into something writable on its author's behalf; it is left out of `MEMORY.md`.
+    store, config = a_store(tmp_path, extra='["./docs/handbooks//ledger.md"]')
+    text = render_index(reconcile(store, config, write=False), config, store)
+    assert "ledger.md" not in text
     assert "./docs" not in text
 
 

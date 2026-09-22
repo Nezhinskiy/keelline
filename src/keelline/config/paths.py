@@ -9,9 +9,19 @@ strings under `[paths]` are refused. Until that changes, the ledger and memory l
 `contained()` themselves on the fields they consume; widening the guard here would change
 `Config`'s shape, so it belongs with the lane that first reads those fields.
 
-Two rules, not one: `PATH_VALUE` is the charset half — the grammar a value must match before it
-may be printed anywhere, a report included — and `contained()` is the shape half, deciding
-whether the value may be written. The same four unguarded fields above are unguarded by both.
+Two rules, not one: `PATH_VALUE` is the grammar half — what a value must match before it may be
+printed anywhere, a report included — and `contained()` is the root half, deciding whether the
+value may be written *here*. The same four unguarded fields above are unguarded by both.
+
+**The component rule is `fsops`', and this module borrows it rather than restating it.**
+`contained()` used to split the value with `Path(relative).parts`, which normalises an empty
+component, a trailing slash and a leading `./` out of existence; `fsops` splits the raw string
+and refuses all three. So `plan()` found nothing wrong with `docs//roadmap-history.md` and
+`apply()` raised on it after ten artifacts and the manifest were already written, leaving a
+repository `init` would not touch again and `upgrade` does not yet ship for. The two spellings
+agreed for four review rounds, which is what a duplicated rule does until it does not.
+`checked_components` is the single spelling now; the import goes subpackage-to-leaf, so `fsops`
+stays the leaf the hook path depends on it being.
 """
 
 from __future__ import annotations
@@ -20,6 +30,7 @@ from pathlib import Path
 
 from keelline.config.schema import PATH_VALUE, Config
 from keelline.errors import Refusal
+from keelline.fsops import UnsafePath, checked_components
 
 
 class PathEscape(Refusal):
@@ -33,14 +44,16 @@ def contained(
     allow_final_symlink: bool = False,
     resolved_root: Path | None = None,
 ) -> Path:
-    candidate = Path(relative)
-    if not candidate.parts:
-        raise PathEscape("a path must name something inside the project root, not the root")
-    if candidate.is_absolute():
-        raise PathEscape(f"{relative!r} is absolute; paths must stay inside the project root")
-    if any(part == ".." for part in candidate.parts):
-        raise PathEscape(f"{relative!r} contains '..'; paths must stay inside the project root")
-    target = root / candidate
+    try:
+        # The empty path, an absolute path, `..`, `.` and an empty segment, all read off the
+        # caller's own spelling — one rule, in `fsops`, so a value this function accepts is a
+        # value the write can reach. `fsops` raises `UnsafePath`, an `OSError`, because a leaf
+        # module owns no user-facing verdict; a configured path's verdict is a `Refusal`, and
+        # the translation is all this line adds.
+        parts = checked_components(relative)
+    except UnsafePath as exc:
+        raise PathEscape(str(exc)) from exc
+    target = root.joinpath(*parts)
     for ancestor in [target, *target.parents]:
         if ancestor == root:
             break

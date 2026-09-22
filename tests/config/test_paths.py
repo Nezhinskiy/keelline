@@ -9,6 +9,7 @@ import pytest
 from keelline.config.loader import CONFIG_FILE, load, loads
 from keelline.config.paths import PathEscape, contained, validate_paths
 from keelline.config.schema import PATH_VALUE, Config, Paths
+from keelline.fsops import UnsafePath, checked_components, write_within
 
 PATH_NAMES = tuple(f.name for f in fields(Paths))
 
@@ -181,3 +182,65 @@ def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path:
         assert PATH_VALUE.match(value), value
     for value in ("docs/ specs", "docs/spécs", "-docs", "docs/`x`", "docs/x\n"):
         assert PATH_VALUE.match(value) is None, value
+
+
+# Every spelling the two readers of a path could have disagreed about, and the plain ones they
+# never did. Shared by the three assertions below so one list of spellings answers all of them.
+ADMITTED = ("docs/specs", "design/specs.v2", ".keelline/local/x", "AGENTS.md", "docs/.hidden")
+REFUSED = (
+    "docs//roadmap-history.md",  # an empty component
+    "design/handbooks/",  # a trailing slash
+    "./docs",  # a leading './'
+    "docs/./x.md",  # a '.' component anywhere
+    "docs/../x.md",  # a '..' component the charset spells out of ordinary letters
+    ".",
+    "..",
+    "/etc/keelline",
+    "",
+)
+
+
+def test_the_grammar_admits_exactly_what_the_component_rule_accepts() -> None:
+    # B1, and the shape of it: `PATH_VALUE` and `fsops.checked_components` are the two readers
+    # of a `[paths]` value, and they have to answer the same question. They did not. The charset
+    # form admitted an empty component, a trailing slash and a leading `./`, every one of which
+    # `checked_components` refuses — so a value could clear the grammar, clear `contained()`
+    # (which normalised it away through `Path(relative).parts`) and still be refused by the walk
+    # at the write. Asserted as an equivalence rather than as two lists, because two lists that
+    # agree today are what shipped.
+    #
+    # `-docs` is the one deliberate asymmetry: the charset refuses a leading `-`, which the
+    # component rule has no opinion about. So the implication is stated in the direction that
+    # matters — grammar implies component rule — and the reverse is asserted only for the
+    # spellings the charset admits.
+    for value in ADMITTED:
+        assert PATH_VALUE.match(value), value
+        assert checked_components(value), value
+    for value in REFUSED:
+        assert PATH_VALUE.match(value) is None, value
+        with pytest.raises(UnsafePath):
+            checked_components(value)
+
+
+def test_a_value_the_grammar_admits_is_one_the_write_can_reach(tmp_path: Path) -> None:
+    # The round trip the suite was missing, at the level of the two functions: everything the
+    # grammar lets through is something `contained()` accepts and `fsops` actually writes. The
+    # defect was exactly the absence of this — `plan` said yes, `apply` raised.
+    for value in ADMITTED:
+        root = tmp_path / value.replace("/", "-").replace(".", "_")
+        root.mkdir()
+        assert contained(root, value) == root.joinpath(*value.split("/"))
+        write_within(root, value, "body\n")
+        assert (root / value).read_text(encoding="utf-8") == "body\n"
+
+
+def test_contained_refuses_every_spelling_the_write_would_refuse(tmp_path: Path) -> None:
+    # The other half, and the one that closes the half-write: `contained()` is what `plan()`
+    # asks, so a spelling the walk refuses has to be refused here — before `apply()` has put a
+    # single artifact on disk. It was not: `Path('docs//x.md').parts` is `('docs', 'x.md')`.
+    #
+    # Mutation (oracle): `parts = checked_components(relative)` ->
+    # `parts = Path(relative).parts` -> this reddens.
+    for value in REFUSED:
+        with pytest.raises(PathEscape):
+            contained(tmp_path, value)

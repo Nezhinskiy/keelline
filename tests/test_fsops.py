@@ -11,6 +11,7 @@ from keelline.fsops import (
     NotASymlink,
     UnsafePath,
     _mode_of,
+    checked_components,
     mkdirs_within,
     open_within,
     readlink_within,
@@ -209,10 +210,8 @@ def test_a_current_directory_component_is_refused(tmp_path: Path) -> None:
     # `PurePosixPath` normalises `.` away today, so this asserts the guard rather than the
     # parse: the normalisation is pathlib's implementation detail and this is the single place
     # five later lanes' containment rests on.
-    from keelline.fsops import _checked
-
     with pytest.raises(UnsafePath):
-        _checked("docs/./a.md")
+        checked_components("docs/./a.md")
 
 
 # --- the reusable write surface ---------------------------------------------------------------

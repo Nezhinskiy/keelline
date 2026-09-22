@@ -5492,3 +5492,36 @@ after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it",
 ]
+
+# B1. Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
+# `fsops.checked_components` says what a path *is*; for four review rounds they disagreed about
+# `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()`
+# could not write — and `apply()` raised part-way through the pass, with earlier artifacts on
+# disk and its `finally` having already persisted the manifest. The anchor's provenance: both
+# rules are read off the clone's own spelling of its own `keelline.toml`, and neither consults
+# anything the clone can move, so a repository cannot choose which of the two answers it gets.
+# Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
+# and `./docs` all match the grammar again.
+[[mutation]]
+name = "the [paths] grammar admits a spelling the write refuses again"
+file = "src/keelline/config/schema.py"
+before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+# The other half of B1, and the one the half-write actually turned on: `contained()` is what
+# `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first
+# write. `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`,
+# which is why `plan` said yes. Restoring that spelling restores the disagreement, with the
+# grammar left tightened — the two guards must not be able to cover for each other.
+[[mutation]]
+name = "contained normalises the value away, so plan stops agreeing with apply"
+file = "src/keelline/config/paths.py"
+before = "        parts = checked_components(relative)"
+after = "        parts = Path(relative).parts"
+reddens = [
+  "tests/config/test_paths.py::test_contained_refuses_every_spelling_the_write_would_refuse",
+  "tests/scaffold/test_containment.py::test_a_target_that_survives_plan_is_one_apply_can_write",
+]

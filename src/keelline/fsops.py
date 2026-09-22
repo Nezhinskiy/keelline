@@ -63,8 +63,18 @@ class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
 
 
-def _checked(relative: str) -> tuple[str, ...]:
+def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
+
+    **Public, and the one place this rule lives.** `config.paths.contained()` used to carry a
+    second copy of it, written against `Path(relative).parts` — and the two agreed only about
+    the values nobody had to think about. Those parts are normalised, so `docs//x.md`,
+    `docs/x/` and `./docs` reached `contained()` as `('docs', 'x.md')`, `('docs', 'x')` and
+    `('docs',)`: a configured path that `plan()` reported no refusal for and that the walk below
+    then refused at the write, part-way through a pass, with earlier artifacts already on disk.
+    Two spellings of one rule is the defect; there is one spelling now, and `contained()` calls
+    it. That is also why this is not private: `contained()` is in a subpackage and this is a
+    leaf module, so the call goes this way and the leaf stays a leaf.
 
     The split is on the **raw string**, not on `PurePosixPath(relative).parts`. Those parts are
     already normalised — `.` and empty segments are dropped, a trailing slash disappears — so a
@@ -102,9 +112,9 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
     The caller writes through the descriptor, so nothing between this walk and the write can
     redirect it: `os.replace(..., src_dir_fd=fd, dst_dir_fd=fd)` never re-resolves the parent.
 
-    `relative` must stay inside `root` by its own spelling — see `_checked`.
+    `relative` must stay inside `root` by its own spelling — see `checked_components`.
     """
-    parts = _checked(relative)
+    parts = checked_components(relative)
     fd = os.open(root, _DIR_FLAGS)
     opened = [fd]
     try:
@@ -228,9 +238,10 @@ def mkdirs_within(root: Path, target: str) -> None:
     `overlay` and `hooks-core` all write files that are not `Template`s; a private helper
     leaves each of them to re-derive this, and the failure mode of getting it wrong is silent.
     """
-    # `_checked` and not `PurePosixPath(target).parts`, so the whole target is refused by
+    # `checked_components` and not `PurePosixPath(target).parts`, so the whole target is
+    # refused by
     # its own spelling before any directory is created, rather than one branch at a time.
-    parts = _checked(target)[:-1]
+    parts = checked_components(target)[:-1]
     for depth in range(len(parts)):
         branch = "/".join(parts[: depth + 1])
         with open_within(root, branch) as (dir_fd, name), contextlib.suppress(FileExistsError):

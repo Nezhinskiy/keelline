@@ -119,9 +119,24 @@ def test_value_types_and_ranges_are_validated(tmp_path: Path, text: str) -> None
 def test_a_path_that_escapes_the_root_is_refused_by_load(tmp_path: Path) -> None:
     # PathEscape is a Refusal (exit 2), not a ConfigError (exit 1): naming the class here is
     # what catches a regression that downgrades the refusal to a finding.
+    #
+    # Both arms, because `load` reaches two guards and the class is the point of each. A `..`
+    # value is the grammar's now that a segment of one or two dots is refused there — it names
+    # the key and never the value — and a component that is a symlink out of the tree is
+    # `contained()`'s, which is the arm that would otherwise stop being exercised here.
     write(tmp_path, MINIMAL + '\n[paths]\nspecs = "../elsewhere"\n')
-    with pytest.raises(PathEscape, match="project root"):
+    with pytest.raises(PathEscape) as caught:
         load(tmp_path, machine=tmp_path / "no-machine.toml")
+    assert "paths.specs" in str(caught.value) and "elsewhere" not in str(caught.value)
+
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.mkdir()
+    write(linked, MINIMAL + '\n[paths]\nspecs = "docs/specs"\n')
+    (linked / "docs").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(PathEscape, match="symlink"):
+        load(linked, machine=tmp_path / "no-machine.toml")
 
 
 def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> None:

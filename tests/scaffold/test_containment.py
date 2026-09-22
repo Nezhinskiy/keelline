@@ -83,9 +83,19 @@ def load_at(root: Path) -> Config:
 
 
 def test_the_loader_refuses_every_escaping_paths_value(tmp_path: Path) -> None:
+    # The refusal is the grammar's now, and the fixture is unchanged: closing `.` and `..` as
+    # segments — which a charset cannot do, because both are spelled out of characters a path
+    # needs — means the `[paths]` grammar loop refuses every value here before `contained()` is
+    # reached, exactly as it already did for the absolute one below. So this asserts what the
+    # loop actually says: the key, and never the value. `contained()`'s own `..` refusal is not
+    # covered for by this any more and is proven directly, in `tests/config/test_paths.py`:
+    # `test_dotdot_is_refused_even_when_it_resolves_inside_the_root` and
+    # `test_contained_refuses_every_spelling_the_write_would_refuse`.
     write_config(tmp_path, HOSTILE_PATHS)
-    with pytest.raises(PathEscape, match=r"\.\."):
+    with pytest.raises(PathEscape) as caught:
         load_at(tmp_path)
+    assert "paths.agents_md" in str(caught.value)
+    assert "AGENTS.md" not in str(caught.value)
 
 
 def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_reached() -> None:
@@ -93,8 +103,7 @@ def test_an_absolute_paths_value_is_refused_by_the_grammar_before_contained_is_r
     # `contained()` call, an absolute value like the one this fixture used to carry for
     # `architecture` is refused by the grammar first — `contained()`'s own `..`-shaped message
     # never fires for it, and folding it into `HOSTILE_PATHS` let one guard silently cover for
-    # the other. Asserted directly against the grammar instead, so `HOSTILE_PATHS` above stays
-    # every value `contained()` itself refuses.
+    # the other. Asserted directly against the grammar instead.
     from keelline.config.schema import PATH_VALUE
 
     assert PATH_VALUE.match("/etc") is None
@@ -142,6 +151,73 @@ def test_nothing_outside_the_root_is_written_even_when_apply_is_called(tmp_path:
         apply(root, plan(root, load_at(root), escaping_templates()))
     assert list(sibling.iterdir()) == []
     assert sorted(p.name for p in tmp_path.iterdir()) == ["project", "sibling"]
+
+
+# --- plan and apply agree about what a path is ------------------------------------------------
+
+# Four spellings `plan()` used to pass and `apply()` then refused, and four it has always
+# handled, in one list: the assertion below is that the two verdicts agree on every row, not
+# that any particular row is refused.
+ROUND_TRIP = (
+    "docs/x.md",
+    "AGENTS.md",
+    ".keelline/local/x.md",
+    "a.b-c/d_e.md",
+    "docs//roadmap-history.md",
+    "design/handbooks/",
+    "./docs/x.md",
+    "docs/./x.md",
+    "docs/../x.md",
+    "/etc/x",
+    "",
+    ".",
+)
+
+
+def test_a_target_that_survives_plan_is_one_apply_can_write(tmp_path: Path) -> None:
+    # The round trip the suite did not have, which is why this survived four review rounds:
+    # nothing asserted that a value `plan` reports no refusal for is a value `apply` can
+    # actually write. `docs//roadmap-history.md` was the proof it could not — `plan` normalised
+    # the empty component away through `Path(relative).parts`, `apply` split the raw string and
+    # raised `UnsafePath` part-way through the pass, and `apply`'s `finally: manifest.write(root)`
+    # then persisted a manifest for a run that had been refused. The repository was stuck after
+    # that: `init` refuses a manifest it finds, and `upgrade` does not ship.
+    #
+    # Stated as an implication over every spelling rather than as a fixed expected verdict, so
+    # it stays true for whatever the grammar and the component rule decide next.
+    for index, target in enumerate(ROUND_TRIP):
+        root = tmp_path / f"root-{index}"
+        root.mkdir()
+        write_config(root, VALID_HEAD)
+        templates = [
+            Template(id="only", kind=Kind.TEMPLATE, target=target, source="t", render=lambda: "x")
+        ]
+        planned = plan(root, load_at(root), templates)
+        if planned.refusals:
+            # A refused plan is allowed, and must have planned nothing and written nothing.
+            assert planned.actions == ()
+            assert not (root / ".keelline").exists(), target
+            continue
+        apply(root, planned)  # must not raise: this is the whole of the round trip
+        assert (root / target).read_text(encoding="utf-8") == "x", target
+
+
+def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None:
+    # The end-to-end consequence, through the `[paths]` table a clone actually commits. The
+    # refusal now happens in the grammar loop `validate_paths` runs, above `contained()` and far
+    # above the first write — so `init.py`'s "a refusal anywhere leaves nothing written and no
+    # manifest" and `docs/cli.md`'s copy of it are true again.
+    write_config(
+        tmp_path,
+        HOSTILE_PATHS.replace(
+            'roadmap_history = "../roadmap-history.md"',
+            'roadmap_history = "docs//roadmap-history.md"',
+        ),
+    )
+    with pytest.raises(PathEscape):
+        load_at(tmp_path)
+    assert not (tmp_path / ".keelline").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == [CONFIG_FILE]
 
 
 # --- the two fields nobody guards yet ---------------------------------------------------------
