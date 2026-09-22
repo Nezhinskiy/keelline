@@ -5195,3 +5195,17 @@ after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_pin_and_says_why_otherwise",
 ]
+
+# DC6, and the second half of one rule: a remote URL's last path segment and a checkout's
+# directory name are both repository-authored, so the value that fails the grammar is the one
+# thing the refusal must not carry. The anchor is `PROJECT_NAME`, the loader's own grammar in
+# the package, and the remedy — write `[project] name` yourself — is what a project whose
+# directory this tool cannot name still has. The loader refuses the same grammar the same way.
+[[mutation]]
+name = "a detected name outside the grammar is quoted back in the refusal"
+file = "src/keelline/project/detect.py"
+before = "        raise Refusal(NOT_A_NAME)"
+after = '        raise Refusal(f"{NOT_A_NAME}: {name}")'
+reddens = [
+  "tests/project/test_detect.py::test_a_name_outside_the_grammar_is_refused_without_being_quoted",
+]
