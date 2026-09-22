@@ -59,6 +59,58 @@ def test_the_three_write_once_artifacts_are_once_and_the_rest_are_not(tmp_path: 
     assert not any(t.kind is Kind.ONCE for t in prepared.footprint)
 
 
+def test_the_claude_md_pointer_names_the_configured_instruction_file(tmp_path: Path) -> None:
+    """The rendered bytes, not the template's: the pointer is one line and that line is a path.
+
+    `claude.md` shipped as the literal `@AGENTS.md` and was built with no `render` override, so
+    `[paths] agents_md = "CONTEXT.md"` produced `CLAUDE.md` pointing at a file the run did not
+    write, `CONTEXT.md` beside it, and a `keelline docs check` that passed — every Claude Code
+    session in that project following a dangling pointer, with nothing anywhere saying so.
+
+    Mutation (oracle): `AGENTS_MD=p.agents_md` -> `AGENTS_MD=CLAUDE_MD` -> the pointer names the
+    pointer and the renamed case reddens. The self-pointer that mutation writes is the one
+    `_one_target_each` already refuses when a repository asks for it, so this is the only way to
+    reach it.
+    """
+    config = preset_defaults("widget")
+    by_id = {t.id: t for t in _prepared(config, root=tmp_path).once}
+    assert by_id["claude-md"].render() == "@AGENTS.md\n"
+    moved = replace(config, paths=replace(config.paths, agents_md="CONTEXT.md"))
+    renamed = {t.id: t for t in _prepared(moved, root=tmp_path).once}
+    # The pointer and the file the skeleton is written to are one path, asserted together: a
+    # pointer that merely changed would still be wrong if it named something else.
+    assert renamed["claude-md"].render() == "@CONTEXT.md\n"
+    assert renamed["agents-skeleton"].target == "CONTEXT.md"
+    assert "%%" not in renamed["claude-md"].render()
+
+
+def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: Path) -> None:
+    """The rendered bytes again, and the numbers are `Budgets.effective`'s and not the preset's.
+
+    The three numbers were literals in the shipped template — 300, 3,000 and 50, the preset's
+    own. A project that lowered `agents_md_lines` to 250 received a document Keelline wrote
+    telling it 300 was fine, and `keelline docs check` then failed the same document at 251.
+    Nothing held the literals to the preset, so nothing could see them drift either.
+
+    Mutation (oracle): `LINES=_budget(config, "agents_md_lines")` ->
+    `LINES=_budget(config, "agents_md_words")` -> the lowered case reddens.
+    """
+    config = preset_defaults("widget")
+    body = {t.id: t for t in _prepared(config, root=tmp_path).once}["agents-skeleton"].render()
+    assert "at most 300\nlines and 3,000 words" in body and "under 50 lines" in body
+    # A project may lower a budget and never raise it (D7), so the rendered sentence follows the
+    # override down and ignores it upward -- `effective`'s rule, read through the file that
+    # states it. `agents_md_words` is left at the preset in the same case, so a fill that took
+    # one number for all three cannot pass.
+    lowered = replace(
+        config,
+        budgets=replace(config.budgets, configured={"agents_md_lines": 250, "status_lines": 999}),
+    )
+    body = {t.id: t for t in _prepared(lowered, root=tmp_path).once}["agents-skeleton"].render()
+    assert "at most 250\nlines and 3,000 words" in body and "under 50 lines" in body
+    assert "300" not in body and "999" not in body and "%%" not in body
+
+
 def test_targets_follow_the_configured_paths_and_not_the_preset(tmp_path: Path) -> None:
     config = preset_defaults("widget")
     moved = replace(
@@ -273,4 +325,4 @@ def test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it() -> 
         with pytest.raises(Failure, match="is not a shipped project template"):
             read(name)
     # And a name it does ship is read, so the check is not simply refusing everything.
-    assert read("claude.md") == "@AGENTS.md\n"
+    assert read("claude.md") == "@%%AGENTS_MD%%\n"

@@ -1,10 +1,9 @@
 # %%NAME%%
 
-What this repository is, in one paragraph. Keep this file within its budgets — at most 300
-lines and 3,000 words, and the status section below under 50 lines — because it is loaded
-into every session; detail belongs in the documents it links to.
+What this repository is, in one paragraph. Keep this file within its budgets — at most %%LINES%%
+lines and %%WORDS%% words, and the status section below under %%STATUS_LINES%% lines — because it
+is loaded into every session; detail belongs in the documents it links to.
 
 ## Current status
 
 - Not started.
-

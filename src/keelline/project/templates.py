@@ -8,6 +8,14 @@ under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAM
 shape-checked there — `GATE_BRANCH`, `CI_REF` — and a value outside its grammar costs the
 artifact rather than the run.
 
+**Every write-once file this renders answers to the configuration, including the two that look
+like fixed text.** `CLAUDE.md` is a one-line pointer and its one line is `[paths] agents_md`: it
+was the literal `@AGENTS.md`, so a project that renamed the instruction file got a pointer at a
+file that was not there and a `docs check` that passed anyway, and every session in it followed
+the dangling pointer. The skeleton's budget sentence is the same shape — it states the numbers
+`keelline docs check` enforces, so it is filled from `Budgets.effective` rather than from three
+literals copied out of the preset.
+
 **One invariant governs the workflow: its `uses:` ref is always what `[ci] ref` says on disk
 after the run.** That is what `doctor`'s `ci-ref` row enforces from the other side — "the
 workflow pins a different ref from `[ci] ref`, so the gate that runs is not the one recorded" —
@@ -161,6 +169,25 @@ def fill(text: str, **values: str) -> str:
     return text
 
 
+def _budget(config: Config, name: str) -> str:
+    """One budget, rendered the way the skeleton's prose reads it.
+
+    The skeleton tells a project the numbers `keelline docs check` will hold it to, and those
+    numbers were three literals — the preset's — written into a file `init` renders into somebody
+    else's repository. A project that lowers `agents_md_lines` to 250 was handed a document
+    Keelline itself wrote saying 300 was fine, and then failed at 251 by the same tool. So the
+    numbers come from `Budgets.effective`, which is the preset lowered by any override, and the
+    template carries sentinels instead.
+
+    **Grouped, with `,`.** One rule for all three rather than one per number: the prose this
+    replaces read "at most 300 lines and 3,000 words ... under 50 lines", so grouping is what it
+    already did, and `format(n, ",")` reproduces those three bytes exactly at the preset's
+    defaults. A four-digit budget written bare would read as a different kind of number from the
+    one the sentence next to it carries.
+    """
+    return format(config.budgets.effective(name), ",")
+
+
 def _template(
     artifact_id: str,
     target: str,
@@ -281,9 +308,21 @@ def project_templates(
             p.agents_md,
             "agents-skeleton.md",
             kind=Kind.ONCE,
-            render=lambda: fill(read("agents-skeleton.md"), NAME=config.project.name),
+            render=lambda: fill(
+                read("agents-skeleton.md"),
+                NAME=config.project.name,
+                LINES=_budget(config, "agents_md_lines"),
+                WORDS=_budget(config, "agents_md_words"),
+                STATUS_LINES=_budget(config, "status_lines"),
+            ),
         ),
-        _template("claude-md", CLAUDE_MD, "claude.md", kind=Kind.ONCE),
+        _template(
+            "claude-md",
+            CLAUDE_MD,
+            "claude.md",
+            kind=Kind.ONCE,
+            render=lambda: fill(read("claude.md"), AGENTS_MD=p.agents_md),
+        ),
     )
     footprint: list[Template] = [
         _template("documentation-policy", f"{p.architecture}/documentation.md", "documentation.md"),

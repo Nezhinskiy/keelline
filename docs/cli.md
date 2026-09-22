@@ -689,8 +689,8 @@ either way.
 | id | pass | kind | target | what it holds |
 |---|---|---|---|---|
 | `config` | write-once | once | `keelline.toml` | the document this run rendered |
-| `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name |
-| `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at the instruction file |
+| `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name, stating this project's own budgets |
+| `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at `[paths] agents_md`, whatever that file is called |
 | `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
 | `adr-template` | footprint | template | `<adr>/0000-template.md` | the four-heading decision record |
 | `ledger-runbook` | footprint | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |

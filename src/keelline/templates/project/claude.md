@@ -1,1 +1,1 @@
-@AGENTS.md
+@%%AGENTS_MD%%

@@ -5571,3 +5571,33 @@ reddens = [
   "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
   "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
 ]
+
+# The pointer every Claude Code session in an adopting project follows. `CLAUDE.md` shipped as
+# the literal `@AGENTS.md` and was built with no `render` override at all, so a project that set
+# `[paths] agents_md` to anything else received a pointer at a file the run had not written,
+# beside the file it had — and `keelline docs check` passed over the pair, because nothing on
+# either side reads the other. The mutation writes the self-pointer `_one_target_each` refuses
+# when a repository asks for it, which is the only way left to reach that state.
+[[mutation]]
+name = "the CLAUDE.md pointer stops naming the configured instruction file"
+file = "src/keelline/project/templates.py"
+before = '            render=lambda: fill(read("claude.md"), AGENTS_MD=p.agents_md),'
+after = '            render=lambda: fill(read("claude.md"), AGENTS_MD=CLAUDE_MD),'
+reddens = [
+  "tests/project/test_templates.py::test_the_claude_md_pointer_names_the_configured_instruction_file",
+  "tests/project/test_init.py::test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded",
+]
+
+# Three numbers Keelline writes into somebody else's repository, telling them what a Keelline
+# gate will hold that same file to. They were literals copied out of `presets/recommended.toml`,
+# so a project that lowered `agents_md_lines` was handed a document saying the preset's number
+# was fine and failed `keelline docs check` one line past its own. The mutation takes one budget
+# for another, which is the drift a single shared fill would reintroduce.
+[[mutation]]
+name = "the skeleton states a budget other than the one it names"
+file = "src/keelline/project/templates.py"
+before = '                LINES=_budget(config, "agents_md_lines"),'
+after = '                LINES=_budget(config, "agents_md_words"),'
+reddens = [
+  "tests/project/test_templates.py::test_the_skeleton_states_the_budgets_this_project_will_be_held_to",
+]
