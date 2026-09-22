@@ -1253,7 +1253,7 @@ nobody sees, so that is where they all are.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Ten of the sixteen have a `skip` arm — fourteen arms between them: two always, and eight
+**Ten of the sixteen have a `skip` arm — sixteen arms between them: two always, and eight
 more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
 code, so read the detail — each one says which measurement it is missing.
 
@@ -1264,20 +1264,24 @@ compares the installed plugin against the hashes the release recorded beside it.
 
 The eight that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
-against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
-recorded on this machine; `overlay-requires`, when no overlay root is recorded or the overlay
-declares no Keelline requirement; `bundles` and `store-debris`, when the note store does not
-resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has a
-second state arm of its own — a plugin built before the release record existed carries none,
+against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
+no overlay root is recorded on this machine **or** when the root it records is not a directory
+— two different arms with two different sentences, because a machine that recorded an overlay
+and then moved it is not a machine that recorded none; `overlay-requires` again when the
+overlay declares no Keelline requirement; `bundles` and `store-debris`, when the note store does
+not resolve; and `diagnostics`, when no harness data root is set in the environment. `files` has
+a second state arm of its own — a plugin built before the release record existed carries none,
 and it says so rather than comparing anything.
 
-**A `skip` does not mean there is nothing to do.** Five of the fourteen arms carry a remedy:
-the two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing
-line is not "always" versus "on a state" — `bundles`, `pre-commit`, `overlay-requires`,
-`store-debris` and `diagnostics` all skip on a state and carry nothing. It is whether the skip
-is itself worth acting on. Those five report something wrong that no other row will tell you: a
-plugin root nothing can find, a root that will be read and never executed, a recorded attach
-the overlay could not confirm. The other nine report a measurement that is simply unavailable —
+**A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
+the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
+moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
+versus "on a state" — `bundles`, `store-debris` and `diagnostics` all skip on a state and carry
+nothing, and so do the *no overlay recorded* arms of the two overlay rows. It is whether the
+skip is itself worth acting on. Those seven report something wrong that no other row will tell
+you: a plugin root nothing can find, a root that will be read and never executed, a recorded
+attach the overlay could not confirm, an overlay root recorded and not there. The other nine
+report a measurement that is simply unavailable —
 no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
 record in this build, no way to ask Codex — and no command in that row's gift changes it.
 

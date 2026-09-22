@@ -78,8 +78,18 @@ def run_init(args: argparse.Namespace) -> Result:
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
     skipped = report.skipped.get("ci-workflow")
-    if skipped is not None or not report.ref:
-        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"
+    # `skipped is not None` is the whole condition, and the `or not report.ref` that stood
+    # beside it and the `or 'no workflow was planned'` under it were both unreachable.
+    # `templates._ci` returns a rendered workflow only for a non-empty `[ci] ref` that matches
+    # `CI_REF`, and returns a non-empty reason in every other arm; `init` then derives
+    # `report.ref` as `"" if "ci-workflow" in prepared.skipped else config.ci.ref`. So a run
+    # with no skip has a ref, the fallback string could never be formatted, and the disjunct
+    # could never be the reason this branch was taken. `init`'s own comment calls the two "one
+    # value by construction" and `doctor`'s `ci-ref` row enforces it; an unreachable arm that
+    # would print a sentence nobody can provoke is the same species as a vacuous assertion,
+    # and this repository deletes those.
+    if skipped is not None:
+        ci_line = f"CI: skipped — {skipped}"
     elif pin is not None and pin.sha == report.ref:
         ci_line = f"CI: {pin.tag}@{pin.sha}"
     else:

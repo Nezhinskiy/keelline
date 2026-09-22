@@ -11,6 +11,7 @@ from a string.
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
 from contextlib import redirect_stdout
@@ -20,6 +21,11 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.config.loader import loads
+from keelline.config.schema import Config
+from keelline.project.commands import run_init
+from keelline.project.templates import _ci
+from keelline.release.api import Resolution
 from keelline.runner import Completed
 from tests.gitfixture import git, needs_git
 
@@ -190,3 +196,63 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     assert f"v0.1.0@{sha}" not in plain
     workflow = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
     assert f"check.yml@{recorded}" in workflow and sha not in workflow
+
+
+def _ci_config(mode: str, ref: str, tmp_path: Path) -> Config:
+    text = (
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        f'[ci]\nmode = "{mode}"\nref = "{ref}"\n'
+    )
+    return loads(text, tmp_path, machine=tmp_path / "absent.toml")
+
+
+def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
+    """An unreachable branch is a vacuous assertion in another shape.
+
+    `run_init` read `if skipped is not None or not report.ref:` and formatted
+    `skipped or <a fallback>`, and neither the disjunct nor the fallback could ever fire.
+    `templates._ci` returns a rendered workflow only for a `[ci] ref` that is non-empty and
+    matches `CI_REF`, and a non-empty reason in every other arm; `init` then derives
+    `report.ref` as `"" if "ci-workflow" in prepared.skipped else config.ci.ref` -- its own
+    comment calls the two "one value by construction", and `doctor`'s `ci-ref` row enforces it.
+    So a run with no skip has a ref, and a sentence nobody can provoke has been deleted rather
+    than left standing as a claim about a state the code forbids.
+
+    Both halves are asserted. The invariant is walked over `_ci`'s own arms, so this is a
+    statement about the code rather than about one run; the source is read with its comments
+    stripped, because what "unreachable" means here is that the arm is gone and no behaviour
+    moved when it went.
+
+    Mutation: `mutations.toml`'s "the init CI line grows an arm no run can reach".
+    """
+    code = "\n".join(
+        line
+        for line in inspect.getsource(run_init).splitlines()
+        if not line.strip().startswith("#")
+    )
+    assert "no workflow was planned" not in code
+    assert "not report.ref" not in code
+
+    rendered, skipped = 0, 0
+    for mode, ref, adopted in [
+        ("none", "", False),
+        ("uvx", "", False),
+        ("reusable", "", True),
+        ("reusable", "", False),
+        ("reusable", "not-a-sha", False),
+        ("reusable", "a" * 40, False),
+    ]:
+        config = _ci_config(mode, ref, tmp_path)
+        workflow, reason = _ci(config, Resolution(None, True), adopted=adopted)
+        if workflow is not None:
+            # The half the deleted arm rested on: a workflow is planned only for a ref, so
+            # `init`'s `report.ref` cannot be empty while `ci-workflow` is absent from `skipped`.
+            assert reason is None and config.ci.ref
+            rendered += 1
+        else:
+            # And the other half: every skip carries a sentence, so the fallback had nothing to
+            # stand in for either.
+            assert reason
+            skipped += 1
+    # Non-vacuous: both branches were actually taken.
+    assert rendered and skipped

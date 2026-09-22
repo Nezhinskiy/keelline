@@ -157,6 +157,30 @@ PLUGIN_ROOT_REMEDY = (
 NAMED_ROOT_CAVEAT = (
     "; this is the plugin root the environment names, whose files are read here and run nowhere"
 )
+# The two overlay-gated rows ask one question before anything else, and `PLUGIN_ROOT_REMEDY`'s
+# rule applies to them for the same reason it applies to that pair: both rows must say the same
+# thing, so the sentences live in one place rather than being copied from one row into the
+# other. They were copied -- `overlay-requires`' skip arm was `pre-commit`'s byte for byte,
+# `or not overlay.is_dir()` included -- and the copy carried the defect with it.
+#
+# The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
+# sentence. `memory.store.overlay_root` answers `None` for "this machine records no overlay",
+# which is the ordinary state before `keelline setup` has run and which nothing can be done
+# about from here; it answers a `Path` for a recorded root whether or not anything is there.
+# So a machine that recorded an overlay and then moved it -- the owner reorganising their own
+# directories is the ordinary way -- was told "no overlay root is recorded on this machine",
+# which is false, and was handed an empty remedy under it. It is the second state, not the
+# first, that is worth acting on: the overlay is where the notes live, and a recorded root
+# that is not there breaks the store as well as these two rows.
+NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
+OVERLAY_GONE = (
+    "the overlay root this machine records is not a directory, so nothing about the overlay "
+    "can be checked from here"
+)
+OVERLAY_GONE_REMEDY = (
+    "put the overlay back where the machine configuration records it, or run `keelline setup "
+    "--preset recommended --overlay <path>` to record where it is now"
+)
 # Why `diagnostics` prints a count and no content. One constant because the reason is the row's
 # whole substance, and a lane that starts quoting the file has to delete this sentence to do it.
 UNVOUCHED_LOG = (
@@ -176,17 +200,23 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: five of this module's fourteen skip arms carry one.
+    an empty remedy merely for being a skip: seven of this module's sixteen skip arms carry one.
     The line is not "always" versus "on a state" — five state skips (`bundles`, `pre-commit`,
     `overlay-requires`, `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is
     changed by the very command `_uncorroborated` names. It is whether **the skip is itself worth
     acting on**: the two rows that report a plugin root nothing can find, which is every hook entry
-    on this machine silent; `wrapper`'s row for a root it will read and never execute; and the two
-    ways a ledger's recorded attach cannot be corroborated. Those five say what to do. The other
-    nine report a measurement that is simply not available — no store, no overlay, no overlay
-    requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to
-    ask Codex — and no command in that row's gift changes it. A reader is never handed a command
-    that would not help, and never denied one that would.
+    on this machine silent; `wrapper`'s row for a root it will read and never execute; the two
+    ways a ledger's recorded attach cannot be corroborated; and the two rows that report an
+    overlay root this machine records and cannot find, which is the store broken as well as them.
+    Those seven say what to do. The other nine report a measurement that is simply not available —
+    no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
+    record in this build, no way to ask Codex — and no command in that row's gift changes it. A
+    reader is never handed a command that would not help, and never denied one that would.
+
+    The two overlay rows have *both* kinds of arm, which is what `_overlay_absent` is for: the
+    empty one is the machine that never recorded an overlay, and the one with a remedy is the
+    machine that recorded one and moved it. They used to be one arm with one sentence, and the
+    sentence was the first one.
     """
 
     name: str
@@ -1099,7 +1129,12 @@ def _cli_path(context: Context) -> Row:
             WARN,
             "`keelline` does not resolve on PATH, so a skill that invokes it by name fails on "
             "Codex, which performs no plugin-root substitution in skill content",
-            "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",
+            # `REPOSITORY_URL` and not the address written out, which is the rule this module
+            # already follows a few rows below in `overlay-requires`' own remedy (DC7: spelled
+            # once). A second spelling of a URL is a second thing to move when the repository
+            # does, and `doctor` is the command whose whole job is finding the two halves of
+            # something that has stopped agreeing.
+            f"run `uv tool install git+{REPOSITORY_URL}`",
         )
     return Row(OK, "`keelline` resolves on PATH")
 
@@ -1112,6 +1147,29 @@ PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = "pre-commit"
 
 
+def _overlay_absent(overlay: Path | None) -> Row:
+    """Why there is no overlay to measure, told apart into the two states that are not alike.
+
+    Called by both overlay-gated rows and by nothing else, so the sentence a reader gets is the
+    same whichever row they read it in -- see the constants above for the copy this replaces and
+    for what it was saying to whom.
+
+    The argument is the root rather than the `Context`, so that the caller's own
+    `overlay is None or not overlay.is_dir()` narrows `overlay` to a `Path` for the rest of its
+    body. The condition stays at each call site because each row reads the root afterwards; what
+    must not be spelled twice is the answer, and it is not.
+
+    Both arms are a `skip` and neither reaches the exit code. The remedy is the difference, and
+    it follows `Check`'s rule rather than the row's status: "no overlay recorded" is the ordinary
+    state of a machine that has not run `keelline setup`, and no command in this row's gift
+    changes it; a root that is recorded and is not there is a fault on this machine that nothing
+    else in the report names, and there is a command for it.
+    """
+    if overlay is None:
+        return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)
+
+
 def _pre_commit(context: Context) -> Row:
     """§6.4, §8.4: whether the overlay's own secret scan is armed on **this** machine.
 
@@ -1121,7 +1179,7 @@ def _pre_commit(context: Context) -> Row:
     """
     overlay = context.overlay
     if overlay is None or not overlay.is_dir():
-        return Row(SKIP, "no overlay root is recorded on this machine", "")
+        return _overlay_absent(overlay)
     if not (overlay / PRE_COMMIT_CONFIG).is_file():
         return Row(
             WARN,
@@ -1163,7 +1221,7 @@ def _overlay_requires(context: Context) -> Row:
     """
     overlay = context.overlay
     if overlay is None or not overlay.is_dir():
-        return Row(SKIP, "no overlay root is recorded on this machine", "")
+        return _overlay_absent(overlay)
     spec = requires_of(overlay)
     if spec is None:
         return Row(SKIP, "the overlay declares no Keelline requirement", "")

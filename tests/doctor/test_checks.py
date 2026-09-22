@@ -11,6 +11,7 @@ The same `pytestmark` `tests/attach` carries, for the same reason.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import pty
@@ -1106,6 +1107,16 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
     )
     assert check.status == "warn"
     assert "uv tool install" in check.remedy
+    # The address is `keelline.REPOSITORY_URL` and not a second spelling of it. This branch
+    # added that constant "spelled once (DC7)" and `overlay-requires`' remedy a few rows below
+    # reads it, while this one still carried the URL written out -- two places to change when
+    # the repository moves, in the command whose job is finding the halves of something that
+    # has stopped agreeing. Asserted against the source and not only against the text, because
+    # an identical literal satisfies the text.
+    #
+    # Mutation: `mutations.toml`'s "the cli-path remedy spells the repository URL again".
+    assert f"git+{REPOSITORY_URL}" in check.remedy
+    assert REPOSITORY_URL not in inspect.getsource(checks._cli_path)
 
 
 def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> None:
@@ -2070,3 +2081,36 @@ def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
     assert row.status == WARN and "no `uses:` line this build recognises" in row.detail
     # The file is repository-authored and none of it is quoted back.
     assert "o/r" not in row.detail and "other.yml" not in row.detail
+
+
+def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: Path) -> None:
+    """Two states, two sentences, and the same two in both rows that ask.
+
+    `overlay_root` answers `None` for a machine that records no overlay -- the ordinary state
+    before `keelline setup` has run -- and a `Path` for a recorded root whether or not anything
+    is there. `pre-commit` and `overlay-requires` collapsed the two into
+    `overlay is None or not overlay.is_dir()` and told both "no overlay root is recorded on this
+    machine", which is false of the second and leaves the owner nothing to act on: the overlay
+    is where the notes live, and a recorded root that is gone breaks the store too.
+
+    The sentences come from `_overlay_absent` so the two rows cannot drift -- `overlay-requires`'
+    arm was a byte-for-byte copy of `pre-commit`'s, which is how it inherited the defect -- and
+    `PLUGIN_ROOT_REMEDY`'s rule, "one constant because both rows must say the same thing", is the
+    one being read onto this pair.
+
+    Mutation: `mutations.toml`'s "the two overlay rows call a moved overlay an unrecorded one".
+    """
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{tmp_path / "moved-away"}"\n', encoding="utf-8")
+    root = _initialised(tmp_path)
+    assert overlay_root(machine) is not None, "the fixture records no overlay at all"
+    for name in ("pre-commit", "overlay-requires"):
+        row = _by_name(_checks(tmp_path, root, machine=machine), name)
+        assert row.status == SKIP, row
+        assert row.detail == checks.OVERLAY_GONE, row
+        assert row.remedy == checks.OVERLAY_GONE_REMEDY, row
+    # The other arm keeps the sentence it always had, and keeps carrying no remedy: a machine
+    # that has not run `keelline setup` is not a machine with something wrong on it.
+    for name in ("pre-commit", "overlay-requires"):
+        row = _by_name(_checks(tmp_path, root), name)
+        assert row.status == SKIP and row.detail == checks.NO_OVERLAY_RECORDED and not row.remedy

@@ -14,11 +14,12 @@ opened are both correct states somebody should still see.
 **Two is the floor and not the count.** Eight more rows have a skip arm that fires on a state of
 the machine rather than on this build — `wrapper` and `files` when no plugin root can be vouched
 for, `files` again on a build that carries no release record, `attached` with no overlay recorded
-or an overlay that could not be asked, `pre-commit` with no overlay root recorded,
-`overlay-requires` with no overlay root recorded or no requirement declared, `bundles` and
+or an overlay that could not be asked, `pre-commit` and `overlay-requires` with no overlay root
+recorded — and again, each, with a root recorded that is not a directory — `overlay-requires`
+once more with no requirement declared, `bundles` and
 `store-debris` with a store that does not resolve, `diagnostics` with no harness data root — and
-`run_checks` skips fifteen at once when `keelline.toml` is missing or will not load. Fourteen skip
-arms in all, and **five of them carry a remedy** — but not because they skip on a state: five state
+`run_checks` skips fifteen at once when `keelline.toml` is missing or will not load. Sixteen skip
+arms in all, and **seven of them carry a remedy** — but not because they skip on a state: five state
 skips (`bundles`, `pre-commit`, `overlay-requires`, `store-debris`, `diagnostics`) carry nothing,
 and `pre-commit`'s state is changed by the very command `checks._uncorroborated` names. The line is
 whether the skip is **itself worth acting on**, and `checks.Check`'s docstring is where that rule

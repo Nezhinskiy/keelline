@@ -5777,3 +5777,48 @@ after = '''    "a memory.groups entry does not stay inside this project's paths.
 reddens = [
   "tests/attach/test_binding.py::test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true",
 ]
+
+# DC7: spelled once. This branch added `REPOSITORY_URL` and `overlay-requires`' remedy a few rows
+# below reads it, while `cli-path`'s still carried the address written out -- two places to change
+# when the repository moves, in the command whose whole job is finding the two halves of something
+# that has stopped agreeing. The test reads the function's source, because an identical literal
+# satisfies an assertion about the remedy's text.
+[[mutation]]
+name = "the cli-path remedy spells the repository URL again"
+file = "src/keelline/doctor/checks.py"
+before = '            f"run `uv tool install git+{REPOSITORY_URL}`",'
+after = '            "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command",
+]
+
+# `overlay_root` answers `None` for a machine that records no overlay and a `Path` for a recorded
+# root whether or not anything is there, and both overlay-gated rows collapsed the two into one
+# sentence -- so a machine that recorded an overlay and then moved it was told it had recorded
+# none, with an empty remedy under it. `overlay-requires`' arm was a byte-for-byte copy of
+# `pre-commit`'s, which is how it inherited the defect; the sentences live in one place now.
+[[mutation]]
+name = "the two overlay rows call a moved overlay an unrecorded one"
+file = "src/keelline/doctor/checks.py"
+before = '''    if overlay is None:
+        return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)'''
+after = '    return Row(SKIP, NO_OVERLAY_RECORDED, "")'
+reddens = [
+  "tests/doctor/test_checks.py::test_an_overlay_that_moved_is_not_reported_as_one_never_recorded",
+]
+
+# The unreachable arm, restored. `_ci` returns a workflow only for a non-empty `[ci] ref` and a
+# non-empty reason otherwise, and `init` derives `ref` from that same skip -- so the disjunct
+# could never be the reason the branch was taken and the fallback string could never be
+# formatted. An arm no run can reach is the same species as a vacuous assertion.
+[[mutation]]
+name = "the init CI line grows an arm no run can reach"
+file = "src/keelline/project/commands.py"
+before = '''    if skipped is not None:
+        ci_line = f"CI: skipped — {skipped}"'''
+after = '''    if skipped is not None or not report.ref:
+        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"'''
+reddens = [
+  "tests/project/test_command.py::test_the_ci_line_has_no_arm_no_run_can_reach",
+]
