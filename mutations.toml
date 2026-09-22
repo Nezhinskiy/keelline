@@ -5205,15 +5205,23 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor",
 ]
 
-# A supply-chain guard. Without the pin there is no commit to write into the rendered
-# workflow's `uses:` line, and `fill` would refuse an unfilled `%%SHA%%` — but only after the
-# artifact had been offered, and any later spelling that made the sentinel optional would put
-# `check.yml@` into every adopting project's CI, which `actions/checkout` reads as the default
-# branch. The rule is "offer no workflow without a released commit to pin it to", and the
-# anchor is the release area's answer about the public repository's own tags, which nothing a
-# project writes can move.
+# Which sentence the run gives for a missing `[ci] ref`, and this entry used to claim something
+# else. It was named "a ci-workflow artifact is rendered with no released commit to pin it to",
+# and the mutation cannot render one: what renders a workflow is a `[ci] ref` that is non-empty
+# and matches `CI_REF` — two guards with entries of their own above — and this arm is reached only
+# when there is no ref at all, so the `NO_TAG` case merely falls through to `NO_REF` and no
+# workflow is offered either way. The test's own comment says so.
+#
+# What it does break is the reason, and that is worth an entry on this branch's own argument.
+# Three states reach here with no ref, and they have three different remedies: the document this
+# repository already had records none (`NO_REF`, and nothing the network says can change it), the
+# remote could not be asked (`NOT_ASKED`, try again), no released tag matches the version running
+# (`NO_TAG`, wait for a release). Collapsing them is how the adoption path came to be sent to the
+# network for a file it has to edit by hand — the defect `adopted` was threaded to fix, one commit
+# below this one. The mutation makes the run that resolved nothing report the adopted document's
+# sentence instead of its own.
 [[mutation]]
-name = "a ci-workflow artifact is rendered with no released commit to pin it to"
+name = "the no-released-tag state is reported as the adopted document's own reason"
 file = "src/keelline/project/templates.py"
 before = "    if resolution.pin is None:"
 after = "    if False:"
@@ -5497,6 +5505,97 @@ before = "    if name not in PROJECT_FILES:"
 after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it",
+]
+
+# A compatibility gate, and the classic off-by-one site. `satisfies` is what tells a session and a
+# `doctor` row whether the overlay the machine records can be driven by the Keelline that is
+# running; with `>` the version that meets a floor exactly is reported as not meeting it, so every
+# project on the released version an owner wrote into `keelline.requires` is told to install
+# something else, and the overlay's own shipped template declares such a floor. The anchor is this
+# module's two grammars, in the installed package; what the owner authors is the floor.
+[[mutation]]
+name = "the declared floor stops being met by the version that equals it"
+file = "src/keelline/overlay/requires.py"
+before = "    return tuple(int(part) for part in running.groups()) >= tuple("
+after = "    return tuple(int(part) for part in running.groups()) > tuple("
+reddens = [
+  "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
+]
+
+# The other half of "this reader answers for every string", after the digit bound above.
+# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
+# exists on none of them, so without this arm a manifest an owner can save raised `AttributeError`
+# out of a function whose docstring promises `None` for anything it cannot read. Both callers rest
+# on that promise: `doctor` renders a raised reader as "this check could not run", and the session
+# handler's backstop swallows it together with every other line of the same result — which is how
+# an overlay manifest silenced `NOT_ATTACHED` once already.
+[[mutation]]
+name = "the requires reader raises for a manifest that is not an object"
+file = "src/keelline/overlay/requires.py"
+before = "    if not isinstance(raw, dict):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
+]
+
+# A supply-chain verdict, and the one `ci-ref` row that gates the exit code from the file rather
+# than from the configuration: the pin GitHub acts on is the workflow's `uses:` line, so a
+# workflow pinning something other than `[ci] ref` means the gate that runs is not the one
+# recorded. Returning the ref's own verdict there reads as "the workflow agrees" — the same false
+# green the two `warn` arms beside it refuse by name. The anchor is `_USES`, this module's own
+# pattern in the installed package; the file it reads is repository-authored and no byte of it is
+# printed.
+[[mutation]]
+name = "doctor stops comparing the workflow's pin with [ci] ref"
+file = "src/keelline/doctor/checks.py"
+before = "    if pinned != {ref}:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_pins_something_else_is_red",
+]
+
+# The same row's other red, over the documented mutable opt-in. `[ci] ref = "v1"` is judged
+# against the public repository's own tag listing, and an alias the listing does not carry is a
+# project whose gate resolves to nothing; reported as the ordinary `warn` ("a mutable opt-in"), it
+# reads as an installation working. Uncovered as well as unproven until the case beside this
+# entry was written.
+[[mutation]]
+name = "an alias the public repository does not carry is reported as the mutable opt-in"
+file = "src/keelline/doctor/checks.py"
+before = "        if ALIAS not in tags:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed",
+]
+
+# The pin half of the CI line, which `22969c2` records as a real bug in its other half. The line
+# may name a release only when the workflow really pins that release's commit: on the adoption
+# path the workflow pins the ref `keelline.toml` already carried, so `CI: <tag>@<sha>` there
+# asserts that the gate GitHub runs is a release's when it is not — and `doctor`'s `ci-ref` row is
+# what then reports the disagreement. Not a permission gate; it is here for the false-claim class
+# this file already tracks in doctor's own rows, where what a reader does next follows from the
+# sentence.
+[[mutation]]
+name = "the init CI line claims a release for a ref the run did not resolve"
+file = "src/keelline/project/commands.py"
+before = "    elif pin is not None and pin.sha == report.ref:"
+after = "    elif pin is not None:"
+reddens = [
+  "tests/project/test_command.py::test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release",
+]
+
+# The heading over both reports, which was `initialised:` above a REFUSED section saying nothing
+# would be written — invisible while the summary was four count lines, and a claim a reader checks
+# once the report prints. Three states and not two, keyed on `(refused, dry_run)`: an operator who
+# reads "initialised:" over a refusal stops looking for the thing they have to fix. The same
+# false-claim class as the entry above, and not a permission gate either.
+[[mutation]]
+name = "a refused init run is headed as an initialised one"
+file = "src/keelline/project/commands.py"
+before = '    (True, False): "refused, and nothing was written:",'
+after = '    (True, False): "initialised:",'
+reddens = [
+  "tests/project/test_command.py::test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report",
 ]
 
 # Committed provenance. `Template.source` becomes `Record.template` in `.keelline/manifest.json`,

@@ -2006,6 +2006,66 @@ def test_the_alias_is_a_warning_that_names_it_mutable(tmp_path: Path) -> None:
     assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
 
 
+def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_path: Path) -> None:
+    """The two arms of the alias no case reached, one of which gates the exit code.
+
+    `[ci] ref = "v1"` is the documented mutable opt-in, judged against the public repository's own
+    tag listing. Measured with `--cov-report=term-missing` over `tests/doctor tests/overlay
+    tests/release` before this case: the alias's "the listing could not be asked for" arm and its
+    "the listing carries no such tag" arm were both unexecuted. The second is `RED` — the status
+    `doctor` turns into exit 1, which `tests/doctor/test_command.py::test_any_red_check_exits_one`
+    holds — so the one verdict here that fails a run had no case at all, on a value a repository
+    writes into its own `keelline.toml` by hand.
+
+    Mutation (oracle): `if ALIAS not in tags:` -> `if False:` -> the alias that names nothing is
+    reported as the mutable opt-in and the first half reddens. The unaskable half is advisory and
+    ships no entry: `warn` reaches neither the exit code nor anything that reads a verdict as
+    permission, and the sha arm beside it already answers the same way for the same reason.
+    """
+    # Every released tag and no `v1` among them: the alias this repository pinned names nothing,
+    # so no gate is running the commit it thinks it is.
+    stub = _stub()
+    stub.stdout = f"{RELEASED}\trefs/tags/v0.1.0\n"
+    root = _configured(tmp_path / "missing", "v1", workflow_ref="v1")
+    missing = _checks(tmp_path, root, runner=stub)
+    row = _by_name(missing, "ci-ref")
+    assert row.status == RED and "no such tag" in row.detail
+    assert "ci-ref" in [check.name for check in missing if check.status == RED]
+    # `git` itself having failed is a fact about this machine and not about `[ci] ref`, so this
+    # arm warns exactly as the sha arm beside it does — the split `_guarded` makes everywhere.
+    absent = _configured(tmp_path / "unaskable", "v1", workflow_ref="v1")
+    unaskable = _checks(tmp_path, absent, runner=_stub(code=GIT_FAILED))
+    assert _by_name(unaskable, "ci-ref").status == WARN
+    assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
+
+
+def test_a_workflow_that_cannot_be_read_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """A file that is there and cannot be opened is no evidence of agreement.
+
+    Uncovered before this case, measured the same way as the alias arms above: the `OSError` arm
+    of the workflow read. A directory where the workflow should be is the shape a repository
+    reaches it with — the file's own bytes are never read, so none of them can be printed, and
+    what the row names is Python's exception type and this module's own `WORKFLOW` constant.
+
+    Advisory rather than an oracle entry, for the reason
+    `test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence` gives beside it:
+    the arm warns, and `warn` reaches neither the exit code nor anything downstream that reads a
+    verdict as permission. Mutation (comment): return `row` instead of the warning -> this
+    reddens on the status.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.unlink()
+    workflow.mkdir()
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "could not be read" in row.detail
+    assert "IsADirectoryError" in row.detail and WORKFLOW in row.detail
+    # The ref is repository-authored and is not quoted back on this arm either.
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+
+
 def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
     # The pin GitHub acts on is the file. Mutation (comment): skip the workflow comparison ->
     # this reddens.

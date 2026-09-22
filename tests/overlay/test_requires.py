@@ -32,9 +32,35 @@ def test_an_absent_declaration_and_an_absent_manifest_both_answer_none(tmp_path:
     assert requires_of(overlay_with(tmp_path / "b", " >=0.1.0 ")) == ">=0.1.0"
 
 
+def test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared(tmp_path: Path) -> None:
+    """`json.loads` answers for a list, a string and a number as readily as for an object.
+
+    `raw.get` exists on none of those, so without this arm a manifest an owner can save turned
+    `requires_of` into an `AttributeError` out of a function whose docstring promises `None` for
+    anything it cannot read — and the two callers rest on that promise: `doctor` renders a raised
+    reader as "this check could not run", and the session handler's `except Exception` swallows it
+    along with every other line of the same result, `NOT_ATTACHED` included.
+
+    Uncovered before this case, measured with `--cov-report=term-missing` over `tests/doctor
+    tests/overlay tests/release`.
+
+    Mutation (oracle): `if not isinstance(raw, dict):` -> `if False:` -> each shape below raises
+    instead of answering.
+    """
+    root = tmp_path / "overlay"
+    (root / ".claude-plugin").mkdir(parents=True)
+    for body in ("[]", '[{"keelline": {"requires": ">=0.1.0"}}]', '">=0.1.0"', "3", "null"):
+        (root / PLUGIN_MANIFEST).write_text(body, encoding="utf-8")
+        assert requires_of(root) is None, body
+
+
 def test_the_floor_is_compared_as_numbers_not_as_text() -> None:
     # Mutation (comment): compare `running.groups() >= floor.groups()` as strings -> the first
     # line reddens on `>=9.0.0` against `10.0.0`.
+    #
+    # And the boundary itself, which is the classic off-by-one site: a floor a running version
+    # meets exactly is met. Mutation: `mutations.toml`'s "the declared floor stops being met by
+    # the version that equals it".
     assert satisfies(">=9.0.0", "10.0.0") is True
     assert satisfies(">=0.1.0", "0.1.0") is True
     assert satisfies(">=0.1.0", "0.0.9") is False
