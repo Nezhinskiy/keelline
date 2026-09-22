@@ -231,6 +231,18 @@ A rendered overlay ships its own `dependabot.yml` and keeps itself current from 
 what this line is about is the state every *new* overlay starts from. Check them here, at
 the release that publishes the template.
 
+**The project workflow's pin, and what the first tag unlocks.** There is a second sha-pinned
+template now: `src/keelline/templates/project/keelline.yml`, the caller `keelline init` renders
+into an adopting project's `.github/workflows/`. Its `uses:` line is not pinned in the tree —
+the sha is filled in at render time, and it is the commit of the *released* Keelline that did
+the rendering, read off this repository's own `v*` tags. So nothing here rots, and nothing here
+needs checking at a release; what a release changes is whether the workflow can be written at
+all. Before the first tag `init` finds no released commit to name, reports the workflow skipped
+with that reason, and writes nothing into `.github/` — which means every project initialised
+before the first release carries no CI caller and no `[ci] ref`, and gets both when `keelline
+upgrade` ships. The first tag is the event that changes that, and it changes it for new
+projects only.
+
 ## 5. If something goes wrong
 
 - **The tag is wrong and nothing published.** Delete both tags locally and on the remote, fix,

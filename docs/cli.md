@@ -51,6 +51,7 @@ Three things hold everywhere:
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
 - [`keelline memory refs`](#keelline-memory-refs)
+- [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
 - [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
@@ -649,6 +650,87 @@ deliberately does not resolve in *italics*. **Writes** nothing.
 
 ---
 
+## `keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`
+
+Writes a repository's Keelline footprint, once. It is the only command that creates the
+documents every other command reads, and the only one that writes `keelline.toml`.
+
+**`--yes` is required, and it means "take the detected defaults".** The questions §8.1
+describes — the project's name, its base branch, its preset — ship with the onboarding lane;
+until then the command detects what it can, and an invocation without `--yes` is refused (`2`)
+saying so. What it detects: the project's name from `origin`'s last path segment, `.git`
+stripped and lower-cased, else the checkout's directory name; the base branch from
+`refs/remotes/origin/HEAD` with `origin/` stripped, else `main`; and the agent surfaces from
+which of `.claude/` and `.codex/` the repository carries, both when it carries neither. Both
+candidate names are repository-authored, so one outside `[project] name`'s grammar is refused
+naming the grammar and the remedy and never the value.
+
+**A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
+read and kept — the name, the paths, the memory mode, the budgets — and the file itself is not
+replaced: it is a create-once artifact, so a repository that already has one is reported
+`skip_modified` ("create-once, and the file is already there") and the document comes back byte
+for byte. The paths it declares are where the footprint lands. A repository with no
+`keelline.toml` gets one written from the detected values, headed by a two-line comment saying
+which two keys are Keelline's own: `[keelline] version` and `state`. A file that is not valid
+TOML is a failure (`1`) naming the file. A repository that already carries
+`.keelline/manifest.json` is refused (`2`): re-running `init` is `keelline upgrade`, which ships
+later.
+
+**Two passes, both planned before either is applied.** The three write-once files are one pass
+and the rest of the footprint is the other, because two artifacts cannot target one file in one
+pass and both the `AGENTS.md` skeleton and its `harness` region land on `AGENTS.md`. A refusal
+in either plan stops the run with nothing written and no manifest, and `--dry-run` is that same
+branch rather than a second code path — it reports both plans and writes nothing. On a
+repository with no `AGENTS.md` the dry run plans the region as a *create* of a region-only file
+and the real run re-plans it as a *region_update* into the skeleton the first pass has just
+written; the report carries one fixed sentence saying the bytes inside the markers are the same
+either way.
+
+| id | pass | kind | target | what it holds |
+|---|---|---|---|---|
+| `config` | write-once | once | `keelline.toml` | the document this run rendered |
+| `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name |
+| `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at the instruction file |
+| `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
+| `adr-template` | footprint | template | `<adr>/0000-template.md` | the four-heading decision record |
+| `ledger-runbook` | footprint | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
+| `ledger-audits` | footprint | template | `<bugs>/audits/README.md` | what an audit record is |
+| `bug-index` | footprint | template | `[paths] bug_index` | the generated index, rendered empty |
+| `roadmap` | footprint | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
+| `roadmap-history` | footprint | template | `[paths] roadmap_history` | an empty history |
+| `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
+| `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
+| `gitignore` | footprint | managed region | `.gitignore` | the same block `attach` writes |
+| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's Keelline uses |
+| `ci-workflow` | footprint | template | `.github/workflows/keelline.yml` | the pinned call to the reusable gate |
+
+**The CI workflow needs a release to pin, and says so when there is none.** The rendered file
+calls [the reusable workflow](#the-reusable-workflow) at the commit of the Keelline release that
+wrote it, and that sha is asked of the public repository's own `v*` tags. Five states cost the
+artifact rather than the run, each reported under `skipped` with one sentence: `[ci] mode` is
+`none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later lane; the public
+repository could not be asked for its tags; no released tag matches the Keelline running, which
+is every repository's state before the first release; and `[ci] gate_branch` is not a plain
+branch name, so no workflow was rendered around it. `--no-ci` is the first of those on purpose:
+it sets `[ci] mode = "none"` in the document and asks no remote anything. A resolved pin is
+written to `[ci] ref` as well, so `keelline doctor`'s `ci-ref` row can judge it — in a
+repository whose `keelline.toml` this run created, which is the only one it writes.
+
+**Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
+detected values and for the public repository's tags, and every file an artifact targets.
+**Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the
+table above, `.github/workflows/keelline.yml` where a pin resolved, and
+`.keelline/manifest.json` — every one of them through the scaffold engine, so every target goes
+through the containment walk and none may leave the project root or pass through a symlink.
+
+Exits `0` on success, `1` when either plan carries refusals — the report's REFUSED section names
+each, nothing was written and no manifest exists — and `2` on a refusal above the plans: no
+`--yes`, a repository already initialised, or a detected name outside the grammar. `--json`
+carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered report),
+`writes` (both plans' targets), `skipped`, `pin` (`{tag, sha}` or `null`), `asked` and `note`.
+
+---
+
 ## `keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
 
 Creates the private overlay: the repository that holds your standing rules, your cross-project
@@ -682,7 +764,8 @@ When `gh repo create` itself fails, the command stops there and reports **its** 
 **its** stderr: a `gh` that is not installed, or one that hung, costs one launch rather than
 three, and the failure names the binary rather than sending you to `gh auth status` for a
 repository that was never there. It also names the precondition above — the template repository
-nothing publishes yet — because that is the usual reason this source cannot work. When `gh`
+`overlay publish-template` publishes — because that is the usual reason this source cannot
+work. When `gh`
 reports success and the clone brings nothing down, `gh repo view` is asked whether the repository
 exists at all — the answer tells "not created" from "created, and the clone raced its generation"
 — and the clone is retried once, after a ten-second wait when it was the second. **That retry is carried
@@ -1191,7 +1274,10 @@ called the result green, would be worse than one that says it could not vouch fo
 ## The reusable workflow
 
 `.github/workflows/check.yml` is a `workflow_call` workflow a project runs its Keelline gates
-through. Three lines in the caller:
+through. `keelline init` writes the caller —
+[`.github/workflows/keelline.yml`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
+— so most projects never type these lines; what follows is what that file contains, and what to
+write by hand if you would rather. Three lines in the caller:
 
 ```yaml
 jobs:
@@ -1245,10 +1331,16 @@ fails the job. Every gate runs whatever the one before it said, so a project fix
 documents does not pay a round trip per finding.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1`
-and `@dev` are a moving Keelline running against your repository (D16). The SHA pin is what
-`init` will write and `upgrade` will bump; `@v1` is the documented opt-in for a project that
-would rather track the major. `smoke-release.yml` in this repository runs both moving forms on
-demand, so that they are known to work — it is not a form this reference tells you to write.
+and `@dev` are a moving Keelline running against your repository (D16). `keelline init` writes
+that pin: a full-length sha, and the commit of the released Keelline that wrote the file, read
+off the public repository's own `v*` tags rather than off anything the project says.
+`keelline upgrade` (ships later) is what moves it; until then the file says so in its own first
+three lines. **A project with no release to pin gets no workflow at all** — before the first
+Keelline tag there is no commit to name, so `init` reports the workflow skipped with the reason,
+writes nothing into `.github/`, and the gate arrives with `upgrade`. `@v1` is the documented
+opt-in for a project that would rather track the major, written by hand.
+`smoke-release.yml` in this repository runs both moving forms on demand, so that they are known
+to work — it is not a form this reference tells you to write.
 
 **What proves it.** `.github/workflows/smoke.yml` installs this plugin from the checkout with
 the real harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json`
@@ -1373,12 +1465,14 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 ```
 
 **Nine sections, and the list is closed**: a section this block does not show is refused when
-the file loads (`unknown section(s)`), so the grammar above is the whole of it. Two of the
-keys in the last three sections are read today — `[ci] ref` by `doctor`'s `ci-ref` row and
-`[commit_messages] attribution_check` by `commit check` — and `[artifacts] local` by the
-scaffold. `[ci] mode`, `[ci] gate_branch` and `[commit_messages] types` are validated on load
-and read by nothing yet; they are written here so that a project can record its intent without
-the loader refusing the file, and the lane that reads each one will say so.
+the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
+`[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
+and which form, `gate_branch` is the branch the rendered workflow watches on a push and the
+default it passes as `base:`, and `ref` is written by `init` and judged by `doctor`'s `ci-ref`
+row. `[commit_messages] attribution_check` is read by `commit check` and `[artifacts] local` by
+the scaffold engine. `[commit_messages] types` is the one key still read by nothing; it is
+accepted so that a project can record its intent without the loader refusing the file, and the
+lane that reads it will say so.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -1435,7 +1529,7 @@ value above the preset's is ignored rather than refused, so raising one is not a
 [personal]
 reply_language = ""      # chat replies; durable artifacts stay in the artifact language
 artifact_language = "en"
-preset = "recommended"   # the preset `setup` applies, and `init` will
+preset = "recommended"   # the preset `setup` applies
 
 [overlay]
 root = "~/keelline-overlay"   # only read in overlay mode
