@@ -18,7 +18,7 @@ import pytest
 
 from keelline import fsops
 from keelline.attach.api import ledger
-from keelline.attach.write import attach
+from keelline.attach.write import GROUP_ESCAPES, attach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -534,8 +534,14 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    # Non-vacuous: this refusal and not one of the five `attach` can raise before it.
-    assert "memory.groups" in str(refusal.value)
+    # Non-vacuous: this refusal and not one of the five `attach` can raise before it, nor the
+    # one below it. `unlinked_groups` refuses the same entry with `MEMORY_GROUP_ESCAPES` --
+    # deliberately a different sentence, because it contains the group against `root` rather
+    # than against the overlay -- so "memory.groups is in the message" no longer says which of
+    # the two fired. The identity does, and it is what keeps the hoisted call proven: without
+    # it this case passed with `_check_groups` deleted, on the never-moved check's refusal.
+    assert str(refusal.value) == GROUP_ESCAPES
+    assert "memory.groups" in GROUP_ESCAPES
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
