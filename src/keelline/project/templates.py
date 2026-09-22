@@ -20,7 +20,7 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -29,7 +29,7 @@ import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.schema import Config
 from keelline.docs.api import trail_path
-from keelline.errors import Failure
+from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
@@ -87,6 +87,40 @@ BAD_REF = (
 # Named and never quoted: the value is repository-authored, so the refusal names the key and
 # the grammar and leaves the bytes where they were (DC6).
 BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
+
+
+# Which `[paths]` key each artifact's target is built from, so the collision refusal below can
+# name what to edit. Two statements of one thing, the way `PROJECT_FILES` and the shipped tree
+# are: `tests/project/test_templates.py` holds this mapping's key set to the artifact ids both
+# passes actually produce, so an artifact added without a line here reddens rather than reaching
+# a `KeyError` at the moment somebody's configuration collides.
+OWN_NAME = "a fixed name of Keelline's own"
+PATH_KEYS = {
+    "config": OWN_NAME,
+    "agents-skeleton": "paths.agents_md",
+    "claude-md": OWN_NAME,
+    "documentation-policy": "paths.architecture",
+    "adr-template": "paths.adr",
+    "ledger-runbook": "paths.runbooks",
+    "ledger-audits": "paths.bugs",
+    "bug-index": "paths.bug_index",
+    "roadmap": "paths.roadmap",
+    "roadmap-history": "paths.roadmap_history",
+    "trail": "paths.roadmap",
+    "specs-keep": "paths.specs",
+    "plans-keep": "paths.plans",
+    "gitignore": OWN_NAME,
+    "agents-md": "paths.agents_md",
+    "ci-workflow": OWN_NAME,
+}
+# Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
+# Keelline's own vocabulary. The colliding path is a repository-authored value and is not printed.
+ONE_TARGET = (
+    "two artifacts of one pass resolve to the same file: {first} ({first_key}) and {second} "
+    "({second_key}). The engine writes a plan in order, so the second would replace the first "
+    "with no verb saying so and the manifest would record two different digests for one path — "
+    "separate them under [paths] in keelline.toml and run `keelline init --yes` again"
+)
 
 
 @dataclass(frozen=True)
@@ -195,6 +229,42 @@ def _ci(config: Config, resolution: Resolution) -> tuple[Template | None, str | 
     )
 
 
+def _one_target_each(templates: Sequence[Template]) -> None:
+    """Refuse a pass in which two artifacts resolve to one file (DC3).
+
+    DC3's two-pass design rests on "two artifacts cannot target one file in one pass" being
+    true, and nothing made it true: `scaffold.engine.plan` has no duplicate-target detection and
+    C2 is frozen, so the rule belongs where the targets are built. Measured before this guard,
+    with `paths.roadmap` and `paths.roadmap_history` set to one path: both plans reported zero
+    refusals, `apply` wrote both, the file held only `roadmap-history`'s bytes, and the manifest
+    recorded two different `sha256` values for one target — so the roadmap's trail block was
+    silently lost, `upgrade` would read one record as hand-edited for ever, and `uninstall` would
+    remove a file holding the other artifact. `paths.agents_md = "CLAUDE.md"` collides the same
+    way in the write-once pass.
+
+    **The anchor is this module's own artifact list**, a constant in the installed package: which
+    artifacts exist, and which `[paths]` key each one reads, are Keelline's and not a
+    repository's. What the repository chooses is the *values*, and the refusal names the two keys
+    so that the remedy is one edit — it never names the value, which is its bytes.
+
+    Only within a pass. `agents-skeleton` and `agents-md` deliberately target one file across the
+    two, which is the whole reason there are two.
+    """
+    seen: dict[str, str] = {}
+    for template in templates:
+        first = seen.get(template.target)
+        if first is not None:
+            raise Refusal(
+                ONE_TARGET.format(
+                    first=first,
+                    first_key=PATH_KEYS[first],
+                    second=template.id,
+                    second_key=PATH_KEYS[template.id],
+                )
+            )
+        seen[template.target] = template.id
+
+
 def project_templates(
     root: Path, config: Config, *, resolution: Resolution, document: str
 ) -> Prepared:
@@ -257,4 +327,6 @@ def project_templates(
         footprint.append(workflow)
     elif reason is not None:
         skipped["ci-workflow"] = reason
+    _one_target_each(once)
+    _one_target_each(footprint)
     return Prepared(once, tuple(footprint), skipped)

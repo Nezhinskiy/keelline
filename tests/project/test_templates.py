@@ -6,11 +6,15 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.loader import preset_defaults
 from keelline.config.schema import Config
+from keelline.errors import Refusal
 from keelline.ledger.api import render_index
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
+from keelline.project.templates import PATH_KEYS
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
@@ -179,3 +183,54 @@ def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares
     body = {t.id: t for t in prepared.footprint}["ci-workflow"].render()
     passed = set(re.findall(r"^      ([a-z-]+): ", body, re.MULTILINE))
     assert passed and passed <= declared, (passed, declared)
+
+
+def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file(tmp_path: Path) -> None:
+    """DC3's premise, which nothing made true until now.
+
+    `scaffold.engine.plan` has no duplicate-target detection and C2 is frozen, so with two
+    `[paths]` keys aimed at one file both plans reported zero refusals, `apply` wrote both, the
+    file held only the second artifact's bytes, and the manifest recorded two different `sha256`
+    values for one target. Measured on this tree before the guard, with
+    `paths.roadmap = paths.roadmap_history = "docs/x.md"`: `refusals: 0 0`, the manifest held a
+    record for `roadmap` and one for `roadmap-history` both naming `docs/x.md` and carrying
+    different `sha256` values, the file began `# Roadmap history`, and `"Design and plan trail" in
+    body` was `False`. (The two digests are not quoted here: `tests/test_neutral.py`'s
+    bare-commit-id arm reads an eight-character hex run as an abbreviated commit id, and it is
+    right to — measured, this docstring reddened that gate on its first draft.)
+
+    Both passes, because the write-once pass collides too — `paths.agents_md = "CLAUDE.md"` puts
+    the skeleton and the pointer on one file.
+
+    Mutation (oracle): drop the footprint pass's check -> the roadmap case reddens.
+    """
+    config = preset_defaults("widget")
+    footprint_clash = replace(
+        config, paths=replace(config.paths, roadmap="docs/x.md", roadmap_history="docs/x.md")
+    )
+    with pytest.raises(Refusal) as caught:
+        _prepared(footprint_clash, root=tmp_path)
+    message = str(caught.value)
+    assert "roadmap (paths.roadmap)" in message and "roadmap-history" in message
+    assert "paths.roadmap_history" in message
+    # The colliding value is the repository's own bytes and is named nowhere.
+    assert "docs/x.md" not in message
+
+    once_clash = replace(config, paths=replace(config.paths, agents_md="CLAUDE.md"))
+    with pytest.raises(Refusal, match=r"claude-md|agents-skeleton"):
+        _prepared(once_clash, root=tmp_path)
+
+
+def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> None:
+    """The anti-drift half of `PATH_KEYS`: an artifact added without a line there would reach a
+    `KeyError` only once somebody's configuration happened to collide, which is the worst moment
+    for this module to raise something other than its own refusal."""
+    config = _recording(preset_defaults("widget"))
+    prepared = project_templates(
+        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT
+    )
+    ids = {t.id for t in (*prepared.once, *prepared.footprint)}
+    # The walk is stated non-empty first, and at its full size: a `Prepared` that built nothing
+    # would make the comparison below vacuous in both directions.
+    assert len(ids) == 16, sorted(ids)
+    assert ids == set(PATH_KEYS), (sorted(ids ^ set(PATH_KEYS)),)

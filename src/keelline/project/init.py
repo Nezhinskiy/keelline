@@ -148,7 +148,8 @@ def init(
 
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
     that says this repository is already initialised, a `keelline.toml` that is not TOML, a
-    detected name outside the grammar, a `Config` the loader refuses, and finally a refusal in
+    detected name outside the grammar, a `Config` the loader refuses, a pass in which two
+    artifacts resolve to one file (`templates._one_target_each`), and finally a refusal in
     either plan, which is returned rather than raised so the report can name the artifact.
     """
     if not yes:

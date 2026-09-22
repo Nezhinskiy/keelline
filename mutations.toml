@@ -5424,3 +5424,20 @@ after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line",
 ]
+
+# DC3's premise, which nothing made true: `scaffold.engine.plan` has no duplicate-target
+# detection and C2 is frozen, so two `[paths]` keys aimed at one file made both plans report zero
+# refusals, `apply` write both, the file hold only the second artifact's bytes, and the manifest
+# record two different `sha256` values for one target — the first artifact silently lost,
+# `upgrade` reading one record as hand-edited for ever, and `uninstall` removing a file holding
+# the other. The anchor is this module's own artifact list, a constant in the installed package:
+# which artifacts exist and which `[paths]` key each reads are Keelline's, and the repository
+# chooses only the values — which the refusal names by key and never by value.
+[[mutation]]
+name = "two artifacts of one pass may target one file again"
+file = "src/keelline/project/templates.py"
+before = "    _one_target_each(footprint)"
+after = ""
+reddens = [
+  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
+]
