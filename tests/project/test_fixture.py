@@ -1,10 +1,29 @@
-"""The smoke fixture is what the shipped templates render (DC11).
+"""What planning both passes over the smoke fixture still says (DC11).
 
-The fixture is grown rather than generated at smoke time: `keelline init --yes --no-ci` ran on
-a copy of it once, and the manifest and the footprint it wrote were committed back. So the
-claim this module holds is the one that can go stale — that planning both passes over the
-fixture today still has nothing to create, and that every artifact its manifest records is one
-the plan recognises as already correct.
+The fixture is grown rather than generated at smoke time: `keelline init --yes --no-ci` ran on a
+copy of it once, and the manifest and the footprint it wrote were committed back. So the claims
+this module holds are the ones that can go stale — that planning both passes over the fixture
+today has nothing left to *create*, that every artifact its manifest records is one the plan
+recognises as already correct, and that every provenance the manifest records is the one this
+build would write for that artifact.
+
+**It is not "the fixture is what the shipped templates render", which is what this module's first
+line used to say.** Measured on a copy: seven footprint artifacts come back `unchanged`, the
+three write-once ones come back `skip_modified` ("create-once, and the file is already there"),
+and five more footprint artifacts come back `skip_modified` with "exists and Keelline did not
+write it" — `ledger-runbook`, `bug-index`, `roadmap`, `roadmap-history` and `trail`, whose bytes
+genuinely differ from the templates. The manifest records none of those five, and the second
+assertion below constrains only what the manifest records, so the test could not see them: the
+sentence claimed for fifteen artifacts what is true of seven.
+
+**The divergence is the fixture's design, not its drift, which is why the sentence was narrowed
+rather than the fixture rebuilt.** `tests/test_fixtures.py` runs every gate over this tree and
+those five files are what the gates read — a bug index listing `BR-001`, a roadmap carrying the
+trail listing, a `trail.toml` declaring a state per document, a bug-reports runbook. A fixture
+regenerated from a clean `init` would carry the templates' empty forms instead (`render_index([],
+config)` lists no bug at all), so the gates would be checking a project with nothing in it; and
+`init` could not write a `[ci] ref` for it either, because no released tag names this version's
+commit. The honest claim is the narrow one, and it is the one asserted here.
 """
 
 from __future__ import annotations
@@ -24,8 +43,9 @@ SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
 def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_path: Path) -> None:
     # Mutation (by hand — the fixture is data): change one byte of the `documentation.md`
     # template -> `documentation-policy` leaves `unchanged` and the last assertion reddens,
-    # and the fixture is regenerated (Task 12, Step 1). The fixture is what the templates
-    # render.
+    # and the fixture is regenerated (Task 12, Step 1). The seven artifacts that are the
+    # templates' own bytes are the ones this can see; the five that are the fixture's own are
+    # `skip_modified` and are recorded nowhere, which the module docstring states.
     root = tmp_path / "smoke"
     shutil.copytree(SMOKE, root)
     config = load(root, machine=tmp_path / "absent.toml")
@@ -39,7 +59,16 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
     # below while proving nothing about the fixture at all.
     assert len(prepared.once) + len(prepared.footprint) >= 14
     assert not [a for a in [*once.actions, *footprint.actions] if a.verb is Verb.CREATE]
-    recorded = set(Manifest.read(root).records)
-    assert recorded and recorded <= set(footprint.unchanged) | set(once.unchanged) | {
+    records = Manifest.read(root).records
+    assert set(records) and set(records) <= set(footprint.unchanged) | set(once.unchanged) | {
         a.artifact_id for a in once.actions if a.verb is Verb.SKIP_MODIFIED
+    }
+    # And the provenance each record carries is the one this build would write. `Record.template`
+    # is committed and is what `upgrade` will read to find where an artifact's bytes came from,
+    # and three of these artifacts compute their bytes rather than reading a shipped file — so a
+    # record naming `project/<id>` for one of those points at a file the wheel does not carry.
+    # This fixture's manifest carried exactly that for `gitignore` from the day it was grown.
+    built = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
+    assert {key: record.template for key, record in records.items()} == {
+        key: built[key] for key in records
     }

@@ -5499,6 +5499,25 @@ reddens = [
   "tests/project/test_templates.py::test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it",
 ]
 
+# Committed provenance. `Template.source` becomes `Record.template` in `.keelline/manifest.json`,
+# which is tracked and is what `upgrade` will read to find out where an artifact's bytes came
+# from. Three artifacts here compute their bytes rather than reading a shipped file, and all three
+# recorded `project/<id>` — a name `PROJECT_FILES` does not carry, that the wheel does not ship,
+# and that `read` refuses by name. Nothing raised, because each one overrides `render`; what was
+# written was a pointer at nothing, and the committed smoke fixture's manifest carried
+# `"template": "project/gitignore"` from the day it was grown. The mutation restores that
+# spelling, and both ends of the rule redden: the two-rule guard over what this module builds, and
+# the fixture's own manifest held to what this build would write for it.
+[[mutation]]
+name = "a computed artifact records a shipped template name the wheel does not ship"
+file = "src/keelline/project/templates.py"
+before = '        source=f"{COMPUTED}/{artifact_id}",'
+after = '        source=f"{PROJECT}/{artifact_id}",'
+reddens = [
+  "tests/project/test_templates.py::test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed",
+  "tests/project/test_fixture.py::test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in",
+]
+
 # B1. Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
 # `fsops.checked_components` says what a path *is*; for four review rounds they disagreed about
 # `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()`

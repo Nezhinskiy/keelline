@@ -43,7 +43,7 @@
       "kind": "managed-region",
       "location": "repo",
       "target": ".gitignore",
-      "template": "project/gitignore",
+      "template": "computed/gitignore",
       "version": "0.1.0",
       "sha256": "5abf887cee173a8ce4819d24fbdfff49f1ae677d6a0f06d5939504f7564621ea"
     },

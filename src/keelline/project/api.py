@@ -12,9 +12,15 @@ Three names, each with the consumer that reaches for it:
   other way to ask was to spell twelve paths a second time in the script — which is the drift
   a published constant exists to stop.
 - `project_templates` and the `Prepared` it returns, for `tests/project/test_fixture.py`,
-  which plans both passes over a copy of the smoke fixture and asserts the fixture is what
-  these templates render. A return type absent from this list is a value a consumer can hold
-  and cannot declare, and `tests/test_surfaces.py` derives that rule rather than restating it.
+  which plans both passes over a copy of the smoke fixture and asserts that the planning has
+  nothing left to create, that every artifact the fixture's manifest records is one the plan
+  recognises as already correct, and that every provenance it records is the one this build
+  would write. Not that the fixture is what these templates render, which is what this line
+  used to say: five of the fixture's files are its own — a bug index listing `BR-001`, a
+  roadmap, its history, the trail, the runbook — and come back `skip_modified` with bytes that
+  differ from the templates. That module's docstring states the measurement. A return type
+  absent from this list is a value a consumer can hold and cannot declare, and
+  `tests/test_surfaces.py` derives that rule rather than restating it.
 
 `read`, `fill`, `GATE_BRANCH`, `HARNESS_REGION` and `CI_WORKFLOW` are **not** here: they are
 this area's own, reached by `keelline.project.templates` and by nothing outside it. A lane that

@@ -45,6 +45,24 @@ from keelline.scaffold import Kind, Style, Template
 from keelline.templates import tree
 
 PROJECT = "project"
+# The provenance namespace for an artifact whose bytes this module *computes*, so that a record
+# of one never claims a file the wheel does not carry.
+#
+# `Template.source` becomes `Record.template` in `.keelline/manifest.json`, which is committed and
+# is what `upgrade` will read to find out where an artifact's bytes came from. Three artifacts
+# here have no shipped file at all — `config` is the rendered document, `bug-index` is
+# `render_index([], config)`, `gitignore` is `IGNORE_BODY` — and all three recorded
+# `project/<id>`, a name absent from `PROJECT_FILES` and from the tree, which `read` itself
+# refuses. Nothing broke today only because each one overrides `render`; the committed fixture's
+# manifest carried `"template": "project/gitignore"`, a pointer at nothing, for as long as it has
+# existed.
+#
+# A separate namespace rather than a name that looks readable: "there is no shipped file, these
+# bytes are built" is the honest answer, and a reader — `upgrade`, a person, `doctor` — can tell
+# it from `project/roadmap.md` without asking the wheel. It stays one string, so the manifest
+# format is untouched. `_computed` is the only place it is spelled, and
+# `tests/project/test_templates.py` holds every source both passes build to one rule or the other.
+COMPUTED = "computed"
 CLAUDE_MD = "CLAUDE.md"
 CONFIG_FILE = "keelline.toml"
 HARNESS_REGION = "harness"
@@ -214,12 +232,47 @@ def _template(
     region: str | None = None,
     style: Style = Style.MARKDOWN,
 ) -> Template:
+    """An artifact whose bytes begin as `templates/project/<name>`, shipped in the wheel.
+
+    `name` is a `PROJECT_FILES` entry — `read` refuses anything else — and it is also the
+    provenance recorded for the artifact. A `render` override here still reads that file and
+    fills its sentinels, so the record's `project/<name>` stays true of it; an artifact with no
+    shipped file at all is `_computed`'s and not this one's.
+    """
     return Template(
         id=artifact_id,
         kind=kind,
         target=target,
         source=f"{PROJECT}/{name}",
         render=render or partial(read, name),
+        region=region,
+        style=style,
+    )
+
+
+def _computed(
+    artifact_id: str,
+    target: str,
+    render: Callable[[], str],
+    *,
+    kind: Kind = Kind.TEMPLATE,
+    region: str | None = None,
+    style: Style = Style.MARKDOWN,
+) -> Template:
+    """An artifact this module builds, whose provenance therefore names no shipped file.
+
+    A second constructor rather than a flag or a `None` name on `_template`: which artifacts have
+    a file in the wheel is decided here, once per artifact, at the line that builds it — and
+    every argument of both functions is then total, with no arm that a caller could reach only by
+    passing an impossible pair. `render` is required for the same reason: there is nothing to
+    fall back to reading.
+    """
+    return Template(
+        id=artifact_id,
+        kind=kind,
+        target=target,
+        source=f"{COMPUTED}/{artifact_id}",
+        render=render,
         region=region,
         style=style,
     )
@@ -337,7 +390,7 @@ def project_templates(
     """
     p = config.paths
     once = (
-        _template("config", CONFIG_FILE, "config", kind=Kind.ONCE, render=lambda: document),
+        _computed("config", CONFIG_FILE, lambda: document, kind=Kind.ONCE),
         _template(
             "agents-skeleton",
             p.agents_md,
@@ -364,18 +417,17 @@ def project_templates(
         _template("adr-template", f"{p.adr}/0000-template.md", "adr-template.md"),
         _template("ledger-runbook", f"{p.runbooks}/bug-reports.md", "bug-reports-runbook.md"),
         _template("ledger-audits", f"{p.bugs}/audits/README.md", "audits-readme.md"),
-        _template("bug-index", p.bug_index, "bug-index", render=lambda: render_index([], config)),
+        _computed("bug-index", p.bug_index, lambda: render_index([], config)),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),
         _template("trail", str(trail_path(root, config).relative_to(root)), "trail.toml"),
         _template("specs-keep", f"{p.specs}/.gitkeep", "gitkeep"),
         _template("plans-keep", f"{p.plans}/.gitkeep", "gitkeep"),
-        _template(
+        _computed(
             "gitignore",
             ".gitignore",
-            "gitignore",
+            lambda: IGNORE_BODY,
             kind=Kind.MANAGED_REGION,
-            render=lambda: IGNORE_BODY,
             region=IGNORE_REGION,
             style=Style.HASH,
         ),

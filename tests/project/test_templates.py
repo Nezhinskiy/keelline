@@ -14,7 +14,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
-from keelline.project.templates import NO_REF, PATH_KEYS, fill, read
+from keelline.project.templates import COMPUTED, NO_REF, PATH_KEYS, PROJECT, fill, read
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
@@ -332,6 +332,47 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     # would make the comparison below vacuous in both directions.
     assert len(ids) == 16, sorted(ids)
     assert ids == set(PATH_KEYS), (sorted(ids ^ set(PATH_KEYS)),)
+
+
+def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
+    """The same anti-drift rule over `Template.source`, which had no guard and was wrong.
+
+    `source` becomes `Record.template` in `.keelline/manifest.json` — committed, and what
+    `upgrade` will read to find out where an artifact's bytes came from. Three artifacts recorded
+    `project/config`, `project/bug-index` and `project/gitignore`: names `PROJECT_FILES` does not
+    carry, that the wheel does not ship, and that `read` refuses by name. Nothing raised, because
+    all three build their own bytes — but the provenance was a pointer at nothing, and the
+    committed smoke fixture's manifest has carried `"template": "project/gitignore"` for as long
+    as it has existed.
+
+    Two rules and no third: a source is `project/<a file the wheel ships>`, or it is
+    `computed/<artifact id>` and this module builds the bytes.
+
+    Mutation (oracle): `_computed`'s source is spelled `f"{PROJECT}/{artifact_id}"` -> the
+    computed set's assertion reddens, and so does the fixture module's provenance assertion.
+    """
+    config = _recording(preset_defaults("widget"))
+    prepared = project_templates(
+        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT, adopted=False
+    )
+    sources = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
+    # Non-empty and at full size first, for `PATH_KEYS`' reason: nothing built makes every
+    # comparison below true of nothing.
+    assert len(sources) == 16, sorted(sources)
+    computed = {name for name, source in sources.items() if source.startswith(f"{COMPUTED}/")}
+    # As the set and not as a count: an artifact that moved from one rule to the other is exactly
+    # the drift this test exists to see, and a count would not see it.
+    assert computed == {"config", "bug-index", "gitignore"}
+    root = tree(PROJECT)
+    for artifact_id, source in sources.items():
+        if artifact_id in computed:
+            assert source == f"{COMPUTED}/{artifact_id}"
+            continue
+        area, _, name = source.partition("/")
+        assert area == PROJECT and name in PROJECT_FILES, source
+        # And the name is a file that is really there: `project/<name>` claims the bytes were
+        # read from the wheel, and the three names above could never have been read at all.
+        assert (root / name).is_file(), source
 
 
 def test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shipping() -> None:
