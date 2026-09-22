@@ -1,0 +1,218 @@
+"""`keelline init --yes`: the two engine passes, what it adopts, and what it refuses."""
+
+from __future__ import annotations
+
+import re
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pytest
+
+import keelline
+from keelline.attach.api import IGNORE_REGION
+from keelline.config.loader import CONFIG_FILE, load
+from keelline.errors import Failure, Refusal
+from keelline.project.init import InitReport, init
+from keelline.release.api import Pin
+from keelline.runner import Completed
+from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
+from tests.gitfixture import git, needs_git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
+
+SHA = "b" * 40
+LISTING = f"{SHA}\trefs/tags/v0.1.0\n"
+
+
+@dataclass
+class _Git:
+    """Answers `ls-remote` from a string; records every argv; reaches no network."""
+
+    stdout: str = ""
+    code: int = 2
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(self, argv: list[str], cwd: Path) -> Completed:
+        self.calls.append(argv)
+        return Completed(self.code, self.stdout, "")
+
+
+def _repo(tmp_path: Path) -> Path:
+    root = tmp_path / "widget"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
+    return root
+
+
+def _init(
+    root: Path,
+    tmp_path: Path,
+    *,
+    runner: _Git | None = None,
+    yes: bool = True,
+    dry_run: bool = False,
+    ci: bool = True,
+) -> InitReport:
+    return init(
+        root,
+        machine=tmp_path / "absent.toml",
+        runner=_Git() if runner is None else runner,
+        yes=yes,
+        dry_run=dry_run,
+        ci=ci,
+    )
+
+
+@needs_git
+def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    report = _init(root, tmp_path)
+    config = load(root, machine=tmp_path / "absent.toml")
+    assert config.project.name == "widget" and config.keelline.state == "initialised"
+    # Read off the file and not only through the loader: `state` has a preset default, so
+    # `load` answers `initialised` for a document that never mentioned it.
+    document = tomllib.loads((root / CONFIG_FILE).read_text(encoding="utf-8"))
+    assert document["keelline"] == {
+        "version": keelline.__version__,
+        "state": "initialised",
+        "agents": ["claude", "codex"],
+    }
+    assert document["project"]["name"] == "widget"
+    records = Manifest.read(root).records
+    assert {
+        "config",
+        "agents-skeleton",
+        "claude-md",
+        "agents-md",
+        "gitignore",
+        "specs-keep",
+    } <= set(records)
+    assert (root / "CLAUDE.md").read_text(encoding="utf-8") == "@AGENTS.md\n"
+    agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.startswith("# widget\n") and "## Current status" in agents
+    assert extract(agents, "harness", Style.MARKDOWN) is not None
+    assert extract((root / ".gitignore").read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
+    assert report.skipped["ci-workflow"].startswith("no released Keelline tag") and report.note
+
+
+@needs_git
+def test_a_dry_run_writes_nothing_and_reports_both_plans(tmp_path: Path) -> None:
+    # Mutation (oracle): move `apply(root, once)` above the `dry_run` return -> the snapshot
+    # reddens.
+    root = _repo(tmp_path)
+    before = snapshot(root)
+    report = _init(root, tmp_path, dry_run=True)
+    assert_snapshot_unchanged(root, before)
+    assert report.dry_run and {a.verb for a in report.once.actions} == {Verb.CREATE}
+    assert {a.verb for a in report.footprint.actions} == {Verb.CREATE}
+
+
+@needs_git
+def test_a_refused_footprint_writes_nothing_at_all(tmp_path: Path) -> None:
+    # B1 of the review: a repository committing an AGENTS.md with an orphan end marker made
+    # the first draft write three files and exit 2. Mutation (oracle): apply the once pass
+    # before the refusal check -> the snapshot reddens.
+    root = _repo(tmp_path)
+    (root / "AGENTS.md").write_text("# Mine\n\n<!-- keelline:harness:end -->\n", encoding="utf-8")
+    before = snapshot(root)
+    report = _init(root, tmp_path)
+    assert report.footprint.refusals and not (root / MANIFEST_PATH).exists()
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_replaced(
+    tmp_path: Path,
+) -> None:
+    # P4: the hand-written file is the answer sheet, and DC3 says what happens to it — a
+    # create-once artifact is created when absent and not looked inside again, so the file
+    # comes back byte for byte and the report names it as left alone. What proves the answers
+    # were *read* is where the footprint landed: under the `[paths]` this file declares and
+    # under none of the preset's.
+    #
+    # **This is where the plan and the engine disagreed**, and the engine won. The plan's own
+    # snippet asserted that `[keelline] state`, `version` and a detected `agents` were written
+    # into the adopted file; `scaffold.engine.plan` skips a `Kind.ONCE` artifact whose file is
+    # present, unconditionally and above every `force`, and the plan's own prose — DC3's
+    # "created when absent", P4's "read as the answers rather than replaced" — says the same
+    # thing the engine does.
+    root = _repo(tmp_path)
+    (root / ".codex").mkdir()
+    hand_written = (
+        '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\nbase_branch = "dev"\n\n'
+        '[paths]\nspecs = "design/specs"\nplans = "design/plans"\n\n[memory]\nmode = "overlay"\n'
+    )
+    (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
+    report = _init(root, tmp_path)
+    assert report.adopted
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8") == hand_written
+    left = {a.artifact_id: a.reason for a in report.once.actions if a.verb is Verb.SKIP_MODIFIED}
+    assert left["config"] == "create-once, and the file is already there"
+    assert (root / "design" / "specs" / ".gitkeep").is_file()
+    assert not (root / "docs" / "specs").exists()
+    # And the answers reach the documents too, not only the directories: the `harness` region
+    # names the trees this file moved.
+    agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "design/specs/" in agents and "design/plans/" in agents
+
+
+@needs_git
+def test_an_initialised_repository_is_refused_and_says_upgrade_ships_later(tmp_path: Path) -> None:
+    # DC5. Mutation (oracle): drop the manifest guard -> the second call plans a second init.
+    root = _repo(tmp_path)
+    _init(root, tmp_path)
+    with pytest.raises(Refusal, match=r"upgrade.*ships later"):
+        _init(root, tmp_path)
+
+
+@needs_git
+def test_without_yes_and_with_a_broken_configuration_nothing_happens(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=re.escape("--yes")):
+        _init(root, tmp_path, yes=False)
+    assert_snapshot_unchanged(root, before)
+    (root / CONFIG_FILE).write_text("[keelline\n", encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Failure, match=re.escape(CONFIG_FILE)):
+        _init(root, tmp_path)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_an_existing_agents_file_keeps_every_byte_outside_the_region(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    prose = (
+        "# Mine\r\n\r\nHand-written, CRLF, and a form feed \x0c here.\r\n\r\n"
+        "## Current status\r\n\r\n- Busy.\r\n"
+    )
+    (root / "AGENTS.md").write_bytes(prose.encode("utf-8"))
+    (root / "CLAUDE.md").write_text("# not the pointer\n", encoding="utf-8")
+    report = _init(root, tmp_path)
+    assert (root / "AGENTS.md").read_bytes().decode("utf-8").startswith(prose)
+    assert (root / "CLAUDE.md").read_text(encoding="utf-8") == "# not the pointer\n"
+    assert not report.note
+    assert {a.verb for a in report.once.actions} == {Verb.SKIP_MODIFIED, Verb.CREATE}
+
+
+@needs_git
+def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
+    tmp_path: Path,
+) -> None:
+    root = _repo(tmp_path)
+    runner = _Git(stdout=LISTING, code=0)
+    report = _init(root, tmp_path, runner=runner)
+    assert report.resolution.pin == Pin("v0.1.0", SHA)
+    assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
+    workflow = root / ".github" / "workflows" / "keelline.yml"
+    assert SHA in workflow.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    runner = _Git(stdout=LISTING, code=0)
+    _init(root, tmp_path, runner=runner, ci=False)
+    assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
+    assert runner.calls == []

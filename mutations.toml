@@ -5209,3 +5209,33 @@ after = '        raise Refusal(f"{NOT_A_NAME}: {name}")'
 reddens = [
   "tests/project/test_detect.py::test_a_name_outside_the_grammar_is_refused_without_being_quoted",
 ]
+
+# DC3's whole point, and the review finding B1 behind it: both passes are planned before
+# either is applied, so a refusal anywhere — a committed `AGENTS.md` whose `harness` region
+# has an end marker and no beginning is the ordinary way one arrives — leaves nothing written
+# and no manifest. The dry run is the same branch, which is what makes `--dry-run` honest
+# rather than a second code path that happens to agree.
+[[mutation]]
+name = "init applies the write-once pass before it has looked at either plan's refusals"
+file = "src/keelline/project/init.py"
+before = "    if dry_run or once.refusals or footprint.refusals:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_init.py::test_a_dry_run_writes_nothing_and_reports_both_plans",
+  "tests/project/test_init.py::test_a_refused_footprint_writes_nothing_at_all",
+]
+
+# DC5. The manifest is the record that this repository has been initialised, and it is the
+# only one: a second `init` over an initialised repository would re-plan every artifact
+# against a configuration it rebuilt from scratch. Refreshing a footprint is `keelline
+# upgrade`, which ships later, and the refusal says so rather than doing half of it. The
+# anchor is `.keelline/manifest.json`, whose path is the scaffold area's own constant and is
+# contained against the root before it is read.
+[[mutation]]
+name = "init runs again over a repository whose manifest says it is already initialised"
+file = "src/keelline/project/init.py"
+before = "    if (root / MANIFEST_PATH).is_file():"
+after = "    if False:"
+reddens = [
+  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_says_upgrade_ships_later",
+]

@@ -81,7 +81,7 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     assert "keelline.presets" not in imported
 
 
-# The ten areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
+# The eleven areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
 # CLI frame and not an area — nothing discovers it, it has no `api.py`, and it owns the wiring
 # of the `hook` command — so it reads `keelline.hooks.policy` directly. It is named here rather
 # than skipped silently, because an exemption nobody can see is how the two violations this
@@ -200,7 +200,7 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
     # current: measured at 99 files, 10 areas and 100 crossings when this was written, and a
     # walk narrowed to `commands.py` alone finds 13.
-    assert len(areas) == 10, areas
+    assert len(areas) == 11, areas
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing

@@ -206,6 +206,10 @@ One line per command; `docs/cli.md` has the rest. Every line here parses against
 parser, and every registered command has a line — a test holds both.
 
 ```text
+# Initialising a project
+keelline init --yes --dry-run                         # both reports, nothing written
+keelline init --yes                                   # write the footprint and record every file
+
 # Memory
 keelline memory index                                 # render MEMORY.md from the notes
 keelline memory index --check                         # report drift, write nothing
