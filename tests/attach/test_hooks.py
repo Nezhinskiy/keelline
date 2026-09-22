@@ -215,3 +215,22 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
     machine.write_text("[overlay\n", encoding="utf-8")
     result = handler.run(_event(root), load(root, machine=root / "absent.toml"))
     assert result.decision is None and result.context == NOT_ASKABLE
+
+
+@needs_git
+def test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The handler's backstop is a floor, not a filter: a line it swallows takes every other
+    line of the same result with it.
+
+    `satisfies` used to raise `ValueError` for a floor whose components are past CPython's
+    4300-digit `int()` cap — a string an owner can mistype into the overlay's own manifest, and
+    one no repository can write. `except Exception` then returned an empty `HookResult`, so the
+    session was told nothing at all: not the unreadable requirement, and not `NOT_ATTACHED`,
+    which is the one line that says this project is not bound to the overlay it is reading.
+
+    The assertion is the two lines, in order, and never the exception.
+    """
+    root, _, machine = _recorded(tmp_path, monkeypatch, requires=">=" + "9" * 5000 + ".0.0")
+    assert _run(root, machine, None) == NOT_ATTACHED + "\n" + REQUIRES_UNREADABLE

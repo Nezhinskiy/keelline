@@ -5688,3 +5688,33 @@ after = "        machine=machine,"
 reddens = [
   "tests/doctor/test_checks.py::test_no_case_here_can_read_the_developers_own_machine_configuration",
 ]
+
+# The third enumerated-value leak in this loader, after `_build`'s and `_budgets`'. `!r` escapes
+# the control characters, which is why it read as milder than the raw bytes those two printed —
+# but `keelline.state`, `memory.mode` and `ci.mode` are repository-authored and bounded by no
+# grammar, so what it prints is unbounded in content and in length, and the same branch deleted
+# `; got {project.name!r}` from the refusal one screen below on exactly this reasoning.
+[[mutation]]
+name = "a configuration enum quotes the value back again"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")'''
+after = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")'''
+reddens = [
+  "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
+]
+
+# One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
+# the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
+# could not run" and the session handler's backstop swallows along with every other line of the
+# same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
+# floor written in Eastern Arabic-Indic numerals validate and print back verbatim.
+[[mutation]]
+name = "the version grammar stops bounding its components"
+file = "src/keelline/overlay/requires.py"
+before = '_COMPONENT = r"([0-9]{1,9})"'
+after = '_COMPONENT = r"(\d+)"'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
+  "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
+  "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
+]

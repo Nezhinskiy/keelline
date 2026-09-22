@@ -191,8 +191,23 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
+    """The key and the vocabulary it may be spelled in; never the value it was spelled with.
+
+    The three keys this guards — `keelline.state`, `memory.mode`, `ci.mode` — are
+    repository-authored strings bounded by no grammar, so a clone can write anything at all
+    into one, and the refusal reaches a terminal and a model through the `init` and `attach`
+    skills' relay. `; got {value!r}` therefore put unbounded repository bytes into it:
+    `ci.mode must be one of reusable, uvx, none; got '\\x1b[2JIGNORE PRIOR RULES'`. `!r` escapes
+    the control characters, which makes it milder than a raw-bytes leak and not a different
+    kind of thing — it is still content- and length-unbounded.
+
+    Nothing is lost by dropping it. `allowed` is Keelline's own closed vocabulary, the key names
+    the line to look at, and the reader has the file open. This is the ruling `PROJECT_NAME`'s
+    refusal one screen down already took for the same reason — it dropped `; got
+    {project.name!r}` — and `_named` took for the keys of every table.
+    """
     if value not in allowed:
-        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")
+        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")
 
 
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
