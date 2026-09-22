@@ -14,11 +14,12 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from keelline.attach.api import LEDGER
-from keelline.attach.write import GITIGNORE, IGNORE_REGION, Detached, detach
+from keelline.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
-from keelline.scaffold.regions import RegionError, Style, markers
+from keelline.scaffold import Kind, Location, Manifest, Record, digest
+from keelline.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
@@ -546,3 +547,46 @@ def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> 
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
     assert (root / GITIGNORE).read_bytes() == b"\n"
+
+
+def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
+    """DC4: ownership decides, not last writer.
+
+    `keelline init` records the `keelline:ignore` region as a footprint artifact with exactly
+    the body `attach` writes — one spelling, imported rather than respelled, so neither command
+    can report the other's region as hand-edited. `attach`'s own write stays and is idempotent;
+    what changes is the withdrawal. A `detach` that dropped a region the manifest records would
+    take a line out of a *committed* file that `init` put there, and `upgrade` would then read
+    the footprint as hand-edited on a repository nobody edited.
+
+    The manifest is the authority because it is the only record of who wrote the region that
+    survives the region being written twice. There is no new ledger field: the attach ledger is
+    per-checkout and untracked, and the question "whose region is this" is answered for every
+    clone by the committed manifest.
+
+    Mutation: `mutations.toml`'s "detach withdraws a region the footprint owns".
+    """
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    (root / GITIGNORE).write_text(
+        "node_modules/\n" + upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH), encoding="utf-8"
+    )
+    Manifest(
+        {
+            "gitignore": Record(
+                "gitignore",
+                Kind.MANAGED_REGION,
+                Location.REPO,
+                GITIGNORE,
+                "gitignore",
+                "0.1.0",
+                digest(IGNORE_BODY),
+            )
+        }
+    ).write(root)
+    _attach(root, store, machine, tmp_path / "home", confirmed=True)
+    removed = _detach(root, machine, tmp_path / "home")
+    text = (root / GITIGNORE).read_text(encoding="utf-8")
+    assert removed.ignore_region_removed is False
+    assert text.startswith("node_modules/\n")
+    assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY

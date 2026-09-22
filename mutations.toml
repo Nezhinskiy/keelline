@@ -5265,3 +5265,68 @@ reddens = [
   "tests/config/test_loader.py::test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_message",
   "tests/project/test_init.py::test_a_configuration_that_will_not_parse_never_quotes_its_own_keys",
 ]
+
+# `attach` links; it never moves a note. Linking over a group that is still a real directory
+# leaves every session reading the repository's own copy while that group's share of the
+# overlay stays empty — and by the time anyone notices, the binding record, the settings merge
+# and the ledger are written and `doctor._attached` reports the repository attached. The
+# refusal is above every write for that reason, so the mutation is measured on the snapshots.
+[[mutation]]
+name = "attach links over notes that never moved again"
+file = "src/keelline/attach/write.py"
+before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# DC4, and it is an ownership rule rather than a last-writer one. `init` records the
+# `keelline:ignore` region as a footprint artifact with the body `attach` writes; a `detach`
+# that dropped it would take a line out of a committed file this command never wrote, and
+# `upgrade` would read the footprint as hand-edited on a repository nobody edited.
+# The other half of the same test, and the reason it snapshots rather than only catching the
+# refusal: "above every write" is the claim, and a check hoisted one write too low still raises.
+# Deleting the refusal reddens the `pytest.raises`; moving a write above it reddens the walks.
+[[mutation]]
+name = "the never-moved check is asked one write too late"
+file = "src/keelline/attach/write.py"
+before = "    real = unlinked_groups(root, config)"
+after = "    _write_ignore_region(root)\n    real = unlinked_groups(root, config)"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+[[mutation]]
+name = "detach withdraws a region the footprint owns"
+file = "src/keelline/attach/write.py"
+before = "    ignore_remainder = None if owned_by_footprint else _ignore_region_remainder(root)"
+after = "    ignore_remainder = _ignore_region_remainder(root)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_region_init_recorded_survives_a_detach",
+]
+
+# `--check`'s exit code is what the attach skill branches on before it relays anything, so a
+# count that prints while the exit stays 0 is a finding nothing acts on. Exit 1 for the same
+# reason a mismatch answers 1: the answer is an act of the owner's, not a fault in the command.
+[[mutation]]
+name = "check reports the groups that never moved and still exits zero"
+file = "src/keelline/attach/permissions.py"
+before = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)"
+after = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH else 0)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
+]
+
+# P10, the fourth site of the family this branch has now closed three times. The file is the
+# overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may print —
+# except that the value Keelline writes into it is this repository's `origin`, and a remote URL
+# may not print wherever it came from. `tomllib`'s message embeds the source for several of its
+# faults, so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
+[[mutation]]
+name = "the binding record's parse failure is quoted back whole"
+file = "src/keelline/attach/binding.py"
+before = '        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise Failure(f"{where} is not valid TOML: {exc}") from exc'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
+]

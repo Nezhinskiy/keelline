@@ -303,3 +303,27 @@ def test_detachs_line_says_what_went_without_naming_any_of_it(
     line = capsys.readouterr().out
     assert RULE not in line
     assert "1 allow rule(s)" in line
+
+
+def test_check_counts_the_groups_that_never_moved_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--check` refuses nothing, so its job here is to report the finding `attach` will refuse
+    # on: exit 1, the same code a mismatch answers with, because both are findings the owner
+    # acts on before the real run rather than faults in the command. The count is this lane's
+    # own and prints; the group's name is repository-authored and does not, which is the rule
+    # `real_directories` is a count for.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 1
+    report = capsys.readouterr().out
+    data = json.loads(report)
+    assert data["real_directories"] == 1
+    assert "developer" not in report
+    # Non-vacuous in the other direction: the same fixture with nothing left behind answers 0
+    # and reports none, so the exit code above is this finding and not the fixture's state.
+    (root / DEFAULT_MEMORY / "developer").rmdir()
+    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["real_directories"] == 0

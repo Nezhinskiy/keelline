@@ -915,9 +915,15 @@ then refuses.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
 the permission diff (which allow rules and which hook entries would be added, and how many of
-the overlay's rules this repository already has), and the Codex standing-rule files it would
-place under `.codex/rules/`. Read it before the real run: everything under **Writes** below that
-carries content from the overlay is named here first.
+the overlay's rules this repository already has), the Codex standing-rule files it would
+place under `.codex/rules/`, and `real_directories`: how many of this project's memory groups
+are still real directories rather than links into the overlay. Read it before the real run:
+everything under **Writes** below that carries content from the overlay is named here first.
+
+It exits `1` when that count is non-zero, the same way it does on a mismatch and for the same
+reason — both are findings you act on before the real run, and `attach` itself is what
+refuses. The count is a count: a group's name comes out of `keelline.toml`, so it is never
+printed.
 
 Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
 a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
@@ -934,6 +940,16 @@ no flag, because the gate is on the capability and not on the command.
 name; if this repository's `origin` is a different one, it is not the repository that was bound,
 and `attach` refuses (`2`) unless you say otherwise. A clone chooses its own `project.name`; it
 does not choose what the overlay recorded under that name.
+
+**A group that never moved is refused.** `attach` **links**; it never moves a note. So a
+`memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
+leaving every session reading the repository's own copy while that group's share of the overlay
+stayed empty — with the binding record, the settings merge and the ledger already written.
+`attach` refuses (`2`) above its first write instead, counts the groups, and names where each
+one goes: `<overlay>/projects/<name>/memory/<group>`, and `common/memory` for the shared group.
+Moving the notes is yours to do; no command does it for you. The containment that count is taken
+under is anchored on the checkout you pointed the command at, not on any path the repository
+configures, so a repository cannot move the directory being counted.
 
 **Reads** the overlay's `common/claude/permissions.json` and `common/claude/hooks.json`, this
 project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and
@@ -973,7 +989,8 @@ Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a sto
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
 with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
-overlay, or a `--machine` outside an interactive shell. Every one of those refusals happens
+overlay, a memory group that is still a real directory rather than a link into it, or a
+`--machine` outside an interactive shell. Every one of those refusals happens
 before the first write, so a refused attach leaves both the repository and the overlay as they
 were. A write that itself fails also exits `2`, and is the one kind that can leave part of a run
 behind: an unwritable `.gitignore`, or a path inside the overlay that is not a directory — or
@@ -1008,6 +1025,14 @@ mixes one of those with your own entry is split, never replaced), removes the `.
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
 harness memory link, removes the `keelline:ignore` region, and deletes the ledger. A file left
 holding nothing is removed rather than left empty.
+
+**The `keelline:ignore` region in `.gitignore` goes only if the manifest does not record it.**
+On a repository `keelline init` set up, that block is the footprint's — recorded in
+`.keelline/manifest.json` as a scaffolded artifact, with the body `attach` writes — and it
+stays. Ownership decides, not last writer: the block is committed, so withdrawing it would
+take a line out of a tracked file this command never wrote and leave `keelline upgrade`
+(ships later) reading the footprint as hand-edited. A repository with no manifest is one no
+`init` has set up, and its region is withdrawn as before.
 
 **Directories come back too, with one exception.** `attach` records which of `.keelline/local/`,
 `.keelline/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
@@ -1387,7 +1412,7 @@ beside the six above:
 | `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
 | `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
 | `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
-| `keelline attach --check` | report the binding and the diff, and write nothing |
+| `keelline attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is
 a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state

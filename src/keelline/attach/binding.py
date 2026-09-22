@@ -30,7 +30,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from keelline.config.loader import load
+from keelline.config.loader import load, toml_position
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -112,7 +112,15 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except OSError as exc:
         raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
     except tomllib.TOMLDecodeError as exc:
-        raise Failure(f"{where} is not valid TOML: {exc}") from exc
+        # P10, and the same leak this branch has closed at three other sites. `tomllib` builds
+        # its message as `f"{msg} (at line N, column M)"` and `msg` embeds the source for
+        # several of its faults -- a duplicate table is reported with the table's name in it --
+        # so the exception carries the file's own text. This file is the overlay's, whose bytes
+        # are the machine owner's and may print, with one exception that decides it: the value
+        # Keelline writes into it is this repository's `origin`, and a remote URL may not print
+        # wherever it came from. `toml_position` bounds it to the suffix, and `from None`
+        # because a chained `__cause__` would print the message a traceback away.
+        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None
     value = raw.get("remote")
     return value if isinstance(value, str) and value else None
 
@@ -147,14 +155,22 @@ def binding_for(root: Path, config: Config, *, machine: Path | None) -> Binding:
     return Binding(project, overlay, store, origin, recorded, _state(recorded, origin))
 
 
-def read_binding(root: Path, *, store: Path, machine: Path | None) -> Binding:
+def read_binding(
+    root: Path, *, store: Path, machine: Path | None, config: Config | None = None
+) -> Binding:
     """The binding this repository would attach under, or a refusal that it may not.
 
     `project.name` arrives through `config.loader.load` and never out of the raw TOML, because
     that loader is what holds it to one path segment (§7.4 names `../common` as the value it is
     protecting against, and the name becomes a directory under the overlay's `projects/`).
+
+    `config` is loaded here only when the caller does not already hold one. `permissions.check`
+    does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
+    `keelline.toml` and the machine file twice per `--check`, with the two halves free to
+    disagree if the file changed in between. `binding_for` is the seam for a caller that has a
+    `Config` and no `--store` to check; this is the seam for one that has both.
     """
-    config = load(root, machine=machine)
+    config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)

@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from keelline import fsops, tomlout
-from keelline.attach.binding import MISMATCH, Binding, read_binding
+from keelline.attach.binding import MISMATCH, Binding, read_binding, unlinked_groups
 from keelline.attach.permissions import (
     CODEX_RULES,
     LOCAL_SETTINGS,
@@ -83,6 +83,7 @@ from keelline.memory.api import (
 from keelline.runner import Runner
 from keelline.scaffold import (
     EntriesError,
+    Manifest,
     Style,
     apply_entries,
     drop,
@@ -124,13 +125,25 @@ NO_ORIGIN = (
     "this repository has no `origin` remote, so there is nothing for the overlay to record; "
     "add one, or bind the clone that has it"
 )
-# The seventh, and the one whose trigger is repository-authored (§7.4: `memory.groups` reaches no
-# guard of its own). One constant for the check above every write and for the `O_NOFOLLOW` walk
-# that is the floor under it, because two spellings of one refusal are two refusals to keep in
-# step. The entry is never quoted back into it.
+# The sixth, and the first of the two whose trigger is repository-authored (§7.4:
+# `memory.groups` reaches no guard of its own). One constant for the check above every write
+# and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
+# refusal are two refusals to keep in step. The entry is never quoted back into it.
 GROUP_ESCAPES = (
     "a memory.groups entry does not stay inside this project's share of the overlay, so it is "
     "refused rather than created"
+)
+# The eighth, and the second of the two whose trigger is repository-authored. Its anchor is
+# `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
+# repository cannot move the directory this count is taken under: `unlinked_groups` contains
+# every `<paths.memory>/<group>` against that root and refuses the ones that leave it. The
+# count prints and the entries do not, for the reason `GROUP_ESCAPES` gives; the remedy names
+# the shape of the destination rather than any group's name.
+REAL_DIRECTORIES = (
+    "{count} of this project's memory groups are real directories under paths.memory, and "
+    "`attach` links rather than moves; move each into "
+    "`<overlay>/projects/<the name in keelline.toml>/memory/<group>` (`common/memory` for the "
+    "shared group) and run again -- `keelline attach --check` reports the count"
 )
 # `fsops.mkdirs_within` creates a target's *parents*, so a directory is asked for as the parent
 # of a name inside it. Nothing is ever written at this name; `overlay.create` asks the same way.
@@ -808,10 +821,16 @@ def attach(
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
     without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
     `origin`; read the existing ledger, which refuses one no attach could have written; refuse a
-    `memory.groups` entry that leaves this project's share of the overlay; then write,
-    `.gitignore` first, so the ledger is never in a tracked path even for an instant.
+    `memory.groups` entry that leaves this project's share of the overlay; refuse a harness
+    anchor this machine cannot vouch for; refuse a group that never moved into the overlay;
+    then write, `.gitignore` first, so the ledger is never in a tracked path even for an
+    instant.
 
-    **All six refusals are above every write, and three of them were not.** The no-`origin` one
+    The ordinals in the body number this enumeration, not the line order: the ledger's refusal
+    is read a few lines below the two that need the `Config`, and this one is asked in the
+    same breath as the containment that reads the same `memory.groups` list.
+
+    **All eight refusals are above every write, and three of them were not.** The no-`origin` one
     lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in
     `_prepare_store` — which runs after the ignore region, the Codex rule files, the settings
     merge, the ledger *and* the overlay's binding record. Each could exit 2 having written three,
@@ -862,6 +881,18 @@ def attach(
     # writes while what it reads is loaded below them.
     config = load(root, machine=machine)
     _check_groups(binding, config)
+    # The eighth, and the one whose remedy is an act no command performs: `attach` **links**,
+    # so a group that is still a real directory under `paths.memory` has its notes in the
+    # repository and its share of the overlay empty, and linking over it would leave every
+    # session reading the repository's copy with the binding record, the settings merge and
+    # the ledger already written. Above every write for that reason, and beside the
+    # `memory.groups` containment because it reads the same repository-authored list -- the
+    # anchor it is contained against is `root`, the checkout this command was pointed at,
+    # which is why a repository cannot move the directory the count is taken under. A
+    # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
+    real = unlinked_groups(root, config)
+    if real:
+        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))
     # The seventh, and the one that is not about this repository at all: the anchor for the
     # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
     # below every write here — so a home directory that is not there, and the ordinary
@@ -1095,7 +1126,17 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    ignore_remainder = _ignore_region_remainder(root)
+    # DC4: the region goes only when nothing else owns it. `keelline init` records the same
+    # `keelline:ignore` block as a footprint artifact, with the body imported from here rather
+    # than respelled, and a region the footprint owns is committed: withdrawing it would take a
+    # line out of a tracked file this command never wrote, and leave `upgrade` reading the
+    # footprint as hand-edited on a repository nobody edited. Ownership and not last writer,
+    # and the manifest rather than a new ledger field -- the ledger is untracked and
+    # per-checkout, while the question "whose region is this" has to answer the same for every
+    # clone. A repository with no manifest is the state every attach before `init` shipped
+    # leaves behind, and it withdraws as it always did.
+    owned_by_footprint = Manifest.read(root).get("gitignore") is not None
+    ignore_remainder = None if owned_by_footprint else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     rules_removed: list[str] = []
     for rule in recorded.rules:

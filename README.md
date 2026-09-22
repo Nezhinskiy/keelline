@@ -195,6 +195,7 @@ Keelline writes files. Being specific about which is the point of this section.
 | `~/.config/keelline/trust.json` | Which repositories' committed notes you have approved | `keelline memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/keelline/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
+| `.gitignore`, the `keelline:ignore` region | The block that keeps `.keelline/local/` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `keelline init`, or `attach` on a repository `init` has not set up |
 | `.keelline/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — git-ignored by the region `attach` itself writes | `keelline attach` |
 | `<overlay>/projects/<name>/project.toml` | Which remote this overlay is bound to for this project, and when it was first attached | `keelline attach` |
 
