@@ -82,7 +82,7 @@ def test_the_header_is_computed_from_the_configured_paths(tmp_path: Path) -> Non
     assert header(config) == (
         "# Bug reports\n\n"
         f"{GENERATED_BY} from `bugs/BR-*.md`; edit the entry\n"
-        "files, not this one. How to file, close, reference, and merge:\n"
+        "files, not this one. How to file, close and reference an entry:\n"
         "[runbook](runbooks/bug-reports.md). Audit provenance: "
         "[docs/bugs/audits/](bugs/audits/)._\n"
     )

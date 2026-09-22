@@ -8,3 +8,7 @@ string, a value carrying characters a path never needs) is refused today, naming
 the grammar it must match. `project.name`'s own refusal, and this new one, both stop quoting
 the value back into the message: either only names the key and the rule, never what was
 written.
+
+`project.name` is also anchored strictly now. Its grammar ended in `$`, which in Python matches
+before a trailing newline, so a multi-line `name = """widget\n"""` loaded and became a path
+segment carrying a newline; it ends in `\Z`, and that spelling is refused.
