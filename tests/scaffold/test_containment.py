@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import presets
 from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
@@ -170,12 +171,23 @@ def test_a_preset_name_in_another_case_is_refused_on_every_filesystem(
     # The membership question was put to the filesystem, and macOS's default one folds case: the
     # same `keelline.toml` loaded on a Mac and was refused on a Linux CI runner. It is asked of
     # the listing now, which answers the same everywhere. On a case-sensitive filesystem this
-    # case cannot tell the two apart — the mutation below is proven on the machine the oracle
-    # runs on, and CI's macOS job runs it too.
-    # Oracle: `mutations.toml`, "preset membership is asked of the filesystem again".
+    # case cannot tell the two apart, so it is the regression and not the oracle's proof; the
+    # case below is, and holds on every platform.
     write_config(tmp_path, VALID_HEAD.replace('preset = "recommended"', f'preset = "{name}"'))
     with pytest.raises(Failure, match="does not ship"):
         load_at(tmp_path)
+
+
+def test_preset_membership_is_the_listings_answer_and_not_the_filesystems(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The portable half of the case above. With the listing emptied, `recommended.toml` is still
+    # on disk, so a check that asks the filesystem loads it and one that asks the listing
+    # refuses — on a case-sensitive filesystem as much as on macOS, where the CI oracle does
+    # not run. Oracle: `mutations.toml`, "preset membership is asked of the filesystem again".
+    monkeypatch.setattr(presets, "shipped_presets", lambda: [])
+    with pytest.raises(Failure, match="does not ship"):
+        load_preset("recommended")
 
 
 def test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule() -> None:

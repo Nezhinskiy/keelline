@@ -6214,15 +6214,16 @@ reddens = [
 ]
 
 # Finding 2: membership was the filesystem's answer, and macOS folds case, so `"RECOMMENDED"`
-# loaded on a Mac and was refused on Linux. Only a case-insensitive filesystem can redden this;
-# the oracle runs on the maintainer's Mac and in CI's macOS job.
+# loaded on a Mac and was refused on Linux. The case-folding test reddens only on a
+# case-insensitive filesystem, and the CI oracle runs on Linux, so the proof is the case that
+# empties the listing: `recommended.toml` stays on disk, and only the listing refuses it.
 [[mutation]]
 name = "preset membership is asked of the filesystem again"
 file = "src/keelline/presets/__init__.py"
 before = "    if name not in shipped_presets():"
 after = '    if not resources.files(__package__).joinpath(f"{name}.toml").is_file():'
 reddens = [
-  "tests/scaffold/test_containment.py::test_a_preset_name_in_another_case_is_refused_on_every_filesystem",
+  "tests/scaffold/test_containment.py::test_preset_membership_is_the_listings_answer_and_not_the_filesystems",
 ]
 
 # Finding 3: one ASCII grammar for the name, which is what the sentence printed with it says.
