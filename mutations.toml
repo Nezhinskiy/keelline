@@ -6202,7 +6202,7 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
 ]
 
-# PR #20 review, finding 1: the `key` half was pinned only by a direct call, so reverting the
+# The review of this change, finding 1: the `key` half was pinned only by a direct call, so reverting the
 # call site left `setup --preset` telling a person to edit a `keelline.toml` it never read.
 [[mutation]]
 name = "setup's preset refusal names the configuration key again"
