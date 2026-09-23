@@ -8,7 +8,9 @@ from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.project.init import init
 from keelline.scaffold import Kind, Template, apply, plan
+from tests.gitfixture import LsRemote, git, needs_git
 
 VALID_HEAD = """
 [keelline]
@@ -202,49 +204,86 @@ def test_a_target_that_survives_plan_is_one_apply_can_write(tmp_path: Path) -> N
         assert (root / target).read_text(encoding="utf-8") == "x", target
 
 
-def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None:
-    # The end-to-end consequence, through the `[paths]` table a clone actually commits. The
-    # refusal now happens in the grammar loop `validate_paths` runs, above `contained()` and far
-    # above the first write — so `init.py`'s "a refusal anywhere leaves nothing written and no
-    # manifest" and `docs/cli.md`'s copy of it are true again.
-    write_config(
-        tmp_path,
-        HOSTILE_PATHS.replace(
-            'roadmap_history = "../roadmap-history.md"',
-            'roadmap_history = "docs//roadmap-history.md"',
-        ),
+def _init(root: Path) -> None:
+    init(
+        root,
+        machine=root / "absent.toml",
+        runner=LsRemote(),
+        yes=True,
+        dry_run=False,
+        ci=True,
     )
-    with pytest.raises(PathEscape):
-        load_at(tmp_path)
-    assert not (tmp_path / ".keelline").exists()
-    assert sorted(p.name for p in tmp_path.iterdir()) == [CONFIG_FILE]
+
+
+@needs_git
+def test_a_refused_paths_value_leaves_no_manifest_behind(tmp_path: Path) -> None:
+    """The end-to-end consequence, through `init` and the `[paths]` table a clone commits.
+
+    Hostile in exactly one value, and that value is B1's own: every other key is the preset's,
+    so no older `..` rule can be what refuses it. Before the fix this run wrote nine files and
+    the manifest and then raised inside `apply`, leaving a repository `init` refuses for ever.
+
+    **No single-edit mutation reddens this, and that is measured rather than assumed.** Two
+    guards stand in front of the write — the `[paths]` grammar and `contained()`'s component
+    rule — and each refuses the value alone, which is the point of having both. With both
+    mutations applied together ("the [paths] grammar admits a spelling the write refuses
+    again" and "contained normalises the value away, so plan stops agreeing with apply"), this
+    run reaches `apply` and the manifest assertion reddens. The
+    oracle proves each guard separately through the siblings those entries name.
+    """
+    root = tmp_path / "widget"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    write_config(root, VALID_HEAD + '\n[paths]\nroadmap_history = "docs//roadmap-history.md"\n')
+    # `Refusal` and not `PathEscape` around the call, and the type asserted last: with both
+    # guards gone the run reaches `apply`, which refuses too — as `UnsafePath`, part-way through
+    # the pass. The assertions that must fail then are the ones about what is on disk.
+    with pytest.raises(Refusal) as caught:
+        _init(root)
+    assert not (root / ".keelline").exists()
+    assert sorted(p.name for p in root.iterdir()) == [".git", CONFIG_FILE]
+    assert isinstance(caught.value, PathEscape)
 
 
 # --- git's control directory ------------------------------------------------------------------
 
 
+@needs_git
 def test_a_paths_value_inside_the_control_directory_is_refused_before_any_write(
     tmp_path: Path,
 ) -> None:
-    # B2, end to end through the table a clone actually commits, and with the developer's own
-    # hook on disk so the assertion is about the file and not only about the exception. The
-    # `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
-    # not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried
-    # the existing 0755 onto the replacement.
-    root = tmp_path / "project"
-    (root / ".git" / "hooks").mkdir(parents=True)
+    """B2, end to end through `init`, with the developer's own hook on disk.
+
+    The `agents-md` artifact is a `MANAGED_REGION`, which the engine's "exists and Keelline did
+    not write it" guard exempts, so this reached `region_update` and `fsops._mode_of` carried the
+    existing 0755 onto the replacement. Driven through `init` rather than `load` so that the
+    hook's bytes and mode are something the run could actually have changed.
+
+    Two guards again, the `[paths]` loop and the walk's own copy of the rule, and either alone
+    refuses. With both "a [paths] value may name git's control directory again" and "the walk
+    writes inside git's control directory again" applied, the hook is rewritten and this
+    reddens; each alone is proven by the siblings those entries name.
+    """
+    root = tmp_path / "widget"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
     hook = root / ".git" / "hooks" / "pre-commit"
     hook.write_text("#!/bin/sh\necho real hook\n", encoding="utf-8")
     hook.chmod(0o755)
-    write_config(
-        root,
-        VALID_HEAD + '\n[paths]\nagents_md = ".git/hooks/pre-commit"\n',
-    )
-    with pytest.raises(PathEscape, match="control directory"):
-        load_at(root)
+    write_config(root, VALID_HEAD + '\n[paths]\nagents_md = ".git/hooks/pre-commit"\n')
+    # Caught rather than `pytest.raises`, so that a run which does not refuse still reaches the
+    # assertions about the hook: that is the damage, and the missing exception is not.
+    try:
+        _init(root)
+    except PathEscape as exc:
+        refused: PathEscape | None = exc
+    else:
+        refused = None
     assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho real hook\n"
+    assert hook.stat().st_mode & 0o777 == 0o755
     assert not (root / ".keelline").exists()
-    assert sorted(p.name for p in (root / ".git").iterdir()) == ["hooks"]
+    assert sorted(p.name for p in root.iterdir()) == [".git", CONFIG_FILE]
+    assert refused is not None and "control directory" in str(refused)
 
 
 def test_the_engine_refuses_a_control_directory_target_the_loader_never_sees(
