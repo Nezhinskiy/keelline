@@ -84,7 +84,6 @@ from keelline.runner import Runner
 from keelline.scaffold import (
     EntriesError,
     Manifest,
-    ManifestError,
     Style,
     apply_entries,
     drop,
@@ -1061,7 +1060,8 @@ def _footprint_owns_region(root: Path) -> bool:
     `.keelline/manifest.json` is **tracked** -- `IGNORE_BODY` covers `.keelline/local/` and
     `.keelline/assessment.json` and nothing else -- so a clone commits it, and `Manifest.read`
     raises `ManifestError` for one that is unreadable, is not a JSON object, or declares a
-    `format` past this Keelline's. `attach` never reads the file, so such a clone attached
+    `format` past this Keelline's -- and `PathEscape` for one committed as a symlink out of the
+    root. `attach` never reads the file, so such a clone attached
     cleanly, merged the owner's allow rules and hook entries, and then made the **withdrawal**
     exit 2 on every run for ever: a repository a clone chose could keep the command that undoes
     an attach from ever completing. Nothing destructive had happened first, because this
@@ -1079,7 +1079,10 @@ def _footprint_owns_region(root: Path) -> bool:
     """
     try:
         return Manifest.read(root).get("gitignore") is not None
-    except ManifestError:
+    except Refusal:
+        # `Refusal` and not `ManifestError`: a manifest committed as a symlink out of the root is
+        # refused by `contained()` as a `PathEscape` before any byte is read, and it blocks the
+        # withdrawal exactly as an unparseable one did.
         return True
 
 

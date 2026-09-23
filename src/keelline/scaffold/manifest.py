@@ -128,9 +128,13 @@ class Manifest:
         path = _contained_path(root)
         if not path.is_file():
             return cls({})
+        # `ValueError` rather than `json.JSONDecodeError`: bytes that are not UTF-8 raise
+        # `UnicodeDecodeError` from the decode, before the parser runs, and that is a
+        # `ValueError` too. `RecursionError` is the parser's answer to nesting deep enough to
+        # exhaust the stack. The file is tracked, so a clone chooses all three.
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, RecursionError) as exc:
             raise ManifestError(f"{MANIFEST_PATH} is unreadable: {exc}") from exc
         if not isinstance(raw, dict):
             raise ManifestError(f"{MANIFEST_PATH} is not a JSON object")

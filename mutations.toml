@@ -5856,15 +5856,33 @@ reddens = [
 
 # `.keelline/manifest.json` is tracked, `attach` never reads it, and `Manifest.read` refuses an
 # unreadable one -- so a clone committing `{"format": 99}` attached cleanly and then made every
-# later `detach` exit 2, for ever, above every withdrawal. The mutation restores the propagation.
+# later `detach` exit 2, for ever, above every withdrawal. The mutation lets a symlinked
+# manifest's `PathEscape` propagate again.
 [[mutation]]
 name = "an unreadable manifest blocks the detach again"
 file = "src/keelline/attach/write.py"
 before = '''    try:
         return Manifest.read(root).get("gitignore") is not None
-    except ManifestError:
-        return True'''
-after = '    return Manifest.read(root).get("gitignore") is not None'
+    except Refusal:'''
+after = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except Refusal as exc:
+        if isinstance(exc, PathEscape):
+            raise'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The half the first fix missed: catching `ManifestError` alone let a symlinked manifest's
+# `PathEscape` through, and the detach exited 2 exactly as before. The mutation above now puts
+# that narrowing back; this one does the same to the reader, where bytes that are not UTF-8 left
+# `Manifest.read` as a `UnicodeDecodeError` rather than as its own refusal.
+
+[[mutation]]
+name = "the manifest reader lets undecodable bytes out as a crash again"
+file = "src/keelline/scaffold/manifest.py"
+before = "        except (OSError, ValueError, RecursionError) as exc:"
+after = "        except (OSError, json.JSONDecodeError) as exc:"
 reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]

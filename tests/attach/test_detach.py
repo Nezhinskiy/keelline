@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -592,7 +593,31 @@ def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
     assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY
 
 
-def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(tmp_path: Path) -> None:
+def _newer_format(manifest: Path, outside: Path) -> None:
+    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
+
+
+def _not_utf8(manifest: Path, outside: Path) -> None:
+    manifest.write_bytes(b'{"a": "\xff"}')
+
+
+def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
+    manifest.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+
+def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:
+    outside.write_text("{}", encoding="utf-8")
+    manifest.symlink_to(outside)
+
+
+@pytest.mark.parametrize(
+    "commit",
+    [_newer_format, _not_utf8, _nested_past_the_stack, _symlinked_out_of_the_root],
+    ids=lambda commit: commit.__name__.lstrip("_"),
+)
+def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
+    tmp_path: Path, commit: Callable[[Path, Path], None]
+) -> None:
     """A repository may not disable the command that undoes an attach.
 
     `.keelline/manifest.json` is **tracked** -- the ignore region covers `.keelline/local/` and
@@ -609,7 +634,14 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(tmp_path: Path
     which is the conservative half, and the detach finishes. Everything else comes back, which
     is what the settings file and the ledger assert here.
 
-    Mutation: `mutations.toml`'s "an unreadable manifest blocks the detach again".
+    The first fix caught `ManifestError` alone, and a clone has three other ways to make the
+    read fail: bytes that are not UTF-8 (`UnicodeDecodeError`, a `ValueError` the reader did not
+    name), nesting deep enough to exhaust the parser's stack (`RecursionError`), and a manifest
+    committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
+    one made the detach exit 2 exactly as `{"format": 99}` had.
+
+    Mutations: `mutations.toml`'s "an unreadable manifest blocks the detach again" and "the
+    manifest reader lets undecodable bytes out as a crash again".
     """
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
@@ -620,7 +652,7 @@ def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(tmp_path: Path
     # `detach` and never read by the run that wrote the ledger.
     manifest = root / MANIFEST_PATH
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
+    commit(manifest, tmp_path / "outside.json")
     removed = _detach(root, machine, home)
     assert not (root / LEDGER).exists()
     assert removed.allow_removed == (RULE,)
