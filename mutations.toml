@@ -583,7 +583,9 @@ reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_st
 [[mutation]]
 name = "an escaping code root is followed"
 file = "src/keelline/guards/roots.py"
-before = '            candidate = contained(root, entry, resolved_root=resolved_root)'
+before = '''            candidate = contained(
+                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
+            )'''
 after = '            candidate = root / entry'
 reddens = ["tests/guards/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
 
