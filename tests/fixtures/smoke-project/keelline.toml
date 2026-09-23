@@ -1,14 +1,7 @@
 # A project every gate passes on: the smoke workflow's caller, and `check.yml`'s
-# same-repository and cross-repository forms both run against it. This file is hand-written
-# and its version is whatever this Keelline is — `doctor` warns on drift and nothing fails.
-#
-# `.keelline/manifest.json` and the footprint beside it were produced by `keelline init --yes
-# --no-ci` on a copy of this directory and committed back, and this configuration was kept
-# (DC11): a fixture generated at smoke time would need a pin that does not exist and would
-# make the smoke depend on `init`. The manifest carries no `config` record, and that is not an
-# edit — `keelline.toml` is a create-once artifact and this one was already here, so the run
-# reported it `skip_modified` and recorded nothing for it. `state = "installed"` below is the
-# fixture's own and is what makes the gates enforce; `init` writes `initialised`.
+# same-repository and cross-repository forms both run against it. `init --yes` writes the
+# real one when the templates package ships; until then this is hand-written and its
+# version is whatever this Keelline is — `doctor` warns on drift and nothing fails.
 [keelline]
 version = "0.1.0"
 state = "installed"

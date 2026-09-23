@@ -7,6 +7,16 @@ today has nothing left to *create*, that every artifact its manifest records is 
 recognises as already correct, and that every provenance the manifest records is the one this
 build would write for that artifact.
 
+`keelline.toml` itself was kept exactly as hand-written rather than let that same `init --yes
+--no-ci` run replace it, and deliberately so: a fixture built fresh at smoke time would need a
+`[ci] ref` pin that does not exist yet, and would make the smoke suite depend on `init` finishing
+cleanly rather than on a tree already known to satisfy every gate. The manifest carries no
+`config` record for it, and that absence is not an edit — `keelline.toml` is a create-once
+artifact, this one already existed on the copy that run acted on, and the run reported it
+`skip_modified` and recorded nothing for it, the same as the other write-once artifacts above.
+The `state = "installed"` it declares is the fixture's own and is what makes the gates this
+project runs over it enforce instead of merely warn; `init` itself writes `initialised`.
+
 **It is not "the fixture is what the shipped templates render", which is what this module's first
 line used to say.** Measured on a copy: seven footprint artifacts come back `unchanged`, the
 three write-once ones come back `skip_modified` ("create-once, and the file is already there"),
