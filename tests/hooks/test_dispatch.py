@@ -330,6 +330,33 @@ def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> Non
     assert recorder.marks == {"ledger-notes"}
 
 
+def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -> None:
+    """An empty result is not a delivery, so the handler is asked again.
+
+    `dispatch` banks a `once_key` only `if handler.once_key is not None and delivered`, and
+    `delivered` is `bool(result.context) or result.decision == Decision.DENY` -- spending a
+    handler's single delivery on a result that said nothing would let the first unrelated Bash
+    call of a session consume a notice meant for the first failing test run. That is the right
+    rule and it has a consequence worth stating: a handler whose healthy answer is silence runs
+    on every matching event, and pays whatever it pays to decide that, every time.
+    `attach/hooks.py` is the handler that made this worth writing down -- its own docstring said
+    the opposite about which path its `git` calls fall on.
+
+    Mutation: `mutations.toml`'s "a silent handler spends its one delivery".
+    """
+    recorder = Recorder()
+    silent = handler("a", Policy.OPEN, HookResult(), once_key="overlay-status")
+    for _ in range(3):
+        outcome = dispatch(event(), [silent], None, sink=recorder)
+        assert "additionalContext" not in json.loads(outcome.stdout)["hookSpecificOutput"]
+    assert recorder.marks == set()
+    # Non-vacuous: the same handler with something to say does bank it, so this is about the
+    # emptiness of the result and not about the key being ignored.
+    speaking = handler("a", Policy.OPEN, HookResult(context="A"), once_key="overlay-status")
+    dispatch(event(), [speaking], None, sink=recorder)
+    assert recorder.marks == {"overlay-status"}
+
+
 def test_a_handler_without_a_once_key_runs_every_time() -> None:
     recorder = Recorder()
     every = handler("a", Policy.OPEN, HookResult(context="A"))

@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import os
 import pty
+import time
 from pathlib import Path
 
 from keelline.runner import (
     _ENV_DROP,
     _ENV_FORCE,
+    NETWORK_TIMEOUT_SECONDS,
     NOT_FOUND,
     TIMED_OUT,
     _SubprocessRunner,
+    subprocess_runner,
 )
 
 PROBE = [
@@ -29,8 +32,12 @@ PROBE = [
 def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Path) -> None:
     # Every call here runs with output captured, so a `git` or `gh` that asks for a credential
     # on an inherited stdin is invisible and blocks for the whole of NETWORK_TIMEOUT_SECONDS.
-    # `doctor`'s `ci-ref` row is what makes it a finding rather than an annoyance: the URL it
-    # resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+    # What makes that a finding rather than an annoyance is which callers reach the network
+    # through this seam: `overlay create --template` launches `gh` with the machine owner's own
+    # authentication, and `release.pins.released` runs `git ls-remote` for `keelline init` and
+    # for `doctor`'s `ci-ref` row — a write meant to be non-interactive and a read-only
+    # diagnostic. (This used to cite that row's URL as repository-authored; it is
+    # `keelline.REPOSITORY_URL`, a module constant. See `keelline.runner._ENV_FORCE`.)
     #
     # The pty is the point of the case: without it this process's own stdin is already not a
     # terminal under pytest, and the assertion would pass with the guard deleted.
@@ -81,3 +88,33 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
     # Non-vacuous: a binary that really is missing still answers NOT_FOUND, which is the mapping
     # the global constraints ask for — an optional binary is a finding, never a traceback.
     assert _SubprocessRunner().run(["keelline-no-such-binary"], tmp_path).code == NOT_FOUND
+
+
+def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None:
+    """`NETWORK_TIMEOUT_SECONDS` is right for what it was written for and wrong for a diagnostic.
+
+    Five minutes bounds `gh repo create --clone` waiting on GitHub and the clone behind it. It
+    also bounded `doctor`'s `ci-ref` row, which reads one tag listing on a command documented as
+    one line of output — and `keelline init` recording a `[ci] ref` is what made that block
+    reachable at all. The bound belongs to the caller that knows how big its question is, so it
+    is a keyword on the factory rather than a second module constant: the protocol is untouched
+    and no stub in the suite grows a parameter it would ignore.
+
+    Measured against the wall rather than against the constant, because the claim is that the
+    subprocess is really cut off: `sleep 5` under a one-second bound answers `TIMED_OUT`, and the
+    sentence it carries names the bound that was applied and not the module's.
+
+    Mutation (oracle entry "the runner ignores the bound its caller asked for"): `timeout=bound`
+    back to `timeout=NETWORK_TIMEOUT_SECONDS`. Measured: `sleep 5` runs to completion and the
+    runner answers `Completed(code=0)` after 5.45s, so the code assertion is what reddens and the
+    elapsed one is the floor under it — a bound of five minutes cannot cut a five-second sleep.
+    """
+    started = time.monotonic()
+    hung = subprocess_runner(timeout=1).run(["sh", "-c", "sleep 5"], tmp_path)
+    elapsed = time.monotonic() - started
+    assert hung.code == TIMED_OUT
+    assert elapsed < 5, elapsed
+    assert "within 1s" in hung.stderr and str(NETWORK_TIMEOUT_SECONDS) not in hung.stderr
+    # Non-vacuous: the default is still the module's, and a runner asked for nothing in particular
+    # is the one every other caller gets.
+    assert _SubprocessRunner().timeout is None

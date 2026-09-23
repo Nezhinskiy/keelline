@@ -1,0 +1,20 @@
+# Written by `keelline init`. The ref below is `[ci] ref` from keelline.toml — a full-length
+# sha, the only immutable reference for a reusable workflow. Keep the two equal: `keelline
+# doctor` reports red when the workflow pins something else, because then the gate that runs is
+# not the one recorded. Do not replace it with a branch name; `keelline upgrade` (ships later)
+# moves both together.
+name: keelline
+
+on:
+  pull_request:
+  push:
+    branches: ["%%GATE_BRANCH%%"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: %%SLUG%%/.github/workflows/check.yml@%%REF%% %%PIN_NOTE%%
+    with:
+      base: ${{ github.base_ref || '%%GATE_BRANCH%%' }}

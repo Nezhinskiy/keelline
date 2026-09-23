@@ -79,7 +79,7 @@ def _defined_here(tree: ast.AST) -> set[str]:
 def test_every_area_with_a_surface_is_walked() -> None:
     # The floor for the three parametrisations below: a `glob` that stopped matching would turn
     # all three into zero test cases, and a suite that collects nothing reports nothing. Pinned
-    # to the exact ten, because an area gaining or losing a published surface is a decision.
+    # to the exact eleven, because an area gaining or losing a published surface is a decision.
     assert AREAS == [
         "attach",
         "docs",
@@ -89,6 +89,7 @@ def test_every_area_with_a_surface_is_walked() -> None:
         "ledger",
         "memory",
         "overlay",
+        "project",
         "release",
         "setup",
     ], AREAS

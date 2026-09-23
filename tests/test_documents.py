@@ -534,13 +534,13 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
 
 
-# The `doctor` check table: fifteen rows, each spelling a check name, and the one
+# The `doctor` check table: sixteen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
-# `checks.py`, so the document's copy is a sixteenth spelling that guard cannot see and a
-# renamed check would leave this page green and wrong. That the unbound ones drift is not a
-# hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory over still said
-# fourteen.
+# `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
+# guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
+# ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
+# over still said fourteen.
 _DOCTOR_SECTION = re.compile(r"^## `keelline doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 # `| `name` | what it answers | what it reads |` — the first cell only, backticked.
 _CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)

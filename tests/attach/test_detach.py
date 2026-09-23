@@ -9,16 +9,18 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from keelline.attach.api import LEDGER
-from keelline.attach.write import GITIGNORE, IGNORE_REGION, Detached, detach
+from keelline.attach.write import GITIGNORE, IGNORE_BODY, IGNORE_REGION, Detached, detach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import harness_memory_path, resolve
 from keelline.memory.trust import record
-from keelline.scaffold.regions import RegionError, Style, markers
+from keelline.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
+from keelline.scaffold.regions import RegionError, Style, extract, markers, upsert
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config
 from tests.attach.test_write import SETTINGS
@@ -546,3 +548,115 @@ def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> 
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
     assert (root / GITIGNORE).read_bytes() == b"\n"
+
+
+def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
+    """DC4: ownership decides, not last writer.
+
+    `keelline init` records the `keelline:ignore` region as a footprint artifact with exactly
+    the body `attach` writes — one spelling, imported rather than respelled, so neither command
+    can report the other's region as hand-edited. `attach`'s own write stays and is idempotent;
+    what changes is the withdrawal. A `detach` that dropped a region the manifest records would
+    take a line out of a *committed* file that `init` put there, and `upgrade` would then read
+    the footprint as hand-edited on a repository nobody edited.
+
+    The manifest is the authority because it is the only record of who wrote the region that
+    survives the region being written twice. There is no new ledger field: the attach ledger is
+    per-checkout and untracked, and the question "whose region is this" is answered for every
+    clone by the committed manifest.
+
+    Mutation: `mutations.toml`'s "detach withdraws a region the footprint owns".
+    """
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    (root / GITIGNORE).write_text(
+        "node_modules/\n" + upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH), encoding="utf-8"
+    )
+    Manifest(
+        {
+            "gitignore": Record(
+                "gitignore",
+                Kind.MANAGED_REGION,
+                Location.REPO,
+                GITIGNORE,
+                "gitignore",
+                "0.1.0",
+                digest(IGNORE_BODY),
+            )
+        }
+    ).write(root)
+    _attach(root, store, machine, tmp_path / "home", confirmed=True)
+    removed = _detach(root, machine, tmp_path / "home")
+    text = (root / GITIGNORE).read_text(encoding="utf-8")
+    assert removed.ignore_region_removed is False
+    assert text.startswith("node_modules/\n")
+    assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY
+
+
+def _newer_format(manifest: Path, outside: Path) -> None:
+    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
+
+
+def _not_utf8(manifest: Path, outside: Path) -> None:
+    manifest.write_bytes(b'{"a": "\xff"}')
+
+
+def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
+    manifest.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+
+def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:
+    outside.write_text("{}", encoding="utf-8")
+    manifest.symlink_to(outside)
+
+
+@pytest.mark.parametrize(
+    "commit",
+    [_newer_format, _not_utf8, _nested_past_the_stack, _symlinked_out_of_the_root],
+    ids=lambda commit: commit.__name__.lstrip("_"),
+)
+def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
+    tmp_path: Path, commit: Callable[[Path, Path], None]
+) -> None:
+    """A repository may not disable the command that undoes an attach.
+
+    `.keelline/manifest.json` is **tracked** -- the ignore region covers `.keelline/local/` and
+    `.keelline/assessment.json` and nothing else -- so a clone commits whatever it likes there,
+    and `Manifest.read` refuses one that is unreadable, is not an object, or declares a `format`
+    past this Keelline's. `attach` never reads the file, so a clone shipping `{"format": 99}`
+    attached cleanly, merged the owner's allow rules and hook entries, and then made `detach`
+    exit 2 on every run for ever: the ownership question is asked above every withdrawal, so
+    nothing was half-undone and nothing could ever be undone either.
+
+    Refusing with a better sentence is not the answer, because the act it would name is
+    "delete a tracked file out of somebody else's repository". An unreadable manifest is read
+    as no claim this command will act on and no claim it will act against: the region stays,
+    which is the conservative half, and the detach finishes. Everything else comes back, which
+    is what the settings file and the ledger assert here.
+
+    The first fix caught `ManifestError` alone, and a clone has three other ways to make the
+    read fail: bytes that are not UTF-8 (`UnicodeDecodeError`, a `ValueError` the reader did not
+    name), nesting deep enough to exhaust the parser's stack (`RecursionError`), and a manifest
+    committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
+    one made the detach exit 2 exactly as `{"format": 99}` had.
+
+    Mutations: `mutations.toml`'s "an unreadable manifest blocks the detach again" and "the
+    manifest reader lets undecodable bytes out as a crash again".
+    """
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home, confirmed=True)
+    assert (root / LEDGER).is_file()
+    # Written after the attach, exactly as a clone's committed one is there before a later
+    # `detach` and never read by the run that wrote the ledger.
+    manifest = root / MANIFEST_PATH
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    commit(manifest, tmp_path / "outside.json")
+    removed = _detach(root, machine, home)
+    assert not (root / LEDGER).exists()
+    assert removed.allow_removed == (RULE,)
+    # The conservative half: ownership could not be established, so the block is left alone and
+    # the result says so rather than claiming a withdrawal it did not make.
+    assert removed.ignore_region_removed is False
+    assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)

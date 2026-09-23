@@ -1,8 +1,10 @@
 """What `doctor` answers about an installation, and what it refuses to guess (§8.4).
 
-Two of the fifteen checks cannot be answered by this build and say so rather than guessing;
-one of them — `codex-trust` — is a platform question §10 lists as unmeasured, and a check that
+One of the sixteen checks cannot be answered by this build and says so rather than guessing:
+`codex-trust`, a platform question §10 lists as unmeasured, and a check that
 returned green because it could not look would be strictly worse than one that admits it.
+`ci-ref` used to be counted beside it; `init` writes `[ci] ref`, so its skip reports a state of
+the repository and not a limit of this build.
 
 `git` is required by the fixtures below rather than by the code under test: an attached
 repository is one whose `origin` the overlay recorded, and `read_binding` compares the two.
@@ -11,10 +13,12 @@ The same `pytestmark` `tests/attach` carries, for the same reason.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import pty
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,18 +26,26 @@ from pathlib import Path
 import pytest
 
 import keelline
+from keelline import REPOSITORY_URL
 from keelline.attach.api import LEDGER, LOCAL_SETTINGS
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
-from keelline.doctor.checks import SETTINGS_FILES, plugin_root
+from keelline.doctor.checks import (
+    SETTINGS_FILES,
+    WORKFLOW,
+    WORKFLOW_MAX_BYTES,
+    plugin_root,
+)
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
 from keelline.memory.api import PROJECT_RECORD, PROJECTS, resolve
+from keelline.memory.store import overlay_root
 from keelline.memory.trust import record
-from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
+from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY, PLUGIN_MANIFEST
 from keelline.release.api import HASHED_FILES
 from keelline.runner import Completed
 from tests.gitfixture import git as _git
+from tests.overlay.test_requires import overlay_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -75,11 +87,12 @@ class _Stub:
     """A `Runner` that records argv and answers, so no test reaches a real binary."""
 
     code: int = 0
+    stdout: str = ""
     calls: list[list[str]] = field(default_factory=list)
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
         self.calls.append(argv)
-        return Completed(self.code, "", "")
+        return Completed(self.code, self.stdout, "")
 
 
 def _stub(code: int = 0) -> _Stub:
@@ -101,11 +114,22 @@ def _checks(
     and a case that forgets it hands the developer's real `HOME` to the `wrapper` check's
     subprocess and their real `${CLAUDE_PLUGIN_DATA}` to `diagnostics`. Defaulting it here is
     what makes forgetting impossible rather than merely discouraged.
+
+    **`machine` is defaulted here for the same reason, and it was the hole that rule was written
+    to close.** `None` does not mean "no machine file" to the code under test: `_context` hands
+    it to `overlay_root`, which resolves `None` as `Path.home()/.config/keelline/config.toml` —
+    the *process* `HOME`, which the `env` dict above cannot reach. On any machine that has run
+    `keelline setup --overlay`, and this project's own developers are exactly those machines,
+    every case that omitted `machine` read the developer's real overlay: `context.overlay` was
+    their overlay root, `overlay-requires` read its real manifest, and `bundles`, `store-debris`
+    and `attached` resolved against their real note store. Those cases passed here and in CI
+    only because neither machine happens to have a machine configuration. A path under
+    `tmp_path` that does not exist is what `None` was meant to mean, and now says it.
     """
     return run_checks(
         root,
         home=tmp_path / "home" if home is None else home,
-        machine=machine,
+        machine=tmp_path / "no-machine.toml" if machine is None else machine,
         runner=_stub() if runner is None else runner,
         env=_env(tmp_path) if env is None else env,
     )
@@ -245,7 +269,7 @@ def _attached(tmp_path: Path) -> Path:
 def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_rest(
     tmp_path: Path,
 ) -> None:
-    # §12: "No keelline.toml → plugin hooks silent; doctor reports 'not initialised'." Fifteen
+    # §12: "No keelline.toml → plugin hooks silent; doctor reports 'not initialised'." Sixteen
     # red checks for a repository that never heard of Keelline is noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
@@ -257,7 +281,7 @@ def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
     # A check that raises takes the whole report with it, and a report that cannot run is worth
     # less than a report with one skip line in it.
     checks = _checks(tmp_path, _initialised(tmp_path))
-    assert len(checks) == 15
+    assert len(checks) == 16
     assert all(check.status in {"ok", "warn", "red", "skip"} for check in checks)
 
 
@@ -1017,44 +1041,6 @@ def test_an_overlay_git_cannot_answer_about_is_a_warning_and_never_a_red_row(
     assert "hooks directory" in check.detail
 
 
-def test_a_recorded_ci_ref_is_asked_of_the_remote_through_the_runner(tmp_path: Path) -> None:
-    # §8.4 names the mechanism — `git ls-remote --exit-code` — and the runner is the seam that
-    # keeps it out of a test's way. The ref itself is repository-authored and is never printed.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__) + '\n[ci]\nref = "o/r/.github/w.yml@v1"\n',
-        encoding="utf-8",
-    )
-    runner = _stub(code=2)
-    check = _by_name(
-        _checks(tmp_path, root, runner=runner),
-        "ci-ref",
-    )
-    assert check.status == "red"
-    assert runner.calls == [["git", "ls-remote", "--exit-code", "--", "o/r/.github/w.yml@v1"]]
-    assert "o/r" not in check.detail
-
-
-def test_a_ci_ref_naming_a_transport_helper_never_reaches_git(tmp_path: Path) -> None:
-    # `[ci] ref` is type-checked as `str` and nothing more, and it is the sole variable argument
-    # this area hands `git`. `--` stops it becoming an *option*; it does not stop it becoming a
-    # *transport*, and `ext::<command>` makes `git ls-remote` run a program the repository
-    # chose. git 2.54 refuses `ext::` under its default `protocol.ext.allow` (verified locally),
-    # which is git's guard and not this project's: it is absent on an older git and off under
-    # `protocol.ext.allow=always`. The answer must not depend on which git is installed.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__)
-        + '\n[ci]\nref = "ext::sh -c touch% /tmp/pwned"\n',
-        encoding="utf-8",
-    )
-    runner = _stub()
-    check = _by_name(_checks(tmp_path, root, runner=runner), "ci-ref")
-    assert check.status == "red"
-    assert runner.calls == []
-    assert "sh -c" not in check.detail and "ext::" not in check.detail
-
-
 def test_a_budget_the_project_tried_to_raise_is_named(tmp_path: Path) -> None:
     # D7: "a project may lower a budget below the preset and never raise it". A value above the
     # preset is ignored rather than refused, so without this check nothing ever says that the
@@ -1129,6 +1115,16 @@ def test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command
     )
     assert check.status == "warn"
     assert "uv tool install" in check.remedy
+    # The address is `keelline.REPOSITORY_URL` and not a second spelling of it. This branch
+    # added that constant "spelled once (DC7)" and `overlay-requires`' remedy a few rows below
+    # reads it, while this one still carried the URL written out -- two places to change when
+    # the repository moves, in the command whose job is finding the halves of something that
+    # has stopped agreeing. Asserted against the source and not only against the text, because
+    # an identical literal satisfies the text.
+    #
+    # Mutation: `mutations.toml`'s "the cli-path remedy spells the repository URL again".
+    assert f"git+{REPOSITORY_URL}" in check.remedy
+    assert REPOSITORY_URL not in inspect.getsource(checks._cli_path)
 
 
 def test_an_environment_with_no_path_at_all_resolves_nothing(tmp_path: Path) -> None:
@@ -1165,24 +1161,6 @@ def test_a_budget_the_project_lowered_is_reported_green_and_named(tmp_path: Path
     assert _by_name(_checks(tmp_path, _initialised(tmp_path)), "budgets").detail == (
         "every budget is the preset's"
     )
-
-
-def test_a_ci_ref_git_could_not_be_asked_about_is_a_warning_and_never_a_red_row(
-    tmp_path: Path,
-) -> None:
-    # `git ls-remote --exit-code` answers 2 for "the ref is not there" and 0 for "it is". Every
-    # other exit code is `git` itself having failed — no network, no binary, a credential prompt
-    # that timed out — which is a fact about this machine and not about `[ci] ref`. Calling it
-    # red makes `doctor` exit 1 on an aeroplane. The arm existed and nothing ran it.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__) + '\n[ci]\nref = "o/r/.github/w.yml@v1"\n',
-        encoding="utf-8",
-    )
-    check = _by_name(_checks(tmp_path, root, runner=_stub(code=128)), "ci-ref")
-    assert check.status == "warn"
-    assert "128" in check.detail
-    assert "o/r" not in check.detail
 
 
 def test_a_note_store_holding_something_that_is_not_a_note_is_reported(tmp_path: Path) -> None:
@@ -1291,7 +1269,9 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # module and keeps the red the row exists for.
     #
     # Mutation: `mutations.toml`'s "doctor renders an unreadable file as a broken check".
-    context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
+    context = checks.Context(
+        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+    )
 
     def cannot_read(_: checks.Context) -> checks.Row:
         raise PermissionError(13, "Permission denied")
@@ -1318,7 +1298,9 @@ def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # wording is prose, the presence is the guarantee.
     #
     # Mutation: `mutations.toml`'s "the plugin-root skips go back to an empty remedy".
-    context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
+    context = checks.Context(
+        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+    )
     assert context.plugin_root is None and context.own_root is None
     for check in (checks._files(context), checks._wrapper(context)):
         assert check.status == checks.SKIP, check
@@ -1434,7 +1416,7 @@ def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
     rows = _checks(tmp_path, root, machine=_machine(tmp_path))
     # Non-vacuous: the report ran and answered about every row.
-    assert len(rows) == 15
+    assert len(rows) == 16
     assert not any(row.status == "red" for row in rows), [
         (row.name, row.detail) for row in rows if row.status == "red"
     ]
@@ -1476,31 +1458,6 @@ def test_the_wrapper_probe_never_inherits_this_process_stdin(
     assert saw.read_text(encoding="utf-8").strip() == "closed"
 
 
-def test_an_ipv6_literal_in_a_ci_ref_is_not_a_transport_helper(tmp_path: Path) -> None:
-    # `TRANSPORT_HELPER` was `"::"`, asked with `in` — and `::` is also how a legal IPv6 literal
-    # is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red as "names a git
-    # transport helper" and the remedy told the machine owner to replace a URL that was already
-    # correct. A false finding is more expensive in this command than anywhere else: `doctor`'s
-    # entire value is that what it reports is true. git decides this in `transport_get` by
-    # taking a helper only when `::` follows the leading run of URL-scheme characters, which is
-    # the parse now matched.
-    root = _initialised(tmp_path)
-    (root / CONFIG_FILE).write_text(
-        LOCAL_ONLY.format(version=keelline.__version__)
-        + '\n[ci]\nref = "ssh://user@[2001:db8::1]/repo.git"\n',
-        encoding="utf-8",
-    )
-    runner = _stub()
-    check = _by_name(_checks(tmp_path, root, runner=runner), "ci-ref")
-    # Which arm answered, not merely that it is not red: the ref must have reached the runner,
-    # because "refused before the runner sees it" is the behaviour being denied here.
-    assert check.status != "red"
-    assert runner.calls, "the ref never reached `git ls-remote`, so it was refused after all"
-    assert runner.calls == [
-        ["git", "ls-remote", "--exit-code", "--", "ssh://user@[2001:db8::1]/repo.git"]
-    ]
-
-
 def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # D2 (DC3): a check used to build `Check("files", ...)` on every one of its return paths,
     # up to seven times, and the registry spelled the name an eighth time. A row that
@@ -1521,7 +1478,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     ]
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 15
+    assert len(names) == 16
     counted = {name: literals.count(name) for name in names}
     assert counted == dict.fromkeys(names, 1), counted
 
@@ -1879,3 +1836,487 @@ def test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml(tmp_pa
     assert all(row.status == SKIP for row in rows[1:]), [
         (row.name, row.status) for row in rows[1:] if row.status != SKIP
     ]
+
+
+def _recorded_overlay(tmp_path: Path, requires: object) -> Path:
+    """A machine file recording an overlay whose manifest declares `requires`.
+
+    The manifest writer is `tests/overlay/test_requires.py::overlay_with`, shared rather than
+    respelled: one spelling of the declaration the two readers of it are tested against.
+    """
+    overlay = overlay_with(tmp_path / "overlay", requires)
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    return machine
+
+
+UNMET = "the overlay requires Keelline >=99.0.0 and {running} does not satisfy it"
+
+
+def test_overlay_requires_is_red_when_a_bound_project_needs_a_newer_keelline(
+    tmp_path: Path,
+) -> None:
+    # Red because this project keeps its notes in the overlay, so the floor it declares is this
+    # installation's business. Mutation (comment; the verdict's own arm): `if not verdict` ->
+    # `if verdict` -> this and the ok case swap verdicts. The red-versus-warn split below has an
+    # oracle entry of its own.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    root = _initialised(tmp_path, template=OVERLAY)
+    row = _by_name(_checks(tmp_path, root, machine=machine), "overlay-requires")
+    assert row.status == RED
+    assert row.detail == UNMET.format(running=keelline.__version__)
+    assert "uv tool install" in row.remedy
+
+
+def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor(
+    tmp_path: Path,
+) -> None:
+    # DC2's own sentence, which is why this requirement has a row of its own rather than being
+    # folded into `versions`: "a `local-only` project on a machine that records an overlay must
+    # not go red for a requirement it has no relationship with". The finding is the same finding
+    # and says the same thing; only the level moves, because red gates the exit code and wave 5's
+    # `assess` is planned to gate on it. Asserted as the level AND the whole text, so this case
+    # cannot pass for the red case's reason or vice versa.
+    #
+    # Mutation (declared): `unmet = RED if ... else WARN` -> `unmet = RED`.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == WARN
+    assert row.detail == UNMET.format(running=keelline.__version__)
+    assert "uv tool install" in row.remedy
+
+
+def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overlay(
+    tmp_path: Path,
+) -> None:
+    machine = _recorded_overlay(tmp_path, " >=0.0.1 ")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == OK and ">=0.0.1" in row.detail and " >=0.0.1 " not in row.detail
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
+    assert row.status == SKIP
+
+
+def test_no_case_here_can_read_the_developers_own_machine_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_checks`'s hermetic defaults, proved on the one that was missing.
+
+    `machine` defaulted to `None`, and `None` is not "no machine file" to the code under test:
+    `_context` hands it to `overlay_root`, which resolves `None` as
+    `Path.home()/.config/keelline/config.toml` — the **process** `HOME`, which the `env` dict
+    this helper passes cannot reach. So on any machine that has run `keelline setup --overlay`,
+    and this project's own intended users are exactly those machines, every case that omitted
+    `machine` read the developer's real overlay: `context.overlay` was their overlay root,
+    `overlay-requires` read its real manifest — the shipped template declares a floor — and
+    `bundles`, `store-debris` and `attached` resolved against their real note store. Those cases
+    passed here and in CI only because neither machine happens to have a machine configuration.
+
+    Asserted so that the default coming back would redden it: a real machine configuration is
+    planted at a `HOME` this test owns, `machine_config_path` is asked to confirm that `None`
+    really would resolve to it, and the row that would change its answer is then required to
+    skip. `_checks` is called with no `machine=`, which is the shape every case in the list
+    above has.
+    """
+    from keelline.config.machine import machine_config_path
+
+    home = tmp_path / "developer-home"
+    (home / ".config" / "keelline").mkdir(parents=True)
+    overlay = overlay_with(tmp_path / "their-overlay", ">=0.0.1")
+    (home / ".config" / "keelline" / "config.toml").write_text(
+        f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("HOME", str(home))
+    expected = home / ".config" / "keelline" / "config.toml"
+    assert machine_config_path(interactive=False) == expected, "the planted file is not reachable"
+    assert overlay_root(expected) == overlay, "the planted file records no overlay"
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path)), "overlay-requires")
+    assert row.status == SKIP, row
+
+
+def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
+    machine = _recorded_overlay(tmp_path, "~=1.0")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == WARN and PLUGIN_MANIFEST in row.remedy
+
+
+def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
+    # DC2's reason for a row of its own: the verdict is the machine's, so the `versions` row
+    # stays about the project and never goes red for this.
+    #
+    # And the consequence the decision is actually about, asserted over the whole report rather
+    # than over one row: `doctor` does not exit 1 here. `overlay-requires` was measured as the
+    # only red row this fixture produced while the unmet arm was unconditional, so this
+    # assertion is the exit code and not a restatement of the case above.
+    machine = _recorded_overlay(tmp_path, ">=99.0.0")
+    checks = _checks(tmp_path, _initialised(tmp_path), machine=machine)
+    assert _by_name(checks, "versions").status == OK
+    assert [check.name for check in checks if check.status == RED] == []
+    assert len(checks) == 16
+
+
+# The two shas a listing can carry and one it cannot: `RELEASED` is what `v0.1.0` names,
+# `ALIAS_SHA` is what the mutable `v1` names, and `UNRELEASED` is named by no tag at all.
+RELEASED, UNRELEASED, ALIAS_SHA = "c" * 40, "d" * 40, "e" * 40
+LISTING = f"{RELEASED}\trefs/tags/v0.1.0\n{ALIAS_SHA}\trefs/tags/v1\n"
+# Not 2: `git ls-remote --exit-code` exits 2 for "no matching refs", which `released` reads as
+# "no tags", an answer. 128 is `git` itself having failed, which is the arm that warns.
+GIT_FAILED = 128
+
+
+def _configured(
+    tmp_path: Path, ref: str, *, workflow_ref: str | None = None, mode: str = "reusable"
+) -> Path:
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        (root / CONFIG_FILE).read_text(encoding="utf-8")
+        + f'\n[ci]\nmode = "{mode}"\nref = "{ref}"\n',
+        encoding="utf-8",
+    )
+    if workflow_ref is not None:
+        (root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        (root / ".github" / "workflows" / "keelline.yml").write_text(
+            f"jobs:\n  check:\n    uses: o/r/.github/workflows/check.yml@{workflow_ref} # v0.1.0\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def test_a_released_commit_is_ok_and_an_unreleased_one_is_red(tmp_path: Path) -> None:
+    # Mutation (oracle): `if not is_a_release` -> `if is_a_release` -> both arms swap.
+    stub = _stub()
+    stub.stdout = LISTING
+    # The workflow is written here and not left out: a repository with no workflow file has its
+    # own row below, and this case is about what the public repository's tags say.
+    ok = _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref=RELEASED), runner=stub)
+    assert _by_name(ok, "ci-ref").status == OK
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, UNRELEASED), runner=stub), "ci-ref")
+    assert row.status == RED and "released" in row.detail
+    assert stub.calls[0] == ["git", "ls-remote", "--exit-code", REPOSITORY_URL, "refs/tags/v*"]
+
+
+def test_a_value_that_is_neither_a_sha_nor_the_alias_is_red_without_a_subprocess(
+    tmp_path: Path,
+) -> None:
+    stub = _stub()
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, "ext::sh -c id"), runner=stub), "ci-ref")
+    assert row.status == RED and "40-character" in row.detail and stub.calls == []
+    # And the value is not quoted back on the way out: it is repository-authored, and this is
+    # the arm a repository reaches by writing something `git` would have run as a program.
+    assert "ext::" not in row.detail and "ext::" not in row.remedy
+
+
+def test_the_alias_is_a_warning_that_names_it_mutable(tmp_path: Path) -> None:
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path / "alias", "v1", workflow_ref="v1")
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "mutable" in row.detail
+    stub = _stub(code=GIT_FAILED)
+    root = _configured(tmp_path / "unaskable", RELEASED, workflow_ref=RELEASED)
+    unaskable = _checks(tmp_path, root, runner=stub)
+    assert _by_name(unaskable, "ci-ref").status == WARN
+    assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
+
+
+def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_path: Path) -> None:
+    """The two arms of the alias no case reached, one of which gates the exit code.
+
+    `[ci] ref = "v1"` is the documented mutable opt-in, judged against the public repository's own
+    tag listing. Measured with `--cov-report=term-missing` over `tests/doctor tests/overlay
+    tests/release` before this case: the alias's "the listing could not be asked for" arm and its
+    "the listing carries no such tag" arm were both unexecuted. The second is `RED` — the status
+    `doctor` turns into exit 1, which `tests/doctor/test_command.py::test_any_red_check_exits_one`
+    holds — so the one verdict here that fails a run had no case at all, on a value a repository
+    writes into its own `keelline.toml` by hand.
+
+    Mutation (oracle): `if ALIAS not in tags:` -> `if False:` -> the alias that names nothing is
+    reported as the mutable opt-in and the first half reddens. The unaskable half is advisory and
+    ships no entry: `warn` reaches neither the exit code nor anything that reads a verdict as
+    permission, and the sha arm beside it already answers the same way for the same reason.
+    """
+    # Every released tag and no `v1` among them: the alias this repository pinned names nothing,
+    # so no gate is running the commit it thinks it is.
+    stub = _stub()
+    stub.stdout = f"{RELEASED}\trefs/tags/v0.1.0\n"
+    root = _configured(tmp_path / "missing", "v1", workflow_ref="v1")
+    missing = _checks(tmp_path, root, runner=stub)
+    row = _by_name(missing, "ci-ref")
+    assert row.status == RED and "no such tag" in row.detail
+    assert "ci-ref" in [check.name for check in missing if check.status == RED]
+    # `git` itself having failed is a fact about this machine and not about `[ci] ref`, so this
+    # arm warns exactly as the sha arm beside it does — the split `_guarded` makes everywhere.
+    absent = _configured(tmp_path / "unaskable", "v1", workflow_ref="v1")
+    unaskable = _checks(tmp_path, absent, runner=_stub(code=GIT_FAILED))
+    assert _by_name(unaskable, "ci-ref").status == WARN
+    assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
+
+
+# The join the FIFO case gives the row, and the only wall-clock number in this module. Six seconds
+# rather than one: it separates "answered" from "never answers", so it needs to be long enough that
+# no amount of machine load reads as the defect and short enough that the defect is not a hung
+# suite. The guarded row answers in milliseconds.
+_FIFO_CEILING_SECONDS = 6.0
+
+
+def test_a_workflow_that_is_not_a_regular_file_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """A path that is there and is not a file is no evidence of agreement.
+
+    A directory where the workflow should be is the shape a repository reaches this with, and it
+    used to arrive through the `OSError` arm naming `IsADirectoryError` — an assertion on one
+    platform's spelling of the fault, which this project's CI (Linux and macOS) happened to make
+    true. The `is_file()` guard answers it above the open instead, so what the row names is this
+    module's own sentence and its own `WORKFLOW` constant, and nothing about the host.
+
+    Advisory rather than an oracle entry, for the reason
+    `test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence` gives beside it:
+    the arm warns, and `warn` reaches neither the exit code nor anything downstream that reads a
+    verdict as permission. The guard itself has an oracle entry, reddening the case below.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.unlink()
+    workflow.mkdir()
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "is not a regular file" in row.detail
+    assert WORKFLOW in row.detail
+    # The ref is repository-authored and is not quoted back on this arm either.
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+    # And a dangling symlink is the same arm: `exists()` follows the link and answers False, so
+    # `is_symlink()` is what keeps it out of the "no workflow at all" sentence one line below.
+    workflow.rmdir()
+    workflow.symlink_to(root / "nowhere.yml")
+    dangling = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert dangling.status == WARN and "is not a regular file" in dangling.detail
+
+
+def test_a_workflow_that_cannot_be_opened_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """The `OSError` arm, which the `is_file()` guard leaves for a regular file that will not open.
+
+    Reached with a mode rather than with a type, which is the one shape left: `is_file()` is true
+    and the open fails. **Platform-dependent on purpose, and guarded rather than assumed** — this
+    project's CI is Linux and macOS, where a 0o000 file is unreadable by its non-root owner, but a
+    run as root or on a filesystem that ignores the mode can read it anyway, and the case says so
+    by asking `os.access` instead of believing the `chmod`.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.chmod(0o000)
+    if os.access(workflow, os.R_OK):
+        workflow.chmod(0o644)
+        pytest.skip("this process can read a 0o000 file, so the unopenable arm is not reachable")
+    try:
+        row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    finally:
+        workflow.chmod(0o644)
+    assert row.status == WARN and "could not be read" in row.detail
+    assert WORKFLOW in row.detail
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+
+
+def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> None:
+    """A committed symlink to a FIFO at the workflow path used to stop `doctor` returning.
+
+    `read_text` on a FIFO with no writer blocks for ever, and this path is repository-authored:
+    a clone chooses what sits at `.github/workflows/keelline.yml`. Measured before the
+    `is_file()` guard, on a real FIFO in a thread with a six-second join: the row did not come
+    back. `doctor` is documented as a one-line diagnostic and has no timeout of its own, so the
+    guard is the whole of the fix.
+
+    The ceiling is wall-clock, which the repository keeps for the case it cannot avoid
+    (`tests/guards/test_bgcleanup.py` says so of its own three seconds). It only has to separate
+    "returned" from "never returns": the guarded row answers in milliseconds, and the unguarded
+    one answers at no time at all, so load on the machine cannot move the verdict. The row is
+    run in a daemon thread because a test that hangs is not a test that fails.
+
+    Mutation (oracle entry "doctor reads the rendered workflow without asking what it is"): the
+    `is_file()` guard is removed -> this case fails on the join.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.unlink()
+    target = root / ".github" / "workflows" / "pipe"
+    os.mkfifo(target)
+    workflow.symlink_to(target)
+    answered: list[Check] = []
+    thread = threading.Thread(
+        target=lambda: answered.append(_by_name(_checks(tmp_path, root, runner=stub), "ci-ref")),
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout=_FIFO_CEILING_SECONDS)
+    assert not thread.is_alive(), (
+        f"the ci-ref row did not return within {_FIFO_CEILING_SECONDS}s with a FIFO at {WORKFLOW}"
+    )
+    assert answered[0].status == WARN and "is not a regular file" in answered[0].detail
+
+
+def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
+    """Over the bound is an answer, and it is not "the workflow agrees".
+
+    The read is `WORKFLOW_MAX_BYTES + 1` bytes, the shape `_diagnostics` reads its log with: a
+    file past the cap is not one `init` rendered, and a `uses:` line beyond it would be compared
+    against bytes nobody read. The fixture pins the *pinned* ref first, so the arm can only be
+    the cap — a file that agrees would otherwise be green either way.
+
+    What this case pins is the *arm* and not the number of bytes held to reach it: a bounded read
+    and an unbounded one answer `len(raw) > WORKFLOW_MAX_BYTES` alike, so no assertion here can
+    tell them apart. Measured, not assumed — the oracle entry's first spelling replaced
+    `handle.read(WORKFLOW_MAX_BYTES + 1)` with `handle.read()` and survived. The entry is on the
+    comparison instead, and says so.
+
+    Mutation (oracle entry "doctor reads the rendered workflow with no bound of its own"): the cap
+    comparison is deleted -> this case fails on the status.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8") + "#" + "p" * WORKFLOW_MAX_BYTES + "\n",
+        encoding="utf-8",
+    )
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "larger than" in row.detail
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+    # Non-vacuous: one byte under the cap is read, and the same file is green.
+    under = _configured(tmp_path / "under", RELEASED, workflow_ref=RELEASED)
+    padded = under / WORKFLOW
+    body = padded.read_text(encoding="utf-8")
+    padded.write_text(body + "#" + "p" * (WORKFLOW_MAX_BYTES - len(body) - 2) + "\n", "utf-8")
+    assert len(padded.read_bytes()) == WORKFLOW_MAX_BYTES
+    assert _by_name(_checks(tmp_path, under, runner=stub), "ci-ref").status == OK
+
+
+def test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared(tmp_path: Path) -> None:
+    """A strict decode made a repository able to force a red row that said nothing.
+
+    `read_text(encoding="utf-8")` raises `UnicodeDecodeError`, a `ValueError`, which no arm here
+    caught: it reached `_guarded` as `ci-ref: red — this check could not run
+    (UnicodeDecodeError)` and exit 1, from a file the row's own rule says must be named rather
+    than absolved. The read is bytes and the decode replaces, so the pin is still compared and
+    the stray byte cannot forge a sha — `_USES` bounds what is compared and nothing read is
+    printed.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    workflow = root / WORKFLOW
+    workflow.write_bytes(workflow.read_bytes() + b"# \xff\xfe not utf-8\n")
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == OK and "released" in row.detail
+
+
+def test_a_workflow_that_pins_something_else_is_red(tmp_path: Path) -> None:
+    # The pin GitHub acts on is the file. Mutation (comment): skip the workflow comparison ->
+    # this reddens.
+    stub = _stub()
+    stub.stdout = LISTING
+    row = _by_name(
+        _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref="main"), runner=stub),
+        "ci-ref",
+    )
+    assert row.status == RED and "workflow pins a different ref" in row.detail
+    row = _by_name(
+        _checks(tmp_path, _configured(tmp_path, RELEASED, workflow_ref=RELEASED), runner=stub),
+        "ci-ref",
+    )
+    assert row.status == OK
+    # `finditer` and not `search`: a recognisable pin that follows an unrecognised `uses:` line
+    # is still the pin GitHub acts on, and a `search` that stopped at the first line would report
+    # a workflow that agrees as one that does not.
+    root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
+    (root / ".github" / "workflows" / "keelline.yml").write_text(
+        "jobs:\n  lint:\n    uses: o/r/.github/workflows/other.yml@main\n"
+        f"  check:\n    uses: o/r/.github/workflows/check.yml@{RELEASED} # v0.1.0\n",
+        encoding="utf-8",
+    )
+    assert _by_name(_checks(tmp_path, root, runner=stub), "ci-ref").status == OK
+
+
+def test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green(tmp_path: Path) -> None:
+    """A missing file is no more evidence of agreement than an unrecognised one.
+
+    The `FileNotFoundError` arm returned the ref's own verdict, so a repository with
+    `[ci] mode = "reusable"`, a released sha recorded and no `.github/workflows/keelline.yml`
+    reported `ok`: "[ci] ref is a released Keelline commit". A reader takes that for "my gate is
+    pinned correctly" when no gate exists at all — the same false green the `not pinned` arm
+    eleven lines below already refuses by name. It is the state `init` itself leaves whenever it
+    reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the file.
+
+    `[ci] mode` is what tells the cases apart, and the `none` arm is asserted beside it: under a
+    mode this build renders no workflow for, an absent workflow is the configuration working.
+
+    Mutation (oracle): `if context.config.ci.mode == "reusable":` -> `if False:` -> the first
+    case goes back to `ok` and reddens.
+    """
+    stub = _stub()
+    stub.stdout = LISTING
+    row = _by_name(_checks(tmp_path, _configured(tmp_path, RELEASED), runner=stub), "ci-ref")
+    assert row.status == WARN, row
+    assert WORKFLOW in row.detail and "is not there at all" in row.detail
+    assert row.remedy and WORKFLOW in row.remedy
+    # No byte of this repository's own configuration is quoted back, ref included.
+    assert RELEASED not in row.detail and RELEASED not in row.remedy
+    quiet = _configured(tmp_path / "off", RELEASED, mode="none")
+    assert _by_name(_checks(tmp_path, quiet, runner=stub), "ci-ref").status == OK
+
+
+def test_a_workflow_that_pins_nothing_this_build_recognises_is_never_silence(
+    tmp_path: Path,
+) -> None:
+    # A file that was read and not recognised used to leave the ref's own verdict standing, which
+    # a reader takes for "the workflow agrees" -- the false green the `OSError` arm beside it
+    # already refuses to produce.
+    #
+    # Advisory rather than an oracle entry: the arm warns, and `warn` reaches neither the exit
+    # code nor anything downstream that reads a verdict as permission. Mutation (comment): return
+    # `row` instead of the warning -> this reddens on the status.
+    stub = _stub()
+    stub.stdout = LISTING
+    root = _configured(tmp_path, RELEASED, workflow_ref="main")
+    (root / ".github" / "workflows" / "keelline.yml").write_text(
+        "jobs:\n  check:\n    uses: o/r/.github/workflows/other.yml@main\n", encoding="utf-8"
+    )
+    row = _by_name(_checks(tmp_path, root, runner=stub), "ci-ref")
+    assert row.status == WARN and "no `uses:` line this build recognises" in row.detail
+    # The file is repository-authored and none of it is quoted back.
+    assert "o/r" not in row.detail and "other.yml" not in row.detail
+
+
+def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: Path) -> None:
+    """Two states, two sentences, and the same two in both rows that ask.
+
+    `overlay_root` answers `None` for a machine that records no overlay -- the ordinary state
+    before `keelline setup` has run -- and a `Path` for a recorded root whether or not anything
+    is there. `pre-commit` and `overlay-requires` collapsed the two into
+    `overlay is None or not overlay.is_dir()` and told both "no overlay root is recorded on this
+    machine", which is false of the second and leaves the owner nothing to act on: the overlay
+    is where the notes live, and a recorded root that is gone breaks the store too.
+
+    The sentences come from `_overlay_absent` so the two rows cannot drift -- `overlay-requires`'
+    arm was a byte-for-byte copy of `pre-commit`'s, which is how it inherited the defect -- and
+    `PLUGIN_ROOT_REMEDY`'s rule, "one constant because both rows must say the same thing", is the
+    one being read onto this pair.
+
+    Mutation: `mutations.toml`'s "the two overlay rows call a moved overlay an unrecorded one".
+    """
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{tmp_path / "moved-away"}"\n', encoding="utf-8")
+    root = _initialised(tmp_path)
+    assert overlay_root(machine) is not None, "the fixture records no overlay at all"
+    for name in ("pre-commit", "overlay-requires"):
+        row = _by_name(_checks(tmp_path, root, machine=machine), name)
+        assert row.status == SKIP, row
+        assert row.detail == checks.OVERLAY_GONE, row
+        assert row.remedy == checks.OVERLAY_GONE_REMEDY, row
+    # The other arm keeps the sentence it always had, and keeps carrying no remedy: a machine
+    # that has not run `keelline setup` is not a machine with something wrong on it.
+    for name in ("pre-commit", "overlay-requires"):
+        row = _by_name(_checks(tmp_path, root), name)
+        assert row.status == SKIP and row.detail == checks.NO_OVERLAY_RECORDED and not row.remedy

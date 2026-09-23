@@ -59,7 +59,7 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # §5.2: every command prints a one-line result. Fifteen rows on stdout would make `doctor`
+    # §5.2: every command prints a one-line result. Sixteen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
@@ -68,9 +68,48 @@ def test_a_clean_installation_exits_zero_with_one_line(
     assert len(out.strip().splitlines()) == 1
 
 
+def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one call this area makes that leaves the machine is bounded, and here is where it is.
+
+    `runner.NETWORK_TIMEOUT_SECONDS` is five minutes, written for `gh repo create --clone` and
+    the clone behind it. `doctor` inherited it for the `ci-ref` row's single `git ls-remote` —
+    and `keelline init` recording a `[ci] ref` is what made a five-minute block reachable on a
+    command §5.2 gives one line of output. The row's own `git` questions go through `gitenv`'s
+    five seconds and the wrapper probe through this module's thirty, so the bound here is the
+    module's own thirty and `checks.CI_REF_TIMEOUT_SECONDS` carries the argument for it.
+
+    Asserted where the runner is *built*, because that is the only place the choice exists: the
+    `Runner` protocol has no timeout and every stub in this suite is bounded at nothing. The
+    factory is imported inside `run_doctor`, so patching the module attribute is the seam.
+
+    Mutation (oracle entry "doctor asks the public repository with no bound of its own"):
+    `subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS)` -> `subprocess_runner()` -> this reddens
+    on the recorded keyword.
+    """
+    import keelline.runner as runner
+
+    asked: list[float | None] = []
+    real = runner.subprocess_runner
+
+    def spy(*, timeout: float | None = None) -> runner.Runner:
+        asked.append(timeout)
+        return real(timeout=timeout)
+
+    monkeypatch.setattr(runner, "subprocess_runner", spy)
+    root = _initialised(tmp_path)
+    assert invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")]) == 0
+    assert asked == [checks.CI_REF_TIMEOUT_SECONDS]
+    # And it is narrower than the seam's own default, which is the whole point of asking.
+    assert checks.CI_REF_TIMEOUT_SECONDS < runner.NETWORK_TIMEOUT_SECONDS
+
+
 def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Three checks skip in this build by construction (release hashes, Codex trust, [ci] ref).
-    # If a skip exited 1, `doctor` would be red on every correct installation until wave 5.
+    # One check cannot be answered by this build — the Codex hook-trust hash §10 lists as
+    # unmeasured — and `ci-ref` skips on a state this repository is in: it records no `[ci] ref`.
+    # (`files` was counted with the first until the release lane shipped the record it compares
+    # against.) If a skip exited 1, `doctor` would be red on every correct installation.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     assert code == 0
@@ -95,7 +134,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 15
+    assert len(report["checks"]) == 16
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -103,7 +142,7 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and fifteen checks is already past eight. Asserted over a
+    # off the end of the line, and sixteen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

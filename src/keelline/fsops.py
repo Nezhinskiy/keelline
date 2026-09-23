@@ -57,14 +57,59 @@ NEW_FILE_MODE = 0o644
 _DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _PARENT = ".."
 _HERE = "."
+# Git's control directory, reserved at every depth and in any case.
+#
+# **Where the anchor comes from.** The rule is "no component of a path *relative to a root* may
+# be git's control directory", and the root is the checkout a person handed the CLI — resolved
+# by `project.detect`, or passed on the command line. `.git` is git's own name inside that
+# root. So the party being contained is the clone, which authors the path string and can author
+# nothing else here: it cannot move `.git`, cannot choose the root, and cannot rename the
+# directory out from under this check.
+#
+# **Case-insensitively**, because the default filesystem on macOS is case-insensitive and
+# `.GIT/hooks/pre-commit` reaches the same file there; **at every depth**, because a `.git`
+# below the top is a submodule's control directory and is exactly as off-limits.
+#
+# **`.git` and not "a leading dot".** `.github/workflows/keelline.yml` is an artifact this
+# project ships and `.keelline/manifest.json` is its own ledger, so a leading-dot rule would
+# refuse Keelline's own footprint. `.gitignore`, `.gitattributes` and `.gitkeep` are ordinary
+# files and are untouched by an equality test on the whole component.
+#
+# The one place Keelline does write inside `.git` is `guards.githooks.install`, and it does not
+# come through here: git itself names the directory (`rev-parse --git-path hooks`), the result
+# is an absolute path this process computed, and the write is `write_atomically`, the plain-path
+# form for a caller that already holds a trusted path. No repository-authored string reaches it.
+CONTROL_DIRECTORY = ".git"
 
 
 class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
 
 
-def _checked(relative: str) -> tuple[str, ...]:
+def names_control_directory(relative: str) -> bool:
+    """Whether any component of `relative` is git's control directory, spelled in any case.
+
+    Public and separate from the walk, because two callers need the same answer and must not
+    each write their own version of it: `checked_components` refuses on it, and
+    `config.paths.validate_paths` asks it a key at a time so its refusal can name the key
+    without printing the repository-authored value. See `CONTROL_DIRECTORY` for the rule and
+    for where its anchor comes from.
+    """
+    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split("/"))
+
+
+def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
+
+    **Public, and the one place this rule lives.** `config.paths.contained()` used to carry a
+    second copy of it, written against `Path(relative).parts` — and the two agreed only about
+    the values nobody had to think about. Those parts are normalised, so `docs//x.md`,
+    `docs/x/` and `./docs` reached `contained()` as `('docs', 'x.md')`, `('docs', 'x')` and
+    `('docs',)`: a configured path that `plan()` reported no refusal for and that the walk below
+    then refused at the write, part-way through a pass, with earlier artifacts already on disk.
+    Two spellings of one rule is the defect; there is one spelling now, and `contained()` calls
+    it. That is also why this is not private: `contained()` is in a subpackage and this is a
+    leaf module, so the call goes this way and the leaf stays a leaf.
 
     The split is on the **raw string**, not on `PurePosixPath(relative).parts`. Those parts are
     already normalised — `.` and empty segments are dropped, a trailing slash disappears — so a
@@ -78,7 +123,15 @@ def _checked(relative: str) -> tuple[str, ...]:
     * `..`, which walks out one component at a time; and `.`, and an empty segment (`a//b`, a
       trailing slash), which are merely odd rather than dangerous — refused because this
       function's answer is what five later lanes will read as "contained", and a surface that
-      quietly rewrites its argument is a surface whose guarantee has to be restated per caller.
+      quietly rewrites its argument is a surface whose guarantee has to be restated per caller;
+    * and git's control directory, at any depth and in any case — see `CONTROL_DIRECTORY`.
+      Staying inside the root is not the whole of containment for a repository-scoped tool:
+      `.git/hooks/pre-commit` is inside every root Keelline is ever handed, and a clone that
+      pointed a `MANAGED_REGION` artifact at it had the developer's executable hook rewritten
+      in place, because `_mode_of` carries an existing file's 0755 onto the replacement. This
+      is the last line before the write, under `contained()` rather than instead of it, and it
+      covers the callers that never had a configured string to check — `attach`, `overlay` and
+      `hooks-core` all pass paths that `contained()` never sees.
     """
     if relative.startswith("/"):
         raise UnsafePath(f"{relative!r} is absolute; a path here must stay inside the root")
@@ -92,6 +145,11 @@ def _checked(relative: str) -> tuple[str, ...]:
             raise UnsafePath(
                 f"{relative!r} contains {part!r}; a path here must stay inside the root"
             )
+    if names_control_directory(relative):
+        raise UnsafePath(
+            f"{relative!r} names {CONTROL_DIRECTORY!r}; git's control directory is not a "
+            "repository-scoped tool's to write into"
+        )
     return parts
 
 
@@ -102,9 +160,9 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
     The caller writes through the descriptor, so nothing between this walk and the write can
     redirect it: `os.replace(..., src_dir_fd=fd, dst_dir_fd=fd)` never re-resolves the parent.
 
-    `relative` must stay inside `root` by its own spelling — see `_checked`.
+    `relative` must stay inside `root` by its own spelling — see `checked_components`.
     """
-    parts = _checked(relative)
+    parts = checked_components(relative)
     fd = os.open(root, _DIR_FLAGS)
     opened = [fd]
     try:
@@ -228,9 +286,10 @@ def mkdirs_within(root: Path, target: str) -> None:
     `overlay` and `hooks-core` all write files that are not `Template`s; a private helper
     leaves each of them to re-derive this, and the failure mode of getting it wrong is silent.
     """
-    # `_checked` and not `PurePosixPath(target).parts`, so the whole target is refused by
+    # `checked_components` and not `PurePosixPath(target).parts`, so the whole target is
+    # refused by
     # its own spelling before any directory is created, rather than one branch at a time.
-    parts = _checked(target)[:-1]
+    parts = checked_components(target)[:-1]
     for depth in range(len(parts)):
         branch = "/".join(parts[: depth + 1])
         with open_within(root, branch) as (dir_fd, name), contextlib.suppress(FileExistsError):

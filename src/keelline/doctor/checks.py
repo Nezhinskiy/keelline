@@ -1,4 +1,4 @@
-"""The fifteen checks an installation is judged by (§8.4), and the context they share.
+"""The sixteen checks an installation is judged by (§8.4), and the context they share.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label is "what this lane computed" while the detail "may quote the
@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 import keelline
+from keelline import REPOSITORY_URL
 from keelline.attach.api import (
     LEDGER,
     MISMATCH,
@@ -89,7 +90,15 @@ from keelline.memory.api import (
     render,
     resolve,
 )
-from keelline.release.api import HASHED_FILES, UnreadableRecord, digests, read_record
+from keelline.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
+from keelline.release.api import (
+    HASHED_FILES,
+    UnreadableRecord,
+    digests,
+    is_released,
+    read_record,
+    released,
+)
 from keelline.runner import Runner
 from keelline.scaffold import marker_id, owned_ids
 from keelline.setup.api import USER_SETTINGS
@@ -131,6 +140,16 @@ _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
 # interpreter probe and nothing about it is a project's to tune. Wide enough for a cold
 # interpreter start on a loaded machine, narrow enough that a hung probe does not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
+# Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
+# `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
+# with. `runner.NETWORK_TIMEOUT_SECONDS` is 300 and is right for what it was written for — `gh
+# repo create --clone` waiting on GitHub to instantiate a template, then a clone down the wire —
+# but this row reads one tag listing, and `init` recording a ref is what made a five-minute block
+# reachable from a command documented as a one-line diagnostic. The number is the wrapper probe's
+# above, deliberately: both bound one bounded question that a hung peer must not turn into a hung
+# `doctor`, and the module's other `git` calls go through `gitenv`'s five seconds. D7's shipped
+# file: none — nothing about it is a project's to tune.
+CI_REF_TIMEOUT_SECONDS = 30
 # Said by `files` about a wrapper it measured under a root the environment named, so nobody
 # reads "executable" as "this installation is sound". The sentence is a constant because both
 # of that check's rows carry it and a lane that changes one must change the other.
@@ -147,6 +166,30 @@ PLUGIN_ROOT_REMEDY = (
 )
 NAMED_ROOT_CAVEAT = (
     "; this is the plugin root the environment names, whose files are read here and run nowhere"
+)
+# The two overlay-gated rows ask one question before anything else, and `PLUGIN_ROOT_REMEDY`'s
+# rule applies to them for the same reason it applies to that pair: both rows must say the same
+# thing, so the sentences live in one place rather than being copied from one row into the
+# other. They were copied -- `overlay-requires`' skip arm was `pre-commit`'s byte for byte,
+# `or not overlay.is_dir()` included -- and the copy carried the defect with it.
+#
+# The defect is that `overlay is None or not overlay.is_dir()` is two states and said one
+# sentence. `memory.store.overlay_root` answers `None` for "this machine records no overlay",
+# which is the ordinary state before `keelline setup` has run and which nothing can be done
+# about from here; it answers a `Path` for a recorded root whether or not anything is there.
+# So a machine that recorded an overlay and then moved it -- the owner reorganising their own
+# directories is the ordinary way -- was told "no overlay root is recorded on this machine",
+# which is false, and was handed an empty remedy under it. It is the second state, not the
+# first, that is worth acting on: the overlay is where the notes live, and a recorded root
+# that is not there breaks the store as well as these two rows.
+NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
+OVERLAY_GONE = (
+    "the overlay root this machine records is not a directory, so nothing about the overlay "
+    "can be checked from here"
+)
+OVERLAY_GONE_REMEDY = (
+    "put the overlay back where the machine configuration records it, or run `keelline setup "
+    "--preset recommended --overlay <path>` to record where it is now"
 )
 # Why `diagnostics` prints a count and no content. One constant because the reason is the row's
 # whole substance, and a lane that starts quoting the file has to delete this sentence to do it.
@@ -167,17 +210,25 @@ class Check:
     """One row of the report: what was asked, what the answer was, and what to do about it.
 
     `remedy` is empty for a row nothing can be done about, and a `skip` is **not** entitled to
-    an empty remedy merely for being a skip: five of this module's twelve skip arms carry one.
-    The line is not "always" versus "on a state" — four state skips (`bundles`, `pre-commit`,
-    `store-debris`, `diagnostics`) are empty, and `pre-commit`'s state is changed by the very
-    command `_uncorroborated` names. It is whether **the skip is itself worth acting on**: the
-    two rows that report a plugin root nothing can find, which is every hook entry on this
-    machine silent; `wrapper`'s row for a root it will read and never execute; and the two ways
-    a ledger's recorded attach cannot be corroborated. Those five say what to do. The other
-    seven report a measurement that is simply not available — no store, no overlay, no harness
-    data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no
-    command in that row's gift changes it. A reader is never handed a command that would not
-    help, and never denied one that would.
+    an empty remedy merely for being a skip: seven of this module's sixteen skip arms carry one,
+    counting `_overlay_absent`'s two once for each of the two rows that reach them.
+    The line is not "always" versus "on a state" — eight state arms over seven rows are empty
+    (`_files` on a build with no release record, `bundles`, `store-debris`, `diagnostics`,
+    `ci-ref`, `overlay-requires` twice, and `pre-commit`), and `pre-commit`'s state is
+    changed by the very command `_uncorroborated` names. It is whether **the skip is itself worth
+    acting on**: the two rows that report a plugin root nothing can find, which is every hook entry
+    on this machine silent; `wrapper`'s row for a root it will read and never execute; the two
+    ways a ledger's recorded attach cannot be corroborated; and the two rows that report an
+    overlay root this machine records and cannot find, which is the store broken as well as them.
+    Those seven say what to do. The other nine report a measurement that is simply not available —
+    no store, no overlay, no overlay requirement, no harness data root, no `[ci] ref`, no release
+    record in this build, no way to ask Codex — and no command in that row's gift changes it. A
+    reader is never handed a command that would not help, and never denied one that would.
+
+    The two overlay rows have *both* kinds of arm, which is what `_overlay_absent` is for: the
+    empty one is the machine that never recorded an overlay, and the one with a remedy is the
+    machine that recorded one and moved it. They used to be one arm with one sentence, and the
+    sentence was the first one.
     """
 
     name: str
@@ -197,7 +248,7 @@ class Row:
 
 @dataclass
 class Context:
-    """Everything the fifteen checks read, resolved once.
+    """Everything the sixteen checks read, resolved once.
 
     Built by `run_checks` after `not-initialised` has passed, so `config` is never `None` here:
     a repository whose configuration does not load has nothing else worth asking about, and the
@@ -1090,7 +1141,12 @@ def _cli_path(context: Context) -> Row:
             WARN,
             "`keelline` does not resolve on PATH, so a skill that invokes it by name fails on "
             "Codex, which performs no plugin-root substitution in skill content",
-            "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",
+            # `REPOSITORY_URL` and not the address written out, which is the rule this module
+            # already follows a few rows below in `overlay-requires`' own remedy (DC7: spelled
+            # once). A second spelling of a URL is a second thing to move when the repository
+            # does, and `doctor` is the command whose whole job is finding the two halves of
+            # something that has stopped agreeing.
+            f"run `uv tool install git+{REPOSITORY_URL}`",
         )
     return Row(OK, "`keelline` resolves on PATH")
 
@@ -1103,6 +1159,29 @@ PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = "pre-commit"
 
 
+def _overlay_absent(overlay: Path | None) -> Row:
+    """Why there is no overlay to measure, told apart into the two states that are not alike.
+
+    Called by both overlay-gated rows and by nothing else, so the sentence a reader gets is the
+    same whichever row they read it in -- see the constants above for the copy this replaces and
+    for what it was saying to whom.
+
+    The argument is the root rather than the `Context`, so that the caller's own
+    `overlay is None or not overlay.is_dir()` narrows `overlay` to a `Path` for the rest of its
+    body. The condition stays at each call site because each row reads the root afterwards; what
+    must not be spelled twice is the answer, and it is not.
+
+    Both arms are a `skip` and neither reaches the exit code. The remedy is the difference, and
+    it follows `Check`'s rule rather than the row's status: "no overlay recorded" is the ordinary
+    state of a machine that has not run `keelline setup`, and no command in this row's gift
+    changes it; a root that is recorded and is not there is a fault on this machine that nothing
+    else in the report names, and there is a command for it.
+    """
+    if overlay is None:
+        return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)
+
+
 def _pre_commit(context: Context) -> Row:
     """§6.4, §8.4: whether the overlay's own secret scan is armed on **this** machine.
 
@@ -1112,7 +1191,7 @@ def _pre_commit(context: Context) -> Row:
     """
     overlay = context.overlay
     if overlay is None or not overlay.is_dir():
-        return Row(SKIP, "no overlay root is recorded on this machine", "")
+        return _overlay_absent(overlay)
     if not (overlay / PRE_COMMIT_CONFIG).is_file():
         return Row(
             WARN,
@@ -1142,65 +1221,236 @@ def _pre_commit(context: Context) -> Row:
     return Row(OK, "the overlay's commit-time secret scan is installed")
 
 
-# git's own spelling for "run this program and talk to it": `ext::<command>` and, generally,
-# `<helper>::<address>`. `--` stops an argument becoming an *option*; it does not stop it
-# becoming a *transport*, and `[ci] ref` is the one variable argument this area hands `git`.
-# git 2.54 refuses `ext::` under its default `protocol.ext.allow` (verified locally), which is
-# git's guard rather than this project's: it does not hold on an older git and it is off
-# entirely under `protocol.ext.allow=always`. Refused here so the answer does not depend on
-# which git the machine owner installed.
-#
-# **git's parse and not a substring test.** This was `"::"`, asked with `in` — and `::` is also
-# how a legal IPv6 literal is spelled, so `ssh://user@[2001:db8::1]/repo.git` was reported red
-# as naming a transport helper. A false finding is expensive here in a way it is not elsewhere:
-# `doctor`'s whole value is that what it reports is true, and the remedy it printed told the
-# machine owner to replace a URL that was already correct.
-#
-# git decides this in `transport_get`: it walks the leading run of URL-scheme characters and
-# takes a helper only when `::` comes *immediately* after it. So the helper name is anchored at
-# the start and is scheme-shaped, which `ssh://…[…::1]/…` is not — its run stops at `:/`. The
-# empty name (`::address`) is matched too, because git takes that as a helper as well.
-TRANSPORT_HELPER = re.compile(r"\A(?:[A-Za-z][A-Za-z0-9+.\-]*)?::")
+def _overlay_requires(context: Context) -> Row:
+    """§6.1's "refuses to run without it", as the verdict it can be now that an overlay runs
+    nothing (P1): does the Keelline running satisfy the floor the overlay declares.
+
+    A row of its own, gated on a recorded overlay exactly as `pre-commit` is (DC2): the
+    subject is this machine's overlay, not this project, so a `local-only` project on a
+    machine that records one is never red for it -- it is warned instead, which is where the
+    unmet arm below splits. The spec string is the owner's own and is printed as `requires_of`
+    normalised it.
+    """
+    overlay = context.overlay
+    if overlay is None or not overlay.is_dir():
+        return _overlay_absent(overlay)
+    spec = requires_of(overlay)
+    if spec is None:
+        return Row(SKIP, "the overlay declares no Keelline requirement", "")
+    running = keelline.__version__
+    verdict = satisfies(spec, running)
+    if verdict is None:
+        return Row(
+            WARN,
+            "the overlay's keelline.requires is not a >=X.Y.Z form this Keelline reads",
+            f"write keelline.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
+        )
+    if not verdict:
+        # **Red only when this project consults the overlay**, which is DC2's own argument for
+        # giving this requirement a row rather than folding it into `versions`: "a `local-only`
+        # project on a machine that records an overlay must not go red for a requirement it has
+        # no relationship with". `memory.mode` is what says whether this repository keeps its
+        # notes in the overlay, and red is a statement that *this installation* is wrong -- it
+        # gates the exit code and wave 5's `assess` is planned to gate on it too. The machine
+        # owner is still told, at the level `pre-commit` uses in its analogous machine-scoped
+        # state. `memory.mode` is compared and never printed, exactly as `_attached` compares it
+        # one screen up; the literal is that comparison's second site and not a new vocabulary.
+        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
+        return Row(
+            unmet,
+            f"the overlay requires Keelline {spec} and {running} does not satisfy it",
+            f"install a Keelline that satisfies {spec}: uv tool install git+{REPOSITORY_URL}@<tag>",
+        )
+    return Row(OK, f"the overlay requires Keelline {spec}, which {running} satisfies")
+
+
+# §7.1 makes `[ci] ref` a commit, and the documented opt-in is the mutable `v1` alias. Both are
+# judged against the public repository's own tags, which is why neither ever reaches a
+# subprocess: a sha cannot be asked for by name, so the row asks `git ls-remote` about a constant
+# URL and a constant pattern (`release.pins`) and compares in Python.
+_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
+ALIAS = "v1"
+# The rendered workflow, which is the pin GitHub actually acts on.
+WORKFLOW = ".github/workflows/keelline.yml"
+# Bound on the read of that file, which a repository authors. `DIAGNOSTICS_MAX_BYTES` is the same
+# number for the same reason one function down, and D7 asks a cap to name the shipped file that
+# must change with it: `templates/project/keelline.yml`, which renders to well under 2 KiB. Two
+# orders of magnitude above it leaves room for a project that adds jobs of its own around the
+# call, and still refuses to read a file no `init` could have written into a one-line diagnostic.
+WORKFLOW_MAX_BYTES = 256 * 1024
+# Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
+_USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")
+# Said of a path that is there and is not a regular file: a directory, a device, a FIFO, or a
+# symlink to any of those. Fixed text, and the file's own bytes are never reached.
+WORKFLOW_NOT_A_FILE = (
+    f"{WORKFLOW} is there and is not a regular file, so whether it pins the same ref as [ci] ref "
+    f"was not checked"
+)
+CI_REF_REMEDY = (
+    f"set [ci] ref in {CONFIG_FILE} to a released commit and rewrite the workflow's uses: line "
+    f"to match; keelline upgrade (ships later) will move both"
+)
+# `git` itself having failed is a fact about this machine, not about `[ci] ref`, so it warns --
+# the same split `_guarded` makes and for the same reason: red gates the exit code.
+CI_REF_UNASKABLE = "[ci] ref could not be checked against the public repository's tags"
+# A recorded ref and no workflow at all. Fixed text carrying this module's own `WORKFLOW`
+# constant and nothing else: no byte of any repository-authored path reaches it.
+NO_WORKFLOW = (
+    f'[ci] mode is "reusable" and [ci] ref is recorded, and {WORKFLOW} is not there at all, so '
+    f"no Keelline gate runs on this repository"
+)
+NO_WORKFLOW_REMEDY = (
+    f'write {WORKFLOW} with a uses: line pinned to [ci] ref, or set [ci] mode = "none" if this '
+    f"repository is not meant to run the Keelline gate; keelline upgrade (ships later) will "
+    f"write it for you"
+)
+
+
+def _ref_is_released(context: Context, ref: str) -> Row:
+    """What the public repository's tags say about `[ci] ref`, in one `git ls-remote`.
+
+    The alias arm asks for the tag listing and the sha arm asks the release area's own rule
+    (`is_released`, which filters to `vX.Y.Z` so the mutable alias cannot make a commit look
+    released); the two arms are exclusive, so either way the row launches `git` exactly once.
+    """
+    if ref == ALIAS:
+        tags = released(context.runner, cwd=context.root)
+        if tags is None:
+            return Row(WARN, CI_REF_UNASKABLE, CI_REF_REMEDY)
+        if ALIAS not in tags:
+            return Row(
+                RED,
+                f"[ci] ref is the {ALIAS} alias and the public repository carries no such tag",
+                CI_REF_REMEDY,
+            )
+        return Row(
+            WARN,
+            f"[ci] ref is the {ALIAS} alias, a mutable opt-in; a released commit is the "
+            f"immutable form",
+            CI_REF_REMEDY,
+        )
+    if _SHA.match(ref):
+        is_a_release = is_released(ref, context.runner, cwd=context.root)
+        if is_a_release is None:
+            return Row(WARN, CI_REF_UNASKABLE, CI_REF_REMEDY)
+        if not is_a_release:
+            return Row(
+                RED, "[ci] ref is not the commit of any released Keelline tag", CI_REF_REMEDY
+            )
+        return Row(OK, "[ci] ref is a released Keelline commit")
+    return Row(
+        RED,
+        f"[ci] ref is neither a 40-character commit sha nor the {ALIAS} alias, so it was not "
+        f"checked against anything",
+        CI_REF_REMEDY,
+    )
 
 
 def _ci_ref(context: Context) -> Row:
-    """§8.4: whether `[ci] ref` resolves, asked with `git ls-remote --exit-code`.
+    """§8.4, D16: whether `[ci] ref` is the commit of a released Keelline, and whether the
+    rendered workflow pins the same ref.
 
-    The value is repository-authored, so it is passed to the runner after a `--` and is never
-    printed — not in the detail, not in the remedy. `init` is the lane that writes it (wave 5),
-    so an empty value is `skip` rather than red: nothing in this build has had a chance to set
-    one, and calling that a fault would make `doctor` red on every correct installation.
+    **The value never reaches a subprocess.** §7.1 makes it a sha, and a sha cannot be asked for
+    by name, so the row asks the release area which commits the public repository's `v*` tags
+    name -- a constant URL, a constant pattern -- and compares in Python. The alias is reported
+    as what it is, a mutable opt-in; and the rendered workflow is read because the pin GitHub
+    acts on is the file, not the configuration beside it.
 
-    **It is also the one value in this area that chooses a program rather than a destination**,
-    which is why `TRANSPORT_HELPER` is refused before the runner sees it, and why
-    `overlay.Runner` closes stdin and sets `GIT_TERMINAL_PROMPT=0`: without those a
-    repository-chosen URL could hold this read-only diagnostic on a credential prompt for the
-    whole of `NETWORK_TIMEOUT_SECONDS`.
+    `init` is the lane that writes both, so an empty value is `skip` rather than red: a
+    repository that has not been initialised has had no chance to set one, and calling that a
+    fault would make `doctor` red on every correct installation.
+
+    **Three ways the workflow can fail to agree, and none of them is `ok`.** It can disagree
+    (red), be unreadable or unrecognisable (warn), or not be there at all — and that last one
+    returned the ref's own verdict, so a repository with a released sha recorded and no workflow
+    reported "[ci] ref is a released Keelline commit", which a reader takes for "my gate is
+    pinned correctly". `[ci] mode` is what makes the absent file a finding rather than the
+    configuration working: only `reusable` renders one.
+
+    The value is repository-authored and is never printed -- not in the detail, not in the
+    remedy, and not in an argument list.
     """
     ref = context.config.ci.ref
     if not ref:
         return Row(SKIP, "no [ci] ref is recorded, so there is nothing to resolve", "")
-    if TRANSPORT_HELPER.match(ref):
+    row = _ref_is_released(context, ref)
+    if row.status == RED:
+        return row
+    workflow = context.root / WORKFLOW
+    # **A regular file, and a bounded read of it — the two guards its siblings in this module
+    # already have.** `_hook_entries` asks `is_file()` of every settings file before it opens one
+    # and `_diagnostics` reads its log to a cap; this path had neither, and it is
+    # repository-authored in the same sense: a clone chooses what sits at
+    # `.github/workflows/keelline.yml`. A committed symlink to a FIFO there made `read_text` block
+    # with nothing to read, so `doctor` — one line, documented as a diagnostic — never returned
+    # at all. Measured before this guard on a real FIFO: the row did not come back.
+    #
+    # None of the file's bytes is printed on any arm, so this is containment hygiene rather than a
+    # leak, which is why it is a guard here and not a refusal. A directory reaches the same arm
+    # and used to reach the `OSError` one below, naming `IsADirectoryError`; the arm's own
+    # sentence says what a reader needs and carries no platform's spelling of the fault.
+    if not workflow.is_file():
+        if workflow.exists() or workflow.is_symlink():
+            return Row(WARN, WORKFLOW_NOT_A_FILE, CI_REF_REMEDY)
+        # No file at all, which is not agreement either. `return row` here reported `ok` — "[ci]
+        # ref is a released Keelline commit" — for a repository with no gate in it, and a reader
+        # takes that for "my gate is pinned correctly". It is the same false green the `not
+        # pinned` arm below refuses by name, and this is the state `init` itself leaves whenever
+        # it reports `ci-workflow` under `skipped`, and the state anyone reaches by deleting the
+        # file. `mode` is what tells the cases apart: under `none` or `uvx` this build renders no
+        # workflow, so an absent one is the configuration working.
+        if context.config.ci.mode == "reusable":
+            return Row(WARN, NO_WORKFLOW, NO_WORKFLOW_REMEDY)
+        return row
+    try:
+        with workflow.open("rb") as handle:
+            raw = handle.read(WORKFLOW_MAX_BYTES + 1)
+    except OSError as exc:
+        return Row(
+            WARN,
+            f"{WORKFLOW} is there and could not be read ({type(exc).__name__}), so whether it "
+            f"pins the same ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    if len(raw) > WORKFLOW_MAX_BYTES:
+        # Over the cap is itself an answer, the way it is for the hook sink's log: this is not a
+        # file `init` rendered, and a `uses:` line past the cap would be compared against bytes
+        # that were never read. Never the ref's own verdict, for the reason the arms around it
+        # give.
+        return Row(
+            WARN,
+            f"{WORKFLOW} is larger than {WORKFLOW_MAX_BYTES} bytes, so whether it pins the same "
+            f"ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    # `errors="replace"` and not a strict decode: a stray byte in a repository-authored file used
+    # to raise `UnicodeDecodeError`, which is a `ValueError` and so escaped to `_guarded` as a red
+    # row saying the check could not run — a red a clone could force, on a row whose own rule is
+    # that a file it cannot account for is named and never absolved. A replaced byte cannot forge
+    # a sha: `_USES` bounds what is compared, and nothing read here is printed.
+    rendered = raw.decode("utf-8", errors="replace")
+    # `finditer` and not `search`: the first `uses:` in the file may belong to another job, and
+    # a recognisable pin after it is still the pin GitHub acts on. Every recognisable one is
+    # compared, so a second job pinning something else is a finding too.
+    pinned = {match.group(1) for match in _USES.finditer(rendered)}
+    if not pinned:
+        # Read and not recognised. Returning the ref's own verdict here would read as "the
+        # workflow agrees", which is the false green the `OSError` arm beside it already refuses
+        # to produce. None of the file's bytes is printed -- it is a repository-authored file.
+        return Row(
+            WARN,
+            f"{WORKFLOW} is there and carries no `uses:` line this build recognises, so whether "
+            f"it pins the same ref as [ci] ref was not checked",
+            CI_REF_REMEDY,
+        )
+    if pinned != {ref}:
         return Row(
             RED,
-            "[ci] ref names a git transport helper, which would hand `git ls-remote` a program "
-            "this repository chose; it was not resolved",
-            f"set [ci] ref in {CONFIG_FILE} to a plain remote URL",
+            "the workflow pins a different ref from [ci] ref, so the gate that runs is not the "
+            "one recorded",
+            CI_REF_REMEDY,
         )
-    done = context.runner.run(["git", "ls-remote", "--exit-code", "--", ref], context.root)
-    if done.code == 0:
-        return Row(OK, "[ci] ref resolves")
-    if done.code == 2:
-        return Row(
-            RED,
-            "[ci] ref does not resolve, so the reusable workflow this project pins is not there",
-            f"correct [ci] ref in {CONFIG_FILE}",
-        )
-    return Row(
-        WARN,
-        f"[ci] ref could not be checked (`git ls-remote` exited {done.code})",
-        "check that `git` runs here and that the remote is reachable",
-    )
+    return row
 
 
 def _store_debris(context: Context) -> Row:
@@ -1330,7 +1580,7 @@ def _ignored_env(context: Context) -> Row:
     )
 
 
-# The fifteen, in the order §8.4 and its cross-references name them. The list is the report's
+# The sixteen, in the order §8.4 and its cross-references name them. The list is the report's
 # order and the only registry there is: a check added here needs no other edit, and a check
 # missing from it is a check nothing runs.
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
@@ -1345,6 +1595,7 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("bundles", _bundles),
     ("cli-path", _cli_path),
     (PRE_COMMIT_HOOK, _pre_commit),
+    ("overlay-requires", _overlay_requires),
     ("ci-ref", _ci_ref),
     ("store-debris", _store_debris),
     ("diagnostics", _diagnostics),
@@ -1362,7 +1613,7 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
 
     `Exception` and not `BaseException`: what was asked for is that a check which *raises*
     becomes a red row. `KeyboardInterrupt` and `SystemExit` are not that — catching them turns
-    one `Ctrl-C` into fifteen red rows and a report, instead of stopping.
+    one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
     `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it too, so a
@@ -1422,7 +1673,7 @@ def run_checks(
     runner: Runner,
     env: Mapping[str, str] | None = None,
 ) -> list[Check]:
-    """The fifteen rows, always fifteen, whatever state the machine is in.
+    """The sixteen rows, always sixteen, whatever state the machine is in.
 
     Four keyword parameters, which is what the plan's `Interfaces:` block names. A fifth,
     `candidates`, used to thread `KEELLINE_PYTHON_CANDIDATES` into the `wrapper` check's
@@ -1446,7 +1697,7 @@ def run_checks(
                 RED,
                 f"there is no {CONFIG_FILE} here, so the plugin's hooks are silent in this "
                 f"repository",
-                "run `keelline init` once it ships, or write keelline.toml by hand",
+                "run `keelline init --yes`",
             ),
             *(
                 Check(name, SKIP, f"there is no {CONFIG_FILE} to check against", "")

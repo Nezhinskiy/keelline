@@ -40,14 +40,20 @@ one `setup/api.py` corrected about its own `setup` and `SetupReport` — three o
 naming a test that runs a command rather than a module that imports a name. A published surface
 argued from prose is a surface nobody measured: this pass's first half counted `src/`,
 `scripts/` and `tests/` and never read the sentence, and the sentence is what kept the names.
+
+`IGNORE_REGION` and `IGNORE_BODY` are published for the `project` area (wave 4), which records
+the same region as a scaffold artifact; one spelling, or `init` and `attach` would each report
+the other's region as hand-edited.
 """
 
 from keelline.attach.binding import BOUND, MISMATCH, STATES, UNBOUND, Binding, read_binding
 from keelline.attach.permissions import LOCAL_SETTINGS, overlay_entries
-from keelline.attach.write import LEDGER, AttachLedger, ledger
+from keelline.attach.write import IGNORE_BODY, IGNORE_REGION, LEDGER, AttachLedger, ledger
 
 __all__ = [
     "BOUND",
+    "IGNORE_BODY",
+    "IGNORE_REGION",
     "LEDGER",
     "LOCAL_SETTINGS",
     "MISMATCH",

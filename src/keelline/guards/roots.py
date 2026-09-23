@@ -3,7 +3,7 @@ the consuming lane must check itself; two commands here consume it."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
@@ -25,9 +25,17 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     share -- a wrong number in a notice whose whole job is to be believed about a number, and
     in an audit's "N test file(s)" total.
 
+    **An entry is folded before it is asked about.** `contained()` refuses a trailing `/`, a
+    doubled `/` and a leading `./` since it shares the write's component rule, and that rule is
+    right for a target the engine writes. A code root is only walked, and `"src/"` is the way
+    many people write a directory: refused here, it was dropped from the hygiene counts, the
+    audit and the citation roots with nothing saying so. `PurePosixPath` folds exactly those
+    three spellings and nothing else -- it keeps `..` and an absolute root, which `contained()`
+    still refuses.
+
     Comparing the paths `contained()` returns is enough to collapse two spellings of one
-    directory, not just two copies of one spelling: `Path` has already folded `./` and
-    repeated separators, and `contained()` refuses a `..` component, an absolute path and a
+    directory, not just two copies of one spelling: the fold above has already removed `./`
+    and repeated separators, and `contained()` refuses a `..` component, an absolute path and a
     symlink anywhere from the root to the target inclusive -- so no two surviving entries can
     name the same directory by different routes. Order is the config's. Between an ancestor
     and a descendant the ANCESTOR wins whichever way round they are written, because it is the
@@ -38,7 +46,9 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     resolved_root = root.resolve()
     for entry in config.ledger.code_roots:
         try:
-            candidate = contained(root, entry, resolved_root=resolved_root)
+            candidate = contained(
+                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
+            )
         except PathEscape:
             continue
         if not candidate.is_dir():

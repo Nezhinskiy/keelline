@@ -43,5 +43,8 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "BOUND",
         "UNBOUND",
         "STATES",
+        # the `.gitignore` region's name and body, for `init` (wave 4, DC4): one spelling
+        "IGNORE_REGION",
+        "IGNORE_BODY",
     }
     assert required == set(attach.__all__)

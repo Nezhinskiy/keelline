@@ -9,10 +9,10 @@ whether `uv_build` shipped it. Exit 0 with no findings, 1 with them.
 
 Three things this looks at, each of which was an inline CI step or nothing at all:
 
-* **The wheel.** CI installs from source, so a packaging regression that dropped the preset
-  or the overlay template would break every `uv tool install` while the workflow stayed
-  green. `resources.files` resolves to the checkout under `uv run`, which is why no test in
-  `tests/` can see this.
+* **The wheel.** CI installs from source, so a packaging regression that dropped the preset,
+  the overlay template or the project footprint's templates would break every `uv tool install`
+  while the workflow stayed green. `resources.files` resolves to the checkout under `uv run`,
+  which is why no test in `tests/` can see this.
 * **The sdist.** A packager for Homebrew, Debian or nixpkgs cannot run a single test against
   an sdist that ships only `src/`, which is the artefact they most need to verify for a
   security-sensitive tool. `skills/` and `agents/` are here because
@@ -32,12 +32,18 @@ import zipfile
 from pathlib import Path
 
 from keelline.overlay.api import OVERLAY_FILES
+from keelline.project.api import PROJECT_FILES
 from keelline.release.api import HASHED_FILES, RECORD
 from keelline.scaffold import MANIFEST_PATH
 
 WHEEL_MUST = (
     "keelline/presets/recommended.toml",
     *(f"keelline/templates/overlay/{relative}" for relative in OVERLAY_FILES),
+    # The project footprint's own tree. `init` reads it at runtime through
+    # `keelline.templates.tree`, exactly as `overlay create --local` reads the tree above, so a
+    # build that dropped it would leave every installed Keelline unable to initialise anything
+    # while the checkout's own suite stayed green.
+    *(f"keelline/templates/project/{name}" for name in PROJECT_FILES),
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.

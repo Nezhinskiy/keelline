@@ -11,7 +11,9 @@ from keelline.fsops import (
     NotASymlink,
     UnsafePath,
     _mode_of,
+    checked_components,
     mkdirs_within,
+    names_control_directory,
     open_within,
     readlink_within,
     remove_within,
@@ -209,10 +211,70 @@ def test_a_current_directory_component_is_refused(tmp_path: Path) -> None:
     # `PurePosixPath` normalises `.` away today, so this asserts the guard rather than the
     # parse: the normalisation is pathlib's implementation detail and this is the single place
     # five later lanes' containment rests on.
-    from keelline.fsops import _checked
-
     with pytest.raises(UnsafePath):
-        _checked("docs/./a.md")
+        checked_components("docs/./a.md")
+
+
+def test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case() -> None:
+    # B2. Nothing reserved `.git`: the walk refused a symlink, `..`, an absolute path and an
+    # empty component, and a control directory is none of those. Both halves of the rule are
+    # asserted, because either alone is a rule a clone can spell its way past — the default
+    # filesystem on macOS is case-insensitive, so `.GIT/hooks/pre-commit` reaches the same file,
+    # and a `.git` below the top component is a submodule's control directory.
+    #
+    # Mutation (oracle): drop the `names_control_directory` check from `checked_components`.
+    for target in (
+        ".git",
+        ".git/hooks/pre-commit",
+        ".git/config",
+        ".GIT/hooks/pre-commit",
+        ".Git/config",
+        "vendor/lib/.git/hooks/pre-commit",
+        "a/b/.GIT",
+    ):
+        assert names_control_directory(target), target
+        with pytest.raises(UnsafePath, match="control directory"):
+            checked_components(target)
+
+
+def test_the_reserved_name_is_the_component_and_not_a_leading_dot() -> None:
+    # The rule this branch cannot have: `.github/workflows/` is an artifact it ships and
+    # `.keelline/` holds the manifest, so refusing a leading dot would refuse Keelline's own
+    # footprint. And `.gitignore`, `.gitattributes` and `.gitkeep` are ordinary files that
+    # merely start the same way, which an equality test on the whole component leaves alone.
+    for target in (
+        ".github/workflows/keelline.yml",
+        ".keelline/manifest.json",
+        ".gitignore",
+        ".gitattributes",
+        "docs/.gitkeep",
+        "gitignore/x.md",
+    ):
+        assert not names_control_directory(target), target
+        assert checked_components(target), target
+
+
+def test_an_existing_git_hook_is_never_rewritten_in_place(tmp_path: Path) -> None:
+    # The impact, end to end and at the primitive. The developer's own `pre-commit` is a real
+    # executable file, and `_mode_of` carries an existing file's mode onto the replacement — so
+    # before this rule, a write through here left a 0755 file with Keelline's bytes appended to
+    # somebody else's hook. Mode and body are both asserted, and both after the refusal.
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True)
+    hook = hooks / "pre-commit"
+    hook.write_text("#!/bin/sh\necho real hook\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+    with pytest.raises(UnsafePath, match="control directory"):
+        write_within(tmp_path, ".git/hooks/pre-commit", "#!/bin/sh\n<!-- keelline -->\n")
+    assert hook.read_text(encoding="utf-8") == "#!/bin/sh\necho real hook\n"
+    assert stat.S_IMODE(hook.stat().st_mode) == 0o755
+
+    # And nothing new is created inside it either, which is the other half of what a clone got
+    # to choose: an arbitrary file at an arbitrary name in git's own directory.
+    with pytest.raises(UnsafePath, match="control directory"):
+        write_within(tmp_path, ".git/keelline-roadmap.md", "# roadmap\n")
+    assert sorted(p.name for p in (tmp_path / ".git").iterdir()) == ["hooks"]
 
 
 # --- the reusable write surface ---------------------------------------------------------------

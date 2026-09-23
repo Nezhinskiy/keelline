@@ -30,7 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from keelline.attach.binding import MISMATCH, Binding, read_binding
+from keelline.attach.binding import MISMATCH, Binding, read_binding, unlinked_groups
+from keelline.config.loader import load
 from keelline.errors import Failure
 from keelline.memory.api import PROJECTS
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -264,9 +265,23 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     Here rather than in `binding.py` because it needs both halves and `permissions` already
     imports `binding`; the other way round is a cycle.
 
-    Exit 1 on a `mismatch` — a finding, not a refusal, because the answer is "ask the owner"
-    and `attach` itself is what refuses. Neither remote reaches the output: both are
-    repository-authored, and the state label this lane computed says everything a reader needs.
+    Exit 1 on a `mismatch`, and on a memory group that never moved — findings, not refusals,
+    because the answer to each is an act of the owner's and `attach` itself is what refuses.
+    Neither remote reaches the output: both are repository-authored, and the state label this
+    lane computed says everything a reader needs.
+
+    The second finding is the one this command exists to deliver early. `attach` links rather
+    than moves, so a group still sitting as a real directory under `paths.memory` refuses the
+    whole run — above every write, and after the owner has already been told the diff is
+    clean. Reporting it here costs one walk and turns a refusal into a list of notes to move.
+
+    The `Config` is loaded once and handed to both halves: `read_binding` takes it rather than
+    loading a second one, and `unlinked_groups` needs the same `memory.groups` and
+    `paths.memory` the binding was read under. Two loads could disagree, and a `--check` whose
+    two halves read different documents is exactly what it exists to rule out.
+
+    A `PathEscape` out of `unlinked_groups` propagates: `--check` refuses what `attach` would,
+    rather than reporting a count for a `paths.memory` no walk could contain.
 
     **Nor does `project.name`, and that is the same rule rather than a second one.** The Global
     Constraints list it among the bytes a repository authors, `config/schema.py`'s
@@ -276,8 +291,10 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
     attributed to Keelline. The reader opens `keelline.toml` to learn the name either way; what
     this line owes them is the state and the counts, which this lane computed.
     """
-    binding = read_binding(root, store=store, machine=machine)
+    config = load(root, machine=machine)
+    binding = read_binding(root, store=store, machine=machine, config=config)
     diff = diff_permissions(root, binding)
+    real = len(unlinked_groups(root, config))
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
     # diff's three fields are fixed by the plan's Interfaces block, and a fourth would blur what
     # `widens` means. These names come out of the overlay, so they are the owner's own and may
@@ -289,6 +306,10 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         f"would be added, {len(diff.already_present)} already present; "
         f"{len(rules)} Codex standing-rule file(s) would be placed"
     )
+    if real:
+        # A count and never a name: `memory.groups` is repository-authored, and this line is
+        # what `skills/attach/SKILL.md` has the model relay to the user.
+        summary += f"; {real} memory group(s) are real directories and would refuse the attach"
     if rules:
         summary += "\n" + "\n".join(f"  {target}" for target in rules)
     data = {
@@ -302,5 +323,7 @@ def check(root: Path, *, store: Path, machine: Path | None) -> Result:
         "already_present": len(diff.already_present),
         "rules_to_write": list(rules),
         "widens": diff.widens,
+        # A count, for the reason `already_present` is one: the entries are repository-authored.
+        "real_directories": real,
     }
-    return Result(summary, data, exit_code=1 if binding.state == MISMATCH else 0)
+    return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)

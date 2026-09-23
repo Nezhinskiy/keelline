@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.config.schema import Config
 from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.attach.test_write import LEDGER, RULE, SETTINGS, _overlay_grants
 
@@ -303,3 +304,90 @@ def test_detachs_line_says_what_went_without_naming_any_of_it(
     line = capsys.readouterr().out
     assert RULE not in line
     assert "1 allow rule(s)" in line
+
+
+def test_check_counts_the_groups_that_never_moved_and_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--check` refuses nothing, so its job here is to report the finding `attach` will refuse
+    # on: exit 1, the same code a mismatch answers with, because both are findings the owner
+    # acts on before the real run rather than faults in the command. The count is this lane's
+    # own and prints; the group's name is repository-authored and does not, which is the rule
+    # `real_directories` is a count for.
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 1
+    report = capsys.readouterr().out
+    data = json.loads(report)
+    assert data["real_directories"] == 1
+    assert "developer" not in report
+    # Non-vacuous in the other direction: the same fixture with nothing left behind answers 0
+    # and reports none, so the exit code above is this finding and not the fixture's state.
+    (root / DEFAULT_MEMORY / "developer").rmdir()
+    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["real_directories"] == 0
+
+
+def test_check_reads_each_of_its_two_documents_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `check`'s own docstring says a `--check` whose two halves read different documents is
+    # "exactly what it exists to rule out", and the single load is what makes that true: the
+    # binding takes the `Config` the group count is taken under rather than loading a second
+    # one. Without a counter that claim was unguarded — deleting `config=config` restored two
+    # loads and the whole suite still passed.
+    #
+    # Counted at `binding.load`, the name `read_binding` resolves, and not at
+    # `keelline.config.loader.load`: `permissions` binds its own reference at import time, so a
+    # patch there would also count the load `check` is supposed to make. Zero is the assertion.
+    #
+    # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
+    from keelline.config.loader import load as real_load
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    loads: list[Path] = []
+
+    def counted(target: Path, **kwargs: object) -> Config:
+        loads.append(target)
+        return real_load(target, **kwargs)  # type: ignore[arg-type]
+
+    # Patched by name rather than through the module object, which is the same seam and does not
+    # read an attribute the module never exported.
+    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    assert invoke(["attach", "--check", *_flags(root, store, machine)]) == 0
+    assert loads == []
+
+
+def test_attach_reads_each_of_its_two_documents_once_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same counter over the writing half, which has the stronger version of the argument
+    # above: a `--check` that read two documents reports the wrong thing, while an `attach`
+    # that reads two *writes* under the wrong one. `attach` called `read_binding` without a
+    # `Config` and then loaded a second time for its own `memory.groups` refusals, so
+    # `keelline.toml` and the machine file were read twice per run with the two halves free to
+    # disagree.
+    #
+    # Counted at `binding.load` and zero is the assertion, for the reason the test above gives.
+    # A real attach and not a `--check`, so the count covers the whole run.
+    #
+    # Mutation (oracle): `read_binding(...)` without `config=config` -> this reddens.
+    from keelline.config.loader import load as real_load
+
+    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
+    _overlay_grants(store)
+    (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
+    machine = _machine(tmp_path, overlay=store.parents[2])
+    loads: list[Path] = []
+
+    def counted(target: Path, **kwargs: object) -> Config:
+        loads.append(target)
+        return real_load(target, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("keelline.attach.binding.load", counted)
+    assert invoke(["attach", "--yes", *_flags(root, store, machine)]) == 0
+    assert loads == []

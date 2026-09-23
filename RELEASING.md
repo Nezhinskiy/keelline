@@ -87,10 +87,22 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    uv run keelline release check                           # must print "one version everywhere: X.Y.Z"
    ```
 
-   Read what it wrote. A fragment written as a note to the author rather than as a release note
-   is worth fixing now — this is the text users see. The version comes before the changelog
-   because `release notes` refuses a `--version` that is not the project's; after this step
-   `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+   Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
+   as a release note is worth fixing now — this is the text users see. The version comes before
+   the changelog because `release notes` refuses a `--version` that is not the project's; after
+   this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+
+   **On a first release, fold the `Fixed` entries into the features they repair.** There is no
+   released version for a fix to be a fix *relative to*, so every `Fixed` entry in 0.1.0
+   describes a bug no user could have met — and reads as a warning about the release it ships
+   in. `init`, `attach`, `doctor` and the overlay lane each accumulated several of these while
+   the wave was open, which is correct while it is open: the fragments are the per-commit
+   record, and a fold done earlier is undone by the next commit. Do it here, once, over the
+   assembled file: state the feature as what it now is, delete the fixes that only describe
+   its development, and keep the ones a reader of 0.1.0 has to act on — a grammar that refuses
+   a `keelline.toml` which loaded before, a flag that means something narrower than it sounds.
+   The same folding applies to a `Changed` entry that changed something never released.
+   `release check --tag` cannot judge this: it counts pending fragments and never reads them.
 
 5. **Edit the README's install section, then commit.** In `README.md`, replace everything
    between `<!-- release-install:begin -->` and `<!-- release-install:end -->` — the markers,
@@ -230,6 +242,18 @@ workflow directory the platform reads, so those two pins rot here until somebody
 A rendered overlay ships its own `dependabot.yml` and keeps itself current from then on;
 what this line is about is the state every *new* overlay starts from. Check them here, at
 the release that publishes the template.
+
+**The project workflow's pin, and what the first tag unlocks.** There is a second sha-pinned
+template now: `src/keelline/templates/project/keelline.yml`, the caller `keelline init` renders
+into an adopting project's `.github/workflows/`. Its `uses:` line is not pinned in the tree —
+the sha is filled in at render time, and it is the commit of the *released* Keelline that did
+the rendering, read off this repository's own `v*` tags. So nothing here rots, and nothing here
+needs checking at a release; what a release changes is whether the workflow can be written at
+all. Before the first tag `init` finds no released commit to name, reports the workflow skipped
+with that reason, and writes nothing into `.github/` — which means every project initialised
+before the first release carries no CI caller and no `[ci] ref`, and gets both when `keelline
+upgrade` ships. The first tag is the event that changes that, and it changes it for new
+projects only.
 
 ## 5. If something goes wrong
 

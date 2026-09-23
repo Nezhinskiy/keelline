@@ -18,7 +18,7 @@ import pytest
 
 from keelline import fsops
 from keelline.attach.api import ledger
-from keelline.attach.write import attach
+from keelline.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -27,7 +27,7 @@ from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import _machine, _project_and_store
+from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 
@@ -534,8 +534,15 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    # Non-vacuous: this refusal and not one of the five `attach` can raise before it.
-    assert "memory.groups" in str(refusal.value)
+    # Non-vacuous: this refusal and not one of the five `attach` can raise before it, nor the
+    # one below it. `unlinked_groups` refuses the same entry with `MEMORY_GROUP_ESCAPES` --
+    # deliberately a different sentence, because it contains the group against `root` rather
+    # than against the overlay -- so "memory.groups is in the message" no longer says which of
+    # the two fired. The identity does, and it is what keeps the hoisted call proven: without
+    # it this case passed with `_check_groups` deleted, on the never-moved check's refusal.
+    # (`GROUP_ESCAPES` names `memory.groups`, which is what a reader needs from it; asserting
+    # that here would be an assertion about a literal that no behaviour change can redden.)
+    assert str(refusal.value) == GROUP_ESCAPES
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
@@ -1036,3 +1043,84 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             home=tmp_path / "home",
         )
     assert "memory.groups" in str(refusal.value)
+
+
+def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path: Path) -> None:
+    """The eighth refusal, and the only one whose remedy is an act nothing here can perform.
+
+    `attach` **links**; it never moves a note. So a `memory.groups` entry that is still a real
+    directory under `paths.memory` is a group whose notes are in the repository and whose share
+    of the overlay is empty — and linking over it would leave the session reading the
+    repository's copy with the binding record, the settings merge and the ledger already
+    written. The anchor is `root`, the checkout the command was pointed at, and not a value the
+    repository chose: `unlinked_groups` contains every `<paths.memory>/<group>` against it, so a
+    repository cannot move the directory the count is taken under.
+
+    Both snapshots, because a refusal that leaves the *overlay* carrying a binding record is
+    just as much "looking attached" as one that leaves the repository carrying a ledger.
+
+    Mutation: `mutations.toml`'s "attach links over notes that never moved again".
+    """
+    root, store, machine = _attachable(tmp_path)
+    note = root / DEFAULT_MEMORY / "project-stable" / "kept.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("---\nname: kept\ndescription: a note\n---\n\nbody\n", encoding="utf-8")
+    before, overlay_before = snapshot(root), snapshot(store.parents[2])
+    # The walks' own floor, for the reason the mismatch case above states: `snapshot` is a walk,
+    # and two empty dictionaries compare equal however much was written between them.
+    assert before and overlay_before
+    # The identity and not a substring, for the reason the escaping-group case above now gives:
+    # a refusal added beside this one makes a substring match stop saying which fired, and this
+    # one already sits one line from a containment whose message shares most of its words.
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    assert str(refusal.value) == REAL_DIRECTORIES.format(count=1)
+    assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(store.parents[2], overlay_before)
+    # The owner's act, and the only one that clears the refusal: the notes move into this
+    # project's share of the overlay, and the same attach then links over nothing.
+    shutil.move(str(note.parent), str(store / "project-stable"))
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert (root / DEFAULT_MEMORY / "project-stable").is_symlink()
+    assert (root / DEFAULT_MEMORY / "project-stable" / "kept.md").is_file()
+
+
+def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> None:
+    """`memory.groups` is repository-authored, so the message carries a count and no entry.
+
+    The same rule `GROUP_ESCAPES` and the `--store` refusal are written to, and worth its own
+    case here because this refusal's *remedy* invites a name — "move this group" reads better
+    than "move each of them" — and `skills/attach/SKILL.md` relays these messages to a model.
+    """
+    root, store, machine = _attachable(tmp_path)
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    message = str(refusal.value)
+    assert "developer" not in message
+    # Non-vacuous: the message did report, and what it reported is the count this lane took.
+    assert "1 of this project's memory groups" in message

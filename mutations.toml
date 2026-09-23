@@ -583,7 +583,9 @@ reddens = ["tests/guards/test_hygiene.py::test_a_normally_compiled_pyc_is_not_st
 [[mutation]]
 name = "an escaping code root is followed"
 file = "src/keelline/guards/roots.py"
-before = '            candidate = contained(root, entry, resolved_root=resolved_root)'
+before = '''            candidate = contained(
+                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
+            )'''
 after = '            candidate = root / entry'
 reddens = ["tests/guards/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
 
@@ -1722,8 +1724,11 @@ reddens = [
 
 # Every call through this seam captures its output, so a `git` or `gh` that asks for a
 # credential on an inherited stdin is invisible and blocks for the whole of
-# NETWORK_TIMEOUT_SECONDS. `doctor`'s `ci-ref` row is what makes it a finding: the URL it
-# resolves is repository-authored, and a read-only diagnostic must not be holdable by one.
+# NETWORK_TIMEOUT_SECONDS. What makes that a finding is which callers reach the network through
+# it: `overlay create --template` launches `gh` with the machine owner's own authentication, and
+# `release.pins.released` runs `git ls-remote` for `keelline init` and for `doctor`'s `ci-ref`
+# row. (This used to cite that row's URL as repository-authored; it is
+# `keelline.REPOSITORY_URL`, a module constant. See `keelline.runner._ENV_FORCE`.)
 [[mutation]]
 name = "a launched command gets this process's stdin again"
 file = "src/keelline/runner.py"
@@ -1755,12 +1760,13 @@ reddens = ["tests/test_runner.py::test_the_variables_that_redirect_git_are_dropp
 
 # `TimeoutExpired` is a `SubprocessError`, so a `gh` that hung for the full five minutes
 # arrived as NOT_FOUND -- which every caller reads as "gh is not installed". A wrong finding is
-# worse than a slow one, and the two have different remedies.
+# worse than a slow one, and the two have different remedies. Repointed when the bound became the
+# caller's to narrow: the sentence now names the bound that was applied rather than the module's.
 [[mutation]]
 name = "a command that hangs is reported as one that is not installed"
 file = "src/keelline/runner.py"
-before = '                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
-after = '                NOT_FOUND, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"'
+before = '            return Completed(TIMED_OUT, "", f"{argv[0]} did not finish within {bound}s")'
+after = '            return Completed(NOT_FOUND, "", f"{argv[0]} did not finish within {bound}s")'
 reddens = [
   "tests/test_runner.py::test_a_command_that_hangs_is_not_reported_as_one_that_is_missing",
 ]
@@ -1794,8 +1800,18 @@ reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_so
 [[mutation]]
 name = "attach takes the overlay root from its argument instead of the machine file"
 file = "src/keelline/attach/binding.py"
-before = '    overlay = overlay_root(machine)'
-after = '    overlay = store.parents[2]'
+# Widened past `read_binding`'s own line, fix round 1: Task 3's `binding_for` gained the same
+# `overlay = overlay_root(machine)` line, so the old one-line `before` stopped being unique in
+# this file — the oracle refuses rather than mutating an ambiguous match, so this went uncaught
+# until a broader sweep than the entry's own filter string surfaced it.
+#
+# Re-pointed again in wave 4: `read_binding` now takes an optional `config` and loads only when
+# the caller holds none, so the first of the two lines is spelled differently. The mutation is
+# unchanged -- the second line is the guard -- and the first is here only for uniqueness.
+before = '''    config = load(root, machine=machine) if config is None else config
+    overlay = overlay_root(machine)'''
+after = '''    config = load(root, machine=machine) if config is None else config
+    overlay = store.parents[2]'''
 reddens = [
   "tests/attach/test_binding.py::test_the_overlay_root_comes_from_the_machine_file_and_not_from_the_argument",
 ]
@@ -2062,19 +2078,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_log_larger_than_the_sink_would_ever_write_is_read_to_a_bound",
 ]
 
-# `[ci] ref` is the sole variable argument this area hands `git`, and `--` stops it becoming an
-# option, not a transport. `ext::<command>` makes `git ls-remote` run a program the repository
-# chose; git 2.54's default `protocol.ext.allow` refuses it, which is git's guard and not this
-# project's -- absent on an older git, off under `protocol.ext.allow=always`.
-[[mutation]]
-name = "a ci-ref naming a git transport helper reaches git again"
-file = "src/keelline/doctor/checks.py"
-before = "    if TRANSPORT_HELPER.match(ref):"
-after = "    if False:"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_ci_ref_naming_a_transport_helper_never_reaches_git",
-]
-
 # I4: three load-bearing guards of the `attach` lane that had no entry. The first is the wave's
 # `--machine` gate -- a flag is a third member of the equivalence class `config/machine.py`
 # gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` on, and this is the command that turns the
@@ -2154,12 +2157,15 @@ reddens = [
 # escaping entry got five artifacts written and exit 2, and `doctor` then reported the
 # repository attached and the binding *bound*, because the record had been written too. The
 # mutation takes the hoisted call away and leaves only the write-time one.
+#
+# Anchored on the call and not on the `load` above it, which is where it used to be anchored and
+# which moved to the top of `attach` when the second load of the run was removed. The guard is
+# that this check is asked, and the line that asks it is the one this entry should break.
 [[mutation]]
 name = "the memory.groups containment is asked at write time only"
 file = "src/keelline/attach/write.py"
-before = '''    config = load(root, machine=machine)
-    _check_groups(binding, config)'''
-after = '''    config = load(root, machine=machine)'''
+before = "    _check_groups(binding, config)"
+after = "    pass  # `_check_groups` is not asked"
 reddens = [
   "tests/attach/test_write.py::test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created",
 ]
@@ -2618,12 +2624,16 @@ reddens = [
 [[mutation]]
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/keelline/attach/write.py"
+# Re-pointed in wave 4: DC4 put the manifest's answer between the anchor loop and the region
+# read, so the block this moves is two lines longer. What it proves is unchanged -- `git` is
+# asked before the first withdrawal, and a `git` that cannot run must not strand a half-detached
+# repository.
 before = '''    checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    ignore_remainder = _ignore_region_remainder(root)
+    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)'''
-after = '''    ignore_remainder = _ignore_region_remainder(root)
+after = '''    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     allow_removed = _withdraw_settings(root, recorded)
     checkouts = _checkouts(root)
     for tree in checkouts:
@@ -3113,8 +3123,8 @@ reddens = [
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/keelline/templates/overlay/README.md"
-before = "`keelline overlay create` renders seventeen files here."
-after = "`keelline overlay create` renders sixteen files here."
+before = "`keelline overlay create` renders seventeen files here:"
+after = "`keelline overlay create` renders sixteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
 ]
@@ -3179,7 +3189,10 @@ reddens = ["tests/hooks/test_sink.py::test_a_relative_data_root_is_no_sink_at_al
 [[mutation]]
 name = "detach stops reading the ignore region before its first withdrawal"
 file = "src/keelline/attach/write.py"
-before = "    ignore_remainder = _ignore_region_remainder(root)"
+# Re-pointed in wave 4: the read is now conditional on what the manifest records (DC4). The
+# mutation still takes the read away entirely, which is what leaves a region that cannot be
+# withdrawn to be discovered after everything else is gone.
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
 after = "    ignore_remainder = None"
 reddens = [
   "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
@@ -4267,12 +4280,17 @@ reddens = [
 # The test above reads its expectation out of the README's own roadmap sentence, which is what
 # keeps the rule in one place — and is also what makes it vacuous the moment that sentence stops
 # yielding items. Shorten the list to one and the storefront may advertise anything the other
-# five names cover.
+# names cover.
+#
+# Re-pointed in wave 4, when `init` and the project templates shipped and left that sentence
+# holding exactly the four items the test's floor requires. The entry quotes two lines of prose
+# verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
+# caught it is reading every entry's `before` back out of its file and counting.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `init`, `upgrade`,\n> `uninstall`, the project templates, `assess` and the adoption state machine \u2014 so today you"
-after = "> discipline. **Not yet:** `init` \u2014 so today you"
+before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess` and the adoption state machine \u2014 so nothing refreshes or removes a"
+after = "> discipline. **Not yet:** `upgrade` \u2014 so nothing refreshes or removes a"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -4681,7 +4699,7 @@ reddens = [
   "tests/test_areas.py::test_no_area_reaches_into_another_areas_private_module",
 ]
 
-# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a sixteenth spelling of the check
+# §4.5 item 12. The `doctor` check table in `docs/cli.md` is a seventeenth spelling of the check
 # names that `tests/doctor/test_checks.py` cannot see, in the branch that built this binding
 # for two other tables.
 [[mutation]]
@@ -5015,8 +5033,8 @@ reddens = [
 [[mutation]]
 name = "a broken machine file is blamed on keelline.toml again"
 file = "src/keelline/config/loader.py"
-before = '        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None'
-after = '        raise ConfigError(f"{machine} is not valid TOML: {exc}") from None'
+before = '        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise ConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None'
 reddens = [
   "tests/doctor/test_checks.py::test_a_machine_file_that_does_not_load_is_not_blamed_on_keelline_toml",
 ]
@@ -5085,4 +5103,1057 @@ before = '        if str(stale) in dropped or not stale.is_dir():'
 after = '        if str(stale) in dropped:'
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
+]
+
+[[mutation]]
+name = "the [paths] grammar check is dropped"
+file = "src/keelline/config/paths.py"
+before = "        if not PATH_VALUE.match(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted",
+]
+
+[[mutation]]
+name = "unlinked_groups stops excluding a linked group"
+file = "src/keelline/attach/binding.py"
+before = "        if target.is_dir() and not target.is_symlink():"
+after = "        if target.is_dir():"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not",
+]
+
+[[mutation]]
+name = "an annotated tag's peeled commit no longer wins over its tag object"
+file = "src/keelline/release/pins.py"
+before = "    return {**plain, **peeled}"
+after = "    return {**peeled, **plain}"
+reddens = [
+  "tests/release/test_pins.py::test_an_annotated_tag_resolves_to_its_commit_not_its_tag_object",
+]
+
+[[mutation]]
+name = "unlinked_groups stops refusing an escaping group name with a fixed sentence"
+file = "src/keelline/attach/binding.py"
+before = '''        except PathEscape as exc:
+            # `group` and `config.paths.memory` are repository-authored, so the combined path
+            # `contained` refuses is refused again, fixed text and never quoted back.
+            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc'''
+after = "        except PathEscape:\n            raise"
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_sentence",
+]
+
+[[mutation]]
+name = "is_released stops filtering to semver tags, so the v1 alias counts as a release"
+file = "src/keelline/release/pins.py"
+before = "    return any(value == sha for tag, value in pins.items() if _SEMVER.match(tag))"
+after = "    return any(value == sha for tag, value in pins.items())"
+reddens = [
+  "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
+]
+
+# One helper, two readers: the section list and, since round 2, the unknown-key lists inside a
+# known table. Dropping the filter reddens both, which is the point of their sharing it.
+[[mutation]]
+name = "an unknown name is no longer bounded before it prints"
+file = "src/keelline/config/loader.py"
+before = "    named = [name for name in unknown if SECTION_NAME.match(name)]"
+after = "    named = list(unknown)"
+reddens = [
+  "tests/config/test_loader.py::test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them",
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# The one count in the session-start lines that is computed from repository-authored bytes.
+# `memory.groups` is bounded by no grammar (`config/paths.py` names it as one of four such
+# fields), so a group name is instruction-shaped text a clone chose -- and `HookResult.context`
+# becomes `additionalContext`, model input with no delimiter and no trust record. The length of
+# the list prints; the list does not.
+[[mutation]]
+name = "the overlay-status line names the memory groups instead of counting them"
+file = "src/keelline/attach/hooks.py"
+before = "            lines.append(REAL_DIRECTORIES.format(count=len(real)))"
+after = '            lines.append(REAL_DIRECTORIES.format(count=", ".join(real)))'
+reddens = [
+  "tests/attach/test_hooks.py::test_real_directories_are_counted_and_a_group_name_never_reaches_the_context",
+]
+
+# `[ci] ref` is repository-authored and §7.1 makes it the commit of a released Keelline. Which
+# commits those are is the release area's own rule (`is_released`, semver tags only), and the
+# row's verdict is what a reader acts on: a ref no released tag names is a project pinned to a
+# gate nobody shipped, reported green.
+[[mutation]]
+name = "a ci-ref that is no released commit is reported as a released commit"
+file = "src/keelline/doctor/checks.py"
+before = "        if not is_a_release:"
+after = "        if is_a_release:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_released_commit_is_ok_and_an_unreleased_one_is_red",
+]
+
+# DC2's own argument for giving the overlay's declared floor a row rather than folding it into
+# `versions`: a `local-only` project on a machine that records an overlay must not go red for a
+# requirement it has no relationship with. `red` is what gates the exit code, and wave 5's
+# `assess` is planned to gate on it too, so the level here is a verdict something downstream
+# reads -- an unconditional red makes `doctor` exit 1 in a repository that never opens the
+# overlay. `memory.mode` is the gate, and it is compared and never printed.
+[[mutation]]
+name = "an unrelated overlay's declared floor reddens a project that never reads it"
+file = "src/keelline/doctor/checks.py"
+before = '        unmet: Status = RED if context.config.memory.mode == "overlay" else WARN'
+after = "        unmet: Status = RED"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor",
+  "tests/doctor/test_checks.py::test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor",
+]
+
+# Which sentence the run gives for a missing `[ci] ref`, and this entry used to claim something
+# else. It was named "a ci-workflow artifact is rendered with no released commit to pin it to",
+# and the mutation cannot render one: what renders a workflow is a `[ci] ref` that is non-empty
+# and matches `CI_REF` — two guards with entries of their own above — and this arm is reached only
+# when there is no ref at all, so the `NO_TAG` case merely falls through to `NO_REF` and no
+# workflow is offered either way. The test's own comment says so.
+#
+# What it does break is the reason, and that is worth an entry on this branch's own argument.
+# Three states reach here with no ref, and they have three different remedies: the document this
+# repository already had records none (`NO_REF`, and nothing the network says can change it), the
+# remote could not be asked (`NOT_ASKED`, try again before a run writes), no released tag matches the version running
+# (`NO_TAG`, wait for a release). Collapsing them is how the adoption path came to be sent to the
+# network for a file it has to edit by hand — the defect `adopted` was threaded to fix, one commit
+# below this one. The mutation makes the run that resolved nothing report the adopted document's
+# sentence instead of its own.
+[[mutation]]
+name = "the no-released-tag state is reported as the adopted document's own reason"
+file = "src/keelline/project/templates.py"
+before = "    if resolution.pin is None:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
+]
+
+# DC6, and the second half of one rule: a remote URL's last path segment and a checkout's
+# directory name are both repository-authored, so the value that fails the grammar is the one
+# thing the refusal must not carry. The anchor is `PROJECT_NAME`, the loader's own grammar in
+# the package, and the remedy — write `[project] name` yourself — is what a project whose
+# directory this tool cannot name still has. The loader refuses the same grammar the same way.
+[[mutation]]
+name = "a detected name outside the grammar is quoted back in the refusal"
+file = "src/keelline/project/detect.py"
+before = "        raise Refusal(NOT_A_NAME)"
+after = '        raise Refusal(f"{NOT_A_NAME}: {name}")'
+reddens = [
+  "tests/project/test_detect.py::test_a_name_outside_the_grammar_is_refused_without_being_quoted",
+]
+
+# DC3's whole point, and the review finding B1 behind it: both passes are planned before
+# either is applied, so a refusal anywhere — a committed `AGENTS.md` whose `harness` region
+# has an end marker and no beginning is the ordinary way one arrives — leaves nothing written
+# and no manifest. The dry run is the same branch, which is what makes `--dry-run` honest
+# rather than a second code path that happens to agree.
+[[mutation]]
+name = "init applies the write-once pass before it has looked at either plan's refusals"
+file = "src/keelline/project/init.py"
+before = "    if dry_run or once.refusals or footprint.refusals:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_init.py::test_a_dry_run_writes_nothing_and_reports_both_plans",
+  "tests/project/test_init.py::test_a_refused_footprint_writes_nothing_at_all",
+]
+
+# DC5. The manifest is the record that this repository has been initialised, and it is the
+# only one: a second `init` over an initialised repository would re-plan every artifact
+# against a configuration it rebuilt from scratch. Refreshing a footprint is `keelline
+# upgrade`, which ships later, and the refusal says so rather than doing half of it. The
+# anchor is `.keelline/manifest.json`, whose path is the scaffold area's own constant and is
+# contained against the root before it is read.
+[[mutation]]
+name = "init runs again over a repository whose manifest says it is already initialised"
+file = "src/keelline/project/init.py"
+before = "    if (root / MANIFEST_PATH).is_file():"
+after = "    if False:"
+reddens = [
+  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_says_upgrade_ships_later",
+]
+
+# P10, and the third leak of this family this branch closes. `tomllib` builds its message as
+# `f"{msg} (at line N, column M)"` and `msg` embeds the source for at least five of its own
+# faults — a duplicate table, a duplicate inline-table key, a redefined namespace, an invalid
+# character, an overwritten value. A TOML key is arbitrary quoted text, so interpolating the
+# exception whole put unbounded repository bytes into a `ConfigError` and, through
+# `project.init._existing`, into a refusal the `init` skill is instructed to relay to a model
+# and stop on. Only the position prints, and the fallback reports an absent suffix rather than
+# the message — a fallback to `str(exc)` is the one change that would reopen this silently.
+# Wave A closed the sibling leak in the same loader function (the unknown-section list, bounded
+# to `SECTION_NAME`); this completes it, and one extractor serves all three call sites.
+[[mutation]]
+name = "a tomllib message is quoted back whole, so a hostile key reaches a refusal"
+file = "src/keelline/config/loader.py"
+before = "    return found.group(0) if found is not None else NO_POSITION"
+after = "    return str(exc)"
+reddens = [
+  "tests/config/test_loader.py::test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped",
+  "tests/config/test_loader.py::test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_message",
+  "tests/project/test_init.py::test_a_configuration_that_will_not_parse_never_quotes_its_own_keys",
+  "tests/docs/test_trail.py::test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys",
+]
+
+# `attach` links; it never moves a note. Linking over a group that is still a real directory
+# leaves every session reading the repository's own copy while that group's share of the
+# overlay stays empty — and by the time anyone notices, the binding record, the settings merge
+# and the ledger are written and `doctor._attached` reports the repository attached. The
+# refusal is above every write for that reason, so the mutation is measured on the snapshots.
+[[mutation]]
+name = "attach links over notes that never moved again"
+file = "src/keelline/attach/write.py"
+before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
+after = "        pass"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# DC4, and it is an ownership rule rather than a last-writer one. `init` records the
+# `keelline:ignore` region as a footprint artifact with the body `attach` writes; a `detach`
+# that dropped it would take a line out of a committed file this command never wrote, and
+# `upgrade` would read the footprint as hand-edited on a repository nobody edited.
+# The count-not-name half of the same refusal, and the highest-value class the plan names:
+# `memory.groups` is one of the four fields `config/paths.py` says no grammar bounds, and
+# `skills/attach/SKILL.md` has the model relay this message to the user, so a group name here is
+# instruction-shaped text a clone chose arriving attributed to Keelline. The length of the list
+# prints; the list does not. Wave B's entry on `attach/hooks.py` is the same mutation on the same
+# constant's other caller.
+[[mutation]]
+name = "the never-moved refusal names the memory groups instead of counting them"
+file = "src/keelline/attach/write.py"
+before = "        raise Refusal(REAL_DIRECTORIES.format(count=len(real)))"
+after = '        raise Refusal(REAL_DIRECTORIES.format(count=", ".join(real)))'
+reddens = [
+  "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
+]
+
+# The overlay half of the never-moved snapshot, which the repository-write mutation above cannot
+# reach: it hoists `_write_ignore_region`, which lands under the root. `_record_binding` is the
+# write that made `doctor` report a refused attach as **bound**, and it lands in the overlay --
+# so this is the one that proves the second walk is doing work rather than passing empty.
+[[mutation]]
+name = "the binding record is written above the never-moved refusal"
+file = "src/keelline/attach/write.py"
+before = "    real = unlinked_groups(root, config)\n    if real:"
+after = "    _record_binding(binding)\n    real = unlinked_groups(root, config)\n    if real:"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+# The other half of the same test, and the reason it snapshots rather than only catching the
+# refusal: "above every write" is the claim, and a check hoisted one write too low still raises.
+# Deleting the refusal reddens the `pytest.raises`; moving a write above it reddens the walks.
+[[mutation]]
+name = "the never-moved check is asked one write too late"
+file = "src/keelline/attach/write.py"
+before = "    real = unlinked_groups(root, config)"
+after = "    _write_ignore_region(root)\n    real = unlinked_groups(root, config)"
+reddens = [
+  "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
+]
+
+[[mutation]]
+name = "detach withdraws a region the footprint owns"
+file = "src/keelline/attach/write.py"
+before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
+after = "    ignore_remainder = _ignore_region_remainder(root)"
+reddens = [
+  "tests/attach/test_detach.py::test_a_region_init_recorded_survives_a_detach",
+]
+
+# `--check`'s exit code is what the attach skill branches on before it relays anything, so a
+# count that prints while the exit stays 0 is a finding nothing acts on. Exit 1 for the same
+# reason a mismatch answers 1: the answer is an act of the owner's, not a fault in the command.
+# The same rule on the same line `--check` prints. `skills/attach/SKILL.md` relays this summary,
+# so the count is Keelline's own and the entries are the repository's.
+[[mutation]]
+name = "check names the groups that never moved instead of counting them"
+file = "src/keelline/attach/permissions.py"
+before = '        summary += f"; {real} memory group(s) are real directories and would refuse the attach"'
+after = '        summary += f"; {unlinked_groups(root, config)} are real directories"'
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
+]
+
+# `check`'s docstring calls a `--check` whose two halves read different documents "exactly what
+# it exists to rule out", and the single load is what makes that true. Unguarded, deleting this
+# argument restored two loads with the whole suite still green.
+[[mutation]]
+name = "check loads the configuration twice again"
+file = "src/keelline/attach/permissions.py"
+before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
+after = "    binding = read_binding(root, store=store, machine=machine)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_reads_each_of_its_two_documents_once",
+]
+
+[[mutation]]
+name = "check reports the groups that never moved and still exits zero"
+file = "src/keelline/attach/permissions.py"
+before = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH or real else 0)"
+after = "    return Result(summary, data, exit_code=1 if binding.state == MISMATCH else 0)"
+reddens = [
+  "tests/attach/test_commands.py::test_check_counts_the_groups_that_never_moved_and_exits_one",
+]
+
+# P10, the fourth site of the family this branch has now closed three times. The file is the
+# overlay's `projects/<name>/project.toml`, whose bytes are the machine owner's and may print —
+# except that the value Keelline writes into it is this repository's `origin`, and a remote URL
+# may not print wherever it came from. `tomllib`'s message embeds the source for several of its
+# faults, so the whole exception is unbounded bytes in a `Failure` the attach skill relays.
+[[mutation]]
+name = "the binding record's parse failure is quoted back whole"
+file = "src/keelline/attach/binding.py"
+before = '        raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None'
+after = '        raise Failure(f"{where} is not valid TOML: {exc}") from exc'
+reddens = [
+  "tests/attach/test_binding.py::test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped",
+]
+
+# One invariant, enforced from both ends: the workflow's `uses:` ref is what `[ci] ref` says on
+# disk after the run, and `doctor`'s `ci-ref` row reports red when the two disagree. On the
+# adoption path `keelline.toml` is a create-once artifact already on disk, so a pin recorded
+# into the in-memory tables reaches no file — and the workflow written beside it then pins a sha
+# the document does not carry. Measured before this guard: an adopted `ref = "aaa…"`, a listing
+# resolving `bbb…`, the workflow pinning `bbb…`, `keelline.toml` still saying `aaa…`, `skipped`
+# empty, and the run printing `CI: v0.1.0@bbb…` as a success.
+[[mutation]]
+name = "init records a resolved pin in a document it did not create, so the workflow outruns [ci] ref"
+file = "src/keelline/project/init.py"
+before = "    if resolution.pin is not None and existing is None:"
+after = "    if resolution.pin is not None:"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewritten",
+  "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
+  "tests/project/test_command.py::test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release",
+]
+
+# `[ci] ref` is repository-authored — on the adoption path it is whatever `keelline.toml`
+# already carried, and the loader bounds it to "a string" and nothing more — and it lands in the
+# `uses:` line of a YAML file GitHub executes. `GATE_BRANCH`'s rule, read onto the second value
+# this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
+# nothing a repository writes can move, and a value outside it costs the artifact, not the run.
+[[mutation]]
+name = "a [ci] ref outside the grammar is rendered into the workflow's uses line"
+file = "src/keelline/project/templates.py"
+before = "    if not CI_REF.match(ref):"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line",
+]
+
+# DC3's premise, which nothing made true: `scaffold.engine.plan` has no duplicate-target
+# detection and C2 is frozen, so two `[paths]` keys aimed at one file made both plans report zero
+# refusals, `apply` write both, the file hold only the second artifact's bytes, and the manifest
+# record two different `sha256` values for one target — the first artifact silently lost,
+# `upgrade` reading one record as hand-edited for ever, and `uninstall` removing a file holding
+# the other. The anchor is this module's own artifact list, a constant in the installed package:
+# which artifacts exist and which `[paths]` key each reads are Keelline's, and the repository
+# chooses only the values — which the refusal names by key and never by value.
+[[mutation]]
+name = "two artifacts of one pass may target one file again"
+file = "src/keelline/project/templates.py"
+before = "    _one_target_each(footprint)"
+after = ""
+reddens = [
+  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
+]
+
+# The highest-value new guard in the `project` area, and it had a test and no entry.
+# `[ci] gate_branch` is repository-authored and is interpolated into two positions of a YAML file
+# GitHub executes — a `branches:` list and a `${{ }}` default — so it is quoted there *and* held
+# to a shape here, because quoting alone still admits a newline, which closes the list and lets
+# further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
+# the installed package; the party bounded is the repository, which cannot move it. A value
+# outside the grammar costs the artifact rather than the run, and the sentence names the key and
+# the grammar and never the value.
+[[mutation]]
+name = "a gate_branch outside the grammar is interpolated into the rendered workflow"
+file = "src/keelline/project/templates.py"
+before = "    if not GATE_BRANCH.match(config.ci.gate_branch):"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
+  "tests/project/test_init.py::test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow",
+  "tests/project/test_command.py::test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin",
+]
+
+# Without it a `%%REF%%` survives into an adopting project's `uses:` line and a `%%NAME%%` into
+# the head of the file every session loads. Measured before the test beside it existed: the guard
+# was executed by `tests/project` and asserted by none of it — 39 passed with the search made to
+# answer `None`.
+[[mutation]]
+name = "a template sentinel left unfilled is written into a project's file"
+file = "src/keelline/project/templates.py"
+before = "    left = _SENTINEL.search(text)"
+after = "    left = None"
+reddens = [
+  "tests/project/test_templates.py::test_a_template_sentinel_left_unfilled_costs_the_artifact_rather_than_shipping",
+]
+
+# A containment check whose docstring names its anchor's provenance, with nothing proving it:
+# `name` decides which file under the shipped tree is opened, so the membership test is before the
+# join and not after. The anchor is `PROJECT_FILES`, a constant in the wheel beside the files it
+# names, and the party contained is a caller inside this package. Measured before the test beside
+# it existed: 39 passed with the check dropped; with it, the traversal name reaches `read_text`
+# and raises `OSError` instead of this module's own `Failure`.
+[[mutation]]
+name = "read joins a name this package does not ship"
+file = "src/keelline/project/templates.py"
+before = "    if name not in PROJECT_FILES:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_templates.py::test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it",
+]
+
+# A compatibility gate, and the classic off-by-one site. `satisfies` is what tells a session and a
+# `doctor` row whether the overlay the machine records can be driven by the Keelline that is
+# running; with `>` the version that meets a floor exactly is reported as not meeting it, so every
+# project on the released version an owner wrote into `keelline.requires` is told to install
+# something else, and the overlay's own shipped template declares such a floor. The anchor is this
+# module's two grammars, in the installed package; what the owner authors is the floor.
+[[mutation]]
+name = "the declared floor stops being met by the version that equals it"
+file = "src/keelline/overlay/requires.py"
+before = "    return tuple(int(part) for part in running.groups()) >= tuple("
+after = "    return tuple(int(part) for part in running.groups()) > tuple("
+reddens = [
+  "tests/overlay/test_requires.py::test_the_floor_is_compared_as_numbers_not_as_text",
+]
+
+# The other half of "this reader answers for every string", after the digit bound above.
+# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
+# exists on none of them, so without this arm a manifest an owner can save raised `AttributeError`
+# out of a function whose docstring promises `None` for anything it cannot read. Both callers rest
+# on that promise: `doctor` renders a raised reader as "this check could not run", and the session
+# handler's backstop swallows it together with every other line of the same result — which is how
+# an overlay manifest silenced `NOT_ATTACHED` once already.
+[[mutation]]
+name = "the requires reader raises for a manifest that is not an object"
+file = "src/keelline/overlay/requires.py"
+before = "    if not isinstance(raw, dict):"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
+]
+
+# A supply-chain verdict, and the one `ci-ref` row that gates the exit code from the file rather
+# than from the configuration: the pin GitHub acts on is the workflow's `uses:` line, so a
+# workflow pinning something other than `[ci] ref` means the gate that runs is not the one
+# recorded. Returning the ref's own verdict there reads as "the workflow agrees" — the same false
+# green the two `warn` arms beside it refuse by name. The anchor is `_USES`, this module's own
+# pattern in the installed package; the file it reads is repository-authored and no byte of it is
+# printed.
+[[mutation]]
+name = "doctor stops comparing the workflow's pin with [ci] ref"
+file = "src/keelline/doctor/checks.py"
+before = "    if pinned != {ref}:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_pins_something_else_is_red",
+]
+
+# The same row's other red, over the documented mutable opt-in. `[ci] ref = "v1"` is judged
+# against the public repository's own tag listing, and an alias the listing does not carry is a
+# project whose gate resolves to nothing; reported as the ordinary `warn` ("a mutable opt-in"), it
+# reads as an installation working. Uncovered as well as unproven until the case beside this
+# entry was written.
+[[mutation]]
+name = "an alias the public repository does not carry is reported as the mutable opt-in"
+file = "src/keelline/doctor/checks.py"
+before = "        if ALIAS not in tags:"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed",
+]
+
+# The pin half of the CI line, which `22969c2` records as a real bug in its other half. The line
+# may name a release only when the workflow really pins that release's commit: on the adoption
+# path the workflow pins the ref `keelline.toml` already carried, so `CI: <tag>@<sha>` there
+# asserts that the gate GitHub runs is a release's when it is not — and `doctor`'s `ci-ref` row is
+# what then reports the disagreement. Not a permission gate; it is here for the false-claim class
+# this file already tracks in doctor's own rows, where what a reader does next follows from the
+# sentence.
+[[mutation]]
+name = "the init CI line claims a release for a ref the run did not resolve"
+file = "src/keelline/project/commands.py"
+before = "    elif pin is not None and pin.sha == report.ref:"
+after = "    elif pin is not None:"
+reddens = [
+  "tests/project/test_command.py::test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release",
+]
+
+# The heading over both reports, which was `initialised:` above a REFUSED section saying nothing
+# would be written — invisible while the summary was four count lines, and a claim a reader checks
+# once the report prints. Three states and not two, keyed on `(refused, dry_run)`: an operator who
+# reads "initialised:" over a refusal stops looking for the thing they have to fix. The same
+# false-claim class as the entry above, and not a permission gate either.
+[[mutation]]
+name = "a refused init run is headed as an initialised one"
+file = "src/keelline/project/commands.py"
+before = '    (True, False): "refused, and nothing was written:",'
+after = '    (True, False): "initialised:",'
+reddens = [
+  "tests/project/test_command.py::test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report",
+]
+
+# Committed provenance. `Template.source` becomes `Record.template` in `.keelline/manifest.json`,
+# which is tracked and is what `upgrade` will read to find out where an artifact's bytes came
+# from. Three artifacts here compute their bytes rather than reading a shipped file, and all three
+# recorded `project/<id>` — a name `PROJECT_FILES` does not carry, that the wheel does not ship,
+# and that `read` refuses by name. Nothing raised, because each one overrides `render`; what was
+# written was a pointer at nothing, and the committed smoke fixture's manifest carried
+# `"template": "project/gitignore"` from the day it was grown. The mutation restores that
+# spelling, and both ends of the rule redden: the two-rule guard over what this module builds, and
+# the fixture's own manifest held to what this build would write for it.
+[[mutation]]
+name = "a computed artifact records a shipped template name the wheel does not ship"
+file = "src/keelline/project/templates.py"
+before = '        source=f"{COMPUTED}/{artifact_id}",'
+after = '        source=f"{PROJECT}/{artifact_id}",'
+reddens = [
+  "tests/project/test_templates.py::test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed",
+  "tests/project/test_fixture.py::test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in",
+]
+
+# B1. Two readers of one value. `PATH_VALUE` says what a `[paths]` value may look like and
+# `fsops.checked_components` says what a path *is*; for four review rounds they disagreed about
+# `docs//x.md`, `docs/x/` and `./docs`, so `plan()` reported no refusal for a value `apply()`
+# could not write — and `apply()` raised part-way through the pass, with earlier artifacts on
+# disk and its `finally` having already persisted the manifest. The anchor's provenance: both
+# rules are read off the clone's own spelling of its own `keelline.toml`, and neither consults
+# anything the clone can move, so a repository cannot choose which of the two answers it gets.
+# Measured: with the charset form restored, `docs//roadmap-history.md`, `docs/architecture/`
+# and `./docs` all match the grammar again.
+[[mutation]]
+name = "the [paths] grammar admits a spelling the write refuses again"
+file = "src/keelline/config/schema.py"
+before = '    r"^(?!\.\.?(?:/|\Z))[A-Za-z0-9._][A-Za-z0-9._-]*(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9._-]+)*\Z"'
+after = '    r"^[A-Za-z0-9._][A-Za-z0-9._/-]*\Z"'
+reddens = [
+  "tests/config/test_paths.py::test_the_grammar_admits_exactly_what_the_component_rule_accepts",
+]
+
+# The other half of B1, and the one the half-write actually turned on: `contained()` is what
+# `plan()` asks, so a spelling the walk will refuse has to be refused *here*, above the first
+# write. `Path(relative).parts` drops an empty component, a trailing slash and a leading `./`,
+# which is why `plan` said yes. Restoring that spelling restores the disagreement, with the
+# grammar left tightened — the two guards must not be able to cover for each other.
+[[mutation]]
+name = "contained normalises the value away, so plan stops agreeing with apply"
+file = "src/keelline/config/paths.py"
+before = "        parts = checked_components(relative)"
+after = "        parts = Path(relative).parts"
+reddens = [
+  "tests/config/test_paths.py::test_contained_refuses_every_spelling_the_write_would_refuse",
+  "tests/scaffold/test_containment.py::test_a_target_that_survives_plan_is_one_apply_can_write",
+]
+
+# B2. A containment ruling and its anchor's provenance. Nothing reserved git's control
+# directory: `PATH_VALUE` admits a leading dot, and `contained()` and this walk each refused an
+# absolute path, `..` and a symlink — a control directory is none of those. So a clone could aim
+# a `MANAGED_REGION` artifact at `.git/hooks/pre-commit`, which the engine's "exists and
+# Keelline did not write it" guard exempts, and `_mode_of` then carried the developer's 0755
+# onto the replacement. The anchor is the project root the CLI resolved and `.git` is git's own
+# name inside it, so the clone — which authors the path string and nothing else — cannot move
+# the directory being reserved. Measured: with the check dropped here, `write_within` creates
+# `.git/keelline-roadmap.md` and rewrites an existing executable `pre-commit` in place at 0755.
+[[mutation]]
+name = "the walk writes inside git's control directory again"
+file = "src/keelline/fsops.py"
+before = "    if names_control_directory(relative):"
+after = "    if False:"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/test_fsops.py::test_an_existing_git_hook_is_never_rewritten_in_place",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+]
+
+# The same rule where it can name the key instead of quoting the value. Separate from the walk's
+# copy because the refusal a user reads for a `[paths]` value must not print that value back,
+# and because a guard proven only through the layer beneath it is a guard that can be deleted
+# with nothing going red.
+[[mutation]]
+name = "a [paths] value may name git's control directory again"
+file = "src/keelline/config/paths.py"
+before = "        if names_control_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted",
+]
+
+# The case half, on its own. A rule that matched `.git` exactly would be green on every test
+# above that does not spell `.GIT`, and the default filesystem on macOS is case-insensitive, so
+# `.GIT/hooks/pre-commit` reaches the developer's hook there.
+[[mutation]]
+name = "the control-directory rule stops folding case, so .GIT reaches the same directory"
+file = "src/keelline/fsops.py"
+before = "    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+after = "    return any(part == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+reddens = [
+  "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
+  "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+]
+
+# The pointer every Claude Code session in an adopting project follows. `CLAUDE.md` shipped as
+# the literal `@AGENTS.md` and was built with no `render` override at all, so a project that set
+# `[paths] agents_md` to anything else received a pointer at a file the run had not written,
+# beside the file it had — and `keelline docs check` passed over the pair, because nothing on
+# either side reads the other. The mutation writes the self-pointer `_one_target_each` refuses
+# when a repository asks for it, which is the only way left to reach that state.
+[[mutation]]
+name = "the CLAUDE.md pointer stops naming the configured instruction file"
+file = "src/keelline/project/templates.py"
+before = '            render=lambda: fill(read("claude.md"), AGENTS_MD=p.agents_md),'
+after = '            render=lambda: fill(read("claude.md"), AGENTS_MD=CLAUDE_MD),'
+reddens = [
+  "tests/project/test_templates.py::test_the_claude_md_pointer_names_the_configured_instruction_file",
+  "tests/project/test_init.py::test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded",
+]
+
+# Three numbers Keelline writes into somebody else's repository, telling them what a Keelline
+# gate will hold that same file to. They were literals copied out of `presets/recommended.toml`,
+# so a project that lowered `agents_md_lines` was handed a document saying the preset's number
+# was fine and failed `keelline docs check` one line past its own. The mutation takes one budget
+# for another, which is the drift a single shared fill would reintroduce.
+[[mutation]]
+name = "the skeleton states a budget other than the one it names"
+file = "src/keelline/project/templates.py"
+before = '                LINES=_budget(config, "agents_md_lines"),'
+after = '                LINES=_budget(config, "agents_md_words"),'
+reddens = [
+  "tests/project/test_templates.py::test_the_skeleton_states_the_budgets_this_project_will_be_held_to",
+]
+
+# `_ci`'s docstring states the rule this restores — "a run that collapsed them would send an
+# operator to the network for a file they have to edit" — and the code had the inverse of it,
+# because `project_templates` took no adoption flag and `_ci` could not tell the two kinds of
+# run apart. Under the preset's `[ci] mode = "reusable"` on a repository with a hand-written
+# `keelline.toml`, an unreachable remote printed "run `keelline init --yes` again with the
+# network reachable". Running again cannot help: `keelline.toml` is a `Kind.ONCE` artifact
+# already on disk, so no pin is ever recorded and the workflow is skipped again for ever.
+[[mutation]]
+name = "the adoption path is sent back to the network for a file it has to edit by hand"
+file = "src/keelline/project/templates.py"
+before = '''        if adopted:
+            return None, NO_REF'''
+after = '''        if False:
+            return None, NO_REF'''
+reddens = [
+  "tests/project/test_templates.py::test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit",
+  "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
+
+# The other half: the flag exists and has to travel. `init` held `existing is None` and passed
+# none of it, which is how the branch above came to be unreachable in the first place.
+[[mutation]]
+name = "init stops telling project_templates which kind of run this is"
+file = "src/keelline/project/init.py"
+before = "adopted=existing is not None"
+after = "adopted=False"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
+
+# The ask the adoption path with no `[ci] ref` does not need: `_ci` answers it with `NO_REF`
+# before it reads the resolution, so the round trip — up to its whole timeout offline — bought
+# an answer nothing printed.
+[[mutation]]
+name = "the adoption path with no ref asks the network again"
+file = "src/keelline/project/init.py"
+before = 'if config.ci.mode == "reusable" and (existing is None or config.ci.ref)'
+after = 'if config.ci.mode == "reusable"'
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
+]
+
+# `NO_REF`'s argument, on the path `NO_REF` does not cover: a run that writes persists the
+# manifest, and `init` refuses a repository that has one, so "run it again with the network
+# reachable" is a remedy only a dry run can take. The mutation gives it to every run.
+[[mutation]]
+name = "an unreachable remote tells a run that wrote to run again"
+file = "src/keelline/project/templates.py"
+before = "            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN"
+after = "            return None, NOT_ASKED_DRY"
+reddens = [
+  "tests/project/test_init.py::test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing",
+]
+
+# N5 of the wave-4 re-review. `contained()` took on the write's component rule, and
+# `contained_roots` catches its refusal and moves on — so `code_roots = ["src/"]` was silently
+# dropped from every count the field feeds. The fold is what keeps a read-only walk from
+# inheriting a rule that exists for writes.
+[[mutation]]
+name = "a code root spelled with a slash is dropped again"
+file = "src/keelline/guards/roots.py"
+before = "                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root"
+after = "                root, entry, resolved_root=resolved_root"
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked",
+]
+
+# The call site, which is what regressed. A TOML key is arbitrary quoted text, so this message
+# joined a repository's own bytes straight into a `ConfigError` — raw ESC and raw newlines into
+# a terminal and into a refusal the `init` skill is instructed to relay to a model. Reachable on
+# all nine tables, and two functions from the helper written in that file for this rule. The
+# *missing*-key message beside it is built from schema field names and is deliberately not
+# bounded.
+[[mutation]]
+name = "an unknown key in a known table is echoed back raw"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# `[budgets]` is a second reader with a second message and its own name list, so it is a second
+# entry rather than a second assertion under the one above.
+[[mutation]]
+name = "an unknown budget key is echoed back raw"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")'''
+after = '''        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")'''
+reddens = [
+  "tests/config/test_loader.py::test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them",
+]
+
+# A verdict a reader acts on. With `[ci] mode = "reusable"`, a released sha recorded and no
+# `.github/workflows/keelline.yml`, the row reported `ok` — "[ci] ref is a released Keelline
+# commit" — for a repository with no gate in it at all. That is the false green the `not pinned`
+# arm eleven lines below already refuses by name, and it is the state `init` itself leaves
+# whenever it reports `ci-workflow` under `skipped`. The mutation puts the false green back.
+[[mutation]]
+name = "doctor reports a pinned ref as ok with no workflow file to pin it in"
+file = "src/keelline/doctor/checks.py"
+before = '        if context.config.ci.mode == "reusable":'
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_recorded_ref_with_no_workflow_file_at_all_is_never_green",
+]
+
+# The hermetic default the helper's own docstring promises. `machine=None` is not "no machine
+# file" to the code under test: it resolves to `Path.home()/.config/keelline/config.toml`, the
+# process `HOME`, which the `env` dict this helper passes cannot reach. Every case that omitted
+# `machine` read the developer's real overlay on any machine that has run `keelline setup
+# --overlay`, and passed only because neither this machine nor CI has one.
+[[mutation]]
+name = "the doctor test helper defaults machine back to the process home"
+file = "tests/doctor/test_checks.py"
+before = '        machine=tmp_path / "no-machine.toml" if machine is None else machine,'
+after = "        machine=machine,"
+reddens = [
+  "tests/doctor/test_checks.py::test_no_case_here_can_read_the_developers_own_machine_configuration",
+]
+
+# The third enumerated-value leak in this loader, after `_build`'s and `_budgets`'. `!r` escapes
+# the control characters, which is why it read as milder than the raw bytes those two printed —
+# but `keelline.state`, `memory.mode` and `ci.mode` are repository-authored and bounded by no
+# grammar, so what it prints is unbounded in content and in length, and the same branch deleted
+# `; got {project.name!r}` from the refusal one screen below on exactly this reasoning.
+[[mutation]]
+name = "a configuration enum quotes the value back again"
+file = "src/keelline/config/loader.py"
+before = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")'''
+after = '''        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")'''
+reddens = [
+  "tests/config/test_loader.py::test_an_enumerated_value_is_refused_without_being_quoted",
+]
+
+# One line for both halves of the bound, because one regex holds both. Unbounded `\d+` restores
+# the `ValueError` past CPython's 4300-digit `int()` cap — which `doctor` renders as "this check
+# could not run" and the session handler's backstop swallows along with every other line of the
+# same result, `NOT_ATTACHED` included — and restores the Unicode-aware digit class, which let a
+# floor written in Eastern Arabic-Indic numerals validate and print back verbatim.
+[[mutation]]
+name = "the version grammar stops bounding its components"
+file = "src/keelline/overlay/requires.py"
+before = '_COMPONENT = r"([0-9]{1,9})"'
+after = '_COMPONENT = r"(\d+)"'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_component_too_long_to_convert_is_unreadable_and_not_an_exception",
+  "tests/overlay/test_requires.py::test_only_ascii_digits_are_a_version",
+  "tests/attach/test_hooks.py::test_an_unreadable_floor_costs_its_own_line_and_never_the_whole_result",
+]
+
+# The mirror of "check loads the configuration twice again", over the half that writes. `attach`
+# called `read_binding` without a `Config` and then loaded a second one for its own
+# `memory.groups` refusals, so one run read `keelline.toml` and the machine file twice and the
+# two halves were free to disagree about `project.name`, `memory.groups` and `paths.memory`.
+[[mutation]]
+name = "attach loads the configuration twice again"
+file = "src/keelline/attach/write.py"
+before = "    binding = read_binding(root, store=store, machine=machine, config=config)"
+after = "    binding = read_binding(root, store=store, machine=machine)"
+reddens = [
+  "tests/attach/test_commands.py::test_attach_reads_each_of_its_two_documents_once_too",
+]
+
+# `.keelline/manifest.json` is tracked, `attach` never reads it, and `Manifest.read` refuses an
+# unreadable one -- so a clone committing `{"format": 99}` attached cleanly and then made every
+# later `detach` exit 2, for ever, above every withdrawal. The mutation lets a symlinked
+# manifest's `PathEscape` propagate again.
+[[mutation]]
+name = "an unreadable manifest blocks the detach again"
+file = "src/keelline/attach/write.py"
+before = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except Refusal:'''
+after = '''    try:
+        return Manifest.read(root).get("gitignore") is not None
+    except Refusal as exc:
+        if isinstance(exc, PathEscape):
+            raise'''
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The half the first fix missed: catching `ManifestError` alone let a symlinked manifest's
+# `PathEscape` through, and the detach exited 2 exactly as before. The mutation above now puts
+# that narrowing back; this one does the same to the reader, where bytes that are not UTF-8 left
+# `Manifest.read` as a `UnicodeDecodeError` rather than as its own refusal.
+
+[[mutation]]
+name = "the manifest reader lets undecodable bytes out as a crash again"
+file = "src/keelline/scaffold/manifest.py"
+before = "        except (OSError, ValueError, RecursionError) as exc:"
+after = "        except (OSError, json.JSONDecodeError) as exc:"
+reddens = [
+  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
+]
+
+# The one list four lanes report as a count, and the one fault none of those lanes can fix for
+# itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
+# counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
+# line -- about one directory whose remedy was already done.
+[[mutation]]
+name = "a repeated memory group is counted twice again"
+file = "src/keelline/config/loader.py"
+before = '    memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))'
+after = '    memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))'
+reddens = [
+  "tests/config/test_loader.py::test_a_repeated_memory_group_is_one_group",
+]
+
+# The verdict half of the same finding. Since `checked_components` became the one component
+# rule, `contained` refuses `""`, `"."`, a trailing slash and a doubled separator as well as a
+# `..` -- and the first four of those never left `paths.memory`, so the old sentence told four
+# kinds of owner a thing about their own document that was not true, with a remedy already done.
+[[mutation]]
+name = "the memory-group refusal describes an escape again"
+file = "src/keelline/attach/binding.py"
+before = '''    "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
+    "paths.memory is itself a symlink, so the entry is refused rather than counted"'''
+after = '''    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
+    "rather than counted"'''
+reddens = [
+  "tests/attach/test_binding.py::test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true",
+]
+
+# DC7: spelled once. This branch added `REPOSITORY_URL` and `overlay-requires`' remedy a few rows
+# below reads it, while `cli-path`'s still carried the address written out -- two places to change
+# when the repository moves, in the command whose whole job is finding the two halves of something
+# that has stopped agreeing. The test reads the function's source, because an identical literal
+# satisfies an assertion about the remedy's text.
+[[mutation]]
+name = "the cli-path remedy spells the repository URL again"
+file = "src/keelline/doctor/checks.py"
+before = '            f"run `uv tool install git+{REPOSITORY_URL}`",'
+after = '            "run `uv tool install git+https://github.com/Nezhinskiy/keelline`",'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_cli_that_does_not_resolve_is_a_warning_that_names_the_install_command",
+]
+
+# `overlay_root` answers `None` for a machine that records no overlay and a `Path` for a recorded
+# root whether or not anything is there, and both overlay-gated rows collapsed the two into one
+# sentence -- so a machine that recorded an overlay and then moved it was told it had recorded
+# none, with an empty remedy under it. `overlay-requires`' arm was a byte-for-byte copy of
+# `pre-commit`'s, which is how it inherited the defect; the sentences live in one place now.
+[[mutation]]
+name = "the two overlay rows call a moved overlay an unrecorded one"
+file = "src/keelline/doctor/checks.py"
+before = '''    if overlay is None:
+        return Row(SKIP, NO_OVERLAY_RECORDED, "")
+    return Row(SKIP, OVERLAY_GONE, OVERLAY_GONE_REMEDY)'''
+after = '    return Row(SKIP, NO_OVERLAY_RECORDED, "")'
+reddens = [
+  "tests/doctor/test_checks.py::test_an_overlay_that_moved_is_not_reported_as_one_never_recorded",
+]
+
+# The unreachable arm, restored. `_ci` returns a workflow only for a non-empty `[ci] ref` and a
+# non-empty reason otherwise, and `init` derives `ref` from that same skip -- so the disjunct
+# could never be the reason the branch was taken and the fallback string could never be
+# formatted. An arm no run can reach is the same species as a vacuous assertion.
+[[mutation]]
+name = "the init CI line grows an arm no run can reach"
+file = "src/keelline/project/commands.py"
+before = '''    if skipped is not None:
+        ci_line = f"CI: skipped — {skipped}"'''
+after = '''    if skipped is not None or not report.ref:
+        ci_line = f"CI: skipped — {skipped or 'no workflow was planned'}"'''
+reddens = [
+  "tests/project/test_command.py::test_the_ci_line_has_no_arm_no_run_can_reach",
+]
+
+# `Sync.ahead` is `None` when the count is UNKNOWN -- a branch with no upstream has every commit
+# unpushed -- and the two lines were appended by two independent `if`s with `ahead=sync.ahead or 0`
+# under the second. So a session heard "nothing backs it up" and "0 unpushed commit(s)" in one
+# breath, with the number on the sentence that was false. Parked twice as "the plan specified that
+# condition exactly"; the plan is not the authority on whether a sentence is true.
+[[mutation]]
+name = "a session with no upstream is told it has 0 unpushed commits"
+file = "src/keelline/attach/hooks.py"
+before = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                elif sync.dirty > 0 or sync.ahead > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead, dirty=sync.dirty))'''
+after = '''                if sync.ahead is None:
+                    lines.append(NO_UPSTREAM.format(dirty=sync.dirty))
+                if sync.dirty > 0 or (sync.ahead or 0) > 0:
+                    lines.append(UNPUSHED.format(ahead=sync.ahead or 0, dirty=sync.dirty))'''
+reddens = [
+  "tests/attach/test_hooks.py::test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wrong",
+]
+
+# The budget this handler shares with the one that links the note store. A healthy repository
+# delivers nothing, so `dispatch` banks no `once_key` marker and this handler is asked again on
+# every event the matcher covers -- and it is the healthy path that pays, because `overlay_sync`
+# sits under `if not lines:`. Four of nine seconds against an entry whose `timeout` is ten, re-paid
+# on every compaction, in a process that also runs `worktree-link`: a timeout
+# there costs the store link and not merely this nudge. With the set emptied, every invocation pays
+# again, which is the state this gate was measured against.
+[[mutation]]
+name = "a compacted session re-pays the overlay sync"
+file = "src/keelline/attach/hooks.py"
+before = 'CONTINUED = frozenset({"compact"})'
+after = "CONTINUED = frozenset()"
+reddens = [
+  "tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync",
+]
+
+# §5.3's floor for this area, spelled in this module: an open handler never costs a session, and
+# the blanket backstop is what makes that true of a failure no `except` here foresaw. Every other
+# case in this module reaches a path with an explicit `except` of its own, so the backstop survived
+# deletion green until the case beside this entry existed. It is also what keeps this module's
+# safety off `Policy.OPEN` being kept for it -- the two guards are independent, and the entry below
+# is the other one.
+[[mutation]]
+name = "an open session handler lets an unforeseen failure out"
+file = "src/keelline/attach/hooks.py"
+before = """    except Exception:
+        return HookResult()"""
+after = """    except Exception:
+        raise"""
+reddens = [
+  "tests/attach/test_hooks.py::test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception",
+]
+
+# The mirror of "the background guard fails open again", over the one handler that must not fail
+# closed. `Policy.CLOSED` turns a failed overlay lookup into a deny on the one channel a refusal
+# travels -- the state D11 reserves for a guard that could not judge -- out of a handler that reads
+# two git remotes and a manifest and protects nothing. Asserted through the real dispatcher, not by
+# reading the constant back off the handler it was passed to.
+[[mutation]]
+name = "the overlay-status handler refuses a session when it fails"
+file = "src/keelline/attach/hooks.py"
+before = "            policy=Policy.OPEN,"
+after = "            policy=Policy.CLOSED,"
+reddens = [
+  "tests/attach/test_hooks.py::test_the_registration_is_what_the_dispatcher_acts_on",
+]
+
+# The delivery rule `attach/hooks.py`'s corrected docstring rests on. Banking a `once_key` for a
+# result that said nothing would spend a handler's single delivery on silence -- and the
+# consequence, which no test stated until now, is that a handler whose healthy answer IS silence
+# runs on every matching event and pays its `git` calls every time.
+[[mutation]]
+name = "a silent handler spends its one delivery"
+file = "src/keelline/hooks/dispatch.py"
+before = "            if handler.once_key is not None and delivered:"
+after = "            if handler.once_key is not None:"
+reddens = [
+  "tests/hooks/test_dispatch.py::test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery",
+]
+
+# The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
+# `.github/workflows/keelline.yml`. This row read it with neither of the guards its two siblings in
+# the same module have -- `_hook_entries` asks `is_file()` of every settings file before it opens
+# one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
+# `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
+# timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
+# back. None of the bytes reaches the report either way, so this is containment hygiene rather than
+# a leak, which is why it is a guard and not a refusal.
+[[mutation]]
+name = "doctor reads the rendered workflow without asking what it is"
+file = "src/keelline/doctor/checks.py"
+before = """    if not workflow.is_file():
+        if workflow.exists() or workflow.is_symlink():"""
+after = """    if False:
+        if workflow.exists() or workflow.is_symlink():"""
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_that_is_not_a_file_does_not_hang_the_row",
+]
+
+# Over the bound is itself an answer, which is the sibling rule of "doctor reads an
+# environment-named log with no bound of its own" one function down: a workflow `init` rendered is
+# under 2 KiB, a file a clone committed there has no cap at all, and a `uses:` line past the bound
+# would be compared against bytes nobody read. So the arm must not fall through to the ref's own
+# verdict, which is what this entry breaks.
+#
+# **What has no entry, and why: the `+ 1` on the read itself.** `handle.read(WORKFLOW_MAX_BYTES + 1)`
+# and `handle.read()` answer `len(raw) > WORKFLOW_MAX_BYTES` identically -- the difference is how
+# many bytes were held to answer it, and no assertion at a testable file size can see that.
+# Measured rather than assumed: this entry's `after` was `raw = handle.read()` on its first run and
+# the oracle reported it survived, which is the finding that produced this paragraph. The sibling
+# `_diagnostics` entry does redden, because that row counts records *inside* what it read and an
+# unbounded read counts more of them; this row returns above its count.
+[[mutation]]
+name = "doctor reads the rendered workflow with no bound of its own"
+file = "src/keelline/doctor/checks.py"
+before = "    if len(raw) > WORKFLOW_MAX_BYTES:"
+after = "    if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_over_the_cap_is_not_the_refs_own_verdict",
+]
+
+# The strict decode was a red a *clone* could force. `read_text(encoding="utf-8")` raises
+# `UnicodeDecodeError`, a `ValueError`, which no arm of this row caught: it reached `_guarded` as
+# "this check could not run" and exit 1, out of the one row whose own rule is that a file it cannot
+# account for is named rather than absolved. A replaced byte cannot forge a sha -- `_USES` bounds
+# what is compared and nothing read here is printed.
+[[mutation]]
+name = "a workflow byte that is not utf-8 makes the ci-ref row a broken check"
+file = "src/keelline/doctor/checks.py"
+before = '    rendered = raw.decode("utf-8", errors="replace")'
+after = '    rendered = raw.decode("utf-8")'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_workflow_carrying_a_byte_that_is_not_utf8_is_still_compared",
+]
+
+# The one call this area makes that leaves the machine, and the five-minute cap it inherited.
+# `NETWORK_TIMEOUT_SECONDS` is written for `gh repo create --clone` and the clone behind it; the
+# `ci-ref` row reads one tag listing, on a command §5.2 gives one line of output and `docs/cli.md`
+# calls a diagnostic. `keelline init` recording a `[ci] ref` is what made the block reachable at
+# all. Two entries, because the choice and the honouring of it are in different modules: without the
+# second, a caller's bound is accepted and ignored.
+[[mutation]]
+name = "doctor asks the public repository with no bound of its own"
+file = "src/keelline/doctor/commands.py"
+before = "        runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),"
+after = "        runner=subprocess_runner(),"
+reddens = [
+  "tests/doctor/test_command.py::test_the_runner_this_command_builds_is_bounded_for_a_diagnostic",
+]
+
+[[mutation]]
+name = "the runner ignores the bound its caller asked for"
+file = "src/keelline/runner.py"
+before = "                timeout=bound,"
+after = "                timeout=NETWORK_TIMEOUT_SECONDS,"
+reddens = [
+  "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]

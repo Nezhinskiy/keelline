@@ -51,6 +51,7 @@ Three things hold everywhere:
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
 - [`keelline memory refs`](#keelline-memory-refs)
+- [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
 - [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
@@ -343,6 +344,47 @@ is silent rather than closed. The wrapper cannot defend its own mode, so `keelli
 what catches it: the `files` row goes **red** on a cleared bit and hands you the `chmod +x`. Run
 it after anything that rewrites the plugin directory.
 
+**What a session hears about the overlay it is bound to: `overlay-status`.** The `attach` area
+registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks **at most** once
+per session: the marker is banked only when the handler had something to say, so a session that
+hears a line hears it once, and a repository with nothing to report is asked again on every
+`startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says
+nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
+count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
+**could not be asked** about, which is a machine configuration file that will not parse; this
+repository **not attached** to that overlay, or the overlay recording **a different remote**
+under this project's name; **a memory path refused**, so the notes were not examined at all; how
+many note groups are **real directories** rather than links into the overlay; the overlay's
+`keelline.requires` in **a form this Keelline cannot read**, or naming **a floor this Keelline
+does not meet**; and — only when none of those fired — the overlay's branch having **no
+upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound, linked,
+up-to-date repository on a satisfied Keelline hears nothing. Not one byte a repository wrote
+reaches any of those lines: `project.name`, `memory.groups`, `paths.memory` and both remotes are
+read and none is quoted back, because the field these lines land in is `additionalContext` —
+model input with no delimiter and no trust record.
+
+**What it costs, and on which repository.** The binding's own `origin` query runs on every
+invocation, at git's five-second cap. The last two lines cost two more `git` calls at two seconds
+each, and they are reached **only when nothing above them found anything wrong** — a finding
+short-circuits them. So the repository that pays all three, nine seconds against the entry's own
+ten-second budget shared with `worktree-link`, is the bound, linked, up-to-date one that then
+hears nothing; and because the `once_key` marker is banked only on a line actually delivered,
+that is also the repository asked again on every event the matcher covers. A repository with a
+finding pays five seconds, hears its line, and is not asked again.
+
+Which is why those last two `git` calls are gated on the event's own `source`: on a **compact** —
+the running conversation continuing, under the session id the marker is filed under — they are
+skipped, so a healthy repository costs five seconds there and not nine. `startup`, `resume`,
+`fork`, `clear` and a payload carrying no `source` all pay: a resume is a new launch, often days
+later, over an overlay the conversation may have left dirty, and an invocation Keelline cannot
+place in a context is treated as a new one rather than as one already answered. The cost is that
+an overlay which becomes unpushed *during* a session that started clean is not reported at that
+session's compactions, only at its next resume or startup; `keelline doctor` answers on demand. And the overlay is never a plugin Keelline
+executes anything from — its
+`hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
+`projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
+merge.
+
 ## `keelline guard bg-cleanup`
 
 Judge one Bash call for a background leak. Reads one JSON object on stdin — a whole hook
@@ -626,6 +668,118 @@ deliberately does not resolve in *italics*. **Writes** nothing.
 
 ---
 
+## `keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`
+
+Writes a repository's Keelline footprint, once. It is the only command that creates the
+documents every other command reads, and the only one that writes `keelline.toml`.
+
+**`--yes` is required, and it means "take the detected defaults".** The questions §8.1
+describes — the project's name, its base branch, its preset — ship with the onboarding lane;
+until then the command detects what it can, and an invocation without `--yes` is refused (`2`)
+saying so. What it detects: the project's name from `origin`'s last path segment, `.git`
+stripped and lower-cased, else the checkout's directory name; the base branch from
+`refs/remotes/origin/HEAD` with `origin/` stripped, else `main`; and the agent surfaces from
+which of `.claude/` and `.codex/` the repository carries, both when it carries neither. Both
+candidate names are repository-authored, so one outside `[project] name`'s grammar is refused
+naming the grammar and the remedy and never the value.
+
+**A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
+read and kept — the name, the paths, the memory mode, the budgets — and the file itself is not
+replaced: it is a create-once artifact, so a repository that already has one is reported
+`skip_modified` ("create-once, and the file is already there") and the document comes back byte
+for byte. The paths it declares are where the footprint lands. A repository with no
+`keelline.toml` gets one written from the detected values, headed by a two-line comment saying
+which two keys are Keelline's own: `[keelline] version` and `state`. A file that is not valid
+TOML is a failure (`1`) naming the file. A repository that already carries
+`.keelline/manifest.json` is refused (`2`): re-running `init` is `keelline upgrade`, which ships
+later.
+
+**Two passes, both planned before either is applied.** The three write-once files are one pass
+and the rest of the footprint is the other, because two artifacts cannot target one file in one
+pass and both the `AGENTS.md` skeleton and its `harness` region land on `AGENTS.md`. A refusal
+in either plan stops the run with nothing written and no manifest, and `--dry-run` is that same
+branch rather than a second code path — it reports both plans and writes nothing. On a
+repository with no `AGENTS.md` the dry run plans the region as a *create* of a region-only file
+and the real run re-plans it as a *region_update* into the skeleton the first pass has just
+written; the report carries one fixed sentence saying the bytes inside the markers are the same
+either way.
+
+| id | pass | kind | target | what it holds |
+|---|---|---|---|---|
+| `config` | write-once | once | `keelline.toml` | the document this run rendered |
+| `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name, stating this project's own budgets |
+| `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at `[paths] agents_md`, whatever that file is called |
+| `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
+| `adr-template` | footprint | template | `<adr>/0000-template.md` | the four-heading decision record |
+| `ledger-runbook` | footprint | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
+| `ledger-audits` | footprint | template | `<bugs>/audits/README.md` | what an audit record is |
+| `bug-index` | footprint | template | `[paths] bug_index` | the generated index, rendered empty |
+| `roadmap` | footprint | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
+| `roadmap-history` | footprint | template | `[paths] roadmap_history` | an empty history |
+| `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
+| `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
+| `gitignore` | footprint | managed region | `.gitignore` | the same block `attach` writes |
+| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's Keelline uses |
+| `ci-workflow` | footprint | template | `.github/workflows/keelline.yml` | the pinned call to the reusable gate |
+
+**The workflow pins what `[ci] ref` says, and nothing else.** The rendered file calls
+[the reusable workflow](#the-reusable-workflow) at the ref `keelline.toml` carries *after this
+run*, and those two are one value by construction — which is the invariant `keelline doctor`'s
+`ci-ref` row enforces from the other side ("the workflow pins a different ref from `[ci] ref`,
+so the gate that runs is not the one recorded"). On a repository this run creates the document
+for, the ref is the commit of the Keelline release running, asked of the public repository's own
+`v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
+`keelline.toml`, that document is not rewritten — so the workflow pins the ref **it** records,
+and `doctor` judges whether that is a released commit, which is its job.
+
+Seven states cost the artifact rather than the run, each reported under `skipped` with one
+sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later
+lane; the public repository could not be asked for its tags; no released tag matches the
+Keelline running, which is every repository's state before the first release; the `keelline.toml`
+this repository already had records no `[ci] ref`, so there is nothing a workflow could pin that
+anything records; `[ci] ref` is not a full-length commit sha, which is the only immutable form
+and the only one `init` renders — the documented mutable `v1` alias is a file you write by hand;
+and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
+puts `[ci] mode = "none"` into the document this run builds and asks no remote anything. **On a
+repository that already has a `keelline.toml` the flag governs this run and nothing more** — that
+document is a create-once artifact, reported `skip_modified`, so the file still says whatever it
+said and the next `init` would ask the remote again. Writing `none` there is yours to do.
+
+**The two states about the remote are reported only on a run that creates the document.** On the
+adoption path the answer is the fifth one whatever the remote said, because it is the whole
+reason: a pin this run resolved would be written into a create-once file that is already there,
+so nothing would record it. Reporting "run `keelline init --yes` again with the network
+reachable" there would send you to the network for a file you have to edit by hand — and by the
+time you read it, `.keelline/manifest.json` exists and `init` refuses to run again at all. Write
+a released commit into `[ci] ref` **before** you initialise the repository and `init` renders the
+workflow around it; afterwards the workflow is yours to write, or `keelline upgrade` (ships
+later) writes it.
+
+**Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
+detected values and for the public repository's tags, and every file an artifact targets.
+**Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the
+table above, `.github/workflows/keelline.yml` where a ref is recorded, and
+`.keelline/manifest.json` — every one of them through the scaffold engine, so every target goes
+through the containment walk and none may leave the project root or pass through a symlink.
+
+Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED
+section names each, nothing was written and no manifest exists — or a `keelline.toml` that is not
+valid TOML, or the merged document the loader itself refuses (an unknown section or key, a
+`[project] name` outside its grammar, a value of the wrong type, a machine configuration file
+that does not load). `2` on a refusal above the plans: no `--yes`, a repository already
+initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
+grammar, naming git's control directory, or reaching through a component that is a symlink —
+all three refused by the loader before a plan exists —
+and two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
+keys to separate.
+
+`--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
+report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
+`{tag, sha}` or `null`), `asked`, `note`, and `ref` — what `[ci] ref` says on disk after the run
+and so what the workflow pins, empty when no workflow was planned.
+
+---
+
 ## `keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
 
 Creates the private overlay: the repository that holds your standing rules, your cross-project
@@ -659,7 +813,8 @@ When `gh repo create` itself fails, the command stops there and reports **its** 
 **its** stderr: a `gh` that is not installed, or one that hung, costs one launch rather than
 three, and the failure names the binary rather than sending you to `gh auth status` for a
 repository that was never there. It also names the precondition above — the template repository
-nothing publishes yet — because that is the usual reason this source cannot work. When `gh`
+`overlay publish-template` publishes — because that is the usual reason this source cannot
+work. When `gh`
 reports success and the clone brings nothing down, `gh repo view` is asked whether the repository
 exists at all — the answer tells "not created" from "created, and the clone raced its generation"
 — and the clone is retried once, after a ten-second wait when it was the second. **That retry is carried
@@ -809,9 +964,15 @@ then refuses.
 
 **`--check` writes nothing.** It reports the binding state — `unbound`, `bound` or `mismatch` —
 the permission diff (which allow rules and which hook entries would be added, and how many of
-the overlay's rules this repository already has), and the Codex standing-rule files it would
-place under `.codex/rules/`. Read it before the real run: everything under **Writes** below that
-carries content from the overlay is named here first.
+the overlay's rules this repository already has), the Codex standing-rule files it would
+place under `.codex/rules/`, and `real_directories`: how many of this project's memory groups
+are still real directories rather than links into the overlay. Read it before the real run:
+everything under **Writes** below that carries content from the overlay is named here first.
+
+It exits `1` when that count is non-zero, the same way it does on a mismatch and for the same
+reason — both are findings you act on before the real run, and `attach` itself is what
+refuses. The count is a count: a group's name comes out of `keelline.toml`, so it is never
+printed.
 
 Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
 a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
@@ -828,6 +989,20 @@ no flag, because the gate is on the capability and not on the command.
 name; if this repository's `origin` is a different one, it is not the repository that was bound,
 and `attach` refuses (`2`) unless you say otherwise. A clone chooses its own `project.name`; it
 does not choose what the overlay recorded under that name.
+
+**A group that never moved is refused.** `attach` **links**; it never moves a note. So a
+`memory.groups` entry that is still a real directory under `paths.memory` would be linked over,
+leaving every session reading the repository's own copy while that group's share of the overlay
+stayed empty — with the binding record, the settings merge and the ledger already written.
+`attach` refuses (`2`) above its first write instead, counts the groups, and names where each
+one goes: `<overlay>/projects/<name>/memory/<group>`, and `common/memory` for the shared group.
+Moving the notes is yours to do; no command does it for you. The containment that count is taken
+under is anchored on the checkout you pointed the command at, not on any path the repository
+configures, so a repository cannot move the directory being counted. **And that containment is a
+refusal of its own**, distinct from the two above it: a `memory.groups` entry that does not stay
+inside this project's `paths.memory` is refused (`2`) rather than counted — `paths.memory` may
+itself be a symlink, and then every group leaves the root at once. Its sentence names neither the
+group nor the path, both being repository-authored.
 
 **Reads** the overlay's `common/claude/permissions.json` and `common/claude/hooks.json`, this
 project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and
@@ -863,11 +1038,17 @@ It also runs `pre-commit install` in the overlay when the overlay carries a pre-
 configuration and no hook is installed — the machine that cloned an overlay someone else created
 never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback.
 
-Exits `0` on success, `1` on a mismatch under `--check`, `2` on a refusal: a store outside the
+Exits `0` on success; `1` under `--check` on a mismatch **or** on a non-zero count of memory
+groups that are still real directories, which are the two findings the paragraphs above explain
+and the same number for both; `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
 with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
-overlay, or a `--machine` outside an interactive shell. Every one of those refusals happens
+overlay, a `memory.groups` entry that does not name a subdirectory of this project's
+`paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,
+and the reason the count above is a count of
+groups that stayed inside — a memory group that is still a real directory rather than a link into
+it, or a `--machine` outside an interactive shell. Every one of those refusals happens
 before the first write, so a refused attach leaves both the repository and the overlay as they
 were. A write that itself fails also exits `2`, and is the one kind that can leave part of a run
 behind: an unwritable `.gitignore`, or a path inside the overlay that is not a directory — or
@@ -902,6 +1083,21 @@ mixes one of those with your own entry is split, never replaced), removes the `.
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
 harness memory link, removes the `keelline:ignore` region, and deletes the ledger. A file left
 holding nothing is removed rather than left empty.
+
+**The `keelline:ignore` region in `.gitignore` goes only if the manifest does not record it.**
+On a repository `keelline init` set up, that block is the footprint's — recorded in
+`.keelline/manifest.json` as a scaffolded artifact, with the body `attach` writes — and it
+stays. Ownership decides, not last writer: the block is committed, so withdrawing it would
+take a line out of a tracked file this command never wrote and leave `keelline upgrade`
+(ships later) reading the footprint as hand-edited. A repository with no manifest is one no
+`init` has set up, and its region is withdrawn as before.
+
+A manifest this command **cannot read** — unreadable, not a JSON object, or written by a newer
+Keelline — is read as no answer rather than as an answer, so the block stays and the detach
+finishes. That file is committed and `attach` never opens it, so a clone that ships a broken one
+would otherwise attach cleanly and then make every later `detach` exit `2` for ever, with the
+only way out being to delete a tracked file out of somebody else's repository. `--json` reports
+`ignore_region_removed: false`, and `keelline init` or a hand edit clears the block.
 
 **Directories come back too, with one exception.** `attach` records which of `.keelline/local/`,
 `.keelline/`, `.codex/rules/`, `.codex/` and `.claude/` this repository did not have before it
@@ -1055,14 +1251,30 @@ when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is als
 
 ## `keelline doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Fifteen checks over one installation. It **reports and never repairs**: every finding
+Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
 **Several subprocesses are run and every one of them only asks.** Keelline's own
-`hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the remote `[ci] ref`
-names, only when one is set; and the `git` queries the other rows need — where the overlay keeps
-its hooks, what its `origin` is, and where the note store resolves to. Four launches on a green
-attached installation, measured. Exactly one of them, `ci-ref`, leaves this machine.
+`hooks/run-hook.sh` with `--version`; `git ls-remote --exit-code` against the public
+repository's tags, to judge `[ci] ref`, only when one is set; and the `git` queries the other
+rows need — where the overlay keeps its hooks, what its `origin` is, and where the note store
+resolves to. Four of those are measured on a green attached installation — the wrapper probe and
+three `git` questions — and not one of the four leaves this machine. The `ci-ref` row's
+`git ls-remote` is a fifth on a repository that records a `[ci] ref` at all, and it is the only
+one that does leave: it goes through the `Runner` seam, which is what lets the case that pins the
+four answer it in process instead of launching it. That one is bounded at **30 seconds**, and not
+at the seam's own five minutes: five minutes is the bound for `gh repo create --clone` and the
+clone behind it, and a peer that does not answer must not turn a one-line diagnostic into a
+five-minute block. The other `git` questions are `gitenv`'s five seconds and the wrapper probe is
+this area's own thirty.
+
+**The rendered workflow is read as a regular file, and to a bound.** That path is the
+repository's: a clone chooses what sits at `.github/workflows/keelline.yml`. Anything there that
+is not a regular file — a directory, a symlink to a FIFO, a dangling link — is a warning naming
+the path and never the ref's own verdict, and so is a file past 256 KiB, the same bound the
+`diagnostics` row reads its log under. Not one byte of the file is printed on any arm, and a byte
+that is not UTF-8 is replaced rather than raised: it used to reach the report as a red row saying
+the check could not run, which is a red a clone could force.
 
 The summary line carries the counts and the names of whichever status most needs reading, capped
 the way every summary in this CLI is. The rows are in `--json`, under `checks`, one object per
@@ -1084,37 +1296,49 @@ nobody sees, so that is where they all are.
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `ci-ref` | whether `[ci] ref` resolves | `git ls-remote --exit-code` |
+| `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
 
-**Nine of the fifteen have a `skip` arm — twelve arms between them: two always, and seven
-more on a state of this machine.** A `skip` is **not** a finding and never reaches the exit
-code, so read the detail — each one says which measurement it is missing.
+**Ten of the sixteen have a `skip` arm — sixteen arms between them: one no build can answer,
+and fifteen on a state of this machine or this repository.** A `skip` is **not** a finding and
+never reaches the exit code, so read the detail — each one says which measurement it is missing.
 
-The two that skip on every correct installation are the ones this build cannot answer.
-`codex-trust` needs the hash Codex keys hook trust on, which no spike measured. `ci-ref` needs
-a `[ci] ref`, which `init` writes. `files` was the third of these and is not any more: it now
-compares the installed plugin against the hashes the release recorded beside it.
+The one no build can answer is `codex-trust`: it needs the hash Codex keys hook trust on, which
+no spike measured. `ci-ref` was counted beside it and is not any more, and neither is `files`.
+`init` writes `[ci] ref`, so what `ci-ref`'s skip reports is a state — this repository records
+none — and which state is the ordinary one moves with the release history rather than with any
+code here: while no released tag matches the Keelline running there is no commit to pin, so
+`init` records nothing and the row skips on a correct installation; once a release exists, a
+repository `init` set up carries a ref and the row answers. `files` compares the installed
+plugin against the hashes the release recorded beside it, and skips only on a build carrying no
+such record.
 
-The seven that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
-against, or the overlay could not be asked at all; `pre-commit`, when no overlay root is
-recorded on this machine; `bundles` and `store-debris`, when the note store does not resolve;
-and `diagnostics`, when no harness data root is set in the environment. `files` has a second
-state arm of its own — a plugin built before the release record existed carries none, and it
-says so rather than comparing anything.
+against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
+no overlay root is recorded on this machine **or** when the root it records is not a directory
+— two different arms with two different sentences, because a machine that recorded an overlay
+and then moved it is not a machine that recorded none; `overlay-requires` again when the
+overlay declares no Keelline requirement; `bundles` and `store-debris`, when the note store does
+not resolve; `diagnostics`, when no harness data root is set in the environment; and `ci-ref`,
+when no `[ci] ref` is recorded. `files` has a second state arm of its own — a plugin built
+before the release record existed carries none, and it says so rather than comparing anything.
 
-**A `skip` does not mean there is nothing to do.** Five of the twelve arms carry a remedy: the
-two plugin-root skips, `wrapper`'s named-root skip and both of `attached`'s. The dividing line
-is not "always" versus "on a state" — `bundles`, `pre-commit`, `store-debris` and `diagnostics`
-all skip on a state and carry nothing. It is whether the skip is itself worth acting on. Those
-five report something wrong that no other row will tell you: a plugin root nothing can find, a
-root that will be read and never executed, a recorded attach the overlay could not confirm. The
-other seven report a measurement that is simply unavailable — no store, no overlay, no harness
-data root, no `[ci] ref`, no release record in this build, no way to ask Codex — and no command
-in that row's gift changes it.
+**A `skip` does not mean there is nothing to do.** Seven of the sixteen arms carry a remedy:
+the two plugin-root skips, `wrapper`'s named-root skip, both of `attached`'s, and the
+moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
+versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
+`store-debris`, `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
+rows, `overlay-requires`' no-requirement arm, and `files` on a build with no release record. It
+is whether the skip is itself worth acting on. Those seven report something wrong that no other
+row will tell you: a plugin root nothing can find, a root that will be read and never executed,
+a recorded attach the overlay could not confirm, an overlay root recorded and not there. The
+other nine report a measurement that is simply unavailable — no store, no overlay, no overlay
+requirement, no harness data root, no `[ci] ref`, no release record in this build, no way to ask
+Codex — and no command in that row's gift changes it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
 this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
@@ -1123,7 +1347,7 @@ plugin's own Keelline so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT
 plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
 run it.
 
-One more case is not a skip but produces fourteen of them: with no `keelline.toml` in `--root`,
+One more case is not a skip but produces fifteen of them: with no `keelline.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
 The red row is the one to act on.
 
@@ -1165,7 +1389,10 @@ called the result green, would be worse than one that says it could not vouch fo
 ## The reusable workflow
 
 `.github/workflows/check.yml` is a `workflow_call` workflow a project runs its Keelline gates
-through. Three lines in the caller:
+through. `keelline init` writes the caller —
+[`.github/workflows/keelline.yml`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
+— so most projects never type these lines; what follows is what that file contains, and what to
+write by hand if you would rather. Three lines in the caller:
 
 ```yaml
 jobs:
@@ -1219,10 +1446,19 @@ fails the job. Every gate runs whatever the one before it said, so a project fix
 documents does not pay a round trip per finding.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1`
-and `@dev` are a moving Keelline running against your repository (D16). The SHA pin is what
-`init` will write and `upgrade` will bump; `@v1` is the documented opt-in for a project that
-would rather track the major. `smoke-release.yml` in this repository runs both moving forms on
-demand, so that they are known to work — it is not a form this reference tells you to write.
+and `@dev` are a moving Keelline running against your repository (D16). `keelline init` writes
+that pin, and writes it from `[ci] ref` in `keelline.toml` so that the file and the
+configuration cannot come apart: on a repository it initialises from scratch that value is the
+commit of the released Keelline running, read off the public repository's own `v*` tags rather
+than off anything the project says; on one that already had a `keelline.toml`, it is the ref
+that file records.
+`keelline upgrade` (ships later) is what moves it; until then the file says so in its own first
+three lines. **A project with no release to pin gets no workflow at all** — before the first
+Keelline tag there is no commit to name, so `init` reports the workflow skipped with the reason,
+writes nothing into `.github/`, and the gate arrives with `upgrade`. `@v1` is the documented
+opt-in for a project that would rather track the major, written by hand.
+`smoke-release.yml` in this repository runs both moving forms on demand, so that they are known
+to work — it is not a form this reference tells you to write.
 
 **What proves it.** `.github/workflows/smoke.yml` installs this plugin from the checkout with
 the real harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json`
@@ -1269,7 +1505,7 @@ beside the six above:
 | `keelline overlay init --root`, `keelline overlay upgrade --root` | the overlay root (default: current directory) |
 | `keelline setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
 | `keelline setup --machine` | the machine configuration file to write (default: ~/.config/keelline/config.toml, the file every reader reads) |
-| `keelline attach --check` | report the binding and the diff, and write nothing |
+| `keelline attach --check` | report the binding, the diff and the groups that never moved, and write nothing |
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is
 a binding **mismatch**, not a non-empty diff. A diff carrying allow rules is the ordinary state
@@ -1337,7 +1573,8 @@ local = []               # scaffold template ids whose artifact is written under
 
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
-ref = ""                 # a remote `doctor`'s `ci-ref` row resolves with `git ls-remote`
+ref = ""                 # the commit of the Keelline release the workflow is pinned to;
+                         # `init` writes it; `v1` is the documented mutable opt-in
 gate_branch = "main"     # the branch a gate reads its configuration from
 
 [commit_messages]
@@ -1346,12 +1583,14 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 ```
 
 **Nine sections, and the list is closed**: a section this block does not show is refused when
-the file loads (`unknown section(s)`), so the grammar above is the whole of it. Two of the
-keys in the last three sections are read today — `[ci] ref` by `doctor`'s `ci-ref` row and
-`[commit_messages] attribution_check` by `commit check` — and `[artifacts] local` by the
-scaffold. `[ci] mode`, `[ci] gate_branch` and `[commit_messages] types` are validated on load
-and read by nothing yet; they are written here so that a project can record its intent without
-the loader refusing the file, and the lane that reads each one will say so.
+the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
+`[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
+and which form, `gate_branch` is the branch the rendered workflow watches on a push and the
+default it passes as `base:`, and `ref` is written by `init` and judged by `doctor`'s `ci-ref`
+row. `[commit_messages] attribution_check` is read by `commit check` and `[artifacts] local` by
+the scaffold engine. `[commit_messages] types` is the one key still read by nothing; it is
+accepted so that a project can record its intent without the loader refusing the file, and the
+lane that reads it will say so.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -1408,7 +1647,7 @@ value above the preset's is ignored rather than refused, so raising one is not a
 [personal]
 reply_language = ""      # chat replies; durable artifacts stay in the artifact language
 artifact_language = "en"
-preset = "recommended"   # the preset `setup` applies, and `init` will
+preset = "recommended"   # the preset `setup` applies
 
 [overlay]
 root = "~/keelline-overlay"   # only read in overlay mode

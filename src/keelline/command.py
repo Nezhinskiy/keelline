@@ -52,7 +52,13 @@ SETUP_MACHINE_HELP = (
 # ("Read the diff with `keelline attach --check` and pass --yes"). A `--check` that failed
 # whenever the run would widen would make the documented remedy itself a failure, and the skill
 # that runs check -> relay -> ask would begin with one.
-ATTACH_CHECK_HELP = "report the binding and the diff, and write nothing"
+#
+# Its exit 1 now carries a second finding: a memory group that never moved into the overlay,
+# which `attach` refuses on above its first write. Both are things the owner acts on before
+# the real run rather than faults in the command, which is what makes them one exit code.
+ATTACH_CHECK_HELP = (
+    "report the binding, the diff and the groups that never moved, and write nothing"
+)
 
 
 def common_flags(

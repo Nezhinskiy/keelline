@@ -38,6 +38,7 @@ from pathlib import Path
 import pytest
 
 import keelline
+from keelline.attach.hooks import NOT_ATTACHED, REAL_DIRECTORIES
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.doctor.api import OK, RED, SKIP, run_checks
 from keelline.memory.api import DELIMITER, PROJECTS, harness_memory_path, markers
@@ -59,6 +60,14 @@ ORIGIN = f"git@github.com:{OWNER}/{PROJECT}.git"
 # The rule the walkthrough puts in the overlay and then asks a session for. Distinctive enough
 # that finding it in the wrapper's stdout cannot be an accident.
 RULE_BODY = "NEVER FORCE-PUSH A SHARED BRANCH; open a pull request instead."
+
+# The note the walkthrough asks a session for, as one spelling. `_install_path` writes it into
+# the overlay on the path a fresh project takes, and `_project(initialised=True)` writes the same
+# bytes into the repository so the owner's own hand-move is what puts it in the overlay.
+NOTE = (
+    "---\nname: no-force-push\ndescription: never force-push a shared branch\n"
+    f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n"
+)
 
 CONFIG = """[keelline]
 version = "{version}"
@@ -90,14 +99,44 @@ class _Harness:
         return Completed(0, "", "")
 
 
-def _project(tmp_path: Path, *, mode: str) -> Path:
+def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
+    """The repository the walkthrough starts from; `initialised`, the shape the owner's has.
+
+    **`initialised` does not run `init` here.** It builds the repository `init` is run *over*:
+    notes already in `paths.memory` as real directories, `[ci] mode = "none"`, and one commit,
+    so the history predates Keelline. `keelline init --yes` is `_install_path`'s step 0, which
+    is where the launcher environment lives. The flag keeps the name the plan gives it in both
+    fixtures, because renaming one of the pair would split them.
+
+    `[ci] mode = "none"` because this repository wants no workflow — a `ci` mode that asked for
+    one would have `init` reach for the release pin and a remote, which is a different lane's
+    test. The commit matters because `init` then writes its footprint on top of a tree that was
+    already committed, which is the order an adopting project meets it in, and the notes moved
+    later are notes that were tracked before Keelline arrived.
+    """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
-    (root / CONFIG_FILE).write_text(
-        CONFIG.format(version=keelline.__version__, project=PROJECT, mode=mode), encoding="utf-8"
-    )
+    document = CONFIG.format(version=keelline.__version__, project=PROJECT, mode=mode)
+    if initialised:
+        document += '[ci]\nmode = "none"\n'
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
     git(root, "init", "-q", "-b", "main")
     git(root, "remote", "add", "origin", ORIGIN)
+    if initialised:
+        note = root / "docs" / "memory" / "project-stable" / "no-force-push.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(NOTE, encoding="utf-8")
+        git(root, "add", "-A")
+        git(
+            root,
+            "-c",
+            "user.email=a@b.c",
+            "-c",
+            "user.name=a",
+            "commit",
+            "-qm",
+            "chore: before keelline",
+        )
     return root
 
 
@@ -193,7 +232,7 @@ def _cli(walk: Walkthrough, *argv: str, tty: bool = False) -> subprocess.Complet
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The fifteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
+    """The sixteen rows, read back out of what `doctor --json` printed on the launcher's stdout."""
     done = _cli(
         walk,
         "doctor",
@@ -207,16 +246,30 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 15, rows
+    assert len(rows) == 16, rows
     return rows
 
 
-def _install_path(tmp_path: Path) -> Walkthrough:
+def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = True) -> Walkthrough:
     """Steps 1-5: the overlay, the machine layer, a repository, attach, and a note in it.
 
     Every step is the real launcher with the real argv (D4). Step 1's overlay is created
     **outside** the project root on purpose: `setup` refuses to record one inside it (R13/R14),
     because a path inside the project is exactly the shape of tree a hostile clone can ship.
+
+    `initialised` walks the same steps over a repository that already has its notes in
+    `paths.memory` and has had `keelline init` run over it, which is the shape the owner's own
+    repository is in. Step 4 then has one more beat in the middle: `--check` finds the group
+    that never moved and exits 1, the notes are moved by hand — the owner's act, which no
+    command performs — and the attach is taken over a repository with nothing to link over.
+    Step 5 is skipped there, because the moved note is the standing rule.
+
+    `attach=False` stops before step 4 and answers the unattached state, which is what a
+    session's first `SessionStart` sees on a project nobody has bound yet.
+
+    `init` runs here rather than in `_project`, which has no launcher environment: `_cli` needs
+    the scratch home, the fake `PATH` and the plugin data root, and those are built from this
+    function's locals. It runs before step 1 because it is the state the repository arrives in.
     """
     home = tmp_path / "home"
     data = tmp_path / "plugin-data"
@@ -225,7 +278,7 @@ def _install_path(tmp_path: Path) -> Walkthrough:
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
 
-    root = _project(tmp_path, mode="overlay")
+    root = _project(tmp_path, mode="overlay", initialised=initialised)
     overlays = tmp_path / "overlays"
     overlays.mkdir()
     # Where `overlay create --root <overlays> --name keelline-private` puts it, which
@@ -239,6 +292,13 @@ def _install_path(tmp_path: Path) -> Walkthrough:
         assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
         return done
 
+    # 0. the project footprint, on the repository that came with notes and a history. `init`
+    # adopts the `keelline.toml` already there without rewriting it (a `Kind.ONCE` artifact
+    # whose file is present is skipped), so the document above is still the document below,
+    # and the manifest is the witness that the footprint pass ran.
+    if initialised:
+        step("init", "--yes", "--root", str(root), "--machine", str(machine))
+        assert (root / ".keelline" / "manifest.json").is_file(), "`init` recorded no manifest"
     # 1. the overlay, rendered from the shipped template with no network call.
     step(
         "overlay",
@@ -290,13 +350,39 @@ def _install_path(tmp_path: Path) -> Walkthrough:
     assert str(overlay) in machine.read_text(encoding="utf-8"), (
         "the second `setup` recorded the overlay into the file the first one wrote"
     )
+    if not attach:
+        return walk
     # 4. attach: the diff first, then the write. `--check` writes nothing and prints what the
     # `--yes` run is consenting to, which is the order the attach skill walks.
+    if initialised:
+        # The beat the initialised path adds, and the one the refusal exists for. `attach`
+        # links; it never moves a note, so the group still sitting in the repository is a
+        # finding `--check` reports and exits 1 on, before anything is written.
+        found = _cli(
+            walk,
+            "attach",
+            "--store",
+            str(store),
+            "--check",
+            "--json",
+            "--machine",
+            str(machine),
+            tty=True,
+        )
+        assert found.returncode == 1, found.stderr
+        assert json.loads(found.stdout)["real_directories"] == 1, found.stdout
+        # The owner's own act: the notes move into this project's share of the overlay. No
+        # command does this, which is why the refusal says where they go and stops.
+        store.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(root / "docs" / "memory" / "project-stable"), str(store / "project-stable"))
     previewed = step(
         "attach", "--store", str(store), "--check", "--machine", str(machine), tty=True
     )
     assert previewed.stdout.strip(), "`attach --check` printed no diff to consent to"
     step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
+    if initialised:
+        # Step 5 already happened, by the owner's hand: the moved note *is* the standing rule.
+        return walk
 
     # 5. a standing rule in this project's own share of the overlay.
     #
@@ -306,19 +392,22 @@ def _install_path(tmp_path: Path) -> Walkthrough:
     # nowhere — which is the seam this walkthrough found first.
     note = store / "project-stable" / "no-force-push.md"
     note.parent.mkdir(parents=True, exist_ok=True)
-    note.write_text(
-        "---\nname: no-force-push\ndescription: never force-push a shared branch\n"
-        f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n",
-        encoding="utf-8",
-    )
+    note.write_text(NOTE, encoding="utf-8")
     return walk
 
 
-def _session(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
+def _session(
+    walk: Walkthrough, *argv: str, machine: bool = True
+) -> subprocess.CompletedProcess[str]:
     """One `hooks.json` entry, run the way a harness runs it: through the wrapper, raw.
 
     `HOME` and `--machine` both point into the scratch tree, so nothing here can read the
     developer's own `~/.claude` or `~/.config/keelline`.
+
+    `machine=False` for `keelline hook <event>`, which takes no such flag: the dispatcher hands
+    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/keelline/`
+    (§5.4) and nothing a session can name. `HOME` above is what keeps that inside the scratch
+    tree, and a caller that wants the hook path to see a machine file puts one there.
     """
     env = {
         key: value
@@ -329,8 +418,9 @@ def _session(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
     env["CLAUDE_PROJECT_DIR"] = str(walk.root)
     env["CLAUDE_PLUGIN_DATA"] = str(walk.data)
     env["HOME"] = str(walk.home)
+    flags = ["--machine", str(walk.machine)] if machine else []
     return subprocess.run(
-        [str(WRAPPER), "open", *argv, "--machine", str(walk.machine)],
+        [str(WRAPPER), "open", *argv, *flags],
         cwd=walk.root,
         capture_output=True,
         text=True,
@@ -437,11 +527,7 @@ def test_a_wrapped_bundle_arrives_with_both_of_its_region_markers(tmp_path: Path
     machine.parent.mkdir(parents=True)
     notes = root / "docs" / "memory" / "project-stable"
     notes.mkdir(parents=True)
-    (notes / "no-force-push.md").write_text(
-        "---\nname: no-force-push\ndescription: never force-push a shared branch\n"
-        f"metadata:\n  type: rule\n  startup: 1\n---\n\n{RULE_BODY}\n",
-        encoding="utf-8",
-    )
+    (notes / "no-force-push.md").write_text(NOTE, encoding="utf-8")
     bin_dir = tmp_path / "bin"
     _fake_binaries(bin_dir)
     walk = Walkthrough(root, root, machine, tmp_path / "home", tmp_path / "data", notes, bin_dir)
@@ -523,8 +609,10 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
-    # Green meaning: no `red`, and the only `skip`s are the two this build cannot answer — the
-    # Codex hook-trust hash §10 lists as unmeasured, and a `[ci] ref` that `init` will write.
+    # Green meaning: no `red`, and the only `skip`s are the one this build cannot answer — the
+    # Codex hook-trust hash §10 lists as unmeasured — and `ci-ref`, which skips on a state this
+    # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
+    # released tag matches the Keelline running here for `init` to have pinned.
     # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
     # walk runs against the checkout, so the row now compares the three shipped files against
     # the record committed beside them and is green. A `files` back in this list means the
@@ -540,8 +628,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 
 
 # What `keelline.doctor` says it launches, in `__init__`'s own paragraph and again in
-# `docs/cli.md`: four subprocesses on a green attached installation. Written as a number rather
-# than as a set of argv lists so the failure reads as "the count moved", which is the claim.
+# `docs/cli.md`: four subprocesses on a green attached installation *besides* the `ci-ref` row,
+# which the stub runner below answers in process rather than launching — so four here and five
+# in production on a repository that records a `[ci] ref`, which is what both documents now say.
+# Written as a number rather than as a set of argv lists so the failure reads as "the count
+# moved", which is the claim.
 DOCTOR_LAUNCHES = 4
 
 
@@ -620,3 +711,62 @@ def test_attach_refuses_machine_from_a_pipe_and_honours_it_from_a_terminal(tmp_p
         walk, "attach", "--store", store, "--check", "--machine", str(walk.machine), tty=True
     )
     assert tty.returncode == 0, tty.stderr
+
+
+def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Path) -> None:
+    # The whole slice, in the order the owner walks it and on the repository shape they
+    # actually have: a project with notes already in it, `keelline init` run over it, the
+    # attach refused because those notes never moved, the notes moved by hand, the attach
+    # taken, and a session reading the moved note back through the wrapper.
+    #
+    # What would break it: remove the refusal and step 4's `--check` exits 0 with
+    # `real_directories: 0`; remove the link tree and `RULE_BODY` never reaches the bundle;
+    # remove `init`'s footprint and the manifest assertion fails; let any row go red — the
+    # sixteenth, `overlay-requires`, is the one this branch added and it is answered here
+    # against a real overlay rather than a stub.
+    walk = _install_path(tmp_path, initialised=True)
+    done = _bundle(walk, "standing-rules")
+    assert done.returncode == 0, done.stderr
+    assert RULE_BODY in done.stdout
+    rows = _doctor(walk)
+    assert len(rows) == 16 and not [row for row in rows if row["status"] == RED]
+    assert (walk.root / ".keelline" / "manifest.json").is_file()
+
+
+def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> None:
+    # The handler through the wrapper, on the one state it exists for: initialised, not yet
+    # attached, notes still in the repository. It reads the machine file the hook path reads —
+    # `<home>/.config/keelline/config.toml` (§5.4) — and not the walkthrough's own, so the
+    # walkthrough's file is copied there for the hook alone.
+    #
+    # The envelope is raw JSON with `additionalContext` inside; both constants are single lines
+    # with no JSON-escaped characters, so `in` over the text is enough. Imported and never
+    # respelled: a session line is the one string a reader compares against what they saw.
+    #
+    # What would break it: drop either line from the handler, or let the binding read as bound
+    # or the group count as zero, and the corresponding `in` fails.
+    walk = _install_path(tmp_path, initialised=True, attach=False)
+    hook_machine = walk.home / ".config" / "keelline" / "config.toml"
+    hook_machine.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(walk.machine, hook_machine)
+    done = _session(walk, "hook", "SessionStart", machine=False)
+    assert done.returncode == 0, done.stderr
+    assert NOT_ATTACHED in done.stdout
+    assert REAL_DIRECTORIES.format(count=1) in done.stdout
+
+
+def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -> None:
+    # DC4 end to end. `init` recorded the `keelline:ignore` region as the footprint's, so the
+    # detach that takes back everything `attach` added leaves that block where it is — and the
+    # manifest with it, because `detach` never touches the scaffold ledger.
+    #
+    # What would break it: withdraw the region unconditionally and `.gitignore` loses its
+    # block, so the byte comparison fails.
+    walk = _install_path(tmp_path, initialised=True)
+    ignore_before = (walk.root / ".gitignore").read_text(encoding="utf-8")
+    # Non-vacuous: the block this asserts survives has to be there before the detach.
+    assert "keelline:ignore" in ignore_before
+    done = _cli(walk, "detach", "--root", str(walk.root), "--machine", str(walk.machine), tty=True)
+    assert done.returncode == 0, done.stderr
+    assert (walk.root / ".gitignore").read_text(encoding="utf-8") == ignore_before
+    assert (walk.root / ".keelline" / "manifest.json").is_file()

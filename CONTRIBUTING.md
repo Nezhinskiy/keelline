@@ -55,11 +55,13 @@ An area is a subpackage of `src/keelline/` that the CLI frame and the hook regis
 name — there is no shared registry to edit.
 
 Today the discovered ones are `attach`, `docs`, `doctor`, `guards`, `hooks`, `ledger`,
-`memory`, `overlay`, `release` and `setup`. Three arrived with the install path: `overlay`
-renders and upgrades the private overlay, `attach` binds a repository to one and unbinds it
-again, and `doctor` reports on what every other area left behind and repairs none of it.
-(`config`, `presets` and `scaffold` are subpackages and not areas — nothing discovers them,
-because they carry neither a `commands.py` nor a `hooks.py`.)
+`memory`, `overlay`, `project`, `release` and `setup`. Three arrived with the install path:
+`overlay` renders and upgrades the private overlay, `attach` binds a repository to one and
+unbinds it again, and `doctor` reports on what every other area left behind and repairs none
+of it. `project` is the eleventh: it holds the shipped project templates and `init`, the
+command that writes a repository's footprint from them.
+(`config`, `presets`, `scaffold` and `templates` are subpackages and not areas — nothing
+discovers them, because they carry neither a `commands.py` nor a `hooks.py`.)
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a

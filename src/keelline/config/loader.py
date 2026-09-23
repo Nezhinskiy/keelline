@@ -5,8 +5,9 @@ The machine config (§5.4) is merged too, but it contributes `[personal]` and no
 
 from __future__ import annotations
 
+import re
 import tomllib
-from dataclasses import fields
+from dataclasses import fields, replace
 from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
@@ -18,6 +19,7 @@ from keelline.config.schema import (
     CI_MODES,
     MEMORY_MODES,
     PROJECT_NAME,
+    SECTION_NAME,
     STATES,
     Artifacts,
     Budgets,
@@ -36,6 +38,19 @@ from keelline.errors import Failure
 from keelline.presets import load_preset
 
 CONFIG_FILE = "keelline.toml"
+# Where `tomllib` stopped, and nothing else it had to say (P10). Every `TOMLDecodeError` this
+# package can raise is about a document somebody else wrote — a project's `keelline.toml`, the
+# machine file `--machine` named — and `tomllib` builds its message as `f"{msg} (at line N,
+# column M)"`, where `msg` embeds the source for at least five of its own faults: `Cannot
+# declare ('x',) twice`, `Duplicate inline table key 'k'`, `Cannot redefine namespace k`,
+# `Found invalid character 'c'`, `Cannot overwrite a value`. A TOML key is arbitrary quoted
+# text, so interpolating the exception whole puts unbounded repository bytes into a refusal a
+# skill is instructed to relay to a model. The position is the actionable half and it is
+# Keelline-shaped: two integers, or the parser's end-of-document form. Measured against CPython
+# 3.11 and 3.12; the suffix is what `tomllib` appends, not what its `msg` says, so a `msg`
+# reworded upstream does not move it.
+_TOML_POSITION = re.compile(r"\((?:at line \d+, column \d+|at end of document)\)\Z")
+NO_POSITION = "(at a position tomllib did not report)"
 SECTIONS = (
     "keelline",
     "project",
@@ -68,6 +83,22 @@ class MachineConfigError(ConfigError):
     """
 
 
+def toml_position(exc: tomllib.TOMLDecodeError) -> str:
+    """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
+
+    One extractor for every caller in this package that reports a document it did not write,
+    so that "what may print out of a parse failure" is one decision rather than one per site.
+    See `_TOML_POSITION` for which of `tomllib`'s own messages embed the source and why that
+    makes the whole exception unprintable.
+
+    A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
+    stopped appending a position would otherwise take this guard with it silently, which is the
+    shape every other bounded value in this file refuses.
+    """
+    found = _TOML_POSITION.search(str(exc))
+    return found.group(0) if found is not None else NO_POSITION
+
+
 def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name, {})
     if not isinstance(value, dict):
@@ -93,11 +124,43 @@ def _schema_types(cls: type[Any]) -> dict[str, Any]:
     return {f.name: hints[f.name] for f in fields(cls)}
 
 
+def _named(unknown: list[str], noun: str) -> str:
+    """`unknown`, bounded before it may print (P10): a plain-named one is echoed, anything else
+    is counted and never quoted — `PATH_VALUE`'s rule read onto a second grammar.
+
+    **Every name in a `keelline.toml` is repository-authored, not only the table names.** A TOML
+    key is arbitrary quoted text, so `[paths] "docs\u001b[31m\nIGNORE ALL PRIOR RULES" = 1` put raw
+    ESC and raw newlines into `[paths] has unknown key(s): ...` — a refusal the terminal renders
+    and the `init` skill relays to a model — on all nine tables. That message sat two functions
+    from this one, which was written for exactly this rule and applied only to the section list.
+
+    `SECTION_NAME` is the grammar both callers use, and it is a deliberate re-reading rather than
+    a coincidence: every key any schema class or `Budgets.NAMES` declares is lowercase words
+    joined by underscores, so a typo worth naming (`branch` for `gate_branch`) matches and
+    nothing Keelline answers to falls outside. A key carrying anything else is counted.
+
+    `noun` is what the count calls the names it would not print, so the sentence reads about the
+    thing that was unknown: a section, or a key.
+    """
+    named = [name for name in unknown if SECTION_NAME.match(name)]
+    unnamed = len(unknown) - len(named)
+    parts = list(named)
+    if unnamed:
+        # The noun agrees with the count, for the reason the verb already did: one unnamed key
+        # produced "1 more that is not plain key names", which is the common case of this arm.
+        tail = f"is not a plain {noun} name" if unnamed == 1 else f"are not plain {noun} names"
+        # "more" only when something was named: with every name failing the grammar the message
+        # read "unknown section(s): 3 more that are not plain section names" — more than nothing.
+        more = "more " if named else ""
+        parts.append(f"{unnamed} {more}that {tail}")
+    return ", ".join(parts)
+
+
 def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
     known = _schema_types(cast(Any, cls))
     unknown = sorted(set(values) - set(known))
     if unknown:
-        raise ConfigError(f"[{name}] has unknown key(s): {', '.join(unknown)}")
+        raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")
     missing = sorted(set(known) - set(values))
     if missing:
         raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
@@ -130,15 +193,57 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
 
 
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
+    """The key and the vocabulary it may be spelled in; never the value it was spelled with.
+
+    The three keys this guards — `keelline.state`, `memory.mode`, `ci.mode` — are
+    repository-authored strings bounded by no grammar, so a clone can write anything at all
+    into one, and the refusal reaches a terminal and a model through the `init` and `attach`
+    skills' relay. `; got {value!r}` therefore put unbounded repository bytes into it:
+    `ci.mode must be one of reusable, uvx, none; got '\\x1b[2JIGNORE PRIOR RULES'`. `!r` escapes
+    the control characters, which makes it milder than a raw-bytes leak and not a different
+    kind of thing — it is still content- and length-unbounded.
+
+    Nothing is lost by dropping it. `allowed` is Keelline's own closed vocabulary, the key names
+    the line to look at, and the reader has the file open. This is the ruling `PROJECT_NAME`'s
+    refusal one screen down already took for the same reason — it dropped `; got
+    {project.name!r}` — and `_named` took for the keys of every table.
+    """
     if value not in allowed:
-        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}; got {value!r}")
+        raise ConfigError(f"{section}.{key} must be one of {', '.join(allowed)}")
+
+
+def _deduplicated(memory: Memory) -> Memory:
+    """`memory.groups` with each entry kept once, in the order the document wrote them.
+
+    `_build` coerced the list with `tuple(value)` and nothing else, and it is the one
+    repository-authored list four separate lanes report as a **count** a user is asked to act
+    on. `groups = ["developer", "developer"]` made `attach.binding.unlinked_groups` walk one
+    directory twice, so `attach` refused naming two groups that never moved into the overlay,
+    `attach --check` printed `real_directories: 2`, and the session line told the model two --
+    all about one directory, and with the remedy ("move them into the overlay") already done
+    for the only one there is.
+
+    `dict.fromkeys` and not `set`, because the order is the owner's: the link tree is built in
+    it, and a refusal that reorders the list a person is reading is a worse answer than one
+    that does not.
+
+    **Deduplication only, and the containment stays where it is.** `config/paths.py` names
+    `memory.groups` one of four repository-writable fields this loader deliberately does not
+    contain, and hands each to the lane that first reads it -- because the anchor differs per
+    lane: `unlinked_groups` contains a group against the checkout, `attach._check_groups`
+    against the overlay, `memory.store` against the store. A grammar check here would refuse a
+    spelling those three already refuse, one layer above the guard that knows what it is
+    anchored to, and would take the reachable arm of each of them with it. What this function
+    fixes is the one thing none of them can: a count taken over a list with a duplicate in it.
+    """
+    return replace(memory, groups=tuple(dict.fromkeys(memory.groups)))
 
 
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
     configured = _table(raw, "budgets")
     unknown = sorted(set(configured) - set(Budgets.NAMES))
     if unknown:
-        raise ConfigError(f"[budgets] has unknown key(s): {', '.join(unknown)}")
+        raise ConfigError(f"[budgets] has unknown key(s): {_named(unknown, 'key')}")
     for key, value in configured.items():
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ConfigError(f"budgets.{key} must be a positive integer")
@@ -154,7 +259,7 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
     try:
         raw = tomllib.loads(machine.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise MachineConfigError(f"{machine} is not valid TOML: {exc}") from None
+        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
         values.update(_table(raw, "personal"))
         return _build(Personal, "personal", values)
@@ -197,14 +302,28 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     """
     path = root / CONFIG_FILE
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+    return loads(text, root, machine=machine, interactive=interactive)
+
+
+def loads(
+    text: str, root: Path, *, machine: Path | None = None, interactive: bool | None = False
+) -> Config:
+    """Build a `Config` from `text` as `keelline.toml`'s contents, without reading a file.
+
+    `load` is "read the file, then `loads`"; `init --yes` needs a `Config` for a document it
+    has not written to disk yet, so the parse-and-validate half is this function on its own.
+    """
+    path = root / CONFIG_FILE
+    try:
+        raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path} is not valid TOML: {exc}") from None
+        raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
-        raise ConfigError(f"{path} has unknown section(s): {', '.join(unknown)}")
+        raise ConfigError(f"{path} has unknown section(s): {_named(unknown, 'section')}")
 
     head = _table(raw, "keelline")
     preset_name = str(head.get("preset", "recommended"))
@@ -217,11 +336,10 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
         raise ConfigError(
-            "project.name must be one lowercase path segment matching "
-            f"{PROJECT_NAME.pattern}; got {project.name!r}"
+            f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
         )
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
-    memory = _build(Memory, "memory", _merged(raw, defaults, "memory"))
+    memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
     ledger = _build(Ledger, "ledger", _merged(raw, defaults, "ledger"))
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))

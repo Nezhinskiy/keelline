@@ -30,5 +30,12 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # "present and not a record" is a distinct answer from "absent" — absent skips in
         # `doctor` and unreadable must be red — so the consumer needs the class to branch on.
         "UnreadableRecord",
+        # which commit a release is (wave 4): `init` writes the pin, `doctor`'s `ci-ref` row
+        # judges it
+        "Pin",
+        "Resolution",
+        "released",
+        "resolve_pin",
+        "is_released",
     }
     assert required == set(release.__all__)

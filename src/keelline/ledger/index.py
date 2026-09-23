@@ -75,7 +75,7 @@ def header(config: Config) -> str:
     return (
         "# Bug reports\n\n"
         f"{GENERATED_BY} from `{bugs}/{prefix}-*.md`; edit the entry\n"
-        "files, not this one. How to file, close, reference, and merge:\n"
+        "files, not this one. How to file, close and reference an entry:\n"
         f"[runbook]({runbook}). Audit provenance: "
         f"[{config.paths.bugs}/audits/]({bugs}/audits/)._\n"
     )

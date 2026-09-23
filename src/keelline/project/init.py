@@ -1,0 +1,218 @@
+"""`keelline init --yes`: the footprint, written by the engine in two passes (§8.1, §7.2, DC3).
+
+The three write-once files are `Kind.ONCE` artifacts in a pass of their own and the rest of the
+footprint is the second, because two artifacts cannot target one file in one pass. Both are
+planned before either is applied, so a refusal anywhere leaves nothing written and no
+manifest; the dry run reports both plans and writes nothing.
+
+A repository that already holds a `keelline.toml` and no manifest is adopted (P4). One that
+holds a manifest is refused: re-running `init` is `upgrade` (§7.3), which ships later.
+
+**The workflow and `[ci] ref` are one value.** A resolved pin is written into the document
+only when this run is the one that creates it, and `templates._ci` renders the workflow from
+`config.ci.ref` — so the `uses:` ref and what `keelline.toml` says on disk cannot come apart.
+`doctor`'s `ci-ref` row reports red when they do, which is why this is the invariant rather than
+a convenience.
+
+**Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact, and DC3 says
+what that kind is: created when absent, never looked inside again. So on a repository that
+already carries one the engine reports `skip_modified` — "create-once, and the file is already
+there" — and the file comes back byte for byte. What the hand-written document does is decide
+the whole run: it is parsed, merged under Keelline's own two keys and the preset's defaults,
+and validated by `loads` before a byte is written, and the `Config` that comes out is what
+every target below is built from. The two tool-owned keys are written only into a file
+Keelline itself creates, which is the only file whose header claims them.
+
+**Every value in the document this writes is either Keelline's own or the repository's own
+answer read back.** The tool-owned pair is `[keelline] version` and `state`; everything else
+is copied from a `keelline.toml` a person wrote, or — where there is none — detected under
+`PROJECT_NAME`'s grammar, which is the one thing `detect` refuses outside of. `loads` then
+validates the whole document before a byte is written, so a bad path or a bad name costs the
+run rather than the repository.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+import keelline
+from keelline.config.loader import CONFIG_FILE, loads, toml_position
+from keelline.errors import Failure, Refusal
+from keelline.project.detect import detect
+from keelline.project.templates import project_templates
+from keelline.release.api import Resolution, resolve_pin
+from keelline.runner import Runner
+from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
+from keelline.tomlout import dumps
+
+STATE_NEW = "initialised"
+USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "commit_messages")
+HEAD_KEYS = ("preset", "profile", "agents")
+HEADER = (
+    "# Written by `keelline init`. Every key you leave out takes the preset's default;\n"
+    "# `[keelline] version` and `state` are Keelline's to rewrite, the rest are yours.\n\n"
+)
+# The pair is spelled literally because the intended reader is an agent relaying this sentence,
+# and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
+# them first" reads as two alternatives, one of which does not work.
+NEEDS_YES = (
+    "`keelline init` asks its questions through the onboarding lane, which ships later; today "
+    "it takes the detected defaults — pass --yes to accept them, or --yes --dry-run to read "
+    "them first"
+)
+ALREADY = (
+    f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
+    "`keelline upgrade`, which ships later"
+)
+VERB_NOTE = (
+    "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
+    "a region_update into it; a dry run plans it as a create of a region-only file. The bytes "
+    "inside the markers are the same either way"
+)
+
+
+@dataclass(frozen=True)
+class InitReport:
+    once: Plan
+    footprint: Plan
+    skipped: dict[str, str]
+    resolution: Resolution
+    adopted: bool
+    dry_run: bool
+    note: str = ""
+    # What `[ci] ref` says on disk after the run, which is what the rendered workflow pins;
+    # empty when no workflow was planned. One field for both, because they are one value.
+    ref: str = ""
+
+
+def _existing(root: Path) -> dict[str, object] | None:
+    """The `keelline.toml` already in the repository, parsed, or `None`.
+
+    A file that will not parse is a `Failure` naming the file and the position `tomllib`
+    stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
+    source for several of its faults — a duplicate table or inline-table key is reported with
+    the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
+    `config.loader.toml_position` before any of it prints. The file is `keelline.toml`, which
+    P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
+    instructed to relay and stop on.
+    """
+    path = root / CONFIG_FILE
+    if not path.is_file():
+        return None
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
+
+
+def _tables(
+    root: Path, existing: dict[str, object] | None, *, ci: bool
+) -> dict[str, dict[str, object]]:
+    """The document's tables, in order: Keelline's two keys, then the repository's answers (P4).
+
+    **Detection runs only when no `[project]` table answers for the repository**, and not
+    merely when some key of the head is absent. `detect` is the one call here that can refuse
+    — a directory name or a remote's last segment outside `PROJECT_NAME` — and DC6's remedy for
+    that refusal is to write `[project] name` into `keelline.toml` by hand and run `init`
+    again. A branch that consulted `detect` for anything the preset can default would make that
+    remedy dead: the repository whose name cannot be guessed would go on being refused after
+    doing exactly what it was told. Everything else the head does not carry — `preset`,
+    `profile`, `agents` — has a preset default, and the loader supplies it.
+    """
+    head: dict[str, object] = {"version": keelline.__version__, "state": STATE_NEW}
+    tables: dict[str, dict[str, object]] = {"keelline": head}
+    old_head = existing.get("keelline") if existing else None
+    if isinstance(old_head, dict):
+        head.update({k: old_head[k] for k in HEAD_KEYS if k in old_head})
+    if existing:
+        for name in ("project", *USER_OWNED):
+            table = existing.get(name)
+            if isinstance(table, dict):
+                tables[name] = dict(table)
+    if "project" not in tables:
+        found = detect(root)
+        head.setdefault("agents", list(found.agents))
+        tables["project"] = {
+            "name": found.name,
+            "base_branch": found.base_branch,
+            "release_branch": found.base_branch,
+        }
+    if not ci:
+        tables.setdefault("ci", {})["mode"] = "none"
+    return tables
+
+
+def init(
+    root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
+) -> InitReport:
+    """Plan both passes, then apply both — or neither.
+
+    The refusals come in one order and all of them above every write: no `--yes`, a manifest
+    that says this repository is already initialised, a `keelline.toml` that is not TOML, a
+    detected name outside the grammar, a `Config` the loader refuses, a pass in which two
+    artifacts resolve to one file (`templates._one_target_each`), and finally a refusal in
+    either plan, which is returned rather than raised so the report can name the artifact.
+    """
+    if not yes:
+        raise Refusal(NEEDS_YES)
+    if (root / MANIFEST_PATH).is_file():
+        raise Refusal(ALREADY)
+    existing = _existing(root)
+    tables = _tables(root, existing, ci=ci)
+    config = loads(HEADER + dumps(tables), root, machine=machine)
+    # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
+    # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
+    # the whole of its timeout for an answer nothing prints.
+    resolution = (
+        resolve_pin(keelline.__version__, runner, cwd=root)
+        if config.ci.mode == "reusable" and (existing is None or config.ci.ref)
+        else Resolution(None, True)
+    )
+    # `existing is None` and not just "a pin resolved": on the adoption path `config` is a
+    # create-once artifact that is already on disk, so nothing written into `tables` here ever
+    # reaches a file. Recording the pin anyway made `config.ci.ref` — which is what `_ci`
+    # renders the workflow from — disagree with `keelline.toml`, and the workflow was written
+    # pinned to a sha the document did not carry. `doctor`'s `ci-ref` row reports exactly that
+    # as red, so `init` said it had worked and the next `doctor` said it had not.
+    if resolution.pin is not None and existing is None:
+        tables.setdefault("ci", {})["ref"] = resolution.pin.sha
+        config = loads(HEADER + dumps(tables), root, machine=machine)
+    document = HEADER + dumps(tables)
+    prepared = project_templates(
+        root,
+        config,
+        resolution=resolution,
+        document=document,
+        adopted=existing is not None,
+        dry_run=dry_run,
+    )
+    # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
+    # when no workflow was planned. The two are one value by construction, which is the
+    # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
+    ref = "" if "ci-workflow" in prepared.skipped else config.ci.ref
+    note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
+    once = plan(root, config, prepared.once)
+    footprint = plan(root, config, prepared.footprint)
+    if dry_run or once.refusals or footprint.refusals:
+        return InitReport(
+            once,
+            footprint,
+            prepared.skipped,
+            resolution,
+            existing is not None,
+            dry_run,
+            note,
+            ref,
+        )
+    apply(root, once)
+    # Re-planned against the tree the write-once files are now in: on a repository with no
+    # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
+    # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
+    # that says the bytes inside the markers are the same either way.
+    footprint = plan(root, config, prepared.footprint)
+    apply(root, footprint)
+    return InitReport(
+        once, footprint, prepared.skipped, resolution, existing is not None, False, note, ref
+    )
