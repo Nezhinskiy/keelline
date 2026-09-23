@@ -13,6 +13,7 @@ from keelline.attach.api import IGNORE_REGION
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.errors import Failure, Refusal
 from keelline.project.init import InitReport, init
+from keelline.project.templates import NOT_ASKED_DRY, NOT_ASKED_WRITTEN
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import LsRemote, git, needs_git
@@ -219,15 +220,19 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
 
 @needs_git
 def test_an_adopted_document_with_no_ref_gets_no_workflow_at_all(tmp_path: Path) -> None:
-    # The other half of the same invariant. A pin resolves, but nothing this run resolved can
-    # reach a create-once document that is already there — so a workflow pinned to it would name
-    # a ref `keelline.toml` does not record, which is the state `doctor` reports as red.
+    # The other half of the same invariant. A pin would resolve, but nothing this run resolved
+    # can reach a create-once document that is already there — so a workflow pinned to it would
+    # name a ref `keelline.toml` does not record, which is the state `doctor` reports as red.
+    # The remote is not asked at all: `_ci` answers this path before it reads the resolution,
+    # and the ask was a network round trip, up to its whole timeout, for an answer nothing
+    # printed. Mutation (oracle): "the adoption path with no ref asks the network again".
     root = _repo(tmp_path)
     (root / CONFIG_FILE).write_text(
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
     )
-    report = _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
-    assert report.resolution.pin == Pin("v0.1.0", SHA)
+    runner = LsRemote(stdout=LISTING, code=0)
+    report = _init(root, tmp_path, runner=runner)
+    assert runner.calls == [] and report.resolution.pin is None
     assert report.ref == "" and not (root / ".github").exists()
     assert report.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ""
@@ -245,7 +250,8 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
     which `released` reads as "could not ask") and with it answering that no tag matches. Both
     used to print a sentence about the network; neither is the reason, and running again cannot
     help, because `.keelline/manifest.json` is on disk after this run and `init` refuses a
-    repository that has one.
+    repository that has one. (Neither answer is asked for any more — `init` skips the round trip
+    on this path — so the two runners now hold that the sentence does not depend on them.)
 
     Mutation (oracle): drop `adopted=existing is not None` back to a literal `False` -> both
     cases print the resolution's own sentence and redden.
@@ -265,6 +271,36 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
     assert (root / MANIFEST_PATH).is_file()
     with pytest.raises(Refusal, match="re-running `init` is"):
         _init(root, tmp_path)
+
+
+@needs_git
+def test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing(
+    tmp_path: Path,
+) -> None:
+    """`NOT_ASKED` had `NO_REF`'s defect on the path `NO_REF` does not cover.
+
+    On a bare repository with the remote unreachable, a run that writes records a
+    `keelline.toml` with no `[ci] ref` and persists `.keelline/manifest.json` — and the sentence
+    it printed was "run `keelline init --yes` again with the network reachable", which the very
+    next run refuses. Only a dry run can still take that remedy, so only a dry run is offered it,
+    and the case proves the remedy by taking it: the dry run's advice, followed with the network
+    back, pins.
+
+    Mutation (oracle): "an unreachable remote tells a run that wrote to run again".
+    """
+    offline = LsRemote(stdout="", code=128)
+    dry_root = _repo(tmp_path / "dry")
+    dry = _init(dry_root, tmp_path, runner=offline, dry_run=True)
+    assert dry.skipped["ci-workflow"] == NOT_ASKED_DRY
+    assert _init(dry_root, tmp_path, runner=LsRemote(stdout=LISTING, code=0)).ref == SHA
+
+    root = _repo(tmp_path / "written")
+    written = _init(root, tmp_path, runner=offline)
+    reason = written.skipped["ci-workflow"]
+    assert reason == NOT_ASKED_WRITTEN
+    assert "again" not in reason and "[ci] ref" in reason
+    with pytest.raises(Refusal, match="re-running `init` is"):
+        _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
 
 
 @needs_git

@@ -5216,7 +5216,7 @@ reddens = [
 # What it does break is the reason, and that is worth an entry on this branch's own argument.
 # Three states reach here with no ref, and they have three different remedies: the document this
 # repository already had records none (`NO_REF`, and nothing the network says can change it), the
-# remote could not be asked (`NOT_ASKED`, try again), no released tag matches the version running
+# remote could not be asked (`NOT_ASKED`, try again before a run writes), no released tag matches the version running
 # (`NO_TAG`, wait for a release). Collapsing them is how the adoption path came to be sent to the
 # network for a file it has to edit by hand — the defect `adopted` was threaded to fix, one commit
 # below this one. The mutation makes the run that resolved nothing report the adopted document's
@@ -5755,6 +5755,30 @@ before = "adopted=existing is not None"
 after = "adopted=False"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit",
+]
+
+# The ask the adoption path with no `[ci] ref` does not need: `_ci` answers it with `NO_REF`
+# before it reads the resolution, so the round trip — up to its whole timeout offline — bought
+# an answer nothing printed.
+[[mutation]]
+name = "the adoption path with no ref asks the network again"
+file = "src/keelline/project/init.py"
+before = 'if config.ci.mode == "reusable" and (existing is None or config.ci.ref)'
+after = 'if config.ci.mode == "reusable"'
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
+]
+
+# `NO_REF`'s argument, on the path `NO_REF` does not cover: a run that writes persists the
+# manifest, and `init` refuses a repository that has one, so "run it again with the network
+# reachable" is a remedy only a dry run can take. The mutation gives it to every run.
+[[mutation]]
+name = "an unreachable remote tells a run that wrote to run again"
+file = "src/keelline/project/templates.py"
+before = "            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN"
+after = "            return None, NOT_ASKED_DRY"
+reddens = [
+  "tests/project/test_init.py::test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing",
 ]
 
 # The call site, which is what regressed. A TOML key is arbitrary quoted text, so this message

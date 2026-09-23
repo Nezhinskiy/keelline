@@ -162,9 +162,12 @@ def init(
     existing = _existing(root)
     tables = _tables(root, existing, ci=ci)
     config = loads(HEADER + dumps(tables), root, machine=machine)
+    # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
+    # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
+    # the whole of its timeout for an answer nothing prints.
     resolution = (
         resolve_pin(keelline.__version__, runner, cwd=root)
-        if config.ci.mode == "reusable"
+        if config.ci.mode == "reusable" and (existing is None or config.ci.ref)
         else Resolution(None, True)
     )
     # `existing is None` and not just "a pin resolved": on the adoption path `config` is a
@@ -178,7 +181,12 @@ def init(
         config = loads(HEADER + dumps(tables), root, machine=machine)
     document = HEADER + dumps(tables)
     prepared = project_templates(
-        root, config, resolution=resolution, document=document, adopted=existing is not None
+        root,
+        config,
+        resolution=resolution,
+        document=document,
+        adopted=existing is not None,
+        dry_run=dry_run,
     )
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the

@@ -86,10 +86,18 @@ NO_TAG = (
     "no released Keelline tag matches the version running, so there is no commit to pin; "
     "`keelline upgrade` (ships later) writes it after the first release"
 )
-NOT_ASKED = (
-    "the public repository could not be asked for its tags, so there is no commit to pin; "
-    "run `keelline init --yes` again with the network reachable, or wait for "
-    "`keelline upgrade` (ships later)"
+# Two remedies, picked by the kind of run, for the reason `NO_REF`'s comment gives: a run that
+# writes persists `.keelline/manifest.json`, and `init` refuses a repository that has one, so
+# "run again with the network reachable" is a remedy only a dry run can still take. After a run
+# that wrote, the document records no ref and nothing `init` does will add one.
+NOT_ASKED = "the public repository could not be asked for its tags, so there is no commit to pin; "
+NOT_ASKED_DRY = (
+    NOT_ASKED + "run `keelline init --yes` with the network reachable, and that run pins it"
+)
+NOT_ASKED_WRITTEN = NOT_ASKED + (
+    "the run that writes keelline.toml is the only one that pins, and `init` does not run twice "
+    "on one repository — write a released commit into [ci] ref and the workflow by hand, or "
+    "wait for `keelline upgrade` (ships later)"
 )
 UVX_LATER = (
     'the uvx form of the gate ships with a later lane; [ci] mode = "reusable" is what this '
@@ -279,7 +287,7 @@ def _computed(
 
 
 def _ci(
-    config: Config, resolution: Resolution, *, adopted: bool
+    config: Config, resolution: Resolution, *, adopted: bool, dry_run: bool
 ) -> tuple[Template | None, str | None]:
     """The rendered workflow, or the one sentence saying why this configuration gets none.
 
@@ -308,7 +316,7 @@ def _ci(
         if adopted:
             return None, NO_REF
         if not resolution.asked:
-            return None, NOT_ASKED
+            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN
         if resolution.pin is None:
             return None, NO_TAG
         return None, NO_REF
@@ -376,7 +384,13 @@ def _one_target_each(templates: Sequence[Template]) -> None:
 
 
 def project_templates(
-    root: Path, config: Config, *, resolution: Resolution, document: str, adopted: bool
+    root: Path,
+    config: Config,
+    *,
+    resolution: Resolution,
+    document: str,
+    adopted: bool,
+    dry_run: bool,
 ) -> Prepared:
     """The footprint this configuration asks for, split into the engine's two passes (DC3).
 
@@ -387,6 +401,8 @@ def project_templates(
     rather than derived: `_ci` cannot tell the two kinds of run apart from a `Config` and a
     `Resolution`, and every sentence it can print about a missing `[ci] ref` is wrong for one of
     them. It has no default, because a caller that forgot one would silently get the wrong half.
+    `dry_run` is threaded for the same reason and with the same rule: the one remedy that
+    differs between a run that writes and one that does not is "run it again".
     """
     p = config.paths
     once = (
@@ -448,7 +464,7 @@ def project_templates(
         ),
     ]
     skipped: dict[str, str] = {}
-    workflow, reason = _ci(config, resolution, adopted=adopted)
+    workflow, reason = _ci(config, resolution, adopted=adopted, dry_run=dry_run)
     if workflow is not None:
         footprint.append(workflow)
     elif reason is not None:

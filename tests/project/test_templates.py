@@ -33,12 +33,13 @@ def _prepared(
     resolution: Resolution = NO_PIN,
     root: Path = Path("/nonexistent/root"),
     adopted: bool = False,
+    dry_run: bool = False,
 ) -> Prepared:
     """This file's default is the run that *creates* `keelline.toml`, which is the path on which
     the three "why there is no ref" sentences are the answers. `adopted=True` is the other kind
     of run, and it has one answer; the case below holds that."""
     return project_templates(
-        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted
+        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted, dry_run=dry_run
     )
 
 
@@ -325,7 +326,12 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     for this module to raise something other than its own refusal."""
     config = _recording(preset_defaults("widget"))
     prepared = project_templates(
-        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT, adopted=False
+        Path("/nonexistent/root"),
+        config,
+        resolution=PINNED,
+        document=DOCUMENT,
+        adopted=False,
+        dry_run=False,
     )
     ids = {t.id for t in (*prepared.once, *prepared.footprint)}
     # The walk is stated non-empty first, and at its full size: a `Prepared` that built nothing
@@ -353,7 +359,12 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
     """
     config = _recording(preset_defaults("widget"))
     prepared = project_templates(
-        Path("/nonexistent/root"), config, resolution=PINNED, document=DOCUMENT, adopted=False
+        Path("/nonexistent/root"),
+        config,
+        resolution=PINNED,
+        document=DOCUMENT,
+        adopted=False,
+        dry_run=False,
     )
     sources = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
     # Non-empty and at full size first, for `PATH_KEYS`' reason: nothing built makes every
