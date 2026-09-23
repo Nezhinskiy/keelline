@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from importlib import resources
 from typing import Any
 
 from keelline.errors import Failure
 
-# The rule a preset name is held to, in words, for the refusal a person reads.
-NAME_RULE = "letters, digits, `-` and `_`"
+# The rule a preset name is held to, and the same rule in words for the refusal a person reads.
+# ASCII and nothing wider: `str.isalnum()` stood here and admitted every Unicode letter and digit,
+# which no shipped name uses and the sentence below did not say.
+NAME = re.compile(r"\A[A-Za-z0-9_-]+\Z")
+NAME_RULE = "ASCII letters, digits, `-` and `_`"
 
 
 def shipped_presets() -> list[str]:
@@ -31,13 +35,18 @@ def load_preset(name: str, *, key: str = "[keelline] preset") -> dict[str, Any]:
     held to the same rule rather than given an exception: the person who typed the value has it
     on their own screen, and the list of shipped presets is what they need to fix it.
     """
-    if not name.replace("-", "").replace("_", "").isalnum():
+    if not NAME.match(name):
         raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {_available()}")
-    resource = resources.files(__package__).joinpath(f"{name}.toml")
-    if not resource.is_file():
+    # Membership in the listing, not `joinpath(...).is_file()`: the filesystem answered that, and
+    # on macOS's default case-insensitive one `"RECOMMENDED"` loaded where Linux refused it, so a
+    # configuration checked on one machine failed CI on another. The profile half already asks
+    # its listing; this is the same question, and the identifier check above now only chooses
+    # which refusal a value gets.
+    if name not in shipped_presets():
         raise Failure(
             f"{key} names a preset this version of Keelline does not ship; {_available()}"
         )
+    resource = resources.files(__package__).joinpath(f"{name}.toml")
     return tomllib.loads(resource.read_text(encoding="utf-8"))
 
 

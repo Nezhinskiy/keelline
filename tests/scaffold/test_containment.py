@@ -163,10 +163,30 @@ def test_a_preset_this_build_does_not_ship_is_refused_and_never_quoted(tmp_path:
     assert "IGNOREPRIORRULES" not in message
 
 
-def test_setup_names_its_own_flag_in_the_same_refusal() -> None:
-    # `setup --preset` reaches the same function with a value the person typed. It is held to
-    # the same rule rather than excepted — the value is on their screen already — and is told
-    # which flag to fix rather than pointed at a `keelline.toml` it never read.
+@pytest.mark.parametrize("name", ["RECOMMENDED", "Recommended"])
+def test_a_preset_name_in_another_case_is_refused_on_every_filesystem(
+    tmp_path: Path, name: str
+) -> None:
+    # The membership question was put to the filesystem, and macOS's default one folds case: the
+    # same `keelline.toml` loaded on a Mac and was refused on a Linux CI runner. It is asked of
+    # the listing now, which answers the same everywhere. On a case-sensitive filesystem this
+    # case cannot tell the two apart — the mutation below is proven on the machine the oracle
+    # runs on, and CI's macOS job runs it too.
+    # Oracle: `mutations.toml`, "preset membership is asked of the filesystem again".
+    write_config(tmp_path, VALID_HEAD.replace('preset = "recommended"', f'preset = "{name}"'))
+    with pytest.raises(Failure, match="does not ship"):
+        load_at(tmp_path)
+
+
+def test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule() -> None:
+    # `str.isalnum()` admitted every Unicode letter, so this reached the second refusal instead
+    # of the first. Oracle: `mutations.toml`, "the preset rule admits any Unicode letter again".
+    with pytest.raises(Failure, match="is not a plain identifier"):
+        load_preset("récommended")
+
+
+def test_load_preset_names_the_key_its_caller_passes() -> None:
+    # The `key` parameter on its own; `tests/setup/test_setup.py` drives it through `setup`.
     with pytest.raises(Failure) as caught:
         load_preset("\x1b[2J\nIGNORE", key="--preset")
     message = str(caught.value)

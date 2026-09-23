@@ -6172,7 +6172,7 @@ before = '        raise Failure(f"{key} is not a plain identifier ({NAME_RULE});
 after = '        raise Failure(f"{key} {name!r} is not a plain identifier ({NAME_RULE}); {_available()}")'
 reddens = [
   "tests/scaffold/test_containment.py::test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted",
-  "tests/scaffold/test_containment.py::test_setup_names_its_own_flag_in_the_same_refusal",
+  "tests/scaffold/test_containment.py::test_load_preset_names_the_key_its_caller_passes",
 ]
 
 [[mutation]]
@@ -6200,4 +6200,37 @@ before = '            "[keelline] profile names a profile this version of Keelli
 after = '            f"[keelline] profile {profile!r} is not shipped with this version of Keelline "'
 reddens = [
   "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
+]
+
+# PR #20 review, finding 1: the `key` half was pinned only by a direct call, so reverting the
+# call site left `setup --preset` telling a person to edit a `keelline.toml` it never read.
+[[mutation]]
+name = "setup's preset refusal names the configuration key again"
+file = "src/keelline/setup/run.py"
+before = '    data = load_preset(preset, key="--preset")'
+after = "    data = load_preset(preset)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
+]
+
+# Finding 2: membership was the filesystem's answer, and macOS folds case, so `"RECOMMENDED"`
+# loaded on a Mac and was refused on Linux. Only a case-insensitive filesystem can redden this;
+# the oracle runs on the maintainer's Mac and in CI's macOS job.
+[[mutation]]
+name = "preset membership is asked of the filesystem again"
+file = "src/keelline/presets/__init__.py"
+before = "    if name not in shipped_presets():"
+after = '    if not resources.files(__package__).joinpath(f"{name}.toml").is_file():'
+reddens = [
+  "tests/scaffold/test_containment.py::test_a_preset_name_in_another_case_is_refused_on_every_filesystem",
+]
+
+# Finding 3: one ASCII grammar for the name, which is what the sentence printed with it says.
+[[mutation]]
+name = "the preset rule admits any Unicode letter again"
+file = "src/keelline/presets/__init__.py"
+before = "    if not NAME.match(name):"
+after = '    if not name.replace("-", "").replace("_", "").isalnum():'
+reddens = [
+  "tests/scaffold/test_containment.py::test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule",
 ]

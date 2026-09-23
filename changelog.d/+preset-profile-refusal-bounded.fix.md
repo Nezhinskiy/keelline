@@ -7,3 +7,7 @@ through the skills that relay refusals.
 Each refusal now names the key, states the rule in words, and lists the presets or profiles
 this version ships. `keelline setup --preset` gives the same refusal, naming `--preset` rather
 than a file.
+
+A preset name is now also held to ASCII letters, digits, `-` and `_`, and matched exactly against
+the presets that ship. Before this, macOS's case-insensitive filesystem let `preset = "RECOMMENDED"`
+load there while Linux refused it.
