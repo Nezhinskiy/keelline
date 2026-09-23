@@ -690,7 +690,7 @@ def setup(
     # directory exists.
     # `load_preset` first: a mistyped `--preset` is a refusal, and it used to come one line
     # after the home tree had been created for it.
-    data = load_preset(preset)
+    data = load_preset(preset, key="--preset")
     home.mkdir(parents=True, exist_ok=True)
     personal = _new_personal_values(data, machine)
     machine_table = {"version": __version__, "installed": datetime.date.today().isoformat()}

@@ -6157,3 +6157,81 @@ after = "                timeout=NETWORK_TIMEOUT_SECONDS,"
 reddens = [
   "tests/test_runner.py::test_a_caller_that_asks_for_a_narrower_bound_gets_it",
 ]
+
+# The `_enum` class, at the four sites wave 4 left. Each refusal below is reached by a value a
+# clone writes into `keelline.toml` — `[keelline] preset` or `[keelline] profile` — and each ran
+# `{name!r}` into a message the skills relay to a terminal and a model. The first of each pair
+# runs exactly for a value that failed its rule, so it could carry ESC and line breaks; the
+# second is reached only by a name that passed, and could still carry an instruction spelled in
+# letters. The anchor is Keelline's own vocabulary: the key, the rule in words, and the listing
+# this build ships. Each mutation puts the value back into its message.
+[[mutation]]
+name = "a preset name outside the rule is quoted back again"
+file = "src/keelline/presets/__init__.py"
+before = '        raise Failure(f"{key} is not a plain identifier ({NAME_RULE}); {_available()}")'
+after = '        raise Failure(f"{key} {name!r} is not a plain identifier ({NAME_RULE}); {_available()}")'
+reddens = [
+  "tests/scaffold/test_containment.py::test_a_preset_name_outside_the_identifier_rule_is_refused_and_never_quoted",
+  "tests/scaffold/test_containment.py::test_load_preset_names_the_key_its_caller_passes",
+]
+
+[[mutation]]
+name = "a preset this build does not ship is quoted back again"
+file = "src/keelline/presets/__init__.py"
+before = '            f"{key} names a preset this version of Keelline does not ship; {_available()}"'
+after = '            f"{key} names {name!r}, which this version of Keelline does not ship; {_available()}"'
+reddens = [
+  "tests/scaffold/test_containment.py::test_a_preset_this_build_does_not_ship_is_refused_and_never_quoted",
+]
+
+[[mutation]]
+name = "a profile outside one path segment is quoted back again"
+file = "src/keelline/scaffold/engine.py"
+before = '        raise PathEscape(f"[keelline] profile is not one path segment ({SOURCE_RULE})")'
+after = '        raise PathEscape(f"[keelline] profile {profile!r} is not one path segment ({SOURCE_RULE})")'
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_profile_outside_one_path_segment_is_refused_and_never_quoted",
+]
+
+[[mutation]]
+name = "a profile the listing lacks is quoted back again"
+file = "src/keelline/scaffold/engine.py"
+before = '            "[keelline] profile names a profile this version of Keelline does not ship "'
+after = '            f"[keelline] profile {profile!r} is not shipped with this version of Keelline "'
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
+]
+
+# The review of this change, finding 1: the `key` half was pinned only by a direct call, so reverting the
+# call site left `setup --preset` telling a person to edit a `keelline.toml` it never read.
+[[mutation]]
+name = "setup's preset refusal names the configuration key again"
+file = "src/keelline/setup/run.py"
+before = '    data = load_preset(preset, key="--preset")'
+after = "    data = load_preset(preset)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
+]
+
+# Finding 2: membership was the filesystem's answer, and macOS folds case, so `"RECOMMENDED"`
+# loaded on a Mac and was refused on Linux. The case-folding test reddens only on a
+# case-insensitive filesystem, and the CI oracle runs on Linux, so the proof is the case that
+# empties the listing: `recommended.toml` stays on disk, and only the listing refuses it.
+[[mutation]]
+name = "preset membership is asked of the filesystem again"
+file = "src/keelline/presets/__init__.py"
+before = "    if name not in shipped_presets():"
+after = '    if not resources.files(__package__).joinpath(f"{name}.toml").is_file():'
+reddens = [
+  "tests/scaffold/test_containment.py::test_preset_membership_is_the_listings_answer_and_not_the_filesystems",
+]
+
+# Finding 3: one ASCII grammar for the name, which is what the sentence printed with it says.
+[[mutation]]
+name = "the preset rule admits any Unicode letter again"
+file = "src/keelline/presets/__init__.py"
+before = "    if not NAME.match(name):"
+after = '    if not name.replace("-", "").replace("_", "").isalnum():'
+reddens = [
+  "tests/scaffold/test_containment.py::test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule",
+]

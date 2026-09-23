@@ -48,6 +48,7 @@ from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
 LOCAL_ROOT = ".keelline/local"
 SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+SOURCE_RULE = "lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit"
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # The two refusals that belong to one artifact's own file: a region whose markers no longer say
 # where it ends, and a settings document that cannot be parsed. Both are ordinary user state — a
@@ -111,15 +112,16 @@ def validate_sources(config: Config) -> None:
     profile = config.keelline.profile
     if not profile:
         return
+    # Named and never quoted, in both refusals: `profile` is repository-authored, and the first
+    # runs exactly for a value outside `SOURCE_NAME`, which can hold ESC and line breaks. The
+    # rule is stated in words and the listing is Keelline's own, so nothing here is the clone's.
     if not SOURCE_NAME.match(profile):
-        raise PathEscape(
-            f"[keelline] profile {profile!r} is not one path segment matching {SOURCE_NAME.pattern}"
-        )
+        raise PathEscape(f"[keelline] profile is not one path segment ({SOURCE_RULE})")
     shipped = shipped_profiles()
     if shipped is not None and profile not in shipped:
         known = ", ".join(shipped) or "none"
         raise PathEscape(
-            f"[keelline] profile {profile!r} is not shipped with this version of Keelline "
+            "[keelline] profile names a profile this version of Keelline does not ship "
             f"(available: {known})"
         )
 

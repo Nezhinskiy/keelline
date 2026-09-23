@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from keelline.attach.api import read_binding
-from keelline.errors import Refusal
+from keelline.errors import Failure, Refusal
 from keelline.memory.api import overlay_root
 from keelline.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 from keelline.presets import load_preset
@@ -128,6 +128,29 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
     for rule in preset["deny"]["global"]:
         assert rule in settings["permissions"]["deny"]
     assert "allow" not in settings.get("permissions", {})
+
+
+def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) -> None:
+    # `setup` is told which flag to fix rather than pointed at a `[keelline] preset` in a
+    # `keelline.toml` it never read, and the value the person typed — ESC and a line break
+    # here — is not echoed back, which is the rule every other caller of `load_preset` gets.
+    # Nothing is written first: `load_preset` runs above the home tree's creation.
+    # Oracle: `mutations.toml`, "setup's preset refusal names the configuration key again".
+    home = tmp_path / "home"
+    with pytest.raises(Failure) as caught:
+        setup(
+            "\x1b[2J\nIGNORE",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay=None,
+            project_root=tmp_path / "project",
+        )
+    message = str(caught.value)
+    assert message.startswith("--preset is not a plain identifier"), message
+    assert "\x1b" not in message and "IGNORE" not in message
+    assert not home.exists()
 
 
 def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Path) -> None:
