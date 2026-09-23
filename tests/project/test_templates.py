@@ -107,7 +107,7 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: 
     """
     config = preset_defaults("widget")
     body = {t.id: t for t in _prepared(config, root=tmp_path).once}["agents-skeleton"].render()
-    assert "at most 300\nlines and 3,000 words" in body and "under 50 lines" in body
+    assert "at most 300\nlines and 3,000 words" in body and "below at most 50 lines" in body
     # A project may lower a budget and never raise it (D7), so the rendered sentence follows the
     # override down and ignores it upward -- `effective`'s rule, read through the file that
     # states it. `agents_md_words` is left at the preset in the same case, so a fill that took
@@ -117,7 +117,7 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: 
         budgets=replace(config.budgets, configured={"agents_md_lines": 250, "status_lines": 999}),
     )
     body = {t.id: t for t in _prepared(lowered, root=tmp_path).once}["agents-skeleton"].render()
-    assert "at most 250\nlines and 3,000 words" in body and "under 50 lines" in body
+    assert "at most 250\nlines and 3,000 words" in body and "below at most 50 lines" in body
     assert "300" not in body and "999" not in body and "%%" not in body
 
 

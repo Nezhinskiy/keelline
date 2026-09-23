@@ -5781,6 +5781,19 @@ reddens = [
   "tests/project/test_init.py::test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing",
 ]
 
+# N5 of the wave-4 re-review. `contained()` took on the write's component rule, and
+# `contained_roots` catches its refusal and moves on — so `code_roots = ["src/"]` was silently
+# dropped from every count the field feeds. The fold is what keeps a read-only walk from
+# inheriting a rule that exists for writes.
+[[mutation]]
+name = "a code root spelled with a slash is dropped again"
+file = "src/keelline/guards/roots.py"
+before = "                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root"
+after = "                root, entry, resolved_root=resolved_root"
+reddens = [
+  "tests/guards/test_hygiene.py::test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked",
+]
+
 # The call site, which is what regressed. A TOML key is arbitrary quoted text, so this message
 # joined a repository's own bytes straight into a `ConfigError` — raw ESC and raw newlines into
 # a terminal and into a refusal the `init` skill is instructed to relay to a model. Reachable on
@@ -5931,8 +5944,8 @@ reddens = [
 [[mutation]]
 name = "the memory-group refusal describes an escape again"
 file = "src/keelline/attach/binding.py"
-before = '''    "a memory.groups entry does not name a subdirectory of this project's paths.memory, so it "
-    "is refused rather than counted"'''
+before = '''    "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
+    "paths.memory is itself a symlink, so the entry is refused rather than counted"'''
 after = '''    "a memory.groups entry does not stay inside this project's paths.memory, so it is refused "
     "rather than counted"'''
 reddens = [
@@ -6008,13 +6021,13 @@ reddens = [
 # delivers nothing, so `dispatch` banks no `once_key` marker and this handler is asked again on
 # every event the matcher covers -- and it is the healthy path that pays, because `overlay_sync`
 # sits under `if not lines:`. Four of nine seconds against an entry whose `timeout` is ten, re-paid
-# on every resume and every compaction, in a process that also runs `worktree-link`: a timeout
+# on every compaction, in a process that also runs `worktree-link`: a timeout
 # there costs the store link and not merely this nudge. With the set emptied, every invocation pays
 # again, which is the state this gate was measured against.
 [[mutation]]
-name = "a resumed session re-pays the overlay sync"
+name = "a compacted session re-pays the overlay sync"
 file = "src/keelline/attach/hooks.py"
-before = 'CONTINUED = frozenset({"resume", "compact"})'
+before = 'CONTINUED = frozenset({"compact"})'
 after = "CONTINUED = frozenset()"
 reddens = [
   "tests/attach/test_hooks.py::test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync",

@@ -1269,7 +1269,9 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     # module and keeps the red the row exists for.
     #
     # Mutation: `mutations.toml`'s "doctor renders an unreadable file as a broken check".
-    context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
+    context = checks.Context(
+        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+    )
 
     def cannot_read(_: checks.Context) -> checks.Row:
         raise PermissionError(13, "Permission denied")
@@ -1296,7 +1298,9 @@ def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # wording is prose, the presence is the guarantee.
     #
     # Mutation: `mutations.toml`'s "the plugin-root skips go back to an empty remedy".
-    context = checks.Context(tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path)))
+    context = checks.Context(
+        tmp_path, None, None, _stub(), {}, load(_initialised(tmp_path), machine=_machine(tmp_path))
+    )
     assert context.plugin_root is None and context.own_root is None
     for check in (checks._files(context), checks._wrapper(context)):
         assert check.status == checks.SKIP, check

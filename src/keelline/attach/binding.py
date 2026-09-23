@@ -75,8 +75,8 @@ NO_OVERLAY = (
 # not the escaping ones, not the odd ones, and not `paths.memory` itself, which is where the
 # notes live rather than a group in them.
 MEMORY_GROUP_ESCAPES = (
-    "a memory.groups entry does not name a subdirectory of this project's paths.memory, so it "
-    "is refused rather than counted"
+    "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
+    "paths.memory is itself a symlink, so the entry is refused rather than counted"
 )
 
 

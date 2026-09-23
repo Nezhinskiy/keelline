@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from keelline.config.loader import CONFIG_FILE, load, loads
-from keelline.config.paths import PathEscape, contained, validate_paths
+from keelline.config.paths import PATH_RULE, PathEscape, contained, validate_paths
 from keelline.config.schema import PATH_VALUE, Config, Paths
 from keelline.fsops import UnsafePath, checked_components, write_within
 
@@ -291,3 +291,19 @@ def test_keellines_own_dotted_footprint_is_not_refused(tmp_path: Path) -> None:
     # a user's repository.
     for value in (".github/workflows/keelline.yml", ".keelline/manifest.json", ".gitignore"):
         assert contained(tmp_path, value) == tmp_path.joinpath(*value.split("/"))
+
+
+def test_a_paths_value_outside_the_grammar_is_refused_in_words(tmp_path: Path) -> None:
+    # The refusal named the key and then printed `PATH_VALUE.pattern` — a per-segment lookahead
+    # that is correct and that no person reading a refusal can act on. The value itself is still
+    # never quoted.
+    (tmp_path / CONFIG_FILE).write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        '[paths]\nroadmap = "docs//roadmap.md"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(PathEscape) as caught:
+        load(tmp_path, machine=tmp_path / "absent.toml")
+    message = str(caught.value)
+    assert message == f"paths.roadmap is not a plain relative path: {PATH_RULE}"
+    assert PATH_VALUE.pattern not in message and "docs//" not in message

@@ -19,7 +19,9 @@ description: Diagnose a Keelline installation — hooks, memory store, budgets, 
    when no plugin root can be vouched for, `files` again on a build with no release record,
    `attached` when no overlay is recorded or the overlay cannot be asked, `pre-commit` with no
    overlay root recorded, `overlay-requires` with no overlay root recorded or no requirement
-   declared, `bundles` and `store-debris` when the note store does not resolve,
+   declared — and those last two also skip when the overlay root this machine records is not a
+   directory any more, which is the one overlay skip that carries a remedy (put the overlay
+   back, or record where it is now), because the note store is broken with it — `bundles` and `store-debris` when the note store does not resolve,
    `diagnostics` with no harness data root set, and `ci-ref` when the repository records no
    `[ci] ref` — which `keelline init` writes once a released Keelline exists to pin, so that
    row's skip says "nothing recorded here", not "this build cannot answer". Each says which

@@ -348,7 +348,7 @@ it after anything that rewrites the plugin directory.
 registers one `SessionStart` handler — `open`, with a `once_key`, so it speaks **at most** once
 per session: the marker is banked only when the handler had something to say, so a session that
 hears a line hears it once, and a repository with nothing to report is asked again on every
-`startup`, `resume`, `clear` and `compact` the matcher above covers — and it says
+`startup`, `resume`, `clear`, `compact` and `fork` the matcher above covers — and it says
 nothing at all unless `[memory] mode` is `overlay`. Ten fixed lines, each carrying at most a
 count, joined by newlines in this order: **no overlay recorded** on this machine, or one that
 **could not be asked** about, which is a machine configuration file that will not parse; this
@@ -372,13 +372,14 @@ hears nothing; and because the `once_key` marker is banked only on a line actual
 that is also the repository asked again on every event the matcher covers. A repository with a
 finding pays five seconds, hears its line, and is not asked again.
 
-Which is why those last two `git` calls are gated on the event's own `source`: on a **resume** or
-a **compact** — one conversation continuing, under the session id the marker is filed under — they
-are skipped, so a healthy repository costs five seconds there and not nine. `startup`, `fork`,
-`clear` and a payload carrying no `source` all pay, because an invocation Keelline cannot place in
-a context is treated as a new one rather than as one already answered. The cost is that an overlay
-which becomes unpushed *during* a session that started clean is not reported until the next
-session; `keelline doctor` answers on demand. And the overlay is never a plugin Keelline
+Which is why those last two `git` calls are gated on the event's own `source`: on a **compact** —
+the running conversation continuing, under the session id the marker is filed under — they are
+skipped, so a healthy repository costs five seconds there and not nine. `startup`, `resume`,
+`fork`, `clear` and a payload carrying no `source` all pay: a resume is a new launch, often days
+later, over an overlay the conversation may have left dirty, and an invocation Keelline cannot
+place in a context is treated as a new one rather than as one already answered. The cost is that
+an overlay which becomes unpushed *during* a session that started clean is not reported at that
+session's compactions, only at its next resume or startup; `keelline doctor` answers on demand. And the overlay is never a plugin Keelline
 executes anything from — its
 `hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through `attach`'s explicit, ledgered
@@ -767,7 +768,8 @@ valid TOML, or the merged document the loader itself refuses (an unknown section
 `[project] name` outside its grammar, a value of the wrong type, a machine configuration file
 that does not load). `2` on a refusal above the plans: no `--yes`, a repository already
 initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
-grammar or naming git's control directory — both refused by the loader before a plan exists —
+grammar, naming git's control directory, or reaching through a component that is a symlink —
+all three refused by the loader before a plan exists —
 and two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
 keys to separate.
 
@@ -1043,7 +1045,8 @@ recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes
 with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
 overlay, a `memory.groups` entry that does not name a subdirectory of this project's
-`paths.memory` — a refusal distinct from that one, and the reason the count below is a count of
+`paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,
+and the reason the count above is a count of
 groups that stayed inside — a memory group that is still a real directory rather than a link into
 it, or a `--machine` outside an interactive shell. Every one of those refusals happens
 before the first write, so a refused attach leaves both the repository and the overlay as they

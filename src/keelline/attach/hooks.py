@@ -32,17 +32,24 @@ the other way round: a repository with a finding pays five seconds and not nine,
 finding short-circuits the sync.
 
 **So the sync is gated here, per context, rather than by changing what `once_key` means.**
-`CONTINUED` says which invocations are one context asking again: on a `resume` or a `compact` the
-two extra `git` calls are not paid and the handler answers on what the lines above already know,
-so a healthy repository costs five seconds there instead of nine. Every other `source` pays --
-`startup`, `fork`, `clear`, and a payload carrying none -- so an invocation this module cannot
-place in a context is treated as a new one and the nudge is never lost by default.
+`CONTINUED` says which invocations are one context asking again: on a `compact` the two extra
+`git` calls are not paid and the handler answers on what the lines above already know, so a
+healthy repository costs five seconds there instead of nine. Every other `source` pays --
+`startup`, `resume`, `fork`, `clear`, and a payload carrying none -- so an invocation this module
+cannot place in a context is treated as a new one and the nudge is never lost by default.
+
+`resume` was in the set, and it is the case the nudge exists for. `claude --resume` and
+`--continue` are a fresh launch of the harness, often days after the conversation they continue:
+notes written to the overlay in that conversation are exactly what is uncommitted or unpushed by
+then, and a `startup` that found the repository healthy banked no marker to say otherwise. A
+`compact` is the same running process asking again within minutes, and it stays gated.
 `dispatch.py`'s `once_key` semantics belong to every area's handlers and are untouched; the
 five-second `origin_remote` is not gated either, because it is what decides three of the lines
 above, and skipping it would drop them rather than defer them.
 
 The cost, stated rather than hidden: an overlay that becomes unpushed *during* a session whose
-`startup` found nothing to say is not reported on that session's later `resume` or `compact`.
+`startup` found nothing to say is not reported on that session's later `compact`; the next
+`resume` or `startup` reports it.
 `keelline doctor` answers on demand, and the alternative is a pair of `git` calls re-run on every
 compaction of a repository with nothing wrong with it, inside a budget shared with the handler
 that links the note store.
@@ -68,24 +75,26 @@ OVERLAY_MODE = "overlay"
 # **What the gate rests on, and how much of it is established.** The `once_key` marker is filed
 # under the session id -- `hooks/commands.py` builds the sink from `event.session_id` -- so "this
 # context has already been asked" is true exactly when the invocation carries the id the marker was
-# filed under. `resume` and `compact` are in the set because they name the harness continuing one
-# conversation; `startup` and `fork` begin one and are out of it; `clear` is out of it because a
-# fresh conversation may carry a session id this handler has never answered for.
+# filed under. `compact` is in the set because it names the running harness continuing one
+# conversation; `startup` and `fork` begin one and are out of it; `resume` is out of it because it
+# is a new launch, often days later, over an overlay the conversation it continues may have left
+# dirty; `clear` is out of it because a fresh conversation may carry a session id this handler has
+# never answered for.
 #
 # **Those last two are assumptions about the harness, and this repository establishes neither.**
 # `session_id` is read and passed through untouched (`hooks/dispatch.py` types it `str | None` and
 # interprets nothing), no fixture here drives a real `/clear` or a real resume, and no field
 # documented to this code says how ids are allocated. What they cost if they are wrong is not
-# symmetric, which is why the set is drawn this way: if a `resume` arrived under a *new* id, the
-# gate would skip the sync for a context that had never been asked and that resume would lose the
-# nudge; if a `clear` keeps the id, the whole cost is two `git` calls re-paid on a clear. So the set
+# symmetric, which is why the set is drawn this way: if a `compact` arrived under a *new* id, the
+# gate would skip the sync for a context that had never been asked and would lose the nudge; if a
+# `clear` or a `resume` keeps the id, the whole cost is two `git` calls re-paid. So the set
 # is as small as the saving allows, and a value not in it -- including a payload with no `source` at
 # all -- pays: losing four seconds is recoverable and losing the one nudge a context gets is not.
 # Whoever can measure the harness should replace this paragraph with the answer.
 #
-# The value is the harness's, it is compared against these two constants, and it is never printed
+# The value is the harness's, it is compared against this constant, and it is never printed
 # -- so nothing here touches the rule about what may reach `additionalContext`.
-CONTINUED = frozenset({"resume", "compact"})
+CONTINUED = frozenset({"compact"})
 NO_OVERLAY = (
     "keelline: memory.mode is overlay and this machine records no overlay; "
     "run `keelline setup --preset recommended --overlay <path>`"
@@ -116,9 +125,13 @@ REQUIRES = (
     "keelline: the overlay requires Keelline {spec} and {running} is running; "
     "install a Keelline that satisfies it"
 )
+# "Could not be counted" rather than "has no upstream": `ahead` is `None` for any non-zero or
+# non-numeric answer from `rev-list @{upstream}..HEAD`, which is also a detached HEAD and a git
+# that ran out of time. The missing upstream is named as the likely cause, not as the finding.
 NO_UPSTREAM = (
-    "keelline: the overlay's branch has no upstream, so nothing backs it up and no commit on it "
-    "is pushed; it has {dirty} uncommitted change(s). Push it with -u"
+    "keelline: the overlay's unpushed commits could not be counted — most often its branch has "
+    "no upstream, and then nothing backs it up; it has {dirty} uncommitted change(s). Push it "
+    "with -u"
 )
 UNPUSHED = (
     "keelline: the overlay has {ahead} unpushed commit(s) and {dirty} uncommitted change(s); "

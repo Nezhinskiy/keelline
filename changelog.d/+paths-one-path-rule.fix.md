@@ -9,7 +9,9 @@ Those spellings are now refused before anything is written, by the `[paths]` gra
 value is a sequence of segments separated by single `/`, no segment empty and no segment that is
 just `.` or `..`. A leading `./`, a doubled `//` and a trailing `/` are therefore refused where
 they used to be silently normalised away — so a `keelline.toml` that loaded yesterday with one
-of them is refused today, naming the key and never quoting the value. `docs/.hidden` and
+of them is refused today, naming the key and the rule in words, and never quoting the value.
+`ledger.code_roots` is the exception: it is only walked, never written, so `"src/"` and `"./src"`
+are folded to `src` there rather than dropped from the hygiene counts and the audit. `docs/.hidden` and
 `docs/..foo` are ordinary names and are still accepted.
 
 The three sentences that promised this — "a refusal anywhere leaves nothing written and no

@@ -24,7 +24,8 @@ Codex, one Python package with **no runtime dependencies**.
 > `[keelline] state` yourself; the [Quickstart](#quickstart) shows the three keys that are enough
 > to start a project by hand, which `init` reads as your answers — a run that writes the file
 > itself writes six, `[keelline] version`, `state` and `agents` beside `[project] name`,
-> `base_branch` and `release_branch`, and no `[memory]` table at all.
+> `base_branch` and `release_branch`, a `[ci]` table only when it has a released commit to pin
+> or `--no-ci` asks for none, and no `[memory]` table at all.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 

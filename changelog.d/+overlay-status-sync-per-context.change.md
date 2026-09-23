@@ -7,13 +7,13 @@ overlay's `git status` and `git rev-list` are reached only when nothing above th
 wrong, and together with the binding's own `origin` query that is nine seconds against a
 ten-second budget shared with the handler that links the note store.
 
-Those last two calls are now gated on the event's own `source`. On a `resume` or a `compact` — one
+Those last two calls are now gated on the event's own `source`. On a `compact` — the running
 conversation continuing, under the session id the marker is filed under — they are skipped, so a
-healthy repository costs five seconds there instead of nine. `startup`, `fork`, `clear` and a
-payload carrying no `source` all still pay, because an invocation that cannot be placed in a
+healthy repository costs five seconds there instead of nine. `startup`, `resume`, `fork`, `clear`
+and a payload carrying no `source` all still pay: a resume is a new launch, often days later, over
+an overlay the conversation may have left dirty, and an invocation that cannot be placed in a
 context is treated as a new one rather than as one already answered.
 
 The cost, which is the reason this is a change and not only a speed-up: an overlay that becomes
-unpushed *during* a session whose start found nothing to say is not reported on that session's own
-later resume or compaction. `keelline doctor` answers on demand, and the next session's start says
-it too.
+unpushed *during* a session whose start found nothing to say is not reported at that session's
+compactions. `keelline doctor` answers on demand, and the next resume or start says it too.

@@ -10,4 +10,12 @@ The reason is that the document records no ref, and that is what the run now say
 public repository answered. The remedy says which run can still act on it: write a released
 commit into `[ci] ref` before the repository is initialised and `init` renders the workflow
 around it; on one already initialised, `init` refuses to run again, so the workflow is yours to
-write or `keelline upgrade` (ships later) writes it.
+write or `keelline upgrade` (ships later) writes it. That path no longer asks the public
+repository for its tags at all, since nothing it could answer changes the outcome — which was up
+to five minutes of waiting offline.
+
+The same dead remedy is gone from a fresh repository too. With the network down, a run that
+writes used to print "run `keelline init --yes` again with the network reachable", and the next
+run refused because the first had initialised the repository. Only a `--dry-run` is offered that
+remedy now; a run that wrote says to record a released commit in `[ci] ref` and write the
+workflow by hand, or to wait for `keelline upgrade`.

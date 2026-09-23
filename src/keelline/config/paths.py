@@ -78,14 +78,22 @@ def contained(
     return target
 
 
+# `PATH_VALUE` in words, for the refusal a person reads. Kept beside the one reader that prints
+# it; a change to the grammar is a change to this sentence.
+PATH_RULE = (
+    "segments of letters, digits, `.`, `_` and `-` joined by single `/`, none of them `.` or "
+    "`..`, the first not starting with `-`, and no `/` at either end"
+)
+
+
 def validate_paths(config: Config, root: Path) -> dict[str, Path]:
     resolved_root = root.resolve()
     for name, relative in config.paths.as_dict().items():
         if not PATH_VALUE.match(relative):
             # Named and never quoted: this is the value a report would otherwise print.
-            raise PathEscape(
-                f"paths.{name} is not a plain relative path matching {PATH_VALUE.pattern}"
-            )
+            # The rule in words, not `PATH_VALUE.pattern`: the lookahead that closes `.` and `..`
+            # as segments is correct and is no sentence a person can act on.
+            raise PathEscape(f"paths.{name} is not a plain relative path: {PATH_RULE}")
         if names_control_directory(relative):
             # Named and never quoted, for the same reason. Nothing reserved git's control
             # directory: the grammar admits a leading dot, and `contained()` refused an

@@ -354,12 +354,14 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
     ten and which it shares with `worktree-link`, the handler that links the note store.
 
     So the sync is gated on the event's own `source`, here and not in `dispatch.py`, whose
-    `once_key` semantics belong to every area's handlers. `resume` and `compact` are one context
-    asking again; `startup`, `fork`, `clear` and a payload with no `source` are new ones and pay.
+    `once_key` semantics belong to every area's handlers. `compact` is one context asking again;
+    `startup`, `resume`, `fork`, `clear` and a payload with no `source` are new ones and pay.
+    `resume` used to be gated too, and it is the launch — often days later — at which an overlay
+    the conversation wrote to is most likely to be dirty or unpushed.
     The `git` calls are counted rather than timed: a wall-clock assertion in a suite that runs
     beside other work measures the machine, not the gate.
 
-    Mutation: `mutations.toml`'s "a resumed session re-pays the overlay sync".
+    Mutation: `mutations.toml`'s "a compacted session re-pays the overlay sync".
     """
     from keelline.overlay import api as overlay_api
 
@@ -381,21 +383,20 @@ def test_a_context_that_has_already_been_asked_does_not_re_pay_the_sync(
     git(overlay, "remote", "add", "origin", str(bare))
     git(overlay, "push", "-q", "-u", "origin", "main")
     # A context that has already been asked: silence, and nothing paid for it.
-    for asked_before in ("resume", "compact"):
-        assert _run(root, machine, None, source=asked_before) is None, asked_before
+    assert _run(root, machine, None, source="compact") is None
     assert asked == []
     # A context that has not: the same silence, and the two calls are what found that out.
-    fresh: tuple[str | None, ...] = ("startup", "fork", "clear", None)
+    fresh: tuple[str | None, ...] = ("startup", "resume", "fork", "clear", None)
     for source in fresh:
         assert _run(root, machine, None, source=source) is None, source
     assert asked == [overlay] * len(fresh)
     # The cost, asserted rather than only documented: work that arrives mid-session is not
-    # reported to that session's own resume. `keelline doctor` is what answers on demand.
+    # reported to that session's own compaction. `keelline doctor` is what answers on demand.
     (overlay / "later.md").write_text("more\n", encoding="utf-8")
-    assert _run(root, machine, None, source="resume") is None
-    # The overlay has an upstream here and is level with it, so the knowable half is the dirty
-    # count: the same state a `startup` reports and a `resume` does not go looking for.
-    assert _run(root, machine, None, source="startup") == UNPUSHED.format(ahead=0, dirty=1)
+    assert _run(root, machine, None, source="compact") is None
+    # And the case the gate used to swallow: the conversation resumed later hears it. The overlay
+    # has an upstream here and is level with it, so the knowable half is the dirty count.
+    assert _run(root, machine, None, source="resume") == UNPUSHED.format(ahead=0, dirty=1)
 
 
 @needs_git

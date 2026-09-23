@@ -13,9 +13,8 @@ Nothing yet — name the phase this project is in, and what closing it means.
 Nothing yet.
 
 <!-- Everything from the next heading to the end-of-trail comment is rewritten by `keelline docs
-     trail`, the paragraph under it included: that paragraph is `docs.trail._PREAMBLE`, and its
-     narrower wrap is that constant's. Editing it here alone makes `docs trail --check` report
-     this file stale. -->
+     trail`, the paragraph under it included: Keelline writes that paragraph, line breaks and
+     all, so an edit to it here makes `docs trail --check` report this file stale. -->
 
 ## Design and plan trail
 
