@@ -195,7 +195,10 @@ def upgrade(
     held = ""
     # The pure editor, to learn what the document would become before anything is written; the
     # one write of `keelline.toml` below still goes through `rewrite_owned`, which re-stamps the
-    # `config` record with it.
+    # `config` record with it. Asked even where the answer is held back, and not replaced by
+    # comparing the loaded version with `running`: the editor refuses a `version` written in a
+    # shape it cannot rewrite, here, before any write, where the comparison would hold the version
+    # and go on to write the footprint.
     if pinned and resolution.pin is not None:
         changes[("ci", "ref")] = resolution.pin.sha
     elif pinned and rewrite(text, changes) != text:

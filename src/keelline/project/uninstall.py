@@ -357,9 +357,10 @@ def uninstall(
         return UninstallReport(footprint, once, orphans, dry_run, note, kept)
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
-    body = plan(
-        root, config, [t for t in footprint_retired if t.id != IGNORE_ARTIFACT], force=force
-    )
+    # The footprint plan without the ignore region, which goes last: nothing has been written
+    # since it was made, and each action is one template's, so this is the plan a re-plan of the
+    # other templates would give, and the plan reported is the one applied.
+    body = _without(footprint, IGNORE_ARTIFACT)
     _apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
@@ -396,6 +397,14 @@ def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDige
         and action.payload is not None
         and template is not None
         and ours_locally(template, action.payload, action.target, digests)
+    )
+
+
+def _without(planned: Plan, artifact_id: str) -> Plan:
+    return Plan(
+        actions=tuple(a for a in planned.actions if a.artifact_id != artifact_id),
+        refusals=tuple(r for r in planned.refusals if r.artifact_id != artifact_id),
+        unchanged=tuple(u for u in planned.unchanged if u != artifact_id),
     )
 
 

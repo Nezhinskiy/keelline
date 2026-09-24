@@ -43,7 +43,6 @@ EXPORTED = [
     "plan",
     "printable",
     "render_report",
-    "shipped_profiles",
     "unlinks",
     "upsert",
     "validate_sources",

@@ -27,7 +27,6 @@ from keelline.scaffold.engine import (
     local_copies,
     ours_locally,
     plan,
-    shipped_profiles,
     unlinks,
     validate_sources,
 )
@@ -91,7 +90,6 @@ __all__ = [
     "plan",
     "printable",
     "render_report",
-    "shipped_profiles",
     "unlinks",
     "upsert",
     "validate_sources",

@@ -75,18 +75,6 @@ _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
-def shipped_profiles() -> tuple[str, ...]:
-    """The profile names this build carries, from the package itself.
-
-    `keelline.profiles.shipped()` lists a directory under the package only when it holds a
-    `profile.toml`, and the package is the one listing: it answers for an installed wheel and a
-    `src/` checkout alike.
-    """
-    from keelline.profiles import shipped
-
-    return shipped()
-
-
 def validate_sources(config: Config) -> None:
     """§7.4's second rule: the two values that name a file inside the *plugin* root.
 
@@ -104,7 +92,11 @@ def validate_sources(config: Config) -> None:
     # rule is stated in words and the listing is Keelline's own, so nothing here is the clone's.
     if not SOURCE_NAME.match(profile):
         raise PathEscape(f"[keelline] profile is not one path segment ({SOURCE_RULE})")
-    shipped = shipped_profiles()
+    # The package is the one listing: `profiles.shipped` lists a directory under it only when it
+    # holds a `profile.toml`, which answers for an installed wheel and a `src/` checkout alike.
+    from keelline import profiles
+
+    shipped = profiles.shipped()
     if profile not in shipped:
         known = ", ".join(shipped) or "none"
         raise PathEscape(
@@ -541,46 +533,38 @@ def _plan_retired(
         # is git-ignored: an edit removed here is one git cannot give back, so a file that is
         # neither goes only when forced.
         ours = ours_locally(template, current, target, digests)
-        if ours or target in forced:
-            payload = _removal_payload(template, current)
-            reason = "retired" if ours else "retired, forced"
-            actions.append(Action(Verb.REMOVE, template.id, target, payload, reason, None))
-        else:
-            why = CHANGED_LOCALLY if digests.records(template.id, target) else NOT_OURS_LOCALLY
-            reason = f"retired, {why}"
-            actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
-        return
-    if record is None:
+        why = CHANGED_LOCALLY if digests.records(template.id, target) else NOT_OURS_LOCALLY
+        kept, stamped = f"retired, {why}", None
+    elif record is None:
         unchanged.append(template.id)
         return
-    present = _present_stamp(template, current)
-    matches = present is not None and digest(present) == record.sha256
+    else:
+        present = _present_stamp(template, current)
+        ours = present is not None and digest(present) == record.sha256
+        kept, stamped = "retired and hand-edited", record
     # `force` reaches a retired artifact the user edited and has decided to remove anyway: the
     # one file a removal's `--force PATH` names. For a region what goes is still the region and
     # never the file around it: forcing overrides the hand-edit verdict, not the payload.
     #
     # The path compared is `target`, the effective target `plan` derived from this template and
     # `[artifacts] local` and then contained, exactly as the live-template check in `plan` does;
-    # never `record.target`, which the committed manifest supplies. The two are equal here only
-    # because `plan` drops a record whose target differs, so comparing the effective one means
-    # no manifest a clone commits can decide which file a `--force PATH` reaches.
-    if matches or target in forced:
+    # never `record.target`, which the committed manifest supplies. The two are equal wherever
+    # a record reaches here, because `plan` drops a record whose target differs, so comparing the
+    # effective one means no manifest a clone commits can decide which file a `--force PATH`
+    # reaches, and the action names that same path.
+    if ours or target in forced:
         actions.append(
             Action(
                 Verb.REMOVE,
                 template.id,
-                record.target,
+                target,
                 _removal_payload(template, current),
-                "retired" if matches else "retired, forced",
-                record,
+                "retired" if ours else "retired, forced",
+                stamped,
             )
         )
         return
-    actions.append(
-        Action(
-            Verb.SKIP_MODIFIED, template.id, record.target, None, "retired and hand-edited", None
-        )
-    )
+    actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, kept, None))
 
 
 def apply(root: Path, planned: Plan) -> Applied:

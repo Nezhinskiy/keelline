@@ -6294,8 +6294,8 @@ reddens = [
 [[mutation]]
 name = "force stops reaching a retired artifact edited by hand"
 file = "src/keelline/scaffold/engine.py"
-before = "    if matches or target in forced:"
-after = "    if matches:"
+before = "    if ours or target in forced:"
+after = "    if ours:"
 reddens = [
   "tests/scaffold/test_engine.py::test_force_reaches_a_retired_artifact_edited_by_hand",
   "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
@@ -6305,9 +6305,9 @@ reddens = [
 name = "forcing a retired region deletes the file around it"
 file = "src/keelline/scaffold/engine.py"
 before = '''                _removal_payload(template, current),
-                "retired" if matches else "retired, forced",'''
-after = '''                _removal_payload(template, current) if matches else None,
-                "retired" if matches else "retired, forced",'''
+                "retired" if ours else "retired, forced",'''
+after = '''                _removal_payload(template, current) if ours else None,
+                "retired" if ours else "retired, forced",'''
 reddens = [
   "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
 ]
@@ -6457,8 +6457,8 @@ reddens = [
 [[mutation]]
 name = "a retired artifact kept out of git is removed whatever its bytes"
 file = "src/keelline/scaffold/engine.py"
-before = "        if ours or target in forced:"
-after = "        if True:"
+before = "        ours = ours_locally(template, current, target, digests)"
+after = "        ours = True"
 reddens = ["tests/scaffold/test_engine.py::test_a_retired_local_artifact_edited_by_hand_stays_unless_forced"]
 
 [[mutation]]
@@ -6632,8 +6632,8 @@ reddens = ["tests/project/test_uninstall.py::test_forcing_agents_md_takes_the_re
 [[mutation]]
 name = "a retired file is removed whatever its bytes, so a committed path and record reach a local edit"
 file = "src/keelline/scaffold/engine.py"
-before = "    matches = present is not None and digest(present) == record.sha256"
-after = "    matches = True"
+before = "        ours = present is not None and digest(present) == record.sha256"
+after = "        ours = True"
 reddens = [
   "tests/project/test_uninstall.py::test_a_committed_path_and_record_reach_only_bytes_the_same_commit_states",
   "tests/project/test_uninstall.py::test_an_edited_file_stays_and_is_listed_and_force_takes_it",

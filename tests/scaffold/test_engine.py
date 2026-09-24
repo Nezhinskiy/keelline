@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from keelline import profiles
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
@@ -700,7 +701,8 @@ def test_a_shipped_profile_is_allowed(tmp_path: Path) -> None:
 
 
 def test_the_listing_is_the_package_s_and_never_none() -> None:
-    assert engine.shipped_profiles() == ("python",)
+    # The listing `validate_sources` checks `[keelline] profile` against.
+    assert profiles.shipped() == ("python",)
 
 
 def test_an_empty_profile_means_none_and_is_allowed(tmp_path: Path) -> None:
