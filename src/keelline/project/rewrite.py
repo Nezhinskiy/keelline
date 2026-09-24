@@ -15,7 +15,9 @@ find the record describing neither, never re-stamp it again, and `uninstall` wou
 as edited for good. So a failed write puts the record back as it was, naming the bytes the file
 still holds. What is left is a process killed between the two writes, which leaves the record
 naming the new bytes; the next run computes the same bytes unless the version or the pin moved
-in between, finds the record already naming them, and writes the file.
+in between, finds the record already naming them, and writes the file. A restore that fails too
+leaves that same state, and the refusal still names `keelline.toml`'s own failure, the one to put
+right, with the manifest's as its cause rather than in its place.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from keelline.config.loader import CONFIG_FILE, read_document
 from keelline.config.owned import Value, rewrite
 from keelline.errors import Refusal
 from keelline.fsops import UnsafePath, write_within
-from keelline.scaffold import Manifest, digest
+from keelline.scaffold import Manifest, ManifestError, digest
 
 NO_DOCUMENT = f"{CONFIG_FILE} is not there, so there is no tool-owned key to rewrite"
 CONFIG_RECORD = "config"
@@ -51,6 +53,10 @@ def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
     try:
         write_within(root, CONFIG_FILE, document)
     except (UnsafePath, OSError) as exc:
+        failure = Refusal(f"{CONFIG_FILE} cannot be written: {exc}")
         if stamped is not None:
-            manifest.write(root)
-        raise Refusal(f"{CONFIG_FILE} cannot be written: {exc}") from exc
+            try:
+                manifest.write(root)
+            except ManifestError as restore:
+                raise failure from restore
+        raise failure from exc

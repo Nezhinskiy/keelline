@@ -12,7 +12,7 @@ from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project import rewrite as module
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
-from keelline.scaffold import MANIFEST_PATH, Manifest, digest
+from keelline.scaffold import MANIFEST_PATH, Manifest, ManifestError, digest
 from tests.gitfixture import needs_git
 from tests.project.repos import initialised
 
@@ -91,6 +91,35 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
     rewrite_owned(root, {("keelline", "version"): "9.9.10"})
     text = (root / CONFIG_FILE).read_text(encoding="utf-8")
     assert 'version = "9.9.10"' in text and _record_digest(root) == digest(text)
+
+
+@needs_git
+def test_a_restore_that_fails_too_still_names_keelline_toml_s_own_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both writes fail: the document, then the manifest put back. The manifest's refusal used to
+    # replace the one naming `keelline.toml`, which is the failure to put right; it is the cause
+    # now. The state is the documented "killed between the two writes" one. Mutation (advisory):
+    # let the restore's `ManifestError` propagate -> the message names the manifest.
+    root = initialised(tmp_path)
+    original = Manifest.write
+    calls: list[int] = []
+
+    def failing(where: Path, target: str, text: str) -> None:
+        raise OSError("no space left on device")
+
+    def second_fails(self: Manifest, where: Path) -> Path:
+        calls.append(1)
+        if len(calls) > 1:
+            raise ManifestError("the manifest cannot be written either")
+        return original(self, where)
+
+    monkeypatch.setattr(module, "write_within", failing)
+    monkeypatch.setattr(Manifest, "write", second_fails)
+    with pytest.raises(Refusal) as refused:
+        rewrite_owned(root, MOVED)
+    assert str(refused.value).startswith(f"{CONFIG_FILE} cannot be written: no space left")
+    assert isinstance(refused.value.__cause__, ManifestError)
 
 
 @needs_git
