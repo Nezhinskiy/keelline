@@ -6497,9 +6497,19 @@ reddens = ["tests/project/test_templates.py::test_every_target_any_configuration
 [[mutation]]
 name = "upgrade moves a project backward to the older Keelline running"
 file = "src/keelline/project/upgrade.py"
-before = '    if satisfies(f">={before.keelline.version}", running) is False:'
-after = "    if False:"
+before = "    if ahead:\n        raise Refusal(NEWER"
+after = "    if False:\n        raise Refusal(NEWER"
 reddens = ["tests/project/test_upgrade.py::test_a_project_recording_a_newer_keelline_is_refused"]
+
+# A recorded version with no leading `X.Y.Z` has no known direction, so moving it to the running
+# version could be moving it backward; `satisfies` answered `None` for it and the old guard read
+# that as "not newer". The mutation lets `None` through as "not newer" again.
+[[mutation]]
+name = "upgrade moves a recorded version it cannot read"
+file = "src/keelline/project/upgrade.py"
+before = "    if ahead is None:"
+after = "    if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_recorded_version_with_no_leading_triple_is_refused_and_never_quoted"]
 
 [[mutation]]
 name = "upgrade moves the version with no release to pin, and the gate refuses its own pull request"

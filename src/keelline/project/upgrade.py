@@ -3,7 +3,8 @@
 Every refusal comes before every write.
 
 1. A `keelline.toml` recording a newer Keelline than the one running is refused: moving a project
-   backward would repin an older release and put older bytes over newer ones.
+   backward would repin an older release and put older bytes over newer ones. So is one whose
+   version has no leading `X.Y.Z`, whose direction is unknown.
 2. `[keelline] version` moves to the running version. Under `[ci] mode = "reusable"` the workflow
    pins Keelline by commit, so `version`, `[ci] ref` and the workflow's `uses:` line are one value
    and move together or not at all. When no released commit resolves, or the workflow would not
@@ -46,7 +47,7 @@ from keelline.config.loader import loads, read_document
 from keelline.config.owned import Value, rewrite
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.overlay.api import satisfies
+from keelline.overlay.api import later
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
 from keelline.project.templates import (
     CI_REF,
@@ -63,6 +64,12 @@ from keelline.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply, plan
 NOT_INITIALISED = (
     f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; `keelline init` writes one"
 )
+# Fixed text: the recorded string is repository-authored and is never quoted.
+UNREADABLE_VERSION = (
+    "keelline.toml's [keelline] version does not begin with a version Keelline can read (X.Y.Z), "
+    "so which way upgrade would move it is unknown and nothing was written; set it to the "
+    "Keelline release this project was last upgraded with, then run `keelline upgrade` again"
+)
 NEWER = (
     "keelline.toml records a newer Keelline than the {running} running here, and upgrade never "
     "moves a project backward; update the Keelline plugin, then run `keelline upgrade` with it"
@@ -76,8 +83,8 @@ NO_RELEASE = _HELD + (
     "it is released and the network is reachable"
 )
 WORKFLOW_HELD = _HELD + (
-    "the workflow would not be rewritten to the new pin (the footprint report and the CI line "
-    f"say why); `--force {CI_WORKFLOW}` moves all three when it was edited by hand"
+    "the workflow would not be rewritten to the new pin (the footprint report or the CI line "
+    f"says why); `--force {CI_WORKFLOW}` moves all three when it was edited by hand"
 )
 _VERSION = re.compile(r"\A[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}\Z")
 
@@ -147,7 +154,12 @@ def upgrade(
         raise Refusal(NO_DOCUMENT)
     before = loads(text, root, machine=machine)
     running = keelline.__version__
-    if satisfies(f">={before.keelline.version}", running) is False:
+    # Read by its leading `X.Y.Z`, so `1.0.0-rc1` is newer and not unknown; a value with no
+    # leading `X.Y.Z` at all is refused, because moving it could be moving it backward.
+    ahead = later(before.keelline.version, running)
+    if ahead is None:
+        raise Refusal(UNREADABLE_VERSION)
+    if ahead:
         raise Refusal(NEWER.format(running=running))
     pinned = before.ci.mode == "reusable"
     resolution = resolve_pin(running, runner, cwd=root) if pinned else Resolution(None, True)

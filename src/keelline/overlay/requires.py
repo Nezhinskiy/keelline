@@ -76,3 +76,21 @@ def satisfies(spec: str, version: str) -> bool | None:
     return tuple(int(part) for part in running.groups()) >= tuple(
         int(part) for part in floor.groups()
     )
+
+
+def later(version: str, than: str) -> bool | None:
+    """Whether `version`'s leading `X.Y.Z` is later than `than`'s, compared as integer tuples.
+
+    Both are read the way `satisfies` reads a running version: the leading three components,
+    whatever follows them, so `1.0.0-rc1` reads as `1.0.0`. `None` when either has no leading
+    `X.Y.Z` (`v1.0.0`, an empty string): the direction is unknown, and a caller that would move
+    a value in one direction must not guess it. `keelline upgrade` refuses such a recorded
+    version, and `doctor`'s `versions` row says so rather than sending it there.
+    """
+    first = _VERSION.match(version)
+    second = _VERSION.match(than)
+    if first is None or second is None:
+        return None
+    return tuple(int(part) for part in first.groups()) > tuple(
+        int(part) for part in second.groups()
+    )

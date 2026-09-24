@@ -90,7 +90,7 @@ from keelline.memory.api import (
     render,
     resolve,
 )
-from keelline.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
+from keelline.overlay.api import PLUGIN_MANIFEST, later, requires_of, satisfies
 from keelline.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -335,6 +335,10 @@ VERSION_AHEAD = (
     "update the Keelline plugin: this project records a newer Keelline than the one running, "
     "and `keelline upgrade` never moves a project backward"
 )
+VERSION_UNREADABLE = (
+    "set [keelline] version to the X.Y.Z of the Keelline release this project was last upgraded "
+    "with: `keelline upgrade` refuses a version it cannot read rather than guess its direction"
+)
 
 
 def _versions(context: Context) -> Row:
@@ -345,12 +349,14 @@ def _versions(context: Context) -> Row:
     # The project's own string is repository-authored and is not quoted back; what is printed
     # is the version that is actually running. The remedy follows the direction: `upgrade`
     # refuses a project that records a newer Keelline, so sending that one to it is a dead end.
-    # A recorded string `satisfies` cannot read is behind in effect: `upgrade` writes over it.
-    ahead = satisfies(f">={recorded}", running) is False
+    # `later` is the reader `upgrade` refuses by, so the two agree: a leading `X.Y.Z` decides
+    # the direction whatever follows it, and a value without one is sent to be written by hand.
+    ahead = later(recorded, running)
+    remedy = VERSION_UNREADABLE if ahead is None else VERSION_AHEAD if ahead else VERSION_BEHIND
     return Row(
         WARN,
         f"{CONFIG_FILE} declares a different Keelline version from the {running} running here",
-        VERSION_AHEAD if ahead else VERSION_BEHIND,
+        remedy,
     )
 
 

@@ -16,6 +16,7 @@ from keelline.project.upgrade import (
     NEWER,
     NO_RELEASE,
     NOT_INITIALISED,
+    UNREADABLE_VERSION,
     WORKFLOW_HELD,
     UpgradeReport,
     upgrade,
@@ -131,6 +132,11 @@ def test_a_current_footprint_upgrades_to_nothing_whatever_the_remote_answers(
     before = snapshot(root)
     report = _upgrade(root, tmp_path, runner)
     assert report.moved == ()
+    # Nothing needed to move, so nothing was held: a note on every offline run of a current
+    # project would say the pin was withheld when there was nothing to pin. Mutation
+    # (advisory): `elif pinned and rewrite(text, changes) != text:` -> `elif pinned:` -> the
+    # no-tag and offline cases redden.
+    assert report.held == ""
     assert [a.verb for a in report.footprint.actions] == []
     assert_snapshot_unchanged(root, before)
 
@@ -232,19 +238,43 @@ def test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced(
 
 
 @needs_git
-def test_a_project_recording_a_newer_keelline_is_refused(tmp_path: Path) -> None:
-    # An older plugin would repin an older release and put older bytes over newer ones.
+@pytest.mark.parametrize("recorded", ["99.0.0", "99.0.0-rc1"])
+def test_a_project_recording_a_newer_keelline_is_refused(tmp_path: Path, recorded: str) -> None:
+    # An older plugin would repin an older release and put older bytes over newer ones. A
+    # pre-release suffix does not hide the newer release: the leading `X.Y.Z` decides.
     root = _pinned(tmp_path)
     path = root / CONFIG_FILE
     path.write_text(
         path.read_text(encoding="utf-8").replace(
-            f'version = "{keelline.__version__}"', 'version = "99.0.0"'
+            f'version = "{keelline.__version__}"', f'version = "{recorded}"'
         ),
         encoding="utf-8",
     )
     before = snapshot(root)
     with pytest.raises(Refusal, match=re.escape(NEWER.format(running=keelline.__version__))):
         _upgrade(root, tmp_path, _listing(keelline.__version__, OLD))
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_recorded_version_with_no_leading_triple_is_refused_and_never_quoted(
+    tmp_path: Path,
+) -> None:
+    # `v99.0.0` has no leading `X.Y.Z`, so which way a move would go is unknown; moving it to the
+    # running version could be moving it backward. Mutation (oracle): "upgrade moves a recorded
+    # version it cannot read".
+    root = _pinned(tmp_path)
+    path = root / CONFIG_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            f'version = "{keelline.__version__}"', 'version = "v99.0.0"'
+        ),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=re.escape(UNREADABLE_VERSION)) as refused:
+        _upgrade(root, tmp_path, _listing(keelline.__version__, OLD))
+    assert "v99" not in str(refused.value)
     assert_snapshot_unchanged(root, before)
 
 

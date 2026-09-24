@@ -27,8 +27,8 @@ user edited is skipped and named, never overwritten.
 - **An exit of 1 wrote nothing.** A `REFUSED` section names each artifact and why. Relay every
   line and stop.
 - **An exit of 2 is a refusal, and it may have come part-way through.** A refusal about the
-  project itself — not initialised, no `keelline.toml`, a newer recorded version, a key written
-  in a shape it will not edit — comes before any write. One that says a file cannot be written
+  project itself — not initialised, no `keelline.toml`, a newer or unreadable recorded version,
+  a key written in a shape it will not edit — comes before any write. One that says a file cannot be written
   comes while writing: what was done before it is on disk and recorded. Relay it as printed,
   run `git status` to show the user what changed, and after they fix the cause run
   `keelline upgrade --dry-run` again, which plans from what is there now. When it says the

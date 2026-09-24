@@ -35,6 +35,7 @@ from keelline.doctor.checks import (
     SETTINGS_FILES,
     VERSION_AHEAD,
     VERSION_BEHIND,
+    VERSION_UNREADABLE,
     WORKFLOW,
     WORKFLOW_MAX_BYTES,
     plugin_root,
@@ -1193,7 +1194,13 @@ def test_a_project_declaring_another_keelline_version_is_named_without_quoting_i
 
 
 @pytest.mark.parametrize(
-    ("recorded", "remedy"), [("0.0.1", VERSION_BEHIND), ("99.0.0", VERSION_AHEAD)]
+    ("recorded", "remedy"),
+    [
+        ("0.0.1", VERSION_BEHIND),
+        ("99.0.0", VERSION_AHEAD),
+        ("99.0.0-rc1", VERSION_AHEAD),
+        ("v99.0.0", VERSION_UNREADABLE),
+    ],
 )
 def test_the_version_remedy_follows_the_direction_of_the_difference(
     tmp_path: Path, recorded: str, remedy: str

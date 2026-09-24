@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from keelline.overlay.api import requires_of, satisfies
+from keelline.overlay.api import later, requires_of, satisfies
 from keelline.overlay.layout import PLUGIN_MANIFEST
 from keelline.overlay.template import template_root
 
@@ -104,3 +104,15 @@ def test_only_ascii_digits_are_a_version(tmp_path: Path) -> None:
     # Non-vacuous: the manifest really does hand this string back, which is why the verdict
     # above is what keeps it out of a line a model reads.
     assert requires_of(overlay_with(tmp_path / "eastern", eastern)) == eastern
+
+
+def test_later_reads_each_version_s_leading_triple_and_answers_none_without_one() -> None:
+    # A suffix does not hide a newer release, and a shape with no leading `X.Y.Z` is unknown
+    # rather than older: `upgrade` moved `1.0.0-rc1` and `v1.0.0` down to the running `0.1.0`
+    # while this answered through `satisfies`, which needs an exact floor.
+    assert later("1.0.0-rc1", "0.1.0") is True
+    assert later("0.10.0", "0.9.9") is True
+    assert later("0.1.0", "0.1.0") is False
+    assert later("0.0.9", "0.1.0") is False
+    for unreadable in ("v1.0.0", "", "one"):
+        assert later(unreadable, "0.1.0") is None, unreadable
