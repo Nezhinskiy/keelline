@@ -6577,8 +6577,11 @@ before = "    judged = plan(root, config, once_body, force=once_force)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
+# The count is a refusal before any write. Without it the check after the write-once pass still
+# keeps the ignore block, so what is lost is the promise that nothing is written: the footprint
+# and the write-once files go first, and then the run refuses.
 [[mutation]]
-name = "uninstall takes out the ignore block while private notes are still behind it"
+name = "uninstall removes the footprint before it refuses the files kept out of git"
 file = "src/keelline/project/uninstall.py"
 before = "    if kept:\n        raise Refusal(KEPT_LOCALLY"
 after = "    if False:\n        raise Refusal(KEPT_LOCALLY"
@@ -6624,13 +6627,28 @@ after = "    return action.verb is Verb.REMOVE"
 reddens = ["tests/project/test_uninstall.py::test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written"]
 
 # The check before any write is a prediction; the disk after the write-once pass is the fact. Drop
-# the second and a remainder the prediction left to that pass loses its ignore block.
+# the second and a remainder the prediction misjudged loses its ignore block. The prediction is
+# exact today, so the test makes it miss.
 [[mutation]]
 name = "the ignore block goes while files are still under .keelline/local/"
 file = "src/keelline/project/uninstall.py"
 before = "    if left:"
 after = "    if False:"
-reddens = ["tests/project/test_uninstall.py::test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored[both-local-plain]"]
+reddens = ["tests/project/test_uninstall.py::test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_prediction_misses"]
+
+# Region and skeleton kept out of git share one file. An edited region there keeps the file, and a
+# person's line in the skeleton keeps it too, since no force reaches the skeleton at that path.
+# Counted as going, the run removes the footprint before it refuses, and tells the person to force
+# a path that is never forced there.
+[[mutation]]
+name = "every action at a shared file kept out of git is counted as removing it"
+file = "src/keelline/project/uninstall.py"
+before = "    if unlinks(action):\n        return True"
+after = "    if unlinks(action) or action.target in local_once:\n        return True"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write[skeleton]",
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write[region]",
+]
 
 # A retired record is judged against a whole-file stub, which names no region. A record kept
 # inside a host file that this build no longer produces is an orphan, so no `--force` can delete

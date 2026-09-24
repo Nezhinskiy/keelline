@@ -9,15 +9,18 @@ by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall
 compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
 `Template.target` does not say) and must know which planned removal deletes a file rather than
 rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
-would drift from it. Importing a private module of this package from another area is a
-review finding; if a lane needs something this list does not carry, the list grows
-deliberately.
+would drift from it. `matches_render` is for `uninstall` too: before any write it predicts
+whether the write-once pass will remove what a region's removal leaves in a file kept out of
+git, and that verdict is the engine's own rule for such a file. Importing a private module of
+this package from another area is a review finding; if a lane needs something this list does
+not carry, the list grows deliberately.
 """
 
 from keelline.scaffold.engine import (
     LOCAL_ROOT,
     apply,
     effective_target,
+    matches_render,
     plan,
     shipped_profiles,
     unlinks,
@@ -71,6 +74,7 @@ __all__ = [
     "extract",
     "mark",
     "marker_id",
+    "matches_render",
     "owned",
     "owned_ids",
     "plan",

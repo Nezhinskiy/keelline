@@ -32,6 +32,7 @@ EXPORTED = [
     "extract",
     "mark",
     "marker_id",
+    "matches_render",
     "owned",
     "owned_ids",
     "plan",

@@ -35,8 +35,8 @@ whatever a person wrote into it, is then judged on its own bytes.
 **The ignore region last, and only over nothing.** The footprint's `.gitignore` region is the
 only thing keeping `.keelline/local/` out of git, so it is taken out in a third pass, after the
 disk shows nothing left under `.keelline/local/`. If something is left, the run stops before that
-pass, with the region and the manifest in place, so git still ignores the files and the next run
-can finish (`KEPT_AFTER`).
+pass, with the region and the manifest in place, so git still ignores the files, and once they
+are moved out the next run can finish (`KEPT_AFTER`).
 
 **Then the directories, `keelline.toml`, and the ledger.** Every directory a removal left empty
 goes, then `keelline.toml`, whose removal the write-once pass holds back for this point, then
@@ -45,10 +45,13 @@ any earlier point leaves the configuration and the manifest the next run needs t
 
 **Two refusals come before any write**: while the repository is attached, and while
 `.keelline/local/` holds a file this run would not remove, the local-only memory notes above all.
-That count is a prediction from the plans: a file goes only when an action unlinks it, and a
-remainder the write-once pass will judge after the first pass ran is left to that pass and to the
-check above. It counts and never names a path, and a dry run reports it instead of refusing, so
-the report that lists an edited local artifact is still printed.
+That count is a prediction from the plans: a file goes only when an action unlinks it, or when
+a region's removal leaves exactly what the write-once pass then removes, which the engine's own
+rule for a file kept out of git (`matches_render`) answers before anything is written. An edited
+region, or a skeleton a person wrote into that shares the region's file, keeps the file, so the
+run refuses before it writes rather than part-way. The check above stays as the fact behind the
+prediction. It counts and never names a path, and a dry run reports it instead of refusing, even
+when a plan refuses, so the report that lists an edited local artifact is still printed.
 
 **A refusal while writing is not a refusal before it.** The engine keeps what it applied, and
 records it, when a later write or removal fails; so does this command across its passes. Exit 2
@@ -65,7 +68,7 @@ configuration put its artifacts, and a target the manifest records is a committe
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence, Set
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
@@ -80,12 +83,16 @@ from keelline.release.api import Resolution
 from keelline.scaffold import (
     LOCAL_ROOT,
     MANIFEST_PATH,
+    Action,
     Kind,
+    Location,
     Manifest,
     Plan,
     Template,
+    Verb,
     apply,
     effective_target,
+    matches_render,
     plan,
     unlinks,
 )
@@ -101,13 +108,13 @@ ATTACHED = (
 KEPT_LOCALLY = (
     f"{LOCAL_ROOT}/ holds {{count}} file(s) uninstall would not remove, and the ignore block it "
     "takes out is what keeps them out of git: local-only memory notes, or an artifact kept out "
-    "of git that was edited. uninstall refuses until they are moved out of it, or an edited "
-    "artifact is named with --force"
+    "of git that was edited. uninstall refuses until they are moved out of it; an edited "
+    "artifact in a file of its own there can instead be named with --force"
 )
 KEPT_AFTER = (
     f"{LOCAL_ROOT}/ still holds {{count}} file(s) after the other removals, so the ignore block "
-    "that keeps them out of git and the manifest were left in place; move them out or name them "
-    "with --force, then run uninstall again"
+    "that keeps them out of git and the manifest were left in place; move them out, then run "
+    "uninstall again"
 )
 ORDER_NOTE = (
     "AGENTS.md is judged twice: the dry run sees the skeleton with Keelline's region still in "
@@ -249,14 +256,20 @@ def uninstall(
     footprint = plan(root, config, footprint_retired, force=force)
     once = plan(root, config, once_retired, force=once_force)
     note = ORDER_NOTE if dry_run else ""
-    if footprint.refusals or once.refusals:
-        return UninstallReport(footprint, once, orphans, dry_run, note, 0)
-    # A file goes only when an action unlinks it. A remainder at a write-once target is judged by
-    # that pass after the first one ran, so it is left to that pass and to the check after it.
-    unlinked = {a.target for a in footprint.actions if unlinks(a) or a.target in once_targets}
+    # Before any write, how many files under `.keelline/local/` the run would leave. A file goes
+    # only when an action unlinks it, or when a region's removal leaves the bytes the write-once
+    # pass will then remove: the engine's own verdict for a file kept out of git, asked of those
+    # bytes now. Only such a file matters here, since no `[paths]` value reaches `.keelline/`.
+    local_once = {
+        target: template
+        for template in once_body
+        for target, location in [effective_target(template, config)]
+        if location is Location.LOCAL
+    }
+    unlinked = {a.target for a in footprint.actions if _goes(a, local_once)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
     kept = _kept_locally(root, unlinked)
-    if dry_run:
+    if dry_run or footprint.refusals or once.refusals:
         return UninstallReport(footprint, once, orphans, dry_run, note, kept)
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
@@ -278,6 +291,23 @@ def uninstall(
     apply(root, last)
     _remove_ledger(root)
     return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)
+
+
+def _goes(action: Action, local_once: Mapping[str, Template]) -> bool:
+    """Whether the file `action` targets is gone once both passes ran: it unlinks it, or it takes
+    a region out of a file kept out of git and leaves exactly what the write-once pass removes.
+    A `REMOVE` with a payload keeps the file for the footprint pass, and a `SKIP_MODIFIED` keeps
+    it for good. A forced path never reaches the write-once pass at such a target, so this is
+    the whole of what that pass will do there."""
+    if unlinks(action):
+        return True
+    template = local_once.get(action.target)
+    return (
+        action.verb is Verb.REMOVE
+        and action.payload is not None
+        and template is not None
+        and matches_render(template, action.payload)
+    )
 
 
 def _joined(first: Plan, second: Plan) -> Plan:

@@ -16,6 +16,7 @@ from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project.uninstall import (
     ATTACHED,
+    KEPT_AFTER,
     KEPT_LOCALLY,
     NO_CONFIG,
     NOTHING,
@@ -203,17 +204,19 @@ def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) ->
 def test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them(tmp_path: Path) -> None:
     # The local-only store is the preset's default, and the ignore region this run removes is
     # all that keeps it out of git. The count is reported by the dry run and refuses the real
-    # one; neither names a note.
+    # one before anything is written; neither names a note. The snapshot is compared whatever the
+    # refusal says, so a run that starts removing and refuses later fails on the writes.
     root = initialised(tmp_path)
     note = root / ".keelline" / "local" / "memory" / "developer" / "private-note.md"
     note.parent.mkdir(parents=True)
     note.write_text("a private note\n", encoding="utf-8")
     before = snapshot(root)
     assert _uninstall(root, tmp_path, dry_run=True).kept_locally == 1
-    with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))) as refused:
+    with pytest.raises(Refusal) as refused:
         _uninstall(root, tmp_path)
-    assert "private-note" not in str(refused.value)
     assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert "private-note" not in str(refused.value)
 
 
 @needs_git
@@ -233,9 +236,11 @@ def test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced(tmp_path:
     assert [a.verb for a in dry.footprint.actions if a.artifact_id == "roadmap"] == [
         Verb.SKIP_MODIFIED
     ]
-    with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))):
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
         _uninstall(root, tmp_path)
-    assert local.read_text(encoding="utf-8") == "private plans\n"
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
     _uninstall(root, tmp_path, force=(".keelline/local/artifacts/docs/roadmap.md",))
     assert not (root / ".keelline").exists()
 
@@ -288,6 +293,99 @@ def test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored
     kept = root / ".keelline" / "local"
     left = [p for p in kept.rglob("*") if p.is_file()] if kept.is_dir() else []
     assert all(_ignored(root, p) for p in left), left
+
+
+@needs_git
+def test_an_untouched_agents_md_kept_out_of_git_goes_whole(tmp_path: Path) -> None:
+    # Region and skeleton share `.keelline/local/artifacts/AGENTS.md`. What the region's removal
+    # leaves is exactly the skeleton `init` wrote, so the prediction before any write counts the
+    # file as going, and it goes. Mutation (advisory): the prediction never credits a remainder
+    # -> the run refuses before any write, and this reddens at the call.
+    root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
+    assert (root / LOCAL_AGENTS).is_file()
+    _uninstall(root, tmp_path)
+    # `keelline.toml` was written by the test before `init` adopted it, so it is the person's.
+    assert tree(root) == {"README.md", "keelline.toml"}
+
+
+@needs_git
+@pytest.mark.parametrize("edit", ["skeleton", "region"])
+def test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write(
+    tmp_path: Path, edit: str
+) -> None:
+    """Region and skeleton both kept out of git share one file. With a person's line in the
+    skeleton, the file stays whatever is forced: the region's force never reaches the skeleton.
+    With the region edited, it stays unforced. Either way the run knows before it writes, and
+    refuses with the remedy that works: move it out. A first draft counted every action at that
+    path as a deletion, started removing, and refused part-way telling the person to force a
+    path that is never forced there, which refused the same way on every run.
+
+    Mutation (declared): every action at that path counted as going, the first draft's rule ->
+    the dry run's count comes back 0, and this reddens there; the real run would remove the
+    footprint before refusing.
+    """
+    root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
+    local = root / LOCAL_AGENTS
+    text = local.read_text(encoding="utf-8")
+    if edit == "skeleton":
+        local.write_text(text + "\nA LINE OF OURS\n", encoding="utf-8")
+    else:
+        local.write_text(
+            text.replace(
+                "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nX\n"
+            ),
+            encoding="utf-8",
+        )
+    before = snapshot(root)
+    assert _uninstall(root, tmp_path, dry_run=True).kept_locally == 1
+    for force in ((), (LOCAL_AGENTS,)) if edit == "skeleton" else ((),):
+        with pytest.raises(Refusal) as refused:
+            _uninstall(root, tmp_path, force=force)
+        assert_snapshot_unchanged(root, before)
+        assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+
+
+@needs_git
+def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_prediction_misses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The count before any write is a prediction; the disk after the write-once pass is the
+    fact. Made to miss (it credits the remainder the skeleton pass then keeps), the run must
+    still stop before the ignore block goes, with the file ignored and the manifest in place.
+
+    Mutation (declared): the check after the write-once pass dropped -> the ignore block goes
+    over the remainder, and the file stops being ignored.
+    """
+    import keelline.project.uninstall as module
+
+    monkeypatch.setattr(module, "matches_render", lambda template, text: True)
+    root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
+    local = root / LOCAL_AGENTS
+    local.write_text(local.read_text(encoding="utf-8") + "\nA LINE OF OURS\n", encoding="utf-8")
+    with pytest.raises(Refusal, match=re.escape(KEPT_AFTER.format(count=1))):
+        _uninstall(root, tmp_path)
+    assert "A LINE OF OURS" in local.read_text(encoding="utf-8")
+    assert _ignored(root, local)
+    assert (root / MANIFEST_PATH).is_file()
+
+
+@needs_git
+def test_a_dry_run_that_refuses_still_counts_what_is_kept_out_of_git(tmp_path: Path) -> None:
+    # A plan with a refusal is still a report, and the refusal the real run would meet after the
+    # finding is fixed is part of it. Mutation (advisory): report 0 whenever a plan refuses ->
+    # the count comes back 0, and this reddens.
+    root = initialised(tmp_path)
+    agents = root / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8").replace("<!-- keelline:harness:begin -->\n", ""),
+        encoding="utf-8",
+    )
+    note = root / ".keelline" / "local" / "memory" / "developer" / "private-note.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("a private note\n", encoding="utf-8")
+    report = _uninstall(root, tmp_path, dry_run=True)
+    assert [r.artifact_id for r in report.footprint.refusals] == ["agents-md"]
+    assert report.kept_locally == 1
 
 
 @needs_git

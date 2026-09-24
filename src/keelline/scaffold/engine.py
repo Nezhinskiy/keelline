@@ -124,6 +124,18 @@ def unlinks(action: Action) -> bool:
     return action.verb is Verb.REMOVE and action.payload is None
 
 
+def matches_render(template: Template, current: str) -> bool:
+    """Whether `current` holds exactly the bytes this build renders for `template`'s part of it.
+
+    The one oracle for an `[artifacts] local` artifact, which is never recorded: `plan` removes a
+    retired one only while this answers yes, unless its path is forced. Public so a caller that
+    must predict that verdict for text not yet on disk asks the engine rather than re-deriving it.
+    """
+    _, stamp = _payload_and_stamp(template, current)
+    present = _present_stamp(template, current)
+    return present is not None and digest(present) == digest(stamp)
+
+
 def _read(path: Path) -> tuple[str | None, str | None]:
     """`(content, reason)`: a reason is a refusal for this one artifact, never for the plan.
 
@@ -416,9 +428,7 @@ def _plan_retired(
         # No record exists for a local artifact, so it is judged against this build's own
         # render, the one oracle it has. The directory is git-ignored: an edit removed here is
         # one git cannot give back, so a file that is not exactly Keelline's goes only when forced.
-        _, stamp = _payload_and_stamp(template, current)
-        present = _present_stamp(template, current)
-        ours = present is not None and digest(present) == digest(stamp)
+        ours = matches_render(template, current)
         if ours or target in forced:
             payload = _removal_payload(template, current)
             reason = "retired" if ours else "retired, forced"

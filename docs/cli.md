@@ -925,11 +925,17 @@ belongs.
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an
 overlay, so run `keelline detach` first; `.keelline/local/` holds files this run would not
 remove, such as notes, or an artifact kept out of git that you edited, which the refusal counts
-and never names; or a `--force` path leaves `--root`. A dry run reports that count in a `note:`
-line instead of refusing, so its report still lists the edited file for you to force or move.
+and never names; or a `--force` path leaves `--root`. The count is exact before anything is
+written, including what taking a region out of a file kept out of git would leave behind. Move
+the files out; an edited artifact in a file of its own there can be named with `--force`
+instead, but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file,
+and forcing it takes only the region, so a line you wrote into that skeleton has to be moved. A
+dry run reports the count in a `note:` line instead of refusing, even when its plans also carry
+refusals, so its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
-`.keelline/local/` after the write-once pass. What was removed stays removed and recorded, and
+`.keelline/local/` after the write-once pass, which the count before any write should already
+have refused; move them out. What was removed stays removed and recorded, and
 `keelline.toml` and the manifest are still there, because they go last; so running the command
 again finishes from what the first run left, to the same end as a run that was never stopped.
 
