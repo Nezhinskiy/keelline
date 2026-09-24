@@ -351,7 +351,8 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     # row in `PATH_KEYS`; its id is asked of the registry, so a harness added there is covered
     # here with no edit.
     assert len(ids) == 17 + len(_renditions()), sorted(ids)
-    assert ids == set(PATH_KEYS) | _renditions(), (sorted(ids ^ set(PATH_KEYS)),)
+    expected = set(PATH_KEYS) | _renditions()
+    assert ids == expected, (sorted(ids ^ expected),)
 
 
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
@@ -507,12 +508,27 @@ def test_the_region_hands_every_harness_the_pointer_and_the_essentials(tmp_path:
 def test_no_profile_means_no_profile_artifact_and_the_region_is_unchanged(
     tmp_path: Path,
 ) -> None:
-    prepared = _prepared(preset_defaults("widget"), root=tmp_path)
+    config = preset_defaults("widget")
+    prepared = _prepared(config, root=tmp_path)
     assert not {t.id for t in prepared.footprint} & {"profile-rules", "claude-rules"}
     region = next(t for t in prepared.footprint if t.id == "agents-md").render()
-    # Byte for byte what the region was before profiles: no block, and no blank line left where
-    # the sentinel sat. Mutation: put `%%PROFILE%%` on a line of its own -> reddens.
-    assert "profile's rules" not in region and not region.endswith("\n\n")
+    # Byte for byte what the region was before profiles: the shipped template with its
+    # `%%PROFILE%%` sentinel taken out and every other sentinel filled. Mutation: make
+    # `_profile_block` return `PROFILE_BLOCK` unfilled for no profile -> the equality reddens.
+    p = config.paths
+    before = fill(
+        read("agents-region.md").replace("%%PROFILE%%", ""),
+        BUG_INDEX=p.bug_index,
+        BUGS=p.bugs,
+        ROADMAP=p.roadmap,
+        SPECS=p.specs,
+        PLANS=p.plans,
+    )
+    assert region == before
+    # That equality holds wherever the sentinel sits, so the position is its own assertion: the
+    # sentinel ends the region's last line, and no blank line is left where it sat. Mutation:
+    # put `%%PROFILE%%` on a line of its own -> this reddens.
+    assert not region.endswith("\n\n")
 
 
 def test_an_unknown_harness_name_is_counted_for_the_report(tmp_path: Path) -> None:

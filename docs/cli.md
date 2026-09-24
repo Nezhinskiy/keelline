@@ -682,8 +682,9 @@ stripped and lower-cased, else the checkout's directory name; the base branch fr
 of `.claude/` and `.codex/` the repository carries, both when it carries neither; and
 `[keelline] profile` from the first shipped profile whose markers sit at the root (`python`:
 `pyproject.toml`, `setup.py`, `setup.cfg`, a requirements file, a `Pipfile` or a lockfile),
-written only when one is found. Both candidate names are repository-authored, so one outside `[project] name`'s grammar is refused
-naming the grammar and the remedy and never the value.
+written only when one is found. Both name candidates, the remote's segment and the directory
+name, are repository-authored, so one outside `[project] name`'s grammar is refused naming the
+grammar and the remedy and never the value.
 
 **A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
 read and kept — the name, the paths, the memory mode, the budgets — and the file itself is not

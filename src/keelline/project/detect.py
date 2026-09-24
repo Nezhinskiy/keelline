@@ -2,10 +2,9 @@
 
 Four values, each one `git` question or a probe of the root: the name, the base branch, the
 harnesses whose directories the root carries, and the shipped profile whose markers it
-carries. The remote URL and the
-directory name are repository-authored, so a refusal names the grammar and never the value
-(DC6); `origin_remote` is the memory area's, so "what is this checkout's origin" is asked one
-way.
+carries. The remote URL and the directory name are repository-authored, so a refusal names the
+grammar and never the value (DC6); `origin_remote` is the memory area's, so "what is this
+checkout's origin" is asked one way.
 """
 
 from __future__ import annotations
