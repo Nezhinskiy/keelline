@@ -233,8 +233,8 @@ def _preset_paths() -> tuple[tuple[int, str], ...]:
 
 
 PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())
-# Three of the preset's eleven default `[paths]` values are also digest-table entries — the
-# ones that were the source repository's paths before they were Keelline's defaults. Pinned so
+# Three of the preset's default `[paths]` values are also digest-table entries — the ones that
+# were the source repository's paths before they were Keelline's defaults. Pinned so
 # the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
 # path the plugin itself ships, which is a contradiction to resolve, not to exempt.
 PRESET_PATHS_IN_TABLE = 3

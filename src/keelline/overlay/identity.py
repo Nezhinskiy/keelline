@@ -35,19 +35,19 @@ what it actually said (Global Constraints: repository bytes are data).
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
+from keelline.config.schema import PROJECT_NAME
 from keelline.errors import Refusal
 from keelline.overlay.layout import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
-# One path segment, and the same grammar `scaffold.engine.SOURCE_NAME` holds a profile to. An
-# owner name becomes a directory, half a remote path, a marketplace selector and the suffix on
-# both manifest names, so it is checked once here rather than at each of those; the leading class
-# is what keeps a value shaped like an option (`-flag`) out of an option's position in an argv
-# (§3). It lives in this module rather than in `create` because the suffix grammar and the
-# manifest-name grammar are the same grammar, and two spellings of it would drift.
-SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# One path segment: `config.schema.PROJECT_NAME`, the one name grammar. An owner name becomes a
+# directory, half a remote path, a marketplace selector and the suffix on both manifest names, so
+# it is checked once here rather than at each of those; the leading class is what keeps a value
+# shaped like an option (`-flag`) out of an option's position in an argv. It is checked in this
+# module rather than in `create` because the suffix grammar and the manifest-name grammar are the
+# same grammar.
+SEGMENT = PROJECT_NAME
 # What the shipped template calls itself, and what `init_instance` suffixes.
 OVERLAY_PLUGIN = "keelline-overlay"
 OVERLAY_MARKETPLACE = "keelline-overlay-marketplace"

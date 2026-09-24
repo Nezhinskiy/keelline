@@ -1546,6 +1546,7 @@ bug_index = "docs/bug-reports.md"
 roadmap = "docs/roadmap.md"
 roadmap_history = "docs/roadmap-history.md"
 memory = "docs/memory"
+keelline = "docs/keelline" # Keelline's own project files: <keelline>/rules/<profile>.md
 
 [memory]
 mode = "local-only"      # local-only | in-repo | overlay
@@ -1629,12 +1630,14 @@ trees `docs trail` lists, and `plans` is where `plan check` looks for the plans 
 `bugs` is the ledger's entry directory and `bug_index` its generated index — `bugs new`,
 `bugs index`, `bugs check` and `bugs renumber` all read both — and `runbooks` supplies the
 `<runbooks>/bug-reports.md` link that index's generated header writes. `memory` is the note
-store, which `memory refs` walks. The remaining three are read for their location alone, and so
-is every one of the others: `bugs check` treats the first component of every `[paths]` value
-that has more than one — `docs`, for the defaults — as a directory documents live in, and
-therefore as a place a citation of an entry file may be written and must resolve. Pointing a
-path key somewhere unusual widens that sweep; it cannot take a document outside it, because a
-value that leaves the root is refused before any command runs.
+store, which `memory refs` walks. `keelline` is the directory Keelline's own project files go
+under, so that `uninstall` can account for them and a reader can find them; a stack profile's
+rules are the first, at `<keelline>/rules/<profile>.md`. The remaining three are read for their
+location alone, and so is every one of the others: `bugs check` treats the first component of
+every `[paths]` value that has more than one — `docs`, for the defaults — as a directory
+documents live in, and therefore as a place a citation of an entry file may be written and must
+resolve. Pointing a path key somewhere unusual widens that sweep; it cannot take a document
+outside it, because a value that leaves the root is refused before any command runs.
 
 **`[ledger]`.** `id_prefix` is the one definition of what an identifier looks like: `BR-001`,
 and `BR-nnn` in every message. It is interpolated into patterns and filenames, so it is held to

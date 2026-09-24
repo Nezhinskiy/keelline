@@ -624,3 +624,17 @@ def test_a_gates_table_in_the_wrong_shape_is_refused(tmp_path: Path, rest: str, 
     # type or counts it once. Mutation: drop any one of the checks and its case reddens.
     with pytest.raises(ConfigError, match=match):
         _gated(tmp_path, rest=rest)
+
+
+def test_the_name_grammar_is_spelled_once() -> None:
+    # A project, a profile, an overlay owner and a custom gate are named in one grammar, and
+    # every other module derives from `PROJECT_NAME`. Mutation: spell `SOURCE_NAME` out again in
+    # `scaffold/engine.py` and this reddens naming the file.
+    spelling = PROJECT_NAME.pattern.removeprefix("^").removesuffix("\\Z")
+    src = Path(__file__).resolve().parents[2] / "src" / "keelline"
+    spelled = sorted(
+        path.relative_to(src).as_posix()
+        for path in src.rglob("*.py")
+        if spelling in path.read_text(encoding="utf-8")
+    )
+    assert spelled == ["config/schema.py"]

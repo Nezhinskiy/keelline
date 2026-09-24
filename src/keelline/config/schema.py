@@ -11,6 +11,10 @@ from typing import ClassVar
 # a string, which `config.loader._schema_types` resolves with `typing.get_type_hints` to decide
 # how to coerce a value. Every name an annotation uses must stay resolvable from this module's
 # globals at runtime, so a type imported only under `TYPE_CHECKING` would break the loader.
+
+# The one grammar for a name Keelline answers to: a project, a profile, an overlay owner, a
+# custom gate. Each is one lowercase path segment whose leading class keeps it out of an option's
+# position in an argv. Every other module derives from this spelling rather than keeping its own.
 PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
 # The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
 # decides whether it may be written, and a shape rule cannot bound a charset.
@@ -93,6 +97,7 @@ class Paths:
     roadmap: str
     roadmap_history: str
     memory: str
+    keelline: str
 
     def as_dict(self) -> dict[str, str]:
         return dict(self.__dict__)

@@ -137,12 +137,13 @@ _NOT_EXEMPT = {
     "bug_index",
     "roadmap",
     "roadmap_history",
+    "keelline",
 }
 
 
 def test_every_configured_path_is_parametrised_here() -> None:
-    # The exemption below is checked per field, so a twelfth path added to `Paths` without a
-    # row here would inherit whatever `validate_paths` decides for it, untested.
+    # The exemption below is checked per field, so a path added to `Paths` without a row here
+    # would inherit whatever `validate_paths` decides for it, untested.
     assert set(PATH_NAMES) == _NOT_EXEMPT | {"memory"}
 
 
@@ -151,7 +152,7 @@ def test_the_final_symlink_exemption_holds_for_memory_and_for_no_other_path(
     tmp_path: Path, name: str
 ) -> None:
     # One negative example cannot tell "only memory" from "anything but that one example":
-    # widening the exemption to the other ten paths must fail here, on each of them.
+    # widening the exemption to any other path must fail here, on each of them.
     config = _sample_config(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()

@@ -32,13 +32,12 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from importlib import resources
 from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
-from keelline.config.schema import Config
+from keelline.config.schema import PROJECT_NAME, Config
 from keelline.errors import Refusal
 from keelline.fsops import UnsafePath, remove_within, write_within
 from keelline.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
@@ -47,7 +46,7 @@ from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Tem
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
 LOCAL_ROOT = ".keelline/local"
-SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+SOURCE_NAME = PROJECT_NAME  # the one name grammar, `config.schema.PROJECT_NAME`
 SOURCE_RULE = "lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit"
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # The two refusals that belong to one artifact's own file: a region whose markers no longer say
