@@ -688,11 +688,11 @@ read and kept — the name, the paths, the memory mode, the budgets — and the 
 replaced: it is a create-once artifact, so a repository that already has one is reported
 `skip_modified` ("create-once, and the file is already there") and the document comes back byte
 for byte. The paths it declares are where the footprint lands. A repository with no
-`keelline.toml` gets one written from the detected values, headed by a two-line comment saying
-which two keys are Keelline's own: `[keelline] version` and `state`. A file that is not valid
-TOML is a failure (`1`) naming the file. A repository that already carries
-`.keelline/manifest.json` is refused (`2`): re-running `init` is `keelline upgrade`, which ships
-later.
+`keelline.toml` gets one written from the detected values, headed by a comment naming the four
+keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced`, and
+`[ci] ref`. A file that is not valid TOML is a failure (`1`) naming the file. A repository that
+already carries `.keelline/manifest.json` is refused (`2`): re-running `init` is
+`keelline upgrade`, which ships later.
 
 **Two passes, both planned before either is applied.** The three write-once files are one pass
 and the rest of the footprint is the other, because two artifacts cannot target one file in one
@@ -1524,6 +1524,7 @@ why so few of them are trusted with anything.
 [keelline]
 version = "0.1.0"        # required; there is no default
 state = "installed"      # initialised | adopting | installed — default: initialised
+enforced = []            # tool-owned: the gates promoted while adopting
 preset = "recommended"
 profile = ""
 agents = ["claude", "codex"]
@@ -1577,12 +1578,18 @@ ref = ""                 # the commit of the Keelline release the workflow is pi
                          # `init` writes it; `v1` is the documented mutable opt-in
 gate_branch = "main"     # the branch a gate reads its configuration from
 
+[gates]
+builtin = ["docs", "bugs", "plan", "commit", "trail"]  # drop any you do not want run
+custom_timeout_seconds = 600  # how long one of your own gates may run
+# [gates.custom.tests]         # zero or more gates of your own, each a table like this
+# run = ["pytest", "-q"]       # an argv, never a shell string
+
 [commit_messages]
 attribution_check = true # whether `commit check` enforces the attribution block
 types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
 ```
 
-**Nine sections, and the list is closed**: a section this block does not show is refused when
+**Ten sections, and the list is closed**: a section this block does not show is refused when
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow watches on a push and the
@@ -1599,6 +1606,22 @@ not load at all (`[keelline] is missing required key(s): version`). And `[keelli
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
 `installed` above shows a set value, not what an omitted key takes. Everything from
 `[project] base_branch` down is the preset's default exactly as written.
+
+**Gates.** A gate is a check that fails a pull request once it enforces. `[gates] builtin`
+chooses among Keelline's own five, all of them by default, and each `[gates.custom.<name>]`
+adds one of the project's own: `run` is an argv run from the project root, never through a
+shell, given `custom_timeout_seconds` to finish, and a non-zero exit is its one finding. A
+custom gate's name is one lowercase path segment, neither a built-in gate's name nor
+`config`, which names the configuration check. Custom gates run only from a command a person
+or a workflow runs on purpose, never from a hook or `doctor`, so running such a command in a
+clone runs the commands that clone configured, as running its test suite would. Nothing runs
+a custom gate yet.
+
+**Enforcement is per gate.** Each gate the project runs is advisory until it enforces. A gate
+enforces when `[keelline] enforced` lists it, or when `state` is `installed`, which means
+every gate the project runs. Both keys are Keelline's to write (`keelline adopt begin` and
+`keelline adopt promote`, which ship later). An `initialised` project enforces nothing, and
+an `installed` one lists every gate or none.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two

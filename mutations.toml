@@ -6302,3 +6302,51 @@ after = "        return remainder"
 reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_region_that_was_the_whole_file_removes_the_file",
 ]
+
+# The gate set and per-gate enforcement. The first, fourth and fifth entries bound what a
+# repository-authored gate name may reach in a refusal; the second and third hold the one fact
+# `state` and `enforced` state together.
+[[mutation]]
+name = "the loader admits a gate the project does not run into [keelline] enforced"
+file = "src/keelline/config/loader.py"
+before = "    unknown = [name for name in keelline.enforced if name not in names]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "an installed project stops enforcing every gate it runs"
+file = "src/keelline/config/loader.py"
+before = "    return replace(config, keelline=replace(keelline, enforced=names))"
+after = "    return config"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_enforces_every_configured_gate",
+]
+
+[[mutation]]
+name = "an installed project's partial enforced list loads again"
+file = "src/keelline/config/loader.py"
+before = "    if keelline.enforced and set(keelline.enforced) != set(names):"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
+]
+
+[[mutation]]
+name = "a custom gate's name reaches the loader's refusals unbounded"
+file = "src/keelline/config/loader.py"
+before = "    unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]"
+after = "    unusable: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_custom_gate_name_outside_the_grammar_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "the loader admits a built-in gate Keelline does not have"
+file = "src/keelline/config/loader.py"
+before = "    unknown = [name for name in gates.builtin if name not in BUILTIN_GATES]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_built_in_gate_keelline_does_not_have_is_counted_and_never_quoted",
+]

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import fields, replace
+from dataclasses import MISSING, fields, replace
 from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar, cast, get_origin, get_type_hints
@@ -16,7 +16,9 @@ from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import validate_paths
 from keelline.config.schema import (
+    BUILTIN_GATES,
     CI_MODES,
+    CONFIG_CHECK,
     MEMORY_MODES,
     PROJECT_NAME,
     SECTION_NAME,
@@ -26,6 +28,8 @@ from keelline.config.schema import (
     Ci,
     CommitMessages,
     Config,
+    CustomGate,
+    Gates,
     Keelline,
     Ledger,
     Memory,
@@ -60,7 +64,35 @@ SECTIONS = (
     "ledger",
     "artifacts",
     "ci",
+    "gates",
     "commit_messages",
+)
+# Every refusal below names its key and quotes no value from the document. A state is a member
+# of `STATES`, a count is a count, and the names a refusal lists are Keelline's own tuple or
+# configured names that have already matched `PROJECT_NAME`.
+GATES_BUILTIN_UNKNOWN = (
+    "[gates] builtin names {count} gate(s) Keelline does not have; the built-in gates are {known}"
+)
+GATES_BUILTIN_TWICE = "[gates] builtin names a gate twice"
+GATES_CUSTOM_NAME = (
+    "[gates] custom names {count} gate(s) Keelline cannot run under that name: a custom gate's "
+    "name matches {pattern} and is neither a built-in gate's name nor `config`"
+)
+GATES_CUSTOM_TABLE = "[gates.custom.{name}] must be a table"
+GATES_CUSTOM_EMPTY = "gates.custom.{name}.run must name a command"
+GATES_CUSTOM_NUL = "gates.custom.{name}.run holds a NUL character, which no argv can carry"
+GATES_UNKNOWN = (
+    "[keelline] enforced names {count} gate(s) this project does not run; the gates it runs are "
+    "{known}"
+)
+GATES_TWICE = "[keelline] enforced names a gate twice"
+GATES_EARLY = (
+    "[keelline] state is initialised and enforced lists {count} gate(s), but an initialised "
+    "project enforces nothing: promoting a gate is what moves a project to adopting"
+)
+GATES_PARTIAL = (
+    "[keelline] state is installed and enforced lists {count} of the project's {total} gate(s), "
+    "but installed means every gate enforces: list every gate, or none"
 )
 
 
@@ -161,7 +193,14 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
     unknown = sorted(set(values) - set(known))
     if unknown:
         raise ConfigError(f"[{name}] has unknown key(s): {_named(unknown, 'key')}")
-    missing = sorted(set(known) - set(values))
+    # A field with a default is filled by the section's own reader after `_build` (`Gates.custom`
+    # is the one), so only a field without one is required of the merged table.
+    required = {
+        f.name
+        for f in fields(cast(Any, cls))
+        if f.default is MISSING and f.default_factory is MISSING
+    }
+    missing = sorted(required - set(values))
     if missing:
         raise ConfigError(f"[{name}] is missing required key(s): {', '.join(missing)}")
     coerced: dict[str, Any] = {}
@@ -237,6 +276,76 @@ def _deduplicated(memory: Memory) -> Memory:
     fixes is the one thing none of them can: a count taken over a list with a duplicate in it.
     """
     return replace(memory, groups=tuple(dict.fromkeys(memory.groups)))
+
+
+def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
+    """`[gates]`: which built-in gates run, and the project's own.
+
+    A custom gate's name is a TOML key, which is arbitrary quoted text, so a name is counted
+    and never quoted until it has matched `PROJECT_NAME`; after that it is printable, and every
+    later refusal names it. `run` is never printed at all. The two argvs `subprocess` cannot run,
+    an empty one and one carrying a NUL, are refused here rather than raised as an internal
+    error by whatever runs the gate.
+    """
+    values = _merged(raw, defaults, "gates")
+    tables = values.pop("custom", {})
+    gates = _build(Gates, "gates", values)
+    unknown = [name for name in gates.builtin if name not in BUILTIN_GATES]
+    if unknown:
+        known = ", ".join(BUILTIN_GATES)
+        raise ConfigError(GATES_BUILTIN_UNKNOWN.format(count=len(unknown), known=known))
+    if len(set(gates.builtin)) != len(gates.builtin):
+        raise ConfigError(GATES_BUILTIN_TWICE)
+    if not isinstance(tables, dict):
+        raise ConfigError("[gates.custom] must be a table")
+    reserved = (*BUILTIN_GATES, CONFIG_CHECK)
+    unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]
+    if unusable:
+        pattern = PROJECT_NAME.pattern
+        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), pattern=pattern))
+    custom: dict[str, CustomGate] = {}
+    for name, table in sorted(tables.items()):
+        if not isinstance(table, dict):
+            raise ConfigError(GATES_CUSTOM_TABLE.format(name=name))
+        gate = _build(CustomGate, f"gates.custom.{name}", table)
+        if not gate.run:
+            raise ConfigError(GATES_CUSTOM_EMPTY.format(name=name))
+        if any("\0" in part for part in gate.run):
+            raise ConfigError(GATES_CUSTOM_NUL.format(name=name))
+        custom[name] = gate
+    return replace(gates, custom=custom)
+
+
+def _enforcement(config: Config) -> Config:
+    """`[keelline] enforced` held to the gates this project runs, and `installed` made explicit.
+
+    `state` is the lifecycle and `enforced` what was promoted while adopting, so the two state
+    one fact and this refuses the ways they can contradict each other. The list holds configured
+    gate names, once each, only once the project is past `initialised`, and under `installed`
+    either every gate or none. An entry outside the configured set is counted and never quoted:
+    it is exactly the value no grammar has bounded. The names the refusal lists are the
+    configured ones, each already held to a grammar.
+
+    Under `installed` the loaded list becomes every configured gate, so `Keelline.enforcing` is
+    the list and nothing else, and a gate added to an installed project enforces from the run
+    that adds it.
+    """
+    keelline = config.keelline
+    names = config.gate_names
+    unknown = [name for name in keelline.enforced if name not in names]
+    if unknown:
+        known = ", ".join(names) or "none"
+        raise ConfigError(GATES_UNKNOWN.format(count=len(unknown), known=known))
+    if len(set(keelline.enforced)) != len(keelline.enforced):
+        raise ConfigError(GATES_TWICE)
+    if keelline.state == "initialised" and keelline.enforced:
+        raise ConfigError(GATES_EARLY.format(count=len(keelline.enforced)))
+    if keelline.state != "installed":
+        return config
+    if keelline.enforced and set(keelline.enforced) != set(names):
+        total = len(names)
+        raise ConfigError(GATES_PARTIAL.format(count=len(keelline.enforced), total=total))
+    return replace(config, keelline=replace(keelline, enforced=names))
 
 
 def _budgets(raw: dict[str, Any], preset: dict[str, Any]) -> Budgets:
@@ -345,6 +454,7 @@ def loads(
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))
     ci = _build(Ci, "ci", _merged(raw, defaults, "ci"))
     _enum("ci", "mode", ci.mode, CI_MODES)
+    gates = _gates(raw, defaults)
     commit_messages = _build(
         CommitMessages, "commit_messages", _merged(raw, defaults, "commit_messages")
     )
@@ -360,9 +470,11 @@ def loads(
         ledger=ledger,
         artifacts=artifacts,
         ci=ci,
+        gates=gates,
         commit_messages=commit_messages,
         personal=personal,
     )
+    config = _enforcement(config)
     validate_paths(config, root)
     return config
 
@@ -397,6 +509,7 @@ def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
         ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
         artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
         ci=_build(Ci, "ci", defaults.get("ci", {})),
+        gates=_gates({}, defaults),
         commit_messages=_build(
             CommitMessages, "commit_messages", defaults.get("commit_messages", {})
         ),

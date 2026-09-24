@@ -10,9 +10,9 @@ import pytest
 
 import keelline
 from keelline.attach.api import IGNORE_REGION
-from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.errors import Failure, Refusal
-from keelline.project.init import InitReport, init
+from keelline.project.init import HEADER, InitReport, init
 from keelline.project.templates import NOT_ASKED_DRY, NOT_ASKED_WRITTEN
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
@@ -84,6 +84,39 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
     assert extract(agents, "harness", Style.MARKDOWN) is not None
     assert extract((root / ".gitignore").read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
     assert report.skipped["ci-workflow"].startswith("no released Keelline tag") and report.note
+
+
+@needs_git
+def test_a_created_document_opens_with_a_header_naming_every_tool_owned_key(
+    tmp_path: Path,
+) -> None:
+    # The header is the file's own statement of which keys Keelline rewrites in place. It named
+    # `[keelline] version` and `state` while four keys are Keelline's to rewrite. Mutation:
+    # restore the two-key header and this reddens on `enforced`.
+    root = _repo(tmp_path)
+    _init(root, tmp_path)
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(HEADER)
+    assert "`enforced`" in HEADER and "`[ci] ref`" in HEADER
+
+
+@needs_git
+def test_an_adopted_document_s_gates_are_validated_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # `init` builds its `Config` from the tables it copies out of a hand-written document, so a
+    # table it does not copy is one it never validates, while every later load does: the run
+    # wrote a footprint for a document the next command refuses. Mutation: drop `"gates"` from
+    # `USER_OWNED` and `init` writes the footprint, so this reddens with DID NOT RAISE.
+    root = _repo(tmp_path)
+    hand_written = (
+        '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n'
+        '[gates]\nbuiltin = ["docs", "docs"]\n'
+    )
+    (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(ConfigError, match=r"^\[gates\] builtin names a gate twice$"):
+        _init(root, tmp_path)
+    assert_snapshot_unchanged(root, before)
 
 
 @needs_git

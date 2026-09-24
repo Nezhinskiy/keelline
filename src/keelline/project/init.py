@@ -20,11 +20,11 @@ already carries one the engine reports `skip_modified` — "create-once, and the
 there" — and the file comes back byte for byte. What the hand-written document does is decide
 the whole run: it is parsed, merged under Keelline's own two keys and the preset's defaults,
 and validated by `loads` before a byte is written, and the `Config` that comes out is what
-every target below is built from. The two tool-owned keys are written only into a file
+every target below is built from. The tool-owned keys are written only into a file
 Keelline itself creates, which is the only file whose header claims them.
 
 **Every value in the document this writes is either Keelline's own or the repository's own
-answer read back.** The tool-owned pair is `[keelline] version` and `state`; everything else
+answer read back.** The tool-owned keys are `config.owned.OWNED`; everything else
 is copied from a `keelline.toml` a person wrote, or — where there is none — detected under
 `PROJECT_NAME`'s grammar, which is the one thing `detect` refuses outside of. `loads` then
 validates the whole document before a byte is written, so a bad path or a bad name costs the
@@ -48,11 +48,12 @@ from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
 from keelline.tomlout import dumps
 
 STATE_NEW = "initialised"
-USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "commit_messages")
+USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "gates", "commit_messages")
 HEAD_KEYS = ("preset", "profile", "agents")
 HEADER = (
     "# Written by `keelline init`. Every key you leave out takes the preset's default;\n"
-    "# `[keelline] version` and `state` are Keelline's to rewrite, the rest are yours.\n\n"
+    "# `[keelline] version`, `state` and `enforced`, and `[ci] ref`, are Keelline's to\n"
+    "# rewrite in place; every other key is yours.\n\n"
 )
 # The pair is spelled literally because the intended reader is an agent relaying this sentence,
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
