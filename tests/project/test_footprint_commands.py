@@ -9,13 +9,16 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import keelline
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.project.commands import CI_LEFT, CI_PINNED
+from keelline.runner import Completed
 from keelline.scaffold import Manifest
 from tests.gitfixture import git, needs_git
 
@@ -35,6 +38,16 @@ def _run(root: Path, tmp_path: Path, *argv: str) -> tuple[int, dict[str, Any]]:
         code = run([*argv, *flags], parser=parser)
     data: dict[str, Any] = json.loads(out.getvalue())
     return code, data
+
+
+@dataclass
+class _Listing:
+    """A `Runner` that answers `ls-remote` from a string and reaches no network."""
+
+    stdout: str
+
+    def run(self, argv: list[str], cwd: Path) -> Completed:
+        return Completed(0, self.stdout, "")
 
 
 def _initialised(tmp_path: Path) -> Path:
@@ -126,6 +139,45 @@ def test_a_force_path_that_names_nothing_is_counted(tmp_path: Path) -> None:
     code, data = _run(root, tmp_path, "upgrade", "--dry-run", "--force", "docs/Roadmap.md")
     assert code == 0
     assert UNMATCHED in data["summary"]
+
+
+@needs_git
+@pytest.mark.parametrize("newer", [False, True], ids=["current", "newer"])
+def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newer: bool
+) -> None:
+    """A hand-edited workflow is `skip_modified` and may pin anything, so the CI line must not say
+    it pins `[ci] ref`. It did whenever no skip reason was recorded, on a current project and on
+    one whose version and ref were held back for exactly that workflow. `--force` with its path
+    rewrites it, and then the line may say so.
+
+    Mutation (advisory): key the line on the skip reason alone again -> both cases print
+    `CI_PINNED` and the first assertion reddens.
+    """
+    from keelline import runner as runner_module
+
+    sha = "a" * 40
+    listing = f"{sha}\trefs/tags/v{keelline.__version__}\n"
+    monkeypatch.setattr(runner_module, "subprocess_runner", lambda: _Listing(listing))
+    root = tmp_path / "widget"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
+    code, data = _run(root, tmp_path, "init", "--yes")
+    assert code == 0, data["summary"]
+    workflow = root / ".github" / "workflows" / "keelline.yml"
+    workflow.write_text(workflow.read_text(encoding="utf-8") + "# ours\n", encoding="utf-8")
+    if newer:
+        monkeypatch.setattr(keelline, "__version__", "9.9.9")
+        listing = f"{'c' * 40}\trefs/tags/v9.9.9\n"
+    code, data = _run(root, tmp_path, "upgrade")
+    assert code == 0, data["summary"]
+    lines = data["summary"].splitlines()
+    assert CI_LEFT in lines and CI_PINNED not in lines
+    assert bool(data["held"]) is newer
+    code, data = _run(root, tmp_path, "upgrade", "--force", ".github/workflows/keelline.yml")
+    assert code == 0, data["summary"]
+    assert CI_PINNED in data["summary"].splitlines()
 
 
 @needs_git

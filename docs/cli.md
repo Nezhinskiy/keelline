@@ -840,7 +840,9 @@ is still refreshed. A workflow you edited by hand, or one Keelline never wrote, 
 `skip_modified` and moves with them only under `--force` with the path the report prints for it.
 When the report refuses the workflow, or the `CI:` line says none was rendered (a `[ci]
 gate_branch` outside the branch-name grammar, say), no flag moves them: the note says to put
-that right and run `keelline upgrade` again.
+that right and run `keelline upgrade` again. The `CI:` line says the workflow pins `[ci] ref` only
+when this run created it, refreshed it or found it current; a workflow the report lists
+`skip_modified` or refuses was left as it is and may pin anything, and the line says so.
 
 **A `[ci] ref` that is not a commit is yours.** The documented `v1` alias, or any other value
 that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade` moves

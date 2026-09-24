@@ -149,6 +149,14 @@ FORCE_UNMATCHED = (
     "note: {count} --force path(s) named no file this run had to judge, so they forced nothing; "
     "a path is compared exactly, relative to --root"
 )
+# The `upgrade` CI line when a workflow was rendered. Keyed on what the plan does with it, not on
+# the absence of a skip reason: a workflow the report lists `skip_modified` (edited by hand, or
+# never Keelline's) or refuses is left as it is, and may pin anything at all.
+CI_PINNED = "CI: the workflow pins [ci] ref"
+CI_LEFT = (
+    "CI: the workflow was left as it is, so what it pins is not this run's to say; the "
+    "footprint report names it and why"
+)
 # A count: the ids of records this build does not produce are repository-authored.
 ORPHANS = (
     "note: {count} record(s) in .keelline/manifest.json name artifacts this Keelline does not "
@@ -201,7 +209,10 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         shown,
     ]
     skipped = report.skipped.get("ci-workflow")
-    lines.append(f"CI: skipped — {skipped}" if skipped else "CI: the workflow pins [ci] ref")
+    if skipped:
+        lines.append(f"CI: skipped — {skipped}")
+    else:
+        lines.append(CI_PINNED if report.workflow_current else CI_LEFT)
     if report.held:
         lines.append(f"note: {report.held}")
     if report.orphans:

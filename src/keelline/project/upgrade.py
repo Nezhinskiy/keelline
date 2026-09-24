@@ -123,6 +123,10 @@ class UpgradeReport:
     skipped: dict[str, str]
     orphans: int
     dry_run: bool
+    # Whether the workflow on disk after the run is the one this build renders from `[ci] ref`:
+    # created, refreshed or already current. It is not when the report lists it `skip_modified`
+    # or refuses it, and then it may pin anything, so the CI line must not say it pins the ref.
+    workflow_current: bool = False
 
 
 def _printable(key: str, value: str) -> str:
@@ -220,7 +224,16 @@ def upgrade(
         )
         if old != new
     )
-    report = UpgradeReport(footprint, moved, held, resolution, prepared.skipped, orphans, dry_run)
+    report = UpgradeReport(
+        footprint,
+        moved,
+        held,
+        resolution,
+        prepared.skipped,
+        orphans,
+        dry_run,
+        _rewrites_the_workflow(footprint),
+    )
     if dry_run or footprint.refusals:
         return report
     apply(root, footprint)
