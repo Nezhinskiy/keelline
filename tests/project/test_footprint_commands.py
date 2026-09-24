@@ -253,7 +253,7 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     monkeypatch.setattr(engine, "remove_within", real)
     code, data = _run(root, tmp_path, "uninstall")
     assert code == 0, data
-    # Every directory the first run emptied goes too: `_prune` asks about every place this
-    # configuration puts an artifact, not only what this run removed.
+    # Every directory the first run emptied goes too: each pass prunes above what it removed in a
+    # `finally`, so the pass that stopped still emptied the directories of the files it took.
     assert {p.name for p in root.iterdir()} == {".git"}, sorted(p.name for p in root.iterdir())
     assert resumable

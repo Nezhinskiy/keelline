@@ -543,6 +543,28 @@ def test_a_harness_directory_a_person_made_stays_when_its_rule_goes(tmp_path: Pa
 
 
 @needs_git
+def test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_removed_from_it(
+    tmp_path: Path,
+) -> None:
+    # A `[paths]` value is committed, and the run used to prune every directory above every
+    # place this configuration puts an artifact: `roadmap = "some/dir/x.md"` had it remove an
+    # empty `some/dir/` a person made, though nothing of Keelline's was ever in it. Only a
+    # directory above a file this run removed goes now. The roadmap's own directory still goes,
+    # because its file did. Mutation (advisory): prune every configured place again, the rule
+    # this replaced -> `some/dir` is removed and the first assertion reddens.
+    root = initialised(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[paths]\nroadmap = "some/dir/x.md"\n',
+        encoding="utf-8",
+    )
+    (root / "some" / "dir").mkdir(parents=True)
+    _uninstall(root, tmp_path)
+    assert (root / "some" / "dir").is_dir()
+    assert not (root / "docs" / "architecture").exists()
+
+
+@needs_git
 def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> None:
     # `upgrade` keeps a workflow `uvx` merely does not render; `uninstall` asks where this build
     # could have written it, and nothing else. Measured before: the workflow was left, unlisted,

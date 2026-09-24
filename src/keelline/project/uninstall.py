@@ -37,10 +37,13 @@ disk shows nothing left under `.keelline/local/`. If something is left, the run 
 pass, with the region and the manifest in place, so git still ignores the files, and once they
 are moved out the next run can finish (`KEPT_AFTER`).
 
-**Then the directories, `keelline.toml`, and the ledger.** Every directory a removal left empty
-goes, then `keelline.toml`, whose removal the write-once pass holds back for this point, then
+**Directories as each pass goes, then `keelline.toml`, then the ledger.** Every directory above
+a file a pass removed goes once it is empty, when the pass ends or stops (`_apply`), and no other:
+a `[paths]` value is committed, so a directory it merely names may be a person's. Then
+`keelline.toml`, whose removal the write-once pass holds back for this point, then
 `.keelline/assessment.json`, the manifest, and `.keelline/` once it is empty. So a run stopped at
-any earlier point leaves the configuration and the manifest the next run needs to finish it.
+any earlier point leaves the configuration and the manifest the next run needs to finish it. A
+process killed mid-pass can leave an empty directory behind, which no later run removes.
 
 **Two refusals come before any write**: while the repository is attached, and while
 `.keelline/local/` holds a file this run would not remove, the local-only memory notes above all.
@@ -72,6 +75,7 @@ records is a committed string.
 from __future__ import annotations
 
 import contextlib
+import os
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -186,23 +190,39 @@ def _rmdirs(root: Path, directories: Set[str]) -> None:
             rmdir_within(root, directory)
 
 
-def _prune(root: Path, places: Sequence[str]) -> None:
-    """Every directory above a place this configuration puts an artifact, once it is empty.
+def _prune(root: Path, removed: Sequence[str]) -> None:
+    """Every directory above a file this run removed, once it is empty.
 
-    Every place, and not only what this run removed: a run stopped part-way removed some of the
-    files and their records, and the run that finishes must still empty their directories. It
-    runs while `keelline.toml` is still there, so a run that stops after it has nothing left to
-    prune but the ledger.
+    Only those. It used to be every directory above every place this configuration puts an
+    artifact, and a place is a committed `[paths]` value: `roadmap = "some/dir/x.md"` had the
+    run remove an empty `some/dir/` a person made, a git-ignored placeholder included, though
+    nothing of Keelline's was ever in it. A directory above a file this run took held that file
+    when the run began, so emptying it is this run's doing.
     """
     _rmdirs(
         root,
         {
             parent.as_posix()
-            for target in places
+            for target in removed
             for parent in PurePosixPath(target).parents
             if parent.as_posix() != "."
         },
     )
+
+
+def _apply(root: Path, planned: Plan) -> None:
+    """`apply`, then `_prune` over what it removed, whether or not it finished.
+
+    In a `finally`, so a pass that stops part-way still empties the directories of the files it
+    took: the run that finishes it cannot tell a directory an earlier run emptied from one a
+    person left empty, so it would never prune one. What counts as removed is a file an action
+    of this plan unlinks that is no longer there; `plan` never unlinks a file it did not read.
+    """
+    try:
+        apply(root, planned)
+    finally:
+        removed = [a.target for a in planned.actions if unlinks(a)]
+        _prune(root, [target for target in removed if not os.path.lexists(root / target)])
 
 
 def _remove_ledger(root: Path) -> None:
@@ -259,11 +279,7 @@ def uninstall(
     # Paths as the engine resolves them: an `[artifacts] local` target lives under
     # `.keelline/local/artifacts/`, which `Template.target` does not say.
     footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}
-    once_targets = {effective_target(t, config)[0] for t in once_retired}
     once_force = tuple(path for path in force if path not in footprint_targets)
-    # Every place this configuration puts an artifact, recorded or not: a run stopped part-way
-    # already removed some files and their records, and their directories are still this run's.
-    places = {effective_target(t, config)[0] for t in (*prepared.once, *prepared.footprint)}
     footprint = plan(root, config, footprint_retired, force=force)
     once = plan(root, config, once_retired, force=once_force)
     note = ORDER_NOTE if dry_run else ""
@@ -285,21 +301,20 @@ def uninstall(
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
     body = plan(root, config, [t for t in footprint_retired if t.id != IGNORE], force=force)
-    apply(root, body)
+    _apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
     judged = plan(root, config, once_body, force=once_force)
-    apply(root, judged)
+    _apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
     left = _kept_locally(root, frozenset())
     if left:
         raise Refusal(KEPT_AFTER.format(count=left))
     ignore = plan(root, config, [t for t in footprint_retired if t.id == IGNORE], force=force)
-    apply(root, ignore)
-    _prune(root, sorted(places | footprint_targets | once_targets))
+    _apply(root, ignore)
     last = plan(root, config, config_retired, force=once_force)
-    apply(root, last)
+    _apply(root, last)
     _remove_ledger(root)
     return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)
 

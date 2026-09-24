@@ -940,10 +940,11 @@ file, so what you wrote into the skeleton is judged on its own bytes.
 **The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore`
 region is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes,
 and the artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own,
-after the disk shows nothing left under `.keelline/local/`. Then every directory a removal left
-empty, deepest first; then `keelline.toml`, which the write-once pass holds back for this point;
-then the ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/` once it
-is empty. A directory someone committed where a ledger file belongs stays. So does a harness's
+after the disk shows nothing left under `.keelline/local/`. Every directory above a file a pass
+removed goes once it is empty, deepest first, and no other: an empty directory a `[paths]` value
+merely names may be yours. Then `keelline.toml`, which the write-once pass holds back for this
+point; then the ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/`
+once it is empty. A directory someone committed where a ledger file belongs stays. So does a harness's
 own directory (`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have
 created `.claude/` to hold the rule it wrote there, but nothing records who made an empty
 directory, and to `init` its presence means the project uses that harness. So a later `init`
