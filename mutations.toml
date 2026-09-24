@@ -6449,3 +6449,20 @@ file = "src/keelline/scaffold/engine.py"
 before = 'LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"'
 after = "LOCAL_ARTIFACTS = LOCAL_ROOT"
 reddens = ["tests/scaffold/test_engine.py::test_a_local_artifact_moves_under_dot_keelline"]
+
+# `rewrite_owned` is the one writer of a tool-owned key. The `config` record is re-stamped only
+# when it described the file before the edit, and before the file is written, so an untouched
+# `keelline.toml` stays one `uninstall` recognises and an edited one is never blessed.
+[[mutation]]
+name = "a tool-owned rewrite re-stamps a keelline.toml a person edited, blessing the edit"
+file = "src/keelline/project/rewrite.py"
+before = "    if record is not None and record.sha256 == digest(text):"
+after = "    if record is not None:"
+reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_and_its_record_never_blesses_the_edit"]
+
+[[mutation]]
+name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
+file = "src/keelline/project/rewrite.py"
+before = "    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
+reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]

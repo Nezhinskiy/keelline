@@ -14,7 +14,7 @@ from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
 from keelline import __version__
 from keelline.config.machine import machine_config_path
-from keelline.config.paths import validate_paths
+from keelline.config.paths import contained, validate_paths
 from keelline.config.schema import (
     BUILTIN_GATES,
     CI_MODES,
@@ -415,6 +415,21 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     except FileNotFoundError:
         raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
     return loads(text, root, machine=machine, interactive=interactive)
+
+
+def read_document(root: Path) -> str | None:
+    """`keelline.toml` exactly as it is on disk, or `None` when there is none.
+
+    `newline=""` and not `read_text`: this is the text a command hands to `config.owned.rewrite`,
+    which keeps every byte but the values it sets, and universal-newline translation would have
+    rewritten every CRLF in a file somebody else owns before the editor saw it. `contained`
+    first, as for every configured path, so a symlinked `keelline.toml` is a refusal.
+    """
+    try:
+        with contained(root, CONFIG_FILE).open(encoding="utf-8", newline="") as stream:
+            return stream.read()
+    except FileNotFoundError:
+        return None
 
 
 def loads(
