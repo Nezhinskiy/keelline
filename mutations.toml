@@ -6808,8 +6808,8 @@ reddens = [
 [[mutation]]
 name = "a copy left kept out of git when its id left [artifacts] local is never judged"
 file = "src/keelline/scaffold/engine.py"
-before = "            copy = left_copy(template, config, digests)\n"
-after = "            copy = None\n"
+before = "        for copy in left_copies(template, config, digests):\n            if copy in planned:"
+after = "        for copy in ():\n            if copy in planned:"
 reddens = [
   "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
   "tests/scaffold/test_local.py::test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it",
@@ -6818,7 +6818,7 @@ reddens = [
 [[mutation]]
 name = "uninstall never judges an artifact only the ledger records"
 file = "src/keelline/project/uninstall.py"
-before = "    wanted = set(manifest.records) | set(config.artifacts.local) | set(digests.entries)"
+before = "    wanted = set(manifest.records) | set(config.artifacts.local) | digests.ids"
 after = "    wanted = set(manifest.records) | set(config.artifacts.local)"
 reddens = [
   "tests/project/test_uninstall.py::test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest",
@@ -6826,10 +6826,10 @@ reddens = [
 ]
 
 # The ledger is kept out of git, and a clone can force-add it anyway, so it authorizes nothing
-# beyond bytes its writer already names, at the one place a template of this build could have put
-# its copy. Two layers, each held by its own case: the reader drops a ledger naming anything
-# outside `.keelline/local/artifacts/`, and the engine takes an entry as an artifact's copy only
-# at that artifact's own target there.
+# beyond bytes its writer already names, under `.keelline/local/artifacts/`. Two layers, each
+# held by its own case: the reader drops a ledger naming anything outside that directory, and the
+# engine lets this build's render vouch for a file only at the artifact's own place there, so
+# anywhere else the recorded digest alone does.
 [[mutation]]
 name = "a ledger entry may name a file outside the artifacts directory"
 file = "src/keelline/scaffold/local.py"
@@ -6838,11 +6838,21 @@ after = ""
 reddens = ["tests/scaffold/test_local.py::test_a_ledger_that_is_not_exactly_this_shape_is_absent"]
 
 [[mutation]]
-name = "a ledger entry names which file kept out of git is an artifact's copy"
+name = "a left copy away from its own place goes on the render alone"
 file = "src/keelline/scaffold/engine.py"
-before = "    return recorded if recorded == f\"{LOCAL_ARTIFACTS}/{template.target}\" else None"
-after = "    return recorded"
-reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_reaches_only_the_artifact_s_own_place"]
+before = "    return target == f\"{LOCAL_ARTIFACTS}/{template.target}\" and matches_render(template, current)"
+after = "    return matches_render(template, current)"
+reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest"]
+
+# A `[paths]` value moved while the artifact stayed in `[artifacts] local`: the old copy is at a
+# place the ledger records for its id and this configuration no longer gives it, and is judged
+# there. Without it no action named the old copy, and `uninstall` refused over it for good.
+[[mutation]]
+name = "a left copy is judged only where [artifacts] local no longer lists its id"
+file = "src/keelline/scaffold/engine.py"
+before = "    return tuple(copy for copy in digests.targets_of(template.id) if copy != target)"
+after = "    return tuple(copy for copy in digests.targets_of(template.id) if template.id not in config.artifacts.local)"
+reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
 
 # The same guard for the copy a region left kept out of git when its id left `[artifacts] local`:
 # the footprint pass judges it at the skeleton's own file, so a force meant for it must not
@@ -6850,7 +6860,7 @@ reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_reaches_only_the_a
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/keelline/project/uninstall.py"
-before = "    footprint_targets |= {\n        copy for t in footprint_retired if (copy := left_copy(t, config, digests)) is not None\n    }\n"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests)\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
 

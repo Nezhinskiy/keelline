@@ -12,7 +12,7 @@ import pytest
 
 from keelline.scaffold import engine
 from keelline.scaffold.engine import apply, plan
-from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, LocalDigests
+from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, MAX_ENTRIES, LocalDigests
 from keelline.scaffold.manifest import Manifest, digest
 from keelline.scaffold.model import Verb
 from tests.scaffold.test_engine import a_config, a_record, a_template
@@ -37,7 +37,7 @@ def test_a_write_kept_out_of_git_is_recorded_in_the_ledger_and_never_in_the_mani
     tmp_path: Path,
 ) -> None:
     _written(tmp_path)
-    assert LocalDigests.read(tmp_path).entries == {"agents-md": (LOCAL, digest("BODY\n"))}
+    assert LocalDigests.read(tmp_path).entries == {("agents-md", LOCAL): digest("BODY\n")}
     assert Manifest.read(tmp_path).records == {}
 
 
@@ -57,7 +57,7 @@ def test_an_unedited_copy_follows_a_changed_template(tmp_path: Path) -> None:
     assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.UPDATE, "refreshed")]
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY 2\n"
-    assert LocalDigests.read(tmp_path).entries == {"agents-md": (LOCAL, digest("BODY 2\n"))}
+    assert LocalDigests.read(tmp_path).entries == {("agents-md", LOCAL): digest("BODY 2\n")}
 
 
 def test_a_retired_unedited_copy_goes_after_its_template_changed(tmp_path: Path) -> None:
@@ -134,35 +134,47 @@ def test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it(
     ]
 
 
-def test_a_ledger_entry_reaches_only_the_artifact_s_own_place(tmp_path: Path) -> None:
-    # A clone can force-add the ledger. An entry naming another file under the directory, with
-    # that file's exact digest, must not make it this artifact's copy: `local_copy` accepts the
-    # template's own target under `LOCAL_ARTIFACTS` and nothing else. Mutation (oracle): "a
-    # ledger entry names which file kept out of git is an artifact's copy" -> `other.md` is
-    # removed.
+def test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest(
+    tmp_path: Path,
+) -> None:
+    # A clone can force-add the ledger. An entry naming another file under the directory reaches
+    # it only while the file's bytes digest to exactly what the entry states, bytes its writer
+    # already names; the render vouches only at the artifact's own place, so a file there that
+    # happens to hold this build's bytes is left and named, and so is one with other bytes.
+    # Mutation (oracle): "a left copy away from its own place goes on the render alone" -> the
+    # file holding the render is removed and the first assertion reddens.
     other = tmp_path / OTHER
     other.parent.mkdir(parents=True)
     other.write_text("BODY\n", encoding="utf-8")
-    _ledger(tmp_path, {"agents-md": {"target": OTHER, "sha256": digest("BODY\n")}})
+    _ledger(tmp_path, {"agents-md": {OTHER: digest("something else\n")}})
     planned = plan(tmp_path, a_config(tmp_path), [a_template()])
-    assert [(a.verb, a.target) for a in planned.actions] == [(Verb.CREATE, "AGENTS.md")]
+    assert [(a.verb, a.target) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, OTHER),
+        (Verb.CREATE, "AGENTS.md"),
+    ]
     apply(tmp_path, planned)
     assert other.is_file()
+    _ledger(tmp_path, {"agents-md": {OTHER: digest("BODY\n")}})
+    planned = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
+        (Verb.REMOVE, OTHER, "relocated")
+    ]
 
 
 @pytest.mark.parametrize(
     ("artifacts", "extra"),
     [
         # Outside `LOCAL_ARTIFACTS`: a committed file, attach's ledger, a parent segment.
-        ({"agents-md": {"target": "AGENTS.md", "sha256": "0" * 64}}, {}),
-        ({"agents-md": {"target": ".keelline/local/attach.json", "sha256": "0" * 64}}, {}),
-        ({"agents-md": {"target": ".keelline/local/artifacts/../x", "sha256": "0" * 64}}, {}),
+        ({"agents-md": {"AGENTS.md": "0" * 64}}, {}),
+        ({"agents-md": {".keelline/local/attach.json": "0" * 64}}, {}),
+        ({"agents-md": {".keelline/local/artifacts/../x": "0" * 64}}, {}),
         # Not this module's shape.
-        ({"agents-md": {"target": LOCAL, "sha256": "zz"}}, {}),
-        ({"Agents\x1b[31m": {"target": LOCAL, "sha256": "0" * 64}}, {}),
+        ({"agents-md": {LOCAL: "zz"}}, {}),
+        ({"Agents\x1b[31m": {LOCAL: "0" * 64}}, {}),
         ({"agents-md": [LOCAL, "0" * 64]}, {}),
+        ({"agents-md": {LOCAL: 7}}, {}),
         ([], {}),
-        ({"agents-md": {"target": LOCAL, "sha256": "0" * 64}}, {"format": 2}),
+        ({"agents-md": {LOCAL: "0" * 64}}, {"format": 2}),
     ],
 )
 def test_a_ledger_that_is_not_exactly_this_shape_is_absent(
@@ -178,7 +190,7 @@ def test_a_ledger_that_is_not_exactly_this_shape_is_absent(
 def test_an_oversized_unparsable_or_redirected_ledger_is_absent(tmp_path: Path) -> None:
     path = tmp_path / LOCAL_DIGESTS
     path.parent.mkdir(parents=True)
-    entry = {"agents-md": {"target": LOCAL, "sha256": "0" * 64}}
+    entry = {"agents-md": {LOCAL: "0" * 64}}
     body = json.dumps({"format": 1, "artifacts": entry})
     path.write_text(body + " " * MAX_BYTES, encoding="utf-8")
     assert LocalDigests.read(tmp_path).entries == {}
@@ -194,7 +206,7 @@ def test_an_oversized_unparsable_or_redirected_ledger_is_absent(tmp_path: Path) 
     assert LocalDigests.read(tmp_path).entries == {}
     path.unlink()
     path.write_text(body, encoding="utf-8")
-    assert LocalDigests.read(tmp_path).entries == {"agents-md": (LOCAL, "0" * 64)}
+    assert LocalDigests.read(tmp_path).entries == {("agents-md", LOCAL): "0" * 64}
 
 
 @pytest.mark.parametrize("edited", [False, True], ids=["committed-untouched", "committed-edited"])
@@ -215,3 +227,44 @@ def test_removing_a_left_copy_keeps_the_record_of_the_committed_file(
     apply(tmp_path, planned)
     assert not (tmp_path / LOCAL).exists()
     assert Manifest.read(tmp_path).get("agents-md") == a_record()
+
+
+def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_template_s(
+    tmp_path: Path,
+) -> None:
+    # A stale entry, or `[paths]` values swapped, can put an artifact's left copy on the file
+    # another artifact of the same plan now targets. That template judges its own file; judged
+    # twice, the left copy's removal deleted it from under an `unchanged` verdict. Mutation
+    # (advisory): drop the `copy in planned` skip -> the plan removes the file and this reddens.
+    _written(tmp_path)
+    _ledger(
+        tmp_path,
+        {"agents-md": {LOCAL: digest("BODY\n")}, "roadmap": {LOCAL: digest("BODY\n")}},
+    )
+    config = a_config(tmp_path, local=("agents-md", "roadmap"))
+    roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
+    planned = plan(tmp_path, config, [a_template(), roadmap])
+    assert [(a.verb, a.target) for a in planned.actions] == [
+        (Verb.CREATE, ".keelline/local/artifacts/docs/roadmap.md")
+    ]
+    apply(tmp_path, planned)
+    assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
+
+
+def test_a_ledger_past_its_entry_bound_is_absent(tmp_path: Path) -> None:
+    files = {f".keelline/local/artifacts/f{n}.md": "0" * 64 for n in range(MAX_ENTRIES + 1)}
+    _ledger(tmp_path, {"agents-md": files})
+    assert LocalDigests.read(tmp_path).entries == {}
+    _ledger(tmp_path, {"agents-md": dict(list(files.items())[:MAX_ENTRIES])})
+    assert len(LocalDigests.read(tmp_path).entries) == MAX_ENTRIES
+
+
+def test_an_entry_whose_copy_a_person_deleted_is_dropped_by_the_next_apply(tmp_path: Path) -> None:
+    # A left copy is kept in the ledger until it is gone. Gone by hand, nothing plans an action
+    # at it, so `apply` drops what no longer names a file. Mutation (advisory): drop the
+    # `on_disk` pass -> the stale entry stays and this reddens.
+    _written(tmp_path)
+    (tmp_path / LOCAL).unlink()
+    apply(tmp_path, plan(tmp_path, a_config(tmp_path), [a_template()]))
+    assert LocalDigests.read(tmp_path).entries == {}
+    assert not (tmp_path / LOCAL_DIGESTS).exists()

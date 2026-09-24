@@ -872,13 +872,14 @@ other when this Keelline renders it differently. One that no longer does is `ski
 (`kept out of git, and changed since Keelline wrote it`), because nothing brings it back once it
 is overwritten, and `--force` with its path takes it; with that record gone, a file that is not
 exactly what this build writes is skipped the same way, saying nothing records what Keelline wrote
-there. When an id leaves `[artifacts] local`, the artifact is written at its committed path and
-the copy under `.keelline/local/artifacts/` is removed while it holds the bytes recorded for it
-(`relocated`); otherwise it is `skip_modified`, and `--force` with its path takes it. The record
+there. When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there,
+the artifact is written at its new place and the copy the record names at the old one is
+removed while it holds exactly the bytes recorded for it (`relocated`); otherwise it is
+`skip_modified`, stays recorded until it is gone, and `--force` with its path takes it. The record
 is read as untrusted, since a clone can commit it anyway: anything but its own exact shape is
-read as no record at all, it is never printed, and it can only vouch for a file at that
-artifact's own place under `.keelline/local/artifacts/` whose bytes are exactly the ones it
-states.
+read as no record at all, it is never printed, it names nothing outside
+`.keelline/local/artifacts/`, and it vouches only for a file there whose bytes are exactly the
+ones it states.
 
 **Retirement.** An artifact this configuration no longer produces — the profile's rules after
 `[keelline] profile` changes, its Claude Code pointer after `agents` drops `claude` — is removed

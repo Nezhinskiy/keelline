@@ -785,3 +785,39 @@ def test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton
     with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))):
         _uninstall(root, tmp_path, force=(LOCAL_AGENTS,))
     assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("edited", [False, True], ids=["unedited", "edited"])
+def test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it(
+    tmp_path: Path, edited: bool
+) -> None:
+    """`roadmap` kept out of git, then its `[paths]` value moved while it stayed there. The ledger
+    entry was overwritten with the new place, no action named the old copy, and `uninstall`
+    refused over it with a `--force` that did nothing. Now the old copy is judged at the place the
+    ledger records: unedited it goes on `upgrade`, and edited it is named, keeps its entry, and
+    `--force` with its path takes it.
+
+    Mutation (oracle): "a left copy is judged only where [artifacts] local no longer lists its id"
+    -> the unedited case keeps the old copy, and the uninstall refuses.
+    """
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    if edited:
+        (root / LOCAL_COPY).write_text("private plans\n", encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[paths]\nroadmap = "docs/r.md"\n',
+        encoding="utf-8",
+    )
+    report = upgrade(
+        root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=False, force=()
+    )
+    verbs = {(a.verb, a.target) for a in report.footprint.actions}
+    assert ((Verb.SKIP_MODIFIED if edited else Verb.REMOVE), LOCAL_COPY) in verbs
+    assert (root / ".keelline" / "local" / "artifacts" / "docs" / "r.md").is_file()
+    if edited:
+        with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))):
+            _uninstall(root, tmp_path)
+        assert (root / LOCAL_COPY).read_text(encoding="utf-8") == "private plans\n"
+    _uninstall(root, tmp_path, force=(LOCAL_COPY,) if edited else ())
+    assert tree(root) == {"README.md", "keelline.toml"}

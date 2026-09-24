@@ -51,7 +51,7 @@ process killed mid-pass can leave an empty directory behind, which no later run 
 `.keelline/local/` holds a file this run would not remove, the local-only memory notes above all.
 That count is a prediction from the plans: a file goes only when an action unlinks it, or when
 a region's removal leaves exactly what the write-once pass then removes, which the engine's own
-rule for a file kept out of git (`ours_locally`, asked of the file `local_copy` names) answers
+rule for a file kept out of git (`ours_locally`, asked of each file `local_copies` names) answers
 before anything is written. An edited region, or a skeleton a person wrote into that shares the
 region's file, keeps the file, so the run refuses before it writes rather than part-way. The check
 above stays as the fact behind the prediction. It counts and never names a path, and a dry run
@@ -115,8 +115,8 @@ from keelline.scaffold import (
     Verb,
     apply,
     effective_target,
-    left_copy,
-    local_copy,
+    left_copies,
+    local_copies,
     ours_locally,
     plan,
     unlinks,
@@ -315,7 +315,7 @@ def uninstall(
     retired, orphans = retired_templates(prepared.could_write, manifest.records, produced)
     # And every artifact the ledger says Keelline wrote a copy of kept out of git: one whose id
     # has left `[artifacts] local` since is recorded nowhere else.
-    wanted = set(manifest.records) | set(config.artifacts.local) | set(digests.entries)
+    wanted = set(manifest.records) | set(config.artifacts.local) | digests.ids
     footprint_retired = (*_retire(prepared.footprint, wanted), *retired)
     once_retired = _retire(prepared.once, wanted)
     # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and
@@ -325,10 +325,11 @@ def uninstall(
     # Paths as the engine resolves them: an `[artifacts] local` target lives under
     # `.keelline/local/artifacts/`, which `Template.target` does not say.
     footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}
-    # And the copy an artifact left kept out of git when its id left `[artifacts] local`, which
-    # the footprint pass judges: forced, it must not reach a skeleton sharing that file either.
+    # And every copy an artifact left kept out of git at a place this configuration no longer
+    # gives it, which the footprint pass judges: forced, it must not reach a skeleton sharing that
+    # file either.
     footprint_targets |= {
-        copy for t in footprint_retired if (copy := left_copy(t, config, digests)) is not None
+        copy for t in footprint_retired for copy in left_copies(t, config, digests)
     }
     once_force = tuple(path for path in force if path not in footprint_targets)
     footprint = plan(root, config, footprint_retired, force=force)
@@ -342,9 +343,7 @@ def uninstall(
     # pass will then remove: the engine's own verdict for a file kept out of git, asked of those
     # bytes now. Only such a file matters here, since no `[paths]` value reaches `.keelline/`.
     local_once = {
-        copy: template
-        for template in once_body
-        if (copy := local_copy(template, config, digests)) is not None
+        copy: template for template in once_body for copy in local_copies(template, config, digests)
     }
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}

@@ -18,9 +18,10 @@ clone can force-add any file, and a clone's checkout then carries it. So it is r
 (`MAX_BYTES`, `MAX_ENTRIES`), through the same `O_NOFOLLOW` walk writes use, shape-checked entry by
 entry, and a fault anywhere makes the whole ledger absent: absence only sends the engine back to
 the render rule, so it is never worth a refusal. Nothing in it is ever printed. An entry is
-consulted only under the id of a template this build produced, only at that template's own place
-under `LOCAL_ARTIFACTS`, and only to overwrite or remove a file there whose current bytes digest to
-exactly what the entry records. That is the manifest's boundary — a committed record reaches only
+consulted only under the id of a template this build produced, only for a file under
+`LOCAL_ARTIFACTS`, and only to overwrite or remove that file while its current bytes digest to
+exactly what the entry records; a file there whose bytes differ is left and named. That is the
+manifest's boundary — a committed record reaches only
 bytes its committer already controls — and narrower: under `LOCAL_ARTIFACTS` a fresh clone holds
 only what the clone itself force-added, and a file a person wrote there has bytes nobody else can
 predict.
@@ -80,7 +81,10 @@ def _read_bounded(root: Path) -> bytes | None:
         return None
 
 
-def _entries(raw: bytes) -> dict[str, tuple[str, str]] | None:
+Entries = dict[tuple[str, str], str]
+
+
+def _entries(raw: bytes) -> Entries | None:
     """The entries `raw` holds, or `None` for anything but exactly this module's own shape."""
     if len(raw) > MAX_BYTES:
         return None
@@ -91,31 +95,36 @@ def _entries(raw: bytes) -> dict[str, tuple[str, str]] | None:
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         return None
     artifacts = data.get("artifacts")
-    if not isinstance(artifacts, dict) or len(artifacts) > MAX_ENTRIES:
+    if not isinstance(artifacts, dict):
         return None
-    entries: dict[str, tuple[str, str]] = {}
-    for artifact_id, entry in artifacts.items():
-        if not isinstance(entry, dict) or not _ID.match(artifact_id):
+    entries: Entries = {}
+    for artifact_id, files in artifacts.items():
+        if not isinstance(files, dict) or not _ID.match(artifact_id):
             return None
-        target, sha256 = entry.get("target"), entry.get("sha256")
-        if not (
-            isinstance(target, str)
-            and isinstance(sha256, str)
-            and target.startswith(f"{LOCAL_ARTIFACTS}/")
-            and PATH_VALUE.match(target)
-            and _SHA256.match(sha256)
-        ):
-            return None
-        entries[artifact_id] = (target, sha256)
+        for target, sha256 in files.items():
+            if not (
+                isinstance(sha256, str)
+                and target.startswith(f"{LOCAL_ARTIFACTS}/")
+                and PATH_VALUE.match(target)
+                and _SHA256.match(sha256)
+            ):
+                return None
+            entries[(artifact_id, target)] = sha256
+            if len(entries) > MAX_ENTRIES:
+                return None
     return entries
 
 
 @dataclass(frozen=True)
 class LocalDigests:
-    """Artifact id -> `(target, sha256)`: where Keelline last wrote it under `LOCAL_ARTIFACTS`,
-    and the digest of its own part of that file, exactly as a manifest record stamps it."""
+    """`(artifact id, target)` -> sha256: each file Keelline wrote under `LOCAL_ARTIFACTS`, for
+    which artifact, and the digest of that artifact's own part of it, exactly as a manifest record
+    stamps it. Keyed by both, because one artifact can have left a copy at a place the
+    configuration no longer gives it (its id left `[artifacts] local`, or its `[paths]` value
+    moved) while it has another at its current one, and because a region and the skeleton it
+    lives in share one file."""
 
-    entries: dict[str, tuple[str, str]] = field(default_factory=dict)
+    entries: Entries = field(default_factory=dict)
 
     @classmethod
     def read(cls, root: Path) -> LocalDigests:
@@ -123,19 +132,33 @@ class LocalDigests:
         entries = None if raw is None else _entries(raw)
         return cls(entries or {})
 
-    def target_of(self, artifact_id: str) -> str | None:
-        entry = self.entries.get(artifact_id)
-        return None if entry is None else entry[0]
+    @property
+    def ids(self) -> frozenset[str]:
+        return frozenset(artifact_id for artifact_id, _ in self.entries)
+
+    def records(self, artifact_id: str, target: str) -> bool:
+        return (artifact_id, target) in self.entries
+
+    def targets_of(self, artifact_id: str) -> tuple[str, ...]:
+        return tuple(sorted(target for owner, target in self.entries if owner == artifact_id))
 
     def matches(self, artifact_id: str, target: str, sha256: str) -> bool:
-        """Whether the entry for `artifact_id` records `sha256` at `target`."""
-        return self.entries.get(artifact_id) == (target, sha256)
+        """Whether Keelline recorded writing exactly `sha256` for `artifact_id` at `target`."""
+        return self.entries.get((artifact_id, target)) == sha256
 
     def with_entry(self, artifact_id: str, target: str, sha256: str) -> LocalDigests:
-        return LocalDigests({**self.entries, artifact_id: (target, sha256)})
+        return LocalDigests({**self.entries, (artifact_id, target): sha256})
 
-    def without(self, artifact_id: str) -> LocalDigests:
-        return LocalDigests({k: v for k, v in self.entries.items() if k != artifact_id})
+    def without(self, artifact_id: str, target: str) -> LocalDigests:
+        return LocalDigests({k: v for k, v in self.entries.items() if k != (artifact_id, target)})
+
+    def without_file(self, target: str) -> LocalDigests:
+        """Every entry at `target`, once the file itself is gone."""
+        return LocalDigests({k: v for k, v in self.entries.items() if k[1] != target})
+
+    def on_disk(self, root: Path) -> LocalDigests:
+        """Only the entries whose file is still there: one a person deleted records nothing."""
+        return LocalDigests({k: v for k, v in self.entries.items() if os.path.lexists(root / k[1])})
 
     def write(self, root: Path) -> None:
         """Replace the ledger through the `O_NOFOLLOW` walk, or remove it once it records nothing,
@@ -146,14 +169,10 @@ class LocalDigests:
                 with contextlib.suppress(FileNotFoundError):
                     remove_within(root, LOCAL_DIGESTS)
                 return
-            body = {
-                "_generated": GENERATED,
-                "format": FORMAT,
-                "artifacts": {
-                    artifact_id: {"target": target, "sha256": sha256}
-                    for artifact_id, (target, sha256) in sorted(self.entries.items())
-                },
-            }
+            artifacts: dict[str, dict[str, str]] = {}
+            for (artifact_id, target), sha256 in sorted(self.entries.items()):
+                artifacts.setdefault(artifact_id, {})[target] = sha256
+            body = {"_generated": GENERATED, "format": FORMAT, "artifacts": artifacts}
             write_within(root, LOCAL_DIGESTS, json.dumps(body, indent=2) + "\n")
         except OSError as exc:
             raise Refusal(f"{LOCAL_DIGESTS} cannot be written: {exc}") from exc
