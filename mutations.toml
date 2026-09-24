@@ -5688,6 +5688,22 @@ reddens = [
   "tests/config/test_paths.py::test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted",
 ]
 
+# Keelline's own directory, reserved the same way. `.keelline/local/` holds attach's ledger and
+# the local-only notes, state git never sees, and `agents-md` is a region inserted into whatever
+# file `[paths] agents_md` names. Measured before the rule: a committed
+# `agents_md = ".keelline/local/attach.json"` had `upgrade` exit 0 with `region_update
+# .keelline/local/attach.json (refreshed)`. The anchor is the resolved root and the
+# `KEELLINE_DIRECTORY` constant in the installed package; a clone authors only the value.
+[[mutation]]
+name = "a [paths] value may name Keelline's own directory"
+file = "src/keelline/config/paths.py"
+before = "        if names_keelline_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_inside_keellines_own_directory_is_refused_and_never_quoted",
+  "tests/project/test_upgrade.py::test_a_committed_path_into_keellines_own_directory_refuses_upgrade_before_any_write",
+]
+
 # The case half, on its own. A rule that matched `.git` exactly would be green on every test
 # above that does not spell `.GIT`, and the default filesystem on macOS is case-insensitive, so
 # `.GIT/hooks/pre-commit` reaches the developer's hook there.

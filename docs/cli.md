@@ -781,7 +781,8 @@ valid TOML, or the merged document the loader itself refuses (an unknown section
 `[project] name` outside its grammar, a value of the wrong type, a machine configuration file
 that does not load). `2` on a refusal above the plans: no `--yes`, a repository already
 initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
-grammar, naming git's control directory, or reaching through a component that is a symlink —
+grammar, naming git's control directory or Keelline's own `.keelline/`, or reaching through a
+component that is a symlink —
 all three refused by the loader before a plan exists —
 two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
 keys to separate, and an `[artifacts] local` list naming a profile artifact, which every pointer
@@ -850,9 +851,13 @@ render, such as `uvx`, is not a request to delete the gate. Every other record i
 counted in a `note:` line and left where it is, and never named.
 
 **The boundary.** Which artifacts exist, and where each could be, are this build's. The
-`[paths]` value a target is built from and the digest a record carries are committed, so a commit
-can make `upgrade` rewrite a file only while that file holds exactly the bytes the same commit
-records. Run it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes
+`[paths]` value a target is built from and the digest a record carries are committed. For a whole
+file, a commit can make `upgrade` rewrite it only while it holds exactly the bytes the same
+commit records. A managed region is inserted into whatever file its key names: a commit that
+points `[paths] agents_md` at another tracked file gets the region written into that file, and
+the diff shows both the edit and the region. No `[paths]` value may name git's control directory
+or Keelline's own `.keelline/`, where attach's ledger and the local-only notes live out of git's
+sight; the loader refuses either, naming the key. Run it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes
 no project-level hook entries, so an upgrade changes none.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, every file an artifact targets, and, under
@@ -1630,7 +1635,7 @@ name = "widget"          # one lowercase path segment
 base_branch = "main"
 release_branch = "main"
 
-[paths]                  # each must stay inside the root
+[paths]                  # each must stay inside the root, and out of .git and .keelline
 agents_md = "AGENTS.md"
 architecture = "docs/architecture"
 runbooks = "docs/runbooks"

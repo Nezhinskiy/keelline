@@ -45,10 +45,11 @@ from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Tem
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
 LOCAL_ROOT = ".keelline/local"
-# `[artifacts] local` artifacts live one directory further down, so no `[paths]` value can aim one
-# at a file another lane keeps under `LOCAL_ROOT`: attach's ledger, the local-only note store.
-# `PATH_VALUE` refuses a `..` segment, so this prefix is a boundary and not a convention; the
-# anchor is this constant in the installed package.
+# `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry
+# can land one on a file another lane keeps under `LOCAL_ROOT`: attach's ledger, the local-only
+# note store. `PATH_VALUE` refuses a `..` segment, so for that setting the prefix is a boundary
+# and not a convention; the anchor is this constant in the installed package. A `[paths]` value
+# never reaches `.keelline/` at all: `config.paths.validate_paths` refuses one that names it.
 LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"
 # The reason a local artifact is left alone. It is never recorded, so the one oracle for
 # "Keelline's bytes" is what this build renders, and anything else may be an edit in a directory

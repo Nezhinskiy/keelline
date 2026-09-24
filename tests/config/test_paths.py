@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from keelline.config.loader import CONFIG_FILE, load, loads
-from keelline.config.paths import PATH_RULE, PathEscape, contained, validate_paths
+from keelline.config.paths import (
+    KEELLINE_DIRECTORY,
+    PATH_RULE,
+    PathEscape,
+    contained,
+    validate_paths,
+)
 from keelline.config.schema import PATH_VALUE, Config, Paths
 from keelline.fsops import UnsafePath, checked_components, write_within
 
@@ -283,6 +289,66 @@ def test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case(
     # `.GIT` reaches the same directory — and the depth arm is a submodule's control directory.
     with pytest.raises(PathEscape, match="control directory"):
         contained(tmp_path, value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ".keelline/local/attach.json",
+        ".keelline/manifest.json",
+        ".Keelline/local/memory/developer/x.md",
+        "packages/api/.keelline/local/attach.json",
+        ".keelline",
+    ],
+)
+def test_a_paths_value_inside_keellines_own_directory_is_refused_and_never_quoted(
+    tmp_path: Path, value: str
+) -> None:
+    # `.keelline/local/` holds attach's ledger and the local-only notes, state git never sees.
+    # `agents-md` is a `MANAGED_REGION` inserted into whatever file `agents_md` names, so a
+    # committed `agents_md = ".keelline/local/attach.json"` had `upgrade` rewrite the ledger.
+    # Case and depth for the reasons `.git` has them: a case-folding filesystem, and a nested
+    # package initialised on its own. The refusal names the key, never the value.
+    # Mutation (oracle): "a [paths] value may name Keelline's own directory".
+    text = (
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+        f'[paths]\nagents_md = "{value}"\n'
+    )
+    with pytest.raises(PathEscape) as caught:
+        loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    assert "paths.agents_md" in str(caught.value) and "Keelline's own directory" in str(
+        caught.value
+    )
+    assert "attach" not in str(caught.value) and "packages" not in str(caught.value)
+
+
+def test_a_name_that_merely_resembles_keellines_directory_is_admitted(tmp_path: Path) -> None:
+    # The preset's own `[paths] keelline = "docs/keelline"` and any other near-miss load.
+    for value in ("docs/keelline", ".keelline-notes/x.md", "docs/.keellinerc"):
+        text = (
+            '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
+            f'[paths]\nroadmap = "{value}"\n'
+        )
+        assert loads(text, tmp_path, machine=tmp_path / "absent.toml").paths.roadmap == value
+
+
+def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_name() -> None:
+    # `config` spells `.keelline` because it imports no area; the lanes that keep files there
+    # spell their own paths. This holds each of them under the reserved name, so a rename on
+    # either side reddens here instead of leaving a lane's state unprotected.
+    from keelline.attach.api import LEDGER
+    from keelline.memory.store import LOCAL_STORE
+    from keelline.scaffold import LOCAL_ROOT, MANIFEST_PATH
+    from keelline.scaffold.engine import LOCAL_ARTIFACTS
+
+    for path in (
+        LEDGER,
+        LOCAL_ROOT,
+        LOCAL_ARTIFACTS,
+        MANIFEST_PATH.as_posix(),
+        LOCAL_STORE.as_posix(),
+    ):
+        assert path.split("/")[0] == KEELLINE_DIRECTORY, path
 
 
 def test_keellines_own_dotted_footprint_is_not_refused(tmp_path: Path) -> None:

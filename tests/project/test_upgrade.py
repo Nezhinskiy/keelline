@@ -97,6 +97,32 @@ def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
 
 
 @needs_git
+def test_a_committed_path_into_keellines_own_directory_refuses_upgrade_before_any_write(
+    tmp_path: Path,
+) -> None:
+    # The attach ledger case, end to end. `agents-md` is a region inserted into whatever file
+    # `[paths] agents_md` names, so a pulled commit naming `.keelline/local/attach.json` had this
+    # command report `region_update .keelline/local/attach.json (refreshed)` and rewrite the
+    # ledger, in a directory git cannot give back. The loader refuses the value now, naming the
+    # key. Mutation (oracle): "a [paths] value may name Keelline's own directory".
+    root = initialised(tmp_path)
+    ledger = root / ".keelline" / "local" / "attach.json"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text('{"entries": []}\n', encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + '\n[paths]\nagents_md = ".keelline/local/attach.json"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=r"paths\.agents_md names Keelline's own directory"):
+        _upgrade(root, tmp_path, NO_TAG)
+    assert_snapshot_unchanged(root, before)
+    assert ledger.read_text(encoding="utf-8") == '{"entries": []}\n'
+
+
+@needs_git
 @pytest.mark.parametrize("runner", [_listing(keelline.__version__, OLD), NO_TAG, OFFLINE])
 def test_a_current_footprint_upgrades_to_nothing_whatever_the_remote_answers(
     tmp_path: Path, runner: LsRemote

@@ -78,6 +78,26 @@ def contained(
     return target
 
 
+# Keelline's own directory in a project: the manifest, `.keelline/local/` (attach's ledger, the
+# local-only note store, `[artifacts] local` artifacts) and the assessment. Spelled here, beside
+# the loop that reserves it, because `config` imports no area and the scaffold engine, `attach`
+# and `memory` all import `config`; `tests/config/test_paths.py` holds each of their paths to lie
+# under it, so the two spellings cannot drift apart.
+KEELLINE_DIRECTORY = ".keelline"
+
+
+def names_keelline_directory(relative: str) -> bool:
+    """Whether any component of `relative` is Keelline's own directory, spelled in any case.
+
+    The same shape as `fsops.names_control_directory`, and for the same two reasons. Any depth:
+    a package inside a monorepo initialised on its own keeps its own `.keelline/local/`, and a
+    parent project's `[paths]` value must not reach that either. Any case: the default
+    filesystems on macOS and Windows fold case, so `.Keelline/local/attach.json` is the same
+    file.
+    """
+    return any(part.lower() == KEELLINE_DIRECTORY for part in relative.split("/"))
+
+
 # `PATH_VALUE` in words, for the refusal a person reads. Kept beside the one reader that prints
 # it; a change to the grammar is a change to this sentence.
 PATH_RULE = (
@@ -105,10 +125,26 @@ def validate_paths(config: Config, root: Path) -> dict[str, Path]:
             # The anchor is the project root the CLI resolved, and `.git` is git's own name
             # inside it; the clone authors this value and nothing else, so it cannot move the
             # directory being reserved. `.git` and not "a leading dot", because
-            # `.github/workflows/` and `.keelline/` are Keelline's own footprint.
+            # `.github/workflows/` is Keelline's own footprint.
             raise PathEscape(
                 f"paths.{name} names git's control directory, which is git's and not "
                 "Keelline's to write into"
+            )
+        if names_keelline_directory(relative):
+            # Named and never quoted. `.keelline/` is where Keelline keeps its manifest and, under
+            # `.keelline/local/`, state git never sees: attach's ledger and the local-only notes.
+            # A `[paths]` value is committed, and `agents-md` is a `MANAGED_REGION` inserted into
+            # whatever file `agents_md` names, exempt from the "exists and Keelline did not write
+            # it" guard — so a pulled commit setting `agents_md = ".keelline/local/attach.json"`
+            # had `upgrade` rewrite the ledger in a directory git cannot restore.
+            #
+            # The anchor is the project root the CLI resolved and `KEELLINE_DIRECTORY` above, a
+            # constant in the installed package; the clone authors the value and nothing else.
+            # No configured path belongs there: the preset puts none, and every file Keelline
+            # keeps in it is found by a constant, never through `[paths]`.
+            raise PathEscape(
+                f"paths.{name} names Keelline's own directory {KEELLINE_DIRECTORY}, which holds "
+                "its manifest and state git never sees and is not a place for a configured path"
             )
     return {
         name: contained(

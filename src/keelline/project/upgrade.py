@@ -19,9 +19,13 @@ leaves the document naming the old version, and the next run re-plans from there
 
 What anchors a write, and what does not. Which artifacts exist and which targets each could have
 come from this build. The `[paths]` value a target is built from, and the digest a record carries,
-come from committed files, so a commit can have this command rewrite a file only while that file
-holds exactly the bytes the same commit records. That is why `docs/cli.md` says to run it on a
-checkout you trust.
+come from committed files. For a whole file that means a commit can have this command rewrite it
+only while it holds exactly the bytes the same commit records. A managed region is different: it
+is inserted into whatever file its `[paths]` key names, recorded or not, so a commit that points
+`agents_md` at a tracked file gets the region written into it, and the diff of both shows it.
+What no committed value can reach is state git never sees: the loader refuses any `[paths]` value
+inside git's control directory or Keelline's own `.keelline/`. That is why `docs/cli.md` says to
+run it on a checkout you trust.
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
 `X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`
