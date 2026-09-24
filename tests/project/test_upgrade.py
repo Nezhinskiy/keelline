@@ -637,3 +637,28 @@ def test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_cha
     assert "A line the next release adds." in (local / "documentation.md").read_text(
         encoding="utf-8"
     )
+
+
+@needs_git
+def test_forcing_a_left_copy_away_keeps_the_committed_file_recorded(tmp_path: Path) -> None:
+    # The review's repro: `roadmap` taken out of `[artifacts] local` with its copy edited, so
+    # `upgrade` skips the copy and creates and records `docs/roadmap.md`; forcing the copy away
+    # then dropped that record by id, and the committed file was nobody's from then on.
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        '\n[artifacts]\nlocal = ["roadmap"]\n\n[ci]\nmode = "none"\n',
+    )
+    copy = ".keelline/local/artifacts/docs/roadmap.md"
+    (root / copy).write_text("private plans\n", encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('local = ["roadmap"]', "local = []"),
+        encoding="utf-8",
+    )
+    _upgrade(root, tmp_path, NO_TAG)
+    recorded = Manifest.read(root).get("roadmap")
+    assert recorded is not None and recorded.target == "docs/roadmap.md"
+    _upgrade(root, tmp_path, NO_TAG, force=(copy,))
+    assert not (root / copy).exists()
+    assert Manifest.read(root).get("roadmap") == recorded

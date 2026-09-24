@@ -391,11 +391,8 @@ def plan(
                 # Neither this build's bytes nor, by the ledger, the bytes Keelline last wrote
                 # here: an edit, or a file nothing records. What the ledger does record goes on to
                 # be refreshed below, which is how an unedited copy follows a changed template.
-                reason = (
-                    CHANGED_LOCALLY
-                    if digests.target_of(template.id) == target
-                    else (NOT_OURS_LOCALLY)
-                )
+                recorded = digests.target_of(template.id) == target
+                reason = CHANGED_LOCALLY if recorded else NOT_OURS_LOCALLY
                 actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
                 continue
             hand_edited = (
@@ -606,7 +603,13 @@ def apply(root: Path, planned: Plan) -> Applied:
             if action.verb is Verb.REMOVE:
                 _remove(root, action.target, action.payload)
                 removed.append(action.target)
-                manifest = manifest.without(frozenset({action.artifact_id}))
+                # A record goes with the file it names and no other. The copy an artifact left
+                # kept out of git carries the artifact's id too, and dropping by id alone took
+                # the live record of its committed file with it: that file then read as nobody's,
+                # `upgrade` never recorded it again, and `uninstall` left it unlisted.
+                record = manifest.get(action.artifact_id)
+                if record is not None and record.target == action.target:
+                    manifest = manifest.without(frozenset({action.artifact_id}))
                 if digests.target_of(action.artifact_id) == action.target:
                     digests = digests.without(action.artifact_id)
                 continue

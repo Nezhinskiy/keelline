@@ -15,7 +15,7 @@ from keelline.scaffold.engine import apply, plan
 from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, LocalDigests
 from keelline.scaffold.manifest import Manifest, digest
 from keelline.scaffold.model import Verb
-from tests.scaffold.test_engine import a_config, a_template
+from tests.scaffold.test_engine import a_config, a_record, a_template
 
 LOCAL = ".keelline/local/artifacts/AGENTS.md"
 OTHER = ".keelline/local/artifacts/other.md"
@@ -195,3 +195,23 @@ def test_an_oversized_unparsable_or_redirected_ledger_is_absent(tmp_path: Path) 
     path.unlink()
     path.write_text(body, encoding="utf-8")
     assert LocalDigests.read(tmp_path).entries == {"agents-md": (LOCAL, "0" * 64)}
+
+
+@pytest.mark.parametrize("edited", [False, True], ids=["committed-untouched", "committed-edited"])
+def test_removing_a_left_copy_keeps_the_record_of_the_committed_file(
+    tmp_path: Path, edited: bool
+) -> None:
+    # The left copy's removal carries the artifact's id, and `apply` dropped the manifest record
+    # by id alone: the committed file's live record went with the copy, `upgrade` then reported
+    # the file unchanged for ever without recording it, and `uninstall` left it unlisted.
+    # Mutation (oracle): "removing a file drops the record of whatever file its artifact now
+    # names" -> the record is gone and the last assertion reddens.
+    _written(tmp_path)
+    committed = "BODY\nours\n" if edited else "BODY\n"
+    (tmp_path / "AGENTS.md").write_text(committed, encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    planned = plan(tmp_path, a_config(tmp_path), [a_template()])
+    assert (Verb.REMOVE, LOCAL) in {(a.verb, a.target) for a in planned.actions}
+    apply(tmp_path, planned)
+    assert not (tmp_path / LOCAL).exists()
+    assert Manifest.read(tmp_path).get("agents-md") == a_record()

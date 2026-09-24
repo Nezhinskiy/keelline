@@ -6853,3 +6853,16 @@ file = "src/keelline/project/uninstall.py"
 before = "    footprint_targets |= {\n        copy for t in footprint_retired if (copy := left_copy(t, config, digests)) is not None\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
+
+# A removal takes the manifest record of the file it removed and no other. The copy an artifact
+# left kept out of git carries the artifact's id, and dropping by id alone took the live record of
+# its committed file with it, which every later run then read as nobody's.
+[[mutation]]
+name = "removing a file drops the record of whatever file its artifact now names"
+file = "src/keelline/scaffold/engine.py"
+before = "                if record is not None and record.target == action.target:\n"
+after = "                if True:\n"
+reddens = [
+  "tests/scaffold/test_local.py::test_removing_a_left_copy_keeps_the_record_of_the_committed_file",
+  "tests/project/test_upgrade.py::test_forcing_a_left_copy_away_keeps_the_committed_file_recorded",
+]
