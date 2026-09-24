@@ -74,7 +74,12 @@ def _key(name: object, what: str) -> str:
     return name
 
 
-def _string(value: str) -> str:
+def quoted(value: str) -> str:
+    """`value` as a basic TOML string, every character it cannot hold raw escaped.
+
+    Published for `config.owned`, the one writer that sets a single value inside a document it
+    did not render.
+    """
     out = []
     for char in value:
         if char in _ESCAPES:
@@ -93,7 +98,7 @@ def _scalar(value: object, where: str) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
-        return _string(value)
+        return quoted(value)
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):

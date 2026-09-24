@@ -6235,3 +6235,24 @@ after = '    if not name.replace("-", "").replace("_", "").isalnum():'
 reddens = [
   "tests/scaffold/test_containment.py::test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule",
 ]
+
+# The one writer into a `keelline.toml` somebody else owns: an edit is kept only when reading it
+# back gives exactly the document before it with that one key set. The multi-line case is the one
+# where the returned text still parses, which is the silent failure the read-back exists for.
+[[mutation]]
+name = "the tool-owned key editor returns an edit it never read back"
+file = "src/keelline/config/owned.py"
+before = "            proved = tomllib.loads(candidate) == expected"
+after = "            proved = True"
+reddens = [
+  "tests/config/test_owned.py::test_a_table_header_inside_a_multi_line_string_is_not_where_the_key_is",
+]
+
+[[mutation]]
+name = "the tool-owned key editor lets a parse failure quote the document"
+file = "src/keelline/config/owned.py"
+before = "    except tomllib.TOMLDecodeError as exc:"
+after = "    except KeyError as exc:"
+reddens = [
+  "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
+]
