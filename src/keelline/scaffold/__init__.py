@@ -5,7 +5,11 @@ lanes reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for
 builds `Template.entries`, and `drop` / `apply_entries` for `uninstall`. The three refusals a
 consumer has to catch by name are here too: a lane that cannot import `ManifestError`,
 `RegionError` or `EntriesError` from this list has no way to tell a bad merge from a bug except
-by catching `Refusal` whole. Importing a private module of this package from another area is a
+by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall`, which must
+compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
+`Template.target` does not say) and must know which planned removal deletes a file rather than
+rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
+would drift from it. Importing a private module of this package from another area is a
 review finding; if a lane needs something this list does not carry, the list grows
 deliberately.
 """
@@ -13,8 +17,10 @@ deliberately.
 from keelline.scaffold.engine import (
     LOCAL_ROOT,
     apply,
+    effective_target,
     plan,
     shipped_profiles,
+    unlinks,
     validate_sources,
 )
 from keelline.scaffold.entries import (
@@ -61,6 +67,7 @@ __all__ = [
     "apply_entries",
     "digest",
     "drop",
+    "effective_target",
     "extract",
     "mark",
     "marker_id",
@@ -70,6 +77,7 @@ __all__ = [
     "printable",
     "render_report",
     "shipped_profiles",
+    "unlinks",
     "upsert",
     "validate_sources",
 ]

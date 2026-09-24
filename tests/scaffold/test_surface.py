@@ -28,6 +28,7 @@ EXPORTED = [
     "apply_entries",
     "digest",
     "drop",
+    "effective_target",
     "extract",
     "mark",
     "marker_id",
@@ -37,6 +38,7 @@ EXPORTED = [
     "printable",
     "render_report",
     "shipped_profiles",
+    "unlinks",
     "upsert",
     "validate_sources",
 ]

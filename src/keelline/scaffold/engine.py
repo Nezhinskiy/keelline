@@ -106,10 +106,22 @@ def validate_sources(config: Config) -> None:
         )
 
 
-def _effective_target(template: Template, config: Config) -> tuple[str, Location]:
+def effective_target(template: Template, config: Config) -> tuple[str, Location]:
+    """Where `plan` puts `template` under `config`, and whether that place is kept out of git.
+
+    An `[artifacts] local` artifact lives under `LOCAL_ARTIFACTS`, which `Template.target` does
+    not say, so a caller comparing paths the way the engine does asks this rather than
+    re-deriving it.
+    """
     if template.id in config.artifacts.local:
         return f"{LOCAL_ARTIFACTS}/{template.target}", Location.LOCAL
     return template.target, Location.REPO
+
+
+def unlinks(action: Action) -> bool:
+    """Whether applying `action` deletes its file. A `REMOVE` with a payload rewrites the file
+    with what is left once Keelline's part is out, so the file stays."""
+    return action.verb is Verb.REMOVE and action.payload is None
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -213,7 +225,7 @@ def plan(
     unchanged: list[str] = []
 
     for template in templates:
-        target, location = _effective_target(template, config)
+        target, location = effective_target(template, config)
         try:
             path = contained(root, target, resolved_root=resolved_root)
         except PathEscape as exc:

@@ -6558,3 +6558,85 @@ file = "src/keelline/project/commands.py"
 before = "            raise Refusal(FORCE_OUTSIDE)"
 after = "            continue"
 reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]
+
+# The attach ledger lives under `.keelline/local/`, so the count of files kept out of git would
+# still stop the real run; what this guard adds is the refusal's remedy, and a dry run that
+# refuses rather than reporting an attached repository as one it could uninstall.
+[[mutation]]
+name = "an attached repository is counted as files kept out of git instead of being told to detach"
+file = "src/keelline/project/uninstall.py"
+before = "    if (root / LEDGER).is_file():"
+after = "    if False:"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
+
+[[mutation]]
+name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
+file = "src/keelline/project/uninstall.py"
+before = "    apply(root, plan(root, config, once_retired, force=once_force))"
+after = "    apply(root, once)"
+reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
+
+[[mutation]]
+name = "uninstall takes out the ignore block while private notes are still behind it"
+file = "src/keelline/project/uninstall.py"
+before = "    if kept:\n        raise Refusal(KEPT_LOCALLY"
+after = "    if False:\n        raise Refusal(KEPT_LOCALLY"
+reddens = [
+  "tests/project/test_uninstall.py::test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them",
+  "tests/project/test_uninstall.py::test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced",
+]
+
+[[mutation]]
+name = "forcing AGENTS.md's region deletes the skeleton and the prose written into it"
+file = "src/keelline/project/uninstall.py"
+before = "    once_force = tuple(path for path in force if path not in footprint_targets)"
+after = "    once_force = tuple(force)"
+reddens = ["tests/project/test_uninstall.py::test_forcing_agents_md_takes_the_region_out_and_keeps_the_skeleton_s_prose"]
+
+[[mutation]]
+name = "a retired file is removed whatever its bytes, so a committed path and record reach a local edit"
+file = "src/keelline/scaffold/engine.py"
+before = "    matches = present is not None and digest(present) == record.sha256"
+after = "    matches = True"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_committed_path_and_record_reach_only_bytes_the_same_commit_states",
+  "tests/project/test_uninstall.py::test_an_edited_file_stays_and_is_listed_and_force_takes_it",
+]
+
+# `--force` names the path the engine resolved. With the region and the skeleton both kept out of
+# git they share `.keelline/local/artifacts/AGENTS.md`, which `Template.target` does not say, and
+# a force meant for the region reaches the skeleton pass and deletes the file.
+[[mutation]]
+name = "a force meant for AGENTS.md's region reaches the skeleton kept out of git"
+file = "src/keelline/project/uninstall.py"
+before = "    footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}"
+after = "    footprint_targets = {t.target for t in footprint_retired}"
+reddens = ["tests/project/test_uninstall.py::test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored[both-local-region-forced]"]
+
+# A `REMOVE` with a payload leaves a remainder. Counted as a deletion, a private remainder kept out
+# of git passes the check before any write, and the ignore block over it is only saved later.
+[[mutation]]
+name = "a region's remainder is counted as a deleted file"
+file = "src/keelline/scaffold/engine.py"
+before = "    return action.verb is Verb.REMOVE and action.payload is None"
+after = "    return action.verb is Verb.REMOVE"
+reddens = ["tests/project/test_uninstall.py::test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written"]
+
+# The check before any write is a prediction; the disk after the write-once pass is the fact. Drop
+# the second and a remainder the prediction left to that pass loses its ignore block.
+[[mutation]]
+name = "the ignore block goes while files are still under .keelline/local/"
+file = "src/keelline/project/uninstall.py"
+before = "    if left:"
+after = "    if False:"
+reddens = ["tests/project/test_uninstall.py::test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored[both-local-plain]"]
+
+# A retired record is judged against a whole-file stub, which names no region. A record kept
+# inside a host file that this build no longer produces is an orphan, so no `--force` can delete
+# the host file whole.
+[[mutation]]
+name = "a region record this build does not produce is retired as a whole file"
+file = "src/keelline/project/uninstall.py"
+before = "    in_file = {i for i, r in manifest.records.items() if r.kind in IN_FILE and i not in produced}"
+after = "    in_file: set[str] = set()"
+reddens = ["tests/project/test_uninstall.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays"]
