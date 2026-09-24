@@ -15,6 +15,6 @@ permissions:
 
 jobs:
   check:
-    uses: %%SLUG%%/.github/workflows/check.yml@%%REF%% %%PIN_NOTE%%
+    uses: %%SLUG%%/.github/workflows/check.yml@%%REF%%
     with:
       base: ${{ github.base_ref || '%%GATE_BRANCH%%' }}

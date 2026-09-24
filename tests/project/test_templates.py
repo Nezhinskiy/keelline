@@ -179,7 +179,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     assert no_ref.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
     footprint = _prepared(_recording(config), resolution=PINNED, root=tmp_path).footprint
     body = {t.id: t for t in footprint}["ci-workflow"].render()
-    assert f"/.github/workflows/check.yml@{SHA} # v0.1.0" in body and "%%" not in body
+    assert f"/.github/workflows/check.yml@{SHA}\n" in body and "%%" not in body
     assert 'branches: ["main"]' in body
     for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships with a later lane")):
         varied = replace(_recording(config), ci=replace(_recording(config).ci, mode=mode))
@@ -266,18 +266,23 @@ def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line
     assert alias.skipped["ci-workflow"].startswith("[ci] ref is not a full-length")
 
 
-def test_a_ref_this_run_did_not_resolve_is_pinned_without_claiming_a_release(
-    tmp_path: Path,
-) -> None:
-    # The adoption path's rendered workflow. The `uses:` ref is the document's own, and the
-    # trailing comment says where it came from rather than naming a release the file does not
-    # record — a `# v0.1.0` beside somebody else's commit is an assertion this build cannot make.
+def test_the_workflow_is_the_same_bytes_whatever_the_remote_answered(tmp_path: Path) -> None:
+    # The workflow is rendered from the configuration alone. A comment naming the release the
+    # remote resolved made an up-to-date workflow read as refreshed on every offline `upgrade`,
+    # and on the adoption path it named a release beside a commit this build did not resolve.
+    # Mutation (oracle, advisory): render `REF=` from `resolution.pin.sha` when there is one ->
+    # the bodies differ and this reddens.
     other = "d" * 40
-    footprint = _prepared(
-        _recording(preset_defaults("widget"), other), resolution=PINNED, root=tmp_path
-    ).footprint
-    body = {t.id: t for t in footprint}["ci-workflow"].render()
-    assert f"/.github/workflows/check.yml@{other} # from [ci] ref" in body
+    config = _recording(preset_defaults("widget"), other)
+    bodies = {
+        {t.id: t for t in _prepared(config, resolution=answer, root=tmp_path).footprint}[
+            "ci-workflow"
+        ].render()
+        for answer in (PINNED, NO_PIN, Resolution(None, False))
+    }
+    assert len(bodies) == 1
+    (body,) = bodies
+    assert f"/.github/workflows/check.yml@{other}\n" in body
     assert "v0.1.0" not in body and SHA not in body
 
 
@@ -541,8 +546,35 @@ def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name(
 ) -> None:
     # A rendition's row is added where it is appended, not listed in `PATH_KEYS`, so this is the
     # case that proves the row exists: without it the collision is a `KeyError`, not a refusal.
-    # Mutation (oracle): drop `keys[rendition.artifact_id] = OWN_NAME` -> reddens.
+    # Mutation (oracle): drop `keys.setdefault(template.id, OWN_NAME)` -> reddens.
     config = _python(("claude",))
     clash = replace(config, paths=replace(config.paths, roadmap=".claude/rules/keelline-python.md"))
     with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of Keelline's own\)"):
         _prepared(clash, root=tmp_path)
+
+
+def test_every_target_any_configuration_writes_is_one_every_configuration_could(
+    tmp_path: Path,
+) -> None:
+    # `could_write` is the anchor `upgrade` and `uninstall` retire against after a toggle: what
+    # one configuration wrote must be listed by the configuration that replaced it, or the file
+    # is left behind as an orphan. So it is built at the lines that build the templates, and
+    # this holds it across every toggle that turns an artifact on or off.
+    # Mutation (oracle): leave the workflow's path out of `could_write` -> `mode = "none"` no
+    # longer lists what `reusable` wrote, and this reddens.
+    base = _recording(preset_defaults("widget"), SHA)
+    configs = [
+        replace(
+            base,
+            ci=replace(base.ci, mode=mode),
+            keelline=replace(base.keelline, profile=profile, agents=agents),
+        )
+        for mode in ("reusable", "uvx", "none")
+        for profile in ("", "python")
+        for agents in ((), ("codex",), ("claude", "codex"))
+    ]
+    prepared = [_prepared(config, resolution=PINNED, root=tmp_path) for config in configs]
+    written = {(t.id, t.target) for p in prepared for t in (*p.once, *p.footprint)}
+    for each in prepared:
+        listed = {(i, target) for i, targets in each.could_write.items() for target in targets}
+        assert written <= listed

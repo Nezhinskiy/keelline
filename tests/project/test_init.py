@@ -287,8 +287,8 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
     assert report.ref == ADOPTED and report.resolution.pin == Pin("v0.1.0", SHA)
     assert "ci-workflow" not in report.skipped
-    # And the comment beside the ref does not name a release this document does not record.
-    assert "# from [ci] ref" in workflow and "v0.1.0" not in workflow
+    # And nothing beside the ref names a release this document does not record.
+    assert f"check.yml@{ADOPTED}\n" in workflow and "v0.1.0" not in workflow
 
 
 @needs_git
@@ -387,9 +387,8 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
     body = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
     # The bare path, unchanged by the adoption fix: this run created the document, so the
-    # resolved sha is what it records and what the workflow pins, and the trailing comment names
-    # the release it really is.
-    assert f"check.yml@{SHA} # v0.1.0" in body
+    # resolved sha is what it records and what the workflow pins.
+    assert f"check.yml@{SHA}\n" in body
     assert report.ref == SHA
 
 

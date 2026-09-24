@@ -6407,7 +6407,7 @@ reddens = [
 [[mutation]]
 name = "a harness rendition that collides is a KeyError instead of a refusal"
 file = "src/keelline/project/templates.py"
-before = "                keys[rendition.artifact_id] = OWN_NAME"
+before = "                keys.setdefault(template.id, OWN_NAME)"
 after = "                pass"
 reddens = [
   "tests/project/test_templates.py::test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name",
@@ -6466,3 +6466,12 @@ file = "src/keelline/project/rewrite.py"
 before = "    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n"
 after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
 reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
+
+# `could_write` is the anchor retirement rests on: which ids exist and which targets each could
+# have are this build's, built at the lines that build the templates.
+[[mutation]]
+name = "the workflow's anchor follows [ci] mode, and switching the gate off strands it"
+file = "src/keelline/project/templates.py"
+before = '    could_write["ci-workflow"] = {CI_WORKFLOW}'
+after = '    could_write["ci-workflow"] = set()'
+reddens = ["tests/project/test_templates.py::test_every_target_any_configuration_writes_is_one_every_configuration_could"]

@@ -28,8 +28,8 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence, Set
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -186,9 +186,20 @@ ONE_TARGET = (
 
 @dataclass(frozen=True)
 class Prepared:
+    """Both passes, the reasons an artifact was not rendered, and every target this build could
+    write for each artifact id under any configuration.
+
+    `could_write` is built at the lines that build the templates, from the same calls, so it
+    cannot describe a target the footprint could not have: for the conditional artifacts it holds
+    the workflow's one path, and each shipped profile's neutral rules and renditions, whichever of
+    them this configuration asks for. `upgrade` and `uninstall` retire a recorded artifact this
+    configuration no longer produces only at a target listed here for its id.
+    """
+
     once: tuple[Template, ...]
     footprint: tuple[Template, ...]
     skipped: dict[str, str]
+    could_write: Mapping[str, frozenset[str]]
     # How many names in `[keelline] agents` no harness answers to; counted, never quoted.
     unknown_harnesses: int = 0
     # The profile's own artifacts in this footprint. Every reader of them, the `AGENTS.md`
@@ -396,12 +407,9 @@ def _ci(
         return None, BAD_REF
     if not GATE_BRANCH.match(config.ci.gate_branch):
         return None, BAD_BRANCH
-    # The trailing comment names the release when this run is the one that resolved the ref, and
-    # says where the ref came from otherwise — a `# v0.1.0` beside a ref the repository recorded
-    # would assert that some other release's commit is this one.
+    # Rendered from `config` alone: the same configuration renders the same bytes online,
+    # offline and before any release, so an up-to-date workflow never reads as refreshed.
     gate = config.ci.gate_branch
-    resolved = resolution.pin is not None and resolution.pin.sha == ref
-    note = f"# v{keelline.__version__}" if resolved else "# from [ci] ref"
     return (
         _template(
             "ci-workflow",
@@ -411,12 +419,36 @@ def _ci(
                 read("keelline.yml"),
                 SLUG=keelline.REPOSITORY_SLUG,
                 REF=ref,
-                PIN_NOTE=note,
                 GATE_BRANCH=gate,
             ),
         ),
         None,
     )
+
+
+def retired_templates(
+    could_write: Mapping[str, frozenset[str]], recorded: Mapping[str, str], produced: Set[str]
+) -> tuple[tuple[Template, ...], int]:
+    """The recorded artifacts this configuration no longer produces, and how many are orphans.
+
+    `recorded` is the committed manifest's `{id: target}`. A record is retired only when its
+    target is one `could_write` lists for its id: which ids exist, and which targets each could
+    have, are this build's. Any other record is an orphan, counted and never touched; its id is
+    repository-authored, so only the count is ever printed.
+
+    The engine judges a retired whole file by its record (`_plan_retired` reads the file and the
+    record), so `render` is a stub, built by `_computed` like every other template with no
+    shipped file.
+    Whether to retire a listed one is the caller's policy: `uninstall` retires every one, and
+    `upgrade` keeps the workflow unless `[ci] mode` asks for no gate.
+    """
+    retired = tuple(
+        replace(_computed(artifact_id, target, lambda: ""), retired=True)
+        for artifact_id, target in sorted(recorded.items())
+        if artifact_id not in produced and target in could_write.get(artifact_id, frozenset())
+    )
+    orphans = sum(1 for artifact_id in recorded if artifact_id not in produced) - len(retired)
+    return retired, orphans
 
 
 def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PATH_KEYS) -> None:
@@ -476,8 +508,8 @@ def project_templates(
     `dry_run` is threaded for the same reason and with the same rule: the one remedy that
     differs between a run that writes and one that does not is "run it again".
     """
-    from keelline.harnesses import select
-    from keelline.profiles import load_profile
+    from keelline.harnesses import HARNESSES, select
+    from keelline.profiles import load_profile, shipped
 
     # The engine's rule first: an unshipped or malformed name is refused naming the grammar and
     # the listing, before `load_profile`'s own refusal, which names neither.
@@ -546,24 +578,42 @@ def project_templates(
         ),
     ]
     skipped: dict[str, str] = {}
+    could_write: dict[str, set[str]] = {}
     workflow, reason = _ci(config, resolution, adopted=adopted, dry_run=dry_run)
+    # Where `_ci` builds the workflow, whatever `[ci] mode` asks for now.
+    could_write["ci-workflow"] = {CI_WORKFLOW}
     if workflow is not None:
         footprint.append(workflow)
     elif reason is not None:
         skipped["ci-workflow"] = reason
     keys = dict(PATH_KEYS)
     profiled: set[str] = set()
-    if profile is not None:
-        footprint.append(_profiled("profile-rules", rules, profile))
-        profiled.add("profile-rules")
-        for harness in harnesses:
+    # Every shipped profile's artifacts are built, so `could_write` lists where each could land;
+    # only the configured profile's, for the harnesses this project lists, join the footprint.
+    for name in shipped():
+        candidate = load_profile(name)
+        candidate_rules = rules_file(config, name)
+        built = [(True, _profiled("profile-rules", candidate_rules, candidate))]
+        for harness in HARNESSES:
             if harness.render_profile is not None:
-                rendition = harness.render_profile(profile, rules)
-                footprint.append(
-                    _computed(rendition.artifact_id, rendition.target, rendition.render)
-                )
-                keys[rendition.artifact_id] = OWN_NAME
-                profiled.add(rendition.artifact_id)
+                rendition = harness.render_profile(candidate, candidate_rules)
+                template = _computed(rendition.artifact_id, rendition.target, rendition.render)
+                built.append((harness in harnesses, template))
+        for wanted, template in built:
+            could_write.setdefault(template.id, set()).add(template.target)
+            if wanted and name == config.keelline.profile:
+                footprint.append(template)
+                keys.setdefault(template.id, OWN_NAME)
+                profiled.add(template.id)
     _one_target_each(once)
     _one_target_each(footprint, keys)
-    return Prepared(once, tuple(footprint), skipped, unknown_harnesses, frozenset(profiled))
+    for template in (*once, *footprint):
+        could_write.setdefault(template.id, set()).add(template.target)
+    return Prepared(
+        once,
+        tuple(footprint),
+        skipped,
+        could_write={artifact_id: frozenset(t) for artifact_id, t in could_write.items()},
+        unknown_harnesses=unknown_harnesses,
+        profiled=frozenset(profiled),
+    )
