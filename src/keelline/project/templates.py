@@ -215,6 +215,33 @@ def refuse_local_profile(prepared: Prepared, config: Config) -> None:
         raise Refusal(LOCAL_PROFILE.format(count=len(local)))
 
 
+# The artifacts that do their work only at the repository root: every command reads
+# `keelline.toml` there, and the ignore block there is what keeps `.keelline/local/` out of git.
+# A copy under `.keelline/local/artifacts/` is never read, and `uninstall` could not remove either
+# one before it checks what is left under `.keelline/local/`, because both go after that check.
+ROOT_ONLY = ("config", "gitignore")
+# Fixed text: the names interpolated are drawn from `ROOT_ONLY`, artifact ids this build produces,
+# never from the repository-authored list.
+LOCAL_ROOT_ONLY = (
+    "[artifacts] local names {names}, which only work at the repository root: every command "
+    "reads keelline.toml there, and the ignore block there is what keeps .keelline/local/ out of "
+    "git; take them out of [artifacts] local"
+)
+
+
+def refuse_local_root_only(config: Config) -> None:
+    """Refuse an `[artifacts] local` list naming an artifact that only works at the root.
+
+    `init`, `upgrade` and `uninstall` all call this before they plan, so none of them writes or
+    removes anything under a configuration that would keep `keelline.toml` or the ignore block out
+    of git. For `uninstall` that is the difference between a refusal before any write and one
+    part-way, since both are removed after the check of what is left under `.keelline/local/`.
+    """
+    named = [artifact_id for artifact_id in ROOT_ONLY if artifact_id in config.artifacts.local]
+    if named:
+        raise Refusal(LOCAL_ROOT_ONLY.format(names=" and ".join(named)))
+
+
 def read(name: str) -> str:
     """One shipped template's text, refusing a name this package does not ship.
 

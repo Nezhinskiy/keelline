@@ -786,8 +786,9 @@ grammar, naming git's control directory or Keelline's own `.keelline/`, or reach
 component that is a symlink —
 all three refused by the loader before a plan exists —
 two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
-keys to separate, and an `[artifacts] local` list naming a profile artifact, which every pointer
-at it reads at its committed path.
+keys to separate, an `[artifacts] local` list naming a profile artifact, which every pointer
+at it reads at its committed path, and one naming `config` or `gitignore`, which only work at the
+repository root.
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -874,7 +875,8 @@ refusals — the report's REFUSED section names each, and nothing was written �
 `keelline.toml` that does not load, as for every command. `2` on a refusal before any write: the
 repository is not initialised, `keelline.toml` is missing, it records a newer Keelline or a
 version with no leading `X.Y.Z`, a key is written in a shape the editor refuses, a profile
-artifact is listed in `[artifacts] local`, or a `--force` path leaves `--root`. `2` also when a file cannot be written or removed part-way
+artifact, `config` or `gitignore` is listed in `[artifacts] local`, or a `--force` path leaves
+`--root`. `2` also when a file cannot be written or removed part-way
 through; what was already applied stays applied and recorded, and running the command again
 re-plans from there.
 
@@ -926,7 +928,8 @@ stays even when it is empty, and so does a directory someone committed where a l
 belongs.
 
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an
-overlay, so run `keelline detach` first; `.keelline/local/` holds files this run would not
+overlay, so run `keelline detach` first; `[artifacts] local` names `config` or `gitignore`, which
+only work at the repository root, so take them out of the list; `.keelline/local/` holds files this run would not
 remove, such as notes, or an artifact kept out of git that you edited, which the refusal counts
 and never names; or a `--force` path leaves `--root`. The count is exact before anything is
 written, including what taking a region out of a file kept out of git would leave behind. Move
@@ -1763,7 +1766,8 @@ volatile_ttl_days = 30
 
 [artifacts]
 local = []               # scaffold template ids whose artifact is written under
-                         # .keelline/local/artifacts/ instead of being committed
+                         # .keelline/local/artifacts/ instead of being committed; never
+                         # config or gitignore, which only work at the repository root
 
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated

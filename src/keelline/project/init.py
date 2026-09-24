@@ -41,7 +41,11 @@ import keelline
 from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
-from keelline.project.templates import project_templates, refuse_local_profile
+from keelline.project.templates import (
+    project_templates,
+    refuse_local_profile,
+    refuse_local_root_only,
+)
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
 from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
@@ -183,7 +187,8 @@ def init(
     detected name outside the grammar, an adopted table holding a key that cannot be written
     back bare (`_rendered`), a `Config` the loader refuses, a pass in which two artifacts
     resolve to one file (`templates._one_target_each`), a profile artifact `[artifacts] local`
-    would keep out of git (`templates.refuse_local_profile`), and finally a refusal in either
+    would keep out of git (`templates.refuse_local_profile`), `keelline.toml` or the ignore block
+    listed there (`templates.refuse_local_root_only`), and finally a refusal in either
     plan, which is returned rather than raised so the report can name the artifact.
     """
     if not yes:
@@ -219,6 +224,7 @@ def init(
         adopted=existing is not None,
     )
     refuse_local_profile(prepared, config)
+    refuse_local_root_only(config)
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.

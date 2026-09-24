@@ -55,6 +55,7 @@ from keelline.project.templates import (
     Prepared,
     project_templates,
     refuse_local_profile,
+    refuse_local_root_only,
     retired_templates,
 )
 from keelline.release.api import Resolution, resolve_pin
@@ -125,6 +126,7 @@ def _footprint(
     prepared = project_templates(root, config, resolution=resolution, document=text, adopted=False)
     # The placement rule `init` applies, at the second entry point that writes a footprint.
     refuse_local_profile(prepared, config)
+    refuse_local_root_only(config)
     recorded = {artifact_id: r.target for artifact_id, r in Manifest.read(root).records.items()}
     produced = {t.id for t in (*prepared.once, *prepared.footprint)}
     retired, orphans = retired_templates(prepared.could_write, recorded, produced)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -14,7 +15,7 @@ from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
 from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import NOT_ASKED
+from keelline.project.templates import LOCAL_ROOT_ONLY, NOT_ASKED
 from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
@@ -453,6 +454,27 @@ def test_a_python_repository_gets_the_profile_in_every_form_it_asked_for(tmp_pat
     assert "`docs/keelline/rules/python.md`" in rule
     assert "`docs/keelline/rules/python.md`" in (root / "AGENTS.md").read_text(encoding="utf-8")
     assert {"profile-rules", "claude-rules"} <= set(Manifest.read(root).records)
+
+
+@needs_git
+@pytest.mark.parametrize("local", [["config"], ["gitignore"], ["config", "gitignore"]])
+def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write(
+    tmp_path: Path, local: list[str]
+) -> None:
+    # Every command reads `keelline.toml` at the root, and the ignore block at the root is what
+    # keeps `.keelline/local/` out of git: a copy under `.keelline/local/artifacts/` is never
+    # read. Mutation (declared): "keelline.toml or the ignore block may be kept out of git".
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f'[artifacts]\nlocal = {json.dumps(local)}\n\n[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == LOCAL_ROOT_ONLY.format(names=" and ".join(local))
 
 
 @needs_git

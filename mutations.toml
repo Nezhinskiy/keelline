@@ -6673,3 +6673,18 @@ reddens = [
   "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[CLAUDE.md]",
   "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[.gitignore]",
 ]
+
+# `keelline.toml` and the ignore block only work at the root, and `uninstall` removes both after
+# its check of what is left under `.keelline/local/`. Kept out of git, the check before any write
+# credits their removal and the check after it finds them still there: the footprint goes, the
+# run refuses part-way, and every later run refuses the same way.
+[[mutation]]
+name = "keelline.toml or the ignore block may be kept out of git"
+file = "src/keelline/project/templates.py"
+before = "    if named:\n        raise Refusal(LOCAL_ROOT_ONLY"
+after = "    if False:\n        raise Refusal(LOCAL_ROOT_ONLY"
+reddens = [
+  "tests/project/test_uninstall.py::test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_write[config]",
+  "tests/project/test_init.py::test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write",
+  "tests/project/test_upgrade.py::test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write",
+]

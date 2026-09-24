@@ -14,6 +14,7 @@ import keelline
 from keelline.attach.api import LEDGER
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
+from keelline.project.templates import LOCAL_ROOT_ONLY, ROOT_ONLY
 from keelline.project.uninstall import (
     ATTACHED,
     KEPT_AFTER,
@@ -550,3 +551,50 @@ def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_g
         ".keelline/assessment.json",
         ".keelline/assessment.json/theirs.md",
     }
+
+
+@needs_git
+@pytest.mark.parametrize("local", ["config", "gitignore"])
+def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_write(
+    tmp_path: Path, local: str
+) -> None:
+    """Both go after the check of what is left under `.keelline/local/`, so kept out of git
+    they would be counted as removed before any write and found still there after it: the run
+    removed the footprint and refused part-way, and every later run refused the same way. Neither
+    works out of git anyway, so the configuration is refused before anything is planned.
+
+    Mutation (declared): the refusal dropped -> `config` refuses part-way with the other
+    message, after the footprint went, and the snapshot comparison reddens.
+    """
+    document = LOCAL_ROADMAP.replace('local = ["roadmap"]', "local = []")
+    root = initialised(tmp_path, document=document)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace("local = []", f'local = ["{local}"]'),
+        encoding="utf-8",
+    )
+    # What an earlier Keelline wrote under that configuration.
+    copy = (
+        root
+        / ".keelline"
+        / "local"
+        / "artifacts"
+        / (CONFIG_FILE if local == "config" else ".gitignore")
+    )
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy.write_text(config.read_text(encoding="utf-8") if local == "config" else "x\n")
+    before = snapshot(root)
+    for force in ((), (copy.relative_to(root).as_posix(),)):
+        with pytest.raises(Refusal) as refused:
+            _uninstall(root, tmp_path, force=force)
+        assert_snapshot_unchanged(root, before)
+        assert str(refused.value) == LOCAL_ROOT_ONLY.format(names=local)
+
+
+def test_the_root_only_artifacts_are_the_two_uninstall_removes_after_its_check() -> None:
+    # `ROOT_ONLY` is spelled in `project.templates`; the ids it must match are the config record
+    # and the ignore pass `uninstall` holds back, so a rename of either reddens here.
+    from keelline.project.rewrite import CONFIG_RECORD
+    from keelline.project.uninstall import IGNORE
+
+    assert set(ROOT_ONLY) == {CONFIG_RECORD, IGNORE}

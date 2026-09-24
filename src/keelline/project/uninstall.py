@@ -78,7 +78,11 @@ from keelline.config.paths import contained
 from keelline.errors import Refusal
 from keelline.fsops import remove_within, rmdir_within
 from keelline.project.rewrite import CONFIG_RECORD
-from keelline.project.templates import project_templates, retired_templates
+from keelline.project.templates import (
+    project_templates,
+    refuse_local_root_only,
+    retired_templates,
+)
 from keelline.release.api import Resolution
 from keelline.scaffold import (
     LOCAL_ROOT,
@@ -227,6 +231,7 @@ def uninstall(
         note = NO_CONFIG.format(count=len(manifest.records))
         return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
     config = loads(document, root, machine=machine)
+    refuse_local_root_only(config)
     prepared = project_templates(
         root, config, resolution=Resolution(None, True), document=document, adopted=True
     )

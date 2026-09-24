@@ -99,6 +99,22 @@ def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
 
 
 @needs_git
+def test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write(tmp_path: Path) -> None:
+    # `templates.refuse_local_root_only` where a hand edit after `init` meets it.
+    root = initialised(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[artifacts]\nlocal = ["config"]\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _upgrade(root, tmp_path, NO_TAG)
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == templates.LOCAL_ROOT_ONLY.format(names="config")
+
+
+@needs_git
 def test_a_committed_path_into_keellines_own_directory_refuses_upgrade_before_any_write(
     tmp_path: Path,
 ) -> None:
