@@ -83,11 +83,13 @@ def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still
     def failing(where: Path, target: str, text: str) -> None:
         raise OSError("no space left on device")
 
-    monkeypatch.setattr(module, "write_within", failing)
-    with pytest.raises(Refusal, match="cannot be written"):
-        rewrite_owned(root, MOVED)
-    assert _record_digest(root) == before
-    monkeypatch.undo()
+    # A context of its own rather than `monkeypatch.undo()`, which also undid the suite's autouse
+    # `HOME` seal: the fixture is shared, so the second run went on without it.
+    with monkeypatch.context() as patched:
+        patched.setattr(module, "write_within", failing)
+        with pytest.raises(Refusal, match="cannot be written"):
+            rewrite_owned(root, MOVED)
+        assert _record_digest(root) == before
     rewrite_owned(root, {("keelline", "version"): "9.9.10"})
     text = (root / CONFIG_FILE).read_text(encoding="utf-8")
     assert 'version = "9.9.10"' in text and _record_digest(root) == digest(text)

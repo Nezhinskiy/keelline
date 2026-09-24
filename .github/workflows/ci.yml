@@ -144,12 +144,13 @@ jobs:
     # 21 minutes is 1260 s, so the margin is ~126 s. Sixty of that absorbs runner variance — a
     # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
     # leaves ~66 s, or roughly **32 further mutation entries** before this number has to move.
-    # It was 19 minutes, sized for 387 entries with room for 118 more; the set passed 505 during
-    # the wave-5 review fixes, where the 60 s variance allowance ran out even though the budget
-    # test, which projects without it, stayed green. At the rate the rule that every assertion
-    # ships with its mutation generates them, that is the figure to watch; when it is reached,
-    # exactly one job's budget changes and nothing else is hostage to it, which is the third
-    # reason this is a job rather than a step.
+    # The budget test projects exactly this sum (entries x rate + 60 s + 60 s) and reddens when
+    # it passes 1260 s. It was 19 minutes, sized for 387 entries with room for 118 more; the set
+    # passed 505 during the wave-5 review fixes, where the 60 s variance allowance ran out while
+    # that test, which then projected without it, stayed green. At the rate the rule that every
+    # assertion ships with its mutation generates them, that is the figure to watch; when it is
+    # reached, exactly one job's budget changes and nothing else is hostage to it, which is the
+    # third reason this is a job rather than a step.
     timeout-minutes: 21
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

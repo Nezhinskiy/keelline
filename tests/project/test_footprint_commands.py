@@ -1,7 +1,8 @@
 """`keelline upgrade` and `keelline uninstall` through the real parser: flags, exit codes, and what
 prints.
 
-`init --no-ci` sets `[ci] mode = "none"`, so no case here asks the network for a pin.
+`tests/project/repos.initialised` runs `init` with `[ci] mode = "none"`, so no case here asks the
+network for a pin.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ import keelline
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.project.commands import CI_LEFT, CI_PINNED
 from keelline.runner import Completed
-from keelline.scaffold import Manifest
+from keelline.scaffold import Kind, Location, Manifest, Record, digest
 from tests.gitfixture import git, needs_git
+from tests.project.repos import initialised, tree
 
 FORGED = "docs/\x1b[31mforged.md"
 # The commands every shared case runs through, and the invocations that print a report.
@@ -50,16 +52,6 @@ class _Listing:
         return Completed(0, self.stdout, "")
 
 
-def _initialised(tmp_path: Path) -> Path:
-    root = tmp_path / "widget"
-    root.mkdir()
-    git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
-    code, data = _run(root, tmp_path, "init", "--yes", "--no-ci")
-    assert code == 0, data["summary"]
-    return root
-
-
 def _forge_the_roadmap_target(root: Path) -> None:
     # A committed manifest can carry any `target`. The engine reports a left-behind file at the
     # recorded target, and a report prints targets; only one the path grammar accepts may print.
@@ -82,7 +74,7 @@ def test_an_uninitialised_repository_exits_two_and_names_what_to_run(
 
 @needs_git
 def test_a_current_footprint_says_so_and_exits_zero(tmp_path: Path) -> None:
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     code, data = _run(root, tmp_path, "upgrade", "--dry-run")
     assert code == 0, data["summary"]
     assert data["summary"].splitlines()[0] == "would upgrade:"
@@ -107,7 +99,7 @@ def test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id(
 ) -> None:
     # `_relocation` answers a forged target with `skip_modified` at that target, and the run goes
     # on: exit 0, the file at the forged path untouched, and nothing of the target printed.
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     _forge_the_roadmap_target(root)
     code, data = _run(root, tmp_path, *argv)
     printed = json.dumps(data)
@@ -119,7 +111,7 @@ def test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id(
 @needs_git
 @pytest.mark.parametrize("command", COMMANDS)
 def test_a_force_path_outside_the_root_is_refused_by_rule(tmp_path: Path, command: str) -> None:
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     code, data = _run(root, tmp_path, command, "--dry-run", "--force", "../elsewhere.md")
     assert code == 2
     assert "elsewhere" not in data["summary"]
@@ -131,7 +123,7 @@ def test_a_force_path_that_names_nothing_is_counted(tmp_path: Path) -> None:
     # case-shifted one does not. On an untouched footprint every forced path would be counted,
     # whether or not the comparison worked. Mutation (advisory): count every forced path ->
     # the exact path gains a note and the first assertion reddens.
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     roadmap = root / "docs" / "roadmap.md"
     roadmap.write_text(roadmap.read_text(encoding="utf-8") + "\nours\n", encoding="utf-8")
     code, data = _run(root, tmp_path, "upgrade", "--dry-run", "--force", "docs/roadmap.md")
@@ -181,8 +173,41 @@ def test_the_ci_line_never_says_a_workflow_it_left_pins_the_ref(
 
 
 @needs_git
+@pytest.mark.parametrize("command", COMMANDS)
+def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays(
+    tmp_path: Path, command: str
+) -> None:
+    # A retired record is judged against a whole-file stub, which names no region, so a record
+    # saying its artifact lived inside a host file (a region, or keyed entries) is never retired
+    # that way: forced, the stub would delete the host file and everything a person wrote in it.
+    # It is counted as an orphan, by the one rule both commands apply. The kind is read off the
+    # committed manifest, and it can only turn a removal into an orphan. Mutation (oracle): "a
+    # region record this build does not produce is retired as a whole file" -> the forced run
+    # removes the host file, and the first assertion reddens for both commands.
+    root = initialised(tmp_path)
+    target = "docs/keelline/rules/python.md"
+    host = root / target
+    host.parent.mkdir(parents=True, exist_ok=True)
+    host.write_text("Our own rules.\n", encoding="utf-8")
+    # The digest a region record carries is its body's, never the host file's.
+    record = Record(
+        id="profile-rules",
+        kind=Kind.MANAGED_REGION,
+        location=Location.REPO,
+        target=target,
+        template="profile/python/rules.md",
+        version=keelline.__version__,
+        sha256=digest("a region body"),
+    )
+    Manifest.read(root).with_record(record).write(root)
+    code, data = _run(root, tmp_path, command, "--force", target)
+    assert host.is_file() and host.read_text(encoding="utf-8") == "Our own rules.\n"
+    assert code == 0 and data["orphans"] == 1, data["summary"]
+
+
+@needs_git
 def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     (root / "docs" / "roadmap.md").write_text("ours\n", encoding="utf-8")
     code, data = _run(root, tmp_path, "uninstall")
     assert code == 0, data["summary"]
@@ -200,7 +225,7 @@ def test_a_file_a_later_pass_deletes_is_never_reported_left_in_place(
     # `skip_modified`, and the write-once pass then removes the untouched skeleton. The file was
     # counted as "left in place, yours now" after it was deleted. Mutation (advisory): drop the
     # `not in gone` filter -> `left` names `AGENTS.md` and the first assertion reddens.
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8")
     begin, end = "<!-- keelline:harness:begin -->", "<!-- keelline:harness:end -->\n"
@@ -234,7 +259,7 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     import keelline.scaffold.engine as engine
     from keelline import fsops
 
-    root = _initialised(tmp_path)
+    root = initialised(tmp_path)
     real = fsops.remove_within
 
     def fails(where: Path, target: str) -> None:
@@ -257,5 +282,5 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     # `finally`, so the pass that stopped still emptied the directories of the files it took.
     # Mutation (oracle): "a pass that stops part-way leaves the directories it emptied" -> the
     # `docs/roadmap.md` case keeps `docs/`.
-    assert {p.name for p in root.iterdir()} == {".git"}, sorted(p.name for p in root.iterdir())
+    assert tree(root) == {"README.md"}, sorted(tree(root))
     assert resumable

@@ -6691,8 +6691,7 @@ file = "src/keelline/project/footprint.py"
 before = "        and records[artifact_id].kind not in IN_FILE\n"
 after = ""
 reddens = [
-  "tests/project/test_uninstall.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
-  "tests/project/test_upgrade.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
+  "tests/project/test_footprint_commands.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
 ]
 
 # `keelline.toml` is what every later run needs to judge anything, so it goes after everything

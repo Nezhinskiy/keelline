@@ -513,36 +513,6 @@ def test_a_record_naming_a_file_this_build_never_writes_is_counted_and_left(
 
 
 @needs_git
-def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays(
-    tmp_path: Path,
-) -> None:
-    # The rule `uninstall` applies, at `upgrade`: a retired record is judged against a whole-file
-    # stub, which names no region, so a record saying its artifact lived inside a host file is
-    # never retired that way. Forced, the stub deleted the host file and what a person wrote in
-    # it. Mutation (oracle): "a region record this build does not produce is retired as a whole
-    # file" -> the forced run removes the host file, and the first assertion reddens.
-    root = initialised(tmp_path)
-    target = "docs/keelline/rules/python.md"
-    host = root / target
-    host.parent.mkdir(parents=True, exist_ok=True)
-    host.write_text("Our own rules.\n", encoding="utf-8")
-    Manifest.read(root).with_record(
-        Record(
-            "profile-rules",
-            Kind.MANAGED_REGION,
-            Location.REPO,
-            target,
-            "profile/python/rules.md",
-            keelline.__version__,
-            digest("a region body"),
-        )
-    ).write(root)
-    report = _upgrade(root, tmp_path, NO_TAG, force=(target,))
-    assert host.is_file() and host.read_text(encoding="utf-8") == "Our own rules.\n"
-    assert report.orphans == 1
-
-
-@needs_git
 def test_switching_ci_off_retires_the_workflow_while_its_bytes_are_keellines(
     tmp_path: Path,
 ) -> None:

@@ -142,39 +142,6 @@ def test_a_person_s_lines_in_gitignore_stay_when_the_ignore_region_goes(
 
 
 @needs_git
-def test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays(
-    tmp_path: Path,
-) -> None:
-    # A retired artifact this build no longer produces is judged against a whole-file stub,
-    # which carries no region name. A record saying its artifact lived inside a host file (a
-    # region, or keyed entries) is therefore never retired that way: forced, the stub would
-    # delete the host file and everything a person wrote in it. It is counted as an orphan. The
-    # kind is read off the committed manifest, and it can only turn a removal into an orphan.
-    # Mutation (declared): every record is offered for retirement whatever its kind -> the
-    # forced run deletes the host file, and the first assertion reddens.
-    root = initialised(tmp_path)
-    target = "docs/keelline/rules/python.md"
-    host = root / target
-    host.parent.mkdir(parents=True, exist_ok=True)
-    host.write_text("Our own rules.\n", encoding="utf-8")
-    # The digest a region record carries is its body's, never the host file's.
-    manifest = Manifest.read(root)
-    record = Record(
-        id="profile-rules",
-        kind=Kind.MANAGED_REGION,
-        location=Location.REPO,
-        target=target,
-        template="profile/python/rules.md",
-        version=keelline.__version__,
-        sha256=digest("a region body"),
-    )
-    manifest.with_record(record).write(root)
-    report = _uninstall(root, tmp_path, force=(target,))
-    assert host.is_file() and host.read_text(encoding="utf-8") == "Our own rules.\n"
-    assert report.orphans == 1
-
-
-@needs_git
 def test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_region(
     tmp_path: Path,
 ) -> None:
