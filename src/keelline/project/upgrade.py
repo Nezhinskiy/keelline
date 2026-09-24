@@ -57,17 +57,10 @@ from keelline.config.owned import Value, rewrite
 from keelline.config.schema import Config
 from keelline.errors import Refusal
 from keelline.overlay.api import later
+from keelline.project.footprint import prepare
 from keelline.project.ignored import refuse_ignored
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
-from keelline.project.templates import (
-    CI_ARTIFACT,
-    CI_REF,
-    Prepared,
-    project_templates,
-    refuse_local_profile,
-    refuse_local_root_only,
-    retired_templates,
-)
+from keelline.project.templates import CI_ARTIFACT, CI_REF, Prepared
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
 from keelline.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply, plan
@@ -151,20 +144,10 @@ def _footprint(
     resolution: Resolution,
     force: Sequence[str],
 ) -> tuple[Prepared, Plan, int]:
-    prepared = project_templates(root, config, resolution=resolution, document=text, adopted=False)
-    # The placement rule `init` applies, at the second entry point that writes a footprint.
-    refuse_local_profile(prepared, config)
-    refuse_local_root_only(config)
-    produced = {t.id for t in (*prepared.once, *prepared.footprint)}
-    retired, orphans = retired_templates(
-        prepared.could_write, Manifest.read(root).records, produced
-    )
-    retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")
-    # The workflow is planned after everything else, retirements included, so a write that fails
-    # part-way leaves its pin agreeing with the `[ci] ref` that `keelline.toml` still holds.
-    templates = (*prepared.footprint, *retired)
-    ordered = sorted(templates, key=lambda t: t.id == CI_ARTIFACT)
-    return prepared, plan(root, config, ordered, force=force), orphans
+    records = Manifest.read(root).records
+    passes = prepare(config, records, resolution=resolution, document=text, adopted=False)
+    planned = plan(root, config, passes.footprint, force=force)
+    return passes.prepared, planned, passes.orphans
 
 
 def _rewrites_the_workflow(footprint: Plan) -> bool:

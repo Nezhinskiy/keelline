@@ -84,7 +84,7 @@ UNANSWERED = (
 )
 
 
-def _preset_places(root: Path, config: Config) -> Mapping[str, frozenset[str]]:
+def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
     """Every place this build could put each artifact under the preset's own `[paths]`.
 
     The same `project_templates` call every command makes, with `config.paths` replaced by the
@@ -100,7 +100,7 @@ def _preset_places(root: Path, config: Config) -> Mapping[str, frozenset[str]]:
     defaults = preset_defaults(config.project.name, preset=config.keelline.preset).paths
     placed = replace(config, paths=defaults)
     prepared = project_templates(
-        root, placed, resolution=Resolution(None, True), document="", adopted=True
+        placed, resolution=Resolution(None, True), document="", adopted=True
     )
     return prepared.could_write
 
@@ -118,7 +118,7 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
     ]
     if not existing:
         return
-    places = _preset_places(root, config)
+    places = _preset_places(config)
     chosen: dict[str, Action] = {}
     for action in existing:
         # That artifact's own preset places: any id's would let `[paths] roadmap = "CLAUDE.md"`

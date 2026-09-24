@@ -95,14 +95,9 @@ from keelline.config.loader import loads, read_document
 from keelline.config.paths import KEELLINE_DIRECTORY, contained
 from keelline.errors import Refusal
 from keelline.fsops import remove_within, rmdir_within
+from keelline.project.footprint import prepare
 from keelline.project.ignored import refuse_ignored
-from keelline.project.templates import (
-    CONFIG_ARTIFACT,
-    IGNORE_ARTIFACT,
-    project_templates,
-    refuse_local_root_only,
-    retired_templates,
-)
+from keelline.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
 from keelline.release.api import Resolution
 from keelline.scaffold import (
     LOCAL_ARTIFACTS,
@@ -310,18 +305,24 @@ def uninstall(
         note = NO_CONFIG.format(count=len(manifest.records))
         return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
     config = loads(document, root, machine=machine)
-    refuse_local_root_only(config)
-    digests = LocalDigests.read(root)
-    prepared = project_templates(
-        root, config, resolution=Resolution(None, True), document=document, adopted=True
+    # `removing`: every record `retired_templates` lists goes, and a profile artifact kept out of
+    # git is not refused, so a configuration written before that rule can still be taken back.
+    passes = prepare(
+        config,
+        manifest.records,
+        resolution=Resolution(None, True),
+        document=document,
+        adopted=True,
+        removing=True,
     )
-    produced = {t.id for t in (*prepared.once, *prepared.footprint)}
-    retired, orphans = retired_templates(prepared.could_write, manifest.records, produced)
-    # And every artifact the ledger says Keelline wrote a copy of kept out of git: one whose id
-    # has left `[artifacts] local` since is recorded nowhere else.
+    orphans = passes.orphans
+    digests = LocalDigests.read(root)
+    # Retired: what the manifest records (every retirement `prepare` found among it), what
+    # `[artifacts] local` keeps out of git, and every artifact the ledger says Keelline wrote a copy
+    # of kept out of git, since one whose id has left `[artifacts] local` is recorded nowhere else.
     wanted = set(manifest.records) | set(config.artifacts.local) | digests.ids
-    footprint_retired = (*_retire(prepared.footprint, wanted), *retired)
-    once_retired = _retire(prepared.once, wanted)
+    footprint_retired = _retire(passes.footprint, wanted)
+    once_retired = _retire(passes.prepared.once, wanted)
     # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and
     # the manifest are there, a run stopped at any earlier point is finished by the next one.
     once_body = [t for t in once_retired if t.id != CONFIG_ARTIFACT]

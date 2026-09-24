@@ -12,7 +12,7 @@ import keelline
 from keelline import fsops
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
-from keelline.project import templates
+from keelline.project import footprint, templates
 from keelline.project.upgrade import (
     NEWER,
     NO_RELEASE,
@@ -81,7 +81,7 @@ def newer(monkeypatch: pytest.MonkeyPatch) -> Callable[[], None]:
 def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    # `templates.refuse_local_profile` at the second entry point that writes a footprint: a
+    # `footprint.refuse_local_profile` at the second entry point that writes a footprint: a
     # `keelline.toml` edited by hand after `init` meets it here. `uninstall` does not apply it, so
     # the same file can still be taken back. Mutation (oracle): "a profile artifact kept out of
     # git is written, and every pointer to it dangles" drops the condition both share.
@@ -101,7 +101,7 @@ def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
 
 @needs_git
 def test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write(tmp_path: Path) -> None:
-    # `templates.refuse_local_root_only` where a hand edit after `init` meets it.
+    # `footprint.refuse_local_root_only` where a hand edit after `init` meets it.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
     config.write_text(
@@ -112,7 +112,7 @@ def test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write(tmp_path
     with pytest.raises(Refusal) as refused:
         _upgrade(root, tmp_path, NO_TAG)
     assert_snapshot_unchanged(root, before)
-    assert str(refused.value) == templates.LOCAL_ROOT_ONLY.format(names="config")
+    assert str(refused.value) == footprint.LOCAL_ROOT_ONLY.format(names="config")
 
 
 @needs_git

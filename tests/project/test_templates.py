@@ -17,20 +17,19 @@ from keelline.harnesses import HARNESSES
 from keelline.ledger.api import render_index
 from keelline.profiles import load_profile
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
+from keelline.project.footprint import LOCAL_PROFILE, refuse_local_profile
 from keelline.project.templates import (
     CI_ARTIFACT,
     CI_WORKFLOW,
     COMPUTED,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
-    LOCAL_PROFILE,
     NO_REF,
     PATH_KEYS,
     PROFILE,
     PROJECT,
     fill,
     read,
-    refuse_local_profile,
 )
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
@@ -48,15 +47,12 @@ def _prepared(
     config: Config,
     *,
     resolution: Resolution = NO_PIN,
-    root: Path = Path("/nonexistent/root"),
     adopted: bool = False,
 ) -> Prepared:
     """This file's default is the run that *creates* `keelline.toml`, which is the path on which
     the three "why there is no ref" sentences are the answers. `adopted=True` is the other kind
     of run, and it has one answer; the case below holds that."""
-    return project_templates(
-        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted
-    )
+    return project_templates(config, resolution=resolution, document=DOCUMENT, adopted=adopted)
 
 
 def _recording(config: Config, ref: str = SHA) -> Config:
@@ -76,8 +72,8 @@ def test_every_declared_file_exists_and_no_file_is_undeclared_at_any_depth() -> 
     assert present == sorted(PROJECT_FILES)
 
 
-def test_the_three_write_once_artifacts_are_once_and_the_rest_are_not(tmp_path: Path) -> None:
-    prepared = _prepared(preset_defaults("widget"), root=tmp_path)
+def test_the_three_write_once_artifacts_are_once_and_the_rest_are_not() -> None:
+    prepared = _prepared(preset_defaults("widget"))
     assert [t.id for t in prepared.once] == ["config", "agents-skeleton", "claude-md"]
     assert all(t.kind is Kind.ONCE for t in prepared.once)
     assert {t.id: t.render() for t in prepared.once}["config"] == DOCUMENT
@@ -85,7 +81,7 @@ def test_the_three_write_once_artifacts_are_once_and_the_rest_are_not(tmp_path: 
     assert not any(t.kind is Kind.ONCE for t in prepared.footprint)
 
 
-def test_the_claude_md_pointer_names_the_configured_instruction_file(tmp_path: Path) -> None:
+def test_the_claude_md_pointer_names_the_configured_instruction_file() -> None:
     """The rendered bytes, not the template's: the pointer is one line and that line is a path.
 
     `claude.md` shipped as the literal `@AGENTS.md` and was built with no `render` override, so
@@ -99,10 +95,10 @@ def test_the_claude_md_pointer_names_the_configured_instruction_file(tmp_path: P
     reach it.
     """
     config = preset_defaults("widget")
-    by_id = {t.id: t for t in _prepared(config, root=tmp_path).once}
+    by_id = {t.id: t for t in _prepared(config).once}
     assert by_id["claude-md"].render() == "@AGENTS.md\n"
     moved = replace(config, paths=replace(config.paths, agents_md="CONTEXT.md"))
-    renamed = {t.id: t for t in _prepared(moved, root=tmp_path).once}
+    renamed = {t.id: t for t in _prepared(moved).once}
     # The pointer and the file the skeleton is written to are one path, asserted together: a
     # pointer that merely changed would still be wrong if it named something else.
     assert renamed["claude-md"].render() == "@CONTEXT.md\n"
@@ -110,7 +106,7 @@ def test_the_claude_md_pointer_names_the_configured_instruction_file(tmp_path: P
     assert "%%" not in renamed["claude-md"].render()
 
 
-def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: Path) -> None:
+def test_the_skeleton_states_the_budgets_this_project_will_be_held_to() -> None:
     """The rendered bytes again, and the numbers are `Budgets.effective`'s and not the preset's.
 
     The three numbers were literals in the shipped template — 300, 3,000 and 50, the preset's
@@ -122,7 +118,7 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: 
     `LINES=_budget(config, "agents_md_words")` -> the lowered case reddens.
     """
     config = preset_defaults("widget")
-    body = {t.id: t for t in _prepared(config, root=tmp_path).once}["agents-skeleton"].render()
+    body = {t.id: t for t in _prepared(config).once}["agents-skeleton"].render()
     assert "at most 300\nlines and 3,000 words" in body and "below at most 50 lines" in body
     # A project may lower a budget and never raise it (D7), so the rendered sentence follows the
     # override down and ignores it upward -- `effective`'s rule, read through the file that
@@ -132,12 +128,12 @@ def test_the_skeleton_states_the_budgets_this_project_will_be_held_to(tmp_path: 
         config,
         budgets=replace(config.budgets, configured={"agents_md_lines": 250, "status_lines": 999}),
     )
-    body = {t.id: t for t in _prepared(lowered, root=tmp_path).once}["agents-skeleton"].render()
+    body = {t.id: t for t in _prepared(lowered).once}["agents-skeleton"].render()
     assert "at most 250\nlines and 3,000 words" in body and "below at most 50 lines" in body
     assert "300" not in body and "999" not in body and "%%" not in body
 
 
-def test_targets_follow_the_configured_paths_and_not_the_preset(tmp_path: Path) -> None:
+def test_targets_follow_the_configured_paths_and_not_the_preset() -> None:
     config = preset_defaults("widget")
     moved = replace(
         config,
@@ -148,7 +144,7 @@ def test_targets_follow_the_configured_paths_and_not_the_preset(tmp_path: Path) 
             roadmap="docs/plan/roadmap.md",
         ),
     )
-    by_id = {t.id: t for t in _prepared(moved, root=tmp_path).footprint}
+    by_id = {t.id: t for t in _prepared(moved).footprint}
     assert by_id["specs-keep"].target == "docs/design/specs/.gitkeep"
     assert by_id["trail"].target == "docs/plan/trail.toml"
     assert by_id["gitignore"].kind is Kind.MANAGED_REGION
@@ -159,34 +155,28 @@ def test_targets_follow_the_configured_paths_and_not_the_preset(tmp_path: Path) 
     assert by_id["bug-index"].render() == render_index([], moved)
 
 
-def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise(
-    tmp_path: Path,
-) -> None:
+def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise() -> None:
     # Mutation (oracle): `if resolution.pin is None:` -> `if False:` -> the "no released tag"
     # arm falls through to `NO_REF` and the second assertion reddens. The workflow is still not
     # offered, because what renders one is `[ci] ref` and there is none.
     config = preset_defaults("widget")
-    assert "ci-workflow" not in {t.id for t in _prepared(config, root=tmp_path).footprint}
-    assert (
-        _prepared(config, root=tmp_path)
-        .skipped["ci-workflow"]
-        .startswith("no released Keelline tag")
-    )
-    skipped = _prepared(config, resolution=Resolution(None, False), root=tmp_path).skipped
+    assert "ci-workflow" not in {t.id for t in _prepared(config).footprint}
+    assert _prepared(config).skipped["ci-workflow"].startswith("no released Keelline tag")
+    skipped = _prepared(config, resolution=Resolution(None, False)).skipped
     assert "could not be asked" in skipped["ci-workflow"]
     # A pin resolved and the document records no ref. On a run that creates the document this is
     # unreachable — `init` records the pin it resolved — so the case is stated on the adoption
     # path, where it is the ordinary one.
-    no_ref = _prepared(config, resolution=PINNED, root=tmp_path, adopted=True)
+    no_ref = _prepared(config, resolution=PINNED, adopted=True)
     assert "ci-workflow" not in {t.id for t in no_ref.footprint}
     assert no_ref.skipped["ci-workflow"].startswith("the keelline.toml this repository already")
-    footprint = _prepared(_recording(config), resolution=PINNED, root=tmp_path).footprint
+    footprint = _prepared(_recording(config), resolution=PINNED).footprint
     body = {t.id: t for t in footprint}["ci-workflow"].render()
     assert f"/.github/workflows/check.yml@{SHA}\n" in body and "%%" not in body
     assert 'branches: ["main"]' in body
     for mode, phrase in (("none", "[ci] mode is none"), ("uvx", "ships with a later lane")):
         varied = replace(_recording(config), ci=replace(_recording(config).ci, mode=mode))
-        prepared = _prepared(varied, resolution=PINNED, root=tmp_path)
+        prepared = _prepared(varied, resolution=PINNED)
         assert phrase in prepared.skipped["ci-workflow"], mode
     # The hostile arm is reached AFTER a ref is in hand, which is why the skip reason matters as
     # much as the missing artifact: `commands.py` used to key its CI line on the pin, so this
@@ -194,7 +184,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     # command reads now, so this asserts the key is there and says why.
     recorded = _recording(config)
     hostile = replace(recorded, ci=replace(recorded.ci, gate_branch="main'; rm -rf"))
-    pinned_hostile = _prepared(hostile, resolution=PINNED, root=tmp_path)
+    pinned_hostile = _prepared(hostile, resolution=PINNED)
     assert "ci-workflow" not in {t.id for t in pinned_hostile.footprint}
     assert pinned_hostile.skipped["ci-workflow"] == (
         "[ci] gate_branch is not a plain branch name, so no workflow was rendered around it"
@@ -202,9 +192,7 @@ def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherw
     assert "rm -rf" not in pinned_hostile.skipped["ci-workflow"]
 
 
-def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit(
-    tmp_path: Path,
-) -> None:
+def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit() -> None:
     """`_ci`'s own docstring states the rule, and the code had the inverse of it.
 
     `project_templates` took no adoption flag, so `_ci` saw only a `Resolution` and could not
@@ -224,23 +212,19 @@ def test_the_adoption_path_is_never_sent_to_the_network_for_a_file_it_must_edit(
     """
     config = preset_defaults("widget")
     for resolution in (Resolution(None, False), NO_PIN, PINNED):
-        prepared = _prepared(config, resolution=resolution, root=tmp_path, adopted=True)
+        prepared = _prepared(config, resolution=resolution, adopted=True)
         assert "ci-workflow" not in {t.id for t in prepared.footprint}, resolution
         assert prepared.skipped["ci-workflow"] == NO_REF, resolution
     # And the network's own answers still print on the run that creates the document, which is
     # the only run they are the reason for: a pin written there does reach the file.
     assert (
         "could not be asked"
-        in _prepared(config, resolution=Resolution(None, False), root=tmp_path).skipped[
-            "ci-workflow"
-        ]
+        in _prepared(config, resolution=Resolution(None, False)).skipped["ci-workflow"]
     )
-    assert _prepared(config, root=tmp_path).skipped["ci-workflow"].startswith("no released")
+    assert _prepared(config).skipped["ci-workflow"].startswith("no released")
 
 
-def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line(
-    tmp_path: Path,
-) -> None:
+def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line() -> None:
     """`[ci] ref` is repository-authored and lands in a YAML file GitHub executes.
 
     On the adoption path it is whatever `keelline.toml` already carried, and the loader bounds it
@@ -254,7 +238,7 @@ def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line
     """
     config = preset_defaults("widget")
     for ref in ("main'; rm -rf", "abc", SHA.upper(), f"{SHA}\n"):
-        prepared = _prepared(_recording(config, ref), resolution=PINNED, root=tmp_path)
+        prepared = _prepared(_recording(config, ref), resolution=PINNED)
         assert "ci-workflow" not in {t.id for t in prepared.footprint}, ref
         assert prepared.skipped["ci-workflow"].startswith("[ci] ref is not a full-length"), ref
         # The value itself is never echoed: the reason names the key and the shape, the way
@@ -264,12 +248,12 @@ def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line
     # The documented mutable alias is refused too, and for a different reason than a hostile
     # value: `v1` is a ref GitHub would accept and `doctor` reports as a mutable opt-in, and
     # `docs/cli.md` says it is a file a project writes by hand. `init` renders immutable pins.
-    alias = _prepared(_recording(config, "v1"), resolution=PINNED, root=tmp_path)
+    alias = _prepared(_recording(config, "v1"), resolution=PINNED)
     assert "ci-workflow" not in {t.id for t in alias.footprint}
     assert alias.skipped["ci-workflow"].startswith("[ci] ref is not a full-length")
 
 
-def test_the_workflow_is_the_same_bytes_whatever_the_remote_answered(tmp_path: Path) -> None:
+def test_the_workflow_is_the_same_bytes_whatever_the_remote_answered() -> None:
     # The workflow is rendered from the configuration alone. A comment naming the release the
     # remote resolved made an up-to-date workflow read as refreshed on every offline `upgrade`,
     # and on the adoption path it named a release beside a commit this build did not resolve.
@@ -278,9 +262,7 @@ def test_the_workflow_is_the_same_bytes_whatever_the_remote_answered(tmp_path: P
     other = "d" * 40
     config = _recording(preset_defaults("widget"), other)
     bodies = {
-        {t.id: t for t in _prepared(config, resolution=answer, root=tmp_path).footprint}[
-            "ci-workflow"
-        ].render()
+        {t.id: t for t in _prepared(config, resolution=answer).footprint}["ci-workflow"].render()
         for answer in (PINNED, NO_PIN, Resolution(None, False))
     }
     assert len(bodies) == 1
@@ -289,9 +271,7 @@ def test_the_workflow_is_the_same_bytes_whatever_the_remote_answered(tmp_path: P
     assert "v0.1.0" not in body and SHA not in body
 
 
-def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares(
-    tmp_path: Path,
-) -> None:
+def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares() -> None:
     # Held to the code, not a second spelling: if `check.yml` renames an input, every adopting
     # project's CI breaks and nothing here would notice. Both files are read as text — the
     # runtime and this suite are stdlib-only, so there is no YAML parser to reach for — with the
@@ -299,13 +279,13 @@ def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares
     declared = set(
         re.findall(r"^      ([a-z-]+):$", CHECK_WORKFLOW.read_text(encoding="utf-8"), re.MULTILINE)
     )
-    prepared = _prepared(_recording(preset_defaults("widget")), resolution=PINNED, root=tmp_path)
+    prepared = _prepared(_recording(preset_defaults("widget")), resolution=PINNED)
     body = {t.id: t for t in prepared.footprint}["ci-workflow"].render()
     passed = set(re.findall(r"^      ([a-z-]+): ", body, re.MULTILINE))
     assert passed and passed <= declared, (passed, declared)
 
 
-def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file(tmp_path: Path) -> None:
+def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     """DC3's premise, which nothing made true until now.
 
     `scaffold.engine.plan` has no duplicate-target detection and C2 is frozen, so with two
@@ -329,7 +309,7 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file(tmp_path: Path) -
         config, paths=replace(config.paths, roadmap="docs/x.md", roadmap_history="docs/x.md")
     )
     with pytest.raises(Refusal) as caught:
-        _prepared(footprint_clash, root=tmp_path)
+        _prepared(footprint_clash)
     message = str(caught.value)
     assert "roadmap (paths.roadmap)" in message and "roadmap-history" in message
     assert "paths.roadmap_history" in message
@@ -338,7 +318,7 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file(tmp_path: Path) -
 
     once_clash = replace(config, paths=replace(config.paths, agents_md="CLAUDE.md"))
     with pytest.raises(Refusal, match=r"claude-md|agents-skeleton"):
-        _prepared(once_clash, root=tmp_path)
+        _prepared(once_clash)
 
 
 def test_the_artifact_ids_the_commands_name_are_the_ones_the_templates_build() -> None:
@@ -352,7 +332,6 @@ def test_the_artifact_ids_the_commands_name_are_the_ones_the_templates_build() -
     assertion reddens; rename a constant -> the last one does.
     """
     prepared = project_templates(
-        Path("/nonexistent/root"),
         _recording(preset_defaults("widget")),
         resolution=PINNED,
         document=DOCUMENT,
@@ -371,7 +350,6 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     `KeyError` only once somebody's configuration happened to collide, which is the worst moment
     for this module to raise something other than its own refusal."""
     prepared = project_templates(
-        Path("/nonexistent/root"),
         _python(tuple(h.name for h in HARNESSES)),
         resolution=PINNED,
         document=DOCUMENT,
@@ -406,7 +384,6 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
     computed set's assertion reddens, and so does the fixture module's provenance assertion.
     """
     prepared = project_templates(
-        Path("/nonexistent/root"),
         _python(tuple(h.name for h in HARNESSES)),
         resolution=PINNED,
         document=DOCUMENT,
@@ -492,8 +469,8 @@ def _renditions() -> set[str]:
     }
 
 
-def test_a_profile_lands_once_neutrally_and_once_per_adapted_harness(tmp_path: Path) -> None:
-    by_id = {t.id: t for t in _prepared(_python(), root=tmp_path).footprint}
+def test_a_profile_lands_once_neutrally_and_once_per_adapted_harness() -> None:
+    by_id = {t.id: t for t in _prepared(_python()).footprint}
     assert by_id["profile-rules"].target == "docs/keelline/rules/python.md"
     assert by_id["profile-rules"].source == "profile/python/rules.md"
     assert by_id["profile-rules"].render() == load_profile("python").rules
@@ -502,32 +479,30 @@ def test_a_profile_lands_once_neutrally_and_once_per_adapted_harness(tmp_path: P
     assert "`docs/keelline/rules/python.md`" in by_id["claude-rules"].render()
 
 
-def test_a_harness_not_listed_gets_no_file_of_its_own(tmp_path: Path) -> None:
-    ids = {t.id for t in _prepared(_python(agents=("codex",)), root=tmp_path).footprint}
+def test_a_harness_not_listed_gets_no_file_of_its_own() -> None:
+    ids = {t.id for t in _prepared(_python(agents=("codex",))).footprint}
     assert "profile-rules" in ids and "claude-rules" not in ids
 
 
-def test_a_profile_artifact_kept_out_of_git_is_refused(tmp_path: Path) -> None:
+def test_a_profile_artifact_kept_out_of_git_is_refused() -> None:
     """The `AGENTS.md` pointer and the Claude rule read `profile-rules` at its committed path;
     kept local it lands under `.keelline/local/artifacts/`, and both point at nothing (a review
     reproduced all three files). Mutation (declared): the refusal's condition dropped -> this
     reddens.
     """
     config = _python()
-    refuse_local_profile(_prepared(config, root=tmp_path), config)
+    refuse_local_profile(_prepared(config), config)
     for local in (("profile-rules",), ("claude-rules",), ("profile-rules", "roadmap")):
         kept = replace(config, artifacts=replace(config.artifacts, local=local))
         with pytest.raises(Refusal, match=re.escape(LOCAL_PROFILE.format(count=1))):
-            refuse_local_profile(_prepared(kept, root=tmp_path), kept)
+            refuse_local_profile(_prepared(kept), kept)
 
 
-def test_the_region_hands_every_harness_the_pointer_and_the_essentials(tmp_path: Path) -> None:
+def test_the_region_hands_every_harness_the_pointer_and_the_essentials() -> None:
     # Advisory output, so its mutation stays here: `lines = "\n".join(...)` -> `lines = ""` in
     # `_profile_block` reddens the loop.
     region = next(
-        t
-        for t in _prepared(_python(agents=("codex",)), root=tmp_path).footprint
-        if t.id == "agents-md"
+        t for t in _prepared(_python(agents=("codex",))).footprint if t.id == "agents-md"
     ).render()
     assert "`docs/keelline/rules/python.md`" in region
     for line in load_profile("python").essentials:
@@ -536,11 +511,9 @@ def test_the_region_hands_every_harness_the_pointer_and_the_essentials(tmp_path:
     assert "\n\n\n" not in region and not region.endswith("\n\n")
 
 
-def test_no_profile_means_no_profile_artifact_and_the_region_is_unchanged(
-    tmp_path: Path,
-) -> None:
+def test_no_profile_means_no_profile_artifact_and_the_region_is_unchanged() -> None:
     config = preset_defaults("widget")
-    prepared = _prepared(config, root=tmp_path)
+    prepared = _prepared(config)
     assert not {t.id for t in prepared.footprint} & {"profile-rules", "claude-rules"}
     region = next(t for t in prepared.footprint if t.id == "agents-md").render()
     # Byte for byte what the region was before profiles: the shipped template with its
@@ -562,26 +535,22 @@ def test_no_profile_means_no_profile_artifact_and_the_region_is_unchanged(
     assert not region.endswith("\n\n")
 
 
-def test_an_unknown_harness_name_is_counted_for_the_report(tmp_path: Path) -> None:
-    prepared = _prepared(_python(agents=("claude", "cursor")), root=tmp_path)
+def test_an_unknown_harness_name_is_counted_for_the_report() -> None:
+    prepared = _prepared(_python(agents=("claude", "cursor")))
     assert prepared.unknown_harnesses == 1
 
 
-def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name(
-    tmp_path: Path,
-) -> None:
+def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name() -> None:
     # A rendition's row is added where it is appended, not listed in `PATH_KEYS`, so this is the
     # case that proves the row exists: without it the collision is a `KeyError`, not a refusal.
     # Mutation (oracle): drop `keys.setdefault(template.id, OWN_NAME)` -> reddens.
     config = _python(("claude",))
     clash = replace(config, paths=replace(config.paths, roadmap=".claude/rules/keelline-python.md"))
     with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of Keelline's own\)"):
-        _prepared(clash, root=tmp_path)
+        _prepared(clash)
 
 
-def test_every_target_any_configuration_writes_is_one_every_configuration_could(
-    tmp_path: Path,
-) -> None:
+def test_every_target_any_configuration_writes_is_one_every_configuration_could() -> None:
     # `could_write` is the anchor `upgrade` and `uninstall` retire against after a toggle: what
     # one configuration wrote must be listed by the configuration that replaced it, or the file
     # is left behind as an orphan. So it is built at the lines that build the templates, and
@@ -599,7 +568,7 @@ def test_every_target_any_configuration_writes_is_one_every_configuration_could(
         for profile in ("", "python")
         for agents in ((), ("codex",), ("claude", "codex"))
     ]
-    prepared = [_prepared(config, resolution=PINNED, root=tmp_path) for config in configs]
+    prepared = [_prepared(config, resolution=PINNED) for config in configs]
     written = {(t.id, t.target) for p in prepared for t in (*p.once, *p.footprint)}
     for each in prepared:
         listed = {(i, target) for i, targets in each.could_write.items() for target in targets}

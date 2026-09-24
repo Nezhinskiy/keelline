@@ -14,12 +14,8 @@ import keelline
 from keelline.attach.api import LEDGER
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
-from keelline.project.templates import (
-    CONFIG_ARTIFACT,
-    IGNORE_ARTIFACT,
-    LOCAL_ROOT_ONLY,
-    ROOT_ONLY,
-)
+from keelline.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
+from keelline.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
 from keelline.project.uninstall import (
     ATTACHED,
     DELETED_CONFIG,

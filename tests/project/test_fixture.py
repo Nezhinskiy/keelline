@@ -61,7 +61,6 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
     config = load(root, machine=tmp_path / "absent.toml")
     document = (root / CONFIG_FILE).read_text(encoding="utf-8")
     prepared = project_templates(
-        root,
         config,
         resolution=Resolution(None, True),
         document=document,

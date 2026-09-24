@@ -14,8 +14,9 @@ from keelline.attach.api import IGNORE_REGION
 from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
+from keelline.project.footprint import LOCAL_ROOT_ONLY
 from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import LOCAL_ROOT_ONLY, NOT_ASKED
+from keelline.project.templates import NOT_ASKED
 from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract

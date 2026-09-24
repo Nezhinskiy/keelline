@@ -8,6 +8,11 @@ under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAM
 shape-checked there — `GATE_BRANCH`, `CI_REF` — and a value outside its grammar costs the
 artifact rather than the run.
 
+This module builds templates and decides nothing about a manifest. Which recorded artifacts a
+configuration retires, what `[artifacts] local` may not move out of git, and the order of the
+footprint pass are the lifecycle policy `init`, `upgrade` and `uninstall` apply to what it
+builds, and they are `project.footprint`'s.
+
 **Every write-once file this renders answers to the configuration, including the two that look
 like fixed text.** `CLAUDE.md` is a one-line pointer and its one line is `[paths] agents_md`: it
 was the literal `@AGENTS.md`, so a project that renamed the instruction file got a pointer at a
@@ -28,10 +33,9 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence, Set
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import keelline
@@ -44,7 +48,7 @@ from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
-from keelline.scaffold import Kind, Record, Style, Template, validate_sources
+from keelline.scaffold import Kind, Style, Template, validate_sources
 from keelline.templates import tree
 
 if TYPE_CHECKING:
@@ -189,7 +193,8 @@ class Prepared:
     cannot describe a target the footprint could not have: for the conditional artifacts it holds
     the workflow's one path, and each shipped profile's neutral rules and renditions, whichever of
     them this configuration asks for. `upgrade` and `uninstall` retire a recorded artifact this
-    configuration no longer produces only at a target listed here for its id.
+    configuration no longer produces only at a target listed here for its id
+    (`footprint.retired_templates`).
     """
 
     once: tuple[Template, ...]
@@ -201,56 +206,6 @@ class Prepared:
     # The profile's own artifacts in this footprint. Every reader of them, the `AGENTS.md`
     # pointer and each harness's rule, names the committed path.
     profiled: frozenset[str] = frozenset()
-
-
-# Fixed text with a count: the ids `[artifacts] local` lists are repository-authored, and which
-# of them matched is not printed, only how many.
-LOCAL_PROFILE = (
-    "[artifacts] local names {count} of the profile's artifacts, and the AGENTS.md pointer and "
-    "each harness's rule read them at the path the project commits; take them out of the list"
-)
-
-
-def refuse_local_profile(prepared: Prepared, config: Config) -> None:
-    """Refuse a footprint whose profile artifacts `[artifacts] local` would move out of git.
-
-    The engine would write them under `.keelline/local/artifacts/`, while every reader of them
-    names `rules_file`'s committed path, so each pointer would lead nowhere. `init` and `upgrade`
-    call this before they plan; `uninstall` does not, so a configuration written before the rule can
-    still be taken back.
-    """
-    local = prepared.profiled & set(config.artifacts.local)
-    if local:
-        raise Refusal(LOCAL_PROFILE.format(count=len(local)))
-
-
-# The artifacts that do their work only at the repository root: every command reads
-# `keelline.toml` there, and the ignore block there is what keeps `.keelline/local/` out of git.
-# A copy under `.keelline/local/artifacts/` is never read, and `uninstall` could not remove either
-# one before it checks what is left under `.keelline/local/`, because both go after that check.
-ROOT_ONLY = (CONFIG_ARTIFACT, IGNORE_ARTIFACT)
-# Fixed text: the names interpolated are drawn from `ROOT_ONLY`, artifact ids this build produces,
-# never from the repository-authored list.
-# `can work` and `take {names} out` rather than `work` and `take them out`: one sentence that
-# is grammatical for one id and for two.
-LOCAL_ROOT_ONLY = (
-    "[artifacts] local names {names}, which can work only at the repository root: every command "
-    "reads keelline.toml there, and the ignore block there is what keeps .keelline/local/ out of "
-    "git; take {names} out of [artifacts] local"
-)
-
-
-def refuse_local_root_only(config: Config) -> None:
-    """Refuse an `[artifacts] local` list naming an artifact that only works at the root.
-
-    `init`, `upgrade` and `uninstall` all call this before they plan, so none of them writes or
-    removes anything under a configuration that would keep `keelline.toml` or the ignore block out
-    of git. For `uninstall` that is the difference between a refusal before any write and one
-    part-way, since both are removed after the check of what is left under `.keelline/local/`.
-    """
-    named = [artifact_id for artifact_id in ROOT_ONLY if artifact_id in config.artifacts.local]
-    if named:
-        raise Refusal(LOCAL_ROOT_ONLY.format(names=" and ".join(named)))
 
 
 def read(name: str) -> str:
@@ -377,6 +332,16 @@ def _profiled(artifact_id: str, target: str, profile: Profile) -> Template:
     )
 
 
+def retired_stub(artifact_id: str, target: str) -> Template:
+    """A recorded artifact this build no longer produces, as the engine plans its retirement.
+
+    A whole file at the recorded target, which the engine judges by the file and the record
+    alone (`_plan_retired`), so `render` is a stub, built by `_computed` like every other
+    template with no shipped file. `footprint.retired_templates` decides which records get one.
+    """
+    return replace(_computed(artifact_id, target, lambda: ""), retired=True)
+
+
 PROFILE_BLOCK = (
     "\n\nThe `{name}` profile's rules are in `{path}`. Before the first command:\n\n{lines}"
 )
@@ -451,44 +416,6 @@ def _ci(
     )
 
 
-# The kinds that live inside a file somebody else owns.
-IN_FILE = frozenset({Kind.MANAGED_REGION, Kind.KEYED_ENTRIES})
-
-
-def retired_templates(
-    could_write: Mapping[str, frozenset[str]], records: Mapping[str, Record], produced: Set[str]
-) -> tuple[tuple[Template, ...], int]:
-    """The recorded artifacts this configuration no longer produces, and how many are orphans.
-
-    `records` is the committed manifest's. A record is retired only when its target is one
-    `could_write` lists for its id: which ids exist, and which targets each could have, are this
-    build's. Any other record is an orphan, counted and never touched; its id is
-    repository-authored, so only the count is ever printed.
-
-    The engine judges a retired whole file by its record (`_plan_retired` reads the file and the
-    record), so `render` is a stub, built by `_computed` like every other template with no
-    shipped file. **A region leaves as a region**, so a record whose kind says it lived inside a
-    host file is never retired this way: the stub names no region, and forced, it would delete
-    the host file and everything a person wrote in it. Such a record is an orphan too. A region
-    comes out only through the template this build produces for it, which carries its name and
-    comment style. The kind is committed, and all it can do here is turn a removal into an
-    orphan.
-
-    Whether to retire a listed one is the caller's policy: `uninstall` retires every one, and
-    `upgrade` keeps the workflow unless `[ci] mode` asks for no gate. Both apply the rules above
-    through this one function.
-    """
-    retired = tuple(
-        replace(_computed(artifact_id, records[artifact_id].target, lambda: ""), retired=True)
-        for artifact_id in sorted(records)
-        if artifact_id not in produced
-        and records[artifact_id].kind not in IN_FILE
-        and records[artifact_id].target in could_write.get(artifact_id, frozenset())
-    )
-    orphans = sum(1 for artifact_id in records if artifact_id not in produced) - len(retired)
-    return retired, orphans
-
-
 def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PATH_KEYS) -> None:
     """Refuse a pass in which two artifacts resolve to one file (DC3).
 
@@ -526,7 +453,6 @@ def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PA
 
 
 def project_templates(
-    root: Path,
     config: Config,
     *,
     resolution: Resolution,
@@ -639,9 +565,8 @@ def project_templates(
                 footprint.append(template)
                 keys.setdefault(template.id, OWN_NAME)
                 profiled.add(template.id)
-    # The workflow last: the engine writes a plan in order, and the workflow's pin is one value
-    # with `[ci] ref`, which `upgrade` writes after the whole footprint. Planned last, a write
-    # that fails part-way leaves the workflow on the ref `keelline.toml` still records.
+    # Where the workflow goes in the plan, after everything a command retires too, is
+    # `footprint.prepare`'s to decide.
     if workflow is not None:
         footprint.append(workflow)
     _one_target_each(once)

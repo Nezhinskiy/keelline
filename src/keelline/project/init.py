@@ -41,13 +41,9 @@ import keelline
 from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
+from keelline.project.footprint import prepare
 from keelline.project.ignored import refuse_ignored
-from keelline.project.templates import (
-    CI_ARTIFACT,
-    project_templates,
-    refuse_local_profile,
-    refuse_local_root_only,
-)
+from keelline.project.templates import CI_ARTIFACT
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
 from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
@@ -189,8 +185,8 @@ def init(
     detected name outside the grammar, an adopted table holding a key that cannot be written
     back bare (`_rendered`), a `Config` the loader refuses, a pass in which two artifacts
     resolve to one file (`templates._one_target_each`), a profile artifact `[artifacts] local`
-    would keep out of git (`templates.refuse_local_profile`), `keelline.toml` or the ignore block
-    listed there (`templates.refuse_local_root_only`), a planned write git ignores
+    would keep out of git (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block
+    listed there (`footprint.refuse_local_root_only`), a planned write git ignores
     (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
     than raised so the report can name the artifact.
     """
@@ -219,22 +215,18 @@ def init(
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
         config = loads(_rendered(tables), root, machine=machine)
     document = _rendered(tables)
-    prepared = project_templates(
-        root,
-        config,
-        resolution=resolution,
-        document=document,
-        adopted=existing is not None,
+    # No manifest yet, so nothing to retire: `prepare` for its refusals and the pass order.
+    passes = prepare(
+        config, {}, resolution=resolution, document=document, adopted=existing is not None
     )
-    refuse_local_profile(prepared, config)
-    refuse_local_root_only(config)
+    prepared = passes.prepared
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
     ref = "" if CI_ARTIFACT in prepared.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once = plan(root, config, prepared.once)
-    footprint = plan(root, config, prepared.footprint)
+    footprint = plan(root, config, passes.footprint)
     refuse_ignored(root, config, once, footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
@@ -253,7 +245,7 @@ def init(
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
     # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
     # that says the bytes inside the markers are the same either way.
-    footprint = plan(root, config, prepared.footprint)
+    footprint = plan(root, config, passes.footprint)
     apply(root, footprint)
     return InitReport(
         once,

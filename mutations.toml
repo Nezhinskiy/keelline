@@ -6433,7 +6433,7 @@ reddens = [
 # pointing at a committed path that holds nothing.
 [[mutation]]
 name = "a profile artifact kept out of git is written, and every pointer to it dangles"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/project/footprint.py"
 before = "    if local:\n        raise Refusal(LOCAL_PROFILE"
 after = "    if False:\n        raise Refusal(LOCAL_PROFILE"
 reddens = [
@@ -6561,9 +6561,9 @@ reddens = ["tests/project/test_upgrade.py::test_a_hand_edited_workflow_holds_bot
 
 [[mutation]]
 name = "upgrade retires the CI workflow for a mode it merely does not render"
-file = "src/keelline/project/upgrade.py"
-before = '    retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")'
-after = "    retired = tuple(retired)"
+file = "src/keelline/project/footprint.py"
+before = '        retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")'
+after = "        retired = tuple(retired)"
 reddens = ["tests/project/test_upgrade.py::test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate"]
 
 [[mutation]]
@@ -6687,7 +6687,7 @@ reddens = [
 # the host file whole. One rule in `retired_templates`, so `upgrade` and `uninstall` both keep it.
 [[mutation]]
 name = "a region record this build does not produce is retired as a whole file"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/project/footprint.py"
 before = "        and records[artifact_id].kind not in IN_FILE\n"
 after = ""
 reddens = [
@@ -6715,7 +6715,7 @@ reddens = [
 # run refuses part-way, and every later run refuses the same way.
 [[mutation]]
 name = "keelline.toml or the ignore block may be kept out of git"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/project/footprint.py"
 before = "    if named:\n        raise Refusal(LOCAL_ROOT_ONLY"
 after = "    if False:\n        raise Refusal(LOCAL_ROOT_ONLY"
 reddens = [
