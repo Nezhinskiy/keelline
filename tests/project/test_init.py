@@ -355,7 +355,8 @@ def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path:
     A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
     has persisted `.keelline/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
-    Mutation (oracle): "an unreachable remote sends a run that wrote back to init".
+    Mutation (oracle): "an unreachable remote is answered with the adoption path's reason instead
+    of its own".
     """
     offline = LsRemote(stdout="", code=128)
     online = LsRemote(stdout=LISTING, code=0)

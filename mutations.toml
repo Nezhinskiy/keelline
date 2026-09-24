@@ -5791,9 +5791,10 @@ reddens = [
 
 # An unreachable remote on a run that creates the document is answered with the two commands
 # that can still pin: `init --yes` before anything is written, `upgrade` after. The mutation
-# answers it with the adoption path's sentence instead, which names neither.
+# answers it with the adoption path's sentence instead, which blames a hand-written document
+# this run did not have and offers `init --yes` to nobody.
 [[mutation]]
-name = "an unreachable remote sends a run that wrote back to init"
+name = "an unreachable remote is answered with the adoption path's reason instead of its own"
 file = "src/keelline/project/templates.py"
 before = "            return None, NOT_ASKED"
 after = "            return None, NO_REF"
