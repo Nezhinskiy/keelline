@@ -85,9 +85,10 @@ def validate_sources(config: Config) -> None:
     """§7.4's second rule: the two values that name a file inside the *plugin* root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
-    path segment and looked up against the listing. The preset half is already enforced by
-    C1's loader through `presets.load_preset`; the profile half is enforced here, because C1
-    stores `profile` as a bare string and widening `Config` would change a frozen contract.
+    path segment and looked up against the listing. The preset half is already enforced by the
+    configuration loader through `presets.load_preset`; the profile half is enforced here,
+    because the loader stores `profile` as a bare string and widening `Config` would change a
+    frozen contract.
     """
     profile = config.keelline.profile
     if not profile:

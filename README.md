@@ -21,12 +21,12 @@ Codex, one Python package with **no runtime dependencies**.
 > `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
 > discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a
 > hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
-> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three keys that are
-> enough to start a project by hand, which `init` reads as your answers — a run that writes the
-> file itself writes `[keelline] version`, `state` and `agents`, and `profile` when the
-> repository carries a shipped profile's markers, beside `[project] name`, `base_branch` and
-> `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks
-> for none, and no `[memory]` table at all.
+> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three
+> keys that are enough to start a project by hand, which `init` reads as your answers — a run
+> that writes the file itself writes `[keelline] version`, `state` and `agents`, and `profile`
+> when the repository carries a shipped profile's markers, beside `[project] name`,
+> `base_branch` and `release_branch`, a `[ci]` table only when it has a released commit to pin
+> or `--no-ci` asks for none, and no `[memory]` table at all.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 

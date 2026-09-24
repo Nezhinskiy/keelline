@@ -78,7 +78,7 @@ from pathlib import Path, PurePosixPath
 
 from keelline.attach.api import LEDGER
 from keelline.config.loader import loads, read_document
-from keelline.config.paths import contained
+from keelline.config.paths import KEELLINE_DIRECTORY, contained
 from keelline.errors import Refusal
 from keelline.fsops import remove_within, rmdir_within
 from keelline.project.rewrite import CONFIG_RECORD
@@ -141,8 +141,8 @@ DELETED_CONFIG = (
     "for good, so nothing was removed. Restore keelline.toml (from git, for instance), then run "
     "uninstall again"
 )
-ASSESSMENT = ".keelline/assessment.json"
-LEDGER_DIRS = (LOCAL_ROOT, ".keelline")
+ASSESSMENT = f"{KEELLINE_DIRECTORY}/assessment.json"
+LEDGER_DIRS = (LOCAL_ROOT, KEELLINE_DIRECTORY)
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,8 @@ def _rmdirs(root: Path, directories: Set[str]) -> None:
     which is the whole safety of the walk, and a refusal of any kind (`UnsafePath` is an
     `OSError`) leaves the directory where it is. A harness's own directory is never asked
     (`Harness.marker_dir`). It is the harness's before it is Keelline's, and detection reads its
-    presence, so an empty harness directory a person made stays.
+    presence, so an empty one stays whoever made it: nothing records whether a person or `init`
+    did, and `docs/cli.md` says a later `init` detects the harness until it is removed.
     """
     from keelline.harnesses import HARNESSES
 

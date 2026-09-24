@@ -338,6 +338,7 @@ def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_na
     # either side reddens here instead of leaving a lane's state unprotected.
     from keelline.attach.api import LEDGER
     from keelline.memory.store import LOCAL_STORE
+    from keelline.project.uninstall import ASSESSMENT, LEDGER_DIRS
     from keelline.scaffold import LOCAL_ROOT, MANIFEST_PATH
     from keelline.scaffold.engine import LOCAL_ARTIFACTS
 
@@ -347,6 +348,8 @@ def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_na
         LOCAL_ARTIFACTS,
         MANIFEST_PATH.as_posix(),
         LOCAL_STORE.as_posix(),
+        ASSESSMENT,
+        *LEDGER_DIRS,
     ):
         assert path.split("/")[0] == KEELLINE_DIRECTORY, path
 

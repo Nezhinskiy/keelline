@@ -222,10 +222,12 @@ def refuse_local_profile(prepared: Prepared, config: Config) -> None:
 ROOT_ONLY = ("config", "gitignore")
 # Fixed text: the names interpolated are drawn from `ROOT_ONLY`, artifact ids this build produces,
 # never from the repository-authored list.
+# `can work` and `take {names} out` rather than `work` and `take them out`: one sentence that
+# is grammatical for one id and for two.
 LOCAL_ROOT_ONLY = (
-    "[artifacts] local names {names}, which only work at the repository root: every command "
+    "[artifacts] local names {names}, which can work only at the repository root: every command "
     "reads keelline.toml there, and the ignore block there is what keeps .keelline/local/ out of "
-    "git; take them out of [artifacts] local"
+    "git; take {names} out of [artifacts] local"
 )
 
 
