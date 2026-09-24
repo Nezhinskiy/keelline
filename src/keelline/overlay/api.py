@@ -9,7 +9,7 @@ does not import a private module of this area.
 because a return type absent from this list is a value `setup` can hold and cannot declare.
 `attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
 `COMMON_CODEX`). The runner is a leaf (`keelline.runner`), not this area's; it used to be
-published here on behalf of three other areas, which is the shape DC2 ended.
+published here on behalf of three other areas, a shape that moving it into a leaf module ended.
 
 Two names are here with no importer in `src/`, on purpose:
 

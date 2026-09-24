@@ -324,9 +324,10 @@ def rmdir_within(root: Path, target: str) -> None:
     Public, and here rather than private to its caller, for the reason `mkdirs_within` gives
     one function above: "a private helper leaves each of them to re-derive this, and the
     failure mode of getting it wrong is silent". `hooks-core` asked for it — the dispatcher's
-    marker tree is keyed by session and must be pruned, which is the one removal loop D14
-    permits — and it is the whole of the difference from `remove_within`, so a later hardening
-    of that walk reaches this too instead of leaving a copy behind.
+    marker tree is keyed by session and must be pruned, which is the one removal loop the
+    enumerated-writes rule permits — and it is the whole of the difference from
+    `remove_within`, so a later hardening of that walk reaches this too instead of leaving a
+    copy behind.
     """
     with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
         os.rmdir(name, dir_fd=dir_fd)

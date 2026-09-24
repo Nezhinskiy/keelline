@@ -1,9 +1,9 @@
-"""What a Keelline *internal error* costs on each hook event (§5.3).
+"""What a Keelline *internal error* costs on each hook event.
 
 Keelline's own policy, not the platform's: the platform also acts on exit 2 for
 `UserPromptSubmit`, `Stop` and `SubagentStop`, but only `PreToolUse` refuses on an internal
 error, because a broken Keelline must not wedge the user everywhere else — on
-`UserPromptSubmit` exit 2 erases what the user typed, which is why §5.3 puts no guard there.
+`UserPromptSubmit` exit 2 erases what the user typed, which is why no guard runs there.
 A handler's deny is a decision, not a breakage, and refuses on every event.
 
 A leaf module: the frame reads it too. A discovery failure aborts `keelline.cli.main` before

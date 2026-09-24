@@ -1,4 +1,4 @@
-"""Decide, then write (contract C2).
+"""Decide, then write: the scaffold engine's contract.
 
 `plan` reads and decides; `apply` writes. The split is what makes `--dry-run` honest — the
 report a user approves is produced by the same code path that then runs — and it is what makes
@@ -8,9 +8,9 @@ Two rules are easy to state and easy to get backwards, so they are stated here o
 
 *An absent record does not mean "hands off" for every kind.* For a whole file it does: a file
 Keelline never wrote is somebody's. For a managed region and for keyed entries the file
-belongs to somebody by definition, and an absent record is the ordinary first install — §7.2's
-second and third rows exist for exactly that case. The hand-edit oracle for those two kinds is
-the region body and the marked entries, never the file around them.
+belongs to somebody by definition, and an absent record is the ordinary first install — the
+rules for regions and for keyed entries exist for exactly that case. The hand-edit oracle for
+those two kinds is the region body and the marked entries, never the file around them.
 
 *A refusal is an artifact's, not the plan's.* A file that cannot be read, a region whose markers
 no longer say where it ends, a settings document that is not JSON: each is recorded in
@@ -82,7 +82,7 @@ def shipped_profiles() -> tuple[str, ...]:
 
 
 def validate_sources(config: Config) -> None:
-    """§7.4's second rule: the two values that name a file inside the *plugin* root.
+    """Path containment's second rule: the two values that name a file inside the *plugin* root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
     path segment and looked up against the listing. The preset half is already enforced by the
@@ -541,8 +541,8 @@ def _write(root: Path, target: str, payload: str) -> None:
     `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
     is the walk, not this area's verdict vocabulary.
 
-    The second clause is what keeps C5's exit 2 reachable. A user who saves a file where a
-    directory component belongs while reading the dry-run report, then confirms, would
+    The second clause is what keeps the refusal exit code, 2, reachable. A user who saves a file
+    where a directory component belongs while reading the dry-run report, then confirms, would
     otherwise get a traceback instead of a refusal, and no race is needed for that.
     """
     try:
@@ -558,7 +558,7 @@ def _remove(root: Path, target: str, payload: str | None) -> None:
 
     The same second clause `_write` carries, for the same reason: a directory Keelline may read
     but not write to arrives here as EACCES from `os.unlink` rather than as an `UnsafePath`, and
-    only a refusal keeps C5's exit 2 reachable.
+    only a refusal keeps the refusal exit code, 2, reachable.
     """
     if payload is not None:
         _write(root, target, payload)

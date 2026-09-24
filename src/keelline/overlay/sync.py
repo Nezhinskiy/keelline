@@ -1,9 +1,9 @@
-"""Whether the overlay's own repository holds anything the other machine cannot see (§6.3, §6.4).
+"""Whether the overlay's own repository holds anything the other machine cannot see.
 
 Two questions through `keelline.gitenv.git_run`, every argument a constant, the root the
 overlay this machine records. The timeout is two seconds **per call** and not `git`'s default
 five, so this function's own worst case is four: it runs inside a session-start handler ahead of
-the handler that links the store (DC1), and the entry's budget is ten seconds for everything.
+the handler that links the store, and the entry's budget is ten seconds for everything.
 `docs/cli.md` states it the same way — "two `git` calls at two seconds each".
 """
 

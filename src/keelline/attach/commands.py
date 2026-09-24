@@ -1,7 +1,7 @@
-"""The `attach` and `detach` groups (§5.2): bind a repository to the overlay, and unbind it.
+"""The `attach` and `detach` groups: bind a repository to the overlay, and unbind it.
 
-Two top-level commands and not one group with two subcommands, because that is the contract
-row §5.2 states and the shape the skills already invoke.
+Two top-level commands and not one group with two subcommands, because that is the command
+table's row and the shape the skills already invoke.
 
 **`--machine` is honoured here only from an interactive shell, and refused otherwise.**
 `config/machine.py` gates `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` behind the same question, and
@@ -10,7 +10,7 @@ of equivalent inputs is not a partial defence, it is a redirect with a longer na
 is now the variable-independent one: in a non-interactive session this file is
 `~/.config/keelline/config.toml` and nothing else." A flag is a third member of that
 equivalence class — it reaches the same file for the price of a different spelling — and this
-is the command that turns that file into capability: the overlay root comes from it (DP3), and
+is the command that turns that file into capability: the overlay root comes from it, and
 from the overlay come allow rules, hook entries and Codex standing rules. A repository that
 tells the agent to run `keelline attach --machine ./vendored.toml --store
 ./vendored/projects/p/memory` supplies both sides of `read_binding`'s containment check out of
@@ -162,7 +162,7 @@ def register(groups: SubParsers) -> None:
     )
     # A parameter and not a sentence in a document: in this harness the CLI is driven by a
     # model that has read repository text, so a gate enforced by model compliance is not a
-    # gate (DP3). The skill's "relay the diff, then ask" is the UX around this flag.
+    # gate. The skill's "relay the diff, then ask" is the UX around this flag.
     attach.add_argument(
         "--yes",
         action="store_true",

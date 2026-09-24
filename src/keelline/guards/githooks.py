@@ -1,4 +1,6 @@
-"""The chained `prepare-commit-msg` hook and its per-repository installer (§7.2).
+"""The chained `prepare-commit-msg` hook and its per-repository installer.
+
+The hook is a Keelline artifact recognised by its marker line, `HOOK_MARKER`.
 
 Installed into `git rev-parse --git-path hooks`, never through `core.hooksPath`: a global
 setting is overridden by any repository that sets its own and silently competes with husky
@@ -13,7 +15,7 @@ last, so nothing that was already running stops running. `uninstall` puts it bac
 This is the one place this lane writes outside a project root on purpose: the hooks
 directory is git's, and in a worktree it is not under the checkout at all. The writes are
 `fsops.write_atomically` on the hook path and a rename of the foreign hook beside it; both are
-enumerated under D14 by the plan that added them.
+enumerated writes, as every write Keelline makes is.
 """
 
 from __future__ import annotations
@@ -158,7 +160,7 @@ def install(root: Path) -> Installed:
         raise Refusal(f"{local} already exists and was not preserved by keelline; move it aside")
     preserved: Path | None = None
     if target.exists() and not replaced:
-        target.rename(local)  # beside the hook, in git's own directory (D14)
+        target.rename(local)  # beside the hook, in git's own directory: an enumerated write
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
         preserved = local

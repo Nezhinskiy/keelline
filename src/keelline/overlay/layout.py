@@ -34,10 +34,10 @@ CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
 # round, so a file deleted from the tree and a file added to it without a line here are both
 # caught rather than one of them.
 # The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
-# has a decision list at all: §6.1 diffs these and asks about them "regardless of hash", because
-# a hash match is not consent for a permission or a hook entry. Named once, unpacked into
-# OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is a
-# rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
+# has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
+# because a hash match is not consent for a permission or a hook entry. Named once, unpacked
+# into OVERLAY_FILES below, and published as CAPABILITY_FILES: one spelling, so a rename here is
+# a rename everywhere. The list used to be derived by filtering OVERLAY_FILES against a second
 # spelling of the two names, under a comment claiming they were not spelled twice.
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 

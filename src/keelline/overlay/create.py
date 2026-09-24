@@ -2,14 +2,14 @@
 
 Two sources, one result. `--template` asks GitHub to generate a private repository from the
 public template and clone it; `--local` renders `templates/overlay/` here through the scaffold
-engine and touches no network. A template and not a fork (D1): a fork's visibility is bound to
-the upstream network and cannot be made private, and an overlay that is not private is the one
+engine and touches no network. A template and not a fork: a fork's visibility is bound to the
+upstream network and cannot be made private, and an overlay that is not private is the one
 outcome this whole area exists to prevent.
 
 `init_instance` is what makes a generated repository *this owner's*: the plugin and marketplace
 names carry their account, so two overlays installed into one harness never collide, and the
 commit-time secret scan is installed. Neither step is destructive and both are idempotent —
-`gh` may give up on the clone with the repository already created (§6.1), so a second run is the
+`gh` may give up on the clone with the repository already created, so a second run is the
 ordinary case rather than the exception.
 """
 
@@ -39,14 +39,15 @@ from keelline.scaffold import Manifest, apply, digest, plan
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "keelline-overlay-template"
 # The directory whose presence says a generated repository actually arrived — the exact probe
-# Findings → S6 used, and the one thing a repository created from this template always carries.
+# the measured trial of template generation used, and the one thing a repository created from
+# this template always carries.
 # Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says why:
 # this one answers "did a tree arrive here", which is the question idempotence asks of a clone
 # `gh` gave up on half way through.
 PROBE = ".claude-plugin"
 # How long to wait before the one retry, when `gh` says the repository exists and the clone
-# brought nothing down. Findings → S6 did not reproduce that race in the one trial it ran, so
-# this is carried on the strength of the design rather than of a measurement: generation is
+# brought nothing down. The one measured trial did not reproduce that race, so this is
+# carried on the strength of the design rather than of a measurement: generation is
 # asynchronous on GitHub's side and one clean run cannot rule out a slow one.
 RETRY_WAIT_SECONDS = 10
 # The precondition `docs/cli.md` names and the command itself never did. `--template` generates
@@ -170,7 +171,7 @@ def _from_template(
 ) -> Created:
     target = root / name
     if _populated(target):
-        # §6.1 asks for idempotence in as many words: `gh` may give up on the clone with the
+        # Creating the overlay is idempotent by rule: `gh` may give up on the clone with the
         # repository already created, so the second run finds a tree and must not re-create.
         return Created(target, "template", (f"{target} already exists and was left alone",))
     slug = f"{owner}/{name}"
@@ -255,12 +256,13 @@ NOT_AN_OVERLAY = (
 def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     """Make a generated overlay this owner's: name it after them, and install the secret scan.
 
-    §6.1 wants the suffix "so two overlays never collide" — a harness installs a plugin by the
-    name in its manifest, so two owners' overlays under one configuration directory would be one
-    plugin fighting itself. **All three manifests**, because the project ships a Codex half of
-    everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision still
-    happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
-    root *is* a root, so the contained walk applies and there is no carve-out to take.
+    Creating the overlay wants the suffix "so two overlays never collide" — a harness installs
+    a plugin by the name in its manifest, so two owners' overlays under one configuration
+    directory would be one plugin fighting itself. **All three manifests**, because the project
+    ships a Codex half of everything else and `.codex-plugin/plugin.json` left unsuffixed is that
+    collision still happening, one harness over. Each is rewritten through `fsops.write_within`:
+    the overlay root *is* a root, so the contained walk applies and there is no carve-out to
+    take.
 
     **Every rewrite is re-stamped into the scaffold ledger.** `create --local` renders these
     files through the engine, which records each one's digest; a rewrite behind the ledger's
@@ -354,9 +356,9 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
 def _install_secret_scan(root: Path, runner: Runner) -> str:
     """Install the commit-time secret scan, or say why it is not installed.
 
-    §6.4 runs gitleaks twice and this is one of the two; the other is the push workflow the
-    template ships, which is what makes `--no-verify` not the last word. A missing `pre-commit`
-    is a reported finding, never a traceback.
+    The overlay's secret scanning runs gitleaks twice and this is one of the two; the other is
+    the push workflow the template ships, which is what makes `--no-verify` not the last word.
+    A missing `pre-commit` is a reported finding, never a traceback.
     """
     done: Completed = runner.run(["pre-commit", "install"], root)
     if done.code == 0:

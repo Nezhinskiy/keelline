@@ -1,4 +1,4 @@
-"""The CLI frame (contract C5): one parser, areas discovered by name, three exit codes."""
+"""The CLI frame: one parser, areas discovered by name, three exit codes."""
 
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _discovery_failed(raw: list[str], exc: BaseException) -> int:
     """Discovery and the parser build both abort before argparse, so `hook`'s own policy is
-    applied here (§5.3).
+    applied here (`docs/cli.md#hooks`: each event's failure policy).
 
     Exit 2 on `UserPromptSubmit` erases what the user typed, so one later area's bug in its
     `commands.py` — raised at import, or from the `register()` the parser build calls, or as

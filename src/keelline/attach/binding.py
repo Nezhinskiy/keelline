@@ -1,10 +1,10 @@
 """Which overlay this repository is bound to, and whether the binding is really this one's.
 
-**DP3, and two of its three rules live here.** The overlay is trusted *by construction*, and
-the construction is that `config.machine.machine_config_path(interactive=False)` makes the
-machine file unselectable by a repository — that module spends twenty lines on why gating one
-of a pair of equivalent variables "is not a partial defence, it is a redirect with a longer
-name". So:
+**Three rules keep the overlay trusted, and two of them live here.** The overlay is trusted
+*by construction*, and the construction is that
+`config.machine.machine_config_path(interactive=False)` makes the machine file unselectable by
+a repository — that module spends twenty lines on why gating one of a pair of equivalent
+variables "is not a partial defence, it is a redirect with a longer name". So:
 
 1. the overlay root comes from `overlay_root(machine)` and never from `--store`. Deriving it
    from the store's own parent would make the source of every allow rule and every hook entry
@@ -18,10 +18,9 @@ name". So:
 
 The third rule is a write and lives in `write.py`.
 
-**The two remotes on a `Binding` are repository-authored bytes**, by the Global Constraints'
-own list, and nothing here puts either into a summary, a `Result.data` or a refusal message.
-What this module computes *about* them — one of three state labels — is Keelline's own and may
-be printed.
+**The two remotes on a `Binding` are repository-authored bytes** (principle 5), and nothing
+here puts either into a summary, a `Result.data` or a refusal message. What this module
+computes *about* them — one of three state labels — is Keelline's own and may be printed.
 """
 
 from __future__ import annotations
@@ -57,8 +56,8 @@ NO_OVERLAY = (
     "this repository to; run `keelline setup` first"
 )
 # `memory.groups` is one of the four fields `config.paths`' own docstring names as bounded by no
-# grammar, so a group name is repository-authored bytes the same way `project.name` is (Task 1,
-# DC6) — refused rather than quoted back. Fixed text, naming the two keys and never the value.
+# grammar, so a group name is repository-authored bytes the same way `project.name` is —
+# refused rather than quoted back. Fixed text, naming the two keys and never the value.
 # Distinct from `attach.write.GROUP_ESCAPES`, which is the same shape for a different escape (a
 # group leaving the *overlay's* share, at write time); this one is `unlinked_groups`' own, so
 # the handler this seam exists for (Task 6) and `unlinked_groups`' own caller cannot spell it
@@ -123,10 +122,11 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except OSError as exc:
         raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
     except tomllib.TOMLDecodeError as exc:
-        # P10, and the same leak this branch has closed at three other sites. `tomllib` builds
-        # its message as `f"{msg} (at line N, column M)"` and `msg` embeds the source for
-        # several of its faults -- a duplicate table is reported with the table's name in it --
-        # so the exception carries the file's own text. This file is the overlay's, whose bytes
+        # A refused value is bounded before it may print -- the same leak this branch has
+        # closed at three other sites. `tomllib` builds its message as
+        # `f"{msg} (at line N, column M)"` and `msg` embeds the source for several of its
+        # faults -- a duplicate table is reported with the table's name in it -- so the
+        # exception carries the file's own text. This file is the overlay's, whose bytes
         # are the machine owner's and may print, with one exception that decides it: the value
         # Keelline writes into it is this repository's `origin`, and a remote URL may not print
         # wherever it came from. `toml_position` bounds it to the suffix, and `from None`
@@ -139,7 +139,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
 def _state(recorded: str | None, origin: str | None) -> str:
     """`unbound`, `bound` or `mismatch` — and never `bound` because nobody looked.
 
-    §12's hostile-clone row turns on this comparison: "attach compares the remote to the
+    The hostile-clone row turns on this comparison: "attach compares the remote to the
     overlay's record and refuses". The clone chooses `project.name`; it does not choose which
     remote the overlay recorded under that name.
     """
@@ -172,8 +172,9 @@ def read_binding(
     """The binding this repository would attach under, or a refusal that it may not.
 
     `project.name` arrives through `config.loader.load` and never out of the raw TOML, because
-    that loader is what holds it to one path segment (§7.4 names `../common` as the value it is
-    protecting against, and the name becomes a directory under the overlay's `projects/`).
+    that loader is what holds it to one path segment (path containment names `../common` as the
+    value it is protecting against, and the name becomes a directory under the overlay's
+    `projects/`).
 
     `config` is loaded here only when the caller does not already hold one. `permissions.check`
     does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
@@ -198,7 +199,7 @@ def read_binding(
 
 
 def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
-    """The `memory.groups` entries that are real directories under `paths.memory` (§6.3, §12).
+    """The `memory.groups` entries that are real directories under `paths.memory`.
 
     The anchor is `root` — the checkout the command was pointed at or the hook was handed,
     never a value the repository chose — and a group `contained` refuses against it is raised,

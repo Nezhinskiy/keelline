@@ -1,4 +1,4 @@
-"""The `release` group (§5.2): one version everywhere, the changelog, and the file record.
+"""The `release` group: one version everywhere, the changelog, and the file record.
 
 **Findings are returned, not raised.** This was the one area that reported a finding by raising
 `Failure`, and the cost was in `--json`: the frame turns a `Failure` into
@@ -10,7 +10,7 @@ other area returns `Result(..., exit_code=1)`; these two do now. The exit codes 
 cannot parse at all, which is `versions.MalformedSource` and `notes`' missing towncrier.
 
 **`release notes --draft` is the one summary in this CLI that is not one line**, and it is
-deliberate: §5.2 gives every command one line because a line is what a caller reads, and a
+deliberate: the CLI gives every command one line because a line is what a caller reads, and a
 draft's whole purpose is that a person reads the section towncrier *would* write before it is
 written. Printing it through `Result.summary` is what puts it on stdout under the same frame as
 every other command, and `docs/cli.md` documents it as the rendered section. Every other

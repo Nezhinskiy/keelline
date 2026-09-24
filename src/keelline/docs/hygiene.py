@@ -1,4 +1,4 @@
-"""Small always-loaded documents and existing link targets (D7: every bound is a budget)."""
+"""Small always-loaded documents and existing link targets (every bound is a budget)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def read_document(path: Path, where: str | Path) -> str:
     """One repository document's text, or a `Failure` naming it.
 
     `cli.run` maps a `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a
-    refusal or an internal error (C5). One latin-1 byte in `AGENTS.md`, in the roadmap, in a
+    refusal or an internal error. One latin-1 byte in `AGENTS.md`, in the roadmap, in a
     plan or in `trail.toml` reached the frame as `internal error: UnicodeDecodeError` and exit
     2 — telling the operator this tool is broken rather than that their file is, with nothing in
     the message to act on. A repository's malformed input must read as their input being wrong.

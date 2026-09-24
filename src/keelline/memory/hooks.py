@@ -1,4 +1,4 @@
-"""Handlers this area contributes; `hooks-core` owns the entries that invoke them (C4, §5.3).
+"""Handlers this area contributes; `hooks-core` owns the entries that invoke them.
 
 Every import of `keelline.config`, `keelline.memory.store` and their neighbours happens
 **inside** a handler body. `tests/test_areas.py` asserts that `discover()` in a clean
@@ -106,7 +106,7 @@ def _link_worktree(event: HookEvent, config: Config | None) -> HookResult:
         if not links.created:
             return HookResult()
         return HookResult(context=LINKED.format(count=len(links.created)))
-    # The backstop stays broad on purpose: §5.3 says a memory handler never costs a session,
+    # The backstop stays broad on purpose: a memory handler never costs a session,
     # and `resolve` alone reaches `tomllib`, `subprocess` and the filesystem. Narrowing it to
     # `OSError` would let an unforeseen exception out of a `Policy.OPEN` handler. What the two
     # clauses above buy is that the two failures this function can actually produce are no

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Keelline hook wrapper. $1 = policy (open|closed); the rest is Keelline's own argv.
 #
-# This file exists because a Python process cannot fail closed about its own absence (D11):
+# This file exists because a Python process cannot fail closed about its own absence:
 # a missing script exits 2 by CPython accident, a missing interpreter 127, an ImportError 1,
 # a lost executable bit 126 — and Claude Code reads every non-2 exit as a non-blocking error,
 # which is permission. Every fault this script can see before the launcher runs prints its own
@@ -29,7 +29,7 @@
 # **`PATH` is the chooser the tty gate did not close, and it is contained rather than dropped.**
 # The last candidate below is bare `python3`, resolved through `PATH`, and an `env` block can set
 # `PATH` — so gating `KEELLINE_PYTHON_CANDIDATES` alone moved the choice from one variable to
-# another. Dropping the entry is not the answer: it is the fall-through S8 row 2 measured, and a
+# another. Dropping the entry is not the answer: it is the measured fall-through, and a
 # machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any of the four absolute
 # paths. What a hostile clone can actually stage is narrower than "any `PATH`" — a shipped
 # interpreter plus a `PATH` entry naming its own tree — so **no candidate that resolves inside
@@ -76,7 +76,7 @@ launcher="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/scripts/keelline"
 # Every entry but the dispatcher's relies on `--root` defaulting to the current directory, and
 # no harness promises to launch a hook inside the project. Resolved here, once, rather than
 # threaded through each entry's argv: CLAUDE_PROJECT_DIR is Claude Code's (Codex sets no such
-# name — S1), and `git` answers for both. **Before the interpreter probe**, because the probe
+# name, measured), and `git` answers for both. **Before the interpreter probe**, because the probe
 # refuses a candidate that lies inside this root and cannot ask that question before it has one.
 #
 # **`git` is a program this file chooses, not a destination it is handed.** The containment below
@@ -255,7 +255,7 @@ in_project() {
 
 # The probe runs code rather than matching a path: bare `python3` in a hook subprocess can
 # resolve to macOS's 3.9, and a path list alone would fall through to it on a machine with no
-# python.org or Intel-Homebrew install (S8 row 2 measured exactly that fall-through).
+# python.org or Intel-Homebrew install (a spike measured exactly that fall-through).
 #
 # `KEELLINE_PYTHON_CANDIDATES` names the *program* this script executes, and the probe asks it
 # only to exit 0 for a trivial `-c` — so unguarded it is a redirect with a longer name, and the

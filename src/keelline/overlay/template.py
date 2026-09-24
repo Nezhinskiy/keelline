@@ -2,13 +2,14 @@
 
 `templates/overlay/` lives **under the module root**, beside `presets/`, and for the same
 reason: it is read at *runtime* — `overlay create --local` renders it — so the copy that has to
-answer is the one an installed Keelline carries. §5.1 draws the tree at the plugin root, and
-this repository has already departed from that drawing once, for `presets/recommended.toml`,
-which `load_preset` reads out of the package. Two facts settle it here. `uv_build` has no wheel
-includes at all: "all data files must either be under the module root or in the appropriate data
-directory", so `source-include` reaches the sdist and nothing else. And §6.1 makes `--local` the
-fallback for an unreachable template repository, while the skills reference the CLI by name — so
-the copy that runs is the one on `PATH`, and a fallback absent from the wheel is not a fallback.
+answer is the one an installed Keelline carries. The plugin root's layout draws the tree at the
+plugin root, and this repository has already departed from that drawing once, for
+`presets/recommended.toml`, which `load_preset` reads out of the package. Two facts settle it
+here. `uv_build` has no wheel includes at all: "all data files must either be under the module
+root or in the appropriate data directory", so `source-include` reaches the sdist and nothing
+else. And `--local` is the fallback for an unreachable template repository, while the skills
+reference the CLI by name — so the copy that runs is the one on `PATH`, and a fallback absent
+from the wheel is not a fallback.
 `hooks/` stays at the plugin root, because the *harness* reads it from there and Python never
 does.
 
@@ -41,7 +42,7 @@ def template_root() -> Path:
     A path is always returned, existing or not, so a caller that cannot find the tree can name
     where it looked instead of handling a `None`. `templates()` is the one place that becomes a
     refusal a user can act on. `keelline.templates.tree` is the one resolver both this tree and
-    `project/`'s answer through (DC9), so the two cannot come to disagree about where "shipped"
+    `project/`'s answer through, so the two cannot come to disagree about where "shipped"
     is — `resources.files` answers a `Path` for every filesystem install, which is every install
     this project supports; `fsops` contains writes with `dir_fd=` and `O_NOFOLLOW`, so a
     zip-imported Keelline could not write an overlay in any case.

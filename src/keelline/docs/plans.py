@@ -107,7 +107,7 @@ _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+
 # Present tense only, so "verified"/"confirmed" — a report — is not among them.
 _GOVERNOR = r"(?:->|→|\bwatch(?:ing)?\b|\bverif(?:y|ies)\b|\bconfirms?\b)"
 # How far an outcome may sit from the instruction that governs it and still be read as its
-# consequence (D7: a bound on a regular expression's reach, not a budget — no shipped file
+# consequence (a bound on a regular expression's reach, not a budget — no shipped file
 # changes with it). Wide enough for a clause, narrow enough that a data-flow arrow early in a
 # long paragraph cannot reach a "must stay green" constraint at its end.
 _OUTCOME_SPAN = 60
@@ -175,7 +175,7 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     vanishes from the gate in silence. `-z` NUL-terminates each record instead and never quotes;
     the trailing empty field falls out with everything that does not end in `.md`.
 
-    The base is refused when it is shaped like an option (§3), in the one spelling
+    The base is refused when it is shaped like an option (principle 5), in the one spelling
     `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. `--` closes
     the pathspec but sits behind the slot `base` interpolates into, so a `--base` of
     `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a

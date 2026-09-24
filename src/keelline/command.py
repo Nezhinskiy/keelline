@@ -15,7 +15,7 @@ from pathlib import Path
 from keelline.config.loader import load
 from keelline.config.schema import Config
 
-# One sentence per shared flag (DC4). `--root` and `--machine` were spelled by hand in three
+# One sentence per shared flag. `--root` and `--machine` were spelled by hand in three
 # parsers besides this one and had already drifted from these words; `--home` appeared in two
 # areas with two sentences, one saying "read" and the other "write". A flag that means the same
 # thing across eight commands says the same thing, and `tests/test_command.py` walks the real

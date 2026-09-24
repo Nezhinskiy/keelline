@@ -1,10 +1,10 @@
-"""Where the dispatcher's markers and diagnostics survive between invocations (§5.3).
+"""Where the dispatcher's markers and diagnostics survive between invocations.
 
 Two of the three path segments below are payload-controlled — the marker key a handler chose,
 and the session id off the hook's stdin — so both are hashed to a fixed-width hex name, and
 every write and removal still goes through `fsops`' `O_NOFOLLOW` walk. Two controls rather
-than one, because what runs here is not only a write but a `remove_within` loop, and D14
-permits it in exactly one directory.
+than one, because what runs here is not only a write but a `remove_within` loop, and writes
+are enumerated and permitted in exactly one directory.
 
 Nothing here ever raises at its caller. A hook runs on every tool call, so an unwritable
 `${CLAUDE_PLUGIN_DATA}` must cost a lost marker and never a refused Bash command — which is
@@ -68,8 +68,8 @@ UNKEYED_SESSION = f"unkeyed:{os.getpid()}:{os.urandom(16).hex()}"
 def _segment(value: str) -> str:
     """One payload-controlled string, as one fixed-width path segment.
 
-    `../../escape` as a filename is a write — and a delete — outside the one directory D14
-    permits. The hash also fixes the length, so a value of any size costs one short name.
+    `../../escape` as a filename is a write — and a delete — outside the one directory writes are
+    permitted in. The hash also fixes the length, so a value of any size costs one short name.
     """
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
 
@@ -132,7 +132,7 @@ class DataSink:
     def diagnostic(self, record: dict[str, object]) -> None:
         # The session is capped with everything else, and not merged in past the cap. It comes
         # off the hook's stdin and `parse_event` type-checks it as `str` and nothing more, so it
-        # is as payload-controlled as any field a handler supplies — "never raw stdin" (§5.3)
+        # is as payload-controlled as any field a handler supplies — "never raw stdin"
         # covers the key this record is filed under as much as it covers the reason string.
         capped = {
             key: value[:DIAGNOSTIC_FIELD_CHARS] if isinstance(value, str) else value
@@ -174,10 +174,10 @@ class DataSink:
 def sink_for(session: str | None, env: Mapping[str, str]) -> Sink:
     """A durable sink under the harness's data root, or `NullSink()` when there is not one.
 
-    `PLUGIN_DATA` is Codex's name for the same thing (S1), so one lookup serves both harnesses.
-    The data root itself belongs to the harness and is not created here; `keelline/` under it is
-    ours, and is created by the probe through `write_within`'s contained walk rather than by a
-    `mkdir(parents=True)` that would follow a symlink on the way.
+    `PLUGIN_DATA` is Codex's name for the same thing (measured), so one lookup serves both
+    harnesses. The data root itself belongs to the harness and is not created here; `keelline/`
+    under it is ours, and is created by the probe through `write_within`'s contained walk rather
+    than by a `mkdir(parents=True)` that would follow a symlink on the way.
     """
     data = env.get("CLAUDE_PLUGIN_DATA") or env.get("PLUGIN_DATA")
     if not data:

@@ -51,7 +51,7 @@ class LedgerError(Failure):
     """A ledger file that cannot be read, or a rule that has been broken.
 
     A `Failure`, so the exit code 1 it carries is the frame's to map, never this module's
-    (C5: library modules raise, only `cli.py` maps).
+    (library modules raise, only `cli.py` maps).
     """
 
 
@@ -213,7 +213,7 @@ def read_ledger_text(path: Path, *, where: Path) -> str:
     A condition the operator can fix — a permission bit, a stray non-UTF-8 byte in an entry —
     must not leave this area as a bare `OSError` or `UnicodeDecodeError`. `cli.run` maps a
     `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a refusal or an
-    internal error (C5): a repository condition reported as an internal error tells the
+    internal error: a repository condition reported as an internal error tells the
     operator the tool is broken rather than that their tree is, and there is nothing in that
     message for them to act on. `check.problems` has an `unreadable-entry` rule for exactly
     this file and catches this; `scan.scannable` records the same condition on `Scanned.error`

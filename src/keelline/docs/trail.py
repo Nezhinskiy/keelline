@@ -3,7 +3,7 @@
 The roadmap's prose owns phase status; this listing makes the corpus navigable: every spec and
 plan, grouped by theme, annotated with its delivery state. Delivered is the default; anything
 else is declared in `trail.toml` beside the roadmap — that file is the one part a human
-maintains, and it is the forward track in machine-readable form (Premise 9). A document
+maintains, and it is the forward track in machine-readable form. A document
 appearing for the first time has to declare its state, `delivered` included: a design is
 written before the thing is built, so the first listing of one would otherwise assert that
 unimplemented work has shipped.

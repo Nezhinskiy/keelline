@@ -1,13 +1,14 @@
-"""What each `SessionStart` entry injects, and how much of it fits (§9.5).
+"""What each `SessionStart` entry injects, and how much of it fits.
 
 One entry per bundle, each rendered by `memory session-context --bundle <name> --part <n>`,
 and **no dispatcher handler**. That is not a style choice. Foundation's `hook <event>` takes
 an event name and runs every handler registered for it, joining their contexts and clamping
 the join to one platform cap — so nine numbered slots registered as handlers would concatenate
-back into a single 10,000-character budget and be truncated, which is precisely the defect
-§9.5 exists to remove. Invoked as separate `hooks.json` entries, each slot gets its own cap,
-and the text is emitted raw rather than through a JSON envelope, so the margin below is
-genuinely additive instead of fighting `ensure_ascii`'s six characters per non-ASCII point.
+back into a single 10,000-character budget and be truncated, which is precisely the defect a
+cap per `SessionStart` slot exists to remove. Invoked as separate `hooks.json` entries, each
+slot gets its own cap, and the text is emitted raw rather than through a JSON envelope, so the
+margin below is genuinely additive instead of fighting `ensure_ascii`'s six characters per
+non-ASCII point.
 
 Standing rules are never truncated, only flagged: a standing rule that does not arrive is a
 standing rule that gets broken, and the set is hand-curated by a flag, so its size is
@@ -38,7 +39,7 @@ class Bundle(StrEnum):
 
 
 # How many numbered entries `hooks/hooks.json` declares for each bundle. Raising one edits
-# that shipped file, which the `hooks-core` lane owns (§9.5); `doctor` compares these against
+# that shipped file, which the `hooks-core` lane owns; `doctor` compares these against
 # what a store actually needs and reports a bundle that does not fit.
 SLOTS: dict[Bundle, int] = {
     Bundle.PRESET_RULES: 1,
@@ -58,16 +59,16 @@ SLOTS: dict[Bundle, int] = {
 # part packed to `_cap` and emitted raw is the bundle plus one trailing newline: measured at
 # `hook_output_chars = 10000`, 9,985 characters emitted with 15 to spare.
 #
-# **D7, stated as the deviation it is.** The Global Constraint asks for a budget, a cap or a
-# TTL to come from `config.budgets`, `config.native_caps`, or a named module constant *whose
-# comment says which shipped file must change with it*. There is no such file for this one and
-# there should not be: it is the headroom between a cap this lane does not own and the way this
+# **The named-cap rule, stated as the deviation it is.** It asks for a budget, a
+# cap or a TTL to come from `config.budgets`, `config.native_caps`, or a named module constant
+# *whose comment says which shipped file must change with it*. There is no such file for this one
+# and there should not be: it is the headroom between a cap this lane does not own and the way this
 # lane emits text, and a project that could widen it would be a project that could make its own
 # bundles overrun the platform truncation silently. So this names no shipped file, which is a
 # departure from the constraint's literal wording rather than a satisfaction of it — the same
 # departure `store._GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` make, and it is flagged here
-# rather than dressed up as compliance. The cap it is subtracted from, `hook_output_chars`, is
-# where D7 is actually satisfied.
+# rather than dressed up as compliance. The cap it is subtracted from, `hook_output_chars`, is where
+# that rule is actually satisfied.
 #
 # **For the `hooks-core` lane, which reads `SLOTS` out of this file: the `hooks.json` entries
 # must not pass `--json`.** The margin is additive only because `memory session-context` prints
@@ -210,7 +211,7 @@ def _index(source: Path | None) -> list[str]:
     """The index, once `index.index_source` has said which file the index actually is.
 
     Reading `store.path / INDEX_NAME` directly was the defect: `is_file()` follows symlinks and
-    nothing asked where the link went, while `worktree.link` already applied §9.1's per-link
+    nothing asked where the link went, while `worktree.link` already applied the per-link
     target rule to the very same file. This is the path that reaches the model, so it gets the
     rule first, not last.
 

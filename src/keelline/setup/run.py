@@ -1,4 +1,4 @@
-"""`setup(preset, ...)`: the walkthrough's steps 3 and 4 (§4) — machine setup, once.
+"""`setup(preset, ...)`: the onboarding walkthrough's steps 3 and 4 — machine setup, once.
 
 Five things, each reported and each independently skippable, in this order: write the machine
 file (the personal defaults the preset names, for whichever of them nothing has recorded yet);
@@ -78,9 +78,9 @@ For `create:`, the destination is `home/<name>` and is knowable from the argumen
 draft ran `gh repo create`, cloned, renamed both manifests and installed the secret scan, and
 *then* refused — leaving a private repository on somebody's GitHub account that nothing in the
 report mentioned. `--yes` gets the one real control the ruling does give it: `setup` refuses
-`--overlay create:<owner>/<name>` without it, because §6.1 asks for "explicit confirmation"
-before `gh repo create` runs, and creating a repository on GitHub is the one irreversible,
-outward-facing act this command performs.
+`--overlay create:<owner>/<name>` without it, because creating the overlay asks for "explicit
+confirmation" before `gh repo create` runs, and creating a repository on GitHub is the one
+irreversible, outward-facing act this command performs.
 
 **A symlinked settings file is a refusal with a remedy that works, not an internal error.**
 `home` is the machine owner's own directory and a home managed by stow, chezmoi or a synced
@@ -126,10 +126,11 @@ from keelline.setup.machine import USER_SETTINGS, read_machine, write_machine
 # `.claude-plugin/marketplace.json`'s `name` (`tests/test_manifests.py` holds both). Claude
 # Code keys `pluginConfigs` by this pair, not by the plugin name alone.
 PLUGIN_ID = "keelline@keelline-marketplace"
-# The release tag scheme (`vX.Y.Z`, §5.9); `uv tool install` has no `--from`, so the positional
-# git URL form is the one D2 permits (`git+https://…@<tag>`). An f-string with a doubled brace,
-# because the concatenation it replaces read as somebody having forgotten one: `{version}` is
-# meant to survive into the template and be filled by the caller, and `{{version}}` says so.
+# The release tag scheme (`vX.Y.Z`); `uv tool install` has no `--from`, so the positional git
+# URL form is the one an install from a git URL at a tag takes (`git+https://…@<tag>`). An
+# f-string with a doubled brace, because the concatenation it replaces read as somebody having
+# forgotten one: `{version}` is meant to survive into the template and be filled by the caller,
+# and `{{version}}` says so.
 INSTALL_COMMAND = f"uv tool install git+{REPOSITORY_URL}@v{{version}}"
 # One verb pair per harness, fixed here rather than in the preset: which CLI verb installs a
 # plugin is a property of the harness, never of any one plugin, and the two differ (measured,
@@ -204,8 +205,8 @@ def _agents(preset: dict[str, Any]) -> tuple[str, ...]:
 def _marketplace(preset: dict[str, Any], agent: str) -> tuple[str, str] | None:
     """`(source, marketplace name)` for `agent`, or `None` when the preset declares none.
 
-    `None` is not a fault: it is "nothing here is vendored for this harness on a guess" (§5.6),
-    and the caller reports it as a note rather than attempting an argv nobody measured.
+    `None` is not a fault: it is "nothing here is vendored for this harness on a guess", and the
+    caller reports it as a note rather than attempting an argv nobody measured.
     """
     table = preset.get("plugins", {}).get(agent)
     if not isinstance(table, dict):
@@ -289,7 +290,7 @@ def _write_user_settings(
     `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
     `options`, so a value this run did not set survives a second one same as `write_machine`'s.
 
-    `settings` (R3) names the file itself, for the layout no `--home` can express: `stow` folds
+    `settings` names the file itself, for the layout no `--home` can express: `stow` folds
     a package as far as it can, so with `~/.claude` already there it links
     `~/.claude/settings.json` into a dotfiles tree, and `--home <dotfiles>/claude` writes
     `<dotfiles>/claude/.claude/settings.json` — a file no reader reads. When it is given, the
@@ -379,8 +380,8 @@ def _home_that_leads_there(home: Path, link: Path) -> Path | None:
     link's basename to its target's, which is trivially true for a per-file link, and printed
     `--home <dotfiles>/claude` — under which this command writes
     `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the link leads to
-    untouched and every reader reading nothing. That is finding 14's shape arriving through the
-    remedy instead of through the default.
+    untouched and every reader reading nothing. That is the silent-success shape — a write nobody
+    reads, and exit 0 — arriving through the remedy instead of through the default.
 
     What `--home H` actually writes is `H/<USER_SETTINGS>` and nothing else, so a remedy exists
     exactly when what the link leads to *is* a `<USER_SETTINGS>` inside some directory — and
@@ -467,8 +468,8 @@ def _check_settings_parent(settings: Path) -> None:
 
     A directory at the file's own name is refused in the same breath: it passed both checks
     above, and `_write_user_settings` then failed from `_read_document` with `Is a directory` —
-    a `Failure`, C5's exit 1, for a structural precondition — after `home.mkdir(parents=True)`
-    and after the machine configuration had been written.
+    a `Failure`, the findings exit code 1, for a structural precondition — after
+    `home.mkdir(parents=True)` and after the machine configuration had been written.
     """
     parent = settings.parent
     if not (parent.is_dir() and not parent.is_symlink()):
@@ -580,7 +581,7 @@ def _requested_overlay(
     `keelline-private/` inside this very checkout the first time a test exercised the branch.
     """
     if overlay is None:
-        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
+        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is the
         # only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None

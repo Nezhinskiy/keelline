@@ -3,11 +3,12 @@
 **Two sources, and the third one is the defect.** The inputs are `<overlay>/common/claude/` and
 `<overlay>/projects/<name>/claude/` — the machine owner's own files, in the repository the
 machine file anchors. `.claude/settings.json` is read for *nothing*: it is committed, so it is
-repository-controlled, and §3's last row and §12 both say it in one line — "Committed settings
-widen permissions → never merged". `.claude/settings.local.json` is read, and only to subtract:
-a rule the project already carries is not something this attach would add.
+repository-controlled, and the trust boundary and the hostile-clone rows both say it in one
+line — "Committed settings widen permissions → never merged". `.claude/settings.local.json` is
+read, and only to subtract: a rule the project already carries is not something this attach
+would add.
 
-**The two halves of the diff are not symmetric (DP4).** A hook entry carries `# keelline:<id>`
+**The two halves of the diff are not symmetric.** A hook entry carries `# keelline:<id>`
 inside its command string, so it has an in-band witness that survives the file being edited by
 hand — `scaffold.owned_ids` reads them back. A `permissions.allow` string cannot carry one:
 `scaffold.mark` appends to a *command*, and `scaffold.entries.unmarked` walks
@@ -38,7 +39,7 @@ from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
 from keelline.result import Result
 from keelline.scaffold import EntriesError, mark
 
-# The project-local file `attach` owns outright (DP4). `.claude/settings.json` beside it is the
+# The project-local file `attach` owns outright. `.claude/settings.json` beside it is the
 # committed one and is never read.
 LOCAL_SETTINGS = ".claude/settings.local.json"
 PERMISSIONS_FILE = "permissions.json"
@@ -48,7 +49,7 @@ PROJECT_CLAUDE = "claude"
 PROJECT_CODEX = "codex"
 # `keelline:overlay-<event>-<n>`: one id per entry, for the reason in the module docstring.
 ENTRY_PREFIX = "overlay"
-# Where Codex reads standing instructions (§6.3).
+# Where Codex reads standing instructions.
 CODEX_RULES = ".codex/rules"
 
 
@@ -69,7 +70,7 @@ class PermissionDiff:
     def widens(self) -> bool:
         """Whether applying this diff would grant a capability the project does not have.
 
-        The gate DP3 puts on the write is on *this*, not on the command: an overlay with no
+        The `--yes` gate on the write is on *this*, not on the command: an overlay with no
         allow rules and no hook entries — the state of a freshly created one — must still link
         memory with no flag, or the flag becomes something people pass reflexively.
         """
@@ -158,9 +159,10 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     instruction is exactly the kind of thing an owner wants named before it lands.
 
     This is **reporting and not gating**, and the distinction is deliberate. The `--yes` gate is
-    about widening a *permission* (D15, DP3), §3's trust table grants the machine owner "add
-    standing rules", and the overlay is the machine owner's own artifact — so a rule file does
-    not make `widens` true, and `widens` keeps meaning what its name says.
+    about widening a *permission* (repository configuration never grants capability), the trust
+    table grants the machine owner "add standing rules", and the overlay is the machine owner's
+    own artifact — so a rule file does not make `widens` true, and `widens` keeps meaning what
+    its name says.
 
     This project's own `codex/` is read second, so a file it shares a name with in `common/` is
     the one that lands; the pair is returned rather than two lists so the caller cannot pair
@@ -240,8 +242,9 @@ def _commands(document: str, label: str) -> set[str]:
 def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     """What attaching `binding` would add to `root`, without writing a byte."""
     overlay_common, overlay_project = _claude_sources(binding, PERMISSIONS_FILE)
-    # The whole of §12's "committed settings widen permissions → never merged": the committed
-    # `.claude/settings.json` sits one name away from both of these and is not on this line.
+    # The whole of the hostile-clone rule "committed settings widen permissions → never merged":
+    # the committed `.claude/settings.json` sits one name away from both of these and is not on
+    # this line.
     sources = (overlay_common, overlay_project)
     granted = [rule for source in sources for rule in _allow_rules(source)]
     document = local_document(root)

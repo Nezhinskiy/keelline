@@ -284,7 +284,7 @@ class Report(NamedTuple):
     violations: tuple[Violation, ...]
 
 
-# A wall-clock bound on one `git log` over a range (D7: a cap, not a config key). Larger than
+# A wall-clock bound on one `git log` over a range (a named cap, not a config key). Larger than
 # `gitenv.GIT_TIMEOUT_SECONDS` because a pull-request range can be hundreds of commits; a
 # `git log` that takes longer than this is a repository this command cannot judge in CI.
 LOG_TIMEOUT_SECONDS = 60
@@ -403,8 +403,8 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
     this module fixed once already: a gate whose whole argument is that it cannot be bypassed,
     bypassed by one byte.
 
-    The range is refused when it is shaped like an option (§3) and closed with `--` so it can
-    never be read as a pathspec.
+    The range is refused when it is shaped like an option, as any value a repository can
+    influence is, and closed with `--` so it can never be read as a pathspec.
     """
     if rev_range.startswith("-"):
         raise Refusal(f"{rev_range!r} looks like an option, not a revision range")

@@ -1,4 +1,4 @@
-"""What `init --yes` can read off a repository without asking (§8.1).
+"""What `init --yes` can read off a repository without asking.
 
 Four values, each one `git` question or a probe of the root: the name, the base branch, the
 harnesses whose directories the root carries, and the shipped profile whose markers it

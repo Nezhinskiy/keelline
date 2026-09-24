@@ -1,4 +1,4 @@
-"""Keyed entries inside a settings file a person and several tools share (§7.2).
+"""Keyed entries inside a settings file a person and several tools share.
 
 Keying on a marker inside the command string rather than on position is what lets `upgrade`
 replace what Keelline installed while a foreign entry beside it — another plugin's, or the

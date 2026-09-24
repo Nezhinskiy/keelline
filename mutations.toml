@@ -1931,7 +1931,7 @@ reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_th
 name = "setup touches the overlay even when the caller named no answer"
 file = "src/keelline/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. §6.1's gate is that `--overlay` is the
+        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is the
         # only way to reach the overlay at all, and `--yes` does not imply one: a default here
         # would turn an omitted flag into a repository created on somebody's account.
         return None"""

@@ -1,10 +1,10 @@
-"""Which commit a release is, asked of the public repository (D16, §5.8).
+"""Which commit a release is, asked of the public repository, for an immutable pin (principle 9).
 
 The sha `init` writes into a project's workflow has to be one a release actually is, and
 `doctor` has to be able to say whether a recorded one still is: one `git ls-remote` over
 `refs/tags/v*`, annotated tags peeled to the commit they name. The repository is
 `keelline.REPOSITORY_URL` and the pattern is a constant, which is what lets either stand in a
-subprocess's argument list (§3).
+subprocess's argument list (principle 5).
 
 `released` distinguishes three states — could not ask (`None`), no tags at all (`{}`), and a
 listing that may or may not hold the tag asked for — and **its callers tell two of them apart, not

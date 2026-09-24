@@ -187,9 +187,9 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
             if "version" in entry:
                 problems.append(
                     f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
-                    "plugin.json is the only source (D12)"
+                    "plugin.json is the only source of the version"
                 )
-    # DC5: the record of the shipped files is held current here and not only at a tag, so a
+    # The record of the shipped files is held current here and not only at a tag, so a
     # wrapper edited without `keelline release hashes` fails the gate the same commit.
     #
     # Asked of the recorded files themselves and not of a `hooks/` directory. `--root` defaults

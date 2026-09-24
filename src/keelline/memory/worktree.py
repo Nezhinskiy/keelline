@@ -18,14 +18,14 @@ Three rules the shell version of this paid for:
 
 Links point at the *resolved* group target, not at the main checkout's own link: in overlay
 mode that link is itself a symlink, and a chain breaks the moment `detach` removes the first
-hop. It also matters for a group the store's own §9.1 checks refused: such a group never makes
+hop. It also matters for a group the store's own checks refused: such a group never makes
 it into `store.groups`, so sourcing from that dict (and never from `store.path / name`) is what
 keeps a boundary the store already enforced from being bypassed a second time here.
 
 The index gets no exemption from that boundary. `store.py` does not track `MEMORY.md` as a
-group — it is not a `memory.groups` entry — so nothing upstream ever applies §9.1's per-link
-target rule to it the way `_group_targets` applies it to every configured group. §6.3 makes a
-symlinked index a legitimate member of the tree `attach` creates, so the fix cannot be "refuse a
+group — it is not a `memory.groups` entry — so nothing upstream ever applies the per-link
+target rule to it the way `_group_targets` applies it to every configured group. `attach` makes
+a symlinked index a legitimate member of the tree it creates, so the fix cannot be "refuse a
 symlinked index"; it has to be the identical rule a group gets: in overlay mode, honoured only
 inside this project's own share of the recorded overlay (`permitted_roots`), and outside overlay
 mode refused outright, exactly as an ungoverned group symlink would be.
@@ -108,7 +108,7 @@ def harness_link_parts(worktree: Path, home: Path | None = None) -> tuple[Path, 
     `.claude/projects/<slug>/memory`, so `mkdirs_within` creates every component through
     the `O_NOFOLLOW` walk — on a machine where `~/.claude/projects` does not exist yet
     (Codex-only, a fresh container) as much as on one where it does — and every component
-    is inside the containment rather than resolved past it (N1). A dotfiles layout that
+    is inside the containment rather than resolved past it. A dotfiles layout that
     links `~/.claude` elsewhere is refused by that walk, and the refusal names the link;
     that is the same rule `setup` applies to `~/.claude/settings.json`, and `--settings`'s
     reason for existing.
@@ -148,8 +148,8 @@ def harness_anchor(where: Path, home: Path | None) -> tuple[Path, str]:
 
     * Creating, the walk raised a bare `FileNotFoundError` from `os.open(root)`. `link`
       wrapped it as a `PartialLink`, and `keelline.memory.hooks` rendered that as "0 links
-      made" with the home path nowhere in the message — an error where C5 asks for a refusal
-      (exit 2, not 1), and one that never said what was wrong.
+      made" with the home path nowhere in the message — an error where the CLI frame asks for
+      a refusal (exit 2, not 1), and one that never said what was wrong.
     * Withdrawing, `_unlink` caught the same errno and answered `False`, so `detach` against a
       wrong `--home` reported "nothing to withdraw" and exited 0. An anchor that is not there
       reading as success is the worse half: it is the one case where the caller would act on
@@ -309,7 +309,7 @@ def harness_link_needed(store: Store, config: Config) -> bool:
     """Whether `~/.claude/projects/<slug>/memory` may point at this store — asked in one place.
 
     `link` asks it for a worktree, `attach_main` asks it for the owning checkout, and `attach`
-    asks it again before taking §6.3's settings-file fallback. Three callers and one spelling,
+    asks it again before taking the settings-file fallback. Three callers and one spelling,
     because the question is easy to ask slightly wrong and asking it wrong costs everything the
     gate was for: `repository_data=in_repository(store, store.path)` is what makes it a question
     about *the directory this link exposes* rather than about the notes behind it. Asked without
@@ -358,11 +358,11 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     the two can no longer disagree about where the overlay is.
 
     Raises `PathEscape` rather than skipping when a name leaves the tree. Every `name` here is
-    repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and §7.4 says
-    in as many words that it reaches no guard of its own), and `store.groups` was validated
-    against the *main checkout's* tree — a worktree is a separate checkout of a separate
-    branch, so its own copy of that subtree can hold a symlink the main one does not. Skipping
-    one escaping name would leave the next name in the list free to try the same thing.
+    repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and
+    `config/paths.py` says in as many words that it reaches no guard of its own), and `store.groups`
+    was validated against the *main checkout's* tree — a worktree is a separate checkout of a
+    separate branch, so its own copy of that subtree can hold a symlink the main one does not.
+    Skipping one escaping name would leave the next name in the list free to try the same thing.
 
     **The harness link is the one hop that leaves keelline's gate, so it is the one that asks
     about trust.** Every link above lands inside the worktree, where the only reader is this
@@ -469,11 +469,11 @@ def attach_main(
     machine: Path | None = None,
     home: Path | None = None,
 ) -> Links:
-    """Build the link tree in the checkout that owns the store, in overlay mode (§6.3).
+    """Build the link tree in the checkout that owns the store, in overlay mode.
 
     The case `link` excludes. `link` is right that the main checkout "already holds the real
-    store, not a link to it" in `local-only` and `in-repo`; in `overlay` mode §6.2 puts the real
-    store in the overlay and the checkout holds a tree of links, so the owning checkout needs an
+    store, not a link to it" in `local-only` and `in-repo`; in `overlay` mode the real store
+    lives in the overlay and the checkout holds a tree of links, so the owning checkout needs an
     entry point of its own. It lives here rather than in `attach` because the two share `_link`,
     `_unlink` and the gate above, and a second copy of that gate in another area is the most
     expensive duplication this plan could make.
@@ -483,7 +483,7 @@ def attach_main(
     function creates. So the links come first and `resolve()` second, which is also why the
     harness link is last.
 
-    The overlay root comes from `overlay_root(machine)` and never from `store_path` (DP3), and
+    The overlay root comes from `overlay_root(machine)` and never from `store_path`, and
     `store_path` is checked against `permitted_roots` rather than trusted — `attach` refuses the
     same store one layer up, and this is the floor under that.
 
@@ -568,7 +568,7 @@ def _detach_source(config: Config, machine: Path | None, name: str) -> Path | No
 def detach_main(
     root: Path, config: Config, *, machine: Path | None = None, home: Path | None = None
 ) -> Links:
-    """Withdraw the link tree a checkout holds, and the harness link with it (§6.3).
+    """Withdraw the link tree a checkout holds, and the harness link with it.
 
     The mirror of `attach_main`, and here for the same reason: `_unlink` is deliberately
     narrower than `_link` — only a symlink whose own target is this store is removed, because a
@@ -596,7 +596,7 @@ def detach_main(
     Takes a `Config` and not a `Store`: by the time a repository is detached its store may no
     longer resolve — that is half of what detaching means — so the tree is found where the
     configuration says it is and each name is removed only if it is one of ours. `machine` is
-    what names the overlay (DP3), for the same reason `attach_main` takes it.
+    what names the overlay, for the same reason `attach_main` takes it.
 
     **`config.memory.mode` is checked here and it does not refuse, and that asymmetry with
     `attach_main` two functions above is deliberate.** This module's own history argues against

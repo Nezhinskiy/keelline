@@ -1,4 +1,4 @@
-"""What a session hears about the overlay it is bound to — or not bound to (§6.3, §12; P1).
+"""What a session hears about the overlay it is bound to — or not bound to.
 
 This area registers it because the question is this area's: `binding_for` says whether a
 repository is bound, and `unlinked_groups` whether its notes ever moved. `memory/hooks.py`
@@ -7,10 +7,11 @@ keeps its single `SessionStart` handler and the test that pins it.
 Every line is fixed text with at most a count interpolated; the overlay's declared floor is
 the one owner-authored string that prints, normalised the way it was validated. A repository
 chooses `project.name`, `memory.groups`, `paths.memory` and its remote, and none of the four
-appears here (Global Constraints; P9 says why `refusal_reason` is not used). `MEMORY_PATH_REFUSED`
-is this module's own line and not `binding.MEMORY_GROUP_ESCAPES` relayed: the refusal's text is
-bounded too, but a line that reaches the model is written where it is read, and the two agree
-because both are fixed.
+appears here — a repository is untrusted input (principle 5), which is also why
+`memory.store.refusal_reason` is not used: its text is built out of those same fields.
+`MEMORY_PATH_REFUSED` is this module's own line and not `binding.MEMORY_GROUP_ESCAPES` relayed:
+the refusal's text is bounded too, but a line that reaches the model is written where it is
+read, and the two agree because both are fixed.
 
 **At most once per session (`once_key`), and what it actually costs.** The matcher fires on
 `startup`, `resume`, `clear`, `compact` and `fork`, and this handler runs ahead of
@@ -210,7 +211,7 @@ def _overlay_status(event: HookEvent, config: Config | None) -> HookResult:
                 elif sync.dirty > 0 or sync.ahead > 0:
                     lines.append(UNPUSHED.format(ahead=sync.ahead, dirty=sync.dirty))
         return HookResult(context="\n".join(lines)) if lines else HookResult()
-    # An open handler never costs a session (§5.3); `memory/hooks.py` keeps the same backstop.
+    # An open handler never costs a session; `memory/hooks.py` keeps the same backstop.
     except Exception:
         return HookResult()
 

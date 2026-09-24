@@ -97,7 +97,7 @@ def project_root(cwd: Path, env: Mapping[str, str]) -> Path | None:
     """`CLAUDE_PROJECT_DIR`, else a walk for `.git`, else git itself.
 
     `keelline hook` runs as a subprocess on every tool call, and Codex sets `PLUGIN_ROOT`,
-    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (S1), so the fallback
+    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (measured), so the fallback
     is the Codex hot path. `git rev-parse --show-toplevel` costs about 8 ms of a 33 ms
     invocation and the walk about 0.004 ms; git stays behind it for what a walk cannot see,
     such as `GIT_DIR` and a bare repository.
@@ -136,7 +136,7 @@ def render(event_name: str, context: str) -> str:
 
 
 def _clamp(event_name: str, context: str, cap: int) -> str:
-    """Fit the emitted string, envelope included, inside the cap (§9.5).
+    """Fit the emitted string, envelope included, inside the cap its injection budget sets.
 
     Claude Code caps each hook's output string at 10,000 characters — `additionalContext`,
     `systemMessage` and plain stdout alike — and replaces anything longer with a preview and a
@@ -213,7 +213,7 @@ def dispatch(
     """One deny travels on one channel — the exit code — so every failure here is judged.
 
     `sink` carries no default on purpose: a caller that has no durable sink must say so with
-    `NullSink()` and inherit its forgetfulness (§5.3), rather than acquire it by omission.
+    `NullSink()` and inherit its forgetfulness, rather than acquire it by omission.
     """
     contexts: list[str] = []
     reasons: list[str] = []
@@ -244,7 +244,7 @@ def dispatch(
             # handler's malformed return destroyed an earlier handler's deny.
             if not isinstance(result, HookResult):
                 raise TypeError(f"returned {type(result).__name__}, not HookResult")
-            # Delivery is DECIDED here and BANKED below (Premise 2). A handler that answered
+            # Delivery is DECIDED here and BANKED below. A handler that answered
             # with an empty result has said nothing, and spending its one delivery on that
             # would make the first unrelated Bash call of a session consume a notice meant for
             # the first failing test run. A deny is a delivery too: it reached the harness.

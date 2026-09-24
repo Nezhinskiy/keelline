@@ -1,6 +1,6 @@
 """Read keelline.toml, merge it under the preset, validate it.
 
-The machine config (§5.4) is merged too, but it contributes `[personal]` and nothing else.
+The machine config is merged too, but it contributes `[personal]` and nothing else.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from keelline.errors import Failure
 from keelline.presets import load_preset
 
 CONFIG_FILE = "keelline.toml"
-# Where `tomllib` stopped, and nothing else it had to say (P10). Every `TOMLDecodeError` this
+# Where `tomllib` stopped, and nothing else it had to say. Every `TOMLDecodeError` this
 # package can raise is about a document somebody else wrote — a project's `keelline.toml`, the
 # machine file `--machine` named — and `tomllib` builds its message as `f"{msg} (at line N,
 # column M)"`, where `msg` embeds the source for at least five of its own faults: `Cannot
@@ -157,7 +157,7 @@ def _schema_types(cls: type[Any]) -> dict[str, Any]:
 
 
 def _named(unknown: list[str], noun: str) -> str:
-    """`unknown`, bounded before it may print (P10): a plain-named one is echoed, anything else
+    """`unknown`, bounded before it may print: a plain-named one is echoed, anything else
     is counted and never quoted — `PATH_VALUE`'s rule read onto a second grammar.
 
     **Every name in a `keelline.toml` is repository-authored, not only the table names.** A TOML
@@ -390,13 +390,13 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     stdin is a pipe, which means the gate held by circumstance rather than by construction.
 
     **It defaults to `False`, so that one command reads one machine file.** The sniff was the
-    default, and `store.overlay_root` and `trust._trust_file` — the two anchors §9.1 and §9.4
-    rest on — resolve that same file with `interactive=False` always. On an interactive run
-    with `XDG_CONFIG_HOME` or `KEELLINE_CONFIG` set, the two disagreed: `[personal]` came from
-    the owner's chosen file while `[overlay] root` and `trust.json` came from
-    `~/.config/keelline/`, so an XDG-honouring owner who wrote one file with both tables got
-    `[personal]` honoured and the overlay silently unrecorded — `keelline memory index`
-    refusing with "no overlay root is recorded in the machine configuration; run `keelline
+    default, and `store.overlay_root` and `trust._trust_file` — the two anchors locating the note
+    store and trusting in-repo notes rest on — resolve that same file with `interactive=False`
+    always. On an interactive run with `XDG_CONFIG_HOME` or `KEELLINE_CONFIG` set, the two
+    disagreed: `[personal]` came from the owner's chosen file while `[overlay] root` and
+    `trust.json` came from `~/.config/keelline/`, so an XDG-honouring owner who wrote one file with
+    both tables got `[personal]` honoured and the overlay silently unrecorded — `keelline memory
+    index` refusing with "no overlay root is recorded in the machine configuration; run `keelline
     setup`" about a file it had just read successfully.
 
     Half a file behind a gate is not a gate, exactly as `machine.py` says of one variable of a

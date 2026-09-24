@@ -1,10 +1,10 @@
-"""The advisory memory link graph (Premise 11): every `[[link]]` resolves to a document in the
+"""The advisory memory link graph: every `[[link]]` resolves to a document in the
 store, no link is immediately repeated, no ledger identifier is bracketed. Advice, never a
 verdict: the store is shared by every session on the machine.
 
 Nothing here is a grammar of its own: the wiki-link pattern is the memory area's
-(`WIKI_LINK` on the C3 surface), the identifier grammar is `keelline.identifiers`, and what
-counts as prose is `keelline.prose`'s.
+(`WIKI_LINK` on its import surface, `memory/api.py`), the identifier grammar is
+`keelline.identifiers`, and what counts as prose is `keelline.prose`'s.
 """
 
 from __future__ import annotations

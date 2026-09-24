@@ -41,10 +41,9 @@ PATH_VALUE = re.compile(
 # The grammar an unknown *name* in a `keelline.toml` must match before a refusal may print it —
 # a top-level section's, and a key's inside a known table. Both are repository-authored the same
 # way a `[paths]` value is, and both of the loader's refusals echoed them back whole, newlines
-# and all (P10, fix round 1, finding 2; the key half, round 2). A TOML key is arbitrary quoted
-# text, so the two are one grammar and not two: every name Keelline itself answers to — every
-# schema field, every `Budgets.NAMES` entry, every section — is lowercase words joined by
-# underscores, and anything else is counted rather than quoted.
+# and all. A TOML key is arbitrary quoted text, so the two are one grammar and not two: every name
+# Keelline itself answers to — every schema field, every `Budgets.NAMES` entry, every section — is
+# lowercase words joined by underscores, and anything else is counted rather than quoted.
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 STATES = ("initialised", "adopting", "installed")
 # The built-in gates, in the order every report lists them. `[gates] builtin` chooses among them
@@ -112,7 +111,7 @@ class Memory:
 
 @dataclass(frozen=True)
 class Budgets:
-    """A project may lower a budget below the preset and never raise it (D7)."""
+    """A project may lower a budget below the preset and never raise it."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "agents_md_lines",
@@ -144,7 +143,7 @@ class Budgets:
 
 @dataclass(frozen=True)
 class NativeCaps:
-    """Platform limits in their own units; consumers of a bounded thing read them (§9.5)."""
+    """Platform limits in their own units; consumers of a bounded thing read them."""
 
     NAMES: ClassVar[tuple[str, ...]] = (
         "memory_index_lines",
@@ -204,7 +203,7 @@ class CommitMessages:
 
 @dataclass(frozen=True)
 class Personal:
-    """Machine-level parameters (§5.4); never read from a repository."""
+    """Machine-level parameters; never read from a repository."""
 
     reply_language: str
     artifact_language: str

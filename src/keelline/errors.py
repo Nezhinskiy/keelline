@@ -1,4 +1,4 @@
-"""Exit-code-bearing exceptions shared by every command (contract C5)."""
+"""Exit-code-bearing exceptions shared by every command: 1 findings, 2 a refusal."""
 
 
 class KeellineError(Exception):

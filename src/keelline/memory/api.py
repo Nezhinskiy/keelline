@@ -1,4 +1,4 @@
-"""The C3 import surface: everything a consumer lane may import from this area.
+"""The memory area's import surface: everything a consumer lane may import from this area.
 
 A module and not the package's `__init__`, for one measured reason: `keelline.hooks.registry`
 imports `keelline.memory.hooks`, which imports the package first, so a re-export list in
@@ -40,14 +40,13 @@ kept in silence is what made this pass necessary:
   `attach/api.py` gives for `STATES` and `doctor/api.py` for `STATUSES`: half a closed
   vocabulary cannot be used by the consumer that is handed a value from it.
 - **The trust gate**: `may_inject`, `changed`, `TrustState` and `UnreadableTrustRecord`. The
-  project's standing constraint is that anything a repository authored reaches a model only
-  after `keelline memory trust` and only inside a delimited region; a lane that injects
-  repository bytes therefore has to be able to *ask this area* whether it may, to honour §9.4's
-  re-prompt predicate — "a store that was trusted and is not any more" — and to tell "this trust
-  record is broken" from "this store is not approved", which is the whole point of the class.
-  A requirement a consumer cannot import is a requirement with no way to meet it, and this is
-  the one group on this list where the cost of being wrong is a repository's bytes reaching a
-  model unwrapped.
+  project's standing constraint is that anything a repository authored reaches a model only after
+  `keelline memory trust` and only inside a delimited region; a lane that injects repository bytes
+  therefore has to be able to *ask this area* whether it may, to honour the trust rule's re-prompt
+  predicate — "a store that was trusted and is not any more" — and to tell "this trust record is
+  broken" from "this store is not approved", which is the whole point of the class. A requirement a
+  consumer cannot import is a requirement with no way to meet it, and this is the one group on this
+  list where the cost of being wrong is a repository's bytes reaching a model unwrapped.
 
 **Trimmed, in the wave-3 refactor pass: thirty-three names**, every one of them with no importer
 in `src/`, `scripts/` or `tests/`, no published signature naming it, and no reader reaching it
@@ -57,7 +56,7 @@ already do. What went is the claim that another area reads it.
 
 - **The index group** — `INDEX_NAME`, `index_source`, `write_index`, `render_index`,
   `check_index`, `reconcile`, `Reconciliation`, `IndexCheck`. Published because "`worktree.py`
-  and `bundles.py` both present `index_source` as *the* place §9.1's per-link target rule
+  and `bundles.py` both present `index_source` as *the* place the per-link target rule
   reaches the index, and neither a reader nor `attach` — the lane that creates the symlinked
   index in the first place — could call it". `attach` shipped and calls none of them; the index
   is a command (`memory index`) and the lanes that want one run it.

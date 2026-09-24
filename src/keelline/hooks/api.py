@@ -59,7 +59,7 @@ __all__ = [
 ]
 
 
-# The five events §5.3's table carries. A lane that needs a sixth adds it here deliberately;
+# The five events the dispatcher carries. A lane that needs a sixth adds it here deliberately;
 # `registry.discover` refuses anything else, so a handler registered for "PreToolUSe" is a
 # loud failure at discovery rather than a guard that never fires and tests that never notice.
 EVENTS = (
@@ -75,12 +75,12 @@ def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = N
     """Which harness this process is running under, from the environment and the stdin payload.
 
     Here rather than in `dispatch.py` because two areas ask the question: the dispatcher stamps
-    `HookEvent.harness` with it, and `memory index` renders the index only on Codex (§9.5). Two
-    spellings of this rule would be two answers to "which harness", which is the drift a shared
-    vocabulary exists to stop.
+    `HookEvent.harness` with it, and `memory index` renders the index only on Codex, which has no
+    native memory. Two spellings of this rule would be two answers to "which harness", which is the
+    drift a shared vocabulary exists to stop.
 
-    S1 (spike record): Codex sets PLUGIN_ROOT/PLUGIN_DATA and ALSO CLAUDE_PLUGIN_ROOT, so the
-    CLAUDE_* names alone identify nothing; Codex's SessionStart stdin also carries `model` and
+    Measured on both harnesses: Codex sets PLUGIN_ROOT/PLUGIN_DATA and ALSO CLAUDE_PLUGIN_ROOT, so
+    the CLAUDE_* names alone identify nothing; Codex's SessionStart stdin also carries `model` and
     `permission_mode`, which Claude Code's does not.
     """
     if "PLUGIN_ROOT" in env:
@@ -130,7 +130,7 @@ class Handler:
     event: str
     policy: Policy
     run: HandlerFn
-    # Handlers stay pure `(event, config) -> result` (§5.3), so a handler that must run once
+    # Handlers stay pure `(event, config) -> result`, so a handler that must run once
     # per context declares the marker key and the dispatcher owns the bookkeeping.
     once_key: str | None = None
 
@@ -147,7 +147,7 @@ DIAGNOSTICS_MAX_BYTES = 256 * 1024
 
 
 class Sink(Protocol):
-    """Where the dispatcher records failures and once-per-context markers (§5.3)."""
+    """Where the dispatcher records failures and once-per-context markers."""
 
     def diagnostic(self, record: dict[str, object]) -> None: ...
 

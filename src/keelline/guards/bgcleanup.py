@@ -150,7 +150,7 @@ class Verdict(NamedTuple):
 
 ALLOW = Verdict(None, None)
 
-# D7: a cap, not a config key. Above it the guard does not read the command at all. 64 KiB is
+# A named cap, not a config key. Above it the guard does not read the command at all. 64 KiB is
 # far past any command a person or a model types and far below where tokenizing costs seconds.
 MAX_COMMAND_CHARS = 65_536
 
@@ -208,7 +208,7 @@ _SHELL_INTERPRETERS = frozenset(
 # an enumerated probe set rather than against a reading of this comment.
 _SHELL_C_FLAG = re.compile(r"\A-[A-Zabd-z]*c[A-Za-z]*\Z")
 
-# D7: a cap on descent into a command hidden inside a string, not a config key. Real nesting
+# A named cap on descent into a command hidden inside a string, not a config key. Real nesting
 # rarely goes past one level. Exceeding it stops looking, which ALLOWS, and that direction is
 # deliberate: it risks a leak in a shape -- a shell inside a shell inside a shell -- nobody
 # reaches by accident, while denying on depth alone would refuse legitimate deep nesting that

@@ -1,4 +1,4 @@
-"""One note, read and written without losing what this reader does not understand (§9.2).
+"""One note, read and written without losing what this reader does not understand.
 
 The store has two writers: the harness's native memory writer and Keelline. That is workable
 only because neither rewrites the other's keys — and "does not rewrite" has to mean *bytes*,
@@ -7,10 +7,10 @@ not *meaning*. A reader that parses `description: 'tis a note` and renders it ba
 seventy notes and the first `memory index` is a diff nobody can review, followed by a
 ping-pong with the native writer over quoting.
 
-So the frontmatter is kept as the lines it arrived as, and `render_note` rewrites **only the
-keys whose value this run actually changed**. Byte-identity for an untouched note is then a
-property of the design rather than a property of the quoting rules, and D5's
-bit-compatibility requirement holds for keys this module has never heard of.
+So the frontmatter is kept as the lines it arrived as, and `render_note` rewrites **only the keys
+whose value this run actually changed**. Byte-identity for an untouched note is then a property of
+the design rather than a property of the quoting rules, and the bit-compatibility requirement with
+the native writer holds for keys this module has never heard of.
 
 A YAML library would be the obvious parser and is not available: the runtime is stdlib-only
 so that a hook works before any environment exists. The grammar below is the smallest one the
@@ -30,9 +30,9 @@ from pathlib import Path
 from keelline.errors import Failure
 from keelline.fsops import write_atomically
 
-# Sort sentinel for a note whose `startup` metadata could not be parsed as an int (D7: this
-# is not a budget or cap read from config, and no shipped file needs to change if it does —
-# it only needs to sort after every real startup rank the corpus can hold).
+# Sort sentinel for a note whose `startup` metadata could not be parsed as an int (the named-cap
+# rule does not apply: this is not a budget or cap read from config, and no shipped file needs to
+# change if it does — it only needs to sort after every real startup rank the corpus can hold).
 UNRANKED = 10_000
 FENCE = "---"
 _KEY = re.compile(r"^(?P<indent> *)(?P<key>[A-Za-z_][A-Za-z0-9_]*):(?P<rest>.*)$")
@@ -419,8 +419,8 @@ class Walk:
 def walk(store: Path, groups: Sequence[str]) -> Walk:
     """Every `*.md` note under the named groups, quarantining the files that will not parse.
 
-    §9.2 says non-note files are "ignored … and flagged by `doctor`", and a store is a place
-    humans put things: one superseded design document with no frontmatter must not cost the
+    The note format says non-note files are "ignored … and flagged by `doctor`", and a store is a
+    place humans put things: one superseded design document with no frontmatter must not cost the
     whole store, which is exactly what a raising walk does inside a handler's `except`.
     """
     found: list[Note] = []

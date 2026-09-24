@@ -1,4 +1,4 @@
-"""Write the machine configuration file, the one both existing readers already read (DP5).
+"""Write the machine configuration file, the one both existing readers already read.
 
 **This module invents no schema.** `config.loader._personal` reads `[personal]` and
 `memory.store.overlay_root` reads `[overlay] root`, both with `interactive=False`, and neither
@@ -61,9 +61,9 @@ from keelline import fsops, tomlout
 from keelline.errors import Refusal
 
 # The one machine-scope settings file this plan writes, relative to `home` (Task 13, Task 15's
-# `hook-entries` check). Codex has no equivalent: §5.4's "no `userConfig` in Codex" is one of
-# the clauses §10 marks *unmeasured*, so nothing is written there and the report says so rather
-# than guessing a path.
+# `hook-entries` check). Codex has no equivalent: the machine configuration's "no `userConfig`
+# in Codex" is one of the clauses the cross-harness contract marks *unmeasured*, so nothing is
+# written there and the report says so rather than guessing a path.
 USER_SETTINGS = ".claude/settings.json"
 
 
@@ -101,10 +101,10 @@ def write_machine(
 
     Each of the three is merged over what the file already holds, key by key, rather than
     replacing its table outright — a second `setup` run that only sets one of them must not
-    erase what an earlier run recorded (DP5, and the test this docstring's module comment
-    names). `overlay_root=None` reads as "not given this run": the existing `[overlay] root`,
-    if any, is carried over unchanged. There is no way to ask this function to *clear* a
-    recorded overlay root; nothing in this plan needs one.
+    erase what an earlier run recorded, which both unchanged readers still read (the test this
+    docstring's module comment names). `overlay_root=None` reads as "not given this run": the
+    existing `[overlay] root`, if any, is carried over unchanged. There is no way to ask this
+    function to *clear* a recorded overlay root; nothing in this plan needs one.
 
     Everything else in the file — a table this writer has never heard of, a key at the top
     level — is carried through untouched, in the order it was written in.

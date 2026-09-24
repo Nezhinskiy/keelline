@@ -1,15 +1,17 @@
 """Refresh an overlay after a release, and name the two files nobody may refresh silently.
 
-The refresh itself is C2's, unchanged: an untouched skeleton file is updated, a hand-edited one
-is skipped and named, and the oracle is the digest the manifest recorded. An overlay is where
-the owner's own rules live, so a silent overwrite here destroys the only copy of something —
-which is exactly why this lane calls the engine rather than reimplementing the rule.
+The refresh itself is the scaffold engine's, unchanged: an untouched skeleton file is updated,
+a hand-edited one is skipped and named, and the oracle is the digest the manifest recorded. An
+overlay is where the owner's own rules live, so a silent overwrite here destroys the only copy
+of something — which is exactly why this lane calls the engine rather than reimplementing the
+rule.
 
-**Why a wrapper type rather than a bare `Plan`.** §6.1 gives two files an exception to the hash
-rule: `common/claude/permissions.json` and `common/claude/hooks.json` are named *regardless of
-hash*, because they are the two that can grant capability and a hash match is not consent for
-those. C2's `Plan` has no verb for "needs a decision" and C2 is frozen for this plan, so the
-answer is a type *around* the plan rather than a new `Verb` inside it.
+**Why a wrapper type rather than a bare `Plan`.** Creating the overlay gives two files an
+exception to the hash rule: `common/claude/permissions.json` and `common/claude/hooks.json` are
+named *regardless of hash*, because they are the two that can grant capability and a hash match
+is not consent for those. The scaffold engine's `Plan` has no verb for "needs a decision" and
+its contract is frozen, so the answer is a type *around* the plan rather than a new `Verb`
+inside it.
 
 **What `decisions` actually is, stated plainly because an earlier account of it was not.** The
 write is **unconditional**: `apply()` runs before `decisions` is computed, so there is no moment

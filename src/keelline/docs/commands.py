@@ -1,4 +1,4 @@
-"""The `docs` and `plan` groups (§5.2)."""
+"""The `docs` and `plan` groups."""
 
 from __future__ import annotations
 
@@ -38,8 +38,7 @@ def run_docs_check(args: argparse.Namespace) -> Result:
 
     root, config = root_and_config(args)
     # No flag runs exactly the enforced set the success line names; the store is resolved only
-    # on `--memory-graph` (Premise 11) — advice this command does not gate on is not fetched by
-    # default.
+    # on `--memory-graph` — advice this command does not gate on is not fetched by default.
     enforced = not (args.budgets or args.links)
     problems: list[Finding] = []
     if enforced or args.budgets:

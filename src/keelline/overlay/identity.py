@@ -23,13 +23,13 @@ hostile clone (`setup`'s "not inside, over, or in any checkout of the project an
 is no longer standing alone.
 
 **`create._populated` deliberately stays the weaker probe.** It answers "did a tree already
-arrive here", which is what §6.1's idempotence rule needs: a `gh` that gave up mid-clone leaves a
-partial tree, and asking *this* question of it would answer "not an overlay" and create the
-repository a second time. Two questions, two probes, and this docstring is why.
+arrive here", which is what the create step's idempotence rule needs: a `gh` that gave up
+mid-clone leaves a partial tree, and asking *this* question of it would answer "not an overlay"
+and create the repository a second time. Two questions, two probes, and this docstring is why.
 
 **Nothing a repository authored is quoted back.** A manifest's `name` is bytes from a directory
 this process was pointed at, so the refusal says which file failed and what it had to say, never
-what it actually said (Global Constraints: repository bytes are data).
+what it actually said (principle 5: a repository is untrusted input).
 """
 
 from __future__ import annotations

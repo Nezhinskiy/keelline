@@ -1,4 +1,4 @@
-"""What a sweep reads (§5.2's `memory inventory`).
+"""What a sweep reads (`memory inventory`, `docs/cli.md#keelline-memory-inventory`).
 
 `--json` is the primary output: the `memory-sweep` skill consumes this, and the human
 rendering is a convenience. Staleness applies only to the volatile group — a durable note has
@@ -57,10 +57,10 @@ def totals(entries: list[Entry]) -> dict[str, int]:
     """Headline counts over what `inventory` returned.
 
     No `config`. The parameter was here and the body opened with `del config` — a dead argument
-    baked into the C3 surface, where it gets more expensive to remove with every consumer that
-    writes a call against it. Every number below comes from the entries alone, and an entry
-    already carries the budget-derived fact (`stale`) that a config would have been consulted
-    for.
+    baked into the import surface (`memory/api.py`), where it gets more expensive to remove with
+    every consumer that writes a call against it. Every number below comes from the entries alone,
+    and an entry already carries the budget-derived fact (`stale`) that a config would have been
+    consulted for.
     """
     return {
         "notes": len(entries),

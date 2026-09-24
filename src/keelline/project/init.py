@@ -1,4 +1,4 @@
-"""`keelline init --yes`: the footprint, written by the engine in two passes (§8.1, §7.2, DC3).
+"""`keelline init --yes`: the footprint, written by the engine in two passes.
 
 The three write-once files are `Kind.ONCE` artifacts in a pass of their own and the rest of the
 footprint is the second, because two artifacts cannot target one file in one pass. Both are
@@ -14,10 +14,10 @@ only when this run is the one that creates it, and `templates._ci` renders the w
 `doctor`'s `ci-ref` row reports red when they do, which is why this is the invariant rather than
 a convenience.
 
-**Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact, and DC3 says
-what that kind is: created when absent, never looked inside again. So on a repository that
-already carries one the engine reports `skip_modified` — "create-once, and the file is already
-there" — and the file comes back byte for byte. What the hand-written document does is decide
+**Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact, and that kind
+is created when absent and never looked inside again. So on a repository that already carries
+one the engine reports `skip_modified` — "create-once, and the file is already there" — and
+the file comes back byte for byte. What the hand-written document does is decide
 the whole run: it is parsed, merged under Keelline's own two keys and the preset's defaults,
 and validated by `loads` before a byte is written, and the `Config` that comes out is what
 every target below is built from. The tool-owned keys are written only into a file
@@ -108,8 +108,8 @@ def _existing(root: Path) -> dict[str, object] | None:
     source for several of its faults — a duplicate table or inline-table key is reported with
     the key in it, and a TOML key is arbitrary quoted text — so the exception is bounded by
     `config.loader.toml_position` before any of it prints. The file is `keelline.toml`, which
-    P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
-    instructed to relay and stop on.
+    on adoption is the repository's own document, read as its answers rather than replaced, and
+    this refusal is one the `init` skill is instructed to relay and stop on.
     """
     path = root / CONFIG_FILE
     if not path.is_file():
@@ -123,12 +123,12 @@ def _existing(root: Path) -> dict[str, object] | None:
 def _tables(
     root: Path, existing: dict[str, object] | None, *, ci: bool
 ) -> dict[str, dict[str, object]]:
-    """The document's tables, in order: Keelline's two keys, then the repository's answers (P4).
+    """The document's tables, in order: Keelline's two keys, then the repository's answers.
 
     **Detection runs only when no `[project]` table answers for the repository**, and not
     merely when some key of the head is absent. `detect` is the one call here that can refuse
-    — a directory name or a remote's last segment outside `PROJECT_NAME` — and DC6's remedy for
-    that refusal is to write `[project] name` into `keelline.toml` by hand and run `init`
+    — a directory name or a remote's last segment outside `PROJECT_NAME` — and the remedy that
+    refusal names is to write `[project] name` into `keelline.toml` by hand and run `init`
     again. A branch that consulted `detect` for anything the preset can default would make that
     remedy dead: the repository whose name cannot be guessed would go on being refused after
     doing exactly what it was told. Everything else the head does not carry — `preset`,

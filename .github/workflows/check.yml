@@ -1,18 +1,18 @@
-# The reusable workflow a project calls (§5.8). It checks out the caller, checks out Keelline
-# at THIS FILE's own commit — no resolver and no build backend; the network is the two
-# checkouts and whatever `setup-python` below fetches when the runner has no matching
-# interpreter cached — and runs the documentation, ledger, plan, commit-message and trail gates with
-# `python3 -m keelline`. The gate's configuration is read from the base ref (§8.3): the
-# base's own copy of `keelline.toml` decides the state, and on any branch but the base itself
-# the tree's copy must equal it. While the base's state is not `installed`, every check is
-# advisory and annotates. Every value that reaches a shell here arrives through `env:`; a
+# The reusable workflow a project calls (`docs/cli.md#the-reusable-workflow`). It checks out
+# the caller, checks out Keelline at THIS FILE's own commit — no resolver and no build backend;
+# the network is the two checkouts and whatever `setup-python` below fetches when the runner has
+# no matching interpreter cached — and runs the documentation, ledger, plan, commit-message and
+# trail gates with `python3 -m keelline`. The gate's configuration is read from the base ref:
+# the base's own copy of `keelline.toml` decides the state, and on any branch but the base
+# itself the tree's copy must equal it. While the base's state is not `installed`, every check
+# is advisory and annotates. Every value that reaches a shell here arrives through `env:`; a
 # `${{ }}` spliced into `run:` is a command injection waiting for a ref name that permits it.
 #
 # **Anchor provenance, said once.** The base ref comes from the caller's `with:`, from the
 # pull request's base, or from the repository's default branch as the platform reports it —
 # never from the tree under review. The Keelline that runs comes from the platform's own
 # record of which reusable workflow is executing (`job.workflow_repository`,
-# `job.workflow_sha`), never from the caller's inputs. The design's §5.8 names a
+# `job.workflow_sha`), never from the caller's inputs. The design names a
 # `github.job_workflow_sha` property; the platform documents no such property on the
 # `github` context (an undefined property is the empty string, and `actions/checkout` with
 # an empty `ref` checks out the DEFAULT BRANCH — a pin silently turned into a floating ref),
@@ -157,8 +157,8 @@ jobs:
             git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" ||
             { echo "::error::origin/$base is not in this checkout — check out with fetch-depth: 0, or name a base that exists"; exit 1; }
           # Three states of the base's copy, each named. Absent: an adopting project whose
-          # base branch carries no configuration yet (the bootstrap; D8 says it is not
-          # installed). Present and readable: the gate's configuration. Present and
+          # base branch carries no configuration yet (the bootstrap, whose state is not
+          # `installed`). Present and readable: the gate's configuration. Present and
           # unreadable: a failure, never a default — `git show | python` without pipefail
           # turned a failed `git show` into `state=initialised`, which is the gate reporting
           # green with nothing enforced.
@@ -221,7 +221,7 @@ jobs:
       - name: Verdict
         # Every gate ran, whatever the first one said — a project fixing gates one round
         # trip at a time was the alternative. Enforcing: any failed gate fails the job.
-        # Advisory (D8: `initialised`, `adopting`, or no configuration on the base yet):
+        # Advisory (`initialised`, `adopting`, or no configuration on the base yet):
         # each failed gate is one warning, and the job is green.
         env:
           ENFORCE: ${{ steps.base.outputs.enforce }}

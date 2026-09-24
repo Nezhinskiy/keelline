@@ -1,11 +1,11 @@
-"""The machine ledger every scaffolded artifact is recorded in (§7.1).
+"""The machine ledger every scaffolded artifact is recorded in.
 
 The manifest is committed, so `upgrade` and `uninstall` work for a collaborator who never ran
 `init`. It is also the only reason `skip_modified` can exist: without a recorded hash there is
 no way to tell a file the tool wrote from a file a person wrote, and every refresh would be
-either a clobber or a no-op. It carries a `format` so a later migration can key on it (§7.3),
-and it is written atomically, because it is the one file whose corruption bricks both
-`upgrade` and `uninstall`.
+either a clobber or a no-op. It carries a `format` so a later migration can key on it, and it
+is written atomically, because it is the one file whose corruption bricks both `upgrade` and
+`uninstall`.
 
 Its own path is repository-controlled too. `.keelline` is an ordinary directory entry that a
 repository may commit as a symlink, and a clone materialises one, so both ends of the ledger

@@ -1,5 +1,5 @@
 """What every check in the ledger, docs and memory areas returns, and how a summary line
-renders a list of them (§5.2: one line per command).
+renders a list of them (one line per command).
 
 The label carries what this lane computed — a repo-relative path, a line number, a rule name
 from this lane's own vocabulary; the detail may quote the repository and is for `--json`
@@ -14,7 +14,7 @@ from enum import StrEnum
 # Items per summary line, capped. A check over a neglected ledger reports findings by the
 # hundred and the remediation is one command for the whole set, so the tail is length, not
 # information — and printing it pushes the command that repairs the tree off the end of the
-# line. One cap for every message rather than a per-call knob, and not a config key (D7): a
+# line. One cap for every message rather than a per-call knob, and not a config key: a
 # caller free to choose is a caller free to reintroduce the thousands-of-characters summary
 # line this exists to prevent.
 LISTED_LIMIT = 8

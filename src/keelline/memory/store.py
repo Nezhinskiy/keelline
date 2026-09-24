@@ -1,11 +1,11 @@
-"""Where the notes are, and the four ways that answer can be a lie (§9.1).
+"""Where the notes are, and the four ways that answer can be a lie.
 
 A store is a per-project value with no machine-level default, because the wrong answer is not
 "no memory" but *another project's* memory reaching this session. Four things are therefore
 checked, and each closes a hole the other three leave open:
 
 1. **The shape.** In overlay mode `paths.memory` is a real directory holding one link per
-   group (§6.3). It is not one link: `developer` points into the overlay's `common/memory`,
+   group. It is not one link: `developer` points into the overlay's `common/memory`,
    which is shared across projects and cannot live under `projects/<name>/`. A single link at
    `paths.memory` would lose the cross-project half of the store outright.
 2. **Containment inside the store.** A group name is repository-controlled — `memory.groups`
@@ -29,8 +29,8 @@ that applies with no trust prompt in a non-interactive session.
 
 **The machine file makes the same claim now.** `machine_config_path` gates `KEELLINE_CONFIG`
 behind `interactive` — and `XDG_CONFIG_HOME` with it, which it did not, and which made the
-first gate worth nothing: both variables reach the same file and this lane routes §9.1's
-overlay anchor (`overlay_root(None)`) and §9.4's trust record (`trust._trust_file(None)`)
+first gate worth nothing: both variables reach the same file and this lane routes the store's
+overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
 through it. A committed `env` block therefore chose which overlay root `permitted_roots` was
 computed from, and which `trust.json` `may_inject` consulted, wherever no `--machine` was
 threaded.
@@ -318,7 +318,7 @@ def origin_remote(root: Path) -> str | None:
     repository and reads as *not this one*, while "could not ask" is a fault on this machine,
     and collapsing them tells the user to run `keelline attach` about their own `git`.
 
-    The value is repository-authored — a remote URL is on the Global Constraints' own list —
+    The value is repository-authored — a remote URL is one of the bytes a clone controls —
     so a caller that shows it wraps it first.
     """
     origin = _git(root, "remote", "get-url", "origin")
@@ -357,7 +357,7 @@ def _inside(candidate: Path, parent: Path) -> bool:
 
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
-    """This project's whole share of the overlay: the common notes and its own (§6.2)."""
+    """This project's whole share of the overlay: the common notes and its own."""
     return overlay / COMMON, overlay / PROJECTS / project / "memory"
 
 
@@ -371,7 +371,7 @@ COMMON_GROUP = "developer"
 
 
 def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
-    """Where one group's notes live inside the overlay (§6.2).
+    """Where one group's notes live inside the overlay.
 
     A rule and deliberately not a probe over what happens to exist: a group directory that is
     not there yet is a first attach, not a reason to link somewhere else. The answer is always
@@ -441,12 +441,12 @@ def _resolve_at(
         if declared is None:
             return None, f"paths.memory ({config.paths.memory!r}) does not stay inside the project"
         base = declared
-        # §9.1 check 1: in every mode but `local-only` and an explicit `override`, `paths.memory`
-        # itself must be a real directory — one link per group, not one link for the whole
-        # store. This has to hold in overlay mode too, not just `in-repo`: a group directory
+        # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
+        # `paths.memory` itself must be a real directory — one link per group, not one link for the
+        # whole store. This has to hold in overlay mode too, not just `in-repo`: a group directory
         # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
-        # check below (`permitted_roots`) never runs, and the whole store silently becomes
-        # whatever `paths.memory` was pointed at — including another project's share.
+        # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
+        # `paths.memory` was pointed at — including another project's share.
         if declared.is_symlink():
             return None, (
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory"
@@ -510,7 +510,7 @@ def resolve(
     machine: Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> Store | None:
-    # `env` is accepted and never read: §9.1 forbids selecting a store through the
+    # `env` is accepted and never read: a store is never selected through the
     # environment, and a parameter that exists and is ignored is a claim a test can pin.
     del env
     return resolved(root, config, override=override, machine=machine)[0]
@@ -537,7 +537,7 @@ def refusal_reason(
 
 
 def inside_project(store: Store) -> bool:
-    """Whether any note actually lives in the repository — the predicate §9.4 turns on.
+    """Whether any note actually lives in the repository — the predicate the trust gate turns on.
 
     Not `memory.mode`, which the clone chooses, and not the store directory, which in overlay
     mode is a real directory of links inside the project. What decides whether a note is the
@@ -552,14 +552,14 @@ def inside_project(store: Store) -> bool:
     standing rule in the mode this project actually ships. A file that is not a note and
     belongs to no group is asked about one at a time, with `in_repository` below.
 
-    **Where it cannot answer, it answers closed.** In `local-only` and `in-repo` the notes are
-    in the repository by construction — `.keelline/local/memory` and `paths.memory` are both
-    resolved under `root` through `contained`, which refuses a symlink at every level — so a
-    group landing outside `store.root` in those modes is a resolution that went wrong, not a
-    store belonging to the machine owner. Answering False there is what let a clone that
-    escaped the resolver reach the model with no trust record and no `trust.wrap`: a gate
-    whose default for the unclassifiable is "ungated" is the wrong way round. `overlay` keeps
-    its answer, because outside `store.root` is precisely where §6.2 puts those notes.
+    **Where it cannot answer, it answers closed.** In `local-only` and `in-repo` the notes are in
+    the repository by construction — `.keelline/local/memory` and `paths.memory` are both resolved
+    under `root` through `contained`, which refuses a symlink at every level — so a group landing
+    outside `store.root` in those modes is a resolution that went wrong, not a store belonging to
+    the machine owner. Answering False there is what let a clone that escaped the resolver reach the
+    model with no trust record and no `trust.wrap`: a gate whose default for the unclassifiable is
+    "ungated" is the wrong way round. `overlay` keeps its answer, because outside `store.root` is
+    precisely where the overlay's layout puts those notes.
     """
     if any(_inside(target, store.root) for target in store.groups.values()):
         return True

@@ -18,7 +18,7 @@ session, which is a harness-level exposure this module cannot close and does not
 
 `git_run` is the runner the ledger and docs areas call; `memory.store._git` keeps its
 three-valued answer and its usability probe, which are the memory lane's, and is not rewritten
-here (Premise 17).
+here.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from pathlib import Path
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
-# Wall-clock bound on one `git` call (D7: a cap, not read from `config.budgets` or
+# Wall-clock bound on one `git` call (a named cap, not read from `config.budgets` or
 # `config.native_caps` — no shipped file needs to change with it). It is the bound for a local,
 # argument-free, read-only query against the environment below (`rev-parse`, `remote get-url`,
 # `--version`), which neither touches the network nor grows with the repository: it guards
@@ -55,9 +55,9 @@ def git_run(
     The one place this project runs `git` outside the memory store's own resolver: every
     argument list is built from constants by the caller, every pathspec follows `--`, and no
     configuration value reaches this list without `contained()` having refused the
-    `-`-shaped ones (§3). Resolved through PATH for the reason above: the machine owner's git
-    must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
-    "nothing matched", and that is an answer.
+    `-`-shaped ones (principle 5). Resolved through PATH for the reason above: the machine
+    owner's git must answer. A non-zero exit is returned, not collapsed — `check-ignore`
+    answers 1 for "nothing matched", and that is an answer.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - see the docstring

@@ -2,7 +2,7 @@
 
 __version__ = "0.1.0"
 
-# The public repository, spelled once (DC7) — the install hint, the workflow pin and the
+# The public repository, spelled once — the install hint, the workflow pin and the
 # `ci-ref` row all derive from it. `release check`'s regex is anchored on `__version__` alone
 # and does not see these two lines.
 REPOSITORY_SLUG = "Nezhinskiy/keelline"
