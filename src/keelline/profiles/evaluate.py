@@ -88,18 +88,30 @@ def _text(value: Any) -> str | None:
 
 
 def _toml_value(text: str, dotted: str) -> str | None:
+    """The text of `dotted` in `text`, or `None` when the key is absent or `text` will not parse.
+
+    `RecursionError` is `tomllib`'s answer to nesting deep enough to exhaust the stack, and a
+    kilobyte of `[` is enough; the file is the repository's, so it chooses that as freely as a
+    syntax error. `_text` walks the same nesting, so it sits inside the same guard.
+    """
     try:
         node: Any = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
+        for part in dotted.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return None
+            node = node[part]
+        return _text(node)
+    except (tomllib.TOMLDecodeError, RecursionError):
         return None
-    for part in dotted.split("."):
-        if not isinstance(node, dict) or part not in node:
-            return None
-        node = node[part]
-    return _text(node)
 
 
 def _ini_value(text: str, address: tuple[str, ...]) -> str | None:
+    """The value at `address` in `text`, `""` for a section alone, or `None`.
+
+    `configparser` refuses a file with no section header or a line it cannot read with its own
+    `configparser.Error`, and the locator then resolves to nothing. Its reader is line by line
+    and does not recurse, so nesting has no second failure here.
+    """
     parser = configparser.ConfigParser(interpolation=None, strict=False)
     try:
         parser.read_string(text)
