@@ -57,11 +57,16 @@ records it, when a later write or removal fails; so does this command across its
 then means "stopped part-way": what was done is on disk and in the manifest, `keelline.toml` is
 still there, and running the command again re-plans from there to the end.
 
-**Without `keelline.toml`, nothing can be judged.** A person who deleted the file, or a run that
-stopped after removing it and before the manifest, leaves a manifest and no configuration. The
-ledger goes, every recorded file stays, and the note gives their count, so the next run converges
-instead of refusing for ever. No directory is pruned on that path: nothing says where this
-configuration put its artifacts, and a target the manifest records is a committed string.
+**Without `keelline.toml`, nothing can be judged.** While the manifest still records the file
+(`CONFIG_RECORD`), something other than this command took it, a person deleting it above all:
+this command's own removal goes through `apply`, which drops the record with the file. Going on
+would drop the manifest and leave every recorded file untracked for good, so the run refuses
+before any write and says to restore the file (`DELETED_CONFIG`). With no such record, either a
+run stopped after removing it and before the manifest, or the file was the project's own and
+never recorded; then the ledger goes, every recorded file stays, and the note gives their
+count, so the next run converges instead of refusing for ever. No directory is pruned on that
+path: nothing says where this configuration put its artifacts, and a target the manifest
+records is a committed string.
 """
 
 from __future__ import annotations
@@ -127,6 +132,14 @@ IGNORE = "gitignore"
 NO_CONFIG = (
     "keelline.toml is not there, so nothing the manifest records can be judged: those {count} "
     "file(s) stay where they are, and only the ledger goes"
+)
+# Fixed text. The manifest still records `keelline.toml`, so something other than this command's
+# own removal took it (`apply` drops the record with the file), and git can usually give it back.
+DELETED_CONFIG = (
+    "keelline.toml is not there while .keelline/manifest.json still records it; without it "
+    "nothing the manifest records can be judged, and going on would leave those files untracked "
+    "for good, so nothing was removed. Restore keelline.toml (from git, for instance), then run "
+    "uninstall again"
 )
 ASSESSMENT = ".keelline/assessment.json"
 LEDGER_DIRS = (LOCAL_ROOT, ".keelline")
@@ -219,6 +232,8 @@ def uninstall(
     manifest = Manifest.read(root)
     document = read_document(root)
     if document is None:
+        if CONFIG_RECORD in manifest.records:
+            raise Refusal(DELETED_CONFIG)
         # Only the ledger: without the configuration nothing says where its artifacts were, and a
         # target the manifest records is a committed string. No run of this command reaches here
         # with directories it emptied, because `keelline.toml` goes after they are pruned.

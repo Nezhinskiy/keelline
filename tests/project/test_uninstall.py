@@ -17,6 +17,7 @@ from keelline.errors import Refusal
 from keelline.project.templates import LOCAL_ROOT_ONLY, ROOT_ONLY
 from keelline.project.uninstall import (
     ATTACHED,
+    DELETED_CONFIG,
     KEPT_AFTER,
     KEPT_LOCALLY,
     NO_CONFIG,
@@ -409,14 +410,41 @@ def test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written(tmp_p
 
 
 @needs_git
-def test_a_missing_keelline_toml_leaves_the_recorded_files_and_converges(tmp_path: Path) -> None:
-    # A run that died after its write-once pass, or a person, removed `keelline.toml` and left the
-    # manifest. Nothing can be judged without the configuration, so the files stay, their count is
-    # reported, and the ledger goes: `init` no longer refuses the repository, and nor does this.
-    # Mutation (advisory): the ledger kept on this path -> the second run finds the manifest and
-    # does not refuse with `NOTHING`, and the last assertion reddens.
+def test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_path: Path) -> None:
+    # The manifest still records `keelline.toml`, and this command's own removal drops that
+    # record with the file, so a person deleted it. Going on dropped the manifest and left every
+    # recorded file untracked for good; now the run refuses before any write, dry run included,
+    # and restoring the file is a remedy that reaches the end. Mutation (oracle): "uninstall drops
+    # the manifest when a person deleted keelline.toml" -> the run removes the ledger instead of
+    # refusing, and the first assertion reddens.
+    root = initialised(tmp_path)
+    config = root / CONFIG_FILE
+    text = config.read_text(encoding="utf-8")
+    config.unlink()
+    before = snapshot(root)
+    for dry_run in (True, False):
+        with pytest.raises(Refusal) as refused:
+            _uninstall(root, tmp_path, dry_run=dry_run)
+        assert str(refused.value) == DELETED_CONFIG
+    assert_snapshot_unchanged(root, before)
+    config.write_text(text, encoding="utf-8")
+    _uninstall(root, tmp_path)
+    assert tree(root) == {"README.md"}
+
+
+@needs_git
+def test_a_missing_keelline_toml_nothing_records_leaves_the_recorded_files_and_converges(
+    tmp_path: Path,
+) -> None:
+    # The state a run leaves when it stopped after removing `keelline.toml` and before the
+    # manifest: `apply` dropped the `config` record with the file. Nothing can be judged without
+    # the configuration, so the files stay, their count is reported, and the ledger goes: `init`
+    # no longer refuses the repository, and nor does this. Mutation (advisory): the ledger kept on
+    # this path -> the second run finds the manifest and does not refuse with `NOTHING`, and the
+    # last assertion reddens; the refusal above made unconditional -> the first call refuses.
     root = initialised(tmp_path)
     (root / CONFIG_FILE).unlink()
+    Manifest.read(root).without(frozenset({"config"})).write(root)
     count = len(Manifest.read(root).records)
     report = _uninstall(root, tmp_path)
     assert report.note == NO_CONFIG.format(count=count)

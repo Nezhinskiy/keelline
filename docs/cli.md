@@ -943,15 +943,16 @@ stays even when it is empty, and so does a directory someone committed where a l
 belongs.
 
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an
-overlay, so run `keelline detach` first; `[artifacts] local` names `config` or `gitignore`, which
-only work at the repository root, so take them out of the list; `.keelline/local/` holds files this run would not
+overlay, so run `keelline detach` first; `keelline.toml` is missing while the manifest records
+it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the
+repository root, so take them out of the list; `.keelline/local/` holds files this run would not
 remove, such as notes, or an artifact kept out of git that you edited, which the refusal counts
 and never names; or a `--force` path leaves `--root`. The count is exact before anything is
 written, including what taking a region out of a file kept out of git would leave behind. Move
-the files out; an edited artifact in a file of its own there can be named with `--force`
-instead, but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file,
-and forcing it takes only the region, so a line you wrote into that skeleton has to be moved. A
-dry run reports the count in a `note:` line instead of refusing, even when its plans also carry
+the files out; an edited artifact in a file of its own there can be named with `--force` instead,
+but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file, and
+forcing it takes only the region, so a line you wrote into that skeleton has to be moved. A dry
+run reports the count in a `note:` line instead of refusing, even when its plans also carry
 refusals, so its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
@@ -960,11 +961,15 @@ have refused; move them out. What was removed stays removed and recorded, and
 `keelline.toml` and the manifest are still there, because they go last; so running the command
 again finishes from what the first run left, to the same end as a run that was never stopped.
 
-**Without `keelline.toml`** — deleted by hand, or a run stopped between removing it and removing
-the manifest — nothing the manifest records can be judged: every recorded file stays, a `note:`
-line gives their count, and only the ledger goes, so `init` and this command no longer refuse the
-repository. No other directory is pruned then, because nothing says where the configuration put
-its artifacts.
+**Without `keelline.toml`, nothing the manifest records can be judged.** While the manifest
+still records the file, it was taken by something other than this command, which drops that
+record as it removes the file, so the run is refused (`2`) before any write, dry run included:
+restore `keelline.toml` (from git, for instance) and run it again. When nothing records it — a
+run stopped between removing it and removing the manifest, or a `keelline.toml` the project
+wrote itself before `init`, which `init` never records — every recorded file stays, a `note:`
+line gives their count, and only the ledger goes, so `init` and this command no longer refuse
+the repository. No other directory is pruned then, because nothing says where the configuration
+put its artifacts.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
 build's. The `[paths]` value a target is built from and the digest a record carries are

@@ -6719,3 +6719,14 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[no-workflow]",
   "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[own-workflow]",
 ]
+
+# The manifest is the one record of what Keelline wrote. With `keelline.toml` gone nothing can be
+# judged, and the path that converges drops the manifest. While the manifest still records the
+# file, this command did not remove it (`apply` drops the record with the file), so the run
+# refuses before any write rather than leaving every recorded file untracked for good.
+[[mutation]]
+name = "uninstall drops the manifest when a person deleted keelline.toml"
+file = "src/keelline/project/uninstall.py"
+before = "        if CONFIG_RECORD in manifest.records:"
+after = "        if False:"
+reddens = ["tests/project/test_uninstall.py::test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored"]
