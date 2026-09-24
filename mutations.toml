@@ -6876,3 +6876,29 @@ reddens = [
   "tests/scaffold/test_local.py::test_removing_a_left_copy_keeps_the_record_of_the_committed_file",
   "tests/project/test_upgrade.py::test_forcing_a_left_copy_away_keeps_the_committed_file_recorded",
 ]
+
+# `uninstall` prunes only directories its own removals emptied: a `[paths]` value is committed,
+# so a directory it merely names may be a person's, a git-ignored placeholder included. Three
+# ways back: pruning every configured place again, counting a removal that unlinked nothing (a
+# relocation whose old file was already gone) as one that emptied its directory, and pruning only
+# after a pass that finished, which strands the directories of a run stopped part-way.
+[[mutation]]
+name = "uninstall prunes above every place the configuration names"
+file = "src/keelline/project/uninstall.py"
+before = "    _apply(root, body)\n"
+after = "    _apply(root, body)\n    _prune(root, sorted(footprint_targets))\n"
+reddens = ["tests/project/test_uninstall.py::test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_removed_from_it"]
+
+[[mutation]]
+name = "a removal that unlinked nothing prunes above its path"
+file = "src/keelline/project/uninstall.py"
+before = "    present = [target for target in unlinking if os.path.lexists(root / target)]"
+after = "    present = unlinking"
+reddens = ["tests/project/test_uninstall.py::test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made"]
+
+[[mutation]]
+name = "a pass that stops part-way leaves the directories it emptied"
+file = "src/keelline/project/uninstall.py"
+before = "    try:\n        apply(root, planned)\n    finally:\n"
+after = "    apply(root, planned)\n    if True:\n"
+reddens = ["tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[docs/roadmap.md]"]

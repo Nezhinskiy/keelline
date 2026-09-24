@@ -568,8 +568,8 @@ def test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_remove
     # place this configuration puts an artifact: `roadmap = "some/dir/x.md"` had it remove an
     # empty `some/dir/` a person made, though nothing of Keelline's was ever in it. Only a
     # directory above a file this run removed goes now. The roadmap's own directory still goes,
-    # because its file did. Mutation (advisory): prune every configured place again, the rule
-    # this replaced -> `some/dir` is removed and the first assertion reddens.
+    # because its file did. Mutation (oracle): "uninstall prunes above every place the
+    # configuration names" -> `some/dir` is removed and the first assertion reddens.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
     config.write_text(
@@ -580,6 +580,37 @@ def test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_remove
     _uninstall(root, tmp_path)
     assert (root / "some" / "dir").is_dir()
     assert not (root / "docs" / "architecture").exists()
+
+
+@needs_git
+def test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made(tmp_path: Path) -> None:
+    # A forged record at `some/dir/x.md`, the committed `[paths]` value naming it, and the
+    # artifact kept out of git: the engine plans a relocation's `REMOVE` of the absent old file,
+    # which unlinks nothing, and `_apply` counted it removed because the path was absent, so the
+    # empty `some/dir/` and `some/` a person made went. Mutation (oracle): "a removal that
+    # unlinked nothing prunes above its path" -> both directories are removed.
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[paths]\nroadmap = "some/dir/x.md"\n',
+        encoding="utf-8",
+    )
+    manifest = Manifest.read(root)
+    manifest.with_record(
+        Record(
+            "roadmap",
+            Kind.TEMPLATE,
+            Location.REPO,
+            "some/dir/x.md",
+            "project/roadmap.md",
+            keelline.__version__,
+            digest("x"),
+        )
+    ).write(root)
+    (root / "some" / "dir").mkdir(parents=True)
+    report = _uninstall(root, tmp_path)
+    assert (Verb.REMOVE, "some/dir/x.md") in {(a.verb, a.target) for a in report.footprint.actions}
+    assert (root / "some" / "dir").is_dir()
 
 
 @needs_git

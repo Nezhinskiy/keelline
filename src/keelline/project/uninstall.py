@@ -231,13 +231,17 @@ def _apply(root: Path, planned: Plan) -> None:
     In a `finally`, so a pass that stops part-way still empties the directories of the files it
     took: the run that finishes it cannot tell a directory an earlier run emptied from one a
     person left empty, so it would never prune one. What counts as removed is a file an action
-    of this plan unlinks that is no longer there; `plan` never unlinks a file it did not read.
+    of this plan unlinks that was there before `apply` and is not after it. Both halves are
+    needed: a relocation whose old file is already gone is still a `REMOVE` that unlinks nothing,
+    and with a forged record and a committed `[paths]` value it named an empty `some/dir/x.md`
+    whose absent file read as removed, so a directory a person made went with it.
     """
+    unlinking = [a.target for a in planned.actions if unlinks(a)]
+    present = [target for target in unlinking if os.path.lexists(root / target)]
     try:
         apply(root, planned)
     finally:
-        removed = [a.target for a in planned.actions if unlinks(a)]
-        _prune(root, [target for target in removed if not os.path.lexists(root / target)])
+        _prune(root, [target for target in present if not os.path.lexists(root / target)])
 
 
 def _remove_local_artifacts(root: Path) -> None:
