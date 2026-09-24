@@ -135,9 +135,10 @@ def _footprint(
     # The placement rule `init` applies, at the second entry point that writes a footprint.
     refuse_local_profile(prepared, config)
     refuse_local_root_only(config)
-    recorded = {artifact_id: r.target for artifact_id, r in Manifest.read(root).records.items()}
     produced = {t.id for t in (*prepared.once, *prepared.footprint)}
-    retired, orphans = retired_templates(prepared.could_write, recorded, produced)
+    retired, orphans = retired_templates(
+        prepared.could_write, Manifest.read(root).records, produced
+    )
     retired = tuple(t for t in retired if t.id != "ci-workflow" or config.ci.mode == "none")
     # The workflow is planned after everything else, retirements included, so a write that fails
     # part-way leaves its pin agreeing with the `[ci] ref` that `keelline.toml` still holds.

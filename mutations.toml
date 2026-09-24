@@ -6652,13 +6652,16 @@ reddens = [
 
 # A retired record is judged against a whole-file stub, which names no region. A record kept
 # inside a host file that this build no longer produces is an orphan, so no `--force` can delete
-# the host file whole.
+# the host file whole. One rule in `retired_templates`, so `upgrade` and `uninstall` both keep it.
 [[mutation]]
 name = "a region record this build does not produce is retired as a whole file"
-file = "src/keelline/project/uninstall.py"
-before = "    in_file = {i for i, r in manifest.records.items() if r.kind in IN_FILE and i not in produced}"
-after = "    in_file: set[str] = set()"
-reddens = ["tests/project/test_uninstall.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays"]
+file = "src/keelline/project/templates.py"
+before = "        and records[artifact_id].kind not in IN_FILE\n"
+after = ""
+reddens = [
+  "tests/project/test_uninstall.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
+  "tests/project/test_upgrade.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
+]
 
 # `keelline.toml` is what every later run needs to judge anything, so it goes after everything
 # but the ledger. Moved back into the write-once pass, a removal that fails later in the run

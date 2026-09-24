@@ -43,7 +43,7 @@ from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
-from keelline.scaffold import Kind, Style, Template, validate_sources
+from keelline.scaffold import Kind, Record, Style, Template, validate_sources
 from keelline.templates import tree
 
 if TYPE_CHECKING:
@@ -440,28 +440,41 @@ def _ci(
     )
 
 
+# The kinds that live inside a file somebody else owns.
+IN_FILE = frozenset({Kind.MANAGED_REGION, Kind.KEYED_ENTRIES})
+
+
 def retired_templates(
-    could_write: Mapping[str, frozenset[str]], recorded: Mapping[str, str], produced: Set[str]
+    could_write: Mapping[str, frozenset[str]], records: Mapping[str, Record], produced: Set[str]
 ) -> tuple[tuple[Template, ...], int]:
     """The recorded artifacts this configuration no longer produces, and how many are orphans.
 
-    `recorded` is the committed manifest's `{id: target}`. A record is retired only when its
-    target is one `could_write` lists for its id: which ids exist, and which targets each could
-    have, are this build's. Any other record is an orphan, counted and never touched; its id is
+    `records` is the committed manifest's. A record is retired only when its target is one
+    `could_write` lists for its id: which ids exist, and which targets each could have, are this
+    build's. Any other record is an orphan, counted and never touched; its id is
     repository-authored, so only the count is ever printed.
 
     The engine judges a retired whole file by its record (`_plan_retired` reads the file and the
     record), so `render` is a stub, built by `_computed` like every other template with no
-    shipped file.
+    shipped file. **A region leaves as a region**, so a record whose kind says it lived inside a
+    host file is never retired this way: the stub names no region, and forced, it would delete
+    the host file and everything a person wrote in it. Such a record is an orphan too. A region
+    comes out only through the template this build produces for it, which carries its name and
+    comment style. The kind is committed, and all it can do here is turn a removal into an
+    orphan.
+
     Whether to retire a listed one is the caller's policy: `uninstall` retires every one, and
-    `upgrade` keeps the workflow unless `[ci] mode` asks for no gate.
+    `upgrade` keeps the workflow unless `[ci] mode` asks for no gate. Both apply the rules above
+    through this one function.
     """
     retired = tuple(
-        replace(_computed(artifact_id, target, lambda: ""), retired=True)
-        for artifact_id, target in sorted(recorded.items())
-        if artifact_id not in produced and target in could_write.get(artifact_id, frozenset())
+        replace(_computed(artifact_id, records[artifact_id].target, lambda: ""), retired=True)
+        for artifact_id in sorted(records)
+        if artifact_id not in produced
+        and records[artifact_id].kind not in IN_FILE
+        and records[artifact_id].target in could_write.get(artifact_id, frozenset())
     )
-    orphans = sum(1 for artifact_id in recorded if artifact_id not in produced) - len(retired)
+    orphans = sum(1 for artifact_id in records if artifact_id not in produced) - len(retired)
     return retired, orphans
 
 

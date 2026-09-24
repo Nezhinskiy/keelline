@@ -9,10 +9,9 @@ file (and the file, if nothing else was in it), and leaves anything else in plac
 target it could not have written, are counted and never touched.
 
 **A region leaves as a region.** A record this build no longer produces is judged against a
-whole-file stub, which names no region, so a record whose kind says it lived inside a host file
-is never retired that way: forced, the stub would delete the host file and everything a person
-wrote in it. It is counted as an orphan instead. A region comes out only through the template
-this build produces for it, which carries the region's name and comment style.
+whole-file stub, which names no region, so `retired_templates` never retires a record whose kind
+says it lived inside a host file: it is counted as an orphan, by the one rule `upgrade` applies
+too. A region comes out only through the template this build produces for it.
 
 **What anchors a removal, and what a commit can move.** Which artifact ids exist, which targets
 each could have, and every region's name are this build's: constants in the installed package
@@ -88,7 +87,6 @@ from keelline.scaffold import (
     LOCAL_ROOT,
     MANIFEST_PATH,
     Action,
-    Kind,
     Location,
     Manifest,
     Plan,
@@ -132,8 +130,6 @@ NO_CONFIG = (
 )
 ASSESSMENT = ".keelline/assessment.json"
 LEDGER_DIRS = (LOCAL_ROOT, ".keelline")
-# The kinds that live inside a file somebody else owns.
-IN_FILE = frozenset({Kind.MANAGED_REGION, Kind.KEYED_ENTRIES})
 
 
 @dataclass(frozen=True)
@@ -235,15 +231,9 @@ def uninstall(
     prepared = project_templates(
         root, config, resolution=Resolution(None, True), document=document, adopted=True
     )
-    recorded = {artifact_id: r.target for artifact_id, r in manifest.records.items()}
     produced = {t.id for t in (*prepared.once, *prepared.footprint)}
-    # A record kept inside a host file that this build does not produce is an orphan: see the
-    # module docstring's "A region leaves as a region".
-    in_file = {i for i, r in manifest.records.items() if r.kind in IN_FILE and i not in produced}
-    whole = {i: target for i, target in recorded.items() if i not in in_file}
-    retired, orphans = retired_templates(prepared.could_write, whole, produced)
-    orphans += len(in_file)
-    wanted = set(recorded) | set(config.artifacts.local)
+    retired, orphans = retired_templates(prepared.could_write, manifest.records, produced)
+    wanted = set(manifest.records) | set(config.artifacts.local)
     footprint_retired = (*_retire(prepared.footprint, wanted), *retired)
     once_retired = _retire(prepared.once, wanted)
     # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and

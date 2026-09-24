@@ -866,7 +866,9 @@ is overwritten; `--force` with its path takes it.
 only at a target this build could have written for it, and only while its bytes are the ones
 recorded. The workflow is removed only when `[ci] mode` is `"none"`; a mode this build does not
 render, such as `uvx`, is not a request to delete the gate. Every other record in the manifest is
-counted in a `note:` line and left where it is, and never named.
+counted in a `note:` line and left where it is, and never named, as is a record saying its
+artifact lived inside a file (a region) that this build no longer produces: a region comes out
+only through the template that names it, never as a whole file, which is `uninstall`'s rule too.
 
 **The boundary.** Which artifacts exist, and where each could be, are this build's. The
 `[paths]` value a target is built from and the digest a record carries are committed. For a whole
