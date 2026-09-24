@@ -127,6 +127,39 @@ def test_an_adopted_document_s_gates_are_validated_before_anything_is_written(
 
 
 @needs_git
+@pytest.mark.parametrize(
+    ("table", "hand_written"),
+    [
+        ("gates", '[gates.custom."x\\u001b[31m"]\nrun = ["true"]\n'),
+        ("paths", '[paths]\n"a b\\u001b[31m" = "docs"\n'),
+    ],
+    ids=["a-custom-gate-name", "a-paths-key"],
+)
+def test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table(
+    tmp_path: Path, table: str, hand_written: str
+) -> None:
+    # `init` renders the tables it copies out of a hand-written document with `tomlout.dumps`
+    # before `loads` runs, and `dumps` refuses a key that is not bare by quoting it with `!r`.
+    # A TOML key is arbitrary quoted text, so an adopted document put ESC into a refusal the
+    # `init` skill relays to a model, ahead of the loader's own count-only sentence. The refusal
+    # now names the table, which is Keelline's own vocabulary, and nothing the document wrote.
+    # Mutation: re-raise the serialiser's refusal as it was and both cases redden.
+    root = _repo(tmp_path)
+    document = '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n' + hand_written
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as caught:
+        _init(root, tmp_path)
+    message = str(caught.value)
+    assert message == (
+        f"keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML "
+        "key, so nothing was written; rename it to letters, digits, `_` and `-`"
+    )
+    assert "\x1b" not in message and "[31m" not in message and "\\x1b" not in message
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
 def test_a_dry_run_writes_nothing_and_reports_both_plans(tmp_path: Path) -> None:
     # Mutation (oracle): move `apply(root, once)` above the `dry_run` return -> the snapshot
     # reddens.

@@ -6361,3 +6361,15 @@ after = "        True"
 reddens = [
   "tests/config/test_layout.py::test_an_adoption_plan_is_a_plan_whose_name_says_keelline",
 ]
+
+# `init` renders the tables it copies out of a hand-written `keelline.toml` before the loader
+# sees them, and the serialiser quotes a key it cannot write bare. The refusal names the table
+# and never the key, which is repository-authored text no grammar has bounded.
+[[mutation]]
+name = "an adopted keelline.toml key reaches init's refusal quoted"
+file = "src/keelline/project/init.py"
+before = "            raise Refusal(UNWRITABLE_KEY.format(table=name)) from None"
+after = "            raise"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table",
+]

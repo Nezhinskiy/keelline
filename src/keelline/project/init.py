@@ -67,6 +67,12 @@ ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
     "`keelline upgrade`, which ships later"
 )
+# The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
+# is the only thing this names: the key that failed is exactly the text no grammar has bounded.
+UNWRITABLE_KEY = (
+    "keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML key, "
+    "so nothing was written; rename it to letters, digits, `_` and `-`"
+)
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
     "a region_update into it; a dry run plans it as a create of a region-only file. The bytes "
@@ -145,6 +151,24 @@ def _tables(
     return tables
 
 
+def _rendered(tables: dict[str, dict[str, object]]) -> str:
+    """The document `loads` validates: `HEADER` and `tables`, rendered by `tomlout.dumps`.
+
+    Every table but Keelline's own head is copied out of a hand-written document, and `dumps`
+    refuses a key it cannot write bare by quoting it (`{name!r}`). A TOML key is arbitrary quoted
+    text, so that put repository bytes, ESC and all, into a refusal the `init` skill relays to a
+    model, ahead of the loader's own count-only answer. Each table is therefore rendered alone
+    first, and a refusal is re-raised naming the table and nothing the document wrote. Rendering
+    a table raises only for a key: every value `tomllib` can parse, `dumps` can emit.
+    """
+    for name, table in tables.items():
+        try:
+            dumps({name: table})
+        except Refusal:
+            raise Refusal(UNWRITABLE_KEY.format(table=name)) from None
+    return HEADER + dumps(tables)
+
+
 def init(
     root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
 ) -> InitReport:
@@ -152,7 +176,8 @@ def init(
 
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
     that says this repository is already initialised, a `keelline.toml` that is not TOML, a
-    detected name outside the grammar, a `Config` the loader refuses, a pass in which two
+    detected name outside the grammar, an adopted table holding a key that cannot be written
+    back bare (`_rendered`), a `Config` the loader refuses, a pass in which two
     artifacts resolve to one file (`templates._one_target_each`), and finally a refusal in
     either plan, which is returned rather than raised so the report can name the artifact.
     """
@@ -162,7 +187,7 @@ def init(
         raise Refusal(ALREADY)
     existing = _existing(root)
     tables = _tables(root, existing, ci=ci)
-    config = loads(HEADER + dumps(tables), root, machine=machine)
+    config = loads(_rendered(tables), root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
     # the whole of its timeout for an answer nothing prints.
@@ -179,8 +204,8 @@ def init(
     # as red, so `init` said it had worked and the next `doctor` said it had not.
     if resolution.pin is not None and existing is None:
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
-        config = loads(HEADER + dumps(tables), root, machine=machine)
-    document = HEADER + dumps(tables)
+        config = loads(_rendered(tables), root, machine=machine)
+    document = _rendered(tables)
     prepared = project_templates(
         root,
         config,
