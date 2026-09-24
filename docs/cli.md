@@ -970,37 +970,35 @@ judges the skeleton with the region still in it and calls it edited; a `note:` l
 the footprint pass targets never reaches the write-once pass, compared as the engine places each
 file, so what you wrote into the skeleton is judged on its own bytes.
 
-**The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore`
-region is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes,
-and the artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own,
-after the disk shows nothing left under `.keelline/local/`. Every directory above a file a pass
-removed goes once it is empty, deepest first, and no other: an empty directory a `[paths]` value
-merely names may be yours. Then `keelline.toml`, which the write-once pass holds back for this
-point; then the ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/`
-once it is empty. A directory someone committed where a ledger file belongs stays. So does a
-harness's own directory (`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have
-created `.claude/` to hold the rule it wrote there, but nothing records who made an empty
-directory, and to `init` its presence means the project uses that harness. So a later `init`
-detects that harness and lists it in `[keelline] agents` until you remove the directory.
+**The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore` region
+is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes, and the
+artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own, after the
+disk shows nothing left under `.keelline/local/`. Every directory above a file a pass removed goes
+once it is empty, deepest first, and no other: an empty directory a `[paths]` value merely names may
+be yours. Then `keelline.toml`, which the write-once pass holds back for this point; then the
+ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/` once it is empty. A
+directory someone committed where a ledger file belongs stays. So does a harness's own directory
+(`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have created `.claude/`
+to hold the rule it wrote there, but nothing records who made an empty directory, and to `init` its
+presence means the project uses that harness. So a later `init` detects that harness and lists it in
+`[keelline] agents` until you remove the directory.
 
-**Refused before any write** (`2`): the repository is not initialised; it is attached to an
-overlay, so run `keelline detach` first; `keelline.toml` is missing while the manifest records
-it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the
-repository root, so take them out of the list; `.keelline/local/` holds files this run would not
-remove, such as notes, or an artifact kept out of git that changed since Keelline wrote it, which
-the refusal counts and never names; git ignores an existing file the run would remove or rewrite
-at a place a `[paths]` value chose, which the refusal names; or a `--force` path leaves
-`--root`. The count is exact before anything
-is written, including what taking a region out of a file kept out of git would leave behind; the
-record of what Keelline wrote there, `.keelline/local/artifacts.json`, is Keelline's own and goes
-once nothing else is left, before the ignore block. Every artifact it records is judged, a copy
-left behind when its id left `[artifacts] local` included, so an unedited one goes. Move the files
-out; one the report lists `skip_modified` in a file of its own there can be named with `--force`
-instead,
-but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file, and
-forcing it takes only the region, so a line you wrote into that skeleton has to be moved. A dry
-run reports the count in a `note:` line instead of refusing, even when its plans also carry
-refusals, so its report still lists the edited file.
+**Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay,
+so run `keelline detach` first; `keelline.toml` is missing while the manifest records it, so restore
+it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
+take them out of the list; `.keelline/local/` holds files this run would not remove, such as notes,
+or an artifact kept out of git that changed since Keelline wrote it, which the refusal counts and
+never names; git ignores an existing file the run would remove or rewrite at a place a `[paths]`
+value chose, which the refusal names; or a `--force` path leaves `--root`. The count is exact before
+anything is written, including what taking a region out of a file kept out of git would leave
+behind; the record of what Keelline wrote there, `.keelline/local/artifacts.json`, is Keelline's own
+and goes once nothing else is left, before the ignore block. Every artifact it records is judged, a
+copy left behind when its id left `[artifacts] local` or its `[paths]` value moved included, so an
+unedited one goes. Move the files out; one the report lists `skip_modified` in a file of its own
+there can be named with `--force` instead, but an `AGENTS.md` whose region and skeleton are both
+kept out of git shares one file, and forcing it takes only the region, so a line you wrote into that
+skeleton has to be moved. A dry run reports the count in a `note:` line instead of refusing, even
+when its plans also carry refusals, so its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
 `.keelline/local/` after the write-once pass, which the count before any write should already
@@ -1036,8 +1034,9 @@ excludes ignore is taken back like any other. Run it on a checkout you trust.
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
 file an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
 `[paths]` value chose, and what is under `.keelline/local/`.
-**Writes** only removals, and region removals, through the scaffold engine, then removes the
-ledger.
+**Writes** only removals, and region removals, through the scaffold engine, and the record of
+what it wrote kept out of git, `.keelline/local/artifacts.json`, which each pass rewrites as it
+removes what that record names; then removes that record, and the ledger.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
