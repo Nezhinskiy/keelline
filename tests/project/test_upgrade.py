@@ -11,6 +11,7 @@ import pytest
 import keelline
 from keelline import fsops
 from keelline.config.loader import CONFIG_FILE
+from keelline.config.owned import OwnedKeyError
 from keelline.errors import Refusal
 from keelline.project import footprint, templates
 from keelline.project.upgrade import (
@@ -216,6 +217,33 @@ def test_a_dry_run_writes_nothing_and_reports_everything(
     before = snapshot(root)
     report = _upgrade(root, tmp_path, _listing("9.9.9", NEW), dry_run=True)
     assert report.dry_run and report.moved and report.footprint.actions
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_version_in_a_shape_the_editor_cannot_rewrite_is_refused_even_when_it_would_be_held(
+    tmp_path: Path,
+) -> None:
+    """A tool-owned key written in a shape the editor cannot prove it rewrote is refused before
+    any write, even on the path where no release resolves and the version would be held back
+    anyway. Asking whether the loaded version differs from the running one instead would hold
+    it silently and write the footprint around a key no later run can move either. The
+    roadmap is deleted first, so a run that went on would visibly write.
+
+    Mutation (oracle): "upgrade holds a version it cannot rewrite and writes the footprint
+    anyway" (the comparison in place of the editor) -> no refusal, and the roadmap is
+    recreated.
+    """
+    root = _pinned(tmp_path)
+    config = root / CONFIG_FILE
+    text = config.read_text(encoding="utf-8")
+    recorded = f'version = "{keelline.__version__}"'
+    assert text.count(recorded) == 1
+    config.write_text(text.replace(recorded, 'version = """0.0.1"""'), encoding="utf-8")
+    (root / "docs" / "roadmap.md").unlink()
+    before = snapshot(root)
+    with pytest.raises(OwnedKeyError, match=re.escape("[keelline] version is written in a shape")):
+        _upgrade(root, tmp_path, NO_TAG)
     assert_snapshot_unchanged(root, before)
 
 

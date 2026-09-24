@@ -6561,6 +6561,16 @@ before = "        changes, held = {}, NO_RELEASE"
 after = "        held = NO_RELEASE"
 reddens = ["tests/project/test_upgrade.py::test_with_no_release_to_pin_neither_key_moves_and_the_report_says_why"]
 
+# A tool-owned key in a shape the editor cannot prove it rewrote is refused before any write,
+# never held silently while the footprint is written around it. The editor is asked even on the
+# path where the version would be held, and the comparison that looks equivalent is not.
+[[mutation]]
+name = "upgrade holds a version it cannot rewrite and writes the footprint anyway"
+file = "src/keelline/project/upgrade.py"
+before = "    elif pinned and rewrite(text, changes) != text:"
+after = "    elif pinned and before.keelline.version != running:"
+reddens = ["tests/project/test_upgrade.py::test_a_version_in_a_shape_the_editor_cannot_rewrite_is_refused_even_when_it_would_be_held"]
+
 [[mutation]]
 name = "upgrade moves version and ref past a workflow it did not rewrite"
 file = "src/keelline/project/upgrade.py"
