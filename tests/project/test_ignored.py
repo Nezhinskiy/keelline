@@ -289,3 +289,73 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
         _upgrade(root, tmp_path)
     assert str(refused.value) == UNANSWERED
     assert_snapshot_unchanged(root, before)
+
+
+MOVED_OFF_DOCS = "\n".join(
+    f'{key} = "planning/{value}"'
+    for key, value in (
+        ("architecture", "architecture"),
+        ("runbooks", "runbooks"),
+        ("adr", "adr"),
+        ("specs", "specs"),
+        ("plans", "plans"),
+        ("bugs", "bugs"),
+        ("bug_index", "bug-reports.md"),
+        ("roadmap", "roadmap.md"),
+        ("roadmap_history", "roadmap-history.md"),
+        ("memory", "memory"),
+        ("keelline", "keelline"),
+    )
+)
+
+
+@needs_git
+def test_a_symlinked_place_only_the_preset_would_use_refuses_no_command(tmp_path: Path) -> None:
+    """Every `[paths]` value moved off `docs/`, and `docs` a symlink to where they went. The guard
+    asked the preset's places through `project_templates`, whose trail target called
+    `contained()` on the preset's `docs/trail.toml`, so `init`, `upgrade` and `uninstall` all
+    refused with a symlink at a path this configuration never uses, and did so even with nothing
+    for the guard to ask about. The places are path arithmetic now, and asked only then.
+
+    Mutation (advisory): put `contained()` back into the trail's template target -> `init`
+    refuses at the first call.
+    """
+    root = _repository(tmp_path)
+    (root / "planning").mkdir()
+    (root / "docs").symlink_to("planning", target_is_directory=True)
+    (root / CONFIG_FILE).write_text(DOCUMENT + f"\n[paths]\n{MOVED_OFF_DOCS}\n", encoding="utf-8")
+    _init(root, tmp_path)
+    assert (root / "planning" / "roadmap.md").is_file()
+    _upgrade(root, tmp_path)
+    _uninstall(root, tmp_path)
+    assert not (root / ".keelline").exists()
+    assert (root / "docs").is_symlink()
+
+
+@needs_git
+@pytest.mark.parametrize("command", ["upgrade", "uninstall"])
+def test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice(
+    tmp_path: Path, command: str
+) -> None:
+    """`[paths] roadmap = "CLAUDE.md"` and a forged `roadmap` record stating the bytes Keelline
+    wrote into `CLAUDE.md`, which this clone's excludes ignore. `CLAUDE.md` is `claude-md`'s
+    preset place, not `roadmap`'s, so for `roadmap` it is a place a `[paths]` value chose: the
+    run is refused, and `CLAUDE.md` is neither overwritten with the roadmap nor removed.
+
+    Mutation (oracle): "an ignored write passes at any artifact's preset place" -> the file is
+    overwritten or removed, and the refusal is never raised.
+    """
+    root = _repository(tmp_path)
+    _excluding(root, "CLAUDE.md")
+    (root / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
+    _init(root, tmp_path)
+    claude = root / "CLAUDE.md"
+    written = claude.read_text(encoding="utf-8")
+    _forge_roadmap(root, "CLAUDE.md", written)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        (_upgrade if command == "upgrade" else _uninstall)(root, tmp_path)
+    text = IGNORED if command == "upgrade" else IGNORED_REMOVING
+    assert str(refused.value) == text.format(count=1, names="CLAUDE.md")
+    assert claude.read_text(encoding="utf-8") == written
+    assert_snapshot_unchanged(root, before)

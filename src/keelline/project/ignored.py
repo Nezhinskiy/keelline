@@ -11,16 +11,26 @@ digest of a predictable ignored file (a tool-generated marker), the same commit 
 delete it or `upgrade` overwrite it. Nothing git ignores can be given back by git either.
 
 **The rule is exactly three conditions, and a planned write or removal is refused only when all
-three hold.** Its file exists: creating a file changes nothing that was there, and removing one
-that is not there removes nothing. Git ignores it. And its place was chosen by a `[paths]` value,
-that is, it is not a place this build could put that artifact under the preset's own paths
-(`_preset_places`). A fixed name (`CLAUDE.md`, `keelline.toml`, `.gitignore`, the workflow, a
-harness's rule) and a preset-default place are never refused: no repository value chose them, and
-a person may well keep `CLAUDE.md` in a global excludes file or `keelline.toml` in
-`.git/info/exclude` on purpose. A first version refused every ignored target, which refused those
-setups outright and left `uninstall` no way to take back a `CLAUDE.md` Keelline wrote there. The
-retirement a record can steer only ever reaches a target `could_write` lists, and those beyond the
-preset's are `[paths]` values, so the `.env` case and the forged-record case stay refused.
+three hold.** Its file exists: creating a file changes nothing that was there, and removing one that
+is not there removes nothing. Git ignores it. And its place was chosen by a `[paths]` value, that
+is, it is not a place this build could put that artifact under the preset's own paths
+(`_preset_places`), asked of that artifact's id and no other's. A fixed name (`CLAUDE.md`,
+`keelline.toml`, `.gitignore`, the workflow, a harness's rule) and a preset-default place are never
+refused: no repository value chose them, and a person may well keep `CLAUDE.md` in a global excludes
+file or `keelline.toml` in `.git/info/exclude` on purpose. A first version refused every ignored
+target, which refused those setups outright and left `uninstall` no way to take back a `CLAUDE.md`
+Keelline wrote there. The retirement a record can steer only ever reaches a target `could_write`
+lists, and those beyond the preset's are `[paths]` values, so the `.env` case and the forged-record
+case stay refused.
+
+**What anchors "the preset's place", and what a repository can move.** The places are
+Keelline's own: the `[defaults.paths]` of a preset this build ships, fed through this build's
+`project_templates`, whose `could_write` lists every target it could produce for each id. The
+one repository input is `[keelline] preset`, and `presets.load_preset` accepts only a preset this
+build ships, so a clone can choose among Keelline's anchors and cannot author one. Nothing on
+the disk is read to compute them, so a path this configuration never uses cannot refuse the run
+(a symlinked `docs/` under `[paths]` values that all live elsewhere did, through the trail's
+`contained()`), and they are computed only once some target qualifies.
 
 One `git check-ignore`, before anything is written, dry run included; the refusal names each file
 through `scaffold.printable`, the bound every report prints targets through.
@@ -78,9 +88,14 @@ def _preset_places(root: Path, config: Config) -> Mapping[str, frozenset[str]]:
     """Every place this build could put each artifact under the preset's own `[paths]`.
 
     The same `project_templates` call every command makes, with `config.paths` replaced by the
-    preset's defaults, so fixed names come out as themselves and every `[paths]`-built target as
-    the preset puts it. A target outside what this answers for its id was chosen by a `[paths]`
-    value in `keelline.toml`.
+    `[defaults.paths]` Keelline ships for `config.keelline.preset`, so fixed names come out as
+    themselves and every `[paths]`-built target as the preset puts it. A target outside what this
+    answers for its id was chosen by a `[paths]` value in `keelline.toml`.
+
+    Provenance: the defaults are this build's shipped preset, the only repository input is which
+    preset (`load_preset` accepts none this build does not ship), and `could_write` is built by
+    this build's code. `project_templates` touches no disk for a target, so nothing here can
+    raise `PathEscape` for a place this configuration never uses.
     """
     defaults = preset_defaults(config.project.name, preset=config.keelline.preset).paths
     placed = replace(config, paths=defaults)
@@ -93,19 +108,24 @@ def _preset_places(root: Path, config: Config) -> Mapping[str, frozenset[str]]:
 def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
     a `[paths]` value chose; `removing` picks `uninstall`'s remedy."""
+    existing = [
+        action
+        for planned in plans
+        for action in planned.actions
+        if action.verb is not Verb.SKIP_MODIFIED
+        and not action.target.startswith(f"{LOCAL_ARTIFACTS}/")
+        and os.path.lexists(root / action.target)
+    ]
+    if not existing:
+        return
     places = _preset_places(root, config)
     chosen: dict[str, Action] = {}
-    for planned in plans:
-        for action in planned.actions:
-            if action.verb is Verb.SKIP_MODIFIED:
-                continue
-            target = action.target
-            if target.startswith(f"{LOCAL_ARTIFACTS}/"):
-                continue
-            if target in places.get(action.artifact_id, frozenset()):
-                continue
-            if os.path.lexists(root / target):
-                chosen.setdefault(target, action)
+    for action in existing:
+        # That artifact's own preset places: any id's would let `[paths] roadmap = "CLAUDE.md"`
+        # pass as `claude-md`'s place, and a forged `roadmap` record overwrite an ignored
+        # `CLAUDE.md` whose bytes Keelline wrote.
+        if action.target not in places.get(action.artifact_id, frozenset()):
+            chosen.setdefault(action.target, action)
     if not chosen:
         return
     # `--stdin -z`: the paths go in NUL-separated and never as arguments, so none is read as an

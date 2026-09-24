@@ -38,7 +38,7 @@ import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.layout import rules_file
 from keelline.config.schema import Config
-from keelline.docs.api import trail_path
+from keelline.docs.api import trail_target
 from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
@@ -526,8 +526,9 @@ def project_templates(
 ) -> Prepared:
     """The footprint this configuration asks for, split into the engine's two passes (DC3).
 
-    `trail_path` contains its answer against `root`, so `relative_to(root)` hands the engine
-    the relative target it re-contains rather than an absolute one it would refuse.
+    Nothing here reads the disk for a target: `trail_target` is a location, like every
+    `[paths]`-built target, and the engine contains each one when it plans it. So this can be
+    asked about paths no run will use, which `ignored._preset_places` does with the preset's.
 
     `adopted` says whether this run read a `keelline.toml` it did not write, and it is threaded
     rather than derived: `_ci` cannot tell the two kinds of run apart from a `Config` and a
@@ -575,7 +576,7 @@ def project_templates(
         _computed("bug-index", p.bug_index, lambda: render_index([], config)),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),
-        _template("trail", str(trail_path(root, config).relative_to(root)), "trail.toml"),
+        _template("trail", trail_target(config), "trail.toml"),
         _template("specs-keep", f"{p.specs}/.gitkeep", "gitkeep"),
         _template("plans-keep", f"{p.plans}/.gitkeep", "gitkeep"),
         _computed(

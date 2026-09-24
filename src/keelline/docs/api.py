@@ -51,12 +51,19 @@ the same finding about its own list.
 `project` area ships `trail.toml` beside the roadmap template and must put it where `docs
 trail` reads it. The other nine trimmed names have no consumer yet and stay where they were
 written, reachable from `keelline.docs.trail`.
+
+**And gives way to `trail_target`, in wave 5.** `trail_path` contains its answer against the
+root, so the project area asking where the trail goes under the *preset's* `[paths]`, a place
+this configuration may never use, was refused whenever that place passed through a symlink. What
+the project area needs is the location, and the engine contains every target it plans;
+`trail_target` is that location, with no disk access, and `trail_path` stays in
+`keelline.docs.trail` for this area's own commands.
 """
 
 from keelline.docs.graph import check_memory_graph
 from keelline.docs.hygiene import check_budgets, check_links
 from keelline.docs.plans import Lint, lint
-from keelline.docs.trail import trail_path
+from keelline.docs.trail import trail_target
 
 __all__ = [
     "Lint",
@@ -64,5 +71,5 @@ __all__ = [
     "check_links",
     "check_memory_graph",
     "lint",
-    "trail_path",
+    "trail_target",
 ]

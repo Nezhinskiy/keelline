@@ -84,9 +84,18 @@ class Trail:
     states: dict[str, str]
 
 
+def trail_target(config: Config) -> str:
+    """Where `trail.toml` sits for `config`, beside the roadmap, as a project-relative path.
+
+    Only a location, read off `[paths] roadmap` without touching the disk: whether it may be read
+    or written is `contained()`'s to say, which `trail_path` asks and the scaffold engine asks of
+    every target it plans.
+    """
+    return str(PurePosixPath(config.paths.roadmap).parent / TRAIL_FILE)
+
+
 def trail_path(root: Path, config: Config) -> Path:
-    directory = PurePosixPath(config.paths.roadmap).parent
-    return contained(root, str(directory / TRAIL_FILE))
+    return contained(root, trail_target(config))
 
 
 def _interpolable(value: str) -> bool:

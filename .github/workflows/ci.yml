@@ -136,18 +136,21 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
-    # measured), so the 387 entries `mutations.toml` now holds cost ~782 s; checkout, `setup-uv`
+    # measured), so the 532 entries `mutations.toml` now holds cost ~1074 s; checkout, `setup-uv`
     # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
-    # to ~60 s, which is the figure to re-measure from this job's first run. Call the shape
-    # ~842 s.
+    # to ~60 s, which is the figure to re-measure from this job's own runs. Call the shape
+    # ~1134 s.
     #
-    # 19 minutes is 1140 s, so the margin is ~298 s. Sixty of that absorbs runner variance — a
+    # 21 minutes is 1260 s, so the margin is ~126 s. Sixty of that absorbs runner variance — a
     # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
-    # leaves ~238 s, or roughly **118 further mutation entries** before this number has to move.
-    # At the rate the rule that every assertion ships with its mutation generates them, that is
-    # the figure to watch; when it is reached, exactly one job's budget changes and nothing else
-    # is hostage to it, which is the third reason this is a job rather than a step.
-    timeout-minutes: 19
+    # leaves ~66 s, or roughly **32 further mutation entries** before this number has to move.
+    # It was 19 minutes, sized for 387 entries with room for 118 more; the set passed 505 during
+    # the wave-5 review fixes, where the 60 s variance allowance ran out even though the budget
+    # test, which projects without it, stayed green. At the rate the rule that every assertion
+    # ships with its mutation generates them, that is the figure to watch; when it is reached,
+    # exactly one job's budget changes and nothing else is hostage to it, which is the third
+    # reason this is a job rather than a step.
+    timeout-minutes: 21
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1

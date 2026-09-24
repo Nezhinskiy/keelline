@@ -5051,7 +5051,7 @@ reddens = [
 [[mutation]]
 name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "    timeout-minutes: 19"
+before = "    timeout-minutes: 21"
 after = "    timeout-minutes: 5"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
@@ -6903,3 +6903,25 @@ file = "src/keelline/project/uninstall.py"
 before = "    try:\n        apply(root, planned)\n    finally:\n"
 after = "    apply(root, planned)\n    if True:\n"
 reddens = ["tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[docs/roadmap.md]"]
+
+# The guard's anchor for "a place a `[paths]` value chose" is Keelline's own: the preset's shipped
+# `[defaults.paths]` through this build's `project_templates`, asked per artifact id. Anchored on
+# the configuration itself, every `[paths]` value reads as the preset's place and nothing is
+# refused; asked of any id's places, `[paths] roadmap = "CLAUDE.md"` passes as `claude-md`'s, and a
+# forged `roadmap` record overwrites or removes an ignored `CLAUDE.md` Keelline wrote.
+[[mutation]]
+name = "an ignored write's place is judged against the configuration's own paths"
+file = "src/keelline/project/ignored.py"
+before = "    placed = replace(config, paths=defaults)"
+after = "    placed = config"
+reddens = [
+  "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
+]
+
+[[mutation]]
+name = "an ignored write passes at any artifact's preset place"
+file = "src/keelline/project/ignored.py"
+before = "        if action.target not in places.get(action.artifact_id, frozenset()):"
+after = "        if not any(action.target in each for each in places.values()):"
+reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice"]
