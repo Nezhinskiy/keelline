@@ -6276,7 +6276,7 @@ reddens = [
 [[mutation]]
 name = "force stops reaching a retired artifact edited by hand"
 file = "src/keelline/scaffold/engine.py"
-before = "    if matches or record.target in forced:"
+before = "    if matches or target in forced:"
 after = "    if matches:"
 reddens = [
   "tests/scaffold/test_engine.py::test_force_reaches_a_retired_artifact_edited_by_hand",

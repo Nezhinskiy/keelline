@@ -1035,6 +1035,7 @@ def test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose(tmp_pa
     planned = plan(tmp_path, a_config(tmp_path), [template], force=("AGENTS.md",))
     assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.REMOVE, "retired, forced")]
     apply(tmp_path, planned)
+    assert host.exists(), "forcing a retired region deleted the file around it"
     assert host.read_text(encoding="utf-8") == "User prose.\n"
 
 

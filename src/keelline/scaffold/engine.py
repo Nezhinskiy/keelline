@@ -203,8 +203,8 @@ def _removal_payload(template: Template, current: str) -> str | None:
     """What `remove` leaves behind.
 
     Nothing for a whole file. For the two kinds that live inside somebody else's file, the file
-    minus Keelline's part (§7.3), and nothing either when Keelline's part was all the file held,
-    which is what `detach` already does with the `.gitignore` it emptied. Emptiness is exact: a
+    minus Keelline's part, and nothing either when Keelline's part was all the file held, which
+    is what `detach` already does with the `.gitignore` it emptied. Emptiness is exact: a
     remainder of whitespace is somebody's and stays. A host file that already existed and was
     empty before the region went in is removed with the region, as `detach` removes it.
     """
@@ -434,7 +434,13 @@ def _plan_retired(
     # `force` reaches a retired artifact the user edited and has decided to remove anyway: the
     # one file a removal's `--force PATH` names. For a region what goes is still the region and
     # never the file around it: forcing overrides the hand-edit verdict, not the payload.
-    if matches or record.target in forced:
+    #
+    # The path compared is `target`, the effective target `plan` derived from this template and
+    # `[artifacts] local` and then contained, exactly as the live-template check in `plan` does;
+    # never `record.target`, which the committed manifest supplies. The two are equal here only
+    # because `plan` drops a record whose target differs, so comparing the effective one means
+    # no manifest a clone commits can decide which file a `--force PATH` reaches.
+    if matches or target in forced:
         actions.append(
             Action(
                 Verb.REMOVE,
