@@ -970,8 +970,9 @@ one of them.
 
 `--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
-order note, or the missing-configuration count, or empty) and `kept_locally` (the count under
-`.keelline/local/` a dry run reports).
+order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
+under `.keelline/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
+a run that removed what it planned).
 
 ---
 
