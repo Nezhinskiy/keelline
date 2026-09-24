@@ -768,8 +768,10 @@ a released commit there in place and renders the workflow around it. On a run th
 document, the unreachable remote's sentence names both remedies: `keelline init --yes` with the
 network reachable while nothing is written yet, and `keelline upgrade` once it is.
 
-**Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
-detected values and for the public repository's tags, and every file an artifact targets.
+**Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the name and
+the base branch and for the public repository's tags, which harness directories the root
+carries (`.claude/`, `.codex/`), each shipped profile's marker files at the root, and every file
+an artifact targets.
 **Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the
 table above (the profile's rules and the Claude pointer only when a profile is set),
 `.github/workflows/keelline.yml` where a ref is recorded, and
@@ -1790,7 +1792,7 @@ ref = ""                 # the commit of the Keelline release the workflow is pi
 gate_branch = "main"     # the branch a gate reads its configuration from
 
 [gates]
-builtin = ["docs", "bugs", "plan", "commit", "trail"]  # drop any you do not want run
+builtin = ["docs", "bugs", "plan", "commit", "trail"]  # validated now; honoured later
 custom_timeout_seconds = 600  # how long one of your own gates may run
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
@@ -1806,9 +1808,10 @@ the file loads (`unknown section(s)`), so the grammar above is the whole of it. 
 and which form, `gate_branch` is the branch the rendered workflow watches on a push and the
 default it passes as `base:`, and `ref` is written by `init` and judged by `doctor`'s `ci-ref`
 row. `[commit_messages] attribution_check` is read by `commit check` and `[artifacts] local` by
-the scaffold engine. `[commit_messages] types` is the one key still read by nothing; it is
-accepted so that a project can record its intent without the loader refusing the file, and the
-lane that reads it will say so.
+the scaffold engine. `[commit_messages] types`, `[keelline] enforced` and all of `[gates]` are
+read by nothing yet but the loader, which validates them; they are accepted so that a project
+can record its intent without the loader refusing the file, and the lane that reads each will
+say so.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -1818,21 +1821,25 @@ defaults to `initialised` — it is one of `initialised`, `adopting` and `instal
 `installed` above shows a set value, not what an omitted key takes. Everything from
 `[project] base_branch` down is the preset's default exactly as written.
 
-**Gates.** A gate is a check that fails a pull request once it enforces. `[gates] builtin`
-chooses among Keelline's own five, all of them by default, and each `[gates.custom.<name>]`
-adds one of the project's own: `run` is an argv run from the project root, never through a
-shell, given `custom_timeout_seconds` to finish, and a non-zero exit is its one finding. A
-custom gate's name is one lowercase path segment, neither a built-in gate's name nor
-`config`, which names the configuration check. Custom gates run only from a command a person
-or a workflow runs on purpose, never from a hook or `doctor`, so running such a command in a
-clone runs the commands that clone configured, as running its test suite would. Nothing runs
-a custom gate yet.
+**Gates.** A gate is one check run over a pull request. `[gates] builtin` names which of
+Keelline's own five the project means to run, all of them by default, and each
+`[gates.custom.<name>]` names one of the project's own: `run` is an argv to run from the
+project root, never through a shell, given `custom_timeout_seconds` to finish, and a non-zero
+exit is its one finding. A custom gate's name is one lowercase path segment, neither a built-in
+gate's name nor `config`, which names the configuration check. **The keys are accepted and
+validated when the file loads; the gate that honours them ships later.** Until it does,
+[the reusable workflow](#the-reusable-workflow) runs every built-in check whatever
+`[gates] builtin` says, and nothing runs a custom gate. When one does, it will run only from a
+command a person or a workflow runs on purpose, never from a hook or `doctor`, so running such a
+command in a clone runs the commands that clone configured, as running its test suite would.
 
-**Enforcement is per gate.** Each gate the project runs is advisory until it enforces. A gate
-enforces when `[keelline] enforced` lists it, or when `state` is `installed`, which means
-every gate the project runs. Both keys are Keelline's to write (`keelline adopt begin` and
-`keelline adopt promote`, which ship later). An `initialised` project enforces nothing, and
-an `installed` one lists every gate or none.
+**Enforcement per gate ships with that gate.** `[keelline] enforced` is meant to list the gates
+promoted while a project adopts Keelline, and `state = "installed"` means every gate the project
+runs. Both keys are Keelline's to write (`keelline adopt begin` and `keelline adopt promote`,
+which ship later), and the loader already holds them together: an `initialised` project lists
+none, and an `installed` one lists every gate or none. Nothing reads the list yet. Until the
+gate ships, the reusable workflow enforces by `state` alone: once the base's state is
+`installed` a failed check fails the job, and before that every failure is a warning.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two
