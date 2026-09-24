@@ -282,7 +282,7 @@ def test_an_artifact_kept_out_of_git_is_written_and_removed_where_git_ignores_it
 
 
 def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> None:
-    # No work tree, so no guard: `check-ignore` cannot answer, and `rev-parse` says why.
+    # No work tree, so no guard: `check-ignore` cannot answer, and no `.git` above says why.
     root = tmp_path / "widget"
     root.mkdir()
     (root / ".gitignore").write_text(".env\n", encoding="utf-8")
@@ -293,14 +293,20 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
 
 
 @needs_git
+@pytest.mark.parametrize("timed_out", [False, True], ids=["refused", "timed-out"])
 def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
 ) -> None:
-    # A guard that cannot answer must not read as a pass. Mutation (advisory): return instead of
-    # refusing after `rev-parse` -> the upgrade runs and this reddens.
+    # A guard that cannot answer must not read as a pass. `timed-out` is every `git` call ending
+    # the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a repository was
+    # asked of `rev-parse`, which timed out too, so the guard passed. Mutation (oracle): "a guard
+    # whose git timed out reads as no repository" (ask `rev-parse` again) -> the `timed-out` case
+    # upgrades and this reddens; returning instead of refusing reddens both.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
+        if timed_out:
+            return -1, ""
         if args[0] == "check-ignore":
             return 128, ""
         return git_run(where, *args)

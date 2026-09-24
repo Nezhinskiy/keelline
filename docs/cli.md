@@ -909,9 +909,11 @@ place are never refused, so a `CLAUDE.md` in your global excludes or a `keelline
 `.git/info/exclude` works as before. A tracked file that matches an ignore pattern is not
 ignored, because git shows every change to it; the artifacts `[artifacts] local` keeps under
 `.keelline/local/artifacts/` are exempt, since keeping them out of git is what that setting asks
-for; and outside a git work tree there is no guard, because there is no diff to hide from. Run
-it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes no
-project-level hook entries, so an upgrade changes none.
+for; and outside a git work tree there is no guard, because there is no diff to hide from.
+Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer, because it
+timed out or is not installed, refuses the run rather than letting it through. Run it on a
+checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level
+hook entries, so an upgrade changes none.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
 file an artifact targets, `git check-ignore` for each existing file a write or removal targets at

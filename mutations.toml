@@ -6975,3 +6975,12 @@ file = "src/keelline/project/ignored.py"
 before = "        if action.target not in places.get(action.artifact_id, frozenset()):"
 after = "        if not any(action.target in each for each in places.values()):"
 reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice"]
+
+# Whether a failed `check-ignore` ran inside a repository is read off the disk, never asked of
+# the same `git`: a `rev-parse` that timed out beside it read as "no repository" and passed.
+[[mutation]]
+name = "a guard whose git timed out reads as no repository"
+file = "src/keelline/project/ignored.py"
+before = "    if _in_work_tree(root):\n        raise Refusal(UNANSWERED)"
+after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]

@@ -42,10 +42,13 @@ this is not `--no-index`, which the documentation lanes use to ask about pattern
 **`LOCAL_ARTIFACTS` is exempt**: `[artifacts] local` asks for exactly that directory, which the
 footprint's ignore block keeps out of git on purpose.
 
-**No repository, no guard.** Outside a git work tree, or with no `git` to ask, there is no diff
-for a change to hide from, and every write still goes through `contained()` and the `O_NOFOLLOW`
-walk. Inside one, a `check-ignore` that answers neither "some matched" nor "none matched" is a
-refusal too, because a guard that cannot answer must not read as a pass.
+**No repository, no guard.** Outside a git work tree there is no diff for a change to hide
+from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
+`check-ignore` that answers neither "some matched" nor "none matched" is a refusal too, because a
+guard that cannot answer must not read as a pass: a `git` that timed out, or that is not there
+to run. Which of the two this is, is read off the disk (`_in_work_tree`) and never asked of the
+same `git`, which fails the same way under the same load: a `rev-parse` that timed out beside
+the `check-ignore` read as "no repository" and let the write through.
 """
 
 from __future__ import annotations
@@ -105,6 +108,13 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
     return prepared.could_write
 
 
+def _in_work_tree(root: Path) -> bool:
+    """Whether `root` or a directory above it holds a `.git` entry, which is how git itself finds
+    the repository: a directory in a clone, a file in a worktree or a submodule. A walk of the
+    disk that cannot time out, so a guard inside a repository fails closed."""
+    return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
+
+
 def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
     a `[paths]` value chose; `removing` picks `uninstall`'s remedy."""
@@ -140,5 +150,5 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
             text = IGNORED_REMOVING if removing else IGNORED
             raise Refusal(text.format(count=len(ignored), names=names))
         return
-    if git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0:
+    if _in_work_tree(root):
         raise Refusal(UNANSWERED)
