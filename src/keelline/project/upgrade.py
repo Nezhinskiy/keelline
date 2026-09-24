@@ -1,0 +1,181 @@
+"""`keelline upgrade`: the footprint refreshed against the running Keelline.
+
+Every refusal comes before every write.
+
+1. A `keelline.toml` recording a newer Keelline than the one running is refused: moving a project
+   backward would repin an older release and put older bytes over newer ones.
+2. `[keelline] version` moves to the running version. Under `[ci] mode = "reusable"` the workflow
+   pins Keelline by commit, so `version`, `[ci] ref` and the workflow's `uses:` line are one value
+   and move together or not at all. When no released commit resolves, or the workflow would not
+   be rewritten to it, neither key moves and `held` says why.
+3. The footprint pass is re-planned by hash against the manifest; the write-once pass is not.
+   An artifact this configuration no longer produces is retired only at a recorded target
+   `Prepared.could_write` lists for its id. The workflow is retired only when `[ci] mode` is
+   `"none"`: a mode this build merely does not render is not a request to delete the gate. Every
+   other record is an orphan, counted and left alone.
+
+Written: the footprint, then `keelline.toml` through `rewrite_owned`, last. An interrupted run
+leaves the document naming the old version, and the next run re-plans from there.
+
+What anchors a write, and what does not. Which artifacts exist and which targets each could have
+come from this build. The `[paths]` value a target is built from, and the digest a record carries,
+come from committed files, so a commit can have this command rewrite a file only while that file
+holds exactly the bytes the same commit records. That is why `docs/cli.md` says to run it on a
+checkout you trust.
+
+What prints is bounded. `Moved.before` is the repository's own value, so a version outside
+`X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`
+is Keelline's own: the running version, and a sha the release area resolved from the public
+repository. `orphans` is a count, because the ids of records this build does not produce are
+repository-authored.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+import keelline
+from keelline.config.loader import loads, read_document
+from keelline.config.owned import Value, rewrite
+from keelline.config.schema import Config
+from keelline.errors import Refusal
+from keelline.overlay.api import satisfies
+from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
+from keelline.project.templates import (
+    CI_REF,
+    CI_WORKFLOW,
+    Prepared,
+    project_templates,
+    refuse_local_profile,
+    retired_templates,
+)
+from keelline.release.api import Resolution, resolve_pin
+from keelline.runner import Runner
+from keelline.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply, plan
+
+NOT_INITIALISED = (
+    f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; `keelline init` writes one"
+)
+NEWER = (
+    "keelline.toml records a newer Keelline than the {running} running here, and upgrade never "
+    "moves a project backward; update the Keelline plugin, then run `keelline upgrade` with it"
+)
+_HELD = (
+    "[keelline] version and [ci] ref were left as they are: the workflow pins Keelline by "
+    "commit, so the two move with it or not at all, and "
+)
+NO_RELEASE = _HELD + (
+    "no released commit of the Keelline running was found; run `keelline upgrade` again once "
+    "it is released and the network is reachable"
+)
+WORKFLOW_HELD = _HELD + (
+    "the workflow would not be rewritten to the new pin (the footprint report and the CI line "
+    f"say why); `--force {CI_WORKFLOW}` moves all three when it was edited by hand"
+)
+_VERSION = re.compile(r"\A[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}\Z")
+
+
+@dataclass(frozen=True)
+class Moved:
+    key: str
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class UpgradeReport:
+    footprint: Plan
+    moved: tuple[Moved, ...]
+    held: str
+    resolution: Resolution
+    skipped: dict[str, str]
+    orphans: int
+    dry_run: bool
+
+
+def _printable(key: str, value: str) -> str:
+    if key == "keelline.version":
+        return value if _VERSION.match(value) else "(not a version)"
+    if not value:
+        return "(none)"
+    return value if CI_REF.match(value) else "(not a commit)"
+
+
+def _footprint(
+    root: Path,
+    config: Config,
+    text: str,
+    resolution: Resolution,
+    force: Sequence[str],
+    dry_run: bool,
+) -> tuple[Prepared, Plan, int]:
+    prepared = project_templates(
+        root, config, resolution=resolution, document=text, adopted=False, dry_run=dry_run
+    )
+    # The placement rule `init` applies, at the second entry point that writes a footprint.
+    refuse_local_profile(prepared, config)
+    recorded = {artifact_id: r.target for artifact_id, r in Manifest.read(root).records.items()}
+    produced = {t.id for t in (*prepared.once, *prepared.footprint)}
+    retired, orphans = retired_templates(prepared.could_write, recorded, produced)
+    retired = tuple(t for t in retired if t.id != "ci-workflow" or config.ci.mode == "none")
+    return prepared, plan(root, config, (*prepared.footprint, *retired), force=force), orphans
+
+
+def _rewrites_the_workflow(footprint: Plan) -> bool:
+    return "ci-workflow" in footprint.unchanged or any(
+        a.artifact_id == "ci-workflow" and a.verb in (Verb.CREATE, Verb.UPDATE)
+        for a in footprint.actions
+    )
+
+
+def upgrade(
+    root: Path,
+    *,
+    machine: Path | None,
+    runner: Runner,
+    dry_run: bool,
+    force: Sequence[str],
+) -> UpgradeReport:
+    if not (root / MANIFEST_PATH).is_file():
+        raise Refusal(NOT_INITIALISED)
+    text = read_document(root)
+    if text is None:
+        raise Refusal(NO_DOCUMENT)
+    before = loads(text, root, machine=machine)
+    running = keelline.__version__
+    if satisfies(f">={before.keelline.version}", running) is False:
+        raise Refusal(NEWER.format(running=running))
+    pinned = before.ci.mode == "reusable"
+    resolution = resolve_pin(running, runner, cwd=root) if pinned else Resolution(None, True)
+    changes: dict[tuple[str, str], Value] = {("keelline", "version"): running}
+    held = ""
+    # The pure editor, to learn what the document would become before anything is written; the
+    # one write of `keelline.toml` below still goes through `rewrite_owned`, which re-stamps the
+    # `config` record with it.
+    if pinned and resolution.pin is not None:
+        changes[("ci", "ref")] = resolution.pin.sha
+    elif pinned and rewrite(text, changes) != text:
+        changes, held = {}, NO_RELEASE
+    document = rewrite(text, changes)
+    config = loads(document, root, machine=machine)
+    prepared, footprint, orphans = _footprint(root, config, text, resolution, force, dry_run)
+    if pinned and document != text and not _rewrites_the_workflow(footprint):
+        changes, held, config = {}, WORKFLOW_HELD, before
+        prepared, footprint, orphans = _footprint(root, config, text, resolution, force, dry_run)
+    moved = tuple(
+        Moved(key, _printable(key, old), new)
+        for key, old, new in (
+            ("keelline.version", before.keelline.version, config.keelline.version),
+            ("ci.ref", before.ci.ref, config.ci.ref),
+        )
+        if old != new
+    )
+    report = UpgradeReport(footprint, moved, held, resolution, prepared.skipped, orphans, dry_run)
+    if dry_run or footprint.refusals:
+        return report
+    apply(root, footprint)
+    rewrite_owned(root, changes)
+    return report

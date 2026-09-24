@@ -1,0 +1,333 @@
+"""`keelline upgrade`: moved keys, a re-planned footprint, and what it will not touch."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+import keelline
+from keelline.config.loader import CONFIG_FILE
+from keelline.errors import Refusal
+from keelline.project import templates
+from keelline.project.upgrade import (
+    NEWER,
+    NO_RELEASE,
+    NOT_INITIALISED,
+    WORKFLOW_HELD,
+    UpgradeReport,
+    upgrade,
+)
+from keelline.scaffold import Manifest, Record, Verb, digest
+from keelline.scaffold.manifest import Kind, Location
+from tests.gitfixture import LsRemote, needs_git
+from tests.project.repos import initialised
+from tests.snapshot import assert_snapshot_unchanged, snapshot
+
+OLD = "a" * 40
+NEW = "c" * 40
+WORKFLOW = Path(".github") / "workflows" / "keelline.yml"
+# `git ls-remote --exit-code` exits 2 when nothing matched, and 128 when it could not ask.
+NO_TAG = LsRemote()
+OFFLINE = LsRemote(code=128)
+
+
+def _listing(version: str, sha: str) -> LsRemote:
+    return LsRemote(stdout=f"{sha}\trefs/tags/v{version}\n", code=0)
+
+
+def _pinned(tmp_path: Path) -> Path:
+    return initialised(tmp_path, runner=_listing(keelline.__version__, OLD), ci=True)
+
+
+def _upgrade(
+    root: Path,
+    tmp_path: Path,
+    runner: LsRemote,
+    *,
+    dry_run: bool = False,
+    force: tuple[str, ...] = (),
+) -> UpgradeReport:
+    return upgrade(
+        root, machine=tmp_path / "absent.toml", runner=runner, dry_run=dry_run, force=force
+    )
+
+
+@pytest.fixture
+def newer(monkeypatch: pytest.MonkeyPatch) -> Callable[[], None]:
+    """Become a later Keelline — a new version, one shipped template's bytes changed — when
+    called, which is after the fixture has run the current one."""
+
+    def become() -> None:
+        monkeypatch.setattr(keelline, "__version__", "9.9.9")
+        original = templates.read
+
+        def read(name: str) -> str:
+            text = original(name)
+            extra = "\nA line the next release adds.\n"
+            return text + extra if name == "documentation.md" else text
+
+        monkeypatch.setattr(templates, "read", read)
+
+    return become
+
+
+@needs_git
+def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # `templates.refuse_local_profile` at the second entry point that writes a footprint: a
+    # `keelline.toml` edited by hand after `init` meets it here. `uninstall` does not apply it, so
+    # the same file can still be taken back. Mutation (oracle): "a profile artifact kept out of
+    # git is written, and every pointer to it dangles" drops the condition both share.
+    root = initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n'
+        'agents = ["claude"]\n\n'
+        '[project]\nname = "widget"\n\n[artifacts]\nlocal = ["claude-rules"]\n\n'
+        '[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match="profile's artifacts"):
+        _upgrade(root, tmp_path, NO_TAG)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("runner", [_listing(keelline.__version__, OLD), NO_TAG, OFFLINE])
+def test_a_current_footprint_upgrades_to_nothing_whatever_the_remote_answers(
+    tmp_path: Path, runner: LsRemote
+) -> None:
+    root = _pinned(tmp_path)
+    before = snapshot(root)
+    report = _upgrade(root, tmp_path, runner)
+    assert report.moved == ()
+    assert [a.verb for a in report.footprint.actions] == []
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_newer_keelline_refreshes_what_is_untouched_and_skips_what_was_edited(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    root = _pinned(tmp_path)
+    running = keelline.__version__
+    newer()
+    roadmap = root / "docs" / "roadmap.md"
+    roadmap.write_text(roadmap.read_text(encoding="utf-8") + "\nOur own line.\n", encoding="utf-8")
+    document_before = (root / CONFIG_FILE).read_text(encoding="utf-8")
+
+    report = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+
+    # Keyed by artifact id, not by path: a document path under `tests/` is one of the strings
+    # the neutrality gate refuses in test code.
+    verbs = {a.artifact_id: (a.verb, a.reason) for a in report.footprint.actions}
+    assert verbs["documentation-policy"] == (Verb.UPDATE, "refreshed")
+    assert verbs["roadmap"] == (Verb.SKIP_MODIFIED, "hand-edited")
+    assert "Our own line." in roadmap.read_text(encoding="utf-8")
+    assert "A line the next release adds." in (
+        root / "docs" / "architecture" / "documentation.md"
+    ).read_text(encoding="utf-8")
+    # Every byte but the two values is the byte it was.
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8") == document_before.replace(
+        f'version = "{running}"', 'version = "9.9.9"'
+    ).replace(OLD, NEW)
+    assert f"@{NEW}\n" in (root / WORKFLOW).read_text(encoding="utf-8")
+    assert [(m.key, m.after) for m in report.moved] == [
+        ("keelline.version", "9.9.9"),
+        ("ci.ref", NEW),
+    ]
+
+
+@needs_git
+def test_force_overwrites_exactly_the_edit_it_names(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    root = _pinned(tmp_path)
+    newer()
+    for name in ("roadmap.md", "roadmap-history.md"):
+        path = root / "docs" / name
+        path.write_text(path.read_text(encoding="utf-8") + "\nours\n", encoding="utf-8")
+    _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=("docs/roadmap.md",))
+    assert "ours" not in (root / "docs" / "roadmap.md").read_text(encoding="utf-8")
+    assert "ours" in (root / "docs" / "roadmap-history.md").read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_dry_run_writes_nothing_and_reports_everything(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    root = _pinned(tmp_path)
+    newer()
+    before = snapshot(root)
+    report = _upgrade(root, tmp_path, _listing("9.9.9", NEW), dry_run=True)
+    assert report.dry_run and report.moved and report.footprint.actions
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("runner", [NO_TAG, OFFLINE])
+def test_with_no_release_to_pin_neither_key_moves_and_the_report_says_why(
+    tmp_path: Path, newer: Callable[[], None], runner: LsRemote
+) -> None:
+    # The workflow pins Keelline by commit, so `version`, `[ci] ref` and its `uses:` line are one
+    # value. A version moved alone is a pull request that still runs the old Keelline.
+    root = _pinned(tmp_path)
+    newer()
+    document = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    report = _upgrade(root, tmp_path, runner)
+    assert report.moved == () and report.held == NO_RELEASE
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8") == document
+    assert "A line the next release adds." in (
+        root / "docs" / "architecture" / "documentation.md"
+    ).read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    root = _pinned(tmp_path)
+    newer()
+    workflow = root / WORKFLOW
+    workflow.write_text(workflow.read_text(encoding="utf-8") + "# ours\n", encoding="utf-8")
+    document = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    held = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    assert held.moved == () and held.held == WORKFLOW_HELD
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8") == document
+    assert f"@{OLD}" in workflow.read_text(encoding="utf-8")
+
+    forced = _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=(WORKFLOW.as_posix(),))
+    assert [m.key for m in forced.moved] == ["keelline.version", "ci.ref"] and not forced.held
+    assert f"@{NEW}\n" in workflow.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_project_recording_a_newer_keelline_is_refused(tmp_path: Path) -> None:
+    # An older plugin would repin an older release and put older bytes over newer ones.
+    root = _pinned(tmp_path)
+    path = root / CONFIG_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            f'version = "{keelline.__version__}"', 'version = "99.0.0"'
+        ),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=re.escape(NEWER.format(running=keelline.__version__))):
+        _upgrade(root, tmp_path, _listing(keelline.__version__, OLD))
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_an_uninitialised_repository_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "bare"
+    root.mkdir()
+    with pytest.raises(Refusal, match=re.escape(NOT_INITIALISED)):
+        _upgrade(root, tmp_path, NO_TAG)
+
+
+@needs_git
+def test_a_record_naming_a_file_this_build_never_writes_is_counted_and_left(
+    tmp_path: Path,
+) -> None:
+    # The manifest is committed, so a record is repository-authored. One claiming README.md
+    # under an id this build does not produce, stamped with README.md's own bytes, must not make
+    # `upgrade` touch it: which ids exist, and where each could be, are this build's. No
+    # one-line mutation breaches this, because no code turns an unknown record into a template;
+    # this case is the guard.
+    root = _pinned(tmp_path)
+    readme = root / "README.md"
+    readme.write_text("# ours\n", encoding="utf-8")
+    manifest = Manifest.read(root)
+    manifest.with_record(
+        Record(
+            "readme",
+            Kind.TEMPLATE,
+            Location.REPO,
+            "README.md",
+            "project/x",
+            "0.0.0",
+            digest("# ours\n"),
+        )
+    ).write(root)
+    report = _upgrade(root, tmp_path, _listing(keelline.__version__, OLD))
+    assert readme.read_text(encoding="utf-8") == "# ours\n"
+    assert report.orphans == 1
+
+
+@needs_git
+def test_switching_ci_off_retires_the_workflow_while_its_bytes_are_keellines(
+    tmp_path: Path,
+) -> None:
+    root = _pinned(tmp_path)
+    config = root / CONFIG_FILE
+    # `init` wrote `[ci] ref` and left `mode` to the preset; the user now sets it.
+    text = config.read_text(encoding="utf-8")
+    assert "[ci]\n" in text
+    config.write_text(text.replace("[ci]\n", '[ci]\nmode = "none"\n'), encoding="utf-8")
+    report = _upgrade(root, tmp_path, NO_TAG)
+    assert (Verb.REMOVE, WORKFLOW.as_posix()) in {
+        (a.verb, a.target) for a in report.footprint.actions
+    }
+    assert not (root / WORKFLOW).exists()
+
+
+@needs_git
+def test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate(
+    tmp_path: Path,
+) -> None:
+    # `uvx` is a mode Keelline accepts and does not yet render, so `_ci` skips the workflow.
+    # A skip is not a retirement, and the record is neither retired nor an orphan: the workflow
+    # is where this build could have written it.
+    root = _pinned(tmp_path)
+    config = root / CONFIG_FILE
+    text = config.read_text(encoding="utf-8")
+    config.write_text(text.replace("[ci]\n", '[ci]\nmode = "uvx"\n'), encoding="utf-8")
+    report = _upgrade(root, tmp_path, NO_TAG)
+    assert (root / WORKFLOW).is_file()
+    assert report.orphans == 0
+
+
+@needs_git
+def test_dropping_the_profile_retires_its_renditions_while_their_bytes_are_keellines(
+    tmp_path: Path,
+) -> None:
+    root = initialised(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[keelline]\n", '[keelline]\nprofile = "python"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    _upgrade(root, tmp_path, NO_TAG)
+    assert (root / "docs" / "keelline" / "rules" / "python.md").is_file()
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('profile = "python"\n', ""), encoding="utf-8"
+    )
+    report = _upgrade(root, tmp_path, NO_TAG)
+    removed = {a.artifact_id for a in report.footprint.actions if a.verb is Verb.REMOVE}
+    assert removed == {"profile-rules", "claude-rules"}
+    assert not (root / "docs" / "keelline" / "rules" / "python.md").exists()
+    assert report.orphans == 0
+
+
+@needs_git
+def test_an_edited_artifact_kept_out_of_git_is_left_and_named(tmp_path: Path) -> None:
+    # A local artifact has no record, and its directory is git-ignored: an edit overwritten there
+    # is gone for good. So it is judged against this build's bytes, and anything else is left.
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        '[artifacts]\nlocal = ["roadmap"]\n\n[ci]\nmode = "none"\n',
+    )
+    local = root / ".keelline" / "local" / "artifacts" / "docs" / "roadmap.md"
+    local.write_text(local.read_text(encoding="utf-8") + "\nprivate plans\n", encoding="utf-8")
+    report = _upgrade(root, tmp_path, NO_TAG)
+    verbs = {a.artifact_id: a.verb for a in report.footprint.actions}
+    assert verbs["roadmap"] is Verb.SKIP_MODIFIED
+    assert "private plans" in local.read_text(encoding="utf-8")

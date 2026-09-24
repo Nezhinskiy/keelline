@@ -6423,6 +6423,7 @@ after = "    if False:\n        raise Refusal(LOCAL_PROFILE"
 reddens = [
   "tests/project/test_templates.py::test_a_profile_artifact_kept_out_of_git_is_refused",
   "tests/project/test_init.py::test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written",
+  "tests/project/test_upgrade.py::test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written",
 ]
 
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit
@@ -6434,6 +6435,7 @@ before = "                and location is Location.LOCAL\n                and pr
 after = "                and False\n"
 reddens = [
   "tests/scaffold/test_engine.py::test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it",
+  "tests/project/test_upgrade.py::test_an_edited_artifact_kept_out_of_git_is_left_and_named",
 ]
 
 [[mutation]]
@@ -6475,3 +6477,40 @@ file = "src/keelline/project/templates.py"
 before = '    could_write["ci-workflow"] = {CI_WORKFLOW}'
 after = '    could_write["ci-workflow"] = set()'
 reddens = ["tests/project/test_templates.py::test_every_target_any_configuration_writes_is_one_every_configuration_could"]
+
+# `upgrade` moves `[keelline] version`, `[ci] ref` and the workflow's pin together or not at all,
+# never moves a project backward, and retires the workflow only when `[ci] mode` asks for none.
+[[mutation]]
+name = "upgrade moves a project backward to the older Keelline running"
+file = "src/keelline/project/upgrade.py"
+before = '    if satisfies(f">={before.keelline.version}", running) is False:'
+after = "    if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_project_recording_a_newer_keelline_is_refused"]
+
+[[mutation]]
+name = "upgrade moves the version with no release to pin, and the gate refuses its own pull request"
+file = "src/keelline/project/upgrade.py"
+before = "        changes, held = {}, NO_RELEASE"
+after = "        held = NO_RELEASE"
+reddens = ["tests/project/test_upgrade.py::test_with_no_release_to_pin_neither_key_moves_and_the_report_says_why"]
+
+[[mutation]]
+name = "upgrade moves version and ref past a workflow it did not rewrite"
+file = "src/keelline/project/upgrade.py"
+before = "    if pinned and document != text and not _rewrites_the_workflow(footprint):"
+after = "    if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced"]
+
+[[mutation]]
+name = "upgrade retires the CI workflow for a mode it merely does not render"
+file = "src/keelline/project/upgrade.py"
+before = '    retired = tuple(t for t in retired if t.id != "ci-workflow" or config.ci.mode == "none")'
+after = "    retired = tuple(retired)"
+reddens = ["tests/project/test_upgrade.py::test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate"]
+
+[[mutation]]
+name = "an upgrade dry run writes the footprint"
+file = "src/keelline/project/upgrade.py"
+before = "    if dry_run or footprint.refusals:"
+after = "    if footprint.refusals:"
+reddens = ["tests/project/test_upgrade.py::test_a_dry_run_writes_nothing_and_reports_everything"]
