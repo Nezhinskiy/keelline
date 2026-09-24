@@ -11,6 +11,7 @@ import pytest
 import keelline
 from keelline.attach.api import IGNORE_REGION
 from keelline.config.loader import CONFIG_FILE, ConfigError, load
+from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
 from keelline.project.init import HEADER, InitReport, init
 from keelline.project.templates import NOT_ASKED_DRY, NOT_ASKED_WRITTEN
@@ -91,12 +92,18 @@ def test_a_created_document_opens_with_a_header_naming_every_tool_owned_key(
     tmp_path: Path,
 ) -> None:
     # The header is the file's own statement of which keys Keelline rewrites in place. It named
-    # `[keelline] version` and `state` while four keys are Keelline's to rewrite. Mutation:
-    # restore the two-key header and this reddens on `enforced`.
+    # `[keelline] version` and `state` while four keys are Keelline's to rewrite. Every key of
+    # `OWNED` is looked for, as `key` or as `[table] key` in backticks, and every table it names
+    # is named, so a fifth owned key or a dropped one reddens here. Mutations: restore the
+    # two-key header and this reddens on `[ci] ref`, the first missing key in sorted order; drop
+    # only "`enforced`" and it reddens on `enforced`.
     root = _repo(tmp_path)
     _init(root, tmp_path)
     assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(HEADER)
-    assert "`enforced`" in HEADER and "`[ci] ref`" in HEADER
+    assert len(OWNED) == 4
+    for table, key in sorted(OWNED):
+        assert re.search(rf"`(?:\[{table}\] )?{key}`", HEADER), (table, key)
+        assert f"`[{table}]" in HEADER, table
 
 
 @needs_git
