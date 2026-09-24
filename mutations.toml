@@ -998,6 +998,53 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_discriminates",
 ]
 
+# The public-anchor gate: shipped code and documents never cite the private design by section
+# number or decision id, because a reader here cannot open what either points at. Its failure
+# mode is the neutrality gate's — silence — so each arm and the walk's reach are declared.
+[[mutation]]
+name = "the public-anchor gate stops seeing a design section number"
+file = "tests/test_public_anchors.py"
+before = '    ("design section", re.compile(r"§\s*\d")),'
+after = '    ("design section", re.compile(r"§\s*\d(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# Most of the ids were written bare — `D7: a cap`, `C5's exit 2`, `the argument P10 makes` — and
+# only the bracketed arm would be left to catch them. Narrowed to the two-letter prefixes, the
+# gate goes on refusing `(D7)` and lets the commoner spelling back in.
+[[mutation]]
+name = "the public-anchor gate sees only the two-letter decision ids"
+file = "tests/test_public_anchors.py"
+before = '    ("decision id", re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
+after = '    ("decision id", re.compile(r"\b(?:DC|DP|OD)\d+\b")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# And the other direction: `C0` is the Unicode name of the control characters `tomlout` escapes,
+# so an arm widened to every `C<digit>` refuses a correct sentence, which is how a gate earns an
+# exemption and then loses its point.
+[[mutation]]
+name = "the public-anchor gate refuses the C0 control class"
+file = "tests/test_public_anchors.py"
+before = '    ("decision id", re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC[1-9]\b")),'
+after = '    ("decision id", re.compile(r"\b(?:DC|DP|OD)\d+\b|\b[DP]\d{1,2}\b|\bC\d\b")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# The walk's reach. Drop `src` and the package — where almost every citation lived — is never
+# read, while the walk over the documents stays green and says nothing.
+[[mutation]]
+name = "the public-anchor walk forgets the package"
+file = "tests/test_public_anchors.py"
+before = 'SCOPE = ("src", "skills", "docs", "hooks", "agents")'
+after = 'SCOPE = ("skills", "docs", "hooks", "agents")'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_walk_reads_what_ships_and_skips_the_plans",
+]
+
 # A repository-controlled prefix reaches a regular expression only after its shape is checked.
 [[mutation]]
 name = "an unchecked ledger prefix reaches the regular expression"
