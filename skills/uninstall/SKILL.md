@@ -34,7 +34,7 @@ edited stays where it is and is listed.
   under `.keelline/local/` counted before the run, and a `--force` path outside the root come
   before anything is removed. A file that cannot be removed, or files still under
   `.keelline/local/` after the write-once pass, stop the run part-way: what was removed stays
-  removed, and the ignore block and the manifest stay so the next run can finish. Relay it as
+  removed, and `keelline.toml` and the manifest stay so the next run can finish. Relay it as
   printed, run `git status` to show the user what changed, and after they deal with the cause run
   `keelline uninstall --dry-run` again.
 - **A target printed as `<id>` is one the manifest recorded outside the path grammar.** Relay it

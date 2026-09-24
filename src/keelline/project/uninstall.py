@@ -38,7 +38,10 @@ disk shows nothing left under `.keelline/local/`. If something is left, the run 
 pass, with the region and the manifest in place, so git still ignores the files and the next run
 can finish (`KEPT_AFTER`).
 
-**Then the ledger:** `.keelline/assessment.json`, the manifest, and `.keelline/` once it is empty.
+**Then the directories, `keelline.toml`, and the ledger.** Every directory a removal left empty
+goes, then `keelline.toml`, whose removal the write-once pass holds back for this point, then
+`.keelline/assessment.json`, the manifest, and `.keelline/` once it is empty. So a run stopped at
+any earlier point leaves the configuration and the manifest the next run needs to finish it.
 
 **Two refusals come before any write**: while the repository is attached, and while
 `.keelline/local/` holds a file this run would not remove, the local-only memory notes above all.
@@ -49,13 +52,14 @@ the report that lists an edited local artifact is still printed.
 
 **A refusal while writing is not a refusal before it.** The engine keeps what it applied, and
 records it, when a later write or removal fails; so does this command across its passes. Exit 2
-then means "stopped part-way": what was done is on disk and in the manifest, and running the
-command again re-plans from there.
+then means "stopped part-way": what was done is on disk and in the manifest, `keelline.toml` is
+still there, and running the command again re-plans from there to the end.
 
-**Without `keelline.toml`, nothing can be judged.** A run that died after its write-once pass, or
-a person who deleted the file, leaves a manifest and no configuration. The ledger goes, every
-recorded file stays, and the note gives their count, so the next run converges instead of
-refusing for ever.
+**Without `keelline.toml`, nothing can be judged.** A person who deleted the file, or a run that
+stopped after removing it and before the manifest, leaves a manifest and no configuration. The
+ledger goes, every recorded file stays, and the note gives their count, so the next run converges
+instead of refusing for ever. No directory is pruned on that path: nothing says where this
+configuration put its artifacts, and a target the manifest records is a committed string.
 """
 
 from __future__ import annotations
@@ -69,7 +73,8 @@ from keelline.attach.api import LEDGER
 from keelline.config.loader import loads, read_document
 from keelline.config.paths import contained
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, remove_within, rmdir_within
+from keelline.fsops import remove_within, rmdir_within
+from keelline.project.rewrite import CONFIG_RECORD
 from keelline.project.templates import project_templates, retired_templates
 from keelline.release.api import Resolution
 from keelline.scaffold import (
@@ -141,37 +146,60 @@ def _kept_locally(root: Path, removing: Set[str]) -> int:
     return sum(1 for p in kept if f"{LOCAL_ROOT}/{p.relative_to(base).as_posix()}" not in removing)
 
 
-def _prune(root: Path, removed: Sequence[str]) -> None:
-    """The ledger, then every directory a removed file leaves empty, deepest first.
+def _rmdirs(root: Path, directories: Set[str]) -> None:
+    """Remove each directory that is empty, deepest first; leave every other one.
 
-    Only the parents of the places this configuration puts an artifact are asked, whichever run
-    removed the file: a run stopped part-way removed some of them and their records, and the run
-    that finishes must still empty their directories. Each is asked only whether it is empty:
-    `rmdir` refuses a directory with anything in it, which is the whole safety of the walk.
-    A harness's own directory is never asked (`Harness.marker_dir`). It is the harness's before it
-    is Keelline's, and detection reads its presence, so an empty harness directory a person made
-    stays.
+    Each is asked only whether it is empty: `rmdir` refuses a directory with anything in it,
+    which is the whole safety of the walk, and a refusal of any kind (`UnsafePath` is an
+    `OSError`) leaves the directory where it is. A harness's own directory is never asked
+    (`Harness.marker_dir`). It is the harness's before it is Keelline's, and detection reads its
+    presence, so an empty harness directory a person made stays.
     """
     from keelline.harnesses import HARNESSES
 
     marker_dirs = {harness.marker_dir for harness in HARNESSES}
-    # The manifest last: while it is there, the next run can still finish this one.
+    for directory in sorted(directories, key=lambda d: d.count("/"), reverse=True):
+        if directory in marker_dirs:
+            continue
+        with contextlib.suppress(OSError):
+            rmdir_within(root, directory)
+
+
+def _prune(root: Path, places: Sequence[str]) -> None:
+    """Every directory above a place this configuration puts an artifact, once it is empty.
+
+    Every place, and not only what this run removed: a run stopped part-way removed some of the
+    files and their records, and the run that finishes must still empty their directories. It
+    runs while `keelline.toml` is still there, so a run that stops after it has nothing left to
+    prune but the ledger.
+    """
+    _rmdirs(
+        root,
+        {
+            parent.as_posix()
+            for target in places
+            for parent in PurePosixPath(target).parents
+            if parent.as_posix() != "."
+        },
+    )
+
+
+def _remove_ledger(root: Path) -> None:
+    """`.keelline/assessment.json`, the manifest last, then `.keelline/` once it is empty.
+
+    A directory where a ledger file belongs is not a file Keelline wrote; it is left where it is,
+    and so is `.keelline/` around it, rather than refusing every later run before the manifest
+    goes.
+    """
     for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):
+        path = root / target
+        if path.is_dir() and not path.is_symlink():
+            continue
         try:
             remove_within(root, target)
         except OSError as exc:
             raise Refusal(f"{target} cannot be removed: {exc}") from exc
-    parents = {
-        parent.as_posix()
-        for target in (*removed, MANIFEST_PATH.as_posix())
-        for parent in PurePosixPath(target).parents
-        if parent.as_posix() != "."
-    }
-    for directory in sorted(parents | set(LEDGER_DIRS), key=lambda d: d.count("/"), reverse=True):
-        if directory in marker_dirs:
-            continue
-        with contextlib.suppress(OSError, UnsafePath):
-            rmdir_within(root, directory)
+    _rmdirs(root, set(LEDGER_DIRS))
 
 
 def uninstall(
@@ -184,8 +212,11 @@ def uninstall(
     manifest = Manifest.read(root)
     document = read_document(root)
     if document is None:
+        # Only the ledger: without the configuration nothing says where its artifacts were, and a
+        # target the manifest records is a committed string. No run of this command reaches here
+        # with directories it emptied, because `keelline.toml` goes after they are pruned.
         if not dry_run:
-            _prune(root, ())
+            _remove_ledger(root)
         note = NO_CONFIG.format(count=len(manifest.records))
         return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
     config = loads(document, root, machine=machine)
@@ -203,6 +234,10 @@ def uninstall(
     wanted = set(recorded) | set(config.artifacts.local)
     footprint_retired = (*_retire(prepared.footprint, wanted), *retired)
     once_retired = _retire(prepared.once, wanted)
+    # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and
+    # the manifest are there, a run stopped at any earlier point is finished by the next one.
+    once_body = [t for t in once_retired if t.id != CONFIG_RECORD]
+    config_retired = [t for t in once_retired if t.id == CONFIG_RECORD]
     # Paths as the engine resolves them: an `[artifacts] local` target lives under
     # `.keelline/local/artifacts/`, which `Template.target` does not say.
     footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}
@@ -229,7 +264,7 @@ def uninstall(
     apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
-    judged = plan(root, config, once_retired, force=once_force)
+    judged = plan(root, config, once_body, force=once_force)
     apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
@@ -239,9 +274,15 @@ def uninstall(
     ignore = plan(root, config, [t for t in footprint_retired if t.id == IGNORE], force=force)
     apply(root, ignore)
     _prune(root, sorted(places | footprint_targets | once_targets))
-    ran = Plan(
-        actions=(*body.actions, *ignore.actions),
-        refusals=(*body.refusals, *ignore.refusals),
-        unchanged=(*body.unchanged, *ignore.unchanged),
+    last = plan(root, config, config_retired, force=once_force)
+    apply(root, last)
+    _remove_ledger(root)
+    return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)
+
+
+def _joined(first: Plan, second: Plan) -> Plan:
+    return Plan(
+        actions=(*first.actions, *second.actions),
+        refusals=(*first.refusals, *second.refusals),
+        unchanged=(*first.unchanged, *second.unchanged),
     )
-    return UninstallReport(ran, judged, orphans, dry_run, note, 0)

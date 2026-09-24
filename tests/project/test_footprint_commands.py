@@ -139,17 +139,24 @@ def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
     assert data["summary"].splitlines()[0] == "uninstalled:"
 
 
-@needs_git
-def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Exit 2 is not "nothing was written". A removal that fails in the write-once pass leaves the
-    footprint pass applied and recorded, the manifest and the ignore block in place, and the next
-    run finishes from what is on disk. The failure is the one the engine translates: an `OSError`
-    from the removal, which `_remove` turns into a refusal.
+# One removal from each pass: the footprint's body, the write-once pass, the ignore pass, and
+# `keelline.toml` itself, which goes last of all.
+FAILING = ["docs/roadmap.md", "CLAUDE.md", ".gitignore", "keelline.toml"]
 
-    No declared mutation: it pins a contract the engine already keeps (`apply` persists the
-    ledger for the actions that ran), which the skills and `docs/cli.md` now state.
+
+@needs_git
+@pytest.mark.parametrize("failing", FAILING)
+def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str
+) -> None:
+    """Exit 2 is not "nothing was written", and it is never a dead end. Wherever a removal fails,
+    what ran stays applied and recorded, `keelline.toml` and the manifest are still there, and
+    the next run finishes to the state an uninterrupted run leaves. The failure is the one the
+    engine translates: an `OSError` from the removal, which `_remove` turns into a refusal.
+
+    Mutation (declared): `keelline.toml` removed in the write-once pass again -> a failure on
+    `CLAUDE.md` or `.gitignore` leaves no configuration, the next run keeps what the manifest
+    still records and drops the manifest, and the last assertion reddens.
     """
     import keelline.scaffold.engine as engine
     from keelline import fsops
@@ -157,21 +164,23 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     root = _initialised(tmp_path)
     real = fsops.remove_within
 
-    def failing(where: Path, target: str) -> None:
-        if target == "keelline.toml":
+    def fails(where: Path, target: str) -> None:
+        if target == failing:
             raise PermissionError(13, "Permission denied")
         real(where, target)
 
-    monkeypatch.setattr(engine, "remove_within", failing)
+    monkeypatch.setattr(engine, "remove_within", fails)
     code, data = _run(root, tmp_path, "uninstall")
     assert code == 2, data
-    assert not (root / "docs" / "roadmap.md").exists()
-    assert (root / "keelline.toml").is_file() and (root / ".keelline" / "manifest.json").is_file()
-    assert "keelline:ignore" in (root / ".gitignore").read_text(encoding="utf-8")
+    assert (root / failing).is_file()
+    # Read now and asserted last, so the converged end state is what a wrong order reddens.
+    resumable = (root / "keelline.toml").is_file() and (
+        root / ".keelline" / "manifest.json"
+    ).is_file()
     monkeypatch.setattr(engine, "remove_within", real)
     code, data = _run(root, tmp_path, "uninstall")
     assert code == 0, data
     # Every directory the first run emptied goes too: `_prune` asks about every place this
-    # configuration puts an artifact, not only what this run removed. A first draft left `docs/`
-    # and its subdirectories behind.
+    # configuration puts an artifact, not only what this run removed.
     assert {p.name for p in root.iterdir()} == {".git"}, sorted(p.name for p in root.iterdir())
+    assert resumable

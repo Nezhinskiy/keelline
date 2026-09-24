@@ -6573,7 +6573,7 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    judged = plan(root, config, once_retired, force=once_force)"
+before = "    judged = plan(root, config, once_body, force=once_force)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
@@ -6641,3 +6641,17 @@ file = "src/keelline/project/uninstall.py"
 before = "    in_file = {i for i, r in manifest.records.items() if r.kind in IN_FILE and i not in produced}"
 after = "    in_file: set[str] = set()"
 reddens = ["tests/project/test_uninstall.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays"]
+
+# `keelline.toml` is what every later run needs to judge anything, so it goes after everything
+# but the ledger. Moved back into the write-once pass, a removal that fails later in the run
+# (`CLAUDE.md`, the ignore block) leaves a manifest and no configuration, and the next run keeps
+# what is left and drops the ledger: it never converges.
+[[mutation]]
+name = "keelline.toml is removed in the write-once pass, so a run stopped after it never converges"
+file = "src/keelline/project/uninstall.py"
+before = "    once_body = [t for t in once_retired if t.id != CONFIG_RECORD]"
+after = "    once_body = list(once_retired)"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[CLAUDE.md]",
+  "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[.gitignore]",
+]

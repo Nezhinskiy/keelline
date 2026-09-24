@@ -915,10 +915,12 @@ file, so what you wrote into the skeleton is judged on its own bytes.
 **The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore`
 region is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes,
 and the artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own,
-after the disk shows nothing left under `.keelline/local/`. Then the ledger:
-`.keelline/assessment.json`, `.keelline/manifest.json`, and every directory a removal left empty,
-deepest first. A harness's own directory, such as one you made for a harness before its rule
-arrived, stays even when it is empty.
+after the disk shows nothing left under `.keelline/local/`. Then every directory a removal left
+empty, deepest first; then `keelline.toml`, which the write-once pass holds back for this point;
+then the ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/` once it
+is empty. A harness's own directory, such as one you made for a harness before its rule arrived,
+stays even when it is empty, and so does a directory someone committed where a ledger file
+belongs.
 
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an
 overlay, so run `keelline detach` first; `.keelline/local/` holds files this run would not
@@ -927,13 +929,15 @@ and never names; or a `--force` path leaves `--root`. A dry run reports that cou
 line instead of refusing, so its report still lists the edited file for you to force or move.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
-`.keelline/local/` after the write-once pass. What was removed stays removed and recorded, the
-ignore block and the manifest stay, and running the command again finishes from what the first
-run left.
+`.keelline/local/` after the write-once pass. What was removed stays removed and recorded, and
+`keelline.toml` and the manifest are still there, because they go last; so running the command
+again finishes from what the first run left, to the same end as a run that was never stopped.
 
-**Without `keelline.toml`**, nothing the manifest records can be judged: every recorded file
-stays, a `note:` line gives their count, and only the ledger goes, so `init` and this command no
-longer refuse the repository.
+**Without `keelline.toml`** — deleted by hand, or a run stopped between removing it and removing
+the manifest — nothing the manifest records can be judged: every recorded file stays, a `note:`
+line gives their count, and only the ledger goes, so `init` and this command no longer refuse the
+repository. No other directory is pruned then, because nothing says where the configuration put
+its artifacts.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
 build's. The `[paths]` value a target is built from and the digest a record carries are

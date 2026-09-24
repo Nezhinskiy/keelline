@@ -429,3 +429,26 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
     )
     report = _uninstall(root, tmp_path)
     assert not (root / ".github").exists() and report.orphans == 0
+
+
+@needs_git
+def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_goes(
+    tmp_path: Path,
+) -> None:
+    # A clone can commit a directory at `.keelline/assessment.json`. Unlinking it fails, and a
+    # refusal there, after `keelline.toml` went, would leave every later run refusing before the
+    # manifest. It is left behind with `.keelline/` around it, and the run finishes.
+    # Mutation (advisory): drop the directory check in `_remove_ledger` -> the run refuses with
+    # "cannot be removed" and the manifest stays, and this reddens at the call.
+    root = initialised(tmp_path)
+    committed = root / ".keelline" / "assessment.json"
+    committed.mkdir()
+    (committed / "theirs.md").write_text("theirs\n", encoding="utf-8")
+    _uninstall(root, tmp_path)
+    assert (committed / "theirs.md").is_file()
+    assert tree(root) == {
+        "README.md",
+        ".keelline",
+        ".keelline/assessment.json",
+        ".keelline/assessment.json/theirs.md",
+    }
