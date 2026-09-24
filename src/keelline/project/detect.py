@@ -1,6 +1,8 @@
 """What `init --yes` can read off a repository without asking (§8.1).
 
-Three values, each one `git` question or one directory probe. The remote URL and the
+Four values, each one `git` question or a probe of the root: the name, the base branch, the
+harnesses whose directories the root carries, and the shipped profile whose markers it
+carries. The remote URL and the
 directory name are repository-authored, so a refusal names the grammar and never the value
 (DC6); `origin_remote` is the memory area's, so "what is this checkout's origin" is asked one
 way.
@@ -17,7 +19,6 @@ from keelline.gitenv import git_run
 from keelline.memory.api import GitUnavailable, origin_remote
 
 DEFAULT_BRANCH = "main"
-SURFACES = (("claude", ".claude"), ("codex", ".codex"))
 NOT_A_NAME = (
     "the project name this repository suggests is not one lowercase path segment matching "
     f"{PROJECT_NAME.pattern}, so `init` cannot choose one; write `[project] name` into "
@@ -30,6 +31,8 @@ class Detected:
     name: str
     base_branch: str
     agents: tuple[str, ...]
+    # The first shipped profile the root carries markers for, or none.
+    profile: str = ""
 
 
 def _name(root: Path) -> str:
@@ -49,8 +52,14 @@ def _base_branch(root: Path) -> str:
     return out.strip().removeprefix("origin/") or DEFAULT_BRANCH
 
 
+def _profile(root: Path) -> str:
+    from keelline.profiles import detects, load_profile, shipped
+
+    return next((name for name in shipped() if detects(load_profile(name), root)), "")
+
+
 def detect(root: Path) -> Detected:
-    """The name, the base branch and the agent surfaces, or a refusal naming neither value.
+    """The name, the base branch, the harnesses and the profile, or a refusal naming no value.
 
     The refusal is the whole of what this module does with a repository-authored string: the
     remote's last path segment and the checkout's directory name both arrive from outside, so
@@ -61,5 +70,9 @@ def detect(root: Path) -> Detected:
     name = _name(root)
     if not PROJECT_NAME.match(name):
         raise Refusal(NOT_A_NAME)
-    agents = tuple(agent for agent, directory in SURFACES if (root / directory).is_dir())
-    return Detected(name, _base_branch(root), agents or tuple(a for a, _ in SURFACES))
+    from keelline.harnesses import HARNESSES
+
+    agents = tuple(h.name for h in HARNESSES if (root / h.marker_dir).is_dir())
+    return Detected(
+        name, _base_branch(root), agents or tuple(h.name for h in HARNESSES), _profile(root)
+    )

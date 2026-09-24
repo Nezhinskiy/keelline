@@ -28,21 +28,26 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
+from keelline.config.layout import rules_file
 from keelline.config.schema import Config
 from keelline.docs.api import trail_path
 from keelline.errors import Failure, Refusal
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
-from keelline.scaffold import Kind, Style, Template
+from keelline.scaffold import Kind, Style, Template, validate_sources
 from keelline.templates import tree
+
+if TYPE_CHECKING:
+    from keelline.profiles import Profile
 
 PROJECT = "project"
 # The provenance namespace for an artifact whose bytes this module *computes*, so that a record
@@ -63,6 +68,9 @@ PROJECT = "project"
 # format is untouched. `_computed` is the only place it is spelled, and
 # `tests/project/test_templates.py` holds every source both passes build to one rule or the other.
 COMPUTED = "computed"
+# The provenance namespace for an artifact whose bytes are a shipped profile's file:
+# `profile/<name>/rules.md` names a file the wheel carries under `keelline/profiles/`.
+PROFILE = "profile"
 CLAUDE_MD = "CLAUDE.md"
 CONFIG_FILE = "keelline.toml"
 HARNESS_REGION = "harness"
@@ -143,7 +151,9 @@ BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was re
 # name what to edit. Two statements of one thing, the way `PROJECT_FILES` and the shipped tree
 # are: `tests/project/test_templates.py` holds this mapping's key set to the artifact ids both
 # passes actually produce, so an artifact added without a line here reddens rather than reaching
-# a `KeyError` at the moment somebody's configuration collides.
+# a `KeyError` at the moment somebody's configuration collides. A harness's rendition is not
+# listed: its target is the harness's own fixed name, and `project_templates` adds its row where
+# it appends the rendition, so a harness added to the registry needs no line here.
 OWN_NAME = "a fixed name of Keelline's own"
 PATH_KEYS = {
     "config": OWN_NAME,
@@ -162,6 +172,7 @@ PATH_KEYS = {
     "gitignore": OWN_NAME,
     "agents-md": "paths.agents_md",
     "ci-workflow": OWN_NAME,
+    "profile-rules": "paths.keelline",
 }
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
 # Keelline's own vocabulary. The colliding path is a repository-authored value and is not printed.
@@ -178,6 +189,32 @@ class Prepared:
     once: tuple[Template, ...]
     footprint: tuple[Template, ...]
     skipped: dict[str, str]
+    # How many names in `[keelline] agents` no harness answers to; counted, never quoted.
+    unknown_harnesses: int = 0
+    # The profile's own artifacts in this footprint. Every reader of them, the `AGENTS.md`
+    # pointer and each harness's rule, names the committed path.
+    profiled: frozenset[str] = frozenset()
+
+
+# Fixed text with a count: the ids `[artifacts] local` lists are repository-authored, and which
+# of them matched is not printed, only how many.
+LOCAL_PROFILE = (
+    "[artifacts] local names {count} of the profile's artifacts, and the AGENTS.md pointer and "
+    "each harness's rule read them at the path the project commits; take them out of the list"
+)
+
+
+def refuse_local_profile(prepared: Prepared, config: Config) -> None:
+    """Refuse a footprint whose profile artifacts `[artifacts] local` would move out of git.
+
+    The engine would write them under `.keelline/local/`, while every reader of them names
+    `rules_file`'s committed path, so each pointer would lead nowhere. `init` and `upgrade` call
+    this before they plan; `uninstall` does not, so a configuration written before the rule can
+    still be taken back.
+    """
+    local = prepared.profiled & set(config.artifacts.local)
+    if local:
+        raise Refusal(LOCAL_PROFILE.format(count=len(local)))
 
 
 def read(name: str) -> str:
@@ -286,6 +323,41 @@ def _computed(
     )
 
 
+def _profiled(artifact_id: str, target: str, profile: Profile) -> Template:
+    """An artifact whose bytes are a shipped profile's file, so its provenance names that file.
+
+    The third constructor beside `_template` and `_computed`, for the reason those two give for
+    being two: which namespace an artifact's bytes come from is decided at the line that builds
+    it.
+    """
+    from keelline.profiles import RULES_FILE
+
+    return Template(
+        id=artifact_id,
+        kind=Kind.TEMPLATE,
+        target=target,
+        source=f"{PROFILE}/{profile.name}/{RULES_FILE}",
+        render=lambda: profile.rules,
+    )
+
+
+PROFILE_BLOCK = (
+    "\n\nThe `{name}` profile's rules are in `{path}`. Before the first command:\n\n{lines}"
+)
+
+
+def _profile_block(profile: Profile | None, rules: str) -> str:
+    """The universal adapter: what every harness reading `AGENTS.md` is handed.
+
+    It opens with the blank line that separates it from the region's paragraph and ends without
+    a newline, so a project with no profile renders the region byte for byte as before.
+    """
+    if profile is None:
+        return ""
+    lines = "\n".join(f"- {line}" for line in profile.essentials)
+    return PROFILE_BLOCK.format(name=profile.name, path=rules, lines=lines)
+
+
 def _ci(
     config: Config, resolution: Resolution, *, adopted: bool, dry_run: bool
 ) -> tuple[Template | None, str | None]:
@@ -347,7 +419,7 @@ def _ci(
     )
 
 
-def _one_target_each(templates: Sequence[Template]) -> None:
+def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PATH_KEYS) -> None:
     """Refuse a pass in which two artifacts resolve to one file (DC3).
 
     DC3's two-pass design rests on "two artifacts cannot target one file in one pass" being
@@ -375,9 +447,9 @@ def _one_target_each(templates: Sequence[Template]) -> None:
             raise Refusal(
                 ONE_TARGET.format(
                     first=first,
-                    first_key=PATH_KEYS[first],
+                    first_key=keys[first],
                     second=template.id,
-                    second_key=PATH_KEYS[template.id],
+                    second_key=keys[template.id],
                 )
             )
         seen[template.target] = template.id
@@ -404,6 +476,15 @@ def project_templates(
     `dry_run` is threaded for the same reason and with the same rule: the one remedy that
     differs between a run that writes and one that does not is "run it again".
     """
+    from keelline.harnesses import select
+    from keelline.profiles import load_profile
+
+    # The engine's rule first: an unshipped or malformed name is refused naming the grammar and
+    # the listing, before `load_profile`'s own refusal, which names neither.
+    validate_sources(config)
+    profile = load_profile(config.keelline.profile) if config.keelline.profile else None
+    rules = rules_file(config, profile.name) if profile is not None else ""
+    harnesses, unknown_harnesses = select(config.keelline.agents)
     p = config.paths
     once = (
         _computed("config", CONFIG_FILE, lambda: document, kind=Kind.ONCE),
@@ -459,6 +540,7 @@ def project_templates(
                 ROADMAP=p.roadmap,
                 SPECS=p.specs,
                 PLANS=p.plans,
+                PROFILE=_profile_block(profile, rules),
             ),
             region=HARNESS_REGION,
         ),
@@ -469,6 +551,19 @@ def project_templates(
         footprint.append(workflow)
     elif reason is not None:
         skipped["ci-workflow"] = reason
+    keys = dict(PATH_KEYS)
+    profiled: set[str] = set()
+    if profile is not None:
+        footprint.append(_profiled("profile-rules", rules, profile))
+        profiled.add("profile-rules")
+        for harness in harnesses:
+            if harness.render_profile is not None:
+                rendition = harness.render_profile(profile, rules)
+                footprint.append(
+                    _computed(rendition.artifact_id, rendition.target, rendition.render)
+                )
+                keys[rendition.artifact_id] = OWN_NAME
+                profiled.add(rendition.artifact_id)
     _one_target_each(once)
-    _one_target_each(footprint)
-    return Prepared(once, tuple(footprint), skipped)
+    _one_target_each(footprint, keys)
+    return Prepared(once, tuple(footprint), skipped, unknown_harnesses, frozenset(profiled))

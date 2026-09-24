@@ -678,9 +678,11 @@ describes — the project's name, its base branch, its preset — ship with the 
 until then the command detects what it can, and an invocation without `--yes` is refused (`2`)
 saying so. What it detects: the project's name from `origin`'s last path segment, `.git`
 stripped and lower-cased, else the checkout's directory name; the base branch from
-`refs/remotes/origin/HEAD` with `origin/` stripped, else `main`; and the agent surfaces from
-which of `.claude/` and `.codex/` the repository carries, both when it carries neither. Both
-candidate names are repository-authored, so one outside `[project] name`'s grammar is refused
+`refs/remotes/origin/HEAD` with `origin/` stripped, else `main`; the agent surfaces from which
+of `.claude/` and `.codex/` the repository carries, both when it carries neither; and
+`[keelline] profile` from the first shipped profile whose markers sit at the root (`python`:
+`pyproject.toml`, `setup.py`, `setup.cfg`, a requirements file, a `Pipfile` or a lockfile),
+written only when one is found. Both candidate names are repository-authored, so one outside `[project] name`'s grammar is refused
 naming the grammar and the remedy and never the value.
 
 **A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
@@ -721,6 +723,13 @@ either way.
 | `gitignore` | footprint | managed region | `.gitignore` | the same block `attach` writes |
 | `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's Keelline uses |
 | `ci-workflow` | footprint | template | `.github/workflows/keelline.yml` | the pinned call to the reusable gate |
+| `profile-rules` | footprint | template | `<keelline>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[keelline] profile` set |
+| `claude-rules` | footprint | template | `.claude/rules/keelline-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[keelline] agents` lists `claude` |
+
+With a profile set, the `agents-md` region also names the profile's rules file and lists the
+lines under its *Before the first command* heading, so every harness that reads `AGENTS.md` has
+them before its first command. A name in `[keelline] agents` that no harness answers to is
+counted in a `note:` line and never printed.
 
 **The workflow pins what `[ci] ref` says, and nothing else.** The rendered file calls
 [the reusable workflow](#the-reusable-workflow) at the ref `keelline.toml` carries *after this
@@ -758,7 +767,8 @@ later) writes it.
 **Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the three
 detected values and for the public repository's tags, and every file an artifact targets.
 **Writes** `keelline.toml`, `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the
-table above, `.github/workflows/keelline.yml` where a ref is recorded, and
+table above (the profile's rules and the Claude pointer only when a profile is set),
+`.github/workflows/keelline.yml` where a ref is recorded, and
 `.keelline/manifest.json` — every one of them through the scaffold engine, so every target goes
 through the containment walk and none may leave the project root or pass through a symlink.
 
@@ -770,13 +780,15 @@ that does not load). `2` on a refusal above the plans: no `--yes`, a repository 
 initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
 grammar, naming git's control directory, or reaching through a component that is a symlink —
 all three refused by the loader before a plan exists —
-and two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
-keys to separate.
+two artifacts of one pass that resolve to one file, which is named with the two `[paths]`
+keys to separate, and an `[artifacts] local` list naming a profile artifact, which every pointer
+at it reads at its committed path.
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
-`{tag, sha}` or `null`), `asked`, `note`, and `ref` — what `[ci] ref` says on disk after the run
-and so what the workflow pins, empty when no workflow was planned.
+`{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
+and so what the workflow pins, empty when no workflow was planned — and `unknown_harnesses`, how
+many names in `[keelline] agents` no harness answers to.
 
 ---
 

@@ -114,8 +114,8 @@ def test_the_readme_still_declares_what_has_not_shipped() -> None:
     # over an empty list and leave the storefront free to advertise anything.
     items = _not_yet()
     assert len(items) >= 4, items
-    assert "assess" in items
-    assert "adoption state machine" in items
+    assert "memory MCP server" in items
+    assert "hold-the-line baseline" in items
 
 
 def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> None:

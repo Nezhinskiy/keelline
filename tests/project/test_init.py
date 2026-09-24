@@ -439,3 +439,38 @@ def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
     _init(root, tmp_path, runner=runner, ci=False)
     assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
     assert runner.calls == []
+
+
+@needs_git
+def test_a_python_repository_gets_the_profile_in_every_form_it_asked_for(tmp_path: Path) -> None:
+    # The fixture carries `.claude/` only, so `detect` answers `agents = ["claude"]` and the
+    # Claude rule is written: that is the point of the case.
+    root = _repo(tmp_path)
+    (root / ".claude").mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
+    _init(root, tmp_path, ci=False)
+    assert load(root, machine=tmp_path / "absent.toml").keelline.profile == "python"
+    assert (root / "docs" / "keelline" / "rules" / "python.md").is_file()
+    rule = (root / ".claude" / "rules" / "keelline-python.md").read_text(encoding="utf-8")
+    assert "`docs/keelline/rules/python.md`" in rule
+    assert "`docs/keelline/rules/python.md`" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert {"profile-rules", "claude-rules"} <= set(Manifest.read(root).records)
+
+
+@needs_git
+def test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The rule meets a hand-written `keelline.toml`, not only the onboarding questions. If
+    # `_init` runs the CLI rather than the function, assert its exit 2 instead of the raise.
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n\n'
+        '[project]\nname = "widget"\n\n[artifacts]\nlocal = ["profile-rules"]\n\n'
+        '[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match="profile's artifacts"):
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)

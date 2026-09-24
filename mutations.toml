@@ -4285,12 +4285,14 @@ reddens = [
 # Re-pointed in wave 4, when `init` and the project templates shipped and left that sentence
 # holding exactly the four items the test's floor requires. The entry quotes two lines of prose
 # verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
-# caught it is reading every entry's `before` back out of its file and counting.
+# caught it is reading every entry's `before` back out of its file and counting. Re-pointed
+# again when the profile adapters rewrote the sentence to eight items that each leave it in the
+# change that ships them; the mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess` and the adoption state machine \u2014 so nothing refreshes or removes a"
-after = "> discipline. **Not yet:** `upgrade` \u2014 so nothing refreshes or removes a"
+before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess`, the adoption state machine, the memory MCP server, a hold-the-line\n> baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
+after = "> discipline. **Not yet:** `upgrade` \u2014 each leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -5457,7 +5459,7 @@ reddens = [
 [[mutation]]
 name = "two artifacts of one pass may target one file again"
 file = "src/keelline/project/templates.py"
-before = "    _one_target_each(footprint)"
+before = "    _one_target_each(footprint, keys)"
 after = ""
 reddens = [
   "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
@@ -6390,4 +6392,35 @@ before = "    if profile not in shipped:"
 after = "    if False:"
 reddens = [
   "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
+]
+
+[[mutation]]
+name = "a harness's rendering is applied though the project does not list it"
+file = "src/keelline/harnesses.py"
+before = "    chosen = tuple(harness for harness in HARNESSES if harness.name in listed)"
+after = "    chosen = HARNESSES"
+reddens = [
+  "tests/project/test_templates.py::test_a_harness_not_listed_gets_no_file_of_its_own",
+  "tests/test_harnesses.py::test_select_answers_the_listed_harnesses_and_counts_the_rest",
+]
+
+[[mutation]]
+name = "a harness rendition that collides is a KeyError instead of a refusal"
+file = "src/keelline/project/templates.py"
+before = "                keys[rendition.artifact_id] = OWN_NAME"
+after = "                pass"
+reddens = [
+  "tests/project/test_templates.py::test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name",
+]
+
+# A profile artifact kept out of git leaves the `AGENTS.md` pointer and every harness's rule
+# pointing at a committed path that holds nothing.
+[[mutation]]
+name = "a profile artifact kept out of git is written, and every pointer to it dangles"
+file = "src/keelline/project/templates.py"
+before = "    if local:\n        raise Refusal(LOCAL_PROFILE"
+after = "    if False:\n        raise Refusal(LOCAL_PROFILE"
+reddens = [
+  "tests/project/test_templates.py::test_a_profile_artifact_kept_out_of_git_is_refused",
+  "tests/project/test_init.py::test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written",
 ]

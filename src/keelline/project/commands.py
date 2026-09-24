@@ -62,6 +62,11 @@ HEADINGS = {
     (False, True): "would initialise:",
     (False, False): "initialised:",
 }
+# A count and fixed text: `[keelline] agents` is repository-authored, so its names never print.
+UNKNOWN_HARNESSES = (
+    "note: {count} name(s) in [keelline] agents name no harness this Keelline serves; those "
+    "harnesses were given the AGENTS.md region only"
+)
 YES_HELP = (
     "accept the detected defaults and write the footprint; without it nothing is written and "
     "the command refuses, naming the lane that ships the questions"
@@ -115,6 +120,8 @@ def run_init(args: argparse.Namespace) -> Result:
     ]
     if report.note:
         lines.append(f"note: {report.note}")
+    if report.unknown_harnesses:
+        lines.append(UNKNOWN_HARNESSES.format(count=report.unknown_harnesses))
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -126,6 +133,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "asked": report.resolution.asked,
         "note": report.note,
         "ref": report.ref,
+        "unknown_harnesses": report.unknown_harnesses,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

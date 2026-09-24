@@ -80,6 +80,7 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     assert "keelline.config" not in imported
     assert "keelline.presets" not in imported
     assert "keelline.profiles" not in imported
+    assert "keelline.harnesses" not in imported
 
 
 # The eleven areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the

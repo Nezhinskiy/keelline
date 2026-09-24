@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,21 @@ from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.loader import preset_defaults
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.harnesses import HARNESSES
 from keelline.ledger.api import render_index
+from keelline.profiles import load_profile
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
-from keelline.project.templates import COMPUTED, NO_REF, PATH_KEYS, PROJECT, fill, read
+from keelline.project.templates import (
+    COMPUTED,
+    LOCAL_PROFILE,
+    NO_REF,
+    PATH_KEYS,
+    PROFILE,
+    PROJECT,
+    fill,
+    read,
+    refuse_local_profile,
+)
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
@@ -324,10 +337,9 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     """The anti-drift half of `PATH_KEYS`: an artifact added without a line there would reach a
     `KeyError` only once somebody's configuration happened to collide, which is the worst moment
     for this module to raise something other than its own refusal."""
-    config = _recording(preset_defaults("widget"))
     prepared = project_templates(
         Path("/nonexistent/root"),
-        config,
+        _python(tuple(h.name for h in HARNESSES)),
         resolution=PINNED,
         document=DOCUMENT,
         adopted=False,
@@ -335,9 +347,11 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     )
     ids = {t.id for t in (*prepared.once, *prepared.footprint)}
     # The walk is stated non-empty first, and at its full size: a `Prepared` that built nothing
-    # would make the comparison below vacuous in both directions.
-    assert len(ids) == 16, sorted(ids)
-    assert ids == set(PATH_KEYS), (sorted(ids ^ set(PATH_KEYS)),)
+    # would make the comparison below vacuous in both directions. A harness's rendition has no
+    # row in `PATH_KEYS`; its id is asked of the registry, so a harness added there is covered
+    # here with no edit.
+    assert len(ids) == 17 + len(_renditions()), sorted(ids)
+    assert ids == set(PATH_KEYS) | _renditions(), (sorted(ids ^ set(PATH_KEYS)),)
 
 
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
@@ -351,16 +365,16 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
     committed smoke fixture's manifest has carried `"template": "project/gitignore"` for as long
     as it has existed.
 
-    Two rules and no third: a source is `project/<a file the wheel ships>`, or it is
-    `computed/<artifact id>` and this module builds the bytes.
+    Three rules: a source is `project/<a file the wheel ships>`; or it is
+    `computed/<artifact id>` and this module or a harness builds the bytes; or it is
+    `profile/<name>/<a file that profile ships>`.
 
     Mutation (oracle): `_computed`'s source is spelled `f"{PROJECT}/{artifact_id}"` -> the
     computed set's assertion reddens, and so does the fixture module's provenance assertion.
     """
-    config = _recording(preset_defaults("widget"))
     prepared = project_templates(
         Path("/nonexistent/root"),
-        config,
+        _python(tuple(h.name for h in HARNESSES)),
         resolution=PINNED,
         document=DOCUMENT,
         adopted=False,
@@ -369,15 +383,19 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
     sources = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
     # Non-empty and at full size first, for `PATH_KEYS`' reason: nothing built makes every
     # comparison below true of nothing.
-    assert len(sources) == 16, sorted(sources)
+    assert len(sources) == 17 + len(_renditions()), sorted(sources)
     computed = {name for name, source in sources.items() if source.startswith(f"{COMPUTED}/")}
     # As the set and not as a count: an artifact that moved from one rule to the other is exactly
     # the drift this test exists to see, and a count would not see it.
-    assert computed == {"config", "bug-index", "gitignore"}
+    assert computed == {"config", "bug-index", "gitignore"} | _renditions()
     root = tree(PROJECT)
     for artifact_id, source in sources.items():
         if artifact_id in computed:
             assert source == f"{COMPUTED}/{artifact_id}"
+            continue
+        if source.startswith(f"{PROFILE}/"):
+            _, name, file = source.split("/")
+            assert (resources.files("keelline.profiles") / name / file).is_file(), source
             continue
         area, _, name = source.partition("/")
         assert area == PROJECT and name in PROJECT_FILES, source
@@ -425,3 +443,90 @@ def test_read_refuses_a_name_this_package_does_not_ship_before_it_joins_it() -> 
             read(name)
     # And a name it does ship is read, so the check is not simply refusing everything.
     assert read("claude.md") == "@%%AGENTS_MD%%\n"
+
+
+def _python(agents: tuple[str, ...] = ("claude", "codex")) -> Config:
+    config = _recording(preset_defaults("widget"))
+    return replace(config, keelline=replace(config.keelline, profile="python", agents=agents))
+
+
+def _renditions() -> set[str]:
+    """Every harness rendition's artifact id, asked of the registry."""
+    profile = load_profile("python")
+    return {
+        h.render_profile(profile, "rules.md").artifact_id
+        for h in HARNESSES
+        if h.render_profile is not None
+    }
+
+
+def test_a_profile_lands_once_neutrally_and_once_per_adapted_harness(tmp_path: Path) -> None:
+    by_id = {t.id: t for t in _prepared(_python(), root=tmp_path).footprint}
+    assert by_id["profile-rules"].target == "docs/keelline/rules/python.md"
+    assert by_id["profile-rules"].source == "profile/python/rules.md"
+    assert by_id["profile-rules"].render() == load_profile("python").rules
+    assert by_id["claude-rules"].target == ".claude/rules/keelline-python.md"
+    assert by_id["claude-rules"].source == "computed/claude-rules"
+    assert "`docs/keelline/rules/python.md`" in by_id["claude-rules"].render()
+
+
+def test_a_harness_not_listed_gets_no_file_of_its_own(tmp_path: Path) -> None:
+    ids = {t.id for t in _prepared(_python(agents=("codex",)), root=tmp_path).footprint}
+    assert "profile-rules" in ids and "claude-rules" not in ids
+
+
+def test_a_profile_artifact_kept_out_of_git_is_refused(tmp_path: Path) -> None:
+    """The `AGENTS.md` pointer and the Claude rule read `profile-rules` at its committed path;
+    kept local it lands under `.keelline/local/`, and both point at nothing (a review
+    reproduced all three files). Mutation (declared): the refusal's condition dropped -> this
+    reddens.
+    """
+    config = _python()
+    refuse_local_profile(_prepared(config, root=tmp_path), config)
+    for local in (("profile-rules",), ("claude-rules",), ("profile-rules", "roadmap")):
+        kept = replace(config, artifacts=replace(config.artifacts, local=local))
+        with pytest.raises(Refusal, match=re.escape(LOCAL_PROFILE.format(count=1))):
+            refuse_local_profile(_prepared(kept, root=tmp_path), kept)
+
+
+def test_the_region_hands_every_harness_the_pointer_and_the_essentials(tmp_path: Path) -> None:
+    # Advisory output, so its mutation stays here: `lines = "\n".join(...)` -> `lines = ""` in
+    # `_profile_block` reddens the loop.
+    region = next(
+        t
+        for t in _prepared(_python(agents=("codex",)), root=tmp_path).footprint
+        if t.id == "agents-md"
+    ).render()
+    assert "`docs/keelline/rules/python.md`" in region
+    for line in load_profile("python").essentials:
+        assert f"- {line}" in region
+    # The block follows the paragraph after one blank line and adds none before the end marker.
+    assert "\n\n\n" not in region and not region.endswith("\n\n")
+
+
+def test_no_profile_means_no_profile_artifact_and_the_region_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    prepared = _prepared(preset_defaults("widget"), root=tmp_path)
+    assert not {t.id for t in prepared.footprint} & {"profile-rules", "claude-rules"}
+    region = next(t for t in prepared.footprint if t.id == "agents-md").render()
+    # Byte for byte what the region was before profiles: no block, and no blank line left where
+    # the sentinel sat. Mutation: put `%%PROFILE%%` on a line of its own -> reddens.
+    assert "profile's rules" not in region and not region.endswith("\n\n")
+
+
+def test_an_unknown_harness_name_is_counted_for_the_report(tmp_path: Path) -> None:
+    prepared = _prepared(_python(agents=("claude", "cursor")), root=tmp_path)
+    assert prepared.unknown_harnesses == 1
+
+
+def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name(
+    tmp_path: Path,
+) -> None:
+    # A rendition's row is added where it is appended, not listed in `PATH_KEYS`, so this is the
+    # case that proves the row exists: without it the collision is a `KeyError`, not a refusal.
+    # Mutation (oracle): drop `keys[rendition.artifact_id] = OWN_NAME` -> reddens.
+    config = _python(("claude",))
+    clash = replace(config, paths=replace(config.paths, roadmap=".claude/rules/keelline-python.md"))
+    with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of Keelline's own\)"):
+        _prepared(clash, root=tmp_path)

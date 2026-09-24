@@ -40,7 +40,18 @@ class _Listing:
         return Completed(0, self.stdout, "")
 
 
-JSON_KEYS = {"dry_run", "adopted", "once", "footprint", "writes", "skipped", "pin", "asked", "note"}
+JSON_KEYS = {
+    "dry_run",
+    "adopted",
+    "once",
+    "footprint",
+    "writes",
+    "skipped",
+    "pin",
+    "asked",
+    "note",
+    "unknown_harnesses",
+}
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -256,3 +267,23 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
             skipped += 1
     # Non-vacuous: both branches were actually taken.
     assert rendered and skipped
+
+
+@needs_git
+def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) -> None:
+    # `[keelline] agents` is repository-authored, so the report prints how many names went
+    # unserved and none of them. Mutation: print the loaded `agents` names beside the count on
+    # the note line -> the `cursor` and ESC assertion reddens. (Printing them instead of the
+    # count reddens the note assertion first, which proves nothing about the names.)
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        '[keelline]\nversion = "0.1.0"\nagents = ["claude", "cursor\\u001b[31m"]\n\n'
+        '[project]\nname = "widget"\n',
+        encoding="utf-8",
+    )
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert "note: 1 name(s) in [keelline] agents name no harness" in printed
+    assert "cursor" not in printed and "\x1b" not in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["unknown_harnesses"] == 1

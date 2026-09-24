@@ -41,7 +41,7 @@ import keelline
 from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
-from keelline.project.templates import project_templates
+from keelline.project.templates import project_templates, refuse_local_profile
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
 from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
@@ -92,6 +92,8 @@ class InitReport:
     # What `[ci] ref` says on disk after the run, which is what the rendered workflow pins;
     # empty when no workflow was planned. One field for both, because they are one value.
     ref: str = ""
+    # How many names in `[keelline] agents` no harness answers to; a count, never the names.
+    unknown_harnesses: int = 0
 
 
 def _existing(root: Path) -> dict[str, object] | None:
@@ -141,6 +143,8 @@ def _tables(
     if "project" not in tables:
         found = detect(root)
         head.setdefault("agents", list(found.agents))
+        if found.profile:
+            head.setdefault("profile", found.profile)
         tables["project"] = {
             "name": found.name,
             "base_branch": found.base_branch,
@@ -177,9 +181,10 @@ def init(
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
     that says this repository is already initialised, a `keelline.toml` that is not TOML, a
     detected name outside the grammar, an adopted table holding a key that cannot be written
-    back bare (`_rendered`), a `Config` the loader refuses, a pass in which two
-    artifacts resolve to one file (`templates._one_target_each`), and finally a refusal in
-    either plan, which is returned rather than raised so the report can name the artifact.
+    back bare (`_rendered`), a `Config` the loader refuses, a pass in which two artifacts
+    resolve to one file (`templates._one_target_each`), a profile artifact `[artifacts] local`
+    would keep out of git (`templates.refuse_local_profile`), and finally a refusal in either
+    plan, which is returned rather than raised so the report can name the artifact.
     """
     if not yes:
         raise Refusal(NEEDS_YES)
@@ -214,6 +219,7 @@ def init(
         adopted=existing is not None,
         dry_run=dry_run,
     )
+    refuse_local_profile(prepared, config)
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
@@ -231,6 +237,7 @@ def init(
             dry_run,
             note,
             ref,
+            prepared.unknown_harnesses,
         )
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
@@ -240,5 +247,13 @@ def init(
     footprint = plan(root, config, prepared.footprint)
     apply(root, footprint)
     return InitReport(
-        once, footprint, prepared.skipped, resolution, existing is not None, False, note, ref
+        once,
+        footprint,
+        prepared.skipped,
+        resolution,
+        existing is not None,
+        False,
+        note,
+        ref,
+        prepared.unknown_harnesses,
     )
