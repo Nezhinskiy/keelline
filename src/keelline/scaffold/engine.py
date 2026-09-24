@@ -59,27 +59,25 @@ _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
-def shipped_profiles() -> list[str] | None:
-    """The profile names this build carries, or `None` while it carries none.
+def shipped_profiles() -> tuple[str, ...]:
+    """The profile names this build carries, from the package itself.
 
-    `keelline.profiles.shipped()` counts a directory under the package only when it holds a
-    `profile.toml`, so the package's own modules are never mistaken for profiles. `None` keeps
-    the rule `validate_sources` has always applied before any profile existed. The next commit
-    ships the first profile and deletes this arm.
+    `keelline.profiles.shipped()` lists a directory under the package only when it holds a
+    `profile.toml`, and the package is the one listing: it answers for an installed wheel and a
+    `src/` checkout alike.
     """
     from keelline.profiles import shipped
 
-    return list(shipped()) or None
+    return shipped()
 
 
 def validate_sources(config: Config) -> None:
     """§7.4's second rule: the two values that name a file inside the *plugin* root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
-    path segment and, when a listing exists, looked up against it. The preset half is already
-    enforced by C1's loader through `presets.load_preset`; the profile half is enforced here,
-    because C1 stores `profile` as a bare string and widening `Config` would change a frozen
-    contract.
+    path segment and looked up against the listing. The preset half is already enforced by
+    C1's loader through `presets.load_preset`; the profile half is enforced here, because C1
+    stores `profile` as a bare string and widening `Config` would change a frozen contract.
     """
     profile = config.keelline.profile
     if not profile:
@@ -90,7 +88,7 @@ def validate_sources(config: Config) -> None:
     if not SOURCE_NAME.match(profile):
         raise PathEscape(f"[keelline] profile is not one path segment ({SOURCE_RULE})")
     shipped = shipped_profiles()
-    if shipped is not None and profile not in shipped:
+    if profile not in shipped:
         known = ", ".join(shipped) or "none"
         raise PathEscape(
             "[keelline] profile names a profile this version of Keelline does not ship "

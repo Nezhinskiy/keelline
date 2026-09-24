@@ -6382,3 +6382,12 @@ after = "        try:\n            path = root / relative"
 reddens = [
   "tests/profiles/test_evaluate.py::test_a_locator_through_a_symlink_out_of_the_root_resolves_to_nothing",
 ]
+
+[[mutation]]
+name = "the engine accepts a profile this Keelline does not ship"
+file = "src/keelline/scaffold/engine.py"
+before = "    if profile not in shipped:"
+after = "    if False:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
+]

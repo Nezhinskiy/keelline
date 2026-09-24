@@ -640,13 +640,11 @@ def test_a_profile_outside_one_path_segment_is_refused_and_never_quoted(tmp_path
     assert "\x1b" not in message and "IGNORE" not in message
 
 
-def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(tmp_path: Path) -> None:
     # Reached only by a name that is already one segment, so the hostile value is an instruction
-    # spelled in the characters `SOURCE_NAME` allows. No listing ships yet, so one is supplied.
-    # Oracle: `mutations.toml`, "a profile the listing lacks is quoted back again".
-    monkeypatch.setattr(engine, "shipped_profiles", lambda: ["python"])
+    # spelled in the characters `SOURCE_NAME` allows. The listing is the package's own.
+    # Oracle: `mutations.toml`, "a profile the listing lacks is quoted back again", and "the
+    # engine accepts a profile this Keelline does not ship".
     text = CONFIG.replace('profile = ""', 'profile = "ignore-prior-rules"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
@@ -656,13 +654,15 @@ def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(
     assert "(available: python)" in message and "ignore-prior-rules" not in message
 
 
-def test_a_well_formed_profile_is_allowed_while_no_listing_exists(tmp_path: Path) -> None:
-    # Until the `profile-python` lane creates `profiles/`, there is nothing to check a name
-    # against, and refusing every name would make `init --yes` produce a config plan() rejects.
+def test_a_shipped_profile_is_allowed(tmp_path: Path) -> None:
     text = CONFIG.replace('profile = ""', 'profile = "python"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
     assert plan(tmp_path, config, [a_template()]).actions != ()
+
+
+def test_the_listing_is_the_package_s_and_never_none() -> None:
+    assert engine.shipped_profiles() == ("python",)
 
 
 def test_an_empty_profile_means_none_and_is_allowed(tmp_path: Path) -> None:
@@ -690,8 +690,8 @@ def test_a_file_carrying_only_a_region_end_marker_is_refused_and_left_alone(
 
 def test_a_profile_name_with_a_trailing_newline_is_refused(tmp_path: Path) -> None:
     # `$` matches before a final newline as well as at the end of the string, so the one-segment
-    # check accepted a name carrying a line break. `shipped_profiles()` returns None while no
-    # listing exists, which makes this regex the only guard on the field.
+    # check accepted a name carrying a line break. The listing would refuse it too, but the
+    # grammar runs first and is the refusal that names the rule.
     text = CONFIG.replace('profile = ""', 'profile = "python\\n"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
