@@ -14,7 +14,8 @@ from keelline.config.loader import CONFIG_FILE, ConfigError, load
 from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
 from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import NOT_ASKED_DRY, NOT_ASKED_WRITTEN
+from keelline.project.templates import NOT_ASKED
+from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import LsRemote, git, needs_git
@@ -221,12 +222,13 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
 
 
 @needs_git
-def test_an_initialised_repository_is_refused_and_says_upgrade_ships_later(tmp_path: Path) -> None:
-    # DC5. Mutation (oracle): drop the manifest guard -> the second call plans a second init.
+def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path) -> None:
+    # Mutation (oracle): drop the manifest guard -> the second call plans a second init.
     root = _repo(tmp_path)
     _init(root, tmp_path)
-    with pytest.raises(Refusal, match=r"upgrade.*ships later"):
+    with pytest.raises(Refusal, match="re-running `init` is `keelline upgrade`") as refused:
         _init(root, tmp_path)
+    assert "ships later" not in str(refused.value)
 
 
 @needs_git
@@ -347,33 +349,29 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
 
 
 @needs_git
-def test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing(
-    tmp_path: Path,
-) -> None:
-    """`NOT_ASKED` had `NO_REF`'s defect on the path `NO_REF` does not cover.
+def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path: Path) -> None:
+    """`NOT_ASKED` names two commands, and each is taken here by the kind of run it is for.
 
-    On a bare repository with the remote unreachable, a run that writes records a
-    `keelline.toml` with no `[ci] ref` and persists `.keelline/manifest.json` — and the sentence
-    it printed was "run `keelline init --yes` again with the network reachable", which the very
-    next run refuses. Only a dry run can still take that remedy, so only a dry run is offered it,
-    and the case proves the remedy by taking it: the dry run's advice, followed with the network
-    back, pins.
+    A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
+    has persisted `.keelline/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
-    Mutation (oracle): "an unreachable remote tells a run that wrote to run again".
+    Mutation (oracle): "an unreachable remote sends a run that wrote back to init".
     """
     offline = LsRemote(stdout="", code=128)
+    online = LsRemote(stdout=LISTING, code=0)
     dry_root = _repo(tmp_path / "dry")
     dry = _init(dry_root, tmp_path, runner=offline, dry_run=True)
-    assert dry.skipped["ci-workflow"] == NOT_ASKED_DRY
-    assert _init(dry_root, tmp_path, runner=LsRemote(stdout=LISTING, code=0)).ref == SHA
+    assert dry.skipped["ci-workflow"] == NOT_ASKED
+    assert _init(dry_root, tmp_path, runner=online).ref == SHA
 
     root = _repo(tmp_path / "written")
     written = _init(root, tmp_path, runner=offline)
-    reason = written.skipped["ci-workflow"]
-    assert reason == NOT_ASKED_WRITTEN
-    assert "again" not in reason and "[ci] ref" in reason
-    with pytest.raises(Refusal, match="re-running `init` is"):
-        _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    assert written.skipped["ci-workflow"] == NOT_ASKED
+    upgrade(root, machine=tmp_path / "absent.toml", runner=online, dry_run=False, force=())
+    assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
+    assert f"check.yml@{SHA}\n" in (root / ".github" / "workflows" / "keelline.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 @needs_git

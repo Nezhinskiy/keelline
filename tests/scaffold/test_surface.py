@@ -34,6 +34,7 @@ EXPORTED = [
     "owned",
     "owned_ids",
     "plan",
+    "printable",
     "render_report",
     "shipped_profiles",
     "upsert",

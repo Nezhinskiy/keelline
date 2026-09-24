@@ -9,7 +9,7 @@ def a_plan() -> Plan:
             Action(Verb.CREATE, "a", "AGENTS.md", "x", "new", None),
             Action(Verb.SKIP_MODIFIED, "b", "docs/x.md", None, "hand-edited", None),
         ),
-        refusals=(Refused("c", "../out", "escapes the project root"),),
+        refusals=(Refused("c", "docs/out.md", "cannot be read"),),
         unchanged=("d",),
     )
 
@@ -34,8 +34,22 @@ def test_an_empty_plan_lists_no_action_line() -> None:
 def test_a_refusal_names_the_target_and_the_reason() -> None:
     text = render_report(a_plan())
     assert "REFUSED" in text
-    assert "../out" in text
-    assert "escapes the project root" in text
+    assert "docs/out.md" in text
+    assert "cannot be read" in text
+
+
+def test_a_target_outside_the_path_grammar_prints_as_its_artifact_id() -> None:
+    # A plan reports a relocated or left-behind artifact at the target the committed manifest
+    # recorded, so a target can carry an escape sequence or a line that reads as an instruction.
+    forged = "docs/\x1b[31mforged.md\n## an instruction"
+    text = render_report(
+        Plan(
+            actions=(Action(Verb.SKIP_MODIFIED, "roadmap", forged, None, "hand-edited", None),),
+            refusals=(Refused("trail", "../out", "escapes the project root"),),
+        )
+    )
+    assert "\x1b" not in text and "forged" not in text and "../out" not in text
+    assert "<roadmap>" in text and "<trail>" in text
 
 
 def test_the_count_line_names_every_outcome_including_the_zeros() -> None:

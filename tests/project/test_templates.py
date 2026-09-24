@@ -46,13 +46,12 @@ def _prepared(
     resolution: Resolution = NO_PIN,
     root: Path = Path("/nonexistent/root"),
     adopted: bool = False,
-    dry_run: bool = False,
 ) -> Prepared:
     """This file's default is the run that *creates* `keelline.toml`, which is the path on which
     the three "why there is no ref" sentences are the answers. `adopted=True` is the other kind
     of run, and it has one answer; the case below holds that."""
     return project_templates(
-        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted, dry_run=dry_run
+        root, config, resolution=resolution, document=DOCUMENT, adopted=adopted
     )
 
 
@@ -348,7 +347,6 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
         resolution=PINNED,
         document=DOCUMENT,
         adopted=False,
-        dry_run=False,
     )
     ids = {t.id for t in (*prepared.once, *prepared.footprint)}
     # The walk is stated non-empty first, and at its full size: a `Prepared` that built nothing
@@ -363,8 +361,8 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
     """The same anti-drift rule over `Template.source`, which had no guard and was wrong.
 
-    `source` becomes `Record.template` in `.keelline/manifest.json` — committed, and what
-    `upgrade` will read to find out where an artifact's bytes came from. Three artifacts recorded
+    `source` becomes `Record.template` in `.keelline/manifest.json` — committed, and where a
+    reader finds out where an artifact's bytes came from. Three artifacts recorded
     `project/config`, `project/bug-index` and `project/gitignore`: names `PROJECT_FILES` does not
     carry, that the wheel does not ship, and that `read` refuses by name. Nothing raised, because
     all three build their own bytes — but the provenance was a pointer at nothing, and the
@@ -384,7 +382,6 @@ def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_compute
         resolution=PINNED,
         document=DOCUMENT,
         adopted=False,
-        dry_run=False,
     )
     sources = {t.id: t.source for t in (*prepared.once, *prepared.footprint)}
     # Non-empty and at full size first, for `PATH_KEYS`' reason: nothing built makes every

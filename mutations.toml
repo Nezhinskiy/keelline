@@ -4291,8 +4291,8 @@ reddens = [
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess`, the adoption state machine, the memory MCP server, a hold-the-line\n> baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
-after = "> discipline. **Not yet:** `upgrade` \u2014 each leaves this"
+before = "> discipline. **Not yet:** `uninstall`,\n> `assess`, the adoption state machine, the memory MCP server, a hold-the-line\n> baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
+after = "> discipline. **Not yet:** `uninstall` \u2014 each leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -5263,10 +5263,10 @@ reddens = [
   "tests/project/test_init.py::test_a_refused_footprint_writes_nothing_at_all",
 ]
 
-# DC5. The manifest is the record that this repository has been initialised, and it is the
-# only one: a second `init` over an initialised repository would re-plan every artifact
-# against a configuration it rebuilt from scratch. Refreshing a footprint is `keelline
-# upgrade`, which ships later, and the refusal says so rather than doing half of it. The
+# The manifest is the record that this repository has been initialised, and it is the only
+# one: a second `init` over an initialised repository would re-plan every artifact against a
+# configuration it rebuilt from scratch. Refreshing a footprint is `keelline upgrade`, and the
+# refusal says so rather than doing half of it. The
 # anchor is `.keelline/manifest.json`, whose path is the scaffold area's own constant and is
 # contained against the root before it is read.
 [[mutation]]
@@ -5275,7 +5275,7 @@ file = "src/keelline/project/init.py"
 before = "    if (root / MANIFEST_PATH).is_file():"
 after = "    if False:"
 reddens = [
-  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_says_upgrade_ships_later",
+  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
 ]
 
 # P10, and the third leak of this family this branch closes. `tomllib` builds its message as
@@ -5604,7 +5604,7 @@ reddens = [
 ]
 
 # Committed provenance. `Template.source` becomes `Record.template` in `.keelline/manifest.json`,
-# which is tracked and is what `upgrade` will read to find out where an artifact's bytes came
+# which is tracked and is where a reader finds out where an artifact's bytes came
 # from. Three artifacts here compute their bytes rather than reading a shipped file, and all three
 # recorded `project/<id>` — a name `PROJECT_FILES` does not carry, that the wheel does not ship,
 # and that `read` refuses by name. Nothing raised, because each one overrides `render`; what was
@@ -5773,17 +5773,15 @@ reddens = [
   "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
 ]
 
-# `NO_REF`'s argument, on the path `NO_REF` does not cover: a run that writes persists the
-# manifest, and `init` refuses a repository that has one, so "run it again with the network
-# reachable" is a remedy only a dry run can take. The mutation gives it to every run.
+# An unreachable remote on a run that creates the document is answered with the two commands
+# that can still pin: `init --yes` before anything is written, `upgrade` after. The mutation
+# answers it with the adoption path's sentence instead, which names neither.
 [[mutation]]
-name = "an unreachable remote tells a run that wrote to run again"
+name = "an unreachable remote sends a run that wrote back to init"
 file = "src/keelline/project/templates.py"
-before = "            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN"
-after = "            return None, NOT_ASKED_DRY"
-reddens = [
-  "tests/project/test_init.py::test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing",
-]
+before = "            return None, NOT_ASKED"
+after = "            return None, NO_REF"
+reddens = ["tests/project/test_init.py::test_an_unreachable_remote_is_answered_with_a_command_that_can_act"]
 
 # N5 of the wave-4 re-review. `contained()` took on the write's component rule, and
 # `contained_roots` catches its refusal and moves on — so `code_roots = ["src/"]` was silently
@@ -6514,3 +6512,22 @@ file = "src/keelline/project/upgrade.py"
 before = "    if dry_run or footprint.refusals:"
 after = "    if footprint.refusals:"
 reddens = ["tests/project/test_upgrade.py::test_a_dry_run_writes_nothing_and_reports_everything"]
+
+# A report prints targets, and a target a committed manifest recorded is repository-authored:
+# only one inside the path grammar may print as itself.
+[[mutation]]
+name = "a report prints a committed manifest's target raw"
+file = "src/keelline/scaffold/report.py"
+before = '    return item.target if PATH_VALUE.match(item.target) else f"<{item.artifact_id}>"'
+after = "    return item.target"
+reddens = [
+  "tests/scaffold/test_report.py::test_a_target_outside_the_path_grammar_prints_as_its_artifact_id",
+  "tests/project/test_footprint_commands.py::test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id",
+]
+
+[[mutation]]
+name = "a --force path outside the root is dropped instead of refused"
+file = "src/keelline/project/commands.py"
+before = "            raise Refusal(FORCE_OUTSIDE)"
+after = "            continue"
+reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]

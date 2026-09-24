@@ -254,7 +254,7 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
         ("reusable", "a" * 40, False),
     ]:
         config = _ci_config(mode, ref, tmp_path)
-        workflow, reason = _ci(config, Resolution(None, True), adopted=adopted, dry_run=False)
+        workflow, reason = _ci(config, Resolution(None, True), adopted=adopted)
         if workflow is not None:
             # The half the deleted arm rested on: a workflow is planned only for a ref, so
             # `init`'s `report.ref` cannot be empty while `ci-workflow` is absent from `skipped`.

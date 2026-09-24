@@ -18,8 +18,8 @@ Codex, one Python package with **no runtime dependencies**.
 > and the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** `upgrade`,
-> `uninstall`, `assess`, the adoption state machine, the memory MCP server, a hold-the-line
+> discipline. **Not yet:** `uninstall`,
+> `assess`, the adoption state machine, the memory MCP server, a hold-the-line
 > baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this
 > list in the change that ships it. The [Quickstart](#quickstart) shows the three keys that are
 > enough to start a project by hand, which `init` reads as your answers — a run that writes the
@@ -195,7 +195,7 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline init` writes the empty index and `docs/bugs/audits/README.md`; `keelline bugs new`, `bugs index` and `bugs renumber` after |
 | `docs/roadmap.md` and `docs/roadmap-history.md` (configurable) | The forward track and the closed phases; in the roadmap, `docs trail` owns only the listing between its two markers | `keelline init` writes both files; `keelline docs trail` rewrites the listing |
 | `docs/trail.toml` (beside the roadmap) | Which theme each design or plan document belongs to, and which are not plainly delivered. Read by `docs trail`, never written by it | `keelline init`, once; you after |
-| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` (ships later) refreshes what you have not touched | `keelline init` |
+| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` refreshes what you have not touched | `keelline init` |
 | `docs/keelline/rules/<profile>.md` (configurable) and `.claude/rules/keelline-<profile>.md` | The stack profile's rules, the one copy a project edits, and a path-scoped pointer at it for Claude Code (only when `[keelline] agents` lists `claude`) | `keelline init`, when `[keelline] profile` is set |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `keelline setup` |
@@ -232,6 +232,9 @@ parser, and every registered command has a line — a test holds both.
 # Initialising a project
 keelline init --yes --dry-run                         # both reports, nothing written
 keelline init --yes                                   # write the footprint and record every file
+keelline upgrade --dry-run                            # what a newer Keelline would refresh
+keelline upgrade                                      # refresh untouched files; move version and pin
+keelline upgrade --force docs/roadmap.md              # overwrite one file you edited
 
 # Memory
 keelline memory index                                 # render MEMORY.md from the notes

@@ -47,7 +47,6 @@ _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # package that ships each (§15.2). The lane that ships one DELETES its entry: a parsing
 # command that is still listed here reddens `test_every_invocation_parses_or_is_allowlisted`.
 NOT_YET_SHIPPED = {
-    "upgrade": "upgrade",
     "uninstall": "upgrade",
 }
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}

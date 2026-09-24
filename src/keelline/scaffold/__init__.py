@@ -37,7 +37,7 @@ from keelline.scaffold.manifest import (
 )
 from keelline.scaffold.model import Action, Applied, Plan, Refused, Template, Verb
 from keelline.scaffold.regions import RegionError, Style, drop, extract, upsert
-from keelline.scaffold.report import render_report
+from keelline.scaffold.report import printable, render_report
 
 __all__ = [
     "FORMAT",
@@ -67,6 +67,7 @@ __all__ = [
     "owned",
     "owned_ids",
     "plan",
+    "printable",
     "render_report",
     "shipped_profiles",
     "upsert",

@@ -54,7 +54,7 @@ PROJECT = "project"
 # of one never claims a file the wheel does not carry.
 #
 # `Template.source` becomes `Record.template` in `.keelline/manifest.json`, which is committed and
-# is what `upgrade` will read to find out where an artifact's bytes came from. Three artifacts
+# is where a reader finds out where an artifact's bytes came from. Three artifacts
 # here have no shipped file at all — `config` is the rendered document, `bug-index` is
 # `render_index([], config)`, `gitignore` is `IGNORE_BODY` — and all three recorded
 # `project/<id>`, a name absent from `PROJECT_FILES` and from the tree, which `read` itself
@@ -63,7 +63,7 @@ PROJECT = "project"
 # existed.
 #
 # A separate namespace rather than a name that looks readable: "there is no shipped file, these
-# bytes are built" is the honest answer, and a reader — `upgrade`, a person, `doctor` — can tell
+# bytes are built" is the honest answer, and a reader — a person, `doctor` — can tell
 # it from `project/roadmap.md` without asking the wheel. It stays one string, so the manifest
 # format is untouched. `_computed` is the only place it is spelled, and
 # `tests/project/test_templates.py` holds every source both passes build to one rule or the other.
@@ -92,20 +92,14 @@ CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
     "no released Keelline tag matches the version running, so there is no commit to pin; "
-    "`keelline upgrade` (ships later) writes it after the first release"
+    "`keelline upgrade` pins it once a release matches"
 )
-# Two remedies, picked by the kind of run, for the reason `NO_REF`'s comment gives: a run that
-# writes persists `.keelline/manifest.json`, and `init` refuses a repository that has one, so
-# "run again with the network reachable" is a remedy only a dry run can still take. After a run
-# that wrote, the document records no ref and nothing `init` does will add one.
-NOT_ASKED = "the public repository could not be asked for its tags, so there is no commit to pin; "
-NOT_ASKED_DRY = (
-    NOT_ASKED + "run `keelline init --yes` with the network reachable, and that run pins it"
-)
-NOT_ASKED_WRITTEN = NOT_ASKED + (
-    "the run that writes keelline.toml is the only one that pins, and `init` does not run twice "
-    "on one repository — write a released commit into [ci] ref and the workflow by hand, or "
-    "wait for `keelline upgrade` (ships later)"
+# One sentence that is true after either kind of run: before a manifest exists `init` can still
+# pin, and after one exists `upgrade` can.
+NOT_ASKED = (
+    "the public repository could not be asked for its tags, so there is no commit to pin; "
+    "`keelline init --yes` with the network reachable pins it, or `keelline upgrade` once "
+    "this repository is initialised"
 )
 UVX_LATER = (
     'the uvx form of the gate ships with a later lane; [ci] mode = "reusable" is what this '
@@ -124,19 +118,12 @@ NO_CI = "[ci] mode is none"
 # `NOT_ASKED` and `NO_TAG`, both of which send the operator to the network for a file they have
 # to edit by hand.
 #
-# The remedy names the one run that can still act on it. "Run `keelline init --yes` again" was
-# already dead where this sentence prints from a completed run: `apply` persists
-# `.keelline/manifest.json`, and `init` refuses a repository that has one ("re-running `init` is
-# `keelline upgrade`, which ships later"). Measured on a repository adopted with no `[ci] ref`:
-# the second run is a refusal, not a workflow. So the sentence says which run the pin has to be
-# in place for, and who writes the file after that.
+# The remedy names the command that acts on it: `upgrade` writes `[ci] ref` into any
+# `keelline.toml`, whoever wrote the file, because the key is Keelline's.
 NO_REF = (
     "the keelline.toml this repository already had records no [ci] ref, and `init` does not "
     "write into a document it did not create — so a workflow would pin a ref nothing records. "
-    "That is the whole reason, whatever this run could or could not resolve from the public "
-    "repository: write a released commit into [ci] ref by hand, and `keelline init --yes` "
-    "renders the workflow around it on a repository it has not initialised yet; on one it "
-    "already has, the workflow is yours to write, or wait for `keelline upgrade` (ships later)"
+    "`keelline upgrade` records a released commit there and renders the workflow around it"
 )
 BAD_REF = (
     "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; the "
@@ -370,7 +357,7 @@ def _profile_block(profile: Profile | None, rules: str) -> str:
 
 
 def _ci(
-    config: Config, resolution: Resolution, *, adopted: bool, dry_run: bool
+    config: Config, resolution: Resolution, *, adopted: bool
 ) -> tuple[Template | None, str | None]:
     """The rendered workflow, or the one sentence saying why this configuration gets none.
 
@@ -385,10 +372,10 @@ def _ci(
     so on a repository with a hand-written `keelline.toml` — the ordinary adoption path, under
     the preset's `[ci] mode = "reusable"` — an unreachable remote was reported as `NOT_ASKED`
     ("run `keelline init --yes` again with the network reachable") and a pre-release Keelline as
-    `NO_TAG`. Running again cannot help either one: `keelline.toml` is a `Kind.ONCE` artifact
-    already on disk, so no pin this run or any later run resolves is ever recorded, and the
-    workflow is skipped again for ever. The remote's answer is not what is missing here, and
-    `NO_REF` is the sentence that says what is.
+    `NO_TAG`. Running `init` again cannot help either one: `keelline.toml` is a `Kind.ONCE`
+    artifact already on disk, so no pin an `init` run resolves is ever recorded. The remote's
+    answer is not what is missing here, and `NO_REF` is the sentence that says what is, and
+    names the command that writes the key.
     """
     if config.ci.mode == "none":
         return None, NO_CI
@@ -399,7 +386,7 @@ def _ci(
         if adopted:
             return None, NO_REF
         if not resolution.asked:
-            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN
+            return None, NOT_ASKED
         if resolution.pin is None:
             return None, NO_TAG
         return None, NO_REF
@@ -494,7 +481,6 @@ def project_templates(
     resolution: Resolution,
     document: str,
     adopted: bool,
-    dry_run: bool,
 ) -> Prepared:
     """The footprint this configuration asks for, split into the engine's two passes (DC3).
 
@@ -505,8 +491,6 @@ def project_templates(
     rather than derived: `_ci` cannot tell the two kinds of run apart from a `Config` and a
     `Resolution`, and every sentence it can print about a missing `[ci] ref` is wrong for one of
     them. It has no default, because a caller that forgot one would silently get the wrong half.
-    `dry_run` is threaded for the same reason and with the same rule: the one remedy that
-    differs between a run that writes and one that does not is "run it again".
     """
     from keelline.harnesses import HARNESSES, select
     from keelline.profiles import load_profile, shipped
@@ -579,7 +563,7 @@ def project_templates(
     ]
     skipped: dict[str, str] = {}
     could_write: dict[str, set[str]] = {}
-    workflow, reason = _ci(config, resolution, adopted=adopted, dry_run=dry_run)
+    workflow, reason = _ci(config, resolution, adopted=adopted)
     # Where `_ci` builds the workflow, whatever `[ci] mode` asks for now.
     could_write["ci-workflow"] = {CI_WORKFLOW}
     if workflow is not None:

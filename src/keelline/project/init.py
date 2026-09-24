@@ -5,8 +5,8 @@ footprint is the second, because two artifacts cannot target one file in one pas
 planned before either is applied, so a refusal anywhere leaves nothing written and no
 manifest; the dry run reports both plans and writes nothing.
 
-A repository that already holds a `keelline.toml` and no manifest is adopted (P4). One that
-holds a manifest is refused: re-running `init` is `upgrade` (§7.3), which ships later.
+A repository that already holds a `keelline.toml` and no manifest is adopted. One that holds a
+manifest is refused: re-running `init` is `keelline upgrade`.
 
 **The workflow and `[ci] ref` are one value.** A resolved pin is written into the document
 only when this run is the one that creates it, and `templates._ci` renders the workflow from
@@ -65,7 +65,7 @@ NEEDS_YES = (
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
-    "`keelline upgrade`, which ships later"
+    "`keelline upgrade`"
 )
 # The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
 # is the only thing this names: the key that failed is exactly the text no grammar has bounded.
@@ -217,7 +217,6 @@ def init(
         resolution=resolution,
         document=document,
         adopted=existing is not None,
-        dry_run=dry_run,
     )
     refuse_local_profile(prepared, config)
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly

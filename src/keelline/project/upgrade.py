@@ -110,11 +110,8 @@ def _footprint(
     text: str,
     resolution: Resolution,
     force: Sequence[str],
-    dry_run: bool,
 ) -> tuple[Prepared, Plan, int]:
-    prepared = project_templates(
-        root, config, resolution=resolution, document=text, adopted=False, dry_run=dry_run
-    )
+    prepared = project_templates(root, config, resolution=resolution, document=text, adopted=False)
     # The placement rule `init` applies, at the second entry point that writes a footprint.
     refuse_local_profile(prepared, config)
     recorded = {artifact_id: r.target for artifact_id, r in Manifest.read(root).records.items()}
@@ -161,10 +158,10 @@ def upgrade(
         changes, held = {}, NO_RELEASE
     document = rewrite(text, changes)
     config = loads(document, root, machine=machine)
-    prepared, footprint, orphans = _footprint(root, config, text, resolution, force, dry_run)
+    prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
     if pinned and document != text and not _rewrites_the_workflow(footprint):
         changes, held, config = {}, WORKFLOW_HELD, before
-        prepared, footprint, orphans = _footprint(root, config, text, resolution, force, dry_run)
+        prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
     moved = tuple(
         Moved(key, _printable(key, old), new)
         for key, old, new in (

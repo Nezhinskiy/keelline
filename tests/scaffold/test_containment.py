@@ -264,7 +264,7 @@ def test_a_target_that_survives_plan_is_one_apply_can_write(tmp_path: Path) -> N
     # the empty component away through `Path(relative).parts`, `apply` split the raw string and
     # raised `UnsafePath` part-way through the pass, and `apply`'s `finally: manifest.write(root)`
     # then persisted a manifest for a run that had been refused. The repository was stuck after
-    # that: `init` refuses a manifest it finds, and `upgrade` does not ship.
+    # that: `init` refuses a manifest it finds, and `upgrade` did not ship.
     #
     # Stated as an implication over every spelling rather than as a fixed expected verdict, so
     # it stays true for whatever the grammar and the component rule decide next.

@@ -1,7 +1,5 @@
-"""The `init` command (§5.2, §8.1): write a repository's Keelline footprint, once.
-
-One command and not a group, the shape §5.2's contract row states and the shape the skill
-already invokes.
+"""The project area's commands: `init` writes a repository's Keelline footprint once, and
+`upgrade` refreshes it.
 
 **The summary is both rendered reports, the way `overlay upgrade`'s is.** It was four lines of
 counts, with every artifact's verb and the whole REFUSED section reachable only under `--json`
@@ -10,12 +8,11 @@ describing output the command did not print, and the exit-1 path is the one a pe
 without a flag. `scaffold.render_report` is the renderer, and the same text goes into `--json`
 under `once` and `footprint`, so the two cannot disagree.
 
-That is safe on the repository-bytes rule, and the reason is `scaffold.report`'s own format
-string: a line is `{verb} {target} ({reason})`, where the target is a `config.paths` value the
-loader has bounded to `PATH_VALUE` plus a file name this area chose, and the reason is the
-engine's own fixed vocabulary. The CI line beside them is one of this area's fixed sentences,
-or a tag and a commit the *release* area resolved from the public repository's own tags. The
-project's name and its `[ci]` values reach neither.
+That is safe on the repository-bytes rule because `render_report` bounds every target it
+prints: one outside `PATH_VALUE`, such as a target a committed manifest recorded, prints as its
+artifact id. The reason beside it is the engine's own fixed vocabulary. The CI line is one of
+this area's fixed sentences, or a tag and a commit the *release* area resolved from the public
+repository's own tags. The project's name and its `[ci]` values reach none of them.
 
 **The workflow is claimed only when nothing skipped it, and the ref it names is the one on
 disk.** `_ci` reaches its `GATE_BRANCH` check *after* the pin has resolved, so a repository with
@@ -36,12 +33,13 @@ above the plans, such as a missing `--yes` or a repository that is already initi
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from keelline.areas import SubParsers
 from keelline.command import DRY_RUN_HELP, common_flags
+from keelline.errors import Refusal
 from keelline.result import Result
-from keelline.scaffold import render_report
+from keelline.scaffold import Plan, render_report
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
@@ -138,6 +136,93 @@ def run_init(args: argparse.Namespace) -> Result:
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
 
+# The refused lines are `init`'s, word for word: a refused plan wrote nothing, whichever command
+# planned it.
+UPGRADE_HEADINGS = {**HEADINGS, (False, True): "would upgrade:", (False, False): "upgraded:"}
+FORCE_HELP = (
+    "overwrite or remove this hand-edited file anyway, as a path relative to --root; repeat for "
+    "each file, and never for one you did not mean"
+)
+# Fixed text: the value is what the operator typed, and the rule is what they can act on.
+FORCE_OUTSIDE = "--force takes a path relative to --root, with no '..' component"
+FORCE_UNMATCHED = (
+    "note: {count} --force path(s) named no file this run had to judge, so they forced nothing; "
+    "a path is compared exactly, relative to --root"
+)
+# A count: the ids of records this build does not produce are repository-authored.
+ORPHANS = (
+    "note: {count} record(s) in .keelline/manifest.json name artifacts this Keelline does not "
+    "produce; they were left where they are"
+)
+
+
+def _force_paths(raw: list[str]) -> tuple[str, ...]:
+    """Each `--force` value as the engine compares it: root-relative, with a leading `./` gone.
+
+    An absolute path or one with a `..` component is refused naming the rule, never the value.
+    """
+    paths: list[str] = []
+    for value in raw:
+        path = PurePosixPath(value.removeprefix("./"))
+        if path.is_absolute() or ".." in path.parts:
+            raise Refusal(FORCE_OUTSIDE)
+        paths.append(path.as_posix())
+    return tuple(paths)
+
+
+def _unmatched(force: tuple[str, ...], *plans: Plan) -> int:
+    """How many forced paths no planned action names: a typo, or a file with nothing to force."""
+    targets = {action.target for planned in plans for action in planned.actions}
+    return sum(1 for path in force if path not in targets)
+
+
+def run_upgrade(args: argparse.Namespace) -> Result:
+    from keelline.project.upgrade import upgrade
+    from keelline.runner import subprocess_runner
+
+    force = _force_paths(args.force)
+    report = upgrade(
+        Path(args.root).resolve(),
+        machine=Path(args.machine) if args.machine else None,
+        runner=subprocess_runner(),
+        dry_run=args.dry_run,
+        force=force,
+    )
+    refused = bool(report.footprint.refusals)
+    moved = "; ".join(
+        f"[{m.key.split('.')[0]}] {m.key.split('.')[1]} {m.before} -> {m.after}"
+        for m in report.moved
+    )
+    shown = render_report(report.footprint)
+    lines = [
+        UPGRADE_HEADINGS[(refused, report.dry_run)],
+        f"keelline.toml: {moved or 'nothing to move'}",
+        "footprint:",
+        shown,
+    ]
+    skipped = report.skipped.get("ci-workflow")
+    lines.append(f"CI: skipped — {skipped}" if skipped else "CI: the workflow pins [ci] ref")
+    if report.held:
+        lines.append(f"note: {report.held}")
+    if report.orphans:
+        lines.append(ORPHANS.format(count=report.orphans))
+    if unmatched := _unmatched(force, report.footprint):
+        lines.append(FORCE_UNMATCHED.format(count=unmatched))
+    pin = report.resolution.pin
+    data = {
+        "dry_run": report.dry_run,
+        "moved": [{"key": m.key, "before": m.before, "after": m.after} for m in report.moved],
+        "held": report.held,
+        "footprint": shown,
+        "writes": report.footprint.writes,
+        "skipped": dict(report.skipped),
+        "orphans": report.orphans,
+        "pin": {"tag": pin.tag, "sha": pin.sha} if pin else None,
+        "asked": report.resolution.asked,
+    }
+    return Result("\n".join(lines), data, exit_code=1 if refused else 0)
+
+
 def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `keelline.project.init`.
@@ -146,3 +231,7 @@ def register(groups: SubParsers) -> None:
     parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
     parser.set_defaults(func=run_init, ci=True)
+    upgrade = common_flags(groups.add_parser("upgrade", help="refresh this repository's footprint"))
+    upgrade.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
+    upgrade.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
+    upgrade.set_defaults(func=run_upgrade)
