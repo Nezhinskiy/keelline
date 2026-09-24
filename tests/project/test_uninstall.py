@@ -586,6 +586,8 @@ def test_a_workflow_the_mode_no_longer_renders_still_goes(tmp_path: Path) -> Non
     # `upgrade` keeps a workflow `uvx` merely does not render; `uninstall` asks where this build
     # could have written it, and nothing else. Measured before: the workflow was left, unlisted,
     # beside a deleted manifest, and counted as an artifact this Keelline does not produce.
+    # Mutation (oracle): "uninstall keeps a workflow the mode merely does not render, and leaves
+    # it unlisted" -> `.github/` stays and the assertion reddens.
     listing = LsRemote(stdout=f"{'a' * 40}\trefs/tags/v{keelline.__version__}\n", code=0)
     root = initialised(tmp_path, runner=listing, ci=True)
     config = root / CONFIG_FILE
@@ -618,6 +620,39 @@ def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_g
         ".keelline/assessment.json",
         ".keelline/assessment.json/theirs.md",
     }
+
+
+@needs_git
+def test_a_profile_artifact_listed_local_after_init_is_still_taken_back(tmp_path: Path) -> None:
+    """`init` and `upgrade` refuse a profile artifact in `[artifacts] local`, because every
+    pointer to it names the committed path. `uninstall` must not: a `keelline.toml` that lists
+    one, written before that rule or by hand since, would otherwise be a configuration nothing
+    can take back. The committed copy goes as a relocation, and what is left is the adopted
+    `keelline.toml`, the README from before, and `.claude/`, a harness's own directory that
+    `uninstall` never removes.
+
+    Mutation (oracle): "uninstall refuses a profile artifact kept out of git, so a
+    configuration written before that rule can never be taken back" -> the run raises the
+    profile refusal and this reddens at the call.
+    """
+    document = (
+        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n'
+        'agents = ["claude"]\n\n[project]\nname = "widget"\n\n[ci]\nmode = "none"\n'
+    )
+    root = initialised(tmp_path, document=document)
+    rule = ".claude/rules/keelline-python.md"
+    assert (root / rule).is_file()
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[artifacts]\nlocal = ["claude-rules"]\n',
+        encoding="utf-8",
+    )
+    report = _uninstall(root, tmp_path)
+    assert (Verb.REMOVE, rule, "relocated") in {
+        (a.verb, a.target, a.reason) for a in report.footprint.actions
+    }
+    assert tree(root) == {".claude", "README.md", CONFIG_FILE}
+    assert report.orphans == 0 and report.kept_locally == 0
 
 
 @needs_git

@@ -83,8 +83,9 @@ def test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written(
 ) -> None:
     # `footprint.refuse_local_profile` at the second entry point that writes a footprint: a
     # `keelline.toml` edited by hand after `init` meets it here. `uninstall` does not apply it, so
-    # the same file can still be taken back. Mutation (oracle): "a profile artifact kept out of
-    # git is written, and every pointer to it dangles" drops the condition both share.
+    # the same file can still be taken back (`test_uninstall.py` holds that half). Mutation
+    # (oracle): "a profile artifact kept out of git is written, and every pointer to it dangles"
+    # drops the condition both share.
     root = initialised(tmp_path)
     (root / CONFIG_FILE).write_text(
         f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n'

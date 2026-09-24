@@ -6442,6 +6442,15 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written",
 ]
 
+# `uninstall` does not apply the profile refusal `init` and `upgrade` apply, so a configuration
+# that lists a profile artifact in `[artifacts] local` can still be taken back.
+[[mutation]]
+name = "uninstall refuses a profile artifact kept out of git, so a configuration written before that rule can never be taken back"
+file = "src/keelline/project/footprint.py"
+before = "    if not removing:\n        refuse_local_profile(prepared, config)\n"
+after = "    if True:\n        refuse_local_profile(prepared, config)\n"
+reddens = ["tests/project/test_uninstall.py::test_a_profile_artifact_listed_local_after_init_is_still_taken_back"]
+
 # An artifact kept out of git has no record, and its directory is git-ignored: an edit
 # overwritten or removed there is gone for good, so it is judged against this build's render.
 [[mutation]]
@@ -6565,6 +6574,16 @@ file = "src/keelline/project/footprint.py"
 before = '        retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")'
 after = "        retired = tuple(retired)"
 reddens = ["tests/project/test_upgrade.py::test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate"]
+
+# The other half of the same policy: `uninstall` retires every record it may, the workflow of a
+# mode this build merely does not render included, or it is left, unlisted, beside a deleted
+# manifest.
+[[mutation]]
+name = "uninstall keeps a workflow the mode merely does not render, and leaves it unlisted"
+file = "src/keelline/project/footprint.py"
+before = "    if not removing:\n        retired = tuple("
+after = "    if True:\n        retired = tuple("
+reddens = ["tests/project/test_uninstall.py::test_a_workflow_the_mode_no_longer_renders_still_goes"]
 
 [[mutation]]
 name = "an upgrade dry run writes the footprint"
