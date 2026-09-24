@@ -1025,7 +1025,10 @@ bytes the same commit records, and a region only where its key names; the diff s
 removed or rewritten: the run is refused (`2`) before any removal, dry run included, by
 `upgrade`'s rule, naming the files. Take Keelline's part out of them by hand, or take the
 `[paths]` key out of `keelline.toml`; the run then leaves those files where they are and lists
-them. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any other. Run it
+them. That includes a file Keelline itself created at an ignored place a `[paths]` value chose
+(`roadmap = "build/roadmap.md"` under an ignored `build/`, say): creating it was allowed because
+nothing was there, and by the time `uninstall` runs it exists, so this refusal meets it, and
+taking the key out is the remedy that finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any other. Run it
 on a checkout you trust.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every

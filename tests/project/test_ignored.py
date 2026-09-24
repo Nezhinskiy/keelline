@@ -219,6 +219,31 @@ def test_a_new_file_at_an_ignored_place_a_paths_value_chose_is_written(tmp_path:
 
 
 @needs_git
+def test_a_file_created_at_an_ignored_paths_place_is_refused_on_uninstall_until_the_key_goes(
+    tmp_path: Path,
+) -> None:
+    # The existence rule that let `init` create it meets it on `uninstall`, and the remedy the
+    # refusal and docs/cli.md give, taking the key out, finishes the run with the file left.
+    root = _repository(tmp_path)
+    (root / ".gitignore").write_text("build/\n", encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(DOCUMENT + '\n[paths]\nroadmap = "build/roadmap.md"\n', encoding="utf-8")
+    _init(root, tmp_path)
+    with pytest.raises(Refusal) as refused:
+        _uninstall(root, tmp_path)
+    # The roadmap and the trail beside it, both where the key put them.
+    names = "build/roadmap.md, build/trail.toml"
+    assert str(refused.value) == IGNORED_REMOVING.format(count=2, names=names)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('\n[paths]\nroadmap = "build/roadmap.md"\n', ""),
+        encoding="utf-8",
+    )
+    _uninstall(root, tmp_path)
+    assert (root / "build" / "roadmap.md").is_file() and (root / "build" / "trail.toml").is_file()
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
 def test_a_tracked_file_matching_an_ignore_pattern_is_not_ignored(tmp_path: Path) -> None:
     # `check-ignore` without `--no-index`: git shows every change to a tracked file, whatever
     # pattern it matches, so the region may go into one. Mutation (advisory): add `--no-index`
