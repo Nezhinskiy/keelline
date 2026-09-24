@@ -14,7 +14,12 @@ import keelline
 from keelline.attach.api import LEDGER
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
-from keelline.project.templates import LOCAL_ROOT_ONLY, ROOT_ONLY
+from keelline.project.templates import (
+    CONFIG_ARTIFACT,
+    IGNORE_ARTIFACT,
+    LOCAL_ROOT_ONLY,
+    ROOT_ONLY,
+)
 from keelline.project.uninstall import (
     ATTACHED,
     DELETED_CONFIG,
@@ -691,12 +696,11 @@ def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_wr
 
 
 def test_the_root_only_artifacts_are_the_two_uninstall_removes_after_its_check() -> None:
-    # `ROOT_ONLY` is spelled in `project.templates`; the ids it must match are the config record
-    # and the ignore pass `uninstall` holds back, so a rename of either reddens here.
-    from keelline.project.rewrite import CONFIG_RECORD
-    from keelline.project.uninstall import IGNORE
-
-    assert set(ROOT_ONLY) == {CONFIG_RECORD, IGNORE}
+    # `ROOT_ONLY` must name the configuration's record and the ignore region, the two artifacts
+    # `uninstall` holds back past its check of `.keelline/local/`, so naming any other reddens
+    # here. Both ids are spelled once and pinned to what the templates build in
+    # `tests/project/test_templates.py`.
+    assert set(ROOT_ONLY) == {CONFIG_ARTIFACT, IGNORE_ARTIFACT}
 
 
 LOCAL_COPY = ".keelline/local/artifacts/docs/roadmap.md"

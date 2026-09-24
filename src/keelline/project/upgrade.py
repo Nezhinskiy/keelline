@@ -60,6 +60,7 @@ from keelline.overlay.api import later
 from keelline.project.ignored import refuse_ignored
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
 from keelline.project.templates import (
+    CI_ARTIFACT,
     CI_REF,
     Prepared,
     project_templates,
@@ -158,17 +159,17 @@ def _footprint(
     retired, orphans = retired_templates(
         prepared.could_write, Manifest.read(root).records, produced
     )
-    retired = tuple(t for t in retired if t.id != "ci-workflow" or config.ci.mode == "none")
+    retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")
     # The workflow is planned after everything else, retirements included, so a write that fails
     # part-way leaves its pin agreeing with the `[ci] ref` that `keelline.toml` still holds.
     templates = (*prepared.footprint, *retired)
-    ordered = sorted(templates, key=lambda t: t.id == "ci-workflow")
+    ordered = sorted(templates, key=lambda t: t.id == CI_ARTIFACT)
     return prepared, plan(root, config, ordered, force=force), orphans
 
 
 def _rewrites_the_workflow(footprint: Plan) -> bool:
-    return "ci-workflow" in footprint.unchanged or any(
-        a.artifact_id == "ci-workflow" and a.verb in (Verb.CREATE, Verb.UPDATE)
+    return CI_ARTIFACT in footprint.unchanged or any(
+        a.artifact_id == CI_ARTIFACT and a.verb in (Verb.CREATE, Verb.UPDATE)
         for a in footprint.actions
     )
 

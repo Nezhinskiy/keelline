@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.layout import rules_file
+from keelline.config.loader import CONFIG_FILE
 from keelline.config.schema import Config
 from keelline.docs.api import trail_target
 from keelline.errors import Failure, Refusal
@@ -72,9 +73,17 @@ COMPUTED = "computed"
 # `profile/<name>/rules.md` names a file the wheel carries under `keelline/profiles/`.
 PROFILE = "profile"
 CLAUDE_MD = "CLAUDE.md"
-CONFIG_FILE = "keelline.toml"
 HARNESS_REGION = "harness"
 CI_WORKFLOW = ".github/workflows/keelline.yml"
+# The three artifact ids a command's own rules name, spelled once. The workflow is planned last
+# and kept through a `[ci] mode` this build merely does not render (`CI_ARTIFACT`); `rewrite_owned`
+# re-stamps the configuration's record (`CONFIG_ARTIFACT`); `uninstall` removes the ignore region
+# last, and neither of the two may be kept out of git (`IGNORE_ARTIFACT`). An id is also what
+# every initialised repository's committed manifest records, so none of them is renamed lightly:
+# `tests/project/test_templates.py` holds all three to the ids the templates build.
+CI_ARTIFACT = "ci-workflow"
+CONFIG_ARTIFACT = "config"
+IGNORE_ARTIFACT = "gitignore"
 # The grammar `[ci] gate_branch` must match before it is written into the rendered workflow.
 # The value is repository-authored and lands in two places in one YAML file — a `branches:`
 # list and a shell-free `${{ }}` default — so it is quoted there *and* held to a shape here:
@@ -143,7 +152,7 @@ BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was re
 # it appends the rendition, so a harness added to the registry needs no line here.
 OWN_NAME = "a fixed name of Keelline's own"
 PATH_KEYS = {
-    "config": OWN_NAME,
+    CONFIG_ARTIFACT: OWN_NAME,
     "agents-skeleton": "paths.agents_md",
     "claude-md": OWN_NAME,
     "documentation-policy": "paths.architecture",
@@ -156,9 +165,9 @@ PATH_KEYS = {
     "trail": "paths.roadmap",
     "specs-keep": "paths.specs",
     "plans-keep": "paths.plans",
-    "gitignore": OWN_NAME,
+    IGNORE_ARTIFACT: OWN_NAME,
     "agents-md": "paths.agents_md",
-    "ci-workflow": OWN_NAME,
+    CI_ARTIFACT: OWN_NAME,
     "profile-rules": "paths.keelline",
 }
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
@@ -219,7 +228,7 @@ def refuse_local_profile(prepared: Prepared, config: Config) -> None:
 # `keelline.toml` there, and the ignore block there is what keeps `.keelline/local/` out of git.
 # A copy under `.keelline/local/artifacts/` is never read, and `uninstall` could not remove either
 # one before it checks what is left under `.keelline/local/`, because both go after that check.
-ROOT_ONLY = ("config", "gitignore")
+ROOT_ONLY = (CONFIG_ARTIFACT, IGNORE_ARTIFACT)
 # Fixed text: the names interpolated are drawn from `ROOT_ONLY`, artifact ids this build produces,
 # never from the repository-authored list.
 # `can work` and `take {names} out` rather than `work` and `take them out`: one sentence that
@@ -428,7 +437,7 @@ def _ci(
     gate = config.ci.gate_branch
     return (
         _template(
-            "ci-workflow",
+            CI_ARTIFACT,
             CI_WORKFLOW,
             "keelline.yml",
             render=lambda: fill(
@@ -546,7 +555,7 @@ def project_templates(
     harnesses, unknown_harnesses = select(config.keelline.agents)
     p = config.paths
     once = (
-        _computed("config", CONFIG_FILE, lambda: document, kind=Kind.ONCE),
+        _computed(CONFIG_ARTIFACT, CONFIG_FILE, lambda: document, kind=Kind.ONCE),
         _template(
             "agents-skeleton",
             p.agents_md,
@@ -580,7 +589,7 @@ def project_templates(
         _template("specs-keep", f"{p.specs}/.gitkeep", "gitkeep"),
         _template("plans-keep", f"{p.plans}/.gitkeep", "gitkeep"),
         _computed(
-            "gitignore",
+            IGNORE_ARTIFACT,
             ".gitignore",
             lambda: IGNORE_BODY,
             kind=Kind.MANAGED_REGION,
@@ -608,9 +617,9 @@ def project_templates(
     could_write: dict[str, set[str]] = {}
     workflow, reason = _ci(config, resolution, adopted=adopted)
     # Where `_ci` builds the workflow, whatever `[ci] mode` asks for now.
-    could_write["ci-workflow"] = {CI_WORKFLOW}
+    could_write[CI_ARTIFACT] = {CI_WORKFLOW}
     if workflow is None and reason is not None:
-        skipped["ci-workflow"] = reason
+        skipped[CI_ARTIFACT] = reason
     keys = dict(PATH_KEYS)
     profiled: set[str] = set()
     # Every shipped profile's artifacts are built, so `could_write` lists where each could land;

@@ -43,6 +43,7 @@ from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.ignored import refuse_ignored
 from keelline.project.templates import (
+    CI_ARTIFACT,
     project_templates,
     refuse_local_profile,
     refuse_local_root_only,
@@ -230,7 +231,7 @@ def init(
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
-    ref = "" if "ci-workflow" in prepared.skipped else config.ci.ref
+    ref = "" if CI_ARTIFACT in prepared.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)

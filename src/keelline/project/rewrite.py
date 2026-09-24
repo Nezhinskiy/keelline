@@ -31,10 +31,10 @@ from keelline.config.loader import CONFIG_FILE, read_document
 from keelline.config.owned import Value, rewrite
 from keelline.errors import Refusal
 from keelline.fsops import UnsafePath, write_within
+from keelline.project.templates import CONFIG_ARTIFACT
 from keelline.scaffold import Manifest, ManifestError, digest
 
 NO_DOCUMENT = f"{CONFIG_FILE} is not there, so there is no tool-owned key to rewrite"
-CONFIG_RECORD = "config"
 
 
 def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
@@ -45,7 +45,7 @@ def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
     if document == text:
         return
     manifest = Manifest.read(root)
-    record = manifest.get(CONFIG_RECORD)
+    record = manifest.get(CONFIG_ARTIFACT)
     stamped = None
     if record is not None and record.sha256 == digest(text):
         stamped = replace(record, sha256=digest(document), version=keelline.__version__)

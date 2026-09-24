@@ -73,6 +73,7 @@ YES_HELP = (
 
 def run_init(args: argparse.Namespace) -> Result:
     from keelline.project.init import init
+    from keelline.project.templates import CI_ARTIFACT
     from keelline.runner import subprocess_runner
 
     root = Path(args.root).resolve()
@@ -87,12 +88,12 @@ def run_init(args: argparse.Namespace) -> Result:
     )
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
-    skipped = report.skipped.get("ci-workflow")
+    skipped = report.skipped.get(CI_ARTIFACT)
     # `skipped is not None` is the whole condition, and the `or not report.ref` that stood
     # beside it and the `or 'no workflow was planned'` under it were both unreachable.
     # `templates._ci` returns a rendered workflow only for a non-empty `[ci] ref` that matches
     # `CI_REF`, and returns a non-empty reason in every other arm; `init` then derives
-    # `report.ref` as `"" if "ci-workflow" in prepared.skipped else config.ci.ref`. So a run
+    # `report.ref` as `"" if CI_ARTIFACT in prepared.skipped else config.ci.ref`. So a run
     # with no skip has a ref, the fallback string could never be formatted, and the disjunct
     # could never be the reason this branch was taken. `init`'s own comment calls the two "one
     # value by construction" and `doctor`'s `ci-ref` row enforces it; an unreachable arm that
@@ -185,6 +186,7 @@ def _unmatched(force: tuple[str, ...], *plans: Plan) -> int:
 
 
 def run_upgrade(args: argparse.Namespace) -> Result:
+    from keelline.project.templates import CI_ARTIFACT
     from keelline.project.upgrade import upgrade
     from keelline.runner import subprocess_runner
 
@@ -208,7 +210,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         "footprint:",
         shown,
     ]
-    skipped = report.skipped.get("ci-workflow")
+    skipped = report.skipped.get(CI_ARTIFACT)
     if skipped:
         lines.append(f"CI: skipped — {skipped}")
     else:

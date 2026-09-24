@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
-from keelline.config.loader import preset_defaults
+from keelline.config.loader import CONFIG_FILE, preset_defaults
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.harnesses import HARNESSES
@@ -18,7 +18,11 @@ from keelline.ledger.api import render_index
 from keelline.profiles import load_profile
 from keelline.project.api import PROJECT_FILES, Prepared, project_templates
 from keelline.project.templates import (
+    CI_ARTIFACT,
+    CI_WORKFLOW,
     COMPUTED,
+    CONFIG_ARTIFACT,
+    IGNORE_ARTIFACT,
     LOCAL_PROFILE,
     NO_REF,
     PATH_KEYS,
@@ -335,6 +339,31 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file(tmp_path: Path) -
     once_clash = replace(config, paths=replace(config.paths, agents_md="CLAUDE.md"))
     with pytest.raises(Refusal, match=r"claude-md|agents-skeleton"):
         _prepared(once_clash, root=tmp_path)
+
+
+def test_the_artifact_ids_the_commands_name_are_the_ones_the_templates_build() -> None:
+    """`CI_ARTIFACT`, `CONFIG_ARTIFACT` and `IGNORE_ARTIFACT` are what `upgrade`, `uninstall`,
+    `rewrite_owned` and the placement refusals name an artifact by. Each must be the id of the
+    template at its own place, and each must stay the string it is: every initialised
+    repository's committed manifest records it, and `attach`'s `detach` reads the ignore region's
+    record by that literal, since the attach area imports nothing from this one.
+
+    Mutation (advisory): build the workflow under a literal id of its own -> the first
+    assertion reddens; rename a constant -> the last one does.
+    """
+    prepared = project_templates(
+        Path("/nonexistent/root"),
+        _recording(preset_defaults("widget")),
+        resolution=PINNED,
+        document=DOCUMENT,
+        adopted=False,
+    )
+    built = (*prepared.once, *prepared.footprint)
+    assert {t.id for t in built if t.target == CI_WORKFLOW} == {CI_ARTIFACT}
+    assert {t.id for t in prepared.once if t.target == CONFIG_FILE} == {CONFIG_ARTIFACT}
+    assert {t.id for t in built if t.region == IGNORE_REGION} == {IGNORE_ARTIFACT}
+    assert {t.target for t in built if t.id == IGNORE_ARTIFACT} == {".gitignore"}
+    assert (CI_ARTIFACT, CONFIG_ARTIFACT, IGNORE_ARTIFACT) == ("ci-workflow", "config", "gitignore")
 
 
 def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> None:

@@ -71,7 +71,7 @@ then means "stopped part-way": what was done is on disk and in the manifest, `ke
 still there, and running the command again re-plans from there to the end.
 
 **Without `keelline.toml`, nothing can be judged.** While the manifest still records the file
-(`CONFIG_RECORD`), something other than this command took it, a person deleting it above all:
+(`CONFIG_ARTIFACT`), something other than this command took it, a person deleting it above all:
 this command's own removal goes through `apply`, which drops the record with the file. Going on
 would drop the manifest and leave every recorded file untracked for good, so the run refuses
 before any write and says to restore the file (`DELETED_CONFIG`). With no such record, either a
@@ -96,8 +96,9 @@ from keelline.config.paths import KEELLINE_DIRECTORY, contained
 from keelline.errors import Refusal
 from keelline.fsops import remove_within, rmdir_within
 from keelline.project.ignored import refuse_ignored
-from keelline.project.rewrite import CONFIG_RECORD
 from keelline.project.templates import (
+    CONFIG_ARTIFACT,
+    IGNORE_ARTIFACT,
     project_templates,
     refuse_local_root_only,
     retired_templates,
@@ -147,8 +148,6 @@ ORDER_NOTE = (
     "AGENTS.md is judged twice: the dry run sees the skeleton with Keelline's region still in "
     "it and calls it edited, and the real run takes the region out first and judges what is left"
 )
-# The footprint's ignore region: what keeps `.keelline/local/` out of git, so it goes last.
-IGNORE = "gitignore"
 NO_CONFIG = (
     "keelline.toml is not there, so nothing the manifest records can be judged: those {count} "
     "file(s) stay where they are, and only the ledger goes"
@@ -301,7 +300,7 @@ def uninstall(
     manifest = Manifest.read(root)
     document = read_document(root)
     if document is None:
-        if CONFIG_RECORD in manifest.records:
+        if CONFIG_ARTIFACT in manifest.records:
             raise Refusal(DELETED_CONFIG)
         # Only the ledger: without the configuration nothing says where its artifacts were, and a
         # target the manifest records is a committed string. No run of this command reaches here
@@ -325,8 +324,8 @@ def uninstall(
     once_retired = _retire(prepared.once, wanted)
     # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and
     # the manifest are there, a run stopped at any earlier point is finished by the next one.
-    once_body = [t for t in once_retired if t.id != CONFIG_RECORD]
-    config_retired = [t for t in once_retired if t.id == CONFIG_RECORD]
+    once_body = [t for t in once_retired if t.id != CONFIG_ARTIFACT]
+    config_retired = [t for t in once_retired if t.id == CONFIG_ARTIFACT]
     # Paths as the engine resolves them: an `[artifacts] local` target lives under
     # `.keelline/local/artifacts/`, which `Template.target` does not say.
     footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}
@@ -357,7 +356,9 @@ def uninstall(
         return UninstallReport(footprint, once, orphans, dry_run, note, kept)
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
-    body = plan(root, config, [t for t in footprint_retired if t.id != IGNORE], force=force)
+    body = plan(
+        root, config, [t for t in footprint_retired if t.id != IGNORE_ARTIFACT], force=force
+    )
     _apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
@@ -369,7 +370,10 @@ def uninstall(
     if left:
         raise Refusal(KEPT_AFTER.format(count=left))
     _remove_local_artifacts(root)
-    ignore = plan(root, config, [t for t in footprint_retired if t.id == IGNORE], force=force)
+    # The footprint's ignore region: what keeps `.keelline/local/` out of git, so it goes last.
+    ignore = plan(
+        root, config, [t for t in footprint_retired if t.id == IGNORE_ARTIFACT], force=force
+    )
     _apply(root, ignore)
     last = plan(root, config, config_retired, force=once_force)
     _apply(root, last)
