@@ -129,7 +129,11 @@ def _footprint(
     produced = {t.id for t in (*prepared.once, *prepared.footprint)}
     retired, orphans = retired_templates(prepared.could_write, recorded, produced)
     retired = tuple(t for t in retired if t.id != "ci-workflow" or config.ci.mode == "none")
-    return prepared, plan(root, config, (*prepared.footprint, *retired), force=force), orphans
+    # The workflow is planned after everything else, retirements included, so a write that fails
+    # part-way leaves its pin agreeing with the `[ci] ref` that `keelline.toml` still holds.
+    templates = (*prepared.footprint, *retired)
+    ordered = sorted(templates, key=lambda t: t.id == "ci-workflow")
+    return prepared, plan(root, config, ordered, force=force), orphans
 
 
 def _rewrites_the_workflow(footprint: Plan) -> bool:

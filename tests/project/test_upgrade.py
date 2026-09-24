@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import keelline
+from keelline import fsops
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project import templates
@@ -21,7 +22,7 @@ from keelline.project.upgrade import (
     UpgradeReport,
     upgrade,
 )
-from keelline.scaffold import Manifest, Record, Verb, digest
+from keelline.scaffold import Manifest, Record, Verb, digest, engine
 from keelline.scaffold.manifest import Kind, Location
 from tests.gitfixture import LsRemote, needs_git
 from tests.project.repos import initialised
@@ -235,6 +236,46 @@ def test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced(
     forced = _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=(WORKFLOW.as_posix(),))
     assert [m.key for m in forced.moved] == ["keelline.version", "ci.ref"] and not forced.held
     assert f"@{NEW}\n" in workflow.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_write_that_fails_part_way_leaves_the_pin_agreeing_and_the_next_run_converges(
+    tmp_path: Path, newer: Callable[[], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The workflow's pin and `[ci] ref` are one value, and `keelline.toml` is written after the
+    # whole footprint. Planned before the profile's artifacts, the workflow was already at the
+    # new commit when a later write failed, while `keelline.toml` still recorded the old one,
+    # and `doctor` reported the two apart until the next run. Planned last, a failure anywhere
+    # before it leaves both on the old commit. Mutation (advisory): plan the workflow before the
+    # profile's artifacts again -> the first assertion after the failure reddens.
+    root = _pinned(tmp_path)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[keelline]\n", '[keelline]\nprofile = "python"\n', 1
+        ),
+        encoding="utf-8",
+    )
+    newer()
+    original = fsops.write_within
+
+    def failing(where: Path, target: str, payload: str) -> None:
+        if target.endswith("/python.md"):
+            raise OSError("no space left on device")
+        original(where, target, payload)
+
+    monkeypatch.setattr(engine, "write_within", failing)
+    with pytest.raises(Refusal, match="cannot be written"):
+        _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    text = config.read_text(encoding="utf-8")
+    assert f'ref = "{OLD}"' in text and f"@{OLD}\n" in (root / WORKFLOW).read_text(encoding="utf-8")
+
+    monkeypatch.setattr(engine, "write_within", original)
+    report = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    text = config.read_text(encoding="utf-8")
+    assert 'version = "9.9.9"' in text and f'ref = "{NEW}"' in text
+    assert f"@{NEW}\n" in (root / WORKFLOW).read_text(encoding="utf-8")
+    assert [m.key for m in report.moved] == ["keelline.version", "ci.ref"]
 
 
 @needs_git

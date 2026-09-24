@@ -566,9 +566,7 @@ def project_templates(
     workflow, reason = _ci(config, resolution, adopted=adopted)
     # Where `_ci` builds the workflow, whatever `[ci] mode` asks for now.
     could_write["ci-workflow"] = {CI_WORKFLOW}
-    if workflow is not None:
-        footprint.append(workflow)
-    elif reason is not None:
+    if workflow is None and reason is not None:
         skipped["ci-workflow"] = reason
     keys = dict(PATH_KEYS)
     profiled: set[str] = set()
@@ -589,6 +587,11 @@ def project_templates(
                 footprint.append(template)
                 keys.setdefault(template.id, OWN_NAME)
                 profiled.add(template.id)
+    # The workflow last: the engine writes a plan in order, and the workflow's pin is one value
+    # with `[ci] ref`, which `upgrade` writes after the whole footprint. Planned last, a write
+    # that fails part-way leaves the workflow on the ref `keelline.toml` still records.
+    if workflow is not None:
+        footprint.append(workflow)
     _one_target_each(once)
     _one_target_each(footprint, keys)
     for template in (*once, *footprint):
