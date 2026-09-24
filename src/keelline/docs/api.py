@@ -14,8 +14,8 @@ commands. So every other name below is here on an argument rather than on a call
 argument is written beside it — a surface that survives a trim with no explanation is what made
 the trim necessary.
 
-Those five are the four checks this area *is*, one call each, and the one record one of them
-returns:
+The five besides `trail_target` are the four checks this area *is*, one call each, and the one
+record one of them returns:
 
 - `check_budgets`, `check_links` and `check_memory_graph` each answer one question about the
   documentation tree and return `Finding`s from `keelline.findings`, the leaf three areas
