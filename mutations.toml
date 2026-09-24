@@ -6767,15 +6767,16 @@ reddens = ["tests/project/test_uninstall.py::test_a_keelline_toml_deleted_by_han
 # acceptable is that the diff shows it. Git shows nothing for a file it ignores: a pulled commit
 # naming a git-ignored `.env` had `upgrade` append Keelline's region to it with only the manifest
 # in `git status`, and a record stating a predictable ignored file's digest had `uninstall` delete
-# it. One `check-ignore` before any write refuses the run for `init`, `upgrade` and `uninstall`.
+# it. One `check-ignore` before any write refuses the run for `init`, `upgrade` and `uninstall`
+# when an existing file at a place a `[paths]` value chose is ignored.
 [[mutation]]
 name = "a write git ignores goes ahead"
 file = "src/keelline/project/ignored.py"
-before = "        if ignored:\n            raise Refusal(IGNORED"
-after = "        if False:\n            raise Refusal(IGNORED"
+before = "        if ignored:\n            names"
+after = "        if False:\n            names"
 reddens = [
   "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
-  "tests/project/test_ignored.py::test_init_refuses_a_path_git_ignores_and_writes_nothing",
+  "tests/project/test_ignored.py::test_init_refuses_an_existing_ignored_file_a_paths_value_names",
   "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
 ]
 

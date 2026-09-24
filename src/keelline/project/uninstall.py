@@ -21,10 +21,11 @@ whose exact bytes the same commit records, or the region a template of this buil
 diff shows the `[paths]` edit and the record. The kind a record carries is committed too, and all
 it can do here is turn a removal into an orphan. Nothing committed reaches `.git/` or
 `.keelline/`: the loader refuses a `[paths]` value inside either, and the manifest is read through
-`contained()`, so a symlinked `.keelline/` is a refusal. Nothing git ignores is reached either:
-`ignored.refuse_ignored` refuses the run before any write when git ignores a file a plan would
-remove or rewrite, `.keelline/local/artifacts/` excepted. That is the whole boundary, and why
-`docs/cli.md` says to run it on a checkout you trust.
+`contained()`, so a symlinked `.keelline/` is a refusal. Nor is a file git ignores at a place a
+`[paths]` value chose: `ignored.refuse_ignored` refuses the run before any write when git ignores
+an existing file there that a plan would remove or rewrite, `.keelline/local/artifacts/` excepted,
+and says to take the key out, after which the file is left and listed. That is the whole
+boundary, and why `docs/cli.md` says to run it on a checkout you trust.
 
 **Two passes, footprint first.** `AGENTS.md` holds the write-once skeleton and the footprint's
 `harness` region. Once the region is out, an untouched skeleton is byte-identical to the one
@@ -340,7 +341,7 @@ def uninstall(
     once = plan(root, config, once_retired, force=once_force)
     # The later passes re-plan the same templates at the same targets, so these two plans name
     # every file the run can write or remove.
-    refuse_ignored(root, footprint, once)
+    refuse_ignored(root, config, footprint, once, removing=True)
     note = ORDER_NOTE if dry_run else ""
     # Before any write, how many files under `.keelline/local/` the run would leave. A file goes
     # only when an action unlinks it, or when a region's removal leaves the bytes the write-once

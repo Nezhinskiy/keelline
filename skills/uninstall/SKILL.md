@@ -38,5 +38,9 @@ edited stays where it is and is listed.
   removed, and `keelline.toml` and the manifest stay so the next run can finish. Relay it as
   printed, run `git status` to show the user what changed, and after they deal with the cause run
   `keelline uninstall --dry-run` again.
+- **A refusal saying git ignores files at a place a `[paths]` value chose removed nothing.**
+  Relay it with the files it names. Taking Keelline's part out of them by hand, or taking that
+  key out of `keelline.toml` so the run leaves them in place and lists them, is the user's
+  decision; never do either yourself.
 - **A target printed as `<id>` is one the manifest recorded outside the path grammar.** Relay it
   as printed, and never look up or guess the path behind it.

@@ -770,8 +770,9 @@ network reachable while nothing is written yet, and `keelline upgrade` once it i
 
 **Reads** `keelline.toml` when there is one, `.keelline/manifest.json`, `git` for the name and
 the base branch and for the public repository's tags, which harness directories the root carries
-(`.claude/`, `.codex/`), each shipped profile's marker files at the root, and every file an
-artifact targets, and `git check-ignore` for each of them. **Writes** `keelline.toml`,
+(`.claude/`, `.codex/`), each shipped profile's marker files at the root, every file an artifact
+targets, and `git check-ignore` for each existing file a write targets at a place a `[paths]`
+value chose. **Writes** `keelline.toml`,
 `CLAUDE.md`, `[paths] agents_md`, `.gitignore`, the documents in the table above (the profile's
 rules and the Claude pointer only when a profile is set), `.github/workflows/keelline.yml` where a
 ref is recorded, `.keelline/manifest.json`, and `.keelline/local/artifacts.json` when
@@ -790,8 +791,8 @@ component that is a symlink — all three refused by the loader before a plan ex
 artifacts of one pass that resolve to one file, which is named with the two `[paths]` keys to
 separate, an `[artifacts] local` list naming a profile artifact, which every pointer at it reads
 at its committed path, one naming `config` or `gitignore`, which only work at the repository
-root, and a planned write git reports ignored, counted and never named (see `upgrade`'s
-boundary).
+root, and a write git would hide, at an existing file a `[paths]` value chose, which the refusal
+names (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -897,21 +898,27 @@ records. A managed region is inserted into whatever file its key names: a commit
 `[paths] agents_md` at another tracked file gets the region written into that file, and the diff
 shows both the edit and the region. No `[paths]` value may name git's control directory or
 Keelline's own `.keelline/`, where attach's ledger and the local-only notes live out of git's
-sight; the loader refuses either, naming the key. And a file git ignores is never written or
-removed: when git reports any file the run would write or remove as ignored, the run is refused
-(`2`) before anything is written, dry run included, with a count and never the paths. A tracked
-file that matches an ignore pattern is not ignored, because git shows every change to it; the
-artifacts `[artifacts] local` keeps under `.keelline/local/artifacts/` are exempt, since keeping
-them out of git is what that setting asks for; and outside a git work tree there is no guard,
-because there is no diff to hide from. Run it on a checkout you trust. There are no
-hooks to re-trust afterwards: `init` writes no project-level hook entries, so an upgrade changes
-none.
+sight; the loader refuses either, naming the key. And a committed `[paths]` value cannot put a
+write or a removal where git would hide it: the run is refused (`2`) before anything is written,
+dry run included, when all three of these hold for a file it would write or remove — the file
+exists, git ignores it, and it is at a place a `[paths]` value chose rather than where the preset
+puts that artifact. The refusal names each such file, as the report prints paths, and says to
+point the key at a path git does not ignore or take it out. A new file, a fixed name
+(`CLAUDE.md`, `keelline.toml`, `.gitignore`, the workflow, a harness's rule) and a preset's own
+place are never refused, so a `CLAUDE.md` in your global excludes or a `keelline.toml` in
+`.git/info/exclude` works as before. A tracked file that matches an ignore pattern is not
+ignored, because git shows every change to it; the artifacts `[artifacts] local` keeps under
+`.keelline/local/artifacts/` are exempt, since keeping them out of git is what that setting asks
+for; and outside a git work tree there is no guard, because there is no diff to hide from. Run
+it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes no
+project-level hook entries, so an upgrade changes none.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
-file an artifact targets and `git check-ignore` for each, and, under `[ci] mode = "reusable"`, the
-public repository's tags. **Writes** the footprint through the scaffold engine, and the record
-of what it wrote kept out of git, then `keelline.toml`, last, so the version is the commit point: a run
-interrupted before it leaves the old version recorded, and the next run re-plans from there.
+file an artifact targets, `git check-ignore` for each existing file a write or removal targets at
+a place a `[paths]` value chose, and, under `[ci] mode = "reusable"`, the public repository's
+tags. **Writes** the footprint through the scaffold engine, and the record of what it wrote kept
+out of git, then `keelline.toml`, last, so the version is the commit point: a run interrupted
+before it leaves the old version recorded, and the next run re-plans from there.
 
 Exits `0` when it applied the plan or there was nothing to do. `1` on a finding: the plan carries
 refusals — the report's REFUSED section names each, and nothing was written — or a
@@ -919,9 +926,10 @@ refusals — the report's REFUSED section names each, and nothing was written �
 repository is not initialised, `keelline.toml` is missing, it records a newer Keelline, a
 version with no leading `X.Y.Z` or one Keelline does not order against the running one, a key is
 written in a shape the editor refuses, a profile artifact, `config` or `gitignore` is listed in
-`[artifacts] local`, git reports a file the run would write or remove as ignored, or a `--force`
-path leaves `--root`. `2` also when a file cannot be written or removed part-way through; what was already
-applied stays applied and recorded, and running the command again re-plans from there.
+`[artifacts] local`, git ignores an existing file the run would write or remove at a place a
+`[paths]` value chose, or a `--force` path leaves `--root`. `2` also when a file cannot be written
+or removed part-way through; what was already applied stays applied and recorded, and running the
+command again re-plans from there.
 
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
@@ -967,8 +975,8 @@ after the disk shows nothing left under `.keelline/local/`. Every directory abov
 removed goes once it is empty, deepest first, and no other: an empty directory a `[paths]` value
 merely names may be yours. Then `keelline.toml`, which the write-once pass holds back for this
 point; then the ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/`
-once it is empty. A directory someone committed where a ledger file belongs stays. So does a harness's
-own directory (`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have
+once it is empty. A directory someone committed where a ledger file belongs stays. So does a
+harness's own directory (`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have
 created `.claude/` to hold the rule it wrote there, but nothing records who made an empty
 directory, and to `init` its presence means the project uses that harness. So a later `init`
 detects that harness and lists it in `[keelline] agents` until you remove the directory.
@@ -978,8 +986,9 @@ overlay, so run `keelline detach` first; `keelline.toml` is missing while the ma
 it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the
 repository root, so take them out of the list; `.keelline/local/` holds files this run would not
 remove, such as notes, or an artifact kept out of git that changed since Keelline wrote it, which
-the refusal counts and never names; git reports a file the run would remove or rewrite as ignored,
-counted and never named; or a `--force` path leaves `--root`. The count is exact before anything
+the refusal counts and never names; git ignores an existing file the run would remove or rewrite
+at a place a `[paths]` value chose, which the refusal names; or a `--force` path leaves
+`--root`. The count is exact before anything
 is written, including what taking a region out of a file kept out of git would leave behind; the
 record of what Keelline wrote there, `.keelline/local/artifacts.json`, is Keelline's own and goes
 once nothing else is left, before the ignore block. Every artifact it records is judged, a copy
@@ -1012,11 +1021,16 @@ build's. The `[paths]` value a target is built from and the digest a record carr
 committed, so a commit can make `uninstall` remove a whole file only while it holds exactly the
 bytes the same commit records, and a region only where its key names; the diff shows both. No
 `[paths]` value may name git's control directory or Keelline's own `.keelline/`, and a symlinked
-`.keelline/` is refused. A file git ignores is never removed or rewritten: the run is refused
-(`2`) before any removal, dry run included, as `upgrade`'s is. Run it on a checkout you trust.
+`.keelline/` is refused. An existing file git ignores at a place a `[paths]` value chose is never
+removed or rewritten: the run is refused (`2`) before any removal, dry run included, by
+`upgrade`'s rule, naming the files. Take Keelline's part out of them by hand, or take the
+`[paths]` key out of `keelline.toml`; the run then leaves those files where they are and lists
+them. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any other. Run it
+on a checkout you trust.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
-file an artifact targets and `git check-ignore` for each, and what is under `.keelline/local/`.
+file an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
+`[paths]` value chose, and what is under `.keelline/local/`.
 **Writes** only removals, and region removals, through the scaffold engine, then removes the
 ledger.
 

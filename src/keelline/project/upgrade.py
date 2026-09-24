@@ -30,9 +30,11 @@ is inserted into whatever file its `[paths]` key names, recorded or not, so a co
 `agents_md` at a tracked file gets the region written into it, and the diff of both shows it.
 What no committed value can reach is state git never sees: the loader refuses any `[paths]` value
 inside git's control directory or Keelline's own `.keelline/`, and `ignored.refuse_ignored`
-refuses the whole run, before any write, when git ignores a file it would write or remove (only
-`.keelline/local/artifacts/` is exempt, which `[artifacts] local` asks for). Outside a git work
-tree there is no diff to hide from, and no such guard. That is why `docs/cli.md` says to run it on
+refuses the whole run, before any write, when git ignores an existing file it would write or
+remove at a place a `[paths]` value chose rather than the preset (`.keelline/local/artifacts/`
+exempt, which `[artifacts] local` asks for). A fixed name or a preset's place no repository value
+chose, and a file that is not there yet, are not refused. Outside a git work tree there is no diff
+to hide from, and no such guard. That is why `docs/cli.md` says to run it on
 a checkout you trust.
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
@@ -220,7 +222,7 @@ def upgrade(
     if pinned and document != text and not _rewrites_the_workflow(footprint):
         changes, held, config = {}, WORKFLOW_HELD, before
         prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
-    refuse_ignored(root, footprint)
+    refuse_ignored(root, config, footprint)
     moved = tuple(
         Moved(key, _printable(key, old), new)
         for key, old, new in (

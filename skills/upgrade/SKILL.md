@@ -28,8 +28,8 @@ user edited is skipped and named, never overwritten.
   line and stop.
 - **An exit of 2 is a refusal, and it may have come part-way through.** A refusal about the
   project itself — not initialised, no `keelline.toml`, a newer, unreadable or unordered
-  recorded version, a key written in a shape it will not edit — comes before any write. One that says a file
-  cannot be written comes while writing: what was done before it is on disk and recorded.
+  recorded version, a key written in a shape it will not edit — comes before any write. One that
+  says a file cannot be written comes while writing: what was done before it is on disk and recorded.
   Relay it as printed, run `git status` to show the user what changed, and after they fix the
   cause run `keelline upgrade --dry-run` again, which plans from what is there now. When it
   says the project records a newer Keelline than the one running, the plugin is what needs
@@ -49,6 +49,9 @@ user edited is skipped and named, never overwritten.
   One that changed since is skipped like an edited file, because nothing brings it back once it
   is overwritten; so is a copy left behind when its id left `[artifacts] local`. Ask before
   forcing either, like any other.
+- **A refusal saying git ignores files at a place a `[paths]` value chose wrote nothing.** Relay
+  it with the files it names. Pointing that key at a path git does not ignore, or taking it out,
+  is the user's decision; never edit `keelline.toml` or an ignore file to get past it.
 - **A target printed as `<id>` is one the manifest recorded outside the path grammar.** Relay it
   as printed, and never look up or guess the path behind it.
 - **There are no hooks to re-trust.** `init` writes no project-level hook entries, so an upgrade

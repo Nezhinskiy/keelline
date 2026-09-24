@@ -234,7 +234,7 @@ def init(
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)
-    refuse_ignored(root, once, footprint)
+    refuse_ignored(root, config, once, footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
             once,
