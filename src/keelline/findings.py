@@ -9,6 +9,7 @@ from this lane's own vocabulary; the detail may quote the repository and is for 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 # Items per summary line, capped. A check over a neglected ledger reports findings by the
 # hundred and the remediation is one command for the whole set, so the tail is length, not
@@ -17,6 +18,15 @@ from dataclasses import dataclass
 # caller free to choose is a caller free to reintroduce the thousands-of-characters summary
 # line this exists to prevent.
 LISTED_LIMIT = 8
+
+
+class Severity(StrEnum):
+    """How much a finding asks of the person reading it: a warning is worth acting on now, and
+    advice is worth reading. The one scale, so a profile's check and an assessment item cannot
+    grade on two."""
+
+    ADVICE = "advice"
+    WARNING = "warning"
 
 
 @dataclass(frozen=True)

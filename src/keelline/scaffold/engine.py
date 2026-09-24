@@ -33,7 +33,6 @@ creates one component at a time through the same walk rather than with `Path.mkd
 from __future__ import annotations
 
 from collections.abc import Sequence
-from importlib import resources
 from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
@@ -60,43 +59,17 @@ _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
-# Where the repository-root `profiles/` sits relative to this file, when this file *is* in a
-# checkout: `src/keelline/scaffold/engine.py` → three parents up is the repository root. From an
-# installed wheel the same arithmetic lands in `.../lib/python3.x/`, which is not a checkout and
-# has no `profiles/` of its own — but `validate_sources` is a refusal gate, so a listing found by
-# accident there would make its verdict depend on the installing machine's directory layout.
-# `_in_a_checkout` is what keeps the fallback to the case it was written for.
-_REPOSITORY_ROOT = 3
-_CHECKOUT_MARKERS = ("pyproject.toml", ".git")
-
-
-def _in_a_checkout(root: Path) -> bool:
-    return any((root / marker).exists() for marker in _CHECKOUT_MARKERS)
-
-
 def shipped_profiles() -> list[str] | None:
-    """The profile names this build carries, or `None` while no `profiles/` exists anywhere.
+    """The profile names this build carries, or `None` while it carries none.
 
-    `None` is not an empty list, and the difference is the whole point: §5.1 draws `profiles/`
-    at the repository root while the package reads its own data from inside the wheel, and the
-    lane that creates either runs in wave 5. Until then there is no listing to check against,
-    and refusing every non-empty name would make `init --yes` on a Python repository produce a
-    configuration that `plan()` rejects outright.
-
-    The package is asked first and is the only answer that holds for an installed Keelline. The
-    repository-root fallback exists for a checkout — running from `scripts/keelline` before any
-    wheel is built — and is taken only when the directory three levels up actually looks like
-    one, so an installed package cannot pick up a `profiles/` that happens to sit beside its
-    `site-packages`.
+    `keelline.profiles.shipped()` counts a directory under the package only when it holds a
+    `profile.toml`, so the package's own modules are never mistaken for profiles. `None` keeps
+    the rule `validate_sources` has always applied before any profile existed. The next commit
+    ships the first profile and deletes this arm.
     """
-    package = resources.files("keelline").joinpath("profiles")
-    if package.is_dir():
-        return sorted(entry.name for entry in package.iterdir())
-    checkout = Path(__file__).resolve().parents[_REPOSITORY_ROOT]
-    root = checkout / "profiles"
-    if _in_a_checkout(checkout) and root.is_dir():
-        return sorted(entry.name for entry in root.iterdir())
-    return None
+    from keelline.profiles import shipped
+
+    return list(shipped()) or None
 
 
 def validate_sources(config: Config) -> None:

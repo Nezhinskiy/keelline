@@ -6373,3 +6373,12 @@ after = "            raise"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table",
 ]
+
+[[mutation]]
+name = "a profile locator stops refusing a symlinked file the repository planted"
+file = "src/keelline/profiles/evaluate.py"
+before = "        try:\n            path = contained(root, relative)"
+after = "        try:\n            path = root / relative"
+reddens = [
+  "tests/profiles/test_evaluate.py::test_a_locator_through_a_symlink_out_of_the_root_resolves_to_nothing",
+]
