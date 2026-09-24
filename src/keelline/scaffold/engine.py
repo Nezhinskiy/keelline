@@ -201,10 +201,17 @@ def _present_stamp(template: Template, current: str) -> str | None:
 
 
 def _removal_payload(template: Template, current: str) -> str | None:
-    """What `remove` leaves behind: nothing for a whole file, the file minus Keelline's part
-    for the two kinds that live inside somebody else's (§7.3)."""
+    """What `remove` leaves behind.
+
+    Nothing for a whole file. For the two kinds that live inside somebody else's file, the file
+    minus Keelline's part (§7.3), and nothing either when Keelline's part was all the file held,
+    which is what `detach` already does with the `.gitignore` it emptied. Emptiness is exact: a
+    remainder of whitespace is somebody's and stays. A host file that already existed and was
+    empty before the region went in is removed with the region, as `detach` removes it.
+    """
     if template.kind is Kind.MANAGED_REGION and template.region is not None:
-        return drop(current, template.region, template.style)
+        remainder = drop(current, template.region, template.style)
+        return remainder if remainder else None
     if template.kind is Kind.KEYED_ENTRIES:
         return apply_entries(current, {})
     return None
@@ -256,7 +263,9 @@ def plan(
         # name exactly these.
         try:
             if template.retired:
-                _plan_retired(template, record, current, target, location, actions, unchanged)
+                _plan_retired(
+                    template, record, current, target, location, forced, actions, unchanged
+                )
                 continue
             if template.kind is Kind.ONCE and current is not None:
                 # `skip_modified`, which is the plan's decision table (row: "no record, file
@@ -396,6 +405,7 @@ def _plan_retired(
     current: str | None,
     target: str,
     location: Location,
+    forced: set[str],
     actions: list[Action],
     unchanged: list[str],
 ) -> None:
@@ -421,14 +431,18 @@ def _plan_retired(
         unchanged.append(template.id)
         return
     present = _present_stamp(template, current)
-    if present is not None and digest(present) == record.sha256:
+    matches = present is not None and digest(present) == record.sha256
+    # `force` reaches a retired artifact the user edited and has decided to remove anyway: the
+    # one file a removal's `--force PATH` names. For a region what goes is still the region and
+    # never the file around it: forcing overrides the hand-edit verdict, not the payload.
+    if matches or record.target in forced:
         actions.append(
             Action(
                 Verb.REMOVE,
                 template.id,
                 record.target,
                 _removal_payload(template, current),
-                "retired",
+                "retired" if matches else "retired, forced",
                 record,
             )
         )

@@ -996,3 +996,72 @@ def test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose(tmp_
     ]
     apply(tmp_path, planned)
     assert host.read_text(encoding="utf-8") == "User prose.\n"
+
+
+def test_force_reaches_a_retired_artifact_edited_by_hand(tmp_path: Path) -> None:
+    # `uninstall --force PATH` exists for exactly this file: one the user edited and has now
+    # decided to remove anyway. Without the fix the verdict is "retired and hand-edited"
+    # whatever is forced, and the command's documented flag does nothing.
+    (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    result = plan(tmp_path, a_config(tmp_path), [a_template(retired=True)], force=("AGENTS.md",))
+    assert [(a.verb, a.target, a.reason) for a in result.actions] == [
+        (Verb.REMOVE, "AGENTS.md", "retired, forced")
+    ]
+    apply(tmp_path, result)
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_force_on_another_path_leaves_a_retired_hand_edit_alone(tmp_path: Path) -> None:
+    # The negative, so the positive cannot pass because `force` became a blanket switch.
+    (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    result = plan(tmp_path, a_config(tmp_path), [a_template(retired=True)], force=("CLAUDE.md",))
+    assert [a.verb for a in result.actions] == [Verb.SKIP_MODIFIED]
+
+
+def test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose(tmp_path: Path) -> None:
+    # Forcing is the only way to remove a region whose body was edited by hand, and the file
+    # around the region is the user's. Mutation: give the forced branch the payload `None`
+    # (delete the host file) and this reddens; every other scaffold test stays green.
+    host = tmp_path / "AGENTS.md"
+    host.write_text(upsert("User prose.\n", "harness", "EDITED", Style.MARKDOWN), encoding="utf-8")
+    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest("R1"))).write(
+        tmp_path
+    )
+    template = a_template(
+        kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1", retired=True
+    )
+    planned = plan(tmp_path, a_config(tmp_path), [template], force=("AGENTS.md",))
+    assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.REMOVE, "retired, forced")]
+    apply(tmp_path, planned)
+    assert host.read_text(encoding="utf-8") == "User prose.\n"
+
+
+def test_a_retired_region_that_was_the_whole_file_removes_the_file(tmp_path: Path) -> None:
+    # `init` creates `.gitignore` when there is none, and then it holds nothing but the region.
+    # Taking the region out used to leave a zero-byte `.gitignore` behind. `detach` has always
+    # removed the file it emptied, and the two withdrawals now agree.
+    text = upsert("", "ignore", ".keelline/local/", Style.HASH)
+    (tmp_path / ".gitignore").write_text(text, encoding="utf-8")
+    Manifest({}).with_record(
+        a_record(
+            id="gitignore",
+            kind=Kind.MANAGED_REGION,
+            target=".gitignore",
+            sha256=digest(".keelline/local/"),
+        )
+    ).write(tmp_path)
+    template = a_template(
+        id="gitignore",
+        kind=Kind.MANAGED_REGION,
+        target=".gitignore",
+        region="ignore",
+        style=Style.HASH,
+        render=lambda: ".keelline/local/",
+        retired=True,
+    )
+    planned = plan(tmp_path, a_config(tmp_path), [template])
+    assert [(a.verb, a.payload) for a in planned.actions] == [(Verb.REMOVE, None)]
+    apply(tmp_path, planned)
+    assert not (tmp_path / ".gitignore").exists()

@@ -6269,3 +6269,36 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose",
   "tests/scaffold/test_engine.py::test_relocating_a_managed_region_removes_only_its_own_lines",
 ]
+
+# `force` reaches the retired path too: a hand-edited retired artifact the user has decided to
+# remove anyway. The second entry is the guard against the data loss that forcing a region would
+# otherwise cause: with a forced payload of `None`, the prose around the region goes with it.
+[[mutation]]
+name = "force stops reaching a retired artifact edited by hand"
+file = "src/keelline/scaffold/engine.py"
+before = "    if matches or record.target in forced:"
+after = "    if matches:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_reaches_a_retired_artifact_edited_by_hand",
+  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
+]
+
+[[mutation]]
+name = "forcing a retired region deletes the file around it"
+file = "src/keelline/scaffold/engine.py"
+before = '''                _removal_payload(template, current),
+                "retired" if matches else "retired, forced",'''
+after = '''                _removal_payload(template, current) if matches else None,
+                "retired" if matches else "retired, forced",'''
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
+]
+
+[[mutation]]
+name = "a file that held only Keelline's region is rewritten empty instead of removed"
+file = "src/keelline/scaffold/engine.py"
+before = "        return remainder if remainder else None"
+after = "        return remainder"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_region_that_was_the_whole_file_removes_the_file",
+]
