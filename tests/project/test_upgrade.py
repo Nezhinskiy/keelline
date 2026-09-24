@@ -17,6 +17,7 @@ from keelline.project.upgrade import (
     NEWER,
     NO_RELEASE,
     NOT_INITIALISED,
+    UNORDERED,
     UNREADABLE_VERSION,
     WORKFLOW_HELD,
     UpgradeReport,
@@ -389,6 +390,66 @@ def test_a_project_recording_a_newer_keelline_is_refused(tmp_path: Path, recorde
     before = snapshot(root)
     with pytest.raises(Refusal, match=re.escape(NEWER.format(running=keelline.__version__))):
         _upgrade(root, tmp_path, _listing(keelline.__version__, OLD))
+    assert_snapshot_unchanged(root, before)
+
+
+def _recording(root: Path, version: str) -> None:
+    path = root / CONFIG_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            f'version = "{keelline.__version__}"', f'version = "{version}"'
+        ),
+        encoding="utf-8",
+    )
+
+
+@needs_git
+def test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Read by the leading `X.Y.Z` alone, `1.0.0` and `1.0.0rc1` were one version, so this build
+    # rewrote a released `1.0.0` down to `1.0.0rc1` and re-pinned the workflow to it. Mutation
+    # (oracle): "a release reads as older than its own pre-release" -> the run moves the version
+    # and the refusal is never raised.
+    root = initialised(tmp_path)
+    _recording(root, "1.0.0")
+    monkeypatch.setattr(keelline, "__version__", "1.0.0rc1")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _upgrade(root, tmp_path, NO_TAG)
+    assert str(refused.value) == NEWER.format(running="1.0.0rc1")
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_release_moves_a_project_recording_its_own_pre_release_forward(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = initialised(tmp_path)
+    _recording(root, "1.0.0.dev0")
+    monkeypatch.setattr(keelline, "__version__", "1.0.0")
+    report = _upgrade(root, tmp_path, NO_TAG)
+    assert [(m.key, m.before, m.after) for m in report.moved] == [
+        ("keelline.version", "(not a version)", "1.0.0")
+    ]
+    assert 'version = "1.0.0"\n' in (root / CONFIG_FILE).read_text(encoding="utf-8")
+
+
+@needs_git
+def test_two_pre_releases_of_one_version_are_refused_as_unordered_and_never_quoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `later` does not order two pre-releases, so which way a move would go is unknown. The
+    # refusal names the running version, Keelline's own, and never the recorded string.
+    # Mutation (oracle): "upgrade moves a version it cannot order" -> the run moves it.
+    root = initialised(tmp_path)
+    _recording(root, "1.0.0rc1-PROJECT")
+    monkeypatch.setattr(keelline, "__version__", "1.0.0rc2")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _upgrade(root, tmp_path, NO_TAG)
+    assert str(refused.value) == UNORDERED.format(running="1.0.0rc2")
+    assert "PROJECT" not in str(refused.value)
     assert_snapshot_unchanged(root, before)
 
 

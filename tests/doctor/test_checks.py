@@ -35,6 +35,7 @@ from keelline.doctor.checks import (
     SETTINGS_FILES,
     VERSION_AHEAD,
     VERSION_BEHIND,
+    VERSION_UNORDERED,
     VERSION_UNREADABLE,
     WORKFLOW,
     WORKFLOW_MAX_BYTES,
@@ -1210,6 +1211,27 @@ def test_the_version_remedy_follows_the_direction_of_the_difference(
     # reddens.
     root = _initialised(tmp_path)
     (root / CONFIG_FILE).write_text(LOCAL_ONLY.format(version=recorded), encoding="utf-8")
+    assert _by_name(_checks(tmp_path, root), "versions").remedy == remedy
+
+
+@pytest.mark.parametrize(
+    ("recorded", "running", "remedy"),
+    [
+        ("1.0.0", "1.0.0rc1", VERSION_AHEAD),
+        ("1.0.0rc1", "1.0.0", VERSION_BEHIND),
+        ("1.0.0rc1", "1.0.0rc2", VERSION_UNORDERED),
+    ],
+)
+def test_the_version_remedy_orders_a_release_after_its_pre_release_as_upgrade_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str, running: str, remedy: str
+) -> None:
+    # `upgrade` refuses by the same reader, so the row sends each case where `upgrade` would
+    # take it: a project on the release to the plugin, one on its pre-release to `upgrade`, and
+    # two pre-releases to be written by hand, not to the X.Y.Z that `upgrade` would then refuse
+    # as newer.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(LOCAL_ONLY.format(version=recorded), encoding="utf-8")
+    monkeypatch.setattr(keelline, "__version__", running)
     assert _by_name(_checks(tmp_path, root), "versions").remedy == remedy
 
 

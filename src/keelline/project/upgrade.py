@@ -4,7 +4,8 @@ Every refusal comes before every write.
 
 1. A `keelline.toml` recording a newer Keelline than the one running is refused: moving a project
    backward would repin an older release and put older bytes over newer ones. So is one whose
-   version has no leading `X.Y.Z`, whose direction is unknown.
+   version has no leading `X.Y.Z`, or shares the running one's and differs after it in a way
+   `later` does not order, because its direction is unknown.
 2. `[keelline] version` moves to the running version. Under `[ci] mode = "reusable"` with a
    `[ci] ref` that is a commit, or none yet, the workflow pins Keelline by commit, so `version`,
    `[ci] ref` and the workflow's `uses:` line are one value and move together or not at all.
@@ -72,6 +73,14 @@ UNREADABLE_VERSION = (
     "keelline.toml's [keelline] version does not begin with a version Keelline can read (X.Y.Z), "
     "so which way upgrade would move it is unknown and nothing was written; set it to the "
     "Keelline release this project was last upgraded with, then run `keelline upgrade` again"
+)
+# Fixed text with the running version, which is Keelline's own; the recorded one is not quoted.
+UNORDERED = (
+    "keelline.toml's [keelline] version and the {running} running here share one X.Y.Z and "
+    "differ after it, in a way Keelline does not order (two pre-releases, or a post-release), "
+    "so which way upgrade would move it is unknown and nothing was written; set it to {running} "
+    "by hand if that is the release this project should move to, then run `keelline upgrade` "
+    "again"
 )
 NEWER = (
     "keelline.toml records a newer Keelline than the {running} running here, and upgrade never "
@@ -169,11 +178,15 @@ def upgrade(
         raise Refusal(NO_DOCUMENT)
     before = loads(text, root, machine=machine)
     running = keelline.__version__
-    # Read by its leading `X.Y.Z`, so `1.0.0-rc1` is newer and not unknown; a value with no
-    # leading `X.Y.Z` at all is refused, because moving it could be moving it backward.
+    # Read by its leading `X.Y.Z`, so `1.0.0-rc1` is newer than `0.9.9` and not unknown, and a
+    # release is newer than its own pre-release; a value with no leading `X.Y.Z` at all is
+    # refused, and so is a pair `later` does not order, because moving either could be moving
+    # it backward. `later(v, v)` is `None` exactly when `v` has no leading `X.Y.Z`.
     ahead = later(before.keelline.version, running)
-    if ahead is None:
+    if ahead is None and later(before.keelline.version, before.keelline.version) is None:
         raise Refusal(UNREADABLE_VERSION)
+    if ahead is None:
+        raise Refusal(UNORDERED.format(running=running))
     if ahead:
         raise Refusal(NEWER.format(running=running))
     # A ref that is not a commit (`v1`, the documented opt-in to a moving Keelline) is the

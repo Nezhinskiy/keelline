@@ -849,10 +849,15 @@ over the one you wrote around it. The `CI:` line says no workflow was rendered a
 
 **A project recording a newer Keelline is refused** (`2`), before anything is written: an older
 plugin would repin an older release and put older bytes over newer ones. The recorded version is
-read by its leading `X.Y.Z`, so `1.0.0-rc1` counts as `1.0.0`. Update the Keelline plugin, then
-run `keelline upgrade` with it; never edit `[keelline] version` to get past it. A recorded
-version with no leading `X.Y.Z`, such as `v1.0.0`, is refused too, because which way a move
-would go is unknown; set it to the release the project was last upgraded with.
+read by its leading `X.Y.Z` first, so `1.0.0-rc1` is newer than a running `0.9.0`; with the same
+`X.Y.Z`, a release is newer than its own pre-release, so a project recording `1.0.0` is refused
+by a `1.0.0rc1` build. Update the Keelline plugin, then run `keelline upgrade` with it; never edit
+`[keelline] version` to get past it. A recorded version with no leading `X.Y.Z`, such as
+`v1.0.0`, is refused too, because which way a move would go is unknown; set it to the release
+the project was last upgraded with. So is one sharing the running `X.Y.Z` and differing after it
+in a way Keelline does not order — two pre-releases, such as `1.0.0rc1` and `1.0.0rc2`, or a
+post-release — and that refusal names the version running: set it to that by hand if it is the
+release the project should move to.
 
 **An artifact kept out of git is compared with what this Keelline writes.** One listed in
 `[artifacts] local` lives under `.keelline/local/artifacts/` and has no record, so a file there
@@ -887,8 +892,8 @@ interrupted before it leaves the old version recorded, and the next run re-plans
 Exits `0` when it applied the plan or there was nothing to do. `1` on a finding: the plan carries
 refusals — the report's REFUSED section names each, and nothing was written — or a
 `keelline.toml` that does not load, as for every command. `2` on a refusal before any write: the
-repository is not initialised, `keelline.toml` is missing, it records a newer Keelline or a
-version with no leading `X.Y.Z`, a key is written in a shape the editor refuses, a profile
+repository is not initialised, `keelline.toml` is missing, it records a newer Keelline, a
+version with no leading `X.Y.Z` or one Keelline does not order against the running one, a key is written in a shape the editor refuses, a profile
 artifact, `config` or `gitignore` is listed in `[artifacts] local`, or a `--force` path leaves
 `--root`. `2` also when a file cannot be written or removed part-way through; what was already
 applied stays applied and recorded, and running the command again re-plans from there.

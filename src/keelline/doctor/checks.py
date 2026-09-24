@@ -339,6 +339,12 @@ VERSION_UNREADABLE = (
     "set [keelline] version to the X.Y.Z of the Keelline release this project was last upgraded "
     "with: `keelline upgrade` refuses a version it cannot read rather than guess its direction"
 )
+VERSION_UNORDERED = (
+    "the two share one X.Y.Z and differ after it in a way Keelline does not order, such as two "
+    "pre-releases, and `keelline upgrade` refuses rather than guess the direction; set "
+    "[keelline] version to the version running here by hand if that is the one this project "
+    "should move to"
+)
 
 
 def _versions(context: Context) -> Row:
@@ -350,9 +356,15 @@ def _versions(context: Context) -> Row:
     # is the version that is actually running. The remedy follows the direction: `upgrade`
     # refuses a project that records a newer Keelline, so sending that one to it is a dead end.
     # `later` is the reader `upgrade` refuses by, so the two agree: a leading `X.Y.Z` decides
-    # the direction whatever follows it, and a value without one is sent to be written by hand.
+    # the direction when the two differ in it, a release is newer than its own pre-release, and
+    # a value without a leading `X.Y.Z`, or a pair `later` does not order, is sent to be written
+    # by hand. `later(v, v)` is `None` exactly when `v` has no leading `X.Y.Z`.
     ahead = later(recorded, running)
-    remedy = VERSION_UNREADABLE if ahead is None else VERSION_AHEAD if ahead else VERSION_BEHIND
+    if ahead is None:
+        readable = later(recorded, recorded) is not None
+        remedy = VERSION_UNORDERED if readable else VERSION_UNREADABLE
+    else:
+        remedy = VERSION_AHEAD if ahead else VERSION_BEHIND
     return Row(
         WARN,
         f"{CONFIG_FILE} declares a different Keelline version from the {running} running here",
