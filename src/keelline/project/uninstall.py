@@ -316,6 +316,9 @@ def uninstall(
         removing=True,
     )
     orphans = passes.orphans
+    # Every place this build could write each artifact, for every plan and prediction below: a
+    # ledger entry under one id never reaches another's copy kept out of git (`left_copies`).
+    could_write = passes.prepared.could_write
     digests = LocalDigests.read(root)
     # Retired: what the manifest records (every retirement `prepare` found among it), what
     # `[artifacts] local` keeps out of git, and every artifact the ledger says Keelline wrote a copy
@@ -334,11 +337,11 @@ def uninstall(
     # gives it, which the footprint pass judges: forced, it must not reach a skeleton sharing that
     # file either.
     footprint_targets |= {
-        copy for t in footprint_retired for copy in left_copies(t, config, digests)
+        copy for t in footprint_retired for copy in left_copies(t, config, digests, could_write)
     }
     once_force = tuple(path for path in force if path not in footprint_targets)
-    footprint = plan(root, config, footprint_retired, force=force)
-    once = plan(root, config, once_retired, force=once_force)
+    footprint = plan(root, config, footprint_retired, force=force, could_write=could_write)
+    once = plan(root, config, once_retired, force=once_force, could_write=could_write)
     # The later passes re-plan the same templates at the same targets, so these two plans name
     # every file the run can write or remove.
     refuse_ignored(root, config, footprint, once, removing=True)
@@ -348,7 +351,9 @@ def uninstall(
     # pass will then remove: the engine's own verdict for a file kept out of git, asked of those
     # bytes now. Only such a file matters here, since no `[paths]` value reaches `.keelline/`.
     local_once = {
-        copy: template for template in once_body for copy in local_copies(template, config, digests)
+        copy: template
+        for template in once_body
+        for copy in local_copies(template, config, digests, could_write)
     }
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
@@ -364,7 +369,7 @@ def uninstall(
     _apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
-    judged = plan(root, config, once_body, force=once_force)
+    judged = plan(root, config, once_body, force=once_force, could_write=could_write)
     _apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
@@ -373,11 +378,10 @@ def uninstall(
         raise Refusal(KEPT_AFTER.format(count=left))
     _remove_local_artifacts(root)
     # The footprint's ignore region: what keeps `.keelline/local/` out of git, so it goes last.
-    ignore = plan(
-        root, config, [t for t in footprint_retired if t.id == IGNORE_ARTIFACT], force=force
-    )
+    ignore_region = [t for t in footprint_retired if t.id == IGNORE_ARTIFACT]
+    ignore = plan(root, config, ignore_region, force=force, could_write=could_write)
     _apply(root, ignore)
-    last = plan(root, config, config_retired, force=once_force)
+    last = plan(root, config, config_retired, force=once_force, could_write=could_write)
     _apply(root, last)
     _remove_ledger(root)
     return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)

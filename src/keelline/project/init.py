@@ -226,8 +226,11 @@ def init(
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
     ref = "" if CI_ARTIFACT in prepared.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
-    once = plan(root, config, prepared.once)
-    footprint = plan(root, config, passes.footprint)
+    # Every place this build could write each artifact, so no ledger entry a clone force-added
+    # under one id reaches another's copy kept out of git (`scaffold.left_copies`).
+    could_write = prepared.could_write
+    once = plan(root, config, prepared.once, could_write=could_write)
+    footprint = plan(root, config, passes.footprint, could_write=could_write)
     refuse_ignored(root, config, once, footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
@@ -246,7 +249,7 @@ def init(
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
     # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
     # that says the bytes inside the markers are the same either way.
-    footprint = plan(root, config, passes.footprint)
+    footprint = plan(root, config, passes.footprint, could_write=could_write)
     apply(root, footprint)
     return InitReport(
         once,

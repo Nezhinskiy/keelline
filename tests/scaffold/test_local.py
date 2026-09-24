@@ -235,7 +235,8 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
     # A stale entry, or `[paths]` values swapped, can put an artifact's left copy on the file
     # another artifact of the same plan now targets. That template judges its own file; judged
     # twice, the left copy's removal deleted it from under an `unchanged` verdict. Mutation
-    # (advisory): drop the `copy in planned` skip -> the plan removes the file and this reddens.
+    # (oracle): "a left copy at a file another template of the plan targets is judged twice" ->
+    # the plan removes the file and this reddens.
     _written(tmp_path)
     _ledger(
         tmp_path,
@@ -247,6 +248,24 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
     assert [(a.verb, a.target) for a in planned.actions] == [
         (Verb.CREATE, ".keelline/local/artifacts/docs/roadmap.md")
     ]
+    apply(tmp_path, planned)
+    assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
+
+
+def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git(
+    tmp_path: Path,
+) -> None:
+    # `could_write` is every place this build could put each artifact; `LOCAL_ARTIFACTS/<one of
+    # another id's places>` is that artifact's copy, judged under its own id. A forged entry under
+    # `roadmap` naming `AGENTS.md`'s copy with its unedited digest removed it when no template of
+    # the plan targeted it. Mutation (oracle): "a ledger entry under one id reaches another
+    # artifact's copy kept out of git" -> the plan holds a `REMOVE` of that copy.
+    _written(tmp_path)
+    _ledger(tmp_path, {"roadmap": {LOCAL: digest("BODY\n")}})
+    roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
+    could_write = {"agents-md": frozenset({"AGENTS.md"}), "roadmap": frozenset({"docs/roadmap.md"})}
+    planned = plan(tmp_path, a_config(tmp_path), [roadmap], could_write=could_write)
+    assert LOCAL not in {a.target for a in planned.actions}
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
 

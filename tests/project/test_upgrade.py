@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -639,6 +640,37 @@ def test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_cha
     assert "A line the next release adds." in (local / "documentation.md").read_text(
         encoding="utf-8"
     )
+
+
+@needs_git
+def test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git(
+    tmp_path: Path,
+) -> None:
+    """The cross-id forgery. `CLAUDE.md` is kept out of git, and a clone force-adds a ledger
+    whose only entry sits under `roadmap`, naming that copy with the digest of its unedited, and
+    so predictable, bytes. `upgrade` plans only the footprint pass, so no template of its plan
+    claimed the file, and it removed it as `roadmap`'s relocated copy: nothing in the diff, and
+    no later run wrote it again. Another artifact's place kept out of git is never a left copy.
+
+    Mutation (oracle): "a ledger entry under one id reaches another artifact's copy kept out of
+    git" -> the dry run's plan already holds the removal of `CLAUDE.md`'s copy, and this reddens.
+    """
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        '\n[artifacts]\nlocal = ["claude-md"]\n\n[ci]\nmode = "none"\n',
+    )
+    copy = ".keelline/local/artifacts/CLAUDE.md"
+    assert (root / copy).is_file()
+    sha = digest((root / copy).read_text(encoding="utf-8"))
+    (root / ".keelline" / "local" / "artifacts.json").write_text(
+        json.dumps({"format": 1, "artifacts": {"roadmap": {copy: sha}}}), encoding="utf-8"
+    )
+    before = snapshot(root)
+    for dry_run in (True, False):
+        report = _upgrade(root, tmp_path, NO_TAG, dry_run=dry_run)
+        assert copy not in {a.target for a in report.footprint.actions}
+        assert_snapshot_unchanged(root, before)
 
 
 @needs_git

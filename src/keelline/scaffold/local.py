@@ -19,12 +19,18 @@ clone can force-add any file, and a clone's checkout then carries it. So it is r
 entry, and a fault anywhere makes the whole ledger absent: absence only sends the engine back to
 the render rule, so it is never worth a refusal. Nothing in it is ever printed. An entry is
 consulted only under the id of a template this build produced, only for a file under
-`LOCAL_ARTIFACTS`, and only to overwrite or remove that file while its current bytes digest to
-exactly what the entry records; a file there whose bytes differ is left and named. That is the
-manifest's boundary — a committed record reaches only
-bytes its committer already controls — and narrower: under `LOCAL_ARTIFACTS` a fresh clone holds
-only what the clone itself force-added, and a file a person wrote there has bytes nobody else can
-predict.
+`LOCAL_ARTIFACTS`, never for a place there that another artifact id could write
+(`engine.left_copies`), and only to overwrite or remove that file while its current bytes digest
+to exactly what the entry records; a file there whose bytes differ is left and named.
+
+That is the manifest's boundary — a committed record reaches only bytes its committer already
+controls — and the second condition is what keeps it. A file a person wrote under
+`LOCAL_ARTIFACTS` has bytes nobody else can predict, but Keelline's own unedited renders there
+are exactly predictable: without it, an entry a clone force-added under one id, stamped with
+the digest of another artifact's unedited copy, removed that copy as a left-behind one. Which
+ids exist and where each could write are this build's (`project.templates.Prepared.could_write`);
+the `[paths]` values those places are built from are committed, and they can only withhold a
+file from an entry, never hand one to it.
 """
 
 from __future__ import annotations

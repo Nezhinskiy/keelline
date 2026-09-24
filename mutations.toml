@@ -6634,7 +6634,7 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    judged = plan(root, config, once_body, force=once_force)"
+before = "    judged = plan(root, config, once_body, force=once_force, could_write=could_write)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
@@ -6837,7 +6837,7 @@ reddens = [
 [[mutation]]
 name = "a copy left kept out of git when its id left [artifacts] local is never judged"
 file = "src/keelline/scaffold/engine.py"
-before = "        for copy in left_copies(template, config, digests):\n            if copy in planned:"
+before = "        for copy in left_copies(template, config, digests, could_write or {}):\n            if copy in planned:"
 after = "        for copy in ():\n            if copy in planned:"
 reddens = [
   "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
@@ -6879,9 +6879,31 @@ reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_arti
 [[mutation]]
 name = "a left copy is judged only where [artifacts] local no longer lists its id"
 file = "src/keelline/scaffold/engine.py"
-before = "    return tuple(copy for copy in digests.targets_of(template.id) if copy != target)"
-after = "    return tuple(copy for copy in digests.targets_of(template.id) if template.id not in config.artifacts.local)"
+before = "        copy for copy in digests.targets_of(template.id) if copy != target and copy not in others\n"
+after = "        copy for copy in digests.targets_of(template.id) if template.id not in config.artifacts.local\n"
 reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
+
+# A ledger is read as untrusted, and an entry under one id must never reach another artifact's
+# own place kept out of git, whose unedited bytes are predictable: a clone could otherwise
+# force-add an entry that has `upgrade` delete a write-once artifact's copy.
+[[mutation]]
+name = "a ledger entry under one id reaches another artifact's copy kept out of git"
+file = "src/keelline/scaffold/engine.py"
+before = "if copy != target and copy not in others"
+after = "if copy != target"
+reddens = [
+  "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
+  "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
+]
+
+# Within one plan, a left copy at a file another template of the plan targets is that template's
+# to judge; judged twice, its removal deleted the file from under an `unchanged` verdict.
+[[mutation]]
+name = "a left copy at a file another template of the plan targets is judged twice"
+file = "src/keelline/scaffold/engine.py"
+before = "            if copy in planned:\n                continue\n"
+after = "            if False:\n                continue\n"
+reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_template_s"]
 
 # The same guard for the copy a region left kept out of git when its id left `[artifacts] local`:
 # the footprint pass judges it at the skeleton's own file, so a force meant for it must not
@@ -6889,7 +6911,7 @@ reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_move
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/keelline/project/uninstall.py"
-before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests)\n    }\n"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, could_write)\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
 

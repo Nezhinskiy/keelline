@@ -32,7 +32,7 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence, Set
 from pathlib import Path
 
 from keelline.config.paths import PathEscape, contained
@@ -126,9 +126,9 @@ def unlinks(action: Action) -> bool:
 def matches_render(template: Template, current: str) -> bool:
     """Whether `current` holds exactly the bytes this build renders for `template`'s part of it.
 
-    The one oracle for an `[artifacts] local` artifact, which is never recorded: `plan` removes a
-    retired one only while this answers yes, unless its path is forced. Public so a caller that
-    must predict that verdict for text not yet on disk asks the engine rather than re-deriving it.
+    For a file kept out of git, the fallback `ours_locally` asks at the artifact's own place when
+    `LocalDigests` records nothing there (no ledger yet, or one deleted); the ledger's digest is
+    the first answer. Private to this module since `uninstall` asks `ours_locally` instead.
     """
     _, stamp = _payload_and_stamp(template, current)
     present = _present_stamp(template, current)
@@ -152,20 +152,58 @@ def ours_locally(template: Template, current: str, target: str, digests: LocalDi
     return target == f"{LOCAL_ARTIFACTS}/{template.target}" and matches_render(template, current)
 
 
-def left_copies(template: Template, config: Config, digests: LocalDigests) -> tuple[str, ...]:
+def left_copies(
+    template: Template,
+    config: Config,
+    digests: LocalDigests,
+    could_write: Mapping[str, Set[str]],
+) -> tuple[str, ...]:
     """The copies kept out of git `digests` says Keelline left for `template` at a place this
     configuration no longer gives it: its id left `[artifacts] local`, or its `[paths]` value
-    moved while it stayed there. Every place the ledger records for its id but its current one."""
+    moved while it stayed there. Every place the ledger records for its id but its current one,
+    and none that is only another artifact's own place kept out of git.
+
+    **An entry under one id never reaches another artifact's copy.** `could_write` is every
+    target this build could write for each artifact id (`project.templates.Prepared`), and
+    `LOCAL_ARTIFACTS/<target>` for another id's target is that artifact's place kept out of git,
+    judged under its own id or not at all. Without this, a clone that force-added a ledger entry
+    under `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest
+    of those unedited and so predictable bytes, had `upgrade` remove it as a relocated copy:
+    `upgrade` plans only the footprint pass, so no template of its plan claimed the file, and
+    nothing ever wrote it again.
+
+    A place both ids could write stays this one's too: `agents-md`'s region and the skeleton
+    share `AGENTS.md` by design, and the region's copy left there is the region's to take out.
+    The artifact's own earlier places are in no one's `could_write` (a `[paths]` value that moved
+    is a place this configuration no longer builds), which is why the rule withholds another's
+    place rather than admitting only its own. Which ids exist and how each builds its targets are
+    this build's; the `[paths]` values the targets are built from are committed, and all they can
+    do here is withhold a copy from judgement, never offer one.
+    """
     target, _ = effective_target(template, config)
-    return tuple(copy for copy in digests.targets_of(template.id) if copy != target)
+    own = {f"{LOCAL_ARTIFACTS}/{place}" for place in could_write.get(template.id, ())}
+    others = {
+        f"{LOCAL_ARTIFACTS}/{place}"
+        for artifact_id, places in could_write.items()
+        if artifact_id != template.id
+        for place in places
+    } - own
+    return tuple(
+        copy for copy in digests.targets_of(template.id) if copy != target and copy not in others
+    )
 
 
-def local_copies(template: Template, config: Config, digests: LocalDigests) -> tuple[str, ...]:
+def local_copies(
+    template: Template,
+    config: Config,
+    digests: LocalDigests,
+    could_write: Mapping[str, Set[str]],
+) -> tuple[str, ...]:
     """Every file under `LOCAL_ARTIFACTS` `plan` judges as `template`'s: its effective target
     while `[artifacts] local` lists it, and its `left_copies`."""
     target, location = effective_target(template, config)
     current = (target,) if location is Location.LOCAL else ()
-    return (*current, *left_copies(template, config, digests))
+    return (*current, *left_copies(template, config, digests, could_write))
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -259,7 +297,15 @@ def plan(
     templates: Sequence[Template],
     *,
     force: Sequence[str] = (),
+    could_write: Mapping[str, Set[str]] | None = None,
 ) -> Plan:
+    """What applying `templates` under `config` would do, decided and not yet written.
+
+    `could_write` is every target this build could write for each artifact id, from the lane
+    that built `templates` (`project.templates.Prepared.could_write`); `left_copies` says what it
+    guards. A lane whose templates are never kept out of git has no ledger to guard and passes
+    none.
+    """
     validate_sources(config)
     manifest = Manifest.read(root)
     digests = LocalDigests.read(root)
@@ -292,7 +338,7 @@ def plan(
             actions.append(moved)
             record = None
         refused = False
-        for copy in left_copies(template, config, digests):
+        for copy in left_copies(template, config, digests, could_write or {}):
             if copy in planned:
                 continue
             try:
