@@ -309,11 +309,22 @@ def plan(
             if present is not None and digest(present) == digest(stamp):
                 unchanged.append(template.id)
                 continue
-            if record is None and location is Location.REPO and template.kind not in _IN_FILE:
+            if (
+                record is None
+                and location is Location.REPO
+                and template.kind not in _IN_FILE
+                and target not in forced
+            ):
                 # A whole file Keelline never wrote is somebody's; a region or a hook entry
                 # inside a file Keelline never wrote is the ordinary first install. A local
                 # artifact is answered by the next branch instead: it is never recorded, so
                 # `record is None` there says nothing about who wrote the file.
+                #
+                # `--force PATH` reaches this file too, which is the whole-file rule: differs,
+                # so skip it and name it, and `--force <path>` overwrites it. `forced` is the
+                # caller's argv and `target` the path `plan` derived and contained above, so no
+                # committed file can force anything; without it a caller workflow a person wrote
+                # held `upgrade`'s version and pin back for ever, with no flag that moved them.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -490,8 +501,9 @@ def apply(root: Path, planned: Plan) -> Applied:
     # The ledger records what is on disk, so it is persisted for the actions that ran even when
     # a later one refuses. Discarding it would leave a file Keelline wrote carrying no record,
     # which every later run reads as somebody else's: `skip_modified` under a false reason,
-    # proof against `--force`, and invisible to `uninstall`. The refusal still propagates; only
-    # the loop is wrapped, because the refusal above it has written nothing to record.
+    # moved only by a `--force` that names it, and invisible to `uninstall`. The refusal still
+    # propagates; only the loop is wrapped, because the refusal above it has written nothing to
+    # record.
     try:
         for action in planned.actions:
             if action.verb is Verb.SKIP_MODIFIED:

@@ -7,6 +7,7 @@ two copies of the fixture would drift the way the suite's twenty-three `git` hel
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from keelline.project.init import init
@@ -17,10 +18,16 @@ BEFORE = "# ours, from before Keelline\n"
 
 
 def initialised(
-    tmp_path: Path, *, runner: Runner | None = None, ci: bool = False, document: str = ""
+    tmp_path: Path,
+    *,
+    runner: Runner | None = None,
+    ci: bool = False,
+    document: str = "",
+    files: Mapping[str, str] | None = None,
 ) -> Path:
-    """`init --yes` over a repository that already held a README, and `document` as its
-    `keelline.toml` when one is given."""
+    """`init --yes` over a repository that already held a README, `document` as its
+    `keelline.toml` when one is given, and each of `files` (a root-relative path and its text)
+    written before `init` runs."""
     root = tmp_path / "widget"
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
@@ -28,6 +35,10 @@ def initialised(
     (root / "README.md").write_text(BEFORE, encoding="utf-8")
     if document:
         (root / "keelline.toml").write_text(document, encoding="utf-8")
+    for relative, text in (files or {}).items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     init(
         root,
         machine=tmp_path / "absent.toml",

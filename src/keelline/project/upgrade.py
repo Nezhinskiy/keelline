@@ -5,10 +5,13 @@ Every refusal comes before every write.
 1. A `keelline.toml` recording a newer Keelline than the one running is refused: moving a project
    backward would repin an older release and put older bytes over newer ones. So is one whose
    version has no leading `X.Y.Z`, whose direction is unknown.
-2. `[keelline] version` moves to the running version. Under `[ci] mode = "reusable"` the workflow
-   pins Keelline by commit, so `version`, `[ci] ref` and the workflow's `uses:` line are one value
-   and move together or not at all. When no released commit resolves, or the workflow would not
-   be rewritten to it, neither key moves and `held` says why.
+2. `[keelline] version` moves to the running version. Under `[ci] mode = "reusable"` with a
+   `[ci] ref` that is a commit, or none yet, the workflow pins Keelline by commit, so `version`,
+   `[ci] ref` and the workflow's `uses:` line are one value and move together or not at all.
+   When no released commit resolves, or the workflow would not be rewritten to it, neither key
+   moves and `held` says why. A `[ci] ref` that is not a commit, such as the documented `v1`
+   alias, is the project's own choice to track a moving Keelline: only `version` moves, and
+   neither that ref nor the workflow written around it is touched.
 3. The footprint pass is re-planned by hash against the manifest; the write-once pass is not.
    An artifact this configuration no longer produces is retired only at a recorded target
    `Prepared.could_write` lists for its id. The workflow is retired only when `[ci] mode` is
@@ -51,7 +54,6 @@ from keelline.overlay.api import later
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
 from keelline.project.templates import (
     CI_REF,
-    CI_WORKFLOW,
     Prepared,
     project_templates,
     refuse_local_profile,
@@ -83,9 +85,15 @@ NO_RELEASE = _HELD + (
     "no released commit of the Keelline running was found; run `keelline upgrade` again once "
     "it is released and the network is reachable"
 )
+# True in every state that reaches it: the workflow is `skip_modified` at the path the report
+# prints (edited by hand, written by somebody else, or kept out of git and not Keelline's bytes),
+# and a `--force` naming that path reaches each of those; or the plan refuses it, or the CI line
+# says none was rendered, and no flag changes either.
 WORKFLOW_HELD = _HELD + (
-    "the workflow would not be rewritten to the new pin (the footprint report or the CI line "
-    f"says why); `--force {CI_WORKFLOW}` moves all three when it was edited by hand"
+    "the workflow would not be rewritten to the new pin. When the footprint report lists it "
+    "skip_modified, --force with the path printed there moves all three; when the report "
+    "refuses it or the CI line says none was rendered, put right what they name, then run "
+    "`keelline upgrade` again"
 )
 _VERSION = re.compile(r"\A[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}\Z")
 
@@ -167,7 +175,13 @@ def upgrade(
         raise Refusal(UNREADABLE_VERSION)
     if ahead:
         raise Refusal(NEWER.format(running=running))
-    pinned = before.ci.mode == "reusable"
+    # A ref that is not a commit (`v1`, the documented opt-in to a moving Keelline) is the
+    # project's own and pins nothing this command owns: moving it to a sha, or rendering a
+    # workflow over the one written around it, would undo that choice without asking. An empty
+    # ref is still pinned: recording one is how a project with no pin yet gets its workflow.
+    pinned = before.ci.mode == "reusable" and (
+        not before.ci.ref or bool(CI_REF.match(before.ci.ref))
+    )
     resolution = resolve_pin(running, runner, cwd=root) if pinned else Resolution(None, True)
     changes: dict[tuple[str, str], Value] = {("keelline", "version"): running}
     held = ""

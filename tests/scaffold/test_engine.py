@@ -133,6 +133,25 @@ def test_a_hand_edited_file_is_skipped_and_named(tmp_path: Path) -> None:
     assert [(a.verb, a.target) for a in result.actions] == [(Verb.SKIP_MODIFIED, "AGENTS.md")]
 
 
+def test_force_takes_a_whole_file_keelline_did_not_write_and_records_it(tmp_path: Path) -> None:
+    # The whole-file rule: a file that differs is skipped and named, and `--force <path>` is how
+    # its owner says it may be overwritten. The branch for a file with no record ignored
+    # `force`, so a caller workflow a person wrote held `upgrade`'s version and pin back for
+    # ever. Forced, it is written and recorded like any file Keelline writes. Mutation (oracle):
+    # "--force stops reaching a whole file Keelline did not write".
+    (tmp_path / "AGENTS.md").write_text("someone wrote this\n", encoding="utf-8")
+    config = a_config(tmp_path)
+    unforced = plan(tmp_path, config, [a_template()], force=("CLAUDE.md",))
+    assert [(a.verb, a.reason) for a in unforced.actions] == [
+        (Verb.SKIP_MODIFIED, "exists and Keelline did not write it")
+    ]
+    forced = plan(tmp_path, config, [a_template()], force=("AGENTS.md",))
+    assert [(a.verb, a.payload) for a in forced.actions] == [(Verb.UPDATE, "BODY\n")]
+    apply(tmp_path, forced)
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "BODY\n"
+    assert Manifest.read(tmp_path).get("agents-md") == a_record()
+
+
 def test_force_overrides_a_hand_edit(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("edited by hand\n", encoding="utf-8")
     Manifest({}).with_record(a_record()).write(tmp_path)
@@ -924,8 +943,8 @@ def test_reordering_the_keys_inside_a_marked_entry_is_not_a_hand_edit(tmp_path: 
 def test_apply_records_the_files_it_wrote_before_a_later_action_refused(tmp_path: Path) -> None:
     # The ledger describes the disk, so it cannot be discarded for actions that already ran. A
     # file Keelline wrote and did not record reads as somebody else's on every later run:
-    # `skip_modified` under a reason that is false, proof against `--force` because the absent
-    # record is consulted first, and invisible to `uninstall`.
+    # `skip_modified` under a reason that is false, moved only by a `--force` that names it, and
+    # invisible to `uninstall`.
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     outside.mkdir()
     config = a_config(tmp_path)

@@ -6688,3 +6688,31 @@ reddens = [
   "tests/project/test_init.py::test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write",
   "tests/project/test_upgrade.py::test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write",
 ]
+
+# The whole-file rule is "differs: skip it and name it, and `--force <path>` overwrites it". The
+# branch for a file with no record ignored `force`, so a caller workflow a person wrote held
+# `upgrade`'s version and pin back for ever, under a note whose one remedy did nothing. `forced`
+# is the caller's argv, compared with the target `plan` derived and contained, so no committed
+# file can force anything.
+[[mutation]]
+name = "--force stops reaching a whole file Keelline did not write"
+file = "src/keelline/scaffold/engine.py"
+before = "                and template.kind not in _IN_FILE\n                and target not in forced\n"
+after = "                and template.kind not in _IN_FILE\n"
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_takes_a_whole_file_keelline_did_not_write_and_records_it",
+  "tests/project/test_upgrade.py::test_a_workflow_keelline_did_not_write_holds_both_keys_until_it_is_forced",
+]
+
+# A `[ci] ref` that is not a commit (`v1`, the documented opt-in to a moving Keelline) is the
+# project's own. Read as pinned, `upgrade` replaced it with a sha and rendered a workflow over
+# the choice, or held the version for ever behind a workflow written around it.
+[[mutation]]
+name = "upgrade repins a [ci] ref that is not a commit"
+file = "src/keelline/project/upgrade.py"
+before = """    pinned = before.ci.mode == \"reusable\" and (\n        not before.ci.ref or bool(CI_REF.match(before.ci.ref))\n    )\n"""
+after = "    pinned = before.ci.mode == \"reusable\"\n"
+reddens = [
+  "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[no-workflow]",
+  "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[own-workflow]",
+]

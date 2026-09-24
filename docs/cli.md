@@ -815,12 +815,15 @@ nothing.
 **Four verdicts.** A file whose bytes are still the ones the manifest records is refreshed
 (`update`, or `region_update` for a managed region) when this Keelline renders it differently,
 and reported `unchanged` when it does not. One that is missing is created. One you edited is
-`skip_modified` and named, and stays as it is until `--force` names it. An artifact this
+`skip_modified` and named, and stays as it is until `--force` names it. So is a file Keelline
+never wrote at a path it would write (`exists and Keelline did not write it`); forced, it is
+overwritten and recorded, and later runs judge it like any file Keelline wrote. An artifact this
 configuration no longer produces is removed while its bytes are the ones recorded (`remove`),
 and skipped the same way when they are not.
 
 **What is rewritten in `keelline.toml`, and what is not.** Only the values Keelline owns:
-`[keelline] version` and, under `[ci] mode = "reusable"`, `[ci] ref`. Every other byte stays
+`[keelline] version` and, under `[ci] mode = "reusable"`, a `[ci] ref` that is a commit sha or
+empty. Every other byte stays
 where it was — comments, order, blank lines, your keys. A key written in a shape the editor does
 not rewrite in place (a dotted key, an inline table, a multi-line value) is refused (`2`) naming
 the key and the line to write by hand, before anything is written. When the manifest's `config`
@@ -833,8 +836,16 @@ and the `uses:` line in `.github/workflows/keelline.yml` are one value. When no 
 of the Keelline running is found — before its tag exists, or with the network unreachable — or
 when the workflow would not be rewritten to the new pin, neither key moves: a `note:` line says
 `[keelline] version` and `[ci] ref` were left as they are and why, and the rest of the footprint
-is still refreshed. A workflow you edited by hand moves with them only under
-`--force .github/workflows/keelline.yml`.
+is still refreshed. A workflow you edited by hand, or one Keelline never wrote, is reported
+`skip_modified` and moves with them only under `--force` with the path the report prints for it.
+When the report refuses the workflow, or the `CI:` line says none was rendered (a `[ci]
+gate_branch` outside the branch-name grammar, say), no flag moves them: the note says to put
+that right and run `keelline upgrade` again.
+
+**A `[ci] ref` that is not a commit is yours.** The documented `v1` alias, or any other value
+that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade` moves
+`[keelline] version` alone: it never replaces that ref with a sha, and never renders a workflow
+over the one you wrote around it. The `CI:` line says no workflow was rendered around the ref.
 
 **A project recording a newer Keelline is refused** (`2`), before anything is written: an older
 plugin would repin an older release and put older bytes over newer ones. The recorded version is
@@ -1652,7 +1663,9 @@ that file records.
 lines. **A project with no release to pin gets no workflow at all**: before the first Keelline
 tag there is no commit to name, so `init` reports the workflow skipped with the reason and writes
 nothing into `.github/`, and `keelline upgrade` renders it once a release matches. `@v1` is the
-documented opt-in for a project that would rather track the major, written by hand.
+documented opt-in for a project that would rather track the major, written by hand;
+`keelline upgrade` then moves `[keelline] version` alone and leaves the ref and that file as they
+are.
 `smoke-release.yml` in this repository runs both moving forms on demand, so that they are known
 to work — it is not a form this reference tells you to write.
 

@@ -254,6 +254,85 @@ def test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced(
     assert f"@{NEW}\n" in workflow.read_text(encoding="utf-8")
 
 
+def _adopted(tmp_path: Path, ref: str, *, workflow: bool = True) -> tuple[Path, str]:
+    """A repository that wrote its own `keelline.toml` pinning `ref`, and its own caller workflow
+    around it when `workflow` says so, before `init` adopted it. Returns the root and the
+    workflow's text."""
+    document = (
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f'[ci]\nref = "{ref}"\n'
+    )
+    text = (
+        "# ours, from before Keelline\non: pull_request\njobs:\n  keelline:\n"
+        f"    uses: {keelline.REPOSITORY_SLUG}/.github/workflows/check.yml@{ref}\n"
+    )
+    files = {WORKFLOW.as_posix(): text} if workflow else {}
+    return initialised(tmp_path, document=document, files=files), text
+
+
+@needs_git
+def test_a_workflow_keelline_did_not_write_holds_both_keys_until_it_is_forced(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    # The caller workflow is the project's own, so Keelline never wrote it and holds no record of
+    # it. Unforced, it stays byte for byte and so do version and ref, since the three are one
+    # value. `--force` naming it is the remedy `WORKFLOW_HELD` gives, and it used to do nothing:
+    # the engine's branch for a file with no record ignored `force`, so the run held for ever.
+    # Mutation (oracle): "--force stops reaching a whole file Keelline did not write" -> the
+    # forced run holds again, and the assertions after it redden.
+    root, text = _adopted(tmp_path, OLD)
+    running = keelline.__version__
+    newer()
+    workflow, config = root / WORKFLOW, root / CONFIG_FILE
+    document = config.read_text(encoding="utf-8")
+    held = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    assert held.moved == () and held.held == WORKFLOW_HELD
+    verbs = {a.artifact_id: (a.verb, a.reason) for a in held.footprint.actions}
+    assert verbs["ci-workflow"] == (Verb.SKIP_MODIFIED, "exists and Keelline did not write it")
+    assert workflow.read_text(encoding="utf-8") == text
+    assert config.read_text(encoding="utf-8") == document
+
+    forced = _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=(WORKFLOW.as_posix(),))
+    assert [(m.key, m.after) for m in forced.moved] == [
+        ("keelline.version", "9.9.9"),
+        ("ci.ref", NEW),
+    ]
+    assert forced.held == ""
+    assert config.read_text(encoding="utf-8") == document.replace(
+        f'version = "{running}"', 'version = "9.9.9"'
+    ).replace(OLD, NEW)
+    rendered = workflow.read_text(encoding="utf-8")
+    assert f"@{NEW}\n" in rendered and "# ours" not in rendered
+    assert Manifest.read(root).get("ci-workflow") is not None
+
+
+@needs_git
+@pytest.mark.parametrize("workflow", [False, True], ids=["no-workflow", "own-workflow"])
+def test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves(
+    tmp_path: Path, newer: Callable[[], None], workflow: bool
+) -> None:
+    # `v1` is the documented opt-in to a moving Keelline, written by hand. It pins nothing this
+    # command owns: `upgrade` replaced it with a sha and rendered a workflow over the choice, with
+    # no note. Now only `[keelline] version` moves, and the ref and any workflow written around it
+    # stay byte for byte. Mutation (oracle): "upgrade repins a [ci] ref that is not a commit".
+    root, text = _adopted(tmp_path, "v1", workflow=workflow)
+    running = keelline.__version__
+    newer()
+    config = root / CONFIG_FILE
+    document = config.read_text(encoding="utf-8")
+    report = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
+    assert [(m.key, m.after) for m in report.moved] == [("keelline.version", "9.9.9")]
+    assert report.held == ""
+    assert config.read_text(encoding="utf-8") == document.replace(
+        f'version = "{running}"', 'version = "9.9.9"'
+    )
+    assert report.skipped["ci-workflow"] == templates.BAD_REF
+    if workflow:
+        assert (root / WORKFLOW).read_text(encoding="utf-8") == text
+    else:
+        assert not (root / WORKFLOW).exists()
+
+
 @needs_git
 def test_a_write_that_fails_part_way_leaves_the_pin_agreeing_and_the_next_run_converges(
     tmp_path: Path, newer: Callable[[], None], monkeypatch: pytest.MonkeyPatch

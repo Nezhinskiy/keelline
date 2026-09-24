@@ -13,9 +13,9 @@ user edited is skipped and named, never overwritten.
 1. Run `keelline upgrade --dry-run` and relay what it prints: the opening line, the
    `keelline.toml:` line with each key it would move, the `footprint:` report with each file's
    verdict, the `CI:` line, and every `note:` line.
-2. For each file reported `skip_modified`, ask whether the user wants it overwritten. Only on a
-   yes for that file, add `--force <path>` for it, with the path exactly as the report prints
-   it. Never force a path the user did not name.
+2. For each file reported `skip_modified`, edited by the user or never written by Keelline, ask
+   whether the user wants it overwritten. Only on a yes for that file, add `--force <path>` for
+   it, with the path exactly as the report prints it. Never force a path the user did not name.
 3. If any `--force` was added, run `keelline upgrade --dry-run` again with the same flags and
    relay the new report, so the user sees what forcing changes before anything is written.
 4. Run `keelline upgrade` with the same flags, and relay the real run's report the same way.
@@ -28,15 +28,18 @@ user edited is skipped and named, never overwritten.
   line and stop.
 - **An exit of 2 is a refusal, and it may have come part-way through.** A refusal about the
   project itself — not initialised, no `keelline.toml`, a newer or unreadable recorded version,
-  a key written in a shape it will not edit — comes before any write. One that says a file cannot be written
-  comes while writing: what was done before it is on disk and recorded. Relay it as printed,
-  run `git status` to show the user what changed, and after they fix the cause run
-  `keelline upgrade --dry-run` again, which plans from what is there now. When it says the
-  project records a newer Keelline than the one running, the plugin is what needs updating:
-  relay that, and never edit `[keelline] version` to get past it.
+  a key written in a shape it will not edit — comes before any write. One that says a file
+  cannot be written comes while writing: what was done before it is on disk and recorded.
+  Relay it as printed, run `git status` to show the user what changed, and after they fix the
+  cause run `keelline upgrade --dry-run` again, which plans from what is there now. When it
+  says the project records a newer Keelline than the one running, the plugin is what needs
+  updating: relay that, and never edit `[keelline] version` to get past it.
 - **A `note:` saying `[keelline] version` and `[ci] ref` were left as they are is not a
   failure.** The footprint was still refreshed, and the note says what would let the three move
-  together. Relay it as printed.
+  together. Relay it as printed. When the workflow is reported `skip_modified`, forcing it is
+  step 2's question like any other file's.
+- **A `[ci] ref` that is not a commit, such as `v1`, is the user's choice.** Only the version
+  moves and the workflow is left as it is. Relay the `CI:` line, and never change the ref.
 - **`keelline.toml` keeps every byte but the values it moves.** If the command refuses to
   rewrite a key because of how the file writes it, relay the refusal: it names the key and the
   value to set by hand.
