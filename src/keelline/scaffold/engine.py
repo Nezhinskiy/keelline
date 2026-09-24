@@ -45,6 +45,15 @@ from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Tem
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
 LOCAL_ROOT = ".keelline/local"
+# `[artifacts] local` artifacts live one directory further down, so no `[paths]` value can aim one
+# at a file another lane keeps under `LOCAL_ROOT`: attach's ledger, the local-only note store.
+# `PATH_VALUE` refuses a `..` segment, so this prefix is a boundary and not a convention; the
+# anchor is this constant in the installed package.
+LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"
+# The reason a local artifact is left alone. It is never recorded, so the one oracle for
+# "Keelline's bytes" is what this build renders, and anything else may be an edit in a directory
+# git will not give back.
+NOT_OURS_LOCALLY = "kept out of git, and not the bytes this Keelline writes"
 SOURCE_NAME = PROJECT_NAME  # the one name grammar, `config.schema.PROJECT_NAME`
 SOURCE_RULE = "lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit"
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
@@ -98,7 +107,7 @@ def validate_sources(config: Config) -> None:
 
 def _effective_target(template: Template, config: Config) -> tuple[str, Location]:
     if template.id in config.artifacts.local:
-        return f"{LOCAL_ROOT}/{template.target}", Location.LOCAL
+        return f"{LOCAL_ARTIFACTS}/{template.target}", Location.LOCAL
     return template.target, Location.REPO
 
 
@@ -277,11 +286,9 @@ def plan(
                 continue
             if record is None and location is Location.REPO and template.kind not in _IN_FILE:
                 # A whole file Keelline never wrote is somebody's; a region or a hook entry
-                # inside a file Keelline never wrote is the ordinary first install (§7.2, rows
-                # 2 and 3). `.keelline/local/` is excluded because it is Keelline's own
-                # directory: a local artifact is deliberately never recorded, so `record is
-                # None` there says nothing about who wrote the file, and treating it as
-                # somebody's would make every local artifact create-once and force-proof.
+                # inside a file Keelline never wrote is the ordinary first install. A local
+                # artifact is answered by the next branch instead: it is never recorded, so
+                # `record is None` there says nothing about who wrote the file.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -291,6 +298,16 @@ def plan(
                         "exists and Keelline did not write it",
                         None,
                     )
+                )
+                continue
+            if (
+                record is None
+                and location is Location.LOCAL
+                and present is not None
+                and target not in forced
+            ):
+                actions.append(
+                    Action(Verb.SKIP_MODIFIED, template.id, target, None, NOT_OURS_LOCALLY, None)
                 )
                 continue
             hand_edited = (
@@ -318,9 +335,9 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     record describe the file I am about to delete" cannot rest on the record alone: a committed
     manifest naming any in-root file, stamped with the bytes that file is committed with, would
     otherwise make `plan` emit a `REMOVE` for it. So the recorded target must be one of the two
-    paths this template can produce — its configured target, or that target under `LOCAL_ROOT`
-    — before anything else is asked. It is then contained before it is read, exactly like a
-    configured one.
+    paths this template can produce — its configured target, or that target under
+    `LOCAL_ARTIFACTS` — before anything else is asked. It is then contained before it is read,
+    exactly like a configured one.
 
     **Always an `Action`, never `None`.** Every branch that declines to remove the old file used
     to answer `None`, and `plan` read that as "nothing to do here" and carried on creating the
@@ -334,7 +351,7 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     could not have produced, one that no longer contains, and one whose bytes are not the ones
     recorded — each become a `skip_modified` naming the old path and saying which it was.
     """
-    if record.target not in (template.target, f"{LOCAL_ROOT}/{template.target}"):
+    if record.target not in (template.target, f"{LOCAL_ARTIFACTS}/{template.target}"):
         return _left_behind(
             template,
             record,
@@ -383,19 +400,19 @@ def _plan_retired(
         unchanged.append(template.id)
         return
     if location is Location.LOCAL:
-        # No record exists for a local artifact and none is wanted: the hand-edit oracle a
-        # record carries exists to protect content somebody else may have written, and
-        # `.keelline/local/` holds nothing of the sort. A retired one simply goes.
-        actions.append(
-            Action(
-                Verb.REMOVE,
-                template.id,
-                target,
-                _removal_payload(template, current),
-                "retired",
-                None,
-            )
-        )
+        # No record exists for a local artifact, so it is judged against this build's own
+        # render, the one oracle it has. The directory is git-ignored: an edit removed here is
+        # one git cannot give back, so a file that is not exactly Keelline's goes only when forced.
+        _, stamp = _payload_and_stamp(template, current)
+        present = _present_stamp(template, current)
+        ours = present is not None and digest(present) == digest(stamp)
+        if ours or target in forced:
+            payload = _removal_payload(template, current)
+            reason = "retired" if ours else "retired, forced"
+            actions.append(Action(Verb.REMOVE, template.id, target, payload, reason, None))
+        else:
+            reason = f"retired, {NOT_OURS_LOCALLY}"
+            actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
         return
     if record is None:
         unchanged.append(template.id)

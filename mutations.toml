@@ -6424,3 +6424,28 @@ reddens = [
   "tests/project/test_templates.py::test_a_profile_artifact_kept_out_of_git_is_refused",
   "tests/project/test_init.py::test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written",
 ]
+
+# An artifact kept out of git has no record, and its directory is git-ignored: an edit
+# overwritten or removed there is gone for good, so it is judged against this build's render.
+[[mutation]]
+name = "an edited artifact kept out of git is refreshed over, and git cannot give it back"
+file = "src/keelline/scaffold/engine.py"
+before = "                and location is Location.LOCAL\n                and present is not None\n                and target not in forced\n"
+after = "                and False\n"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it",
+]
+
+[[mutation]]
+name = "a retired artifact kept out of git is removed whatever its bytes"
+file = "src/keelline/scaffold/engine.py"
+before = "        if ours or target in forced:"
+after = "        if True:"
+reddens = ["tests/scaffold/test_engine.py::test_a_retired_local_artifact_edited_by_hand_stays_unless_forced"]
+
+[[mutation]]
+name = "artifacts kept out of git share a directory with attach's ledger and the note store"
+file = "src/keelline/scaffold/engine.py"
+before = 'LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"'
+after = "LOCAL_ARTIFACTS = LOCAL_ROOT"
+reddens = ["tests/scaffold/test_engine.py::test_a_local_artifact_moves_under_dot_keelline"]

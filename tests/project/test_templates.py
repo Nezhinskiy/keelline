@@ -478,7 +478,7 @@ def test_a_harness_not_listed_gets_no_file_of_its_own(tmp_path: Path) -> None:
 
 def test_a_profile_artifact_kept_out_of_git_is_refused(tmp_path: Path) -> None:
     """The `AGENTS.md` pointer and the Claude rule read `profile-rules` at its committed path;
-    kept local it lands under `.keelline/local/`, and both point at nothing (a review
+    kept local it lands under `.keelline/local/artifacts/`, and both point at nothing (a review
     reproduced all three files). Mutation (declared): the refusal's condition dropped -> this
     reddens.
     """

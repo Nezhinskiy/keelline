@@ -1584,7 +1584,7 @@ volatile_ttl_days = 30
 
 [artifacts]
 local = []               # scaffold template ids whose artifact is written under
-                         # .keelline/local/ instead of being committed
+                         # .keelline/local/artifacts/ instead of being committed
 
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated

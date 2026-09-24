@@ -207,9 +207,9 @@ LOCAL_PROFILE = (
 def refuse_local_profile(prepared: Prepared, config: Config) -> None:
     """Refuse a footprint whose profile artifacts `[artifacts] local` would move out of git.
 
-    The engine would write them under `.keelline/local/`, while every reader of them names
-    `rules_file`'s committed path, so each pointer would lead nowhere. `init` and `upgrade` call
-    this before they plan; `uninstall` does not, so a configuration written before the rule can
+    The engine would write them under `.keelline/local/artifacts/`, while every reader of them
+    names `rules_file`'s committed path, so each pointer would lead nowhere. `init` and `upgrade`
+    call this before they plan; `uninstall` does not, so a configuration written before the rule can
     still be taken back.
     """
     local = prepared.profiled & set(config.artifacts.local)

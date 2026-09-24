@@ -175,7 +175,7 @@ def test_a_retired_template_edited_by_hand_is_reported_not_removed(tmp_path: Pat
 def test_a_local_artifact_moves_under_dot_keelline(tmp_path: Path) -> None:
     config = a_config(tmp_path, local=("agents-md",))
     result = plan(tmp_path, config, [a_template()])
-    assert [a.target for a in result.actions] == [".keelline/local/AGENTS.md"]
+    assert [a.target for a in result.actions] == [".keelline/local/artifacts/AGENTS.md"]
 
 
 def test_a_relocated_artifact_is_removed_from_its_old_home(tmp_path: Path) -> None:
@@ -185,14 +185,14 @@ def test_a_relocated_artifact_is_removed_from_its_old_home(tmp_path: Path) -> No
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
 
 
 def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_path: Path) -> None:
-    # The plan was `[(create, .keelline/local/AGENTS.md)]`, the report said "0 skipped, 0
-    # refused", the old file stayed on disk holding the user's edit, and the manifest ended
-    # empty — which `apply`'s own comment calls a defect: "a file Keelline wrote carrying no
+    # The plan was `[(create, .keelline/local/artifacts/AGENTS.md)]`, the report said "0
+    # skipped, 0 refused", the old file stayed on disk holding the user's edit, and the manifest
+    # ended empty — which `apply`'s own comment calls a defect: "a file Keelline wrote carrying no
     # record, which every later run reads as somebody else's … invisible to `uninstall`". The
     # symmetric `_plan_retired` path has always emitted `skip_modified` for this.
     old = tmp_path / "AGENTS.md"
@@ -202,7 +202,7 @@ def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_pat
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.SKIP_MODIFIED, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     assert result.actions[0].reason == "relocated and hand-edited"
     applied = apply(tmp_path, result)
@@ -218,7 +218,7 @@ def test_a_relocation_whose_old_file_is_already_gone_reports_no_skip(tmp_path: P
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     assert apply(tmp_path, result).skipped == ()
 
@@ -279,25 +279,30 @@ def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) 
     planned = plan(tmp_path, config, [template])
     assert [(a.verb, a.target) for a in planned.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     apply(tmp_path, planned)
     assert host.read_text(encoding="utf-8") == "User prose.\n"
 
 
-def test_a_local_artifact_is_refreshed_rather_than_read_as_somebody_elses(tmp_path: Path) -> None:
-    # A local artifact is deliberately never recorded, so `record is None` holds for it on every
-    # run after the first. `.keelline/local/` is Keelline's own directory, so that says nothing
-    # about who wrote the file — and reading it as "somebody's" made every local artifact
-    # create-once, under a reason that is false and ahead of the point where `force` is consulted.
+def test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it(
+    tmp_path: Path,
+) -> None:
+    # A local artifact is never recorded, so the one oracle it has is what this build renders.
+    # `.keelline/local/` is git-ignored: an owner's edit overwritten there is gone for good, so a
+    # file that differs is left and named, and `--force` is how the owner says it may go.
     config = a_config(tmp_path, local=("agents-md",))
-    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    local.write_text("BODY\nand the owner's own line\n", encoding="utf-8")
+    planned = plan(tmp_path, config, [a_template()])
+    assert [(a.verb, a.reason) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, "kept out of git, and not the bytes this Keelline writes")
+    ]
+    forced = plan(tmp_path, config, [a_template()], force=(".keelline/local/artifacts/AGENTS.md",))
+    assert [(a.verb, a.reason) for a in forced.actions] == [(Verb.UPDATE, "refreshed")]
+    apply(tmp_path, forced)
     assert local.read_text(encoding="utf-8") == "BODY\n"
-    planned = plan(tmp_path, config, [a_template(render=lambda: "NEWER\n")])
-    assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.UPDATE, "refreshed")]
-    apply(tmp_path, planned)
-    assert local.read_text(encoding="utf-8") == "NEWER\n"
     assert Manifest.read(tmp_path).records == {}
 
 
@@ -312,18 +317,32 @@ def test_a_local_artifact_whose_content_already_matches_is_unchanged(tmp_path: P
 
 
 def test_a_retired_local_artifact_is_removed(tmp_path: Path) -> None:
-    # `uninstall` has to be able to finish. A retirement is decided against the record for a
-    # repository file, and a local artifact has none by design — so for this one directory the
-    # question is answered without one rather than answered "leave it".
+    # `uninstall` has to be able to finish. A local artifact has no record by design, so its
+    # retirement is judged against this build's render: exactly those bytes, and it goes.
     config = a_config(tmp_path, local=("agents-md",))
-    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
     planned = plan(tmp_path, config, [a_template(retired=True)])
     assert [(a.verb, a.target) for a in planned.actions] == [
-        (Verb.REMOVE, ".keelline/local/AGENTS.md")
+        (Verb.REMOVE, ".keelline/local/artifacts/AGENTS.md")
     ]
     apply(tmp_path, planned)
     assert not local.exists()
+
+
+def test_a_retired_local_artifact_edited_by_hand_stays_unless_forced(tmp_path: Path) -> None:
+    config = a_config(tmp_path, local=("agents-md",))
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
+    apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    local.write_text("the owner's notes\n", encoding="utf-8")
+    planned = plan(tmp_path, config, [a_template(retired=True)])
+    assert [a.verb for a in planned.actions] == [Verb.SKIP_MODIFIED]
+    apply(tmp_path, planned)
+    assert local.read_text(encoding="utf-8") == "the owner's notes\n"
+    forced = plan(
+        tmp_path, config, [a_template(retired=True)], force=(".keelline/local/artifacts/AGENTS.md",)
+    )
+    assert [(a.verb, a.reason) for a in forced.actions] == [(Verb.REMOVE, "retired, forced")]
 
 
 # --- regions and keyed entries, which live inside somebody else's file ---------------------
@@ -772,7 +791,9 @@ def test_a_removal_deletes_the_file_and_the_record(tmp_path: Path) -> None:
 def test_a_local_artifact_is_written_but_never_recorded(tmp_path: Path) -> None:
     config = a_config(tmp_path, local=("agents-md",))
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
-    assert (tmp_path / ".keelline/local/AGENTS.md").read_text(encoding="utf-8") == "BODY\n"
+    assert (tmp_path / ".keelline/local/artifacts/AGENTS.md").read_text(
+        encoding="utf-8"
+    ) == "BODY\n"
     assert Manifest.read(tmp_path).records == {}
 
 
@@ -992,7 +1013,7 @@ def test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose(tmp_
     planned = plan(tmp_path, a_config(tmp_path, local=("agents-md",)), [template])
     assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
         (Verb.REMOVE, "AGENTS.md", "relocated"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md", "new"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md", "new"),
     ]
     apply(tmp_path, planned)
     assert host.read_text(encoding="utf-8") == "User prose.\n"

@@ -10,7 +10,13 @@ review finding; if a lane needs something this list does not carry, the list gro
 deliberately.
 """
 
-from keelline.scaffold.engine import apply, plan, shipped_profiles, validate_sources
+from keelline.scaffold.engine import (
+    LOCAL_ROOT,
+    apply,
+    plan,
+    shipped_profiles,
+    validate_sources,
+)
 from keelline.scaffold.entries import (
     EntriesError,
     apply_entries,
@@ -35,6 +41,7 @@ from keelline.scaffold.report import render_report
 
 __all__ = [
     "FORMAT",
+    "LOCAL_ROOT",
     "MANIFEST_PATH",
     "Action",
     "Applied",
