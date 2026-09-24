@@ -6,11 +6,16 @@ parsing it back. `fsops.write_within` writes it. And the `config` record in
 nobody but Keelline has touched stays one `keelline uninstall` recognises, and an edited one is
 never blessed.
 
-**The record is re-stamped before the document is written.** An interruption between the two
-leaves a record naming the new bytes beside a file still holding the old ones. The next run
-computes the same new bytes, finds the record already naming them, and writes the file. In the
-other order the interruption leaves the new file beside a record naming the old bytes; the next
-run finds nothing to rewrite, and `uninstall` keeps an untouched `keelline.toml` for good.
+**The record is re-stamped before the document is written, and put back when the write
+fails.** In the other order an interruption between the two leaves the new file beside a record
+naming the old bytes; the next run finds nothing to rewrite, and `uninstall` keeps an untouched
+`keelline.toml` for good. In this order a write that fails leaves a record naming bytes the file
+does not hold, and the next run may compute different ones (a later version, a new pin): it would
+find the record describing neither, never re-stamp it again, and `uninstall` would keep the file
+as edited for good. So a failed write puts the record back as it was, naming the bytes the file
+still holds. What is left is a process killed between the two writes, which leaves the record
+naming the new bytes; the next run computes the same bytes unless the version or the pin moved
+in between, finds the record already naming them, and writes the file.
 """
 
 from __future__ import annotations
@@ -39,10 +44,13 @@ def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
         return
     manifest = Manifest.read(root)
     record = manifest.get(CONFIG_RECORD)
+    stamped = None
     if record is not None and record.sha256 == digest(text):
         stamped = replace(record, sha256=digest(document), version=keelline.__version__)
         manifest.with_record(stamped).write(root)
     try:
         write_within(root, CONFIG_FILE, document)
     except (UnsafePath, OSError) as exc:
+        if stamped is not None:
+            manifest.write(root)
         raise Refusal(f"{CONFIG_FILE} cannot be written: {exc}") from exc

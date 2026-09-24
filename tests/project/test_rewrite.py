@@ -69,6 +69,31 @@ def test_a_run_interrupted_between_its_two_writes_converges_on_the_next(
 
 
 @needs_git
+def test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still_restamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The record is re-stamped first, so a write that fails left it naming bytes the file never
+    # held. The next run computing different bytes (a later version) then found the record
+    # describing neither, never re-stamped it, and `uninstall` kept an untouched `keelline.toml`
+    # as edited for good. Mutation (oracle): "a failed write of keelline.toml leaves its record
+    # naming bytes the file never held" -> the first assertion after the failure reddens.
+    root = initialised(tmp_path)
+    before = _record_digest(root)
+
+    def failing(where: Path, target: str, text: str) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(module, "write_within", failing)
+    with pytest.raises(Refusal, match="cannot be written"):
+        rewrite_owned(root, MOVED)
+    assert _record_digest(root) == before
+    monkeypatch.undo()
+    rewrite_owned(root, {("keelline", "version"): "9.9.10"})
+    text = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    assert 'version = "9.9.10"' in text and _record_digest(root) == digest(text)
+
+
+@needs_git
 def test_nothing_to_move_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A promotion of a gate already enforced, or an upgrade with nothing to move, must not
     # rewrite identical bytes. Mutation (advisory): drop the early return -> this reddens.

@@ -6481,9 +6481,19 @@ reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_
 [[mutation]]
 name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
 file = "src/keelline/project/rewrite.py"
-before = "    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n"
-after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    manifest = Manifest.read(root)\n    record = manifest.get(CONFIG_RECORD)\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
+before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        if stamped is not None:\n            manifest.write(root)\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
 reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
+
+# The record is re-stamped before the write, so a write that fails must put it back: left naming
+# bytes the file never held, a next run computing other bytes (a later version, a new pin) never
+# re-stamps it, and `uninstall` keeps an untouched `keelline.toml` as edited for good.
+[[mutation]]
+name = "a failed write of keelline.toml leaves its record naming bytes the file never held"
+file = "src/keelline/project/rewrite.py"
+before = "        if stamped is not None:\n            manifest.write(root)\n"
+after = ""
+reddens = ["tests/project/test_rewrite.py::test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still_restamps"]
 
 # `could_write` is the anchor retirement rests on: which ids exist and which targets each could
 # have are this build's, built at the lines that build the templates.
