@@ -903,7 +903,10 @@ for each file. The path rules are `upgrade`'s: a leading `./` is dropped, an abs
 with a `..` component is refused (`2`), and a forced path no planned action names is counted in a
 `note:` line and forces nothing.
 
-**Two passes, the footprint first.** The footprint pass removes files and takes the regions out.
+**Two passes, the footprint first.** The footprint pass removes files and takes the regions out;
+a region taken out of a file that keeps other text is reported as
+`remove  AGENTS.md  (retired; Keelline's part only, the file stays)`, and a line without that
+tail means the file itself goes. Every command that prints a plan says it the same way.
 The write-once pass (`keelline.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) is planned again
 after it, so the skeleton is judged once Keelline's region has left `AGENTS.md`: untouched, it is
 byte for byte what `init` wrote and goes. A dry run cannot take the region out first, so it
@@ -956,9 +959,11 @@ bytes the same commit records, and a region only where its key names; the diff s
 under `.keelline/local/`. **Writes** only removals, and region removals, through the scaffold
 engine, then removes the ledger.
 
-Exits `0` when it applied the plans or there was nothing to remove. `1` on a finding: a plan
-carries refusals — the report's REFUSED section names each, and nothing was removed — or a
-`keelline.toml` that does not load. `2` on the refusals above, before any write or part-way.
+Exits `0` when it applied the plans, including when every recorded file was edited and nothing
+was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
+section names each, and nothing was removed — or a `keelline.toml` that does not load. `2` on the
+refusals above, before any write or part-way; a repository with no `.keelline/manifest.json` is
+one of them.
 
 `--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's

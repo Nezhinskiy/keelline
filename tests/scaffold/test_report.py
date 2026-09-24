@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from keelline.scaffold import Action, Plan, Refused, Verb, render_report
+from keelline.scaffold.report import PART_ONLY
 
 
 def a_plan() -> Plan:
@@ -62,3 +63,20 @@ def test_the_count_line_names_every_outcome_including_the_zeros() -> None:
 def test_the_counts_follow_the_plan() -> None:
     text = render_report(a_plan())
     assert "1 to create, 0 to update, 0 to remove, 1 skipped, 1 unchanged, 1 refused" in text
+
+
+def test_a_removal_that_keeps_its_file_says_it_takes_only_keelline_s_part() -> None:
+    # `remove AGENTS.md (retired)` read, in a delete command, as the file going when only the
+    # region did. A payload is what the file becomes, so the line says the file stays; a removal
+    # with none still reads as the file going. Mutation (advisory): drop the payload arm ->
+    # the first assertion reddens.
+    text = render_report(
+        Plan(
+            actions=(
+                Action(Verb.REMOVE, "agents-md", "AGENTS.md", "# Ours\n", "retired", None),
+                Action(Verb.REMOVE, "roadmap", "docs/roadmap.md", None, "retired", None),
+            )
+        )
+    )
+    assert f"AGENTS.md  (retired; {PART_ONLY})" in text
+    assert "docs/roadmap.md  (retired)" in text
