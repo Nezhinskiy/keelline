@@ -191,6 +191,27 @@ def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
     assert data["summary"].splitlines()[0] == "uninstalled:"
 
 
+@needs_git
+@pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "real"])
+def test_a_file_a_later_pass_deletes_is_never_reported_left_in_place(
+    tmp_path: Path, dry_run: bool
+) -> None:
+    # Keelline's region taken out of `AGENTS.md` by hand: the footprint pass lists the file
+    # `skip_modified`, and the write-once pass then removes the untouched skeleton. The file was
+    # counted as "left in place, yours now" after it was deleted. Mutation (advisory): drop the
+    # `not in gone` filter -> `left` names `AGENTS.md` and the first assertion reddens.
+    root = _initialised(tmp_path)
+    agents = root / "AGENTS.md"
+    text = agents.read_text(encoding="utf-8")
+    begin, end = "<!-- keelline:harness:begin -->", "<!-- keelline:harness:end -->\n"
+    agents.write_text(text[: text.index(begin)] + text[text.index(end) + len(end) :])
+    code, data = _run(root, tmp_path, "uninstall", *(("--dry-run",) if dry_run else ()))
+    assert code == 0, data["summary"]
+    assert data["left"] == [] and "left in place" not in data["summary"]
+    assert "skip_modified  AGENTS.md  (retired and hand-edited)" in data["footprint"]
+    assert agents.exists() is dry_run
+
+
 # One removal from each pass: the footprint's body, the write-once pass, the ignore pass, and
 # `keelline.toml` itself, which goes last of all.
 FAILING = ["docs/roadmap.md", "CLAUDE.md", ".gitignore", "keelline.toml"]

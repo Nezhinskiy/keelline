@@ -39,7 +39,7 @@ from keelline.areas import SubParsers
 from keelline.command import DRY_RUN_HELP, common_flags
 from keelline.errors import Refusal
 from keelline.result import Result
-from keelline.scaffold import Plan, Verb, printable, render_report
+from keelline.scaffold import Plan, Verb, printable, render_report, unlinks
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
@@ -254,11 +254,15 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         force=force,
     )
     refused = bool(report.footprint.refusals or report.once.refusals)
-    # Through `printable`, the bound the reports use, so a forged target is `<id>` in both.
+    # Through `printable`, the bound the reports use, so a forged target is `<id>` in both. A
+    # file one pass left and a later action deletes is gone, not left: with Keelline's region
+    # taken out of `AGENTS.md` by hand, the footprint pass skips the file and the write-once pass
+    # removes the untouched skeleton, and counting the skip told the person a deleted file was
+    # theirs now.
+    actions = (*report.footprint.actions, *report.once.actions)
+    gone = {a.target for a in actions if unlinks(a)}
     left = sorted(
-        printable(a)
-        for a in (*report.footprint.actions, *report.once.actions)
-        if a.verb is Verb.SKIP_MODIFIED
+        printable(a) for a in actions if a.verb is Verb.SKIP_MODIFIED and a.target not in gone
     )
     footprint, once = render_report(report.footprint), render_report(report.once)
     lines = [
