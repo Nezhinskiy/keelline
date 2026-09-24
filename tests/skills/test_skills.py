@@ -44,11 +44,11 @@ TOOL_NAMES = (
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against C5 before the command exists, keyed to the
-# package that ships each (§15.2). The lane that ships one DELETES its entry: a parsing
-# command that is still listed here reddens `test_every_invocation_parses_or_is_allowlisted`.
-NOT_YET_SHIPPED = {
-    "uninstall": "upgrade",
-}
+# package that ships each. The lane that ships one DELETES its entry: a parsing command that is
+# still listed here reddens `test_every_invocation_parses_or_is_allowlisted`. Empty since
+# `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written
+# ahead of its command.
+NOT_YET_SHIPPED: dict[str, str] = {}
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`keelline ([^`\n]+)`")
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)

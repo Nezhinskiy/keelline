@@ -52,9 +52,18 @@ def _uninstall(
 @needs_git
 def test_an_untouched_footprint_leaves_only_what_was_there_before(tmp_path: Path) -> None:
     root = initialised(tmp_path)
-    _uninstall(root, tmp_path)
+    report = _uninstall(root, tmp_path)
     assert tree(root) == {"README.md"}
     assert (root / "README.md").read_text(encoding="utf-8") == BEFORE
+    # The report is what ran: the skeleton judged after its region left, and removed, where the
+    # plan made before the first pass called it edited. Mutation (advisory): return the plans
+    # made before any write -> `AGENTS.md` is reported left in place, and this reddens.
+    assert [a.verb for a in report.once.actions if a.artifact_id == "agents-skeleton"] == [
+        Verb.REMOVE
+    ]
+    assert not [
+        a for a in (*report.footprint.actions, *report.once.actions) if a.verb is Verb.SKIP_MODIFIED
+    ]
 
 
 @needs_git

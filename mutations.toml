@@ -4287,12 +4287,13 @@ reddens = [
 # verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
 # caught it is reading every entry's `before` back out of its file and counting. Re-pointed
 # again when the profile adapters rewrote the sentence to eight items that each leave it in the
-# change that ships them; the mutation cuts it back to one.
+# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it; the
+# mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `uninstall`,\n> `assess`, the adoption state machine, the memory MCP server, a hold-the-line\n> baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
-after = "> discipline. **Not yet:** `uninstall` \u2014 each leaves this"
+before = "> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a\n> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each\n> leaves this"
+after = "> discipline. **Not yet:** `assess` \u2014 each\n> leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -6572,8 +6573,8 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    apply(root, plan(root, config, once_retired, force=once_force))"
-after = "    apply(root, once)"
+before = "    judged = plan(root, config, once_retired, force=once_force)"
+after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
 [[mutation]]

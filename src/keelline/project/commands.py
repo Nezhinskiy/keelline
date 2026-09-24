@@ -1,5 +1,5 @@
-"""The project area's commands: `init` writes a repository's Keelline footprint once, and
-`upgrade` refreshes it.
+"""The project area's commands: `init` writes a repository's Keelline footprint once, `upgrade`
+refreshes it, and `uninstall` takes it back.
 
 **The summary is both rendered reports, the way `overlay upgrade`'s is.** It was four lines of
 counts, with every artifact's verb and the whole REFUSED section reachable only under `--json`
@@ -39,7 +39,7 @@ from keelline.areas import SubParsers
 from keelline.command import DRY_RUN_HELP, common_flags
 from keelline.errors import Refusal
 from keelline.result import Result
-from keelline.scaffold import Plan, render_report
+from keelline.scaffold import Plan, Verb, printable, render_report
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
@@ -223,6 +223,62 @@ def run_upgrade(args: argparse.Namespace) -> Result:
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
 
+# The refused lines are `init`'s in substance, with the verb this command performs.
+UNINSTALL_HEADINGS = {
+    (True, True): "refused, and nothing would be removed:",
+    (True, False): "refused, and nothing was removed:",
+    (False, True): "would uninstall:",
+    (False, False): "uninstalled:",
+}
+
+
+def run_uninstall(args: argparse.Namespace) -> Result:
+    from keelline.project.uninstall import KEPT_LOCALLY, uninstall
+
+    force = _force_paths(args.force)
+    report = uninstall(
+        Path(args.root).resolve(),
+        machine=Path(args.machine) if args.machine else None,
+        dry_run=args.dry_run,
+        force=force,
+    )
+    refused = bool(report.footprint.refusals or report.once.refusals)
+    # Through `printable`, the bound the reports use, so a forged target is `<id>` in both.
+    left = sorted(
+        printable(a)
+        for a in (*report.footprint.actions, *report.once.actions)
+        if a.verb is Verb.SKIP_MODIFIED
+    )
+    footprint, once = render_report(report.footprint), render_report(report.once)
+    lines = [
+        UNINSTALL_HEADINGS[(refused, report.dry_run)],
+        "footprint:",
+        footprint,
+        "write-once:",
+        once,
+    ]
+    if left:
+        lines.append(f"left in place, yours now: {len(left)} file(s), each named above")
+    if report.orphans:
+        lines.append(ORPHANS.format(count=report.orphans))
+    if report.note:
+        lines.append(f"note: {report.note}")
+    if report.kept_locally:
+        lines.append(f"note: {KEPT_LOCALLY.format(count=report.kept_locally)}")
+    if unmatched := _unmatched(force, report.footprint, report.once):
+        lines.append(FORCE_UNMATCHED.format(count=unmatched))
+    data = {
+        "dry_run": report.dry_run,
+        "footprint": footprint,
+        "once": once,
+        "left": left,
+        "orphans": report.orphans,
+        "note": report.note,
+        "kept_locally": report.kept_locally,
+    }
+    return Result("\n".join(lines), data, exit_code=1 if refused else 0)
+
+
 def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `keelline.project.init`.
@@ -235,3 +291,11 @@ def register(groups: SubParsers) -> None:
     upgrade.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     upgrade.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
     upgrade.set_defaults(func=run_upgrade)
+    uninstall = common_flags(
+        groups.add_parser(
+            "uninstall", help="remove this repository's footprint; leave what you edited"
+        )
+    )
+    uninstall.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
+    uninstall.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
+    uninstall.set_defaults(func=run_uninstall)

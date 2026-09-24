@@ -1,4 +1,5 @@
-"""`keelline upgrade` through the real parser: flags, exit codes, and what prints.
+"""`keelline upgrade` and `keelline uninstall` through the real parser: flags, exit codes, and what
+prints.
 
 `init --no-ci` sets `[ci] mode = "none"`, so no case here asks the network for a pin.
 """
@@ -20,8 +21,8 @@ from tests.gitfixture import git, needs_git
 
 FORGED = "docs/\x1b[31mforged.md"
 # The commands every shared case runs through, and the invocations that print a report.
-COMMANDS = ["upgrade"]
-REPORTS = [("upgrade", "--dry-run")]
+COMMANDS = ["upgrade", "uninstall"]
+REPORTS = [("upgrade", "--dry-run"), ("uninstall", "--dry-run"), ("uninstall",)]
 UNMATCHED = "note: 1 --force path(s) named no file this run had to judge"
 
 
@@ -125,3 +126,52 @@ def test_a_force_path_that_names_nothing_is_counted(tmp_path: Path) -> None:
     code, data = _run(root, tmp_path, "upgrade", "--dry-run", "--force", "docs/Roadmap.md")
     assert code == 0
     assert UNMATCHED in data["summary"]
+
+
+@needs_git
+def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
+    root = _initialised(tmp_path)
+    (root / "docs" / "roadmap.md").write_text("ours\n", encoding="utf-8")
+    code, data = _run(root, tmp_path, "uninstall")
+    assert code == 0, data["summary"]
+    assert data["left"] == ["docs/roadmap.md"]
+    assert {"dry_run", "footprint", "once", "left", "orphans", "note", "kept_locally"} <= set(data)
+    assert data["summary"].splitlines()[0] == "uninstalled:"
+
+
+@needs_git
+def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit 2 is not "nothing was written". A removal that fails in the write-once pass leaves the
+    footprint pass applied and recorded, the manifest and the ignore block in place, and the next
+    run finishes from what is on disk. The failure is the one the engine translates: an `OSError`
+    from the removal, which `_remove` turns into a refusal.
+
+    No declared mutation: it pins a contract the engine already keeps (`apply` persists the
+    ledger for the actions that ran), which the skills and `docs/cli.md` now state.
+    """
+    import keelline.scaffold.engine as engine
+    from keelline import fsops
+
+    root = _initialised(tmp_path)
+    real = fsops.remove_within
+
+    def failing(where: Path, target: str) -> None:
+        if target == "keelline.toml":
+            raise PermissionError(13, "Permission denied")
+        real(where, target)
+
+    monkeypatch.setattr(engine, "remove_within", failing)
+    code, data = _run(root, tmp_path, "uninstall")
+    assert code == 2, data
+    assert not (root / "docs" / "roadmap.md").exists()
+    assert (root / "keelline.toml").is_file() and (root / ".keelline" / "manifest.json").is_file()
+    assert "keelline:ignore" in (root / ".gitignore").read_text(encoding="utf-8")
+    monkeypatch.setattr(engine, "remove_within", real)
+    code, data = _run(root, tmp_path, "uninstall")
+    assert code == 0, data
+    # Every directory the first run emptied goes too: `_prune` asks about every place this
+    # configuration puts an artifact, not only what this run removed. A first draft left `docs/`
+    # and its subdirectories behind.
+    assert {p.name for p in root.iterdir()} == {".git"}, sorted(p.name for p in root.iterdir())

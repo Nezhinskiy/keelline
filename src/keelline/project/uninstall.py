@@ -225,15 +225,23 @@ def uninstall(
         return UninstallReport(footprint, once, orphans, dry_run, note, kept)
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
-    body = tuple(t for t in footprint_retired if t.id != IGNORE)
-    ignore = tuple(t for t in footprint_retired if t.id == IGNORE)
-    apply(root, plan(root, config, body, force=force))
-    apply(root, plan(root, config, once_retired, force=once_force))
+    body = plan(root, config, [t for t in footprint_retired if t.id != IGNORE], force=force)
+    apply(root, body)
+    # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
+    # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
+    judged = plan(root, config, once_retired, force=once_force)
+    apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
     left = _kept_locally(root, frozenset())
     if left:
         raise Refusal(KEPT_AFTER.format(count=left))
-    apply(root, plan(root, config, ignore, force=force))
+    ignore = plan(root, config, [t for t in footprint_retired if t.id == IGNORE], force=force)
+    apply(root, ignore)
     _prune(root, sorted(places | footprint_targets | once_targets))
-    return UninstallReport(footprint, once, orphans, dry_run, note, 0)
+    ran = Plan(
+        actions=(*body.actions, *ignore.actions),
+        refusals=(*body.refusals, *ignore.refusals),
+        unchanged=(*body.unchanged, *ignore.unchanged),
+    )
+    return UninstallReport(ran, judged, orphans, dry_run, note, 0)

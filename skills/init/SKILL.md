@@ -31,9 +31,8 @@ defaults", so the dry run is how the user sees them before anything is written.
    skipped was already there and the run left it alone, with the reason beside it: in the
    `write-once:` report that reason is "create-once, and the file is already there", which is
    what an adopted `keelline.toml` gets.
-5. Tell the user how to undo it: `git checkout -- .` restores the files that were already
-   tracked, and the files the run created have to be deleted, `.keelline/manifest.json`
-   among them. There is no undo command yet — `keelline uninstall` ships later.
+5. Tell the user how to undo it: `keelline uninstall` removes what this run wrote and leaves
+   any file they edit afterwards; run it with `--dry-run` first.
 6. Ask the user to commit `keelline.toml`, `.keelline/manifest.json` and the footprint
    together. The manifest is what a later refresh reads to tell your edits from the tool's,
    and a footprint committed without it is a footprint nothing can maintain.

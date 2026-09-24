@@ -53,6 +53,7 @@ Three things hold everywhere:
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-upgrade---dry-run---force-path---root-path---machine-path)
+- [`keelline uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-uninstall---dry-run---force-path---root-path---machine-path)
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
 - [`keelline overlay init --owner OWNER [--root PATH]`](#keelline-overlay-init---owner-owner---root-path)
 - [`keelline overlay upgrade [--root PATH] [--dry-run]`](#keelline-overlay-upgrade---root-path---dry-run)
@@ -881,6 +882,78 @@ re-plans from there.
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
 `footprint` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
 (`{tag, sha}` or `null`) and `asked`.
+
+---
+
+## `keelline uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
+
+Takes back what `init` and `upgrade` wrote. A file whose bytes are still the ones the manifest
+records is removed; Keelline's managed regions come out of files that hold other text, and such a
+file goes too only when nothing else was in it; the ledger goes last. A file you edited stays
+where it is, is reported `skip_modified` with its reason, and is counted in a `left in place`
+line. Every recorded artifact is judged, including one this configuration no longer produces, at
+a target this build could have written for it, whatever `[ci] mode` says now: the workflow goes
+under `uvx` too. Any other record is counted in a `note:` line and left where it is, and never
+named, as is a record saying its artifact lived inside a file (a region) that this build no longer
+produces: a region comes out only through the template that names it, never as a whole file.
+
+`--dry-run` reports everything and writes nothing. `--force PATH` removes one file the report
+named `skip_modified`, as a path relative to `--root` exactly as the report prints it; repeat it
+for each file. The path rules are `upgrade`'s: a leading `./` is dropped, an absolute path or one
+with a `..` component is refused (`2`), and a forced path no planned action names is counted in a
+`note:` line and forces nothing.
+
+**Two passes, the footprint first.** The footprint pass removes files and takes the regions out.
+The write-once pass (`keelline.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) is planned again
+after it, so the skeleton is judged once Keelline's region has left `AGENTS.md`: untouched, it is
+byte for byte what `init` wrote and goes. A dry run cannot take the region out first, so it
+judges the skeleton with the region still in it and calls it edited; a `note:` line says so.
+**Forcing `AGENTS.md` takes Keelline's region out of it and never the skeleton**: a forced path
+the footprint pass targets never reaches the write-once pass, compared as the engine places each
+file, so what you wrote into the skeleton is judged on its own bytes.
+
+**The ignore block goes last, and only over an empty `.keelline/local/`.** The `.gitignore`
+region is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes,
+and the artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own,
+after the disk shows nothing left under `.keelline/local/`. Then the ledger:
+`.keelline/assessment.json`, `.keelline/manifest.json`, and every directory a removal left empty,
+deepest first. A harness's own directory, such as one you made for a harness before its rule
+arrived, stays even when it is empty.
+
+**Refused before any write** (`2`): the repository is not initialised; it is attached to an
+overlay, so run `keelline detach` first; `.keelline/local/` holds files this run would not
+remove, such as notes, or an artifact kept out of git that you edited, which the refusal counts
+and never names; or a `--force` path leaves `--root`. A dry run reports that count in a `note:`
+line instead of refusing, so its report still lists the edited file for you to force or move.
+
+**Refused part-way** (`2`): a file that cannot be written or removed, or files still under
+`.keelline/local/` after the write-once pass. What was removed stays removed and recorded, the
+ignore block and the manifest stay, and running the command again finishes from what the first
+run left.
+
+**Without `keelline.toml`**, nothing the manifest records can be judged: every recorded file
+stays, a `note:` line gives their count, and only the ledger goes, so `init` and this command no
+longer refuse the repository.
+
+**The boundary.** Which artifacts exist, where each could be and every region's name are this
+build's. The `[paths]` value a target is built from and the digest a record carries are
+committed, so a commit can make `uninstall` remove a whole file only while it holds exactly the
+bytes the same commit records, and a region only where its key names; the diff shows both. No
+`[paths]` value may name git's control directory or Keelline's own `.keelline/`, and a symlinked
+`.keelline/` is refused. Run it on a checkout you trust.
+
+**Reads** `keelline.toml`, `.keelline/manifest.json`, every file an artifact targets, and what is
+under `.keelline/local/`. **Writes** only removals, and region removals, through the scaffold
+engine, then removes the ledger.
+
+Exits `0` when it applied the plans or there was nothing to remove. `1` on a finding: a plan
+carries refusals — the report's REFUSED section names each, and nothing was removed — or a
+`keelline.toml` that does not load. `2` on the refusals above, before any write or part-way.
+
+`--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
+files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
+order note, or the missing-configuration count, or empty) and `kept_locally` (the count under
+`.keelline/local/` a dry run reports).
 
 ---
 
