@@ -311,6 +311,24 @@ def test_an_untouched_agents_md_kept_out_of_git_goes_whole(tmp_path: Path) -> No
 
 
 @needs_git
+def test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The prediction before any write asks the engine's rule of what the region's removal leaves,
+    # and that rule reads the ledger: the skeleton `init` wrote is Keelline's though this build
+    # renders another. Judged by the render alone, the run refused before any write over a file
+    # nobody touched. Mutation (oracle): "the ledger never vouches for bytes Keelline wrote kept
+    # out of git" -> the refusal is raised.
+    from keelline.project import templates
+
+    root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
+    original = templates.read
+    monkeypatch.setattr(templates, "read", lambda name: original(name) + "\nA later line.\n")
+    _uninstall(root, tmp_path)
+    assert tree(root) == {"README.md", "keelline.toml"}
+
+
+@needs_git
 @pytest.mark.parametrize("edit", ["skeleton", "region"])
 def test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write(
     tmp_path: Path, edit: str
@@ -360,7 +378,7 @@ def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_pred
     """
     import keelline.project.uninstall as module
 
-    monkeypatch.setattr(module, "matches_render", lambda template, text: True)
+    monkeypatch.setattr(module, "ours_locally", lambda template, text, target, digests: True)
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     local = root / LOCAL_AGENTS
     local.write_text(local.read_text(encoding="utf-8") + "\nA LINE OF OURS\n", encoding="utf-8")
@@ -648,3 +666,122 @@ def test_the_root_only_artifacts_are_the_two_uninstall_removes_after_its_check()
     from keelline.project.uninstall import IGNORE
 
     assert set(ROOT_ONLY) == {CONFIG_RECORD, IGNORE}
+
+
+LOCAL_COPY = ".keelline/local/artifacts/docs/roadmap.md"
+
+
+@needs_git
+@pytest.mark.parametrize("upgraded", [False, True], ids=["direct", "after-upgrade"])
+def test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest(
+    tmp_path: Path, upgraded: bool
+) -> None:
+    """`roadmap` kept out of git, then taken out of `[artifacts] local`. The copy under
+    `.keelline/local/artifacts/` was recorded nowhere, so nothing judged it again: `uninstall`
+    refused over it for good and suggested a `--force` no action could reach. The ledger records
+    it, so it goes whether or not an `upgrade` ran in between.
+
+    Mutation (oracle): "uninstall never judges an artifact only the ledger records" -> the direct
+    case refuses with `KEPT_LOCALLY`.
+    """
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('local = ["roadmap"]', "local = []"),
+        encoding="utf-8",
+    )
+    if upgraded:
+        upgrade(root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=False, force=())
+    _uninstall(root, tmp_path)
+    assert tree(root) == {"README.md", "keelline.toml"}
+
+
+@needs_git
+def test_a_changed_copy_left_by_the_local_list_is_named_and_force_is_a_remedy_that_works(
+    tmp_path: Path,
+) -> None:
+    # The refusal names `--force` for a file the report lists, and for this one it now reaches.
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    (root / LOCAL_COPY).write_text("private plans\n", encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('local = ["roadmap"]', "local = []"),
+        encoding="utf-8",
+    )
+    dry = _uninstall(root, tmp_path, dry_run=True)
+    assert (Verb.SKIP_MODIFIED, LOCAL_COPY) in {(a.verb, a.target) for a in dry.footprint.actions}
+    assert dry.kept_locally == 1
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _uninstall(root, tmp_path)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert_snapshot_unchanged(root, before)
+    _uninstall(root, tmp_path, force=(LOCAL_COPY,))
+    assert tree(root) == {"README.md", "keelline.toml"}
+
+
+@needs_git
+def test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Judged by this build's render alone, a copy nobody touched was "edited" to `uninstall`
+    # after any release that changed its template, and the run refused before any write.
+    from keelline.project import templates
+
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    original = templates.read
+    monkeypatch.setattr(
+        templates, "read", lambda name: original(name) + ("\nnew\n" if name == "roadmap.md" else "")
+    )
+    _uninstall(root, tmp_path)
+    assert tree(root) == {"README.md", "keelline.toml"}
+
+
+@needs_git
+def test_the_ledger_of_what_was_kept_out_of_git_is_ignored_and_goes_last(tmp_path: Path) -> None:
+    # It lives under `.keelline/local/`, which the footprint's ignore block keeps out of git, and
+    # it is Keelline's own: never counted as a file left behind, removed before the ignore block.
+    root = initialised(tmp_path, document=LOCAL_ROADMAP)
+    ledger = ".keelline/local/artifacts.json"
+    assert (root / ledger).is_file() and _ignored(root, root / ledger)
+    assert _uninstall(root, tmp_path, dry_run=True).kept_locally == 0
+    _uninstall(root, tmp_path)
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it(
+    tmp_path: Path,
+) -> None:
+    """`agents-md` taken out of `[artifacts] local` while the skeleton stays in it: the region's
+    copy is judged by the footprint pass at the skeleton's own file. A `--force` for that copy
+    must not reach the write-once pass, where it would delete the skeleton and the line a person
+    wrote into it. The file keeps that line, so the run refuses before any write, and says so
+    in the dry run's count.
+
+    Mutation (oracle): "a force meant for a region's left copy reaches the skeleton kept out of
+    git" -> the dry run plans the skeleton `remove (retired, forced)`, and the first assertion
+    reddens.
+    """
+    root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
+    local = root / LOCAL_AGENTS
+    text = local.read_text(encoding="utf-8").replace(
+        "<!-- keelline:harness:begin -->\n", "<!-- keelline:harness:begin -->\nX\n"
+    )
+    local.write_text(text + "\nA LINE OF OURS\n", encoding="utf-8")
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            'local = ["agents-md", "agents-skeleton"]', 'local = ["agents-skeleton"]'
+        ),
+        encoding="utf-8",
+    )
+    dry = _uninstall(root, tmp_path, dry_run=True, force=(LOCAL_AGENTS,))
+    assert [a.verb for a in dry.once.actions if a.artifact_id == "agents-skeleton"] == [
+        Verb.SKIP_MODIFIED
+    ]
+    assert dry.kept_locally == 1
+    before = snapshot(root)
+    with pytest.raises(Refusal, match=re.escape(KEPT_LOCALLY.format(count=1))):
+        _uninstall(root, tmp_path, force=(LOCAL_AGENTS,))
+    assert_snapshot_unchanged(root, before)

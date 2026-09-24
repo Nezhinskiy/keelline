@@ -40,21 +40,25 @@ from keelline.config.schema import PROJECT_NAME, Config
 from keelline.errors import Refusal
 from keelline.fsops import UnsafePath, remove_within, write_within
 from keelline.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
+from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
 from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Template, Verb
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
-LOCAL_ROOT = ".keelline/local"
-# `[artifacts] local` artifacts live one directory further down, so no `[artifacts] local` entry
-# can land one on a file another lane keeps under `LOCAL_ROOT`: attach's ledger, the local-only
-# note store. `PATH_VALUE` refuses a `..` segment, so for that setting the prefix is a boundary
-# and not a convention; the anchor is this constant in the installed package. A `[paths]` value
-# never reaches `.keelline/` at all: `config.paths.validate_paths` refuses one that names it.
-LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"
-# The reason a local artifact is left alone. It is never recorded, so the one oracle for
-# "Keelline's bytes" is what this build renders, and anything else may be an edit in a directory
-# git will not give back.
-NOT_OURS_LOCALLY = "kept out of git, and not the bytes this Keelline writes"
+# The reasons a file kept out of git is left alone, which is the rule for one: an edit
+# overwritten or removed there is one git cannot give back, so only bytes Keelline can show are
+# its own go. `CHANGED_LOCALLY` when `LocalDigests` records what Keelline last wrote there and the
+# file no longer holds it; `NOT_OURS_LOCALLY` when nothing records it (the ledger was deleted,
+# say) and the file is not what this build writes either, which says nothing about who changed it.
+CHANGED_LOCALLY = "kept out of git, and changed since Keelline wrote it"
+NOT_OURS_LOCALLY = (
+    "kept out of git, with no record of what Keelline wrote there, and not the bytes it writes now"
+)
+# A copy Keelline wrote under `LOCAL_ARTIFACTS` for an artifact whose id has since left
+# `[artifacts] local`, and whose bytes are no longer the ones it wrote.
+LEFT_LOCALLY = (
+    "kept out of git where [artifacts] local no longer puts it, and changed since Keelline wrote it"
+)
 SOURCE_NAME = PROJECT_NAME  # the one name grammar, `config.schema.PROJECT_NAME`
 SOURCE_RULE = "lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit"
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
@@ -135,6 +139,35 @@ def matches_render(template: Template, current: str) -> bool:
     _, stamp = _payload_and_stamp(template, current)
     present = _present_stamp(template, current)
     return present is not None and digest(present) == digest(stamp)
+
+
+def ours_locally(template: Template, current: str, target: str, digests: LocalDigests) -> bool:
+    """Whether `current`, the file at `target` under `LOCAL_ARTIFACTS`, holds only bytes Keelline
+    can show are its own for `template`: what `digests` records it last wrote there, or what this
+    build renders. The one rule `plan` removes or refreshes a file kept out of git by, public so
+    `uninstall` can ask it of text not yet on disk before anything is written."""
+    present = _present_stamp(template, current)
+    if present is not None and digests.matches(template.id, target, digest(present)):
+        return True
+    return matches_render(template, current)
+
+
+def left_copy(template: Template, config: Config, digests: LocalDigests) -> str | None:
+    """The copy kept out of git `digests` says Keelline left for `template` once its id left
+    `[artifacts] local`: at the one other place this template can produce, its target under
+    `LOCAL_ARTIFACTS`. `None` while the list names it, and for any other recorded place, which is
+    not this build's to judge."""
+    if template.id in config.artifacts.local:
+        return None
+    recorded = digests.target_of(template.id)
+    return recorded if recorded == f"{LOCAL_ARTIFACTS}/{template.target}" else None
+
+
+def local_copy(template: Template, config: Config, digests: LocalDigests) -> str | None:
+    """The file under `LOCAL_ARTIFACTS` `plan` judges as `template`'s copy kept out of git: its
+    effective target while `[artifacts] local` lists it, and `left_copy` once it does not."""
+    target, location = effective_target(template, config)
+    return target if location is Location.LOCAL else left_copy(template, config, digests)
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -231,6 +264,7 @@ def plan(
 ) -> Plan:
     validate_sources(config)
     manifest = Manifest.read(root)
+    digests = LocalDigests.read(root)
     resolved_root = root.resolve()
     forced = set(force)
     actions: list[Action] = []
@@ -256,6 +290,16 @@ def plan(
                 continue
             actions.append(moved)
             record = None
+        if location is Location.REPO:
+            copy = left_copy(template, config, digests)
+            if copy is not None:
+                try:
+                    left = _left_locally(root, resolved_root, template, copy, digests, forced)
+                except _OWN_FILE_REFUSALS as exc:
+                    refusals.append(Refused(template.id, copy, str(exc)))
+                    continue
+                if left is not None:
+                    actions.append(left)
 
         current, reason = _read(path)
         if reason is not None:
@@ -269,7 +313,7 @@ def plan(
         try:
             if template.retired:
                 _plan_retired(
-                    template, record, current, target, location, forced, actions, unchanged
+                    template, record, current, target, location, forced, actions, unchanged, digests
                 )
                 continue
             if template.kind is Kind.ONCE and current is not None:
@@ -342,10 +386,17 @@ def plan(
                 and location is Location.LOCAL
                 and present is not None
                 and target not in forced
+                and not digests.matches(template.id, target, digest(present))
             ):
-                actions.append(
-                    Action(Verb.SKIP_MODIFIED, template.id, target, None, NOT_OURS_LOCALLY, None)
+                # Neither this build's bytes nor, by the ledger, the bytes Keelline last wrote
+                # here: an edit, or a file nothing records. What the ledger does record goes on to
+                # be refreshed below, which is how an unedited copy follows a changed template.
+                reason = (
+                    CHANGED_LOCALLY
+                    if digests.target_of(template.id) == target
+                    else (NOT_OURS_LOCALLY)
                 )
+                actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
                 continue
             hand_edited = (
                 record is not None and present is not None and digest(present) != record.sha256
@@ -419,6 +470,41 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     return Action(Verb.REMOVE, template.id, record.target, payload, "relocated", record)
 
 
+def _left_locally(
+    root: Path,
+    resolved_root: Path,
+    template: Template,
+    copy: str,
+    digests: LocalDigests,
+    forced: set[str],
+) -> Action | None:
+    """The copy kept out of git that an artifact left behind when its id left `[artifacts] local`.
+
+    `left_copy` has already bounded `copy` to the template's own target under `LOCAL_ARTIFACTS`,
+    and it is contained here before it is read, like every other target. Nothing there, or a file
+    holding none of this artifact's part (a region whose markers are gone), is nothing to do.
+    Bytes `ours_locally` accepts go, as a `REMOVE` that takes a region out of a file and leaves
+    the rest; anything else is an edit git cannot give back, so it is left and named, and
+    `--force` with its path takes it. Without this, nothing ever judged the copy again, and
+    `uninstall` refused over it for good, suggesting a `--force` no action could reach.
+    """
+    try:
+        path = contained(root, copy, resolved_root=resolved_root)
+    except PathEscape as exc:
+        return Action(Verb.SKIP_MODIFIED, template.id, copy, None, str(exc), None)
+    current, reason = _read(path)
+    if reason is not None:
+        return Action(Verb.SKIP_MODIFIED, template.id, copy, None, reason, None)
+    if current is None or _present_stamp(template, current) is None:
+        return None
+    ours = ours_locally(template, current, copy, digests)
+    if ours or copy in forced:
+        payload = _removal_payload(template, current)
+        why = "relocated" if ours else "relocated, forced"
+        return Action(Verb.REMOVE, template.id, copy, payload, why, None)
+    return Action(Verb.SKIP_MODIFIED, template.id, copy, None, LEFT_LOCALLY, None)
+
+
 def _left_behind(template: Template, record: Record, reason: str) -> Action:
     return Action(Verb.SKIP_MODIFIED, template.id, record.target, None, reason, None)
 
@@ -432,21 +518,24 @@ def _plan_retired(
     forced: set[str],
     actions: list[Action],
     unchanged: list[str],
+    digests: LocalDigests,
 ) -> None:
     if current is None:
         unchanged.append(template.id)
         return
     if location is Location.LOCAL:
-        # No record exists for a local artifact, so it is judged against this build's own
-        # render, the one oracle it has. The directory is git-ignored: an edit removed here is
-        # one git cannot give back, so a file that is not exactly Keelline's goes only when forced.
-        ours = matches_render(template, current)
+        # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the
+        # bytes the ledger says Keelline last wrote here, or this build's render. The directory
+        # is git-ignored: an edit removed here is one git cannot give back, so a file that is
+        # neither goes only when forced.
+        ours = ours_locally(template, current, target, digests)
         if ours or target in forced:
             payload = _removal_payload(template, current)
             reason = "retired" if ours else "retired, forced"
             actions.append(Action(Verb.REMOVE, template.id, target, payload, reason, None))
         else:
-            reason = f"retired, {NOT_OURS_LOCALLY}"
+            why = CHANGED_LOCALLY if digests.target_of(template.id) == target else NOT_OURS_LOCALLY
+            reason = f"retired, {why}"
             actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
         return
     if record is None:
@@ -494,6 +583,7 @@ def apply(root: Path, planned: Plan) -> Applied:
         raise Refusal(f"{len(planned.refusals)} path(s) refused: {detail}")
 
     manifest = Manifest.read(root)
+    digests = kept = LocalDigests.read(root)
     resolved_root = root.resolve()
     written: list[str] = []
     removed: list[str] = []
@@ -517,6 +607,8 @@ def apply(root: Path, planned: Plan) -> Applied:
                 _remove(root, action.target, action.payload)
                 removed.append(action.target)
                 manifest = manifest.without(frozenset({action.artifact_id}))
+                if digests.target_of(action.artifact_id) == action.target:
+                    digests = digests.without(action.artifact_id)
                 continue
             if action.verb in WRITING:
                 if action.payload is None:
@@ -527,8 +619,17 @@ def apply(root: Path, planned: Plan) -> Applied:
                     manifest = manifest.with_record(action.record)
                 else:
                     manifest = manifest.without(frozenset({action.artifact_id}))
+                if action.record is not None and action.record.location is Location.LOCAL:
+                    # Kept out of git, so recorded where git never sees it: `LocalDigests`.
+                    digests = digests.with_entry(
+                        action.artifact_id, action.target, action.record.sha256
+                    )
     finally:
         manifest.write(root)
+        # Written only when it changed, so a footprint with nothing kept out of git never gains
+        # a `.keelline/local/` for it.
+        if digests != kept:
+            digests.write(root)
 
     return Applied(written=tuple(written), removed=tuple(removed), skipped=tuple(skipped))
 

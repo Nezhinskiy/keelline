@@ -316,7 +316,7 @@ def test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes
     local.write_text("BODY\nand the owner's own line\n", encoding="utf-8")
     planned = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.reason) for a in planned.actions] == [
-        (Verb.SKIP_MODIFIED, "kept out of git, and not the bytes this Keelline writes")
+        (Verb.SKIP_MODIFIED, engine.CHANGED_LOCALLY)
     ]
     forced = plan(tmp_path, config, [a_template()], force=(".keelline/local/artifacts/AGENTS.md",))
     assert [(a.verb, a.reason) for a in forced.actions] == [(Verb.UPDATE, "refreshed")]

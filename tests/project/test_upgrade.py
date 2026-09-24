@@ -614,3 +614,26 @@ def test_an_edited_artifact_kept_out_of_git_is_left_and_named(tmp_path: Path) ->
     verbs = {a.artifact_id: a.verb for a in report.footprint.actions}
     assert verbs["roadmap"] is Verb.SKIP_MODIFIED
     assert "private plans" in local.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_changed(
+    tmp_path: Path, newer: Callable[[], None]
+) -> None:
+    # The ledger under `.keelline/local/` records what Keelline wrote there, so a copy nobody
+    # touched is refreshed like a committed one. With the render as its only oracle it was
+    # `skip_modified` after every release that changed its template, and `uninstall` refused
+    # over it, calling it edited.
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        '\n[artifacts]\nlocal = ["documentation-policy"]\n\n[ci]\nmode = "none"\n',
+    )
+    newer()
+    report = _upgrade(root, tmp_path, NO_TAG)
+    verbs = {a.artifact_id: (a.verb, a.reason) for a in report.footprint.actions}
+    assert verbs["documentation-policy"] == (Verb.UPDATE, "refreshed")
+    local = root / ".keelline" / "local" / "artifacts" / "docs" / "architecture"
+    assert "A line the next release adds." in (local / "documentation.md").read_text(
+        encoding="utf-8"
+    )

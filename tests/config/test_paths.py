@@ -339,13 +339,13 @@ def test_every_file_keelline_keeps_in_its_own_directory_is_under_the_reserved_na
     from keelline.attach.api import LEDGER
     from keelline.memory.store import LOCAL_STORE
     from keelline.project.uninstall import ASSESSMENT, LEDGER_DIRS
-    from keelline.scaffold import LOCAL_ROOT, MANIFEST_PATH
-    from keelline.scaffold.engine import LOCAL_ARTIFACTS
+    from keelline.scaffold import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, MANIFEST_PATH
 
     for path in (
         LEDGER,
         LOCAL_ROOT,
         LOCAL_ARTIFACTS,
+        LOCAL_DIGESTS,
         MANIFEST_PATH.as_posix(),
         LOCAL_STORE.as_posix(),
         ASSESSMENT,

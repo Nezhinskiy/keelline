@@ -45,9 +45,10 @@ user edited is skipped and named, never overwritten.
   value to set by hand.
 - **A `note:` about records this Keelline does not produce is not an error.** Those files were
   left where they are, on purpose.
-- **A file kept out of git is compared with what this Keelline writes.** One that differs is
-  skipped like an edited file, because nothing brings it back once it is overwritten. Ask
-  before forcing it, like any other.
+- **A file kept out of git is refreshed only while it holds what Keelline last wrote there.**
+  One that changed since is skipped like an edited file, because nothing brings it back once it
+  is overwritten; so is a copy left behind when its id left `[artifacts] local`. Ask before
+  forcing either, like any other.
 - **A target printed as `<id>` is one the manifest recorded outside the path grammar.** Relay it
   as printed, and never look up or guess the path behind it.
 - **There are no hooks to re-trust.** `init` writes no project-level hook entries, so an upgrade

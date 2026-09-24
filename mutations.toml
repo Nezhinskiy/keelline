@@ -6463,7 +6463,7 @@ reddens = ["tests/scaffold/test_engine.py::test_a_retired_local_artifact_edited_
 
 [[mutation]]
 name = "artifacts kept out of git share a directory with attach's ledger and the note store"
-file = "src/keelline/scaffold/engine.py"
+file = "src/keelline/scaffold/local.py"
 before = 'LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"'
 after = "LOCAL_ARTIFACTS = LOCAL_ROOT"
 reddens = ["tests/scaffold/test_engine.py::test_a_local_artifact_moves_under_dot_keelline"]
@@ -6778,3 +6778,78 @@ reddens = [
   "tests/project/test_ignored.py::test_init_refuses_a_path_git_ignores_and_writes_nothing",
   "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
 ]
+
+# `LocalDigests` records what Keelline last wrote under `.keelline/local/artifacts/`, which the
+# committed manifest never does. With the render as the only oracle, an unedited copy read as
+# somebody's after any release that changed its template: `upgrade` skipped it and `uninstall`
+# refused over it, calling it edited; and a copy whose id left `[artifacts] local` was never
+# judged again, so `uninstall` refused for good, suggesting a `--force` nothing could reach.
+[[mutation]]
+name = "an unedited artifact kept out of git is skipped as not Keelline's once its template changes"
+file = "src/keelline/scaffold/engine.py"
+before = "                and not digests.matches(template.id, target, digest(present))\n"
+after = ""
+reddens = [
+  "tests/scaffold/test_local.py::test_an_unedited_copy_follows_a_changed_template",
+  "tests/project/test_upgrade.py::test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_changed",
+]
+
+[[mutation]]
+name = "the ledger never vouches for bytes Keelline wrote kept out of git"
+file = "src/keelline/scaffold/engine.py"
+before = "    if present is not None and digests.matches(template.id, target, digest(present)):\n        return True"
+after = "    if False:\n        return True"
+reddens = [
+  "tests/scaffold/test_local.py::test_a_retired_unedited_copy_goes_after_its_template_changed",
+  "tests/project/test_uninstall.py::test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed",
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_changed",
+]
+
+[[mutation]]
+name = "a copy left kept out of git when its id left [artifacts] local is never judged"
+file = "src/keelline/scaffold/engine.py"
+before = "            copy = left_copy(template, config, digests)\n"
+after = "            copy = None\n"
+reddens = [
+  "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
+  "tests/scaffold/test_local.py::test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it",
+]
+
+[[mutation]]
+name = "uninstall never judges an artifact only the ledger records"
+file = "src/keelline/project/uninstall.py"
+before = "    wanted = set(manifest.records) | set(config.artifacts.local) | set(digests.entries)"
+after = "    wanted = set(manifest.records) | set(config.artifacts.local)"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest",
+  "tests/project/test_uninstall.py::test_a_changed_copy_left_by_the_local_list_is_named_and_force_is_a_remedy_that_works",
+]
+
+# The ledger is kept out of git, and a clone can force-add it anyway, so it authorizes nothing
+# beyond bytes its writer already names, at the one place a template of this build could have put
+# its copy. Two layers, each held by its own case: the reader drops a ledger naming anything
+# outside `.keelline/local/artifacts/`, and the engine takes an entry as an artifact's copy only
+# at that artifact's own target there.
+[[mutation]]
+name = "a ledger entry may name a file outside the artifacts directory"
+file = "src/keelline/scaffold/local.py"
+before = "            and target.startswith(f\"{LOCAL_ARTIFACTS}/\")\n"
+after = ""
+reddens = ["tests/scaffold/test_local.py::test_a_ledger_that_is_not_exactly_this_shape_is_absent"]
+
+[[mutation]]
+name = "a ledger entry names which file kept out of git is an artifact's copy"
+file = "src/keelline/scaffold/engine.py"
+before = "    return recorded if recorded == f\"{LOCAL_ARTIFACTS}/{template.target}\" else None"
+after = "    return recorded"
+reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_reaches_only_the_artifact_s_own_place"]
+
+# The same guard for the copy a region left kept out of git when its id left `[artifacts] local`:
+# the footprint pass judges it at the skeleton's own file, so a force meant for it must not
+# reach the write-once pass there either.
+[[mutation]]
+name = "a force meant for a region's left copy reaches the skeleton kept out of git"
+file = "src/keelline/project/uninstall.py"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired if (copy := left_copy(t, config, digests)) is not None\n    }\n"
+after = ""
+reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]

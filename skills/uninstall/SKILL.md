@@ -15,9 +15,10 @@ edited stays where it is and is listed.
    about `AGENTS.md` means the real run judges the skeleton after taking Keelline's section
    out, so a file the dry run calls edited there may still go.
 3. A `note:` counting files under `.keelline/local/` means the real run will refuse. They are
-   the user's notes kept out of git, or an edited file kept out of git, and the ignore block
-   this command removes is what keeps them out of it. Relay the count. Moving them is the
-   user's decision; never move or delete them yourself.
+   the user's notes kept out of git, or a file kept out of git that changed since Keelline wrote
+   it, and the ignore block this command removes is what keeps them out of it. Relay the count.
+   A file the report lists `skip_modified` there is step 4's question; moving the rest is the
+   user's decision. Never move or delete them yourself.
 4. For each file left in place, ask the user. Add `--force <path>` only for a file they name,
    with the path exactly as the report prints it. Forcing `AGENTS.md` takes Keelline's section
    out of it, never the rest of the file.

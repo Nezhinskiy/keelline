@@ -51,11 +51,18 @@ process killed mid-pass can leave an empty directory behind, which no later run 
 `.keelline/local/` holds a file this run would not remove, the local-only memory notes above all.
 That count is a prediction from the plans: a file goes only when an action unlinks it, or when
 a region's removal leaves exactly what the write-once pass then removes, which the engine's own
-rule for a file kept out of git (`matches_render`) answers before anything is written. An edited
-region, or a skeleton a person wrote into that shares the region's file, keeps the file, so the
-run refuses before it writes rather than part-way. The check above stays as the fact behind the
-prediction. It counts and never names a path, and a dry run reports it instead of refusing, even
-when a plan refuses, so the report that lists an edited local artifact is still printed.
+rule for a file kept out of git (`ours_locally`, asked of the file `local_copy` names) answers
+before anything is written. An edited region, or a skeleton a person wrote into that shares the
+region's file, keeps the file, so the run refuses before it writes rather than part-way. The check
+above stays as the fact behind the prediction. It counts and never names a path, and a dry run
+reports it instead of refusing, even when a plan refuses, so the report that lists an edited
+local artifact is still printed.
+
+**The engine's ledger of what it wrote under `.keelline/local/artifacts/`** (`LOCAL_DIGESTS`) is
+Keelline's own and is never counted. It goes after the write-once pass, once nothing else is left
+under `.keelline/local/`, and before the ignore block. Every artifact it records is judged, so a
+copy left behind when its id left `[artifacts] local` goes while its bytes are Keelline's, and is
+listed `skip_modified` otherwise, where `--force` with its path reaches it.
 
 **A refusal while writing is not a refusal before it.** The engine keeps what it applied, and
 records it, when a later write or removal fails; so does this command across its passes. Exit 2
@@ -96,17 +103,21 @@ from keelline.project.templates import (
 )
 from keelline.release.api import Resolution
 from keelline.scaffold import (
+    LOCAL_ARTIFACTS,
+    LOCAL_DIGESTS,
     LOCAL_ROOT,
     MANIFEST_PATH,
     Action,
-    Location,
+    LocalDigests,
     Manifest,
     Plan,
     Template,
     Verb,
     apply,
     effective_target,
-    matches_render,
+    left_copy,
+    local_copy,
+    ours_locally,
     plan,
     unlinks,
 )
@@ -121,9 +132,10 @@ ATTACHED = (
 )
 KEPT_LOCALLY = (
     f"{LOCAL_ROOT}/ holds {{count}} file(s) uninstall would not remove, and the ignore block it "
-    "takes out is what keeps them out of git: local-only memory notes, or an artifact kept out "
-    "of git that was edited. uninstall refuses until they are moved out of it; an edited "
-    "artifact in a file of its own there can instead be named with --force"
+    "takes out is what keeps them out of git: local-only memory notes, or a file kept out of git "
+    "that changed since Keelline wrote it or that nothing records Keelline writing. uninstall "
+    "refuses until they are moved out of it; one the report lists skip_modified in a file of its "
+    "own can instead be named with --force"
 )
 KEPT_AFTER = (
     f"{LOCAL_ROOT}/ still holds {{count}} file(s) after the other removals, so the ignore block "
@@ -228,6 +240,34 @@ def _apply(root: Path, planned: Plan) -> None:
         _prune(root, [target for target in removed if not os.path.lexists(root / target)])
 
 
+def _remove_local_artifacts(root: Path) -> None:
+    """The engine's ledger of what it wrote under `.keelline/local/artifacts/`, then every empty
+    directory there, before the ignore block that keeps them out of git goes.
+
+    Reached only once nothing but the ledger is left under `.keelline/local/`, so every directory
+    under `LOCAL_ARTIFACTS` is empty or holds only empty ones. They are pruned whole, and not
+    only above what this run removed, because the directory is Keelline's own, which no `[paths]`
+    value reaches, and an `upgrade` that moved an artifact out of it left its directories behind.
+    A directory where the ledger belongs is not a file Keelline wrote: it goes only if empty.
+    """
+    path = root / LOCAL_DIGESTS
+    if path.is_dir() and not path.is_symlink():
+        with contextlib.suppress(OSError):
+            rmdir_within(root, LOCAL_DIGESTS)
+    else:
+        try:
+            remove_within(root, LOCAL_DIGESTS)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise Refusal(f"{LOCAL_DIGESTS} cannot be removed: {exc}") from exc
+    base = contained(root, LOCAL_ARTIFACTS)
+    if base.is_dir() and not base.is_symlink():
+        below = (p for p in base.rglob("*") if p.is_dir() and not p.is_symlink())
+        found = {f"{LOCAL_ARTIFACTS}/{p.relative_to(base).as_posix()}" for p in below}
+        _rmdirs(root, {*found, LOCAL_ARTIFACTS})
+
+
 def _remove_ledger(root: Path) -> None:
     """`.keelline/assessment.json`, the manifest last, then `.keelline/` once it is empty.
 
@@ -267,12 +307,15 @@ def uninstall(
         return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
     config = loads(document, root, machine=machine)
     refuse_local_root_only(config)
+    digests = LocalDigests.read(root)
     prepared = project_templates(
         root, config, resolution=Resolution(None, True), document=document, adopted=True
     )
     produced = {t.id for t in (*prepared.once, *prepared.footprint)}
     retired, orphans = retired_templates(prepared.could_write, manifest.records, produced)
-    wanted = set(manifest.records) | set(config.artifacts.local)
+    # And every artifact the ledger says Keelline wrote a copy of kept out of git: one whose id
+    # has left `[artifacts] local` since is recorded nowhere else.
+    wanted = set(manifest.records) | set(config.artifacts.local) | set(digests.entries)
     footprint_retired = (*_retire(prepared.footprint, wanted), *retired)
     once_retired = _retire(prepared.once, wanted)
     # `keelline.toml` goes last of all, after the ignore pass and the directories: while it and
@@ -282,6 +325,11 @@ def uninstall(
     # Paths as the engine resolves them: an `[artifacts] local` target lives under
     # `.keelline/local/artifacts/`, which `Template.target` does not say.
     footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}
+    # And the copy an artifact left kept out of git when its id left `[artifacts] local`, which
+    # the footprint pass judges: forced, it must not reach a skeleton sharing that file either.
+    footprint_targets |= {
+        copy for t in footprint_retired if (copy := left_copy(t, config, digests)) is not None
+    }
     once_force = tuple(path for path in force if path not in footprint_targets)
     footprint = plan(root, config, footprint_retired, force=force)
     once = plan(root, config, once_retired, force=once_force)
@@ -294,14 +342,13 @@ def uninstall(
     # pass will then remove: the engine's own verdict for a file kept out of git, asked of those
     # bytes now. Only such a file matters here, since no `[paths]` value reaches `.keelline/`.
     local_once = {
-        target: template
+        copy: template
         for template in once_body
-        for target, location in [effective_target(template, config)]
-        if location is Location.LOCAL
+        if (copy := local_copy(template, config, digests)) is not None
     }
-    unlinked = {a.target for a in footprint.actions if _goes(a, local_once)}
+    unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
-    kept = _kept_locally(root, unlinked)
+    kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS})
     if dry_run or footprint.refusals or once.refusals:
         return UninstallReport(footprint, once, orphans, dry_run, note, kept)
     if kept:
@@ -314,9 +361,10 @@ def uninstall(
     _apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
-    left = _kept_locally(root, frozenset())
+    left = _kept_locally(root, frozenset({LOCAL_DIGESTS}))
     if left:
         raise Refusal(KEPT_AFTER.format(count=left))
+    _remove_local_artifacts(root)
     ignore = plan(root, config, [t for t in footprint_retired if t.id == IGNORE], force=force)
     _apply(root, ignore)
     last = plan(root, config, config_retired, force=once_force)
@@ -325,7 +373,7 @@ def uninstall(
     return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)
 
 
-def _goes(action: Action, local_once: Mapping[str, Template]) -> bool:
+def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDigests) -> bool:
     """Whether the file `action` targets is gone once both passes ran: it unlinks it, or it takes
     a region out of a file kept out of git and leaves exactly what the write-once pass removes.
     A `REMOVE` with a payload keeps the file for the footprint pass, and a `SKIP_MODIFIED` keeps
@@ -338,7 +386,7 @@ def _goes(action: Action, local_once: Mapping[str, Template]) -> bool:
         action.verb is Verb.REMOVE
         and action.payload is not None
         and template is not None
-        and matches_render(template, action.payload)
+        and ours_locally(template, action.payload, action.target, digests)
     )
 
 

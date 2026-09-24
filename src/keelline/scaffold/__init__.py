@@ -9,20 +9,23 @@ by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall
 compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
 `Template.target` does not say) and must know which planned removal deletes a file rather than
 rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
-would drift from it. `matches_render` is for `uninstall` too: before any write it predicts
-whether the write-once pass will remove what a region's removal leaves in a file kept out of
-git, and that verdict is the engine's own rule for such a file. `LOCAL_ARTIFACTS` is for the
-project area's guard against writes git ignores, which exempts the one directory Keelline keeps
-out of git on purpose. Importing a private module of this package from another area is a review
-finding; if a lane needs something this list does not carry, the list grows deliberately.
+would drift from it. `ours_locally`, `local_copy` and `left_copy` are for `uninstall` too:
+before any write it predicts whether the write-once pass will remove what a region's removal
+leaves in a file kept out of git, and that verdict, which file it is asked of, and which copy a
+`--force` meant for the footprint pass names, are the engine's own rule for such a file.
+`LocalDigests` and `LOCAL_DIGESTS` are the ledger that rule reads, which `uninstall` removes before
+the ignore block goes. `LOCAL_ARTIFACTS` is for the project area's guard against writes git
+ignores, which exempts the one directory Keelline keeps out of git on purpose. Importing a private
+module of this package from another area is a review finding; if a lane needs something this list
+does not carry, the list grows deliberately.
 """
 
 from keelline.scaffold.engine import (
-    LOCAL_ARTIFACTS,
-    LOCAL_ROOT,
     apply,
     effective_target,
-    matches_render,
+    left_copy,
+    local_copy,
+    ours_locally,
     plan,
     shipped_profiles,
     unlinks,
@@ -36,6 +39,7 @@ from keelline.scaffold.entries import (
     owned,
     owned_ids,
 )
+from keelline.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from keelline.scaffold.manifest import (
     FORMAT,
     MANIFEST_PATH,
@@ -53,12 +57,14 @@ from keelline.scaffold.report import printable, render_report
 __all__ = [
     "FORMAT",
     "LOCAL_ARTIFACTS",
+    "LOCAL_DIGESTS",
     "LOCAL_ROOT",
     "MANIFEST_PATH",
     "Action",
     "Applied",
     "EntriesError",
     "Kind",
+    "LocalDigests",
     "Location",
     "Manifest",
     "ManifestError",
@@ -75,9 +81,11 @@ __all__ = [
     "drop",
     "effective_target",
     "extract",
+    "left_copy",
+    "local_copy",
     "mark",
     "marker_id",
-    "matches_render",
+    "ours_locally",
     "owned",
     "owned_ids",
     "plan",
