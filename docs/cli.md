@@ -787,8 +787,9 @@ grammar, naming git's control directory or Keelline's own `.keelline/`, or reach
 component that is a symlink — all three refused by the loader before a plan exists — two
 artifacts of one pass that resolve to one file, which is named with the two `[paths]` keys to
 separate, an `[artifacts] local` list naming a profile artifact, which every pointer at it reads
-at its committed path, and one naming `config` or `gitignore`, which only work at the repository
-root.
+at its committed path, one naming `config` or `gitignore`, which only work at the repository
+root, and a planned write git reports ignored, counted and never named (see `upgrade`'s
+boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -882,7 +883,13 @@ records. A managed region is inserted into whatever file its key names: a commit
 `[paths] agents_md` at another tracked file gets the region written into that file, and the diff
 shows both the edit and the region. No `[paths]` value may name git's control directory or
 Keelline's own `.keelline/`, where attach's ledger and the local-only notes live out of git's
-sight; the loader refuses either, naming the key. Run it on a checkout you trust. There are no
+sight; the loader refuses either, naming the key. And a file git ignores is never written or
+removed: when git reports any file the run would write or remove as ignored, the run is refused
+(`2`) before anything is written, dry run included, with a count and never the paths. A tracked
+file that matches an ignore pattern is not ignored, because git shows every change to it; the
+artifacts `[artifacts] local` keeps under `.keelline/local/artifacts/` are exempt, since keeping
+them out of git is what that setting asks for; and outside a git work tree there is no guard,
+because there is no diff to hide from. Run it on a checkout you trust. There are no
 hooks to re-trust afterwards: `init` writes no project-level hook entries, so an upgrade changes
 none.
 
@@ -895,9 +902,10 @@ Exits `0` when it applied the plan or there was nothing to do. `1` on a finding:
 refusals — the report's REFUSED section names each, and nothing was written — or a
 `keelline.toml` that does not load, as for every command. `2` on a refusal before any write: the
 repository is not initialised, `keelline.toml` is missing, it records a newer Keelline, a
-version with no leading `X.Y.Z` or one Keelline does not order against the running one, a key is written in a shape the editor refuses, a profile
-artifact, `config` or `gitignore` is listed in `[artifacts] local`, or a `--force` path leaves
-`--root`. `2` also when a file cannot be written or removed part-way through; what was already
+version with no leading `X.Y.Z` or one Keelline does not order against the running one, a key is
+written in a shape the editor refuses, a profile artifact, `config` or `gitignore` is listed in
+`[artifacts] local`, git reports a file the run would write or remove as ignored, or a `--force`
+path leaves `--root`. `2` also when a file cannot be written or removed part-way through; what was already
 applied stays applied and recorded, and running the command again re-plans from there.
 
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
@@ -955,7 +963,8 @@ overlay, so run `keelline detach` first; `keelline.toml` is missing while the ma
 it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the
 repository root, so take them out of the list; `.keelline/local/` holds files this run would not
 remove, such as notes, or an artifact kept out of git that you edited, which the refusal counts
-and never names; or a `--force` path leaves `--root`. The count is exact before anything is
+and never names; git reports a file the run would remove or rewrite as ignored, counted and never
+named; or a `--force` path leaves `--root`. The count is exact before anything is
 written, including what taking a region out of a file kept out of git would leave behind. Move
 the files out; an edited artifact in a file of its own there can be named with `--force` instead,
 but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file, and
@@ -984,7 +993,8 @@ build's. The `[paths]` value a target is built from and the digest a record carr
 committed, so a commit can make `uninstall` remove a whole file only while it holds exactly the
 bytes the same commit records, and a region only where its key names; the diff shows both. No
 `[paths]` value may name git's control directory or Keelline's own `.keelline/`, and a symlinked
-`.keelline/` is refused. Run it on a checkout you trust.
+`.keelline/` is refused. A file git ignores is never removed or rewritten: the run is refused
+(`2`) before any removal, dry run included, as `upgrade`'s is. Run it on a checkout you trust.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, every file an artifact targets, and what is
 under `.keelline/local/`. **Writes** only removals, and region removals, through the scaffold

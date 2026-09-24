@@ -8,6 +8,7 @@ from keelline.scaffold import EntriesError, ManifestError, RegionError
 
 EXPORTED = [
     "FORMAT",
+    "LOCAL_ARTIFACTS",
     "LOCAL_ROOT",
     "MANIFEST_PATH",
     "Action",

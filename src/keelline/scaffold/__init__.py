@@ -11,12 +11,14 @@ compare paths the way the engine resolves them (an `[artifacts] local` artifact 
 rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
 would drift from it. `matches_render` is for `uninstall` too: before any write it predicts
 whether the write-once pass will remove what a region's removal leaves in a file kept out of
-git, and that verdict is the engine's own rule for such a file. Importing a private module of
-this package from another area is a review finding; if a lane needs something this list does
-not carry, the list grows deliberately.
+git, and that verdict is the engine's own rule for such a file. `LOCAL_ARTIFACTS` is for the
+project area's guard against writes git ignores, which exempts the one directory Keelline keeps
+out of git on purpose. Importing a private module of this package from another area is a review
+finding; if a lane needs something this list does not carry, the list grows deliberately.
 """
 
 from keelline.scaffold.engine import (
+    LOCAL_ARTIFACTS,
     LOCAL_ROOT,
     apply,
     effective_target,
@@ -50,6 +52,7 @@ from keelline.scaffold.report import printable, render_report
 
 __all__ = [
     "FORMAT",
+    "LOCAL_ARTIFACTS",
     "LOCAL_ROOT",
     "MANIFEST_PATH",
     "Action",

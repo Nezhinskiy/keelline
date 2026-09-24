@@ -6762,3 +6762,19 @@ file = "src/keelline/project/uninstall.py"
 before = "        if CONFIG_RECORD in manifest.records:"
 after = "        if False:"
 reddens = ["tests/project/test_uninstall.py::test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored"]
+
+# A `[paths]` value is committed, and the promise that makes a region inserted wherever it points
+# acceptable is that the diff shows it. Git shows nothing for a file it ignores: a pulled commit
+# naming a git-ignored `.env` had `upgrade` append Keelline's region to it with only the manifest
+# in `git status`, and a record stating a predictable ignored file's digest had `uninstall` delete
+# it. One `check-ignore` before any write refuses the run for `init`, `upgrade` and `uninstall`.
+[[mutation]]
+name = "a write git ignores goes ahead"
+file = "src/keelline/project/ignored.py"
+before = "        if ignored:\n            raise Refusal(IGNORED"
+after = "        if False:\n            raise Refusal(IGNORED"
+reddens = [
+  "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
+  "tests/project/test_ignored.py::test_init_refuses_a_path_git_ignores_and_writes_nothing",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
+]

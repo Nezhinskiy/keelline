@@ -29,8 +29,11 @@ only while it holds exactly the bytes the same commit records. A managed region 
 is inserted into whatever file its `[paths]` key names, recorded or not, so a commit that points
 `agents_md` at a tracked file gets the region written into it, and the diff of both shows it.
 What no committed value can reach is state git never sees: the loader refuses any `[paths]` value
-inside git's control directory or Keelline's own `.keelline/`. That is why `docs/cli.md` says to
-run it on a checkout you trust.
+inside git's control directory or Keelline's own `.keelline/`, and `ignored.refuse_ignored`
+refuses the whole run, before any write, when git ignores a file it would write or remove (only
+`.keelline/local/artifacts/` is exempt, which `[artifacts] local` asks for). Outside a git work
+tree there is no diff to hide from, and no such guard. That is why `docs/cli.md` says to run it on
+a checkout you trust.
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
 `X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`
@@ -52,6 +55,7 @@ from keelline.config.owned import Value, rewrite
 from keelline.config.schema import Config
 from keelline.errors import Refusal
 from keelline.overlay.api import later
+from keelline.project.ignored import refuse_ignored
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
 from keelline.project.templates import (
     CI_REF,
@@ -216,6 +220,7 @@ def upgrade(
     if pinned and document != text and not _rewrites_the_workflow(footprint):
         changes, held, config = {}, WORKFLOW_HELD, before
         prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
+    refuse_ignored(root, footprint)
     moved = tuple(
         Moved(key, _printable(key, old), new)
         for key, old, new in (

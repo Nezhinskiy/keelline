@@ -41,6 +41,7 @@ import keelline
 from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
+from keelline.project.ignored import refuse_ignored
 from keelline.project.templates import (
     project_templates,
     refuse_local_profile,
@@ -188,8 +189,9 @@ def init(
     back bare (`_rendered`), a `Config` the loader refuses, a pass in which two artifacts
     resolve to one file (`templates._one_target_each`), a profile artifact `[artifacts] local`
     would keep out of git (`templates.refuse_local_profile`), `keelline.toml` or the ignore block
-    listed there (`templates.refuse_local_root_only`), and finally a refusal in either
-    plan, which is returned rather than raised so the report can name the artifact.
+    listed there (`templates.refuse_local_root_only`), a planned write git ignores
+    (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
+    than raised so the report can name the artifact.
     """
     if not yes:
         raise Refusal(NEEDS_YES)
@@ -232,6 +234,7 @@ def init(
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)
+    refuse_ignored(root, once, footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
             once,
