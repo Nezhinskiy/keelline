@@ -6256,3 +6256,16 @@ after = "    except KeyError as exc:"
 reddens = [
   "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
 ]
+
+# A region's record stamps the region's body, never the file around it, so its relocation is
+# judged by the region. The fabricated-record test is named too: its record now holds the digest
+# the engine really writes.
+[[mutation]]
+name = "a region's relocation is judged by the whole file's digest again"
+file = "src/keelline/scaffold/engine.py"
+before = "    if present is None or digest(present) != record.sha256:"
+after = "    if digest(old) != record.sha256:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose",
+  "tests/scaffold/test_engine.py::test_relocating_a_managed_region_removes_only_its_own_lines",
+]

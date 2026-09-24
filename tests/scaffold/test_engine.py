@@ -271,7 +271,7 @@ def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) 
     host = tmp_path / "AGENTS.md"
     body = upsert("User prose.\n", "harness", "R1\n", Style.MARKDOWN)
     host.write_text(body, encoding="utf-8")
-    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest(body))).write(
+    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest("R1"))).write(
         tmp_path
     )
     config = a_config(tmp_path, local=("agents-md",))
@@ -977,3 +977,22 @@ def test_the_containment_docstring_claims_the_property_the_walk_actually_holds()
     prose = " ".join((engine.__doc__ or "").split())
     assert "it cannot redirect the write" in prose
     assert "there is no window in which a component can become a symlink" not in prose
+
+
+def test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose(tmp_path: Path) -> None:
+    # The record the engine writes for a region holds the digest of the region's body, never of
+    # the file around it. `_relocation` compared the whole file with it, so every real relocation
+    # read as a hand edit, the local `CREATE` dropped the record, and the region stayed in
+    # `AGENTS.md` where no later run could find it. The relocation test that fabricates its
+    # record passed only because it stamped a whole-file digest, which the engine never records.
+    host = tmp_path / "AGENTS.md"
+    host.write_text("User prose.\n", encoding="utf-8")
+    template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1\n")
+    apply(tmp_path, plan(tmp_path, a_config(tmp_path), [template]))
+    planned = plan(tmp_path, a_config(tmp_path, local=("agents-md",)), [template])
+    assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
+        (Verb.REMOVE, "AGENTS.md", "relocated"),
+        (Verb.CREATE, ".keelline/local/AGENTS.md", "new"),
+    ]
+    apply(tmp_path, planned)
+    assert host.read_text(encoding="utf-8") == "User prose.\n"

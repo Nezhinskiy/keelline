@@ -373,7 +373,11 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
         # Nothing at the old path: the move has effectively already happened, and there is no
         # file to leave behind. A `skip_modified` here would report a file that is not there.
         return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)
-    if digest(old) != record.sha256:
+    # What the record stamps is what `_payload_and_stamp` stamped: the whole file for a whole
+    # file, and Keelline's own part of it for a region or a set of keyed entries. Comparing the
+    # whole old file with a region's stamp read every real relocation of a region as a hand edit.
+    present = _present_stamp(template, old)
+    if present is None or digest(present) != record.sha256:
         return _left_behind(template, record, "relocated and hand-edited")
     # The same payload `_plan_retired` computes, and for the same reason: for a managed region
     # or a set of keyed entries the file at the old path belongs to somebody else, so what
