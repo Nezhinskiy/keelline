@@ -86,6 +86,16 @@ class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
 
 
+def names_component(relative: str, name: str) -> bool:
+    """Whether any component of `relative` is `name`, spelled in any case.
+
+    The one test behind `names_control_directory` and `config.paths.names_keelline_directory`:
+    at any depth, and in any case, because the default filesystems on macOS and Windows fold
+    case and `.GIT` or `.Keelline` reaches the same directory there. `name` is lower-case.
+    """
+    return any(part.lower() == name for part in relative.split("/"))
+
+
 def names_control_directory(relative: str) -> bool:
     """Whether any component of `relative` is git's control directory, spelled in any case.
 
@@ -95,7 +105,7 @@ def names_control_directory(relative: str) -> bool:
     without printing the repository-authored value. See `CONTROL_DIRECTORY` for the rule and
     for where its anchor comes from.
     """
-    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split("/"))
+    return names_component(relative, CONTROL_DIRECTORY)
 
 
 def checked_components(relative: str) -> tuple[str, ...]:

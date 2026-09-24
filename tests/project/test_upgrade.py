@@ -187,8 +187,8 @@ def test_a_newer_keelline_refreshes_what_is_untouched_and_skips_what_was_edited(
     ).replace(OLD, NEW)
     assert f"@{NEW}\n" in (root / WORKFLOW).read_text(encoding="utf-8")
     assert [(m.key, m.after) for m in report.moved] == [
-        ("keelline.version", "9.9.9"),
-        ("ci.ref", NEW),
+        (("keelline", "version"), "9.9.9"),
+        (("ci", "ref"), NEW),
     ]
 
 
@@ -251,7 +251,10 @@ def test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced(
     assert f"@{OLD}" in workflow.read_text(encoding="utf-8")
 
     forced = _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=(WORKFLOW.as_posix(),))
-    assert [m.key for m in forced.moved] == ["keelline.version", "ci.ref"] and not forced.held
+    assert [m.key for m in forced.moved] == [
+        ("keelline", "version"),
+        ("ci", "ref"),
+    ] and not forced.held
     assert f"@{NEW}\n" in workflow.read_text(encoding="utf-8")
 
 
@@ -295,8 +298,8 @@ def test_a_workflow_keelline_did_not_write_holds_both_keys_until_it_is_forced(
 
     forced = _upgrade(root, tmp_path, _listing("9.9.9", NEW), force=(WORKFLOW.as_posix(),))
     assert [(m.key, m.after) for m in forced.moved] == [
-        ("keelline.version", "9.9.9"),
-        ("ci.ref", NEW),
+        (("keelline", "version"), "9.9.9"),
+        (("ci", "ref"), NEW),
     ]
     assert forced.held == ""
     assert config.read_text(encoding="utf-8") == document.replace(
@@ -322,7 +325,7 @@ def test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves(
     config = root / CONFIG_FILE
     document = config.read_text(encoding="utf-8")
     report = _upgrade(root, tmp_path, _listing("9.9.9", NEW))
-    assert [(m.key, m.after) for m in report.moved] == [("keelline.version", "9.9.9")]
+    assert [(m.key, m.after) for m in report.moved] == [(("keelline", "version"), "9.9.9")]
     assert report.held == ""
     assert config.read_text(encoding="utf-8") == document.replace(
         f'version = "{running}"', 'version = "9.9.9"'
@@ -371,7 +374,7 @@ def test_a_write_that_fails_part_way_leaves_the_pin_agreeing_and_the_next_run_co
     text = config.read_text(encoding="utf-8")
     assert 'version = "9.9.9"' in text and f'ref = "{NEW}"' in text
     assert f"@{NEW}\n" in (root / WORKFLOW).read_text(encoding="utf-8")
-    assert [m.key for m in report.moved] == ["keelline.version", "ci.ref"]
+    assert [m.key for m in report.moved] == [("keelline", "version"), ("ci", "ref")]
 
 
 @needs_git
@@ -430,7 +433,7 @@ def test_a_release_moves_a_project_recording_its_own_pre_release_forward(
     monkeypatch.setattr(keelline, "__version__", "1.0.0")
     report = _upgrade(root, tmp_path, NO_TAG)
     assert [(m.key, m.before, m.after) for m in report.moved] == [
-        ("keelline.version", "(not a version)", "1.0.0")
+        (("keelline", "version"), "(not a version)", "1.0.0")
     ]
     assert 'version = "1.0.0"\n' in (root / CONFIG_FILE).read_text(encoding="utf-8")
 

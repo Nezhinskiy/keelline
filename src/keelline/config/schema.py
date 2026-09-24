@@ -73,6 +73,10 @@ class Keelline:
         `enforced` as loaded, which under `installed` the loader has already filled with every
         configured gate: `installed` meant "every gate enforces" before the list existed, and a
         document written then says nothing else.
+
+        No command reads it in this release. It is the one reading of "which gates enforce"
+        for `keelline gate` and `keelline assess`, which ship later and each ask it per gate;
+        a lane that read `enforced` directly would skip the loader's `installed` rule.
         """
         return frozenset(self.enforced)
 

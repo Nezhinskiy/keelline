@@ -476,7 +476,10 @@ def project_templates(
     # The engine's rule first: an unshipped or malformed name is refused naming the grammar and
     # the listing, before `load_profile`'s own refusal, which names neither.
     validate_sources(config)
-    profile = load_profile(config.keelline.profile) if config.keelline.profile else None
+    # Each shipped profile loaded once: every one is built below for `could_write`, and the
+    # configured one, which `validate_sources` has just held to the listing, is one of them.
+    loaded = {name: load_profile(name) for name in shipped()}
+    profile = loaded[config.keelline.profile] if config.keelline.profile else None
     rules = rules_file(config, profile.name) if profile is not None else ""
     harnesses, unknown_harnesses = select(config.keelline.agents)
     p = config.paths
@@ -550,8 +553,7 @@ def project_templates(
     profiled: set[str] = set()
     # Every shipped profile's artifacts are built, so `could_write` lists where each could land;
     # only the configured profile's, for the harnesses this project lists, join the footprint.
-    for name in shipped():
-        candidate = load_profile(name)
+    for name, candidate in loaded.items():
         candidate_rules = rules_file(config, name)
         built = [(True, _profiled("profile-rules", candidate_rules, candidate))]
         for harness in HARNESSES:

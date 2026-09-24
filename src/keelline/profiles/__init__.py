@@ -4,6 +4,12 @@ Each directory here that holds a `profile.toml` is one profile, and its `rules.m
 beside it. `shipped()` is the listing `scaffold.validate_sources` checks `[keelline] profile`
 against, and `load_profile` is the one reader. A name outside the listing is refused with fixed
 text: the name arrives from a repository's `keelline.toml`, so it is never printed.
+
+`detects` is what runs today: `init` asks it which profile a repository looks like. `evaluate`
+and the `Outcome` it returns run a profile's checks against a repository, and nothing in this
+release calls them yet; they are published for `keelline assess`, which ships later and reports
+each failed check as one of its findings. Kept rather than trimmed because the checks are this
+package's data, and a reader of them that lived in the assessing lane would be a second one.
 """
 
 from __future__ import annotations

@@ -5711,8 +5711,8 @@ reddens = [
 [[mutation]]
 name = "the control-directory rule stops folding case, so .GIT reaches the same directory"
 file = "src/keelline/fsops.py"
-before = "    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
-after = "    return any(part == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+before = "    return any(part.lower() == name for part in relative.split(\"/\"))"
+after = "    return any(part == name for part in relative.split(\"/\"))"
 reddens = [
   "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
   "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
@@ -6481,8 +6481,8 @@ reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_
 [[mutation]]
 name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
 file = "src/keelline/project/rewrite.py"
-before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
-after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except (UnsafePath, OSError) as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
+before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
 reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
 
 # The record is re-stamped before the write, so a write that fails must put it back: left naming

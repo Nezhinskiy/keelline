@@ -87,26 +87,38 @@ def _text(value: Any) -> str | None:
     return None
 
 
-def _toml_value(text: str, dotted: str) -> str | None:
-    """The text of `dotted` in `text`, or `None` when the key is absent or `text` will not parse.
+def _toml_document(text: str) -> dict[str, Any] | None:
+    """`text` parsed as TOML, or `None` when it will not parse.
 
     `RecursionError` is `tomllib`'s answer to nesting deep enough to exhaust the stack, and a
     kilobyte of `[` is enough; the file is the repository's, so it chooses that as freely as a
-    syntax error. `_text` walks the same nesting, so it sits inside the same guard.
+    syntax error.
     """
     try:
-        node: Any = tomllib.loads(text)
+        return tomllib.loads(text)
+    except (tomllib.TOMLDecodeError, RecursionError):
+        return None
+
+
+def _toml_value(document: dict[str, Any], dotted: str) -> str | None:
+    """The text of `dotted` in `document`, or `None` when the key is absent.
+
+    `_text` walks the nesting `tomllib` built, so it sits inside the same `RecursionError`
+    guard the parse does.
+    """
+    try:
+        node: Any = document
         for part in dotted.split("."):
             if not isinstance(node, dict) or part not in node:
                 return None
             node = node[part]
         return _text(node)
-    except (tomllib.TOMLDecodeError, RecursionError):
+    except RecursionError:
         return None
 
 
-def _ini_value(text: str, address: tuple[str, ...]) -> str | None:
-    """The value at `address` in `text`, `""` for a section alone, or `None`.
+def _ini_document(text: str) -> configparser.ConfigParser | None:
+    """`text` read as an INI file, or `None`.
 
     `configparser` refuses a file with no section header or a line it cannot read with its own
     `configparser.Error`, and the locator then resolves to nothing. Its reader is line by line
@@ -117,6 +129,11 @@ def _ini_value(text: str, address: tuple[str, ...]) -> str | None:
         parser.read_string(text)
     except configparser.Error:
         return None
+    return parser
+
+
+def _ini_value(parser: configparser.ConfigParser, address: tuple[str, ...]) -> str | None:
+    """The value at `address` in `parser`, `""` for a section alone, or `None`."""
     section, key = address[0], address[1] if len(address) == 2 else None
     if not parser.has_section(section):
         return None
@@ -125,18 +142,41 @@ def _ini_value(text: str, address: tuple[str, ...]) -> str | None:
     return parser.get(section, key) if parser.has_option(section, key) else None
 
 
-def _resolves(root: Path, locator: Locator) -> bool:
-    for relative in _files(root, locator.at):
+class _Parsed:
+    """Each file a profile's locators read, parsed once per `evaluate`.
+
+    Seventeen locators of the shipped profile read `pyproject.toml`, and each parsed it again.
+    A file that cannot be read, or will not parse, is `None` for every locator that asks, which
+    is what each of them concluded on its own.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._toml: dict[str, dict[str, Any] | None] = {}
+        self._ini: dict[str, configparser.ConfigParser | None] = {}
+
+    def toml(self, relative: str) -> dict[str, Any] | None:
+        if relative not in self._toml:
+            text = _read(self.root, relative)
+            self._toml[relative] = None if text is None else _toml_document(text)
+        return self._toml[relative]
+
+    def ini(self, relative: str) -> configparser.ConfigParser | None:
+        if relative not in self._ini:
+            text = _read(self.root, relative)
+            self._ini[relative] = None if text is None else _ini_document(text)
+        return self._ini[relative]
+
+
+def _resolves(parsed: _Parsed, locator: Locator) -> bool:
+    for relative in _files(parsed.root, locator.at):
         value: str | None = ""
-        if locator.toml is not None or locator.ini is not None:
-            text = _read(root, relative)
-            if text is None:
-                continue
-            value = (
-                _toml_value(text, locator.toml)
-                if locator.toml is not None
-                else _ini_value(text, locator.ini or ())
-            )
+        if locator.toml is not None:
+            document = parsed.toml(relative)
+            value = None if document is None else _toml_value(document, locator.toml)
+        elif locator.ini is not None:
+            parser = parsed.ini(relative)
+            value = None if parser is None else _ini_value(parser, locator.ini)
         if value is None:
             continue
         if locator.match is not None and not locator.match.search(value):
@@ -168,13 +208,14 @@ def _names(locators: list[Locator]) -> tuple[str, ...]:
 
 
 def evaluate(profile: Profile, root: Path) -> list[Outcome]:
+    parsed = _Parsed(root)
     outcomes: list[Outcome] = []
     for check in profile.checks:
         locators = list(check.locators)
         if check.kind is CheckKind.PRESENT:
-            hits = [] if any(_resolves(root, loc) for loc in locators) else locators
+            hits = [] if any(_resolves(parsed, loc) for loc in locators) else locators
         elif check.kind is CheckKind.ABSENT:
-            hits = [loc for loc in locators if _resolves(root, loc)]
+            hits = [loc for loc in locators if _resolves(parsed, loc)]
         else:
             hits = [
                 loc for loc in locators if any(_untracked(root, f) for f in _files(root, loc.at))

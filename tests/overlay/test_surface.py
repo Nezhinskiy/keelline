@@ -51,6 +51,8 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # the same reader over two versions, for `upgrade`'s never-backward refusal and
         # `doctor`'s `versions` remedy, so the two agree on direction
         "later",
+        # that reader's whole `X.Y.Z` grammar, for `upgrade`'s printing of a recorded version
+        "RELEASE",
         # the overlay repository's own sync state, for the `attach` area's session-start
         # handler (wave 4, DC1, DC12)
         "Sync",

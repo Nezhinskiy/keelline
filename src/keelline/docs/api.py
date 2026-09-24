@@ -6,14 +6,15 @@ before it imports the submodule it wants, so a re-export list in `__init__.py` w
 whole area — and with it the configuration layer — into every `discover()` call.
 `tests/docs/test_surface.py` asserts the `__init__` imports nothing at all.
 
-**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
-and `tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
+**Nothing outside this area imports any name on this list but `trail_target`**, which the
+`project` area reads (the last two paragraphs say why), measured over `src/`, `scripts/` and
+`tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
 `keelline.docs.graph` and `keelline.docs.trail` directly, and every other lane runs the
-commands. So every name below is here on an argument rather than on a caller, and the argument
-is written beside it — a surface that survives a trim with no explanation is what made the trim
-necessary.
+commands. So every other name below is here on an argument rather than on a caller, and the
+argument is written beside it — a surface that survives a trim with no explanation is what made
+the trim necessary.
 
-What is left is the four checks this area *is*, one call each, and the one record one of them
+Those five are the four checks this area *is*, one call each, and the one record one of them
 returns:
 
 - `check_budgets`, `check_links` and `check_memory_graph` each answer one question about the
@@ -42,10 +43,10 @@ which is what `docs/commands.py` and this area's own tests already do; what went
 that another area reads it.
 
 **What is left is a smaller version of the same question, and it is the owner's.** The five
-below have no importer either, and they survive this pass on an argument about shape — one call
-per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s floor. Whether
-this area publishes at all is a structural decision, not a refactor's; `ledger/api.py` records
-the same finding about its own list.
+names above have no importer either, and they survive this pass on an argument about shape —
+one call per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s
+floor. Whether this area publishes at all is a structural decision, not a refactor's;
+`ledger/api.py` records the same finding about its own list.
 
 **`trail_path` returns, in wave 4.** The lane the wave-3 trim named as absent now exists: the
 `project` area ships `trail.toml` beside the roadmap template and must put it where `docs

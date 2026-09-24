@@ -34,12 +34,16 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from keelline.areas import SubParsers
 from keelline.command import DRY_RUN_HELP, common_flags
 from keelline.errors import Refusal
 from keelline.result import Result
 from keelline.scaffold import Plan, Verb, printable, render_report, unlinks
+
+if TYPE_CHECKING:
+    from keelline.release.api import Pin
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
@@ -69,6 +73,11 @@ YES_HELP = (
     "accept the detected defaults and write the footprint; without it nothing is written and "
     "the command refuses, naming the lane that ships the questions"
 )
+
+
+def _pin(pin: Pin | None) -> dict[str, str] | None:
+    """The resolved pin as `--json` prints it, for `init` and `upgrade` alike."""
+    return None if pin is None else {"tag": pin.tag, "sha": pin.sha}
 
 
 def run_init(args: argparse.Namespace) -> Result:
@@ -128,7 +137,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "footprint": footprint,
         "writes": [*report.once.writes, *report.footprint.writes],
         "skipped": dict(report.skipped),
-        "pin": None if pin is None else {"tag": pin.tag, "sha": pin.sha},
+        "pin": _pin(pin),
         "asked": report.resolution.asked,
         "note": report.note,
         "ref": report.ref,
@@ -199,10 +208,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         force=force,
     )
     refused = bool(report.footprint.refusals)
-    moved = "; ".join(
-        f"[{m.key.split('.')[0]}] {m.key.split('.')[1]} {m.before} -> {m.after}"
-        for m in report.moved
-    )
+    moved = "; ".join(f"[{m.key[0]}] {m.key[1]} {m.before} -> {m.after}" for m in report.moved)
     shown = render_report(report.footprint)
     lines = [
         UPGRADE_HEADINGS[(refused, report.dry_run)],
@@ -221,16 +227,17 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         lines.append(ORPHANS.format(count=report.orphans))
     if unmatched := _unmatched(force, report.footprint):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
-    pin = report.resolution.pin
     data = {
         "dry_run": report.dry_run,
-        "moved": [{"key": m.key, "before": m.before, "after": m.after} for m in report.moved],
+        "moved": [
+            {"key": ".".join(m.key), "before": m.before, "after": m.after} for m in report.moved
+        ],
         "held": report.held,
         "footprint": shown,
         "writes": report.footprint.writes,
         "skipped": dict(report.skipped),
         "orphans": report.orphans,
-        "pin": {"tag": pin.tag, "sha": pin.sha} if pin else None,
+        "pin": _pin(report.resolution.pin),
         "asked": report.resolution.asked,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
@@ -296,6 +303,13 @@ def run_uninstall(args: argparse.Namespace) -> Result:
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
 
+def _judging(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """The two flags of a command that re-judges a footprint, `upgrade` and `uninstall`."""
+    parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
+    parser.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
+    return parser
+
+
 def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `keelline.project.init`.
@@ -305,14 +319,10 @@ def register(groups: SubParsers) -> None:
     parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
     parser.set_defaults(func=run_init, ci=True)
     upgrade = common_flags(groups.add_parser("upgrade", help="refresh this repository's footprint"))
-    upgrade.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
-    upgrade.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
-    upgrade.set_defaults(func=run_upgrade)
+    _judging(upgrade).set_defaults(func=run_upgrade)
     uninstall = common_flags(
         groups.add_parser(
             "uninstall", help="remove this repository's footprint; leave what you edited"
         )
     )
-    uninstall.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
-    uninstall.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
-    uninstall.set_defaults(func=run_uninstall)
+    _judging(uninstall).set_defaults(func=run_uninstall)

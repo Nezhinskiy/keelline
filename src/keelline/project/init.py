@@ -196,7 +196,8 @@ def init(
         raise Refusal(ALREADY)
     existing = _existing(root)
     tables = _tables(root, existing, ci=ci)
-    config = loads(_rendered(tables), root, machine=machine)
+    document = _rendered(tables)
+    config = loads(document, root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
     # the whole of its timeout for an answer nothing prints.
@@ -213,8 +214,8 @@ def init(
     # as red, so `init` said it had worked and the next `doctor` said it had not.
     if resolution.pin is not None and existing is None:
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
-        config = loads(_rendered(tables), root, machine=machine)
-    document = _rendered(tables)
+        document = _rendered(tables)
+        config = loads(document, root, machine=machine)
     # No manifest yet, so nothing to retire: `prepare` for its refusals and the pass order.
     passes = prepare(
         config, {}, resolution=resolution, document=document, adopted=existing is not None

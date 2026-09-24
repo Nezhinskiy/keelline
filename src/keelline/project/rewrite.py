@@ -30,7 +30,7 @@ import keelline
 from keelline.config.loader import CONFIG_FILE, read_document
 from keelline.config.owned import Value, rewrite
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, write_within
+from keelline.fsops import write_within
 from keelline.project.templates import CONFIG_ARTIFACT
 from keelline.scaffold import Manifest, ManifestError, digest
 
@@ -52,7 +52,7 @@ def rewrite_owned(root: Path, changes: Mapping[tuple[str, str], Value]) -> None:
         manifest.with_record(stamped).write(root)
     try:
         write_within(root, CONFIG_FILE, document)
-    except (UnsafePath, OSError) as exc:
+    except OSError as exc:
         failure = Refusal(f"{CONFIG_FILE} cannot be written: {exc}")
         if stamped is not None:
             try:

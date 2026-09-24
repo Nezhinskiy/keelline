@@ -30,7 +30,12 @@ from pathlib import Path
 
 from keelline.config.schema import PATH_VALUE, Config
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, checked_components, names_control_directory
+from keelline.fsops import (
+    UnsafePath,
+    checked_components,
+    names_component,
+    names_control_directory,
+)
 
 
 class PathEscape(Refusal):
@@ -89,13 +94,14 @@ KEELLINE_DIRECTORY = ".keelline"
 def names_keelline_directory(relative: str) -> bool:
     """Whether any component of `relative` is Keelline's own directory, spelled in any case.
 
-    The same shape as `fsops.names_control_directory`, and for the same two reasons. Any depth:
+    `fsops.names_component`, the test `fsops.names_control_directory` asks too, and for the same
+    two reasons. Any depth:
     a package inside a monorepo initialised on its own keeps its own `.keelline/local/`, and a
     parent project's `[paths]` value must not reach that either. Any case: the default
     filesystems on macOS and Windows fold case, so `.Keelline/local/attach.json` is the same
     file.
     """
-    return any(part.lower() == KEELLINE_DIRECTORY for part in relative.split("/"))
+    return names_component(relative, KEELLINE_DIRECTORY)
 
 
 # `PATH_VALUE` in words, for the refusal a person reads. Kept beside the one reader that prints

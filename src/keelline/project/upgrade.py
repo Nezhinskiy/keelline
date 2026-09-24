@@ -46,7 +46,6 @@ repository-authored.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,7 +55,7 @@ from keelline.config.loader import loads, read_document
 from keelline.config.owned import Value, rewrite
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.overlay.api import later
+from keelline.overlay.api import RELEASE, later
 from keelline.project.footprint import prepare
 from keelline.project.ignored import refuse_ignored
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
@@ -104,12 +103,12 @@ WORKFLOW_HELD = _HELD + (
     "refuses it or the CI line says none was rendered, put right what they name, then run "
     "`keelline upgrade` again"
 )
-_VERSION = re.compile(r"\A[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}\Z")
 
 
 @dataclass(frozen=True)
 class Moved:
-    key: str
+    # `(table, key)`, as `config.owned` names a tool-owned key.
+    key: tuple[str, str]
     before: str
     after: str
 
@@ -129,9 +128,9 @@ class UpgradeReport:
     workflow_current: bool = False
 
 
-def _printable(key: str, value: str) -> str:
-    if key == "keelline.version":
-        return value if _VERSION.match(value) else "(not a version)"
+def _printable(key: tuple[str, str], value: str) -> str:
+    if key == ("keelline", "version"):
+        return value if RELEASE.match(value) else "(not a version)"
     if not value:
         return "(none)"
     return value if CI_REF.match(value) else "(not a commit)"
@@ -213,8 +212,8 @@ def upgrade(
     moved = tuple(
         Moved(key, _printable(key, old), new)
         for key, old, new in (
-            ("keelline.version", before.keelline.version, config.keelline.version),
-            ("ci.ref", before.ci.ref, config.ci.ref),
+            (("keelline", "version"), before.keelline.version, config.keelline.version),
+            (("ci", "ref"), before.ci.ref, config.ci.ref),
         )
         if old != new
     )

@@ -1028,8 +1028,8 @@ removed or rewritten: the run is refused (`2`) before any removal, dry run inclu
 them. That includes a file Keelline itself created at an ignored place a `[paths]` value chose
 (`roadmap = "build/roadmap.md"` under an ignored `build/`, say): creating it was allowed because
 nothing was there, and by the time `uninstall` runs it exists, so this refusal meets it, and
-taking the key out is the remedy that finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any other. Run it
-on a checkout you trust.
+taking the key out is the remedy that finishes the run. A `CLAUDE.md` or `AGENTS.md` your own
+excludes ignore is taken back like any other. Run it on a checkout you trust.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
 file an artifact targets, `git check-ignore` for each existing file a removal targets at a place a

@@ -34,6 +34,9 @@ from keelline.overlay.layout import PLUGIN_MANIFEST
 _COMPONENT = r"([0-9]{1,9})"
 _FLOOR = re.compile(rf"^>={_COMPONENT}\.{_COMPONENT}\.{_COMPONENT}$")
 _VERSION = re.compile(rf"^{_COMPONENT}\.{_COMPONENT}\.{_COMPONENT}")
+# A version that is exactly `X.Y.Z` and nothing after it, in the same bounded components: what a
+# caller may print back as a version when the string is otherwise repository-authored.
+RELEASE = re.compile(rf"\A{_COMPONENT}\.{_COMPONENT}\.{_COMPONENT}\Z")
 # What may follow an `X.Y.Z` in a pre-release of it: PEP 440's `a`, `b`, `rc` and `dev` segments
 # and their spellings, with an optional separator (`1.0.0rc1`, `1.0.0-rc.1`, `0.2.0.dev0`). The
 # whole suffix must be one of them, so `1.0.0rc1.post2` is not read as a pre-release.
