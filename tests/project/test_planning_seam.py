@@ -15,42 +15,75 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
+from keelline.config.loader import CONFIG_FILE, load
+from keelline.project.footprint import prepare
+from keelline.release.api import Resolution
+from tests.project.repos import DOCUMENT, repository
+
 ROOT = Path(__file__).resolve().parents[2]
 AREA = ROOT / "src" / "keelline" / "project"
 SEAM = AREA / "footprint.py"
 # The planner and what binds its guards: the engine's plan and the two lookups that take the
-# relation, and the ignore guard.
+# relation, and the ignore guard. The seam module binds all four at its top level, so importing
+# one from it is the same bypass as importing it from where it is defined.
 PLANNERS = {
     "keelline.scaffold": {"plan", "left_copies", "local_copies"},
     "keelline.scaffold.engine": {"plan", "left_copies", "local_copies"},
     "keelline.project.ignored": {"refuse_ignored"},
+    "keelline.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},
 }
+# The package every checked module sits in, which a relative import is resolved against.
+PACKAGE = "keelline.project"
+
+
+def _absolute(node: ast.ImportFrom) -> str:
+    """The module an `ImportFrom` names, a relative one resolved against `PACKAGE`."""
+    if not node.level:
+        return node.module or ""
+    parts = PACKAGE.split(".")[: len(PACKAGE.split(".")) - node.level + 1]
+    return ".".join([*parts, *([node.module] if node.module else [])])
+
+
+def _chain(node: ast.expr) -> list[str]:
+    """`a.b.c` as `["a", "b", "c"]`, or `[]` when the chain is not rooted at a plain name."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    return [node.id, *reversed(parts)] if isinstance(node, ast.Name) else []
 
 
 def _planners_reached(path: Path) -> set[str]:
-    """Each planner name `path` imports, or reaches as an attribute of a module it imports."""
+    """Each planner name `path` imports, or reaches as an attribute of a module it imports: one
+    attribute deep (`scaffold.plan`) or at the end of a dotted chain rooted at an imported
+    package (`keelline.scaffold.engine.plan`)."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found: set[str] = set()
-    modules: dict[str, str] = {}
+    # Each name the module binds by an import, and the dotted module it stands for.
+    bound: dict[str, str] = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module is not None:
+        if isinstance(node, ast.ImportFrom):
+            module = _absolute(node)
             for alias in node.names:
-                if alias.name in PLANNERS.get(node.module, set()):
+                if alias.name in PLANNERS.get(module, set()):
                     found.add(alias.name)
-                qualified = f"{node.module}.{alias.name}"
-                if qualified in PLANNERS:
-                    modules[alias.asname or alias.name] = qualified
+                bound[alias.asname or alias.name] = f"{module}.{alias.name}"
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in PLANNERS:
-                    modules[alias.asname or alias.name] = alias.name
+                if alias.asname:
+                    bound[alias.asname] = alias.name
+                else:
+                    top = alias.name.split(".")[0]
+                    bound[top] = top
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.attr in PLANNERS.get(modules.get(node.value.id, ""), set())
-        ):
-            found.add(node.attr)
+        if isinstance(node, ast.Attribute):
+            chain = _chain(node.value)
+            if chain and chain[0] in bound:
+                module = ".".join([bound[chain[0]], *chain[1:]])
+                if node.attr in PLANNERS.get(module, set()):
+                    found.add(node.attr)
     return found
 
 
@@ -63,3 +96,59 @@ def test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard() -> Non
     assert len(modules) >= 10, modules
     reached = {p.name: _planners_reached(p) for p in modules}
     assert {name: found for name, found in reached.items() if found} == {}
+
+
+def test_the_checker_sees_a_planner_reached_through_the_seam_module(tmp_path: Path) -> None:
+    # The seam module binds the planner at its top level, so a command could import it from
+    # there and plan past every guard the seam binds. Mutation (oracle): "the planning seam's
+    # checker stops knowing the seam module re-exports the planner" -> the seam's row in
+    # `PLANNERS` deleted, and this finds nothing.
+    module = tmp_path / "bypass.py"
+    module.write_text("from keelline.project.footprint import plan\n", encoding="utf-8")
+    assert _planners_reached(module) == {"plan"}
+
+
+def test_the_checker_sees_a_fully_dotted_planner(tmp_path: Path) -> None:
+    # `import keelline.scaffold.engine` binds only `keelline`, so a check that looked one
+    # attribute deep saw `keelline.scaffold`, never the planner at the chain's end. Mutation
+    # (oracle): "the planning seam's checker stops resolving a dotted chain" -> the dotted
+    # branch records nothing, and this finds nothing.
+    module = tmp_path / "dotted.py"
+    module.write_text(
+        "import keelline.scaffold.engine\n\n\ndef f(root):\n"
+        "    return keelline.scaffold.engine.plan(root)\n",
+        encoding="utf-8",
+    )
+    assert _planners_reached(module) == {"plan"}
+
+
+def test_the_checker_sees_a_planner_imported_relatively(tmp_path: Path) -> None:
+    # Nothing in the tree imports relatively today, which is why a check that read `.footprint`
+    # as a module named `footprint` passed; the first relative import would have been a bypass
+    # it could not see. Mutation (by hand): `_absolute` returns `node.module or ""` whatever the
+    # level -> both spellings find nothing, and this reddens.
+    module = tmp_path / "relative.py"
+    module.write_text(
+        "from . import footprint\nfrom .ignored import refuse_ignored\n\n\ndef f(root):\n"
+        "    return footprint.plan(root)\n",
+        encoding="utf-8",
+    )
+    assert _planners_reached(module) == {"plan", "refuse_ignored"}
+
+
+def test_replanning_before_predicting_is_refused(tmp_path: Path) -> None:
+    # `replan` plans without asking the ignore guard, because `predict` already asked it about
+    # the same templates at the same targets; before `predict` nothing has asked it, so a
+    # command that called `replan` first would write where git hides a file. Mutation (oracle):
+    # "a footprint command replans what it never predicted" -> the order check disabled, and
+    # `replan` plans instead of raising.
+    root = repository(tmp_path)
+    (root / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
+    config = load(root, machine=tmp_path / "absent.toml")
+    passes = prepare(
+        root, config, {}, resolution=Resolution(None, True), document=DOCUMENT, adopted=True
+    )
+    with pytest.raises(RuntimeError, match="only after predict"):
+        passes.replan(passes.footprint)
+    passes.predict((passes.footprint, ()))
+    assert passes.replan(passes.footprint).actions

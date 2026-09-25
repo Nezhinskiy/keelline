@@ -7285,3 +7285,36 @@ file = "src/keelline/project/init.py"
 before = "from keelline.scaffold import MANIFEST_PATH, Plan, apply"
 after = "from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan"
 reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]
+
+# The planning seam's checker has to see a planner however a module spells its way to it: from
+# the seam module's own top-level binding, and at the end of a dotted chain rooted at an imported
+# package. Both guard the test module that holds the seam, which is what a later command's
+# bypass would have to get past.
+[[mutation]]
+name = "the planning seam's checker stops knowing the seam module binds the planner"
+file = "tests/project/test_planning_seam.py"
+before = '    "keelline.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},'
+after = ""
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_reached_through_the_seam_module",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+[[mutation]]
+name = "the planning seam's checker stops resolving a dotted chain"
+file = "tests/project/test_planning_seam.py"
+before = "                    found.add(node.attr)"
+after = "                    pass"
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_fully_dotted_planner",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+# `replan` asks no guard, so it plans only on a `Passes` whose `predict` already asked the ignore
+# guard about the same templates.
+[[mutation]]
+name = "a footprint command replans what it never predicted"
+file = "src/keelline/project/footprint.py"
+before = "        if not self._predicted:"
+after = "        if False:"
+reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicting_is_refused"]
