@@ -336,6 +336,9 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         ("/.github/ @a b@c\n", True),
         ("/.github/ @owner @org/\n", True),
         ("/.github/ @Owner-1 first.last+tag@sub.example.org @my-org/team_a.b\n", False),
+        ("/.github/ <someone@example.org>\n", True),
+        ('/.github/ "someone"@example.org\n', True),
+        ("/.github/ one,two@example.org\n", True),
     ],
     ids=[
         "no-file",
@@ -357,6 +360,9 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         "an-email-without-a-dot",
         "an-empty-team",
         "every-owner-shape-at-its-edges",
+        "an-email-in-angle-brackets",
+        "a-quoted-local-part",
+        "a-comma-in-the-local-part",
     ],
 )
 def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
@@ -370,7 +376,10 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
     # owned by `owner`, and `a-skipped-line-decides-nothing` by `not-an-owner`, where the
     # owner-less line before it decides; both redden. Mutation (declared): the owner's shape
     # read as any word holding `@` -> `a-bare-at`, `no-domain`, `two-ats`,
-    # `an-email-without-a-dot` and `an-empty-team` read as owned, and each reddens.
+    # `an-email-without-a-dot` and `an-empty-team` read as owned, and each reddens. Mutation
+    # (advisory): the email's local part widened back to `[^@\s]+` and its labels to
+    # `[^@\s.]+` -> `an-email-in-angle-brackets`, `a-quoted-local-part` and
+    # `a-comma-in-the-local-part` read as owned, and each reddens.
     # `direct-children-only` is GitHub's rule for a last `*` (declared; see the divergence case
     # below).
     root = _repo(tmp_path)

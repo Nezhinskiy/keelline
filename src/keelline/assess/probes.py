@@ -203,15 +203,18 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
     return Looked(tuple(f"{_WORKFLOWS}/{name}" for name in names))
 
 
-# An owner as GitHub accepts one: `@user`, `@org/team`, or an email address. A user or an
-# organisation is letters, digits and hyphens, starting with a letter or digit; a team slug adds
-# `_` and `.`; an email is a local part, `@`, and a domain of dot-separated labels. Narrower
-# than GitHub where it differs, which is the side that warns: a line read as skipped here can
-# only leave an earlier line deciding, and a real owner on it would have owned the file anyway.
-# No class overlaps the character after it, so a word of any length is matched in linear time.
+# An owner in one of the three plain shapes GitHub documents: `@user`, `@org/team`, or an
+# email address. A user or an organisation is letters, digits and hyphens, starting with a
+# letter or digit; a team slug adds `_` and `.`. An email is a local part of letters, digits and
+# `.`, `_`, `%`, `+`, `-`, then `@`, then a domain of two or more dot-separated labels of
+# letters, digits and hyphens: no brackets, quotes or commas, which GitHub is not documented to
+# accept. Anything outside these shapes is read as a line GitHub skips, even where GitHub might
+# accept it, and that errs on the side that warns: a skipped line can only leave an earlier
+# line deciding, and a real owner on it would have owned the file anyway. No class overlaps the
+# character after it, so a word of any length is matched in linear time.
 _OWNER = re.compile(
     r"@[A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?"
-    r"|[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+"
+    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
 )
 
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
