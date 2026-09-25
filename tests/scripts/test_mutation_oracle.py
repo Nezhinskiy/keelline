@@ -264,6 +264,30 @@ def test_a_leaked_scratch_checkout_is_swept_where_git_worktree_prune_will_not_ta
     assert not orphan.exists()
 
 
+def test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught(
+    tmp_path: Path,
+) -> None:
+    # Found by running this oracle over the entry for `project.detect`'s base-branch check: the
+    # mutated test failed, as it should, and pytest's diff of the two strings wrote the
+    # branch's latin-1 byte to its stdout raw. `_run` captured that stdout with `text=True`
+    # and a strict decode, so the oracle itself died with `UnicodeDecodeError` on a mutation it
+    # had caught, and every entry after it went unproven. Nothing reads the captured output —
+    # the verdict is the exit code and the junit report — so it is no longer decoded at all.
+    # Mutation (declared): put `text=True` back on `_run`'s pytest call -> this reddens.
+    module = oracle(root=tmp_path)
+    subject = tmp_path / "subject.py"
+    subject.write_text("GUARD = True\n", encoding="utf-8")
+    (tmp_path / "test_subject.py").write_text(
+        "import subject\n\n\ndef test_the_guard_holds() -> None:\n"
+        '    assert ("main" if subject.GUARD else "caf\\udce9") == "main"\n',
+        encoding="utf-8",
+    )
+    caught = module._check(
+        a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)), tmp_path
+    )
+    assert caught is None
+
+
 def test_a_mutation_nothing_notices_is_reported_as_surviving(tmp_path: Path) -> None:
     # And the finding the oracle exists to produce: the named test passes on a clean tree and
     # passes again with the guard broken. Without the clean-tree run this and the typo above
