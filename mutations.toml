@@ -7927,3 +7927,41 @@ file = "docs/cli.md"
 before = "- [`keelline memory fit`](#keelline-memory-fit)"
 after = ""
 reddens = ["tests/test_documents.py::test_the_cli_reference_contents_lists_every_section_in_order"]
+
+[[mutation]]
+name = "an advisory gate's failure fails the gate run"
+file = "src/keelline/assess/report.py"
+before = "        return tuple(r.name for r in self.results if r.failing and r.name in enforcing)"
+after = "        return tuple(r.name for r in self.results if r.failing)"
+reddens = ["tests/assess/test_report.py::test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused"]
+
+[[mutation]]
+name = "an annotation writes any finding's path as its file"
+file = "src/keelline/assess/report.py"
+before = "        if located and PATH_VALUE.match(located):"
+after = "        if located:"
+reddens = ["tests/assess/test_report.py::test_a_path_outside_the_printable_grammar_is_annotated_without_a_location"]
+
+[[mutation]]
+name = "a refused key's annotation skips the per-level cap"
+file = "src/keelline/assess/report.py"
+before = '                emit("error", CONFIG_FILE, None, REFUSED_KEY.format(key=change.key))'
+after = '                lines.append(f"::error::{REFUSED_KEY.format(key=change.key)}")'
+reddens = [
+  "tests/assess/test_report.py::test_refusals_share_the_cap_with_findings",
+  "tests/assess/test_report.py::test_a_path_is_written_from_the_repository_s_root",
+]
+
+[[mutation]]
+name = "an annotation's file is written from the project root, not the repository's"
+file = "src/keelline/assess/report.py"
+before = '        located = run.prefix + path if path else ""'
+after = "        located = path"
+reddens = ["tests/assess/test_report.py::test_a_path_is_written_from_the_repository_s_root"]
+
+[[mutation]]
+name = "an annotation carries a finding's detail"
+file = "src/keelline/assess/report.py"
+before = '            emit(level, path, finding.line, f"{result.name}: {finding.rule}")'
+after = '            emit(level, path, finding.line, f"{result.name}: {finding.detail}")'
+reddens = ["tests/assess/test_report.py::test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_detail"]
