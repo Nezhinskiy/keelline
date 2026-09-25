@@ -682,6 +682,14 @@ def test_the_git_bound_is_the_query_bound(tmp_path: Path, monkeypatch: pytest.Mo
     assert set(seen) == {probes.QUERY_TIMEOUT_SECONDS}
 
 
+def test_the_probes_git_bound_is_the_ledger_s() -> None:
+    # The value mirrors the ledger's own bound on a local query, which is private to that area.
+    # Mutation (advisory): either constant changed alone -> reddens.
+    from keelline.ledger.git import QUERY_TIMEOUT_SECONDS as LEDGER_BOUND
+
+    assert probes.QUERY_TIMEOUT_SECONDS == LEDGER_BOUND
+
+
 def test_git_log_all_on_a_repository_with_no_commit_answers_zero(tmp_path: Path) -> None:
     # The measurement the no-commit case above rests on: were this to exit outside `(0,)`, the
     # early return in `_memory_history` would be what kept that case from "could not look".
