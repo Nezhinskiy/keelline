@@ -71,10 +71,10 @@ def test_no_top_level_bin_directory() -> None:
 def _not_yet() -> list[str]:
     """What `README.md` itself declares unshipped, read off the README and never restated here.
 
-    The README's own roadmap sentence is the authority: the day `assess` ships, its author
-    removes it from that sentence and the storefront is free to advertise it, with no second
-    list to remember. Restating the items here would be the drift this test exists to catch,
-    one file along.
+    The README's own roadmap sentence is the authority: the day an item ships, its author
+    removes it from that sentence, as `assess`'s did, and the storefront is free to advertise
+    it, with no second list to remember. Restating the items here would be the drift this test
+    exists to catch, one file along.
 
     A leading article is dropped, and that is the whole difference between a test that catches
     this and one that does not: the README writes "the adoption state machine" and every one of
