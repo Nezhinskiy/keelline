@@ -255,8 +255,11 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
     # checkout it judges of dubious ownership (a bind mount under another uid in a container or
     # CI), a linked worktree whose gitdir is gone. BR-005 on `other` went uncounted with no word.
     # "No repository" is read off the disk now, where a `.git` entry is. The wrapper makes git
-    # judge the checkout foreign, as `safe.directory` would. Mutation (declared): the disk check
-    # replaced by the `rev-parse` question again — the warning is `None` and this reddens.
+    # judge the checkout foreign, as `safe.directory` would. It reads neither the system nor the
+    # global configuration: a machine whose either file sets `safe.directory = *` trusts every
+    # checkout, and git then answers the log this case needs refused. Mutation (declared): the
+    # disk check replaced by the `rev-parse` question again — the warning is `None` and this
+    # reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     seed(root, config, 1)
@@ -271,7 +274,10 @@ def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
     wrappers.mkdir()
     wrapper = wrappers / "git"
     wrapper.write_text(
-        f'#!/bin/sh\nGIT_TEST_ASSUME_DIFFERENT_OWNER=1 exec "{real}" "$@"\n', encoding="utf-8"
+        "#!/bin/sh\n"
+        f"GIT_TEST_ASSUME_DIFFERENT_OWNER=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={os.devnull} "
+        f'exec "{real}" "$@"\n',
+        encoding="utf-8",
     )
     wrapper.chmod(0o755)
     monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
