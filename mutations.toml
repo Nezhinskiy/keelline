@@ -3347,6 +3347,20 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout",
 ]
 
+# The oracle's own pytest run captured stdout with a strict decode that nothing needed: a
+# failing test whose diff carried a latin-1 byte killed the run on a mutation it had caught.
+[[mutation]]
+name = "the oracle decodes pytest's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """            # reads — a strict decode then killed the run on a mutation it had caught.
+            capture_output=True,"""
+after = """            # reads — a strict decode then killed the run on a mutation it had caught.
+            capture_output=True,
+            text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught",
+]
+
 [[mutation]]
 name = "the scratch checkout's src no longer precedes the editable install"
 file = "scripts/mutation_oracle.py"

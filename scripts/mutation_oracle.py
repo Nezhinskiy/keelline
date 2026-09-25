@@ -375,8 +375,10 @@ def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
                 *targets,
             ],
             cwd=cwd,
+            # Captured to keep it off the terminal and never decoded: the verdict is the exit
+            # code and the junit report, and a failing test's diff can carry a byte no codec
+            # reads — a strict decode then killed the run on a mutation it had caught.
             capture_output=True,
-            text=True,
             env={
                 **os.environ,
                 "PYTHONPATH": pythonpath,
