@@ -277,9 +277,8 @@ def _owns(text: str, path: str) -> bool:
     The grammar is gitignore's without `!` and `[]`, which GitHub does not support: a pattern
     with no `/` but a trailing one matches at any depth, and any other is rooted. A whole
     component of two or more `*` is `**`, zero or more directories; any other run of `*` is one
-    `*`. A pattern matching a
-    directory owns everything below it, and a trailing `/` makes it directory-only, so it never
-    owns a file of that name.
+    `*`. A pattern matching a directory owns everything below it, and a trailing `/` makes it
+    directory-only, so it never owns a file of that name.
 
     One rule is GitHub's and not git's: a last component of exactly `*` matches the directory's
     own files and nothing nested (GitHub's documentation: `docs/*` owns `docs/getting-started.md`
