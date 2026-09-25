@@ -368,8 +368,9 @@ def uninstall(
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
     kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS})
-    if dry_run or footprint.refusals or once.refusals:
-        return UninstallReport(footprint, once, orphans, dry_run, note, kept)
+    report = UninstallReport(footprint, once, orphans, dry_run, note, kept)
+    if dry_run or report.refused:
+        return report
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
     # The footprint plan without the ignore region, which goes last: nothing has been written

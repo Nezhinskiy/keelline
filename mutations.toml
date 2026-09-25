@@ -5260,7 +5260,7 @@ reddens = [
 [[mutation]]
 name = "init applies the write-once pass before it has looked at either plan's refusals"
 file = "src/keelline/project/init.py"
-before = "    if dry_run or once.refusals or footprint.refusals:"
+before = "    if dry_run or report.refused:"
 after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_a_dry_run_writes_nothing_and_reports_both_plans",
@@ -6612,8 +6612,8 @@ reddens = ["tests/project/test_uninstall.py::test_a_workflow_the_mode_no_longer_
 [[mutation]]
 name = "an upgrade dry run writes the footprint"
 file = "src/keelline/project/upgrade.py"
-before = "    if dry_run or footprint.refusals:"
-after = "    if footprint.refusals:"
+before = "    if dry_run or report.refused:"
+after = "    if report.refused:"
 reddens = ["tests/project/test_upgrade.py::test_a_dry_run_writes_nothing_and_reports_everything"]
 
 # A report prints targets, and a target a committed manifest recorded is repository-authored:
@@ -7211,3 +7211,54 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
   "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command[uninstall]",
 ]
+
+# One definition of "the command refused" per report (`refused`), and it decides twice: whether
+# the command writes anything, and the heading and exit code it prints. Each half of each
+# definition is dropped once, and a case whose only refusal is that half's reddens: the run goes
+# on to `apply`, whose backstop refuses the plan with exit 2 and the engine's message instead of
+# the report, and `uninstall` has removed the footprint by the time the write-once plan refuses.
+[[mutation]]
+name = "init's refusal reads only the footprint plan"
+file = "src/keelline/project/init.py"
+before = "        return bool(self.once.refusals or self.footprint.refusals)"
+after = "        return bool(self.footprint.refusals)"
+reddens = ["tests/project/test_command.py::test_a_refused_write_once_pass_exits_one_and_writes_nothing"]
+
+[[mutation]]
+name = "init's refusal reads only the write-once plan"
+file = "src/keelline/project/init.py"
+before = "        return bool(self.once.refusals or self.footprint.refusals)"
+after = "        return bool(self.once.refusals)"
+reddens = ["tests/project/test_command.py::test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report"]
+
+[[mutation]]
+name = "upgrade's refusal reads no plan"
+file = "src/keelline/project/upgrade.py"
+before = "        return bool(self.footprint.refusals)"
+after = "        return False"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[upgrade-footprint]"]
+
+[[mutation]]
+name = "uninstall's refusal reads only the write-once plan"
+file = "src/keelline/project/uninstall.py"
+before = "        return bool(self.footprint.refusals or self.once.refusals)"
+after = "        return bool(self.once.refusals)"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[uninstall-footprint]"]
+
+[[mutation]]
+name = "uninstall's refusal reads only the footprint plan"
+file = "src/keelline/project/uninstall.py"
+before = "        return bool(self.footprint.refusals or self.once.refusals)"
+after = "        return bool(self.footprint.refusals)"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[uninstall-once]"]
+
+# `uninstall`'s dry run stops at its report whatever the plans say, as `init`'s and `upgrade`'s
+# do (their entries: "init applies the write-once pass before it has looked at either plan's
+# refusals", "an upgrade dry run writes the footprint").
+[[mutation]]
+name = "an uninstall dry run removes the footprint"
+file = "src/keelline/project/uninstall.py"
+before = "    if dry_run or report.refused:"
+after = "    if report.refused:"
+reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_region"]
+

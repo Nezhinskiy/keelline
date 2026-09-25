@@ -235,7 +235,7 @@ def upgrade(
         dry_run,
         _rewrites_the_workflow(footprint),
     )
-    if dry_run or footprint.refusals:
+    if dry_run or report.refused:
         return report
     apply(root, footprint)
     rewrite_owned(root, changes)

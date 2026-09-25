@@ -34,7 +34,7 @@ run rather than the repository.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import keelline
@@ -231,18 +231,19 @@ def init(
     ref = "" if CI_ARTIFACT in passes.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     once, footprint = passes.predict((passes.once, ()), (passes.footprint, ()))
-    if dry_run or once.refusals or footprint.refusals:
-        return InitReport(
-            once,
-            footprint,
-            passes.skipped,
-            resolution,
-            existing is not None,
-            dry_run,
-            note,
-            ref,
-            passes.unknown_harnesses,
-        )
+    report = InitReport(
+        once,
+        footprint,
+        passes.skipped,
+        resolution,
+        existing is not None,
+        dry_run,
+        note,
+        ref,
+        passes.unknown_harnesses,
+    )
+    if dry_run or report.refused:
+        return report
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
@@ -250,14 +251,4 @@ def init(
     # that says the bytes inside the markers are the same either way.
     footprint = passes.replan(passes.footprint)
     apply(root, footprint)
-    return InitReport(
-        once,
-        footprint,
-        passes.skipped,
-        resolution,
-        existing is not None,
-        False,
-        note,
-        ref,
-        passes.unknown_harnesses,
-    )
+    return replace(report, footprint=footprint)

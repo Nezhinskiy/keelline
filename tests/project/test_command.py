@@ -28,6 +28,7 @@ from keelline.project.templates import _ci
 from keelline.release.api import Resolution
 from keelline.runner import Completed
 from tests.gitfixture import git, needs_git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
 @dataclass
@@ -139,6 +140,25 @@ def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
     assert plain.startswith("refused, and nothing was written:")
     assert "REFUSED — nothing will be written" in plain
     assert "AGENTS.md  (region 'harness' has an end marker with no beginning" in plain
+
+
+@needs_git
+def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) -> None:
+    # The write-once half of `InitReport.refused`, which the case above cannot reach: its
+    # refusal is the footprint pass's. A `CLAUDE.md` that is a symlink is refused by the
+    # write-once pass alone, and the run must stop there with its report. Mutation (oracle):
+    # "init's refusal reads only the footprint plan" -> the run goes on to `apply`, whose own
+    # backstop refuses the plan: exit 2 with the engine's message, and no report.
+    root = _repo(tmp_path)
+    (tmp_path / "elsewhere.md").write_text("theirs\n", encoding="utf-8")
+    (root / "CLAUDE.md").symlink_to(tmp_path / "elsewhere.md")
+    before = snapshot(root)
+    code, printed = _invoke(root, tmp_path, "--yes", "--json")
+    assert code == 1, printed
+    data = json.loads(printed)
+    assert "REFUSED" in data["once"] and "REFUSED" not in data["footprint"]
+    assert data["summary"].startswith("refused, and nothing was written:")
+    assert_snapshot_unchanged(root, before)
 
 
 @needs_git

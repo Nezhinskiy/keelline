@@ -23,6 +23,7 @@ from keelline.runner import Completed
 from keelline.scaffold import Kind, Location, Manifest, Record, digest
 from tests.gitfixture import git, needs_git
 from tests.project.repos import forge_record, initialised, tree
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 FORGED = "docs/\x1b[31mforged.md"
 # The commands every shared case runs through, and the invocations that print a report.
@@ -278,3 +279,42 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
     # `docs/roadmap.md` case keeps `docs/`.
     assert tree(root) == {"README.md"}, sorted(tree(root))
     assert resumable
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("command", "refusing"),
+    [("upgrade", "footprint"), ("uninstall", "footprint"), ("uninstall", "once")],
+    ids=["upgrade-footprint", "uninstall-footprint", "uninstall-once"],
+)
+def test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing(
+    tmp_path: Path, command: str, refusing: str
+) -> None:
+    """Each half of each report's `refused`, which decides both whether anything is written and
+    the heading and exit code the command prints. The footprint pass refuses a region whose
+    begin marker is gone; the write-once pass refuses a `CLAUDE.md` that became a symlink.
+
+    Mutations (oracle): "upgrade's refusal reads no plan", "uninstall's refusal reads only the
+    write-once plan" and "uninstall's refusal reads only the footprint plan" -> the run goes on
+    to `apply`, whose own backstop refuses the refused plan: exit 2 with the engine's message and
+    no report, and in the `uninstall-once` case only after the footprint pass has removed its
+    files. The matching case reddens.
+    """
+    root = initialised(tmp_path)
+    if refusing == "footprint":
+        agents = root / "AGENTS.md"
+        agents.write_text(
+            agents.read_text(encoding="utf-8").replace("<!-- keelline:harness:begin -->\n", ""),
+            encoding="utf-8",
+        )
+    else:
+        (tmp_path / "elsewhere.md").write_text("theirs\n", encoding="utf-8")
+        (root / "CLAUDE.md").unlink()
+        (root / "CLAUDE.md").symlink_to(tmp_path / "elsewhere.md")
+    before = snapshot(root)
+    code, data = _run(root, tmp_path, command)
+    assert code == 1, data["summary"]
+    verb = "written" if command == "upgrade" else "removed"
+    assert data["summary"].startswith(f"refused, and nothing was {verb}:")
+    assert "REFUSED" in data[refusing]
+    assert_snapshot_unchanged(root, before)
