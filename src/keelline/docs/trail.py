@@ -23,7 +23,7 @@ from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
 from keelline.findings import Finding
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -182,8 +182,26 @@ def _ignored(root: Path, paths: list[Path]) -> set[Path]:
     code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)
     # 1 simply means "nothing matched"; anything else is a tree git cannot speak for.
     if code not in (0, 1):
+        _unasked(root, "check-ignore", code, "ignores", "a local-only one")
         return set()
     return {root / name for name in out.split("\0") if name}
+
+
+def _unasked(root: Path, command: str, code: int, question: str, leak: str) -> None:
+    """Fail where git gave no answer inside a work tree; outside one there is nothing to ask.
+
+    Read as an empty set, a failed filter listed every document on disk: a timeout, a `git` that
+    could not start or a checkout git refuses (dubious ownership) put `leak` into the committed
+    roadmap. Whether this is a repository is read off the disk, because git refuses that
+    question the same way (`gitenv.in_work_tree`).
+    """
+    if not in_work_tree(root):
+        return
+    cause = NO_ANSWER if code == -1 else f"`git {command}` exited {code}"
+    raise Failure(
+        f"{cause}, so which documents this repository {question} is not known, and the listing "
+        f"would name {leak}; nothing was listed"
+    )
 
 
 def _untracked(root: Path, paths: list[Path]) -> set[Path]:
@@ -193,8 +211,9 @@ def _untracked(root: Path, paths: list[Path]) -> set[Path]:
     makes a developer's `--check` disagree with CI over a file CI cannot see — routinely, since
     a sibling session's work-in-progress lands in the same directory. Skipping them keeps the
     two answers identical and matches what the listing is: a generated index OF THE REPOSITORY,
-    not of one machine's disk. Falls back to "nothing untracked" where git cannot answer, so a
-    non-git tree keeps working instead of silently emptying itself."""
+    not of one machine's disk. Falls back to "nothing untracked" outside a work tree, so a
+    non-git tree keeps working instead of silently emptying itself; inside one, a question git
+    gave no answer to fails."""
     if not paths:
         return set()
     code, out = git_run(
@@ -207,6 +226,7 @@ def _untracked(root: Path, paths: list[Path]) -> set[Path]:
         *(str(p.relative_to(root)) for p in paths),
     )
     if code != 0:
+        _unasked(root, "ls-files", code, "tracks", "an untracked one")
         return set()
     return {root / name for name in out.split("\0") if name}
 

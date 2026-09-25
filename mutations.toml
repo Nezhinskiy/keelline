@@ -8114,3 +8114,27 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
   "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
 ]
+
+# Inside a work tree, a filter git gave no answer for — it could not be run, ran past its time
+# limit, or refused the checkout — was read as an empty set, and the listing named every
+# document on disk: a gitignored local-only one went into the committed roadmap. One entry per
+# filter, because each names its own line.
+[[mutation]]
+name = "the trail reads an ignore question git gave no answer to as nothing ignored"
+file = "src/keelline/docs/trail.py"
+before = '        _unasked(root, "check-ignore", code, "ignores", "a local-only one")'
+after = "        pass"
+reddens = [
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[-1-check-ignore]",
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[128-check-ignore]",
+]
+
+[[mutation]]
+name = "the trail reads an untracked question git gave no answer to as nothing untracked"
+file = "src/keelline/docs/trail.py"
+before = '        _unasked(root, "ls-files", code, "tracks", "an untracked one")'
+after = "        pass"
+reddens = [
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[-1-ls-files]",
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[128-ls-files]",
+]

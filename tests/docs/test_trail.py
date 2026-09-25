@@ -7,6 +7,7 @@ import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,6 +25,7 @@ from keelline.docs.trail import (
     undeclared_new_documents,
 )
 from keelline.errors import Failure
+from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import git
 
 CONFIG = """
@@ -316,6 +318,33 @@ def test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_othe
     plans = root / "docs" / "plans"
     asked = [plans / "local-only.md", plans / os.fsdecode(b"2026-04-04-caf\xe9.md")]
     assert _ignored(root, asked) == {plans / "local-only.md"}
+
+
+@needs_git
+@pytest.mark.parametrize("asked", ["check-ignore", "ls-files"])
+@pytest.mark.parametrize("code", [-1, 128])
+def test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, asked: str, code: int
+) -> None:
+    # Inside a work tree, a `check-ignore` or `ls-files` that could not be run, ran past its
+    # time limit, or exited on a checkout git refuses (dubious ownership, 128) was read as
+    # "nothing ignored" or "nothing untracked", and the listing named every document on disk:
+    # a local-only one the owner had put in `.gitignore` went into the committed roadmap, the
+    # case `--no-index` exists for. It fails now, naming the question. Outside a repository
+    # there is nothing to ask and the listing still works (the case below). Mutation (declared,
+    # one per filter): read the failure as an empty set again -> that filter's cases redden.
+    from keelline.docs import trail as module
+
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (code, "") if args[0] == asked else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    cause = NO_ANSWER if code == -1 else f"`git {asked}` exited {code}"
+    with pytest.raises(Failure, match=re.escape(cause)):
+        listing(root, config)
 
 
 def test_a_tree_git_cannot_answer_for_still_lists_its_documents(tmp_path: Path) -> None:

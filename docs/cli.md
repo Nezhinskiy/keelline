@@ -629,7 +629,10 @@ against, so a defaulted `delivered` that was committed over that report is invis
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern that does not
 compile, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
-otherwise split the block and push repository prose into the roadmap. **Writes**
+otherwise split the block and push repository prose into the roadmap. Inside a git work tree,
+a question git gives no answer to — which documents it ignores or tracks, when it cannot be run,
+runs past its time limit or refuses the checkout — fails (`1`) with nothing written, rather than
+listing every document on disk; outside one, every document is listed. **Writes**
 `[paths] roadmap`.
 
 ## `keelline plan check [--base REF] [PATH …]`
