@@ -68,6 +68,28 @@ def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_thro
 
 
 @needs_git
+def test_a_file_where_keelline_s_directory_goes_is_a_refusal_and_is_left_as_it_was(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The other half of the same refusal: `.keelline` is a regular file, so the walk cannot open
+    # it as a directory. No `mutations.toml` entry and no line of its own: the `except
+    # UnsafePath` that turns it into the refusal also holds the symlink case above, and the
+    # walk's `O_DIRECTORY` is `fsops`'s, held by its own tests. Mutation: drop that `except`
+    # -> the frame reports an internal error, still exit 2, and the message assertion reddens.
+    root = smoke_repo(tmp_path)
+    keelline_directory = root / KEELLINE_DIRECTORY
+    for child in keelline_directory.iterdir():
+        child.unlink()
+    keelline_directory.rmdir()
+    keelline_directory.write_text("a person's file\n", encoding="utf-8")
+    before = sorted(p.name for p in root.iterdir())
+    assert _assess(root, tmp_path, "--base", BASE) == 2
+    assert f"refusing to write {ASSESSMENT}: a directory on its path" in capsys.readouterr().err
+    assert keelline_directory.read_text(encoding="utf-8") == "a person's file\n"
+    assert sorted(p.name for p in root.iterdir()) == before
+
+
+@needs_git
 def test_a_directory_where_the_inventory_goes_is_a_refusal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
