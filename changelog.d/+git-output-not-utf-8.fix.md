@@ -10,8 +10,7 @@ carried through unchanged rather than guessed at, so the path in the answer is t
 and a name read off the disk reaches git as its own bytes. Checks that match git's answer against
 a path — which plans a change touched, whether a document is ignored, which files a tracked-tree
 comparison expects, whether an overlay root is another checkout of the project — answer for that
-path instead of failing. `keelline gate` refuses a base whose `keelline.toml` is not UTF-8 text,
-in the words it uses for the tree's own copy, rather than reading it.
+path instead of failing.
 
 When git gives no answer at all — it cannot run or runs past its time limit — each command says
 so instead of reading it as "nothing": `plan check` reports that nothing was linted and why, rather

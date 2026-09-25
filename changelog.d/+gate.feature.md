@@ -11,3 +11,7 @@ project's name are free; an upgrade moves the recorded version to exactly the ru
 the workflow pin only to a released commit. Any other change is refused while the base enforces
 any gate, and lands by a direct push to the base branch. A refused change runs under the base's
 configuration, and a gate either side enforces enforces.
+
+Both copies of `keelline.toml` are read as UTF-8, whatever the locale: a base copy that is not
+UTF-8 text fails the run (exit 1) in the words the tree's own copy fails in, and is never
+parsed.
