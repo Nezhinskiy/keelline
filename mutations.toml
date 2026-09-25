@@ -7046,3 +7046,14 @@ file = "src/keelline/scaffold/engine.py"
 before = "    planned = {path_key(effective_target(template, config)[0]) for template in templates}"
 after = "    planned = {effective_target(template, config)[0] for template in templates}"
 reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_template_s"]
+
+# `_relocation`'s "a place this template could produce" is folded, so the folded trigger is what
+# keeps the engine from relocating a file onto itself: a record at a case variant of the target
+# is that file where case folds, and a relocation removed it beside an `unchanged` verdict.
+[[mutation]]
+name = "a record at a case variant of the target triggers a relocation"
+file = "src/keelline/scaffold/engine.py"
+before = "        if record is not None and path_key(record.target) != path_key(target):"
+after = "        if record is not None and record.target != target:"
+reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation"]
+

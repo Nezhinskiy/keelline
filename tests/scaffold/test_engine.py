@@ -1108,3 +1108,20 @@ def test_a_retired_region_that_was_the_whole_file_removes_the_file(tmp_path: Pat
     assert [(a.verb, a.payload) for a in planned.actions] == [(Verb.REMOVE, None)]
     apply(tmp_path, planned)
     assert not (tmp_path / ".gitignore").exists()
+
+
+def test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation(
+    tmp_path: Path,
+) -> None:
+    # A record at `agents.md` for an artifact at `AGENTS.md`, as a case-only `[paths]` edit leaves
+    # it. Where case folds they are one file, and a relocation "from" `agents.md` removed the
+    # artifact's own file (`relocated`) beside an `unchanged` verdict for it, then dropped its
+    # record. Asserted on the plan, which is the same string rule on every filesystem.
+    # Mutation (oracle): "a record at a case variant of the target triggers a relocation" ->
+    # the plan holds that `REMOVE` and this reddens.
+    config = a_config(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("BODY\n", encoding="utf-8")
+    Manifest({}).with_record(a_record(target="agents.md")).write(tmp_path)
+    planned = plan(tmp_path, config, [a_template()])
+    assert planned.actions == ()
+    assert planned.unchanged == ("agents-md",)
