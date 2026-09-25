@@ -44,6 +44,8 @@ WINDOW = load_preset("recommended")["assess"]["commit_window"]
 # The preset's `[paths] memory`, derived: its literal is on the neutrality denylist for tests.
 MEMORY = preset_defaults("widget").paths.memory
 OWNED_WORKFLOWS = ".github/workflows/"
+# The markers the probe looks for, spelled apart so this file is not one it finds.
+TO_DO, FIX_ME, TRIPLE_X = "TO" + "DO", "FIX" + "ME", "X" + "XX"
 
 
 def _document(extra: str = "") -> str:
@@ -100,8 +102,8 @@ def test_todo_markers_names_each_file_in_the_code_roots_once(tmp_path: Path) -> 
     # Mutation (advisory): `"--", *roots` becomes `"--", "."` -> `notes.txt` joins and this
     # reddens.
     root = _repo(tmp_path)
-    _write(root, "src/a.txt", "TODO: one\nFIXME: two\n")
-    _write(root, "notes.txt", "TODO: not code\n")
+    _write(root, "src/a.txt", f"{TO_DO}: one\n{FIX_ME}: two\n")
+    _write(root, "notes.txt", f"{TO_DO}: not code\n")
     _commit(root)
     items = _items(root, tmp_path, "todo-markers")
     assert [(i.rule, i.severity, i.principle, i.where, i.count) for i in items] == [
@@ -115,7 +117,7 @@ def test_the_count_is_whole_past_the_cap(tmp_path: Path) -> None:
     # `model.item` -> the count is the cap and this reddens.
     root = _repo(tmp_path)
     for n in range(WHERE_CAP + 50):
-        _write(root, f"src/f{n:04}.txt", "XXX\n")
+        _write(root, f"src/f{n:04}.txt", f"{TRIPLE_X}\n")
     _commit(root)
     (item,) = _items(root, tmp_path, "todo-markers")
     assert len(item.where) == WHERE_CAP

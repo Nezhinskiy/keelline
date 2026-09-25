@@ -60,7 +60,8 @@ COULD_NOT_LOOK_REMEDY = (
 PROFILE_NOT_SHIPPED_REMEDY = (
     "set [keelline] profile to a profile this Keelline ships ({shipped}), or to an empty string"
 )
-_MARKERS = "TODO|FIXME|XXX"
+# Each word spelled so this line is not one of the markers it searches for.
+_MARKERS = "T[O]DO|F[I]XME|X[X]X"
 _SUBJECT = re.compile(r"^([a-z]+)(\([^)]*\))?!?: ")
 _ENV_KEEP = (".example", ".sample", ".template")
 _CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")  # GitHub's order
