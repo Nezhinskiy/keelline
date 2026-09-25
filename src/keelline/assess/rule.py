@@ -53,7 +53,7 @@ from pathlib import Path
 from keelline.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from keelline.config.schema import STATES, Budgets, Config
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
+from keelline.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
 from keelline.overlay.api import later
 
 BASE_UNREADABLE = (
@@ -155,11 +155,13 @@ def read_base(root: Path, base: str) -> str | None:
     if not listed:
         return None
     text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}")
+    # The bytes git printed, read as UTF-8 the way the loader reads the tree's copy: the text
+    # `git_run` decoded with the locale's codec is neither refused nor read the same under a
+    # latin-1 locale, where every byte decodes.
     try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:
+        return answer_bytes(text).decode("utf-8")
+    except UnicodeDecodeError:
         raise Failure(BASE_NOT_UTF8) from None
-    return text
 
 
 class Verdict(StrEnum):

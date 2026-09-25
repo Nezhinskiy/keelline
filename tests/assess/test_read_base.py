@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -246,6 +248,80 @@ def test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap(
     with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)) as caught:
         read_base(project, default_base(project))
     assert "fetch-depth" not in str(caught.value)
+
+
+# A base copy whose one non-ASCII character is valid UTF-8, and the same copy with a byte that
+# is not: the one Keelline reads as the tree's own copy reads it, and the one it refuses.
+NON_ASCII_BASE = BASE.replace('name = "widget"', 'name = "widget"\n# caf\u00e9')
+NOT_UTF8_BASE = b'[keelline]\nversion = "\xff"\n'
+
+
+@pytest.mark.parametrize("base", [NON_ASCII_BASE, NOT_UTF8_BASE], ids=["utf-8", "not-utf-8"])
+def test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, base: str | bytes
+) -> None:
+    # `git_run` decodes with the locale's encoding. Under a latin-1 locale every byte decodes, so
+    # a copy that is not UTF-8 came back with no surrogate for the refusal to find and was
+    # parsed, `0xff` read as `y` with a diaeresis; and a valid UTF-8 copy came back as mojibake,
+    # a different document from the one the tree's loader reads as UTF-8. The bytes git printed
+    # are recovered and decoded as UTF-8, so both answers are the same under every locale. The
+    # locale is simulated at the runner's one seam, `pipe_encoding`, so this holds on a machine
+    # with no latin-1 locale installed. Mutation (declared): check the decoded text for
+    # surrogates again instead of decoding the bytes -> both cases redden.
+    monkeypatch.setattr(gitenv, "pipe_encoding", lambda: "latin-1")
+    project = clone(tmp_path, base)
+    (project / "keelline.toml").write_text(BASE, encoding="utf-8")
+    if isinstance(base, bytes):
+        with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)):
+            read_base(project, default_base(project))
+    else:
+        assert read_base(project, default_base(project)) == base
+
+
+def _has_locale(name: str) -> bool:
+    probe = subprocess.run(
+        [sys.executable, "-c", "import locale; print(locale.getpreferredencoding(False))"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": name, "PYTHONUTF8": "0"},
+    )
+    return probe.stdout.strip().replace("-", "").upper() in {"ISO88591", "LATIN1"}
+
+
+LATIN1_LOCALE = next(
+    (name for name in ("en_US.ISO8859-1", "en_US.ISO-8859-1", "C.ISO-8859-1") if _has_locale(name)),
+    None,
+)
+
+
+@pytest.mark.skipif(LATIN1_LOCALE is None, reason="no latin-1 locale is installed here")
+def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(tmp_path: Path) -> None:
+    # The case above without the seam: a child process under a real latin-1 locale, where the
+    # machine has one (macOS does; a stock Linux runner does not, which is why the seam case
+    # carries the oracle entry).
+    project = clone(tmp_path / "ok", NON_ASCII_BASE)
+    broken = clone(tmp_path / "broken", NOT_UTF8_BASE)
+    script = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from keelline.assess.rule import read_base\n"
+        "from keelline.errors import Failure\n"
+        "for root in sys.argv[1:]:\n"
+        "    try:\n"
+        "        print(ascii(read_base(Path(root), 'refs/remotes/origin/main')))\n"
+        "    except Failure as exc:\n"
+        "        print(ascii(str(exc)))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(project), str(broken)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": str(LATIN1_LOCALE), "PYTHONUTF8": "0"},
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.splitlines() == [ascii(NON_ASCII_BASE), ascii(BASE_NOT_UTF8)]
 
 
 def test_a_root_outside_any_repository_is_a_failure(tmp_path: Path) -> None:

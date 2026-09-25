@@ -7750,6 +7750,21 @@ before = "        raise Failure(BASE_NOT_UTF8) from None"
 after = "        pass"
 reddens = [
   "tests/assess/test_read_base.py::test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
+]
+
+# The refusal once looked for surrogate escapes in the text `git_run` decoded, which only a
+# UTF-8 locale leaves: under latin-1 every byte decodes, so a copy that is not UTF-8 was parsed
+# and a valid one read as mojibake. The bytes git printed are decoded as UTF-8 instead.
+[[mutation]]
+name = "the base copy is read in the locale's codec rather than as UTF-8"
+file = "src/keelline/assess/rule.py"
+before = '        return answer_bytes(text).decode("utf-8")'
+after = """        text.encode("utf-8")
+        return text"""
+reddens = [
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[utf-8]",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
 ]
 
 [[mutation]]

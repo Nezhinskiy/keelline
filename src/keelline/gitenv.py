@@ -23,6 +23,7 @@ here (Premise 17).
 
 from __future__ import annotations
 
+import locale
 import os
 import subprocess
 from pathlib import Path
@@ -67,6 +68,25 @@ def scrubbed_env() -> dict[str, str]:
     return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
 
 
+def pipe_encoding() -> str:
+    """The codec `git_run` decodes git's output and encodes its `stdin` with: the locale's,
+    which is UTF-8 in Python's UTF-8 mode and whatever `LC_ALL`/`LANG` name otherwise.
+
+    Named once so `answer_bytes` undoes exactly what `git_run` did: under a latin-1 locale every
+    byte decodes, so an answer carries no surrogate escape to show it was not UTF-8, and only
+    re-encoding it with the same codec recovers the bytes git printed.
+    """
+    return locale.getpreferredencoding(False)
+
+
+def answer_bytes(answer: str) -> bytes:
+    """The bytes git printed for a `git_run` answer, for a caller that must read them as UTF-8
+    whatever the locale: decoding is lossless both ways, so this is exact, except that text
+    mode has already turned each `\\r\\n` and lone `\\r` into `\\n`.
+    """
+    return answer.encode(pipe_encoding(), "surrogateescape")
+
+
 def git_run(
     root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
 ) -> tuple[int, str]:
@@ -102,7 +122,7 @@ def git_run(
             ["git", "-C", str(root), *args],  # noqa: S607 - PATH on purpose, see the module docstring
             input=stdin,
             capture_output=True,
-            text=True,
+            encoding=pipe_encoding(),
             errors="surrogateescape",
             check=False,
             timeout=timeout,
