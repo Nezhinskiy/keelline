@@ -23,7 +23,7 @@ from keelline.ledger.scan import (
     mention_roots,
     scannable,
 )
-from tests.gitfixture import git
+from tests.gitfixture import git, plant_path
 
 CONFIG = """
 [keelline]
@@ -168,6 +168,22 @@ def test_git_enumerates_the_candidates_and_an_ignored_file_is_not_one(tmp_path: 
     write(root, ".gitignore", "src/generated/\n")
     write(root, "src/generated/out.py", "# BR-404\n")
     write(root, "src/a.py", "# BR-405\n")
+    assert list(code_mentions(root, config)) == ["BR-405"]
+
+
+@needs_git
+def test_a_listing_git_cannot_hand_over_falls_back_to_the_walk_and_not_to_nothing(
+    tmp_path: Path,
+) -> None:
+    # `ls-files -z` prints a tracked name raw, so one that is not UTF-8 is `git_run`'s
+    # `(-1, "")`. Read as an empty listing, that scanned no file at all and reported every
+    # reference as absent — the guard that says OK because it looked at nothing, which this
+    # module's walk fallback exists to prevent. Mutation (declared): answer the failed listing
+    # with the empty string again — the scan finds nothing and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q")
+    write(root, "src/a.py", "# BR-405\n")
+    plant_path(root, b"src/caf\xe9.py")
     assert list(code_mentions(root, config)) == ["BR-405"]
 
 

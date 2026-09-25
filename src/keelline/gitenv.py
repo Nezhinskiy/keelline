@@ -42,6 +42,14 @@ GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 # hang, not for a remote and not for a long history.
 GIT_TIMEOUT_SECONDS = 5
 
+# What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
+# does not say which of the three it was, because none of them is an answer about the
+# repository: a caller that words `-1` as one cause — "git is not installed", "the fetch timed
+# out" — is wrong about the other two.
+NO_ANSWER = (
+    "git could not be run, ran past its time limit, or its input or output was not UTF-8 text"
+)
+
 
 def scrubbed_env() -> dict[str, str]:
     return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
@@ -50,7 +58,7 @@ def scrubbed_env() -> dict[str, str]:
 def git_run(
     root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
 ) -> tuple[int, str]:
-    """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when git could not be run.
+    """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when there is no answer to read.
 
     The one place this project runs `git` outside the memory store's own resolver: every
     argument list is built from constants by the caller, every pathspec follows `--`, and no
@@ -58,6 +66,13 @@ def git_run(
     `-`-shaped ones (§3). Resolved through PATH for the reason above: the machine owner's git
     must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
     "nothing matched", and that is an answer.
+
+    No answer is three things, and `NO_ANSWER` names all three: git could not be launched, it
+    ran past `timeout`, or the text crossing the pipe was not UTF-8. `text=True` decodes stdout
+    and stderr strictly and encodes `stdin` the same way, and git prints a committed path raw
+    wherever `-z` is asked for — `ls-files -z`, `diff --name-only -z` — so one tracked name
+    that is not UTF-8 raised `UnicodeDecodeError` out of every caller, a gate's included. What
+    this process cannot read is not an answer about the repository, so it is `(-1, "")` too.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - see the docstring
@@ -69,6 +84,6 @@ def git_run(
             timeout=timeout,
             env=scrubbed_env(),
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, UnicodeError):
         return -1, ""
     return completed.returncode, completed.stdout

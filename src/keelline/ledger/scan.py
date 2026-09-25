@@ -26,9 +26,10 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
+from keelline.gitenv import git_run
 from keelline.guards.api import contained_roots
 from keelline.identifiers import identifiers
-from keelline.ledger.git import git_output
+from keelline.ledger.git import QUERY_TIMEOUT_SECONDS, git_output
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -130,12 +131,15 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
 
     `None` rather than an empty list when `root` is not the top of a checkout, so the caller
     falls back to walking instead of silently scanning nothing — a guard that reports OK
-    because it looked at no files is the failure mode this whole module exists to prevent.
+    because it looked at no files is the failure mode this whole module exists to prevent. The
+    listing itself answers the same way when git gave none: `git_output`'s `""` for a failure
+    is an empty listing, and `-z` prints a tracked name that is not UTF-8 raw, which is no
+    answer this process can read.
     """
     toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()
     if not toplevel or Path(toplevel).resolve() != root.resolve():
         return None
-    listed = git_output(
+    code, listed = git_run(
         root,
         "ls-files",
         "-z",
@@ -144,7 +148,10 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
         "--exclude-standard",
         "--",
         *(_pathspec(n) for n in names),
+        timeout=QUERY_TIMEOUT_SECONDS,
     )
+    if code != 0:
+        return None
     return [root / name for name in listed.split("\0") if name]
 
 

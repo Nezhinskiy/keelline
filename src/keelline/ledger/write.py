@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline import fsops
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.identifiers import DIGITS, identifiers
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
 from keelline.ledger.entries import (
@@ -99,10 +99,14 @@ def _fetch(root: Path) -> str | None:
     code, _ = git_run(root, "fetch", "--quiet", "origin", timeout=FETCH_TIMEOUT_SECONDS)
     if code == 0:
         return None
-    return (
-        f"git fetch origin {'could not run or timed out' if code < 0 else 'failed'}; "
-        "identifiers may collide with branches this checkout has not fetched"
+    # `-1` is not only "could not run or timed out": a remote's message that is not UTF-8 text
+    # is `-1` too, from a fetch that ran, in time.
+    cause = (
+        f"{NO_ANSWER}, so git fetch origin gave no answer"
+        if code < 0
+        else "git fetch origin failed"
     )
+    return f"{cause}; identifiers may collide with branches this checkout has not fetched"
 
 
 def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Allocation:

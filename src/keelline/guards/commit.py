@@ -429,7 +429,7 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
             timeout=LOG_TIMEOUT_SECONDS,
             env=scrubbed_env(),
         )
-    # None of the three refusals below carries a byte this module did not compute. `git log`'s
+    # None of the four refusals below carries a byte this module did not compute. `git log`'s
     # stderr is repository-authored and unbounded — `warning: ignoring broken ref …`, `error:
     # object file … is empty`, `fatal: bad object <name>` all quote refs and object names — and
     # `TimeoutExpired`/`OSError` stringify the whole argv, `root` included. The range is the
@@ -440,6 +440,12 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
         ) from None
     except OSError:
         raise Refusal(f"git could not be run to read {rev_range!r}") from None
+    # A commit's own `encoding` header naming one git cannot convert from leaves its message
+    # raw, and a pull request can push such a commit: undecodable, it cannot be judged.
+    except UnicodeDecodeError:
+        raise Refusal(
+            f"git printed a message in {rev_range!r} that is not UTF-8 text, so it cannot be judged"
+        ) from None
     if completed.returncode != 0:
         raise Refusal(f"git could not read {rev_range!r}; run it yourself to see why")
     # Positional, not searched: the fields alternate sha, message, sha, message, and `-z` puts a

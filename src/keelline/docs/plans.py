@@ -77,7 +77,7 @@ from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.identifiers import identifiers
 from keelline.prose import blank_fences, path_references, resolves_within
 
@@ -129,6 +129,10 @@ _BASE_UNRESOLVABLE = (
     "proved nothing. In CI the cause is a checkout too shallow to hold the base ref "
     "(`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does not have."
 )
+_NO_ANSWER = (
+    "{no_answer}, so the plans `{base}...HEAD` touches under {root} could not be listed and "
+    "NOTHING was linted"
+)
 _SCOPE_MISSING = (
     'no `**Scope:**` admission criterion — one line saying "a change belongs to this branch '
     'iff …", so a mid-plan arrival is screened'
@@ -166,7 +170,8 @@ def _is_git_repo(root: Path) -> bool:
 
 
 def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
-    """Plans this change touches; None when git cannot answer.
+    """Plans this change touches; None when git cannot resolve the range, and a `Failure` when
+    it gave no answer at all.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -190,6 +195,10 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
     code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
+    if code == -1:
+        # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
+        # plan named in bytes that are not UTF-8 is a clone holding every ref.
+        raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
     if code != 0:
         return None
     return [root / name for name in out.split("\0") if name.endswith(".md")]

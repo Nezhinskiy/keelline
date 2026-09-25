@@ -209,6 +209,20 @@ def test_a_failed_fetch_is_reported_not_raised(
     assert allocation.warning is not None and "fetch" in allocation.warning
 
 
+def test_a_fetch_that_gave_no_answer_names_every_cause_and_not_only_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `-1` is also a remote's message that is not UTF-8 text, which "could not run or timed
+    # out" misdiagnosed: the fetch ran, in time. Mutation (advisory): word `-1` as "could not
+    # run or timed out" again — this reddens.
+    root, config = project(tmp_path)
+    from keelline.ledger import write as module
+
+    monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
+    warning = next_identifier(root, config, fetch=True).warning
+    assert warning is not None and "not UTF-8 text" in warning
+
+
 def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(
     tmp_path: Path,
 ) -> None:

@@ -14,7 +14,7 @@ from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.plans import asserted_outcomes, lint
 from keelline.errors import Failure, Refusal
-from tests.gitfixture import git
+from tests.gitfixture import git, plant_path
 
 CONFIG = """
 [keelline]
@@ -214,6 +214,27 @@ def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> 
     git(root, "commit", "-qm", "seed")
     result = lint(root, config, plans=[])
     assert [f.rule for f in result.findings] == ["base-unresolvable"] and result.linted == []
+
+
+@needs_git
+def test_a_touched_path_git_prints_as_bytes_that_are_not_text_is_not_a_shallow_checkout(
+    tmp_path: Path,
+) -> None:
+    # `diff --name-only -z` prints a committed name raw, and one that is not UTF-8 raised
+    # `UnicodeDecodeError` out of `plan check` and the `plan` gate. `git_run` answers `(-1, "")`
+    # for it now, and `-1` is not "the base does not resolve": that finding sends a reader to
+    # `fetch-depth: 0` in a clone that holds every ref. Still exit 1, with the cause in words.
+    # Mutation (advisory): drop the `code == -1` arm in `touched_plans` — the base-unresolvable
+    # finding comes back instead of the `Failure` and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    plant_path(root, b"docs/plans/2026-01-02-caf\xe9.md")
+    git(root, "commit", "-qm", "a plan whose name is not UTF-8")
+    with pytest.raises(Failure, match="not UTF-8 text") as caught:
+        lint(root, config, plans=[], base="HEAD~1")
+    assert "fetch-depth" not in str(caught.value)
 
 
 @needs_git

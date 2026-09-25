@@ -1124,3 +1124,17 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
     assert "developer" not in message
     # Non-vacuous: the message did report, and what it reported is the count this lane took.
     assert "1 of this project's memory groups" in message
+
+
+def test_a_worktree_listing_git_gave_no_answer_for_names_a_path_that_is_not_utf_8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `-1` from `git_run` is also a worktree path git printed in bytes that are not UTF-8 text,
+    # on a machine whose `git` runs fine; "check that `git` runs here" alone sends the owner to
+    # the wrong fault. Mutation (advisory): drop the clause about the path — this reddens.
+    from keelline.attach import write as module
+
+    monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
+    with pytest.raises(Failure, match="UTF-8 text") as caught:
+        module._worktrees(tmp_path)
+    assert "check that `git` runs here" in str(caught.value)

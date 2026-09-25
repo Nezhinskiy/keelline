@@ -1025,6 +1025,19 @@ before = '    return completed.returncode, completed.stdout'
 after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
 reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
 
+# `text=True` decodes strictly and `-z` prints a tracked name raw, so one name that is not UTF-8
+# raised `UnicodeDecodeError` out of `git_run` and every caller — the `plan` gate and `plan
+# check` among them; `stdin` is encoded the same way. No readable answer is `(-1, "")`.
+[[mutation]]
+name = "the git runner lets text that is not UTF-8 escape as a traceback"
+file = "src/keelline/gitenv.py"
+before = "    except (OSError, subprocess.SubprocessError, UnicodeError):"
+after = "    except (OSError, subprocess.SubprocessError):"
+reddens = [
+  "tests/test_git_run.py::test_a_committed_path_that_is_not_utf_8_is_no_answer_and_not_a_traceback",
+  "tests/test_git_run.py::test_a_question_that_is_not_utf_8_is_no_answer_and_not_a_traceback",
+]
+
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
 # the subset stays valid YAML only because the leading class is YAML's whole indicator set.
 [[mutation]]
@@ -1065,6 +1078,19 @@ file = "src/keelline/ledger/scan.py"
 before = '    return FIXTURE_MARKER.encode("utf-8") in head'
 after = '    return False'
 reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
+
+# A listing git gave no answer for — a tracked name that is not UTF-8, a timeout — read as an
+# empty one scanned no file and reported every reference absent. It falls back to the walk.
+[[mutation]]
+name = "the scan reads a listing git gave no answer for as no files"
+file = "src/keelline/ledger/scan.py"
+before = """    if code != 0:
+        return None
+    return [root / name for name in listed.split("\\0") if name]"""
+after = """    return [root / name for name in listed.split("\\0") if name]"""
+reddens = [
+  "tests/ledger/test_scan.py::test_a_listing_git_cannot_hand_over_falls_back_to_the_walk_and_not_to_nothing",
+]
 
 # A repository condition the operator can fix must reach them as findings (exit 1), never as an
 # internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
@@ -3658,20 +3684,6 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
 
-# Fix round 2, item 2. `-z` made an undecodable tracked path reachable: `git_run` decodes
-# strictly and catches only `OSError`/`SubprocessError`, so the `UnicodeDecodeError` left a
-# library function as a traceback. A listing that cannot be read is no listing at all.
-[[mutation]]
-name = "attribute lets an undecodable tracked path escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        code, listing = -1, \"\""""
-after = """    except ZeroDivisionError:
-        code, listing = -1, \"\""""
-reddens = [
-  "tests/guards/test_attribute.py::test_a_listing_this_process_cannot_decode_skips_the_comparison",
-]
-
 # Fix round 1, item 2. Every external program is optional at runtime and a missing binary is a
 # reported finding, never a traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers
 # `Completed(NOT_FOUND, ...)`. This was the one launch in the module with nothing around it.
@@ -3684,15 +3696,43 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
 ]
 
-# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "could not be launched", not an exit
-# status; rendered as one it sends a reader to fetch a ref that is not the problem.
+# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "no answer" — not launched, past its
+# bound, or text that is not UTF-8 — and not an exit status; rendered as one it sends a reader
+# to fetch a ref that is not the problem. Two arms now read it, so each entry carries its own
+# `raise` line to name one of them.
 [[mutation]]
 name = "attribute reports an unlaunchable git as an exit code"
 file = "src/keelline/guards/attribute.py"
-before = "    if code == -1:"
-after = "    if False:"
+before = """    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
+after = """    if False:
+        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
 reddens = [
   "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_is_no_answer_and_not_an_exit_code",
+]
+
+[[mutation]]
+name = "attribute reports an archive git gave no answer for as an exit code"
+file = "src/keelline/guards/attribute.py"
+before = """    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+after = """    if False:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+reddens = [
+  "tests/guards/test_attribute.py::test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code",
+]
+
+# `-z` prints a tracked name raw, so one this process cannot decode is `git_run`'s `(-1, "")`: a
+# listing that cannot be read is no listing, and the comparison is skipped rather than blaming
+# an export rule for a healthy tree.
+[[mutation]]
+name = "attribute reads a listing git gave no answer for as every file missing"
+file = "src/keelline/guards/attribute.py"
+before = "    if code == 0 and missing:"
+after = "    if code != 0 or missing:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_listing_git_gave_no_answer_for_skips_the_comparison",
 ]
 
 # A `${{ }}` inside a workflow's `run:` is interpolated by the platform before the shell sees
@@ -4147,36 +4187,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted",
 ]
 
-# `gitenv.git_run` decodes stderr strictly as well as stdout, so git's own error text carrying
-# one non-UTF-8 byte escapes as a bare `UnicodeDecodeError` out of a library function. The
-# listing's arm answers by skipping the comparison; these two have no weaker answer, so each is
-# a `Failure` naming its command. One entry per arm, because one entry names one line.
-[[mutation]]
-name = "attribute lets an undecodable merge-base diagnostic escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
-after = """    except ZeroDivisionError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
-]
-
-[[mutation]]
-name = "attribute lets an undecodable archive diagnostic escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
-after = """    except ZeroDivisionError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[archive]",
-]
-
 # The case is named for the repository and matched on `refused by a ruleset`, which is the
 # STUB's own stderr — quoted back whatever this message says about where the push went. The
 # slug is the half only this line produces.
@@ -4477,6 +4487,20 @@ reddens = [
   "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[commit check]",
 ]
 
+# A commit whose `encoding` header names one git cannot convert from prints its message raw, and
+# a pull request can push one: the strict decode raised `UnicodeDecodeError`, a `ValueError`,
+# past every caller — an internal error, and past any caller that runs gates one by one.
+[[mutation]]
+name = "the commit range lets a message that is not UTF-8 escape as a traceback"
+file = "src/keelline/guards/commit.py"
+before = """    except UnicodeDecodeError:
+        raise Refusal("""
+after = """    except ZeroDivisionError:
+        raise Refusal("""
+reddens = [
+  "tests/guards/test_commit.py::test_a_message_git_prints_in_bytes_that_are_not_text_is_a_refusal_not_a_traceback",
+]
+
 # `docs check` is the row no success field can hold: it answers `findings: []` and the same
 # `OK:` line whether it read the documents or returned early. Its companion plants one
 # violation per walk, so each walk has a mutation of its own.
@@ -4539,25 +4563,6 @@ before = "                files[str(path.relative_to(root))] = path.read_bytes()
 after = "                files[str(path.relative_to(root))] = str(path.stat().st_size).encode()"
 reddens = [
   "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
-]
-
-# The decode-containment case matched on the COMMAND NAME, which the pre-existing generic arm
-# emits too: with the merge-base arm's `raise` replaced by a fall-through, `match="merge-base"`
-# was satisfied by *"git could not be run, so `merge-base HEAD main` never executed"* — the
-# exact misdiagnosis `test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code`
-# exists to forbid. Measured: 16 passed, two tests contradicting each other, both green. The
-# case now matches the clause only this arm produces.
-[[mutation]]
-name = "the undecodable merge-base falls through to the unlaunchable-git sentence"
-file = "src/keelline/guards/attribute.py"
-before = """
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
-            f"is no merge-base to compare against"
-        ) from None"""
-after = '        code, merge_base = -1, ""'
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
 ]
 
 # Three of the D5 artifact gate's four claims were unheld, each removable with the module's
@@ -4838,8 +4843,8 @@ reddens = [
 [[mutation]]
 name = "the tree listing goes back on the argument-free timeout"
 file = "src/keelline/guards/attribute.py"
-before = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
-after = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
+before = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
+after = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
 reddens = [
   "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
 ]
