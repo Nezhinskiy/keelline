@@ -7658,3 +7658,137 @@ before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--
 after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
     if False:"""
 reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
+
+# The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
+# govern its run, so each guard that says `refused`, and each that picks the configuration and the
+# enforcement the run uses, is a guard.
+[[mutation]]
+name = "a gate the base enforces may be dropped from enforced"
+file = "src/keelline/assess/rule.py"
+before = "    if backward or not after.enforcing >= before.enforcing:"
+after = "    if backward:"
+reddens = ["tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[gate-dropped]"]
+
+[[mutation]]
+name = "the lifecycle may move back while every gate still enforces"
+file = "src/keelline/assess/rule.py"
+before = "    backward = _ORDER[after.state] < _ORDER[before.state]"
+after = "    backward = False"
+reddens = ["tests/assess/test_rule.py::test_state_cannot_move_back_even_when_every_gate_still_enforces"]
+
+[[mutation]]
+name = "a raised budget is read as a tightening"
+file = "src/keelline/assess/rule.py"
+before = "    lower = sides.tree.budgets.effective(name) <= sides.base.budgets.effective(name)"
+after = "    lower = True"
+reddens = [
+  "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[budget-raised]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+]
+
+[[mutation]]
+name = "a built-in gate the base enforces may be removed from [gates] builtin"
+file = "src/keelline/assess/rule.py"
+before = "    if (before - after) & sides.base.keelline.enforcing:"
+after = "    if False:"
+reddens = ["tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[built-in-removed]"]
+
+[[mutation]]
+name = "a custom gate the base enforces may be removed, renamed or given another command"
+file = "src/keelline/assess/rule.py"
+before = "    return Verdict.REFUSED if name in sides.base.keelline.enforcing else Verdict.NEUTRAL"
+after = "    return Verdict.NEUTRAL"
+reddens = [
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-removed]",
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-run-changed]",
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-renamed]",
+]
+
+[[mutation]]
+name = "a moved workflow pin is admitted without the platform's word for the running commit"
+file = "src/keelline/assess/rule.py"
+before = "    vouched = bool(sides.workflow_sha) and pin == sides.workflow_sha"
+after = "    vouched = True"
+reddens = [
+  "tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[no-workflow-sha]",
+  "tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[another-commit]",
+]
+
+[[mutation]]
+name = "a moved workflow pin is admitted when the release tags could not be read"
+file = "src/keelline/assess/rule.py"
+before = "    pinned = pin == sides.base.ci.ref or (vouched and sides.released(pin) is True)"
+after = "    pinned = pin == sides.base.ci.ref or (vouched and sides.released(pin) is not False)"
+reddens = ["tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[tags-unreadable]"]
+
+[[mutation]]
+name = "a recorded version other than the running Keelline's is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    at_running = new == sides.running"
+after = "    at_running = True"
+reddens = ["tests/assess/test_rule.py::test_a_version_that_is_not_the_running_keelline_s_is_not_an_upgrade"]
+
+[[mutation]]
+name = "a version moving down is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    upward = later(old, new) is False"
+after = "    upward = True"
+reddens = [
+  "tests/assess/test_rule.py::test_a_version_moving_down_is_not_an_upgrade",
+  "tests/assess/test_rule.py::test_a_release_moved_to_its_own_pre_release_is_not_an_upgrade",
+]
+
+[[mutation]]
+name = "a version pair Keelline does not order is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    upward = later(old, new) is False"
+after = "    upward = later(old, new) is not True"
+reddens = ["tests/assess/test_rule.py::test_a_version_pair_keelline_does_not_order_is_not_an_upgrade"]
+
+[[mutation]]
+name = "a key the rule cannot tell the direction of is only noted while a gate enforces"
+file = "src/keelline/assess/rule.py"
+before = "    return Verdict.REFUSED if sides.base.keelline.enforcing else Verdict.NOTED"
+after = "    return Verdict.NOTED"
+reddens = [
+  "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[path-moved-while-enforcing]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[moves-another-default]",
+]
+
+[[mutation]]
+name = "a refused change still runs under its own configuration"
+file = "src/keelline/assess/rule.py"
+before = "    return replace(verdict, config=base) if verdict.refused else verdict"
+after = "    return verdict"
+reddens = ["tests/assess/test_rule.py::test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides"]
+
+[[mutation]]
+name = "an admitted change runs under the base's paths"
+file = "src/keelline/assess/rule.py"
+before = "    return replace(verdict, config=base) if verdict.refused else verdict"
+after = "    return replace(verdict, config=base)"
+reddens = [
+  "tests/assess/test_rule.py::test_a_path_moved_while_nothing_enforces_is_noted_and_the_run_uses_it",
+  "tests/assess/test_rule.py::test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths",
+]
+
+[[mutation]]
+name = "a gate the change promotes or adds does not enforce in its own run"
+file = "src/keelline/assess/rule.py"
+before = "    enforcing = base.keelline.enforcing | tree.keelline.enforcing"
+after = "    enforcing = base.keelline.enforcing"
+reddens = [
+  "tests/assess/test_rule.py::test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths",
+  "tests/assess/test_rule.py::test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides",
+  "tests/assess/test_rule.py::test_a_gate_added_to_an_installed_project_enforces_in_the_run_that_adds_it",
+]
+
+[[mutation]]
+name = "a budget is compared as written rather than as it takes effect"
+file = "src/keelline/assess/rule.py"
+before = '            values |= {f"budgets.{name}": table.effective(name) for name in Budgets.NAMES}'
+after = '            values |= {f"budgets.{name}": table.configured.get(name) for name in Budgets.NAMES}'
+reddens = [
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[lowers-a-budget]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+]
