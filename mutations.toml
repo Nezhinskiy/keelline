@@ -3864,9 +3864,9 @@ reddens = [
 ]
 
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
-# `path:` carrying a newline writes further `key=value` lines — and the keys the very next steps
-# read are `base`, `state` and `enforce`. `enforce` is the whole of DC7's teeth. Disable the
-# character check and a caller's `path:` decides whether an installed project's gates enforce.
+# `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
+# is `base_sha`, the commit whose configuration governs the gates. Disable the character check
+# and a caller's `path:` forges that commit, and with it what a pull request is judged against.
 [[mutation]]
 name = "the reusable workflow lets `path:` write its own outputs"
 file = ".github/workflows/check.yml"
@@ -3915,68 +3915,6 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
 ]
 
-# `check.yml`'s verdict is three lines of shell that decide whether a failed gate fails the job,
-# which is the whole of D8's advisory rule. Pin the last line true and an installed project's
-# red gate reports green — the gate running is not the gate enforcing.
-[[mutation]]
-name = "the verdict stops failing the job for a failed gate"
-file = ".github/workflows/check.yml"
-before = '          [ "$ENFORCE" != true ] || [ "$failed" -eq 0 ]'
-after = "          true"
-reddens = [
-  "tests/test_fixtures.py::test_the_verdict_fails_the_job_only_where_the_base_says_installed",
-]
-
-# "Every gate ran, whatever the first one said" is the step's own claim and the reason the five
-# gate steps are `continue-on-error`. Shorten the loop to the first gate and a project fixing its
-# documents pays a round trip per finding, while every other assertion about the verdict still
-# holds.
-[[mutation]]
-name = "the verdict reports only the first gate"
-file = ".github/workflows/check.yml"
-before = '          for pair in "docs:$O_DOCS" "bugs:$O_BUGS" "plan:$O_PLAN" "commit:$O_COMMIT" "trail:$O_TRAIL"; do'
-after = '          for pair in "docs:$O_DOCS"; do'
-reddens = [
-  "tests/test_fixtures.py::test_every_gate_is_named_in_the_verdict_and_not_only_the_first",
-]
-
-# DC7's equality rule applies "on any branch but the base branch itself". A push to the base
-# branch IS the change, so dropping the exemption refuses every merge into it — the gate failing
-# closed on the one ref that can never satisfy it.
-[[mutation]]
-name = "the base branch is compared against itself"
-file = ".github/workflows/check.yml"
-before = '            if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then'
-after = '            if ! git diff --quiet "origin/$base" -- "$file"; then'
-reddens = [
-  "tests/test_fixtures.py::test_the_base_branch_itself_is_exempt_from_the_equality_rule",
-]
-
-# And D8's other half: while the base's state is `initialised` or `adopting` the branch may
-# change the configuration, and the run warns rather than refusing. Refuse there and a project
-# adopting the gate cannot land the pull request that adopts it.
-[[mutation]]
-name = "a differing configuration is refused before the base says installed"
-file = ".github/workflows/check.yml"
-before = '              if [ "$state" = installed ]; then'
-after = "              if true; then"
-reddens = [
-  "tests/test_fixtures.py::test_a_differing_configuration_under_a_base_that_is_not_installed_warns",
-]
-
-# The base step runs in the caller's checkout, and `python3 -c` puts that directory first on
-# `sys.path`. Without `-P` a `tomllib.py` the branch adds reads the base's configuration, so the
-# branch decides the state and with it whether any gate enforces — while `keelline.toml` itself
-# stays byte-equal and the equality rule has nothing to refuse.
-[[mutation]]
-name = "the base step's reader imports from the tree under review again"
-file = ".github/workflows/check.yml"
-before = '''            state="$(git show "origin/$base:$file" | python3 -P -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
-after = '''            state="$(git show "origin/$base:$file" | python3 -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
-reddens = [
-  "tests/test_fixtures.py::test_a_tomllib_the_branch_plants_does_not_read_the_bases_configuration",
-]
-
 # The rule that replaced four rounds of shape enumeration: a `run:` key owns every following
 # line indented past the key's column. Drop the continuation and every multi-line body — a block
 # scalar, an indented plain scalar, a plain scalar that continues onto the next line, a quoted
@@ -3990,7 +3928,7 @@ before = "            body.append(following)"
 after = "            pass"
 reddens = [
   "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-  # And the scan's own size floor, which exists for exactly this: nine bodies are still
+  # And the scan's own size floor, which exists for exactly this: the bodies are still
   # collected from `check.yml`, so the COUNT floor passes while every one of them has been
   # truncated to what stood on the key's line.
   "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
@@ -4934,26 +4872,26 @@ reddens = [
   "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
 ]
 
-# §4.3. All five gates carry `continue-on-error: true`, so while the base is not `installed` a
-# Keelline that cannot even import produced five `::warning`s and a green job — for every
-# adopting project, which by design is every project's first weeks. This is the one unguarded
-# step given the guard back.
+# The step whose exit status is the verdict. `keelline gate` already exits 0 for an advisory
+# gate's findings, so `continue-on-error` there could only turn a refusal or an enforced gate's
+# failure green — and the job with it, for every caller.
 [[mutation]]
-name = "the proof that Keelline runs at all becomes advisory too"
+name = "a judging step that may fail turns an enforced gate green"
 file = ".github/workflows/check.yml"
 before = """
-      - name: Keelline runs at all"""
+      - name: The configuration and the built-in gates
+"""
 after = """
-      - name: Keelline runs at all
-        continue-on-error: true"""
+      - name: The configuration and the built-in gates
+        continue-on-error: true
+"""
 reddens = [
-  "tests/test_fixtures.py::test_something_outside_the_advisory_arm_proves_keelline_runs_at_all",
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
 ]
 
-# §4.3. On a `pull_request` the workflow file comes from the merge commit, so `with: base:` is
-# the author's. A `base:` naming a branch whose `keelline.toml` says `initialised` yielded
-# `enforce=false` without the tree's own file being touched, and the byte-equality rule never
-# fired.
+# On a `pull_request` the caller workflow comes from the merge commit, so `with: base:` is the
+# author's. A `base:` naming a branch the author pushed would choose the configuration the change
+# is judged against, without the tree's own `keelline.toml` being touched.
 [[mutation]]
 name = "a pull request's base: input is preferred over the platform's own answer again"
 file = ".github/workflows/check.yml"
@@ -5577,10 +5515,10 @@ reddens = [
 ]
 
 # The highest-value new guard in the `project` area, and it had a test and no entry.
-# `[ci] gate_branch` is repository-authored and is interpolated into two positions of a YAML file
-# GitHub executes — a `branches:` list and a `${{ }}` default — so it is quoted there *and* held
-# to a shape here, because quoting alone still admits a newline, which closes the list and lets
-# further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
+# `[ci] gate_branch` is repository-authored and is interpolated into three places of a YAML file
+# GitHub executes — the two `branches:` lists and the literal `base:` — so it is quoted there
+# *and* held to a shape here, because quoting alone still admits a newline, which closes the
+# string and lets further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
 # the installed package; the party bounded is the repository, which cannot move it. A value
 # outside the grammar costs the artifact rather than the run, and the sentence names the key and
 # the grammar and never the value.
@@ -8098,4 +8036,172 @@ after = "    configured = loads(tree_text, root, machine=machine, interactive=Fa
 reddens = [
   "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
   "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]
+
+# The custom gates execute files the pull request can change. Under the default `if: success()`
+# they run only once the judging step passed; `if: always()` would run them after a refusal, in
+# a job whose verdict is already failing, and a step that may run whatever came before it is a
+# step nothing orders.
+[[mutation]]
+name = "the custom step runs after a refusal"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The project's own gates
+"""
+after = """
+      - name: The project's own gates
+        if: always()
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `--builtin` is what keeps every command from `[gates.custom]` out of the process that decides
+# the verdict. Drop it and the judging step runs the pull request's own test suite, `Makefile`
+# or script, with the runner's privileges, before its exit status is read.
+[[mutation]]
+name = "the judging step runs the repository's own gate commands"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
+]
+
+# The base step resolves the base once to a commit, and the judging step must judge against
+# that commit. Judged against the tree's own HEAD, every change to `keelline.toml` compares
+# equal to itself, and a pull request that stops enforcing a gate passes the configuration check.
+[[mutation]]
+name = "the judging step judges the tree against itself"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# A refused key and an enforcing gate's findings reach the pull request's page as annotations.
+# Without `--annotate` the job fails with no line saying which key or which finding, and the
+# author reads the raw log to find out.
+[[mutation]]
+name = "the judging step stops annotating"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# The job summary is the one place every gate's mode and outcome and every changed key's verdict
+# are listed together, uncapped by the platform's ten annotations per level.
+[[mutation]]
+name = "the judging step writes no job summary"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# An upgrade's moved `[ci] ref` is admitted only at the commit the platform says is running.
+# Without `--workflow-sha` nothing names that commit, so every upgrade pull request that moves
+# the pin is refused and lands only by a direct push.
+[[mutation]]
+name = "the judging step drops the running workflow's commit"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
+]
+
+# `python3 -m` puts the working directory first on `sys.path`. The gate steps run from the
+# workspace, which the pull request writes nothing into; `-P` is the second layer, and the one
+# that keeps a module the checkout carries from standing in for Keelline's own if a gate step
+# ever runs from the caller's checkout, as the base step it replaced once did.
+[[mutation]]
+name = "the judging step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# `only:` is how a matrix caller gives each gate its own check row. Drop the loop and every leg
+# runs every gate, so each row reports the whole job's verdict under one gate's name.
+[[mutation]]
+name = "only: runs every gate whatever it names"
+file = ".github/workflows/check.yml"
+before = '          for name in $ONLY; do only+=("--only=$name"); done'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
+]
+
+# `$ONLY` is split unquoted, which is also where the shell globs: a name like `d*` would be
+# expanded against the workspace and reach `keelline gate` as whatever files matched.
+[[mutation]]
+name = "only: names are expanded as file patterns"
+file = ".github/workflows/check.yml"
+before = "          set -f"
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
+]
+
+# git resolves a short `origin/<base>` through `refs/tags/` before `refs/remotes/`, and
+# `fetch-depth: 0` fetches every tag. So whoever may push a tag named `origin/main` would choose
+# the commit whose configuration every pull request is judged against. The anchor is the fully
+# qualified remote-tracking ref, which `actions/checkout` writes from the platform.
+[[mutation]]
+name = "a tag named like the tracking branch chooses the base"
+file = ".github/workflows/check.yml"
+before = '          base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||'
+after = '          base_sha="$(git rev-parse --verify --quiet "origin/$base^{commit}")" ||'
+reddens = [
+  "tests/test_fixtures.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base",
+]
+
+# A caller that runs for pull requests into any branch lets a pull request collect a green check
+# against a looser base and then be retargeted onto the gate branch. The anchor is the caller
+# file `keelline init` writes, which `/.github/`'s code owners review.
+[[mutation]]
+name = "the caller runs for pull requests into any branch"
+file = "src/keelline/templates/project/keelline.yml"
+before = """
+  pull_request:
+    branches: ["%%GATE_BRANCH%%"]
+"""
+after = """
+  pull_request:
+"""
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
+
+# `base:` is a literal so that the reusable workflow refuses a pull request whose base is not
+# the gate branch, even where the trigger has been widened by hand. Following `github.base_ref`
+# again, it agrees with whatever branch the pull request targets, and the refusal never fires.
+[[mutation]]
+name = "the caller's base: follows the pull request again"
+file = "src/keelline/templates/project/keelline.yml"
+before = '      base: "%%GATE_BRANCH%%"'
+after = "      base: ${{ github.base_ref || '%%GATE_BRANCH%%' }}"
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
+
+# `only:` is the caller's, and the caller is pull-request content. A pull request that loosens
+# `enforced` and sets `only: docs` in its own caller would run the `docs` gate under the base's
+# configuration, pass it, and never meet the configuration check that refuses the loosening. So
+# the judging step asks for `config` whatever else `only:` names; the tighten-only rule does not
+# rest on one more input the pull request can edit.
+[[mutation]]
+name = "the judging step skips the configuration check when only: names a gate"
+file = ".github/workflows/check.yml"
+before = '          if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
 ]

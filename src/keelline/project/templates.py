@@ -90,9 +90,9 @@ CI_ARTIFACT = "ci-workflow"
 CONFIG_ARTIFACT = "config"
 IGNORE_ARTIFACT = "gitignore"
 # The grammar `[ci] gate_branch` must match before it is written into the rendered workflow.
-# The value is repository-authored and lands in two places in one YAML file — a `branches:`
-# list and a shell-free `${{ }}` default — so it is quoted there *and* held to a shape here:
-# quoting alone would still admit a newline, which closes the list and writes further keys.
+# The value is repository-authored and lands in three places in one YAML file — the two
+# `branches:` lists and the literal `base:` — so it is quoted there *and* held to a shape here:
+# quoting alone would still admit a newline, which closes the string and writes further keys.
 GATE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
 # The grammar `[ci] ref` must match before it is written into the rendered workflow's `uses:`
 # line, for the same reason `GATE_BRANCH` exists and with the same provenance: the value is

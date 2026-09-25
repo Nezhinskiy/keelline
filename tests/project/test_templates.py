@@ -290,6 +290,31 @@ def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares
     assert passed and passed <= declared, (passed, declared)
 
 
+def test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget() -> None:
+    # A caller that ran for pull requests into any branch let a pull request collect a green
+    # check against a looser base and then be retargeted onto the gate branch, and a `base:`
+    # that followed `github.base_ref` followed it there. So the trigger names the gate branch,
+    # `edited` re-runs the check on a retarget, `merge_group` reports for a queue, and `base:`
+    # is a literal the reusable workflow holds a pull request's own base to. The equality below
+    # holds every line of the block, so deleting any one of them reddens it. Mutations
+    # (declared): the `pull_request` branch filter removed; `base:` follows the pull request
+    # again.
+    recorded = _recording(preset_defaults("widget"))
+    config = replace(recorded, ci=replace(recorded.ci, gate_branch="trunk"))
+    body = {t.id: t for t in _prepared(config, resolution=PINNED).footprint}["ci-workflow"].render()
+    trigger = body[body.index("\non:\n") + 1 : body.index("\npermissions:")]
+    assert trigger == (
+        "on:\n"
+        "  pull_request:\n"
+        '    branches: ["trunk"]\n'
+        "    types: [opened, synchronize, reopened, edited]\n"
+        "  merge_group:\n"
+        "  push:\n"
+        '    branches: ["trunk"]\n'
+    ), trigger
+    assert body.endswith('    with:\n      base: "trunk"\n'), body
+
+
 def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     """The two-pass design's premise, which nothing made true until the collision refusal.
 
