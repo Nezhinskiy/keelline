@@ -22,6 +22,7 @@ from keelline.config.loader import toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
+from keelline.findings import Finding
 from keelline.gitenv import git_run
 
 if TYPE_CHECKING:
@@ -34,6 +35,9 @@ MARKER = TRAIL_MARKER
 END_MARKER = "<!-- end design and plan trail -->"
 TRAIL_FILE = "trail.toml"
 UNFILED = "Unfiled"
+# The `trail` gate's two findings, which `docs trail --check` tells apart by rule.
+ROADMAP_MISSING = "roadmap-missing"
+TRAIL_STALE = "trail-stale"
 DELIVERED = "delivered"
 _ROW = re.compile(r"^- \[`([^`]+)`\]", re.MULTILINE)
 # Every value this file interpolates into the listing has to survive being written into it
@@ -309,3 +313,18 @@ def rebuild(text: str, root: Path, config: Config, trail: Trail) -> str:
     # line each time.
     tail = text[end + len(END_MARKER) :]
     return head + _PREAMBLE + render_listing(root, config, trail) + tail.lstrip("\n")
+
+
+def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `trail` gate's whole composition: the roadmap's listing, as `rebuild` would write it.
+
+    `docs trail --check` answers with this function. `base` is unread: every gate takes the same
+    three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    roadmap = contained(root, config.paths.roadmap)
+    if not roadmap.is_file():
+        return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
+    current = read_document(roadmap, config.paths.roadmap)
+    if current == rebuild(current, root, config, read_trail(trail_path(root, config))):
+        return []
+    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]

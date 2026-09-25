@@ -17,6 +17,7 @@ from keelline.docs.trail import (
     read_trail,
     rebuild,
     render_listing,
+    trail_gate,
     trail_path,
     undeclared_new_documents,
 )
@@ -338,3 +339,28 @@ def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Pa
     message = str(caught.value)
     assert "is not valid TOML" in message and "ignore-prior-rules" not in message
     assert re.search(r"\(at line \d+, column \d+\)\Z", message), message
+
+
+@needs_git
+def test_the_trail_gate_passes_a_current_listing_and_names_a_stale_one(tmp_path: Path) -> None:
+    # Mutation (advisory): the stale arm returning `[]` — the second assertion reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    roadmap = root / config.paths.roadmap
+    trail = read_trail(trail_path(root, config))
+    roadmap.write_text(rebuild(SEED, root, config, trail), encoding="utf-8")
+    assert trail_gate(root, config) == []
+    (root / config.paths.plans / "2026-01-02-gadget-plan.md").write_text(
+        "# doc\n", encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    assert [finding.rule for finding in trail_gate(root, config)] == ["trail-stale"]
+
+
+def test_the_trail_gate_names_a_missing_roadmap(tmp_path: Path) -> None:
+    # `docs trail --check` prints its own sentence for this answer, told apart by the rule.
+    # Mutation (advisory): `ROADMAP_MISSING` replaced by `TRAIL_STALE` in the first return —
+    # this reddens.
+    root, config = corpus(tmp_path)
+    (root / config.paths.roadmap).unlink()
+    found = [(finding.rule, finding.path) for finding in trail_gate(root, config)]
+    assert found == [("roadmap-missing", config.paths.roadmap)]

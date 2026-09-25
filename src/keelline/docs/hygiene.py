@@ -164,3 +164,12 @@ def check_links(root: Path, config: Config) -> list[Finding]:
         if landed is not None and not landed.exists():
             found.append(Finding("missing-link", config.paths.agents_md, None, target))
     return found
+
+
+def docs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `docs` gate's whole composition: the budgets and the link targets.
+
+    `docs check` with no flag answers with this function. `base` is unread: every gate takes the
+    same three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    return check_budgets(root, config) + check_links(root, config)

@@ -367,3 +367,13 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     for path in sorted(selected):
         findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=fixes))
     return Lint(findings, sorted(selected), sorted(unlinted))
+
+
+def plan_gate(root: Path, config: Config, base: str) -> list[Finding]:
+    """The `plan` gate's whole composition: `lint`'s findings over the plans the change since
+    `base` touches.
+
+    `plan check` calls `lint` itself rather than this function, because it reports more than
+    findings — which plans it linted, and the uncommitted ones it did not.
+    """
+    return lint(root, config, plans=[], base=base).findings

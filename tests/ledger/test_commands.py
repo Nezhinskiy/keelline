@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.findings import Finding
 
 CONFIG = """
 [keelline]
@@ -190,3 +191,18 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     assert line.startswith("FAIL: BR-001 moved to BR-009, but 1 file(s) still reference BR-001")
     assert "(src/sealed/a.py)" in line and "docs/bugs/BR-001.md" in line
     assert line.count("\n") == 1
+
+
+def test_check_answers_with_the_bugs_gate_s_own_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `bugs check` and the `bugs` gate are one function after the inert arm. Mutation
+    # (advisory): the import in `run_bugs_check` becomes `from keelline.ledger.check import
+    # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
+    _root, common = project(tmp_path)
+    argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
+    assert invoke([*argv, *common]) == 0
+    assert invoke(["bugs", "check", *common]) == 0
+    planted = [Finding("planted", "", None, "")]
+    monkeypatch.setattr("keelline.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
+    assert invoke(["bugs", "check", *common]) == 1

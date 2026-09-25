@@ -34,17 +34,18 @@ def _graph_notices(args: argparse.Namespace, root: Path, config: Config) -> list
 
 
 def run_docs_check(args: argparse.Namespace) -> Result:
-    from keelline.docs.hygiene import check_budgets, check_links
+    from keelline.docs.hygiene import check_budgets, check_links, docs_gate
 
     root, config = root_and_config(args)
-    # No flag runs exactly the enforced set the success line names; the store is resolved only
-    # on `--memory-graph` (Premise 11) — advice this command does not gate on is not fetched by
-    # default.
-    enforced = not (args.budgets or args.links)
+    # No flag runs exactly the enforced set the success line names, which is the `docs` gate
+    # itself; the memory store is resolved only on `--memory-graph`, because advice this
+    # command does not gate on is not fetched by default.
     problems: list[Finding] = []
-    if enforced or args.budgets:
+    if not (args.budgets or args.links):
+        problems = docs_gate(root, config)
+    if args.budgets:
         problems.extend(check_budgets(root, config))
-    if enforced or args.links:
+    if args.links:
         problems.extend(check_links(root, config))
     notices = _graph_notices(args, root, config) if args.memory_graph else []
     data = {"findings": [asdict(p) for p in problems], "notices": [asdict(n) for n in notices]}
@@ -68,23 +69,35 @@ def run_docs_check(args: argparse.Namespace) -> Result:
 def run_docs_trail(args: argparse.Namespace) -> Result:
     from keelline.config.paths import contained
     from keelline.docs.hygiene import read_document
-    from keelline.docs.trail import read_trail, rebuild, trail_path, undeclared_new_documents
+    from keelline.docs.trail import (
+        ROADMAP_MISSING,
+        read_trail,
+        rebuild,
+        trail_gate,
+        trail_path,
+        undeclared_new_documents,
+    )
 
     root, config = root_and_config(args)
+    missing = Result(f"{config.paths.roadmap} does not exist", {"stale": None}, exit_code=1)
+    # `--check` is the `trail` gate itself, answered before anything else is read.
+    if args.check:
+        found = trail_gate(root, config)
+        if not found:
+            return Result(f"OK: {config.paths.roadmap} trail listing is current", {"stale": False})
+        if found[0].rule == ROADMAP_MISSING:
+            return missing
+        return Result(
+            f"{config.paths.roadmap} trail listing is stale; run: keelline docs trail",
+            {"stale": True},
+            exit_code=1,
+        )
     roadmap = contained(root, config.paths.roadmap)
     if not roadmap.is_file():
-        return Result(f"{config.paths.roadmap} does not exist", {"stale": None}, exit_code=1)
+        return missing
     trail = read_trail(trail_path(root, config))
     current = read_document(roadmap, config.paths.roadmap)
     updated = rebuild(current, root, config, trail)
-    if args.check:
-        if current != updated:
-            return Result(
-                f"{config.paths.roadmap} trail listing is stale; run: keelline docs trail",
-                {"stale": True},
-                exit_code=1,
-            )
-        return Result(f"OK: {config.paths.roadmap} trail listing is current", {"stale": False})
     written = current != updated
     if written:
         fsops.write_within(root, config.paths.roadmap, updated)

@@ -21,7 +21,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # and under the old `required <= set(...)` the very same change left all three tests green.
     #
     # Twenty-nine names left in the first half of the wave-3 refactor pass, every one of them
-    # published against `assess` — a lane `docs/cli.md` says has not shipped, in as many words.
+    # published against `assess` before it existed; when it arrived it needed only `commit_gate`.
     # What is below is the whole of what another area actually imports.
     required = {
         # the git hook, for setup, and the two results its verbs return
@@ -35,5 +35,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "hooks_dir",
         # which roots a configuration's paths may reach, for ledger.scan and memory.refs
         "contained_roots",
+        # the commit gate keelline.assess.gates runs
+        "commit_gate",
     }
     assert required == set(guards.__all__)

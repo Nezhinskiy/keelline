@@ -15,9 +15,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     #
     # Ten names left in the wave-3 refactor pass: the trail half, published in one sentence
     # about `templates`, a lane `docs/plans/2026-09-17-wave-3-install-path.md` puts out of
-    # scope. Nothing outside this area imports any name on this list but `trail_target` — the
-    # other five below included — so what stays, stays on the argument written beside it in
-    # `api.py`.
+    # scope. Outside this area `project` imports `trail_target` and `keelline.assess.gates` the
+    # three gate functions; the other five below have no importer, so they stay on the argument
+    # written beside them in `api.py`.
     required = {
         # the four checks this area is, one call each
         "check_budgets",
@@ -30,5 +30,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # the lane that used to be absent, present now (wave 4): `project` ships `trail.toml`
         # beside the roadmap and must put it where `docs trail` reads it, a location only
         "trail_target",
+        # the three gates keelline.assess.gates runs, each this area's own command's function
+        "docs_gate",
+        "plan_gate",
+        "trail_gate",
     }
     assert required == set(docs.__all__)

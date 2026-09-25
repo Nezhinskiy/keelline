@@ -6,10 +6,10 @@ submodule it wants, so a re-export list in `__init__.py` would pull this whole a
 it the configuration layer — into every `discover()` call. `tests/ledger/test_surface.py`
 asserts the `__init__` imports nothing at all.
 
-**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
-and `tests/` — not one, and that was true of the nineteen names this list used to hold as well.
-So every name below is here on an argument rather than on a caller, and the argument is written
-beside it.
+**Outside this area, `keelline.assess.gates` imports `bugs_gate` and nothing else on this
+list**, measured over `src/`, `scripts/` and `tests/`; nothing imported the nineteen names this
+list used to hold either. So every other name below is here on an argument rather than on a
+caller, and the argument is written beside it.
 
 What is left is the two artifacts this area leaves on a project's disk, which outlive any lane
 that reads them:
@@ -44,23 +44,30 @@ on a surface whose verb is not is a value nobody can be handed. Each is still wh
 written and is reachable from `keelline.ledger.write`, which is what `ledger/commands.py` and
 this area's own tests already do.
 
-**What is left is a smaller version of the same question, and it is the owner's.** The six below
-have no importer either. Whether this area publishes at all is a structural decision and not a
-refactor's — the previous pass measured that and said so, and this one acts as far as the rule
-reaches and leaves the floor standing rather than emptying a list a test forbids to be empty.
+**What is left is a smaller version of the same question, and it is the owner's.** The six names
+of the two artifacts have no importer either. Whether this area publishes at all is a structural
+decision and not a refactor's — the previous pass measured that and said so, and this one acts
+as far as the rule reaches and leaves the floor standing rather than emptying a list a test
+forbids to be empty.
 
 The identifier grammar and the finding shape are **not** here: they are leaves
 (`keelline.identifiers`, `keelline.findings`) that three areas share, and a consumer imports
 them from there. The surface test pins every export to this area's own modules, so
 re-exporting a leaf would redden it.
+
+**`bugs_gate` arrived with the assess lane in wave 5.** It is `(root, config, base) ->
+list[Finding]`, the `bugs` gate's whole composition, and `bugs check` answers with the same
+function; `problems`, trimmed above, stays behind it in `keelline.ledger.check`.
 """
 
+from keelline.ledger.check import bugs_gate
 from keelline.ledger.entries import Entry, LedgerError, load_entries, parse_entry
 from keelline.ledger.index import is_generated_index, render_index
 
 __all__ = [
     "Entry",
     "LedgerError",
+    "bugs_gate",
     "is_generated_index",
     "load_entries",
     "parse_entry",

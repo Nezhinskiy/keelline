@@ -201,3 +201,12 @@ def problems(root: Path, config: Config) -> list[Finding]:
                 )
             )
     return found
+
+
+def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `bugs` gate's whole composition: every ledger violation, `[]` before there is a ledger.
+
+    `bugs check` answers with this function after its own inert arm. `base` is unread: every
+    gate takes the same three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    return problems(root, config)
