@@ -65,8 +65,8 @@ reddens = [
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/keelline/memory/trust.py"
-before = '    except (json.JSONDecodeError, UnicodeDecodeError) as exc:'
-after = '''    except (json.JSONDecodeError, UnicodeDecodeError):
+before = '    except json.JSONDecodeError as exc:'
+after = '''    except json.JSONDecodeError:
         return {}
     except RecursionError as exc:'''
 reddens = [
@@ -7430,3 +7430,162 @@ file = "src/keelline/assess/gates.py"
 before = "            _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did"
 after = "            pass"
 reddens = ["tests/assess/test_gates.py::test_an_interrupted_custom_gate_leaves_nothing_running"]
+
+# The planning seam's checker has to see a planner however a module spells its way to it: from
+# the seam module's own top-level binding, and at the end of a dotted chain rooted at an imported
+# package. Both guard the test module that holds the seam, which is what a later command's
+# bypass would have to get past.
+[[mutation]]
+name = "the planning seam's checker stops knowing the seam module binds the planner"
+file = "tests/project/test_planning_seam.py"
+before = '    "keelline.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},'
+after = ""
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_reached_through_the_seam_module",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+[[mutation]]
+name = "the planning seam's checker stops resolving a dotted chain"
+file = "tests/project/test_planning_seam.py"
+before = "                    found.add(node.attr)"
+after = "                    pass"
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_fully_dotted_planner",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+# `replan` asks no guard, so it plans only on a `Passes` whose `predict` already asked the ignore
+# guard about the same templates.
+[[mutation]]
+name = "a footprint command replans what it never predicted"
+file = "src/keelline/project/footprint.py"
+before = "        if not self._predicted:"
+after = "        if False:"
+reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicting_is_refused"]
+
+# `init --questions` prints what `detect` returns and carries it as a JSON Schema, so each
+# repository-authored value is held to its grammar before either sees it, the schema's patterns
+# are ones a JSON Schema validator reads, and the questions are refused, and write nothing,
+# wherever `init` would.
+[[mutation]]
+name = "origin/HEAD reaches the card unbounded"
+file = "src/keelline/project/detect.py"
+before = "    if not GATE_BRANCH.match(branch):"
+after = "    if not branch:"
+reddens = [
+  "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
+]
+
+[[mutation]]
+name = "an underivable name reaches the questions as their default"
+file = "src/keelline/project/detect.py"
+before = '        name, name_source = "", NOT_DERIVABLE'
+after = "        pass"
+reddens = [
+  "tests/project/test_questions.py::test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed",
+]
+
+[[mutation]]
+name = "the schema carries a Python anchor ECMA-262 does not read"
+file = "src/keelline/project/questions.py"
+before = '    return pattern.pattern.removesuffix("\\Z") + "$"'
+after = "    return pattern.pattern"
+reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anchored_for_ecma_262"]
+
+[[mutation]]
+name = "the questions are asked over a keelline.toml that already answers them"
+file = "src/keelline/project/init.py"
+before = "    if answering and (root / CONFIG_FILE).is_file():"
+after = "    if False:"
+reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
+
+[[mutation]]
+name = "a machine file that does not load stops the questions"
+file = "src/keelline/project/questions.py"
+before = "    except Failure:"
+after = "    except KeyError:"
+reddens = [
+  "tests/project/test_questions.py::test_a_machine_file_that_does_not_parse_still_yields_the_questions",
+]
+
+[[mutation]]
+name = "the questions take a flag that plans or writes"
+file = "src/keelline/project/commands.py"
+before = "        if args.dry_run or not args.ci:"
+after = "        if False:"
+reddens = ["tests/project/test_command.py::test_questions_take_no_flag_that_writes_or_plans"]
+
+[[mutation]]
+name = "an id offered as local names no whole file of the footprint"
+file = "src/keelline/project/templates.py"
+before = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")'
+after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-histroy")'
+reddens = [
+  "tests/project/test_templates.py::test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass",
+]
+
+# The rest of the planning seam: a relative import resolved like an absolute one, the private
+# planner called only by the seam, and `replan` opened only by a `predict` the guard passed.
+[[mutation]]
+name = "the planning seam's checker reads a relative import as a top-level module"
+file = "tests/project/test_planning_seam.py"
+before = "    if not node.level:"
+after = "    if True:"
+reddens = ["tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively"]
+
+[[mutation]]
+name = "a footprint command plans through the seam's private planner"
+file = "src/keelline/project/init.py"
+before = "    footprint = passes.replan(passes.footprint)"
+after = "    footprint = passes._plan(passes.footprint, force=())"
+reddens = ["tests/project/test_planning_seam.py::test_only_the_seam_calls_its_private_planner"]
+
+[[mutation]]
+name = "a refused prediction opens replan"
+file = "src/keelline/project/footprint.py"
+before = '''        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
+        # is frozen, hence `object.__setattr__`.
+        object.__setattr__(self, "_predicted", True)'''
+after = '''        object.__setattr__(self, "_predicted", True)
+        refuse_ignored(self.root, self.config, *plans, removing=self.removing)'''
+reddens = [
+  "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
+]
+
+# A file a person or a repository owns that is not UTF-8 is its reader's own failure, never an
+# internal error: `keelline.toml` and the machine file, which most commands read first, and the
+# trust record, which fails loudly rather than reading as empty.
+[[mutation]]
+name = "a keelline.toml that is not UTF-8 crashes every command that loads it"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+after = """    except KeyError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[keelline.toml, as every command loads it]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[bugs-check-keelline-toml]",
+]
+
+[[mutation]]
+name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+after = """    except KeyError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
+]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
+file = "src/keelline/memory/trust.py"
+before = """    except UnicodeDecodeError:
+        raise UnreadableTrustRecord("""
+after = """    except KeyError:
+        raise UnreadableTrustRecord("""
+reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]

@@ -1,12 +1,13 @@
 """`keelline init` through the real parser: the flags, the exit codes and the `--json` keys.
 
-Nothing here reaches the network, and it is kept out two ways. Every case but one goes through
-`_invoke`, which appends `--no-ci`: with `[ci] mode` set to `none` the run never asks the release
-area to resolve a pin, so the `subprocess_runner()` `commands.py` builds is never handed a `git
-ls-remote` against the public repository. The one case that must resolve a pin — the hostile
-`gate_branch` arm, which exists precisely because `_ci` reaches that check *after* the pin —
-stubs `subprocess_runner` at the seam `commands.py` builds it from and answers one released tag
-from a string.
+Nothing here reaches the network, and it is kept out three ways. Every case that writes or plans
+a footprint but one goes through `_invoke`, which appends `--no-ci`: with `[ci] mode` set to
+`none` the run never asks the release area to resolve a pin, so the `subprocess_runner()`
+`commands.py` builds is never handed a `git ls-remote` against the public repository. The one
+case that must resolve a pin — the hostile `gate_branch` arm, which exists precisely because
+`_ci` reaches that check *after* the pin — stubs `subprocess_runner` at the seam `commands.py`
+builds it from and answers one released tag from a string. The `--questions` cases go through
+`_run`, because `--questions` resolves no pin and refuses `--no-ci` beside it.
 """
 
 from __future__ import annotations
@@ -24,10 +25,12 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import loads
 from keelline.config.schema import Config
 from keelline.project.commands import run_init
+from keelline.project.init import HEAD_DEFAULTED
 from keelline.project.templates import _ci
 from keelline.release.api import Resolution
 from keelline.runner import Completed
 from tests.gitfixture import git, needs_git
+from tests.project.repos import repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
@@ -52,6 +55,7 @@ JSON_KEYS = {
     "asked",
     "note",
     "unknown_harnesses",
+    "head_note",
 }
 
 
@@ -77,14 +81,16 @@ def _invoke(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
 
 
 @needs_git
-def test_without_yes_the_command_refuses_and_names_the_lane_that_ships_the_questions(
+def test_without_yes_the_command_refuses_and_names_the_command_that_prints_the_questions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # The refusal names the command that prints the questions, so a relayer has the next step.
+    # Mutation (by hand): the refusal names `keelline init` alone -> the first `in` reddens.
     root = _repo(tmp_path)
     code, printed = _invoke(root, tmp_path)
     assert code == 2 and printed == ""
     stderr = capsys.readouterr().err
-    assert "onboarding lane" in stderr and "--yes" in stderr
+    assert "`keelline init --questions`" in stderr and "--yes" in stderr
     assert not (root / ".keelline").exists()
 
 
@@ -307,3 +313,58 @@ def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) 
     assert "cursor" not in printed and "\x1b" not in printed
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["unknown_harnesses"] == 1
+
+
+@needs_git
+def test_questions_print_each_default_with_its_source_and_write_nothing(tmp_path: Path) -> None:
+    # The card is what a person reads before choosing any answer, so each line carries the
+    # value `init --yes` would take and where it came from; the questions plan nothing.
+    # Mutation (by hand): the card drops the source -> the `project.name` line reddens.
+    root = repository(tmp_path)
+    before = snapshot(root)
+    code, printed = _run(root, tmp_path, "--questions")
+    assert code == 0, printed
+    assert printed.startswith("detected:\n")
+    assert "  project.name: widget (origin remote)\n" in printed
+    assert "  memory.mode: local-only (the preset's default)\n" in printed
+    assert "  artifacts.local: none (the preset's default)\n" in printed
+    code, printed = _run(root, tmp_path, "--questions", "--json")
+    assert code == 0, printed
+    assert json.loads(printed)["questions"]["type"] == "object"
+    assert_snapshot_unchanged(root, before)
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_questions_take_no_flag_that_writes_or_plans(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--yes` is excluded by the parser; `--dry-run` and `--no-ci` are flags `--yes` takes, so
+    # one mutually exclusive group cannot exclude them too, and the command refuses them.
+    # Mutation (oracle): that refusal disabled -> `--questions --dry-run` prints the questions
+    # and exits 0.
+    root = repository(tmp_path)
+    code, printed = _run(root, tmp_path, "--questions", "--dry-run")
+    assert code == 2 and printed == ""
+    assert "--questions writes nothing" in capsys.readouterr().err
+    code, printed = _run(root, tmp_path, "--questions", "--no-ci")
+    assert code == 2 and printed == ""
+    with pytest.raises(SystemExit):
+        _run(root, tmp_path, "--questions", "--yes")
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: Path) -> None:
+    # `init --yes` writes `main` where `origin/HEAD` named a branch outside the grammar, so the
+    # report says the default replaced it, in Keelline's words, without the remote's. Mutation
+    # (by hand): the note dropped from the report -> the note assertion reddens.
+    root = _repo(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and "origin/HEAD" not in printed, printed
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/`id`")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert f"note: {HEAD_DEFAULTED}" in printed and "`id`" not in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_DEFAULTED

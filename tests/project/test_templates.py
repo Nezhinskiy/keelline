@@ -24,6 +24,7 @@ from keelline.project.templates import (
     COMPUTED,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
+    LOCAL_ELIGIBLE,
     NO_REF,
     ONE_FILE,
     OWN_NAME,
@@ -414,6 +415,18 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     assert len(ids) == 17 + len(_renditions()), sorted(ids)
     expected = set(PATH_KEYS) | _renditions()
     assert ids == expected, (sorted(ids ^ expected),)
+
+
+def test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass() -> None:
+    # `init --questions` offers these ids as files a project may keep out of git; one that named
+    # no artifact, a write-once file or a region inside a host file would be an answer the
+    # engine could not act on. Mutation (oracle): a typo in one id -> it is in no `PATH_KEYS` row
+    # and this reddens.
+    footprint = {t.id: t for t in _prepared(preset_defaults("widget")).footprint}
+    assert LOCAL_ELIGIBLE
+    for artifact_id in LOCAL_ELIGIBLE:
+        assert artifact_id in PATH_KEYS, artifact_id
+        assert footprint[artifact_id].kind is Kind.TEMPLATE, artifact_id
 
 
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:

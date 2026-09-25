@@ -103,6 +103,13 @@ class ConfigError(Failure):
     """A keelline.toml that cannot be trusted as written."""
 
 
+# Fixed text and a path Keelline chose or the owner typed. Not the decoder's message: it is only
+# a byte and an offset, but the one sentence says what to do about every such file.
+NOT_UTF8 = "{path} is not UTF-8 text; Keelline reads it only as UTF-8"
+# The error's class name and not its message, which repeats the path and adds nothing to act on.
+UNREADABLE = "{path} cannot be read ({error})"
+
+
 class MachineConfigError(ConfigError):
     """The **machine** file could not be read, which is not `keelline.toml`'s doing.
 
@@ -367,6 +374,12 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         return _build(Personal, "personal", values)
     try:
         raw = tomllib.loads(machine.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None
+    except OSError as exc:
+        raise MachineConfigError(
+            UNREADABLE.format(path=machine, error=type(exc).__name__)
+        ) from None
     except tomllib.TOMLDecodeError as exc:
         raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
@@ -414,6 +427,10 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None
+    except OSError as exc:
+        raise ConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None
     return loads(text, root, machine=machine, interactive=interactive)
 
 
@@ -430,6 +447,10 @@ def read_document(root: Path) -> str | None:
             return stream.read()
     except FileNotFoundError:
         return None
+    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
+    except OSError as exc:
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
 
 
 def loads(

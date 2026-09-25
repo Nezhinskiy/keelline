@@ -232,6 +232,7 @@ parser, and every registered command has a line — a test holds both.
 
 ```text
 # Initialising a project
+keelline init --questions                             # each default, where it came from, the flag that changes it
 keelline init --yes --dry-run                         # both reports, nothing written
 keelline init --yes                                   # write the footprint and record every file
 keelline upgrade --dry-run                            # what a newer Keelline would refresh

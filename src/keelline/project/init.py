@@ -60,19 +60,28 @@ HEADER = (
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
 # them first" reads as two alternatives, one of which does not work.
 NEEDS_YES = (
-    "`keelline init` asks its questions through the onboarding lane, which ships later; today "
-    "it takes the detected defaults — pass --yes to accept them, or --yes --dry-run to read "
-    "them first"
+    "`keelline init` writes nothing without --yes; `keelline init --questions` prints the "
+    "detected defaults and where each came from — pass --yes to accept them, or --yes --dry-run "
+    "to read the plan first"
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
     "`keelline upgrade`"
+)
+ANSWER_SHEET = (
+    "this repository already has a keelline.toml, which answers the questions `init` would ask; "
+    "edit it, then run `keelline init --yes --dry-run` with no answer flag to read the plan"
 )
 # The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
 # is the only thing this names: the key that failed is exactly the text no grammar has bounded.
 UNWRITABLE_KEY = (
     "keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML key, "
     "so nothing was written; rename it to letters, digits, `_` and `-`"
+)
+# Fixed text: the branch `origin/HEAD` named is the remote's, outside the grammar, and not printed.
+HEAD_DEFAULTED = (
+    "origin/HEAD does not name a plain branch, so [project] base_branch and release_branch are "
+    "main; if pull requests merge into another branch, set both in keelline.toml"
 )
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
@@ -95,6 +104,8 @@ class InitReport:
     ref: str = ""
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
+    # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar.
+    head_note: str = ""
 
     @property
     def refused(self) -> bool:
@@ -119,14 +130,20 @@ def _existing(root: Path) -> dict[str, object] | None:
         return None
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise Failure(f"{CONFIG_FILE} is not UTF-8 text; Keelline reads it only as UTF-8") from None
+    except OSError as exc:
+        raise Failure(f"{CONFIG_FILE} cannot be read ({type(exc).__name__})") from None
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
 
 def _tables(
     root: Path, existing: dict[str, object] | None, *, ci: bool
-) -> dict[str, dict[str, object]]:
-    """The document's tables, in order: Keelline's two keys, then the repository's answers (P4).
+) -> tuple[dict[str, dict[str, object]], bool]:
+    """The document's tables, in order: Keelline's two keys, then the repository's own answers;
+    and whether detection put the default base branch in place of a remote head outside the
+    grammar.
 
     **Detection runs only when no `[project]` table answers for the repository**, and not
     merely when some key of the head is absent. `detect` is the one call here that can refuse
@@ -147,8 +164,10 @@ def _tables(
             table = existing.get(name)
             if isinstance(table, dict):
                 tables[name] = dict(table)
+    head_refused = False
     if "project" not in tables:
         found = detect(root)
+        head_refused = found.head_refused
         head.setdefault("agents", list(found.agents))
         if found.profile:
             head.setdefault("profile", found.profile)
@@ -159,7 +178,7 @@ def _tables(
         }
     if not ci:
         tables.setdefault("ci", {})["mode"] = "none"
-    return tables
+    return tables, head_refused
 
 
 def _rendered(tables: dict[str, dict[str, object]]) -> str:
@@ -180,6 +199,19 @@ def _rendered(tables: dict[str, dict[str, object]]) -> str:
     return HEADER + dumps(tables)
 
 
+def precheck(root: Path, *, answering: bool) -> None:
+    """The refusals `init` and `init --questions` share, before anything beyond the root is read.
+
+    A manifest means `init` has already run, so re-running it is `keelline upgrade`. While
+    `answering` — the questions always are — a `keelline.toml` already answers every question,
+    so asking them over it would collect answers that nothing writes.
+    """
+    if (root / MANIFEST_PATH).is_file():
+        raise Refusal(ALREADY)
+    if answering and (root / CONFIG_FILE).is_file():
+        raise Refusal(ANSWER_SHEET)
+
+
 def init(
     root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
 ) -> InitReport:
@@ -197,10 +229,9 @@ def init(
     """
     if not yes:
         raise Refusal(NEEDS_YES)
-    if (root / MANIFEST_PATH).is_file():
-        raise Refusal(ALREADY)
+    precheck(root, answering=False)
     existing = _existing(root)
-    tables = _tables(root, existing, ci=ci)
+    tables, head_refused = _tables(root, existing, ci=ci)
     document = _rendered(tables)
     config = loads(document, root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
@@ -241,6 +272,7 @@ def init(
         note,
         ref,
         passes.unknown_harnesses,
+        HEAD_DEFAULTED if head_refused else "",
     )
     if dry_run or report.refused:
         return report
