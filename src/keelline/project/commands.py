@@ -154,6 +154,8 @@ def run_init(args: argparse.Namespace) -> Result:
         lines.append(f"note: {report.note}")
     if report.unknown_harnesses:
         lines.append(UNKNOWN_HARNESSES.format(count=report.unknown_harnesses))
+    if report.head_note:
+        lines.append(f"note: {report.head_note}")
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -166,6 +168,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "note": report.note,
         "ref": report.ref,
         "unknown_harnesses": report.unknown_harnesses,
+        "head_note": report.head_note,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

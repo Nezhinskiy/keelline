@@ -7379,3 +7379,32 @@ after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbo
 reddens = [
   "tests/project/test_templates.py::test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass",
 ]
+
+# The rest of the planning seam: a relative import resolved like an absolute one, the private
+# planner called only by the seam, and `replan` opened only by a `predict` the guard passed.
+[[mutation]]
+name = "the planning seam's checker reads a relative import as a top-level module"
+file = "tests/project/test_planning_seam.py"
+before = "    if not node.level:"
+after = "    if True:"
+reddens = ["tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively"]
+
+[[mutation]]
+name = "a footprint command plans through the seam's private planner"
+file = "src/keelline/project/init.py"
+before = "    footprint = passes.replan(passes.footprint)"
+after = "    footprint = passes._plan(passes.footprint, force=())"
+reddens = ["tests/project/test_planning_seam.py::test_only_the_seam_calls_its_private_planner"]
+
+[[mutation]]
+name = "a refused prediction opens replan"
+file = "src/keelline/project/footprint.py"
+before = '''        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
+        # is frozen, hence `object.__setattr__`.
+        object.__setattr__(self, "_predicted", True)'''
+after = '''        object.__setattr__(self, "_predicted", True)
+        refuse_ignored(self.root, self.config, *plans, removing=self.removing)'''
+reddens = [
+  "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
+]

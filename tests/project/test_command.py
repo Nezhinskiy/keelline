@@ -25,6 +25,7 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import loads
 from keelline.config.schema import Config
 from keelline.project.commands import run_init
+from keelline.project.init import HEAD_DEFAULTED
 from keelline.project.templates import _ci
 from keelline.release.api import Resolution
 from keelline.runner import Completed
@@ -54,6 +55,7 @@ JSON_KEYS = {
     "asked",
     "note",
     "unknown_harnesses",
+    "head_note",
 }
 
 
@@ -350,3 +352,19 @@ def test_questions_take_no_flag_that_writes_or_plans(
     with pytest.raises(SystemExit):
         _run(root, tmp_path, "--questions", "--yes")
     assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: Path) -> None:
+    # `init --yes` writes `main` where `origin/HEAD` named a branch outside the grammar, so the
+    # report says the default replaced it, in Keelline's words, without the remote's. Mutation
+    # (by hand): the note dropped from the report -> the note assertion reddens.
+    root = _repo(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and "origin/HEAD" not in printed, printed
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/`id`")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert f"note: {HEAD_DEFAULTED}" in printed and "`id`" not in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_DEFAULTED

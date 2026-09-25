@@ -56,6 +56,9 @@ class Detected:
     profile: str = ""
     # Keyed "name", "base_branch", "agents", "profile"; each value one of this module's phrases.
     sources: Mapping[str, str] = field(default_factory=dict)
+    # `origin/HEAD` named a branch outside the grammar, so the base branch is the default in its
+    # place. A flag and never the name: the name is the text the grammar refused.
+    head_refused: bool = False
 
 
 def _name(root: Path) -> tuple[str, str]:
@@ -69,9 +72,13 @@ def _name(root: Path) -> tuple[str, str]:
     return root.name.lower(), DIRECTORY_NAME
 
 
-def _base_branch(root: Path) -> tuple[str, str]:
+def _remote_head(root: Path) -> str:
+    """The branch `origin/HEAD` names, unchecked, or `""` when git records none."""
     code, out = git_run(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-    branch = out.strip().removeprefix("origin/") if code == 0 else ""
+    return out.strip().removeprefix("origin/") if code == 0 else ""
+
+
+def _base_branch(branch: str) -> tuple[str, str]:
     if not GATE_BRANCH.match(branch):
         return DEFAULT_BRANCH, DEFAULT
     return branch, ORIGIN_HEAD
@@ -108,7 +115,8 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
         raise Refusal(NOT_A_NAME)
     if not PROJECT_NAME.match(name):
         name, name_source = "", NOT_DERIVABLE
-    base_branch, branch_source = _base_branch(root)
+    head = _remote_head(root)
+    base_branch, branch_source = _base_branch(head)
     agents, agents_source = _agents(root)
     profile, profile_source = _profile(root)
     return Detected(
@@ -122,4 +130,5 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
             "agents": agents_source,
             "profile": profile_source,
         },
+        head_refused=bool(head) and branch_source == DEFAULT,
     )

@@ -78,6 +78,11 @@ UNWRITABLE_KEY = (
     "keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML key, "
     "so nothing was written; rename it to letters, digits, `_` and `-`"
 )
+# Fixed text: the branch `origin/HEAD` named is the remote's, outside the grammar, and not printed.
+HEAD_DEFAULTED = (
+    "origin/HEAD does not name a plain branch, so [project] base_branch and release_branch are "
+    "main; if pull requests merge into another branch, set both in keelline.toml"
+)
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
     "a region_update into it; a dry run plans it as a create of a region-only file. The bytes "
@@ -99,6 +104,8 @@ class InitReport:
     ref: str = ""
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
+    # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar.
+    head_note: str = ""
 
     @property
     def refused(self) -> bool:
@@ -129,8 +136,10 @@ def _existing(root: Path) -> dict[str, object] | None:
 
 def _tables(
     root: Path, existing: dict[str, object] | None, *, ci: bool
-) -> dict[str, dict[str, object]]:
-    """The document's tables, in order: Keelline's two keys, then the repository's answers (P4).
+) -> tuple[dict[str, dict[str, object]], bool]:
+    """The document's tables, in order: Keelline's two keys, then the repository's own answers;
+    and whether detection put the default base branch in place of a remote head outside the
+    grammar.
 
     **Detection runs only when no `[project]` table answers for the repository**, and not
     merely when some key of the head is absent. `detect` is the one call here that can refuse
@@ -151,8 +160,10 @@ def _tables(
             table = existing.get(name)
             if isinstance(table, dict):
                 tables[name] = dict(table)
+    head_refused = False
     if "project" not in tables:
         found = detect(root)
+        head_refused = found.head_refused
         head.setdefault("agents", list(found.agents))
         if found.profile:
             head.setdefault("profile", found.profile)
@@ -163,7 +174,7 @@ def _tables(
         }
     if not ci:
         tables.setdefault("ci", {})["mode"] = "none"
-    return tables
+    return tables, head_refused
 
 
 def _rendered(tables: dict[str, dict[str, object]]) -> str:
@@ -216,7 +227,7 @@ def init(
         raise Refusal(NEEDS_YES)
     precheck(root, answering=False)
     existing = _existing(root)
-    tables = _tables(root, existing, ci=ci)
+    tables, head_refused = _tables(root, existing, ci=ci)
     document = _rendered(tables)
     config = loads(document, root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
@@ -257,6 +268,7 @@ def init(
         note,
         ref,
         passes.unknown_harnesses,
+        HEAD_DEFAULTED if head_refused else "",
     )
     if dry_run or report.refused:
         return report

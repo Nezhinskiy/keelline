@@ -801,8 +801,10 @@ repository because it timed out or is not installed (see `upgrade`'s boundary).
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
 `{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
-and so what the workflow pins, empty when no workflow was planned — and `unknown_harnesses`, how
-many names in `[keelline] agents` no harness answers to.
+and so what the workflow pins, empty when no workflow was planned — `unknown_harnesses`, how
+many names in `[keelline] agents` no harness answers to, and `head_note`, the `note:` line that
+says `main` replaced an `origin/HEAD` outside the plain-branch grammar (empty otherwise; the
+branch it named is never printed).
 
 ---
 
@@ -827,9 +829,9 @@ each is answered by a flag on `keelline init --yes`; `keelline init --questions 
 ```
 
 Where a value came from is one of a fixed set of phrases. The name comes from the
-`origin remote` or the `directory name`. When neither is one lowercase path segment the source
-is `not derivable`, and the value prints as `none; asked`, never as what the repository
-suggested. The base branch comes from `origin/HEAD` when that names a plain branch; otherwise it
+`origin remote`'s last path segment or, with no origin, the `directory name`; when that one is
+not a lowercase path segment the source is `not derivable`, and the value prints as
+`none; asked`, never as what the repository suggested. The base branch comes from `origin/HEAD` when that names a plain branch; otherwise it
 is the `default`, `main`. The agents come from the `harness directories` the root carries;
 otherwise the `default` is every harness. The profile comes from `profile markers`, or there are
 `no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
