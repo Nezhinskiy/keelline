@@ -177,11 +177,16 @@ def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) ->
     (root / LEDGER).write_text("{}", encoding="utf-8")
     # The ledger lives under `.keelline/local/`, so without this refusal the count of files kept
     # out of git would still stop the real run, with a remedy that is not the one. The dry run
-    # tells them apart: it reports that count, and it refuses an attached repository.
+    # tells them apart: it reports that count, and it refuses an attached repository. Exactly
+    # this sentence, and nothing written, for both. Mutation (oracle): "an attached repository is
+    # counted as files kept out of git instead of being told to detach" -> the dry run returns a
+    # report, and the real run refuses with `KEPT_LOCALLY` instead.
+    before = snapshot(root)
     for dry_run in (True, False):
-        with pytest.raises(Refusal, match=re.escape(ATTACHED)):
+        with pytest.raises(Refusal) as refused:
             _uninstall(root, tmp_path, dry_run=dry_run)
-    assert (root / MANIFEST_PATH).is_file()
+        assert str(refused.value) == ATTACHED
+        assert_snapshot_unchanged(root, before)
 
 
 @needs_git
@@ -355,8 +360,11 @@ def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_pred
     fact. Made to miss (it credits the remainder the skeleton pass then keeps), the run must
     still stop before the ignore block goes, with the file ignored and the manifest in place.
 
-    Mutation (declared): the check after the write-once pass dropped -> the ignore block goes
-    over the remainder, and the file stops being ignored.
+    The run has written by then, so what must be unchanged is what `KEPT_AFTER` says it left:
+    the ignore block, `keelline.toml`, and the manifest's record of the block, which the next run
+    finishes from. Mutation (oracle): "the ignore block goes while files are still under
+    .keelline/local/" -> the ignore block goes over the remainder, no refusal is raised, and the
+    file stops being ignored.
     """
     import keelline.project.uninstall as module
 
@@ -364,11 +372,17 @@ def test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_pred
     root = initialised(tmp_path, document=_agents_local(("agents-md", "agents-skeleton")))
     local = root / LOCAL_AGENTS
     local.write_text(local.read_text(encoding="utf-8") + "\nA LINE OF OURS\n", encoding="utf-8")
-    with pytest.raises(Refusal, match=re.escape(KEPT_AFTER.format(count=1))):
+    kept = (".gitignore", CONFIG_FILE)
+    before = {name: (root / name).read_bytes() for name in kept}
+    record = Manifest.read(root).get(IGNORE_ARTIFACT)
+    assert record is not None
+    with pytest.raises(Refusal) as refused:
         _uninstall(root, tmp_path)
+    assert str(refused.value) == KEPT_AFTER.format(count=1)
+    assert {name: (root / name).read_bytes() for name in kept} == before
+    assert Manifest.read(root).get(IGNORE_ARTIFACT) == record
     assert "A LINE OF OURS" in local.read_text(encoding="utf-8")
     assert _ignored(root, local)
-    assert (root / MANIFEST_PATH).is_file()
 
 
 @needs_git

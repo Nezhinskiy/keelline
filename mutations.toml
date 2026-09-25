@@ -5054,7 +5054,7 @@ reddens = [
 [[mutation]]
 name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "    timeout-minutes: 21"
+before = "    timeout-minutes: 25"
 after = "    timeout-minutes: 5"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
@@ -6635,9 +6635,10 @@ before = "            raise Refusal(FORCE_OUTSIDE)"
 after = "            continue"
 reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]
 
-# The attach ledger lives under `.keelline/local/`, so the count of files kept out of git would
-# still stop the real run; what this guard adds is the refusal's remedy, and a dry run that
-# refuses rather than reporting an attached repository as one it could uninstall.
+# `uninstall`'s `ATTACHED` refusal. The attach ledger lives under `.keelline/local/`, so the count
+# of files kept out of git would still stop the real run; what this guard adds is the refusal's
+# remedy, and a dry run that refuses rather than reporting an attached repository as one it could
+# uninstall. The test asserts the exact sentence and an unchanged tree for both runs.
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/keelline/project/uninstall.py"
@@ -6701,9 +6702,10 @@ before = "    return action.verb is Verb.REMOVE and action.payload is None"
 after = "    return action.verb is Verb.REMOVE"
 reddens = ["tests/project/test_uninstall.py::test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written"]
 
-# The check before any write is a prediction; the disk after the write-once pass is the fact. Drop
-# the second and a remainder the prediction misjudged loses its ignore block. The prediction is
-# exact today, so the test makes it miss.
+# `uninstall`'s `KEPT_AFTER` refusal. The check before any write is a prediction; the disk after
+# the write-once pass is the fact. Drop the second and a remainder the prediction misjudged loses
+# its ignore block. The prediction is exact today, so the test makes it miss, and asserts the exact
+# sentence and that the ignore block, `keelline.toml` and the block's record are as they were.
 [[mutation]]
 name = "the ignore block goes while files are still under .keelline/local/"
 file = "src/keelline/project/uninstall.py"

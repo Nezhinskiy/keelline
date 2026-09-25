@@ -136,22 +136,23 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
-    # measured), so the 556 entries `mutations.toml` now holds cost ~1122 s; checkout, `setup-uv`
+    # measured), so the 555 entries `mutations.toml` now holds cost ~1120 s; checkout, `setup-uv`
     # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
     # to ~60 s, which is the figure to re-measure from this job's own runs. Call the shape
-    # ~1182 s.
+    # ~1180 s.
     #
-    # 21 minutes is 1260 s, so the margin is ~78 s. Sixty of that absorbs runner variance — a
+    # 25 minutes is 1500 s, so the margin is ~320 s. Sixty of that absorbs runner variance — a
     # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
-    # leaves ~18 s, or roughly **9 further mutation entries** before this number has to move.
+    # leaves ~260 s, or roughly **128 further mutation entries** before this number has to move.
     # The budget test projects exactly this sum (entries x rate + 60 s + 60 s) and reddens when
-    # it passes 1260 s. It was 19 minutes, sized for 387 entries with room for 118 more; the set
-    # passed 505 during the wave-5 review fixes, where the 60 s variance allowance ran out while
-    # that test, which then projected without it, stayed green. At the rate the rule that every
-    # assertion ships with its mutation generates them, that is the figure to watch; when it is
-    # reached, exactly one job's budget changes and nothing else is hostage to it, which is the
-    # third reason this is a job rather than a step.
-    timeout-minutes: 21
+    # it passes 1500 s. It was 19 minutes, sized for 387 entries, then 21 for the wave-5 review
+    # fixes, which left ~9 entries of room; 25 is sized for the second half of that wave, which
+    # adds commands, and so entries, at the rate the first half did. At the rate the rule that
+    # every assertion ships with its mutation generates them, that is the figure to watch; when it
+    # is reached, exactly one job's budget changes and nothing else is hostage to it, which is the
+    # third reason this is a job rather than a step. Not sharded: a matrix would rename the
+    # `oracle` check the branch protection requires, and multiply the setup cost.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
