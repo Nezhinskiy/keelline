@@ -43,6 +43,20 @@ def test_the_base_branch_is_the_remotes_head_when_it_is_known(tmp_path: Path) ->
 
 
 @needs_git
+def test_a_base_branch_no_utf_8_file_can_hold_falls_back_to_the_default(tmp_path: Path) -> None:
+    # git names refs in bytes, so `origin/HEAD` can point at a branch whose name is not UTF-8.
+    # `git_run` now hands that name back surrogate-escaped instead of raising, and this value
+    # is rendered into `keelline.toml`: `tomlout` keeps the escape as it is, and encoding the
+    # document as UTF-8 raised `UnicodeEncodeError` out of `init` — measured, before its first
+    # write. A name no file can record is no answer, the same as an `origin/HEAD` that is not
+    # set. Mutation (declared): encode with `surrogateescape` -> the escape passes the check
+    # and this reddens.
+    root = _repo(tmp_path)
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/caf\udce9")
+    assert detect(root).base_branch == "main"
+
+
+@needs_git
 def test_agents_are_the_surfaces_the_repository_carries(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     (root / ".codex").mkdir()

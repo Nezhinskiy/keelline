@@ -58,6 +58,21 @@ def git_run(
     `-`-shaped ones (§3). Resolved through PATH for the reason above: the machine owner's git
     must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
     "nothing matched", and that is an answer.
+
+    **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
+    common directory, a name in `ls-files` or a ref can hold one the locale cannot decode — a
+    latin-1 filename on Linux. Strict decoding raised `UnicodeDecodeError`, a `ValueError`
+    nothing here caught, out of every caller as an internal error; and it did so for stderr
+    too, which nobody reads. Escaped instead, a byte comes back as the same `str` `os.listdir`
+    and `sys.argv` give for it, so an answer is compared with, and opens, the path it names,
+    and a name read off the disk goes back to git on `stdin` as its own bytes. The answer is
+    lossless rather than a placeholder, so every caller still decides about the path that is
+    really there, and no refusal becomes a pass by way of the decode. What it does not make
+    safe is writing that `str` into a UTF-8 file: a caller whose answer ends up in one checks
+    it itself, as `project.detect` does for the base branch.
+
+    A `stdin` with no bytes at all under the locale — a character a non-UTF-8 locale cannot
+    spell — is `(-1, "")`: git could not be asked, which is what that answer already says.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - see the docstring
@@ -65,10 +80,11 @@ def git_run(
             input=stdin,
             capture_output=True,
             text=True,
+            errors="surrogateescape",
             check=False,
             timeout=timeout,
             env=scrubbed_env(),
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):
         return -1, ""
     return completed.returncode, completed.stdout

@@ -48,7 +48,16 @@ def _base_branch(root: Path) -> str:
     code, out = git_run(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
     if code != 0 or not out.strip():
         return DEFAULT_BRANCH
-    return out.strip().removeprefix("origin/") or DEFAULT_BRANCH
+    branch = out.strip().removeprefix("origin/")
+    # git names refs in bytes and `git_run` hands back one the locale cannot decode escaped,
+    # which is right for a path and wrong here: this value is rendered into `keelline.toml`, and
+    # encoding that document as UTF-8 raised `UnicodeEncodeError` out of `init` as an internal
+    # error. A name no file can record is no answer, the same as an `origin/HEAD` not set.
+    try:
+        branch.encode("utf-8")
+    except UnicodeEncodeError:
+        return DEFAULT_BRANCH
+    return branch or DEFAULT_BRANCH
 
 
 def _profile(root: Path) -> str:

@@ -90,18 +90,7 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     """
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
-    # `git_run` decodes STDERR strictly too, so the containment below is not only about the
-    # listing: any git in this module whose diagnostic text carries a non-UTF-8 byte raises
-    # `UnicodeDecodeError` out of a library function, which is the traceback the constraints
-    # forbid. `git archive` writes the tar to a file, so its stdout is empty and its stderr is
-    # the whole of what gets decoded — and a `Failure` and not a skip, because unlike the
-    # listing there is no weaker answer available: nothing was extracted.
-    try:
-        code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
-    except UnicodeDecodeError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted"
-        ) from None
+    code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
     if code != 0:
         raise Failure(f"`git archive {ref}` exited {code}; nothing was extracted")
     try:
@@ -123,36 +112,22 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     archive.unlink()
     if done.returncode != 0:
         raise Failure(f"extracting {ref} exited {done.returncode}")
-    try:
-        # `timeout=120`, matching the `git archive` twenty lines up, and for the same reason
-        # `gitenv` asks a caller to pass its own bound: the default is documented there as the
-        # cap for "a local, argument-free, read-only query … which neither touches the network
-        # nor grows with the repository", and `ls-tree -r` is the one call in this module whose
-        # cost IS the repository's size. On the five-second cap a large or slow-volume tree
-        # timed out, `git_run` returned `(-1, "")`, the `code == 0 and missing` test below went
-        # False, and the export-rule comparison was skipped with no note — so the verdict was
-        # then computed from a tree that really was missing files. The author had already
-        # judged this tree big enough to need more than the default when giving `git archive`
-        # its 120.
-        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
-    # `-z` is what makes this reachable, so it arrived with the fix above: without it `ls-tree`
-    # octal-escapes a non-ASCII name and the answer is always ASCII, and with it the bytes come
-    # through raw. `git_run` runs with `text=True` and strict decoding while catching only
-    # `OSError` and `SubprocessError`, so a tracked name this process's locale cannot decode —
-    # a latin-1 filename committed on Linux, any non-ASCII name under an uncoerced `C` locale —
-    # raised `UnicodeDecodeError` out of a library function. Contained at the call site and not
-    # in `git_run`: its other callers ask for a sha or a config value and never for raw bytes,
-    # and widening a shared seam for one caller's new appetite is how a seam stops meaning
-    # anything.
+    # `timeout=120`, matching the `git archive` above, and for the same reason `gitenv` asks a
+    # caller to pass its own bound: the default is documented there as the cap for "a local,
+    # argument-free, read-only query … which neither touches the network nor grows with the
+    # repository", and `ls-tree -r` is the one call in this module whose cost IS the
+    # repository's size. On the five-second cap a large or slow-volume tree timed out,
+    # `git_run` returned `(-1, "")`, the `code == 0 and missing` test below went False, and the
+    # export-rule comparison was skipped with no note — so the verdict was then computed from a
+    # tree that really was missing files. The author had already judged this tree big enough to
+    # need more than the default when giving `git archive` its 120.
     #
-    # A listing that cannot be read is no listing at all, which is exactly what the `code != 0`
-    # arm below already does with one that could not be produced. Skipping is the right answer
-    # rather than a cop-out: this comparison exists to catch an export rule, it cannot answer
-    # that question about a listing it never read, and raising on it would be one more
-    # over-eager `Failure` on a healthy tree — the defect this whole comparison has now
-    # produced in three separate shapes.
-    except UnicodeDecodeError:
-        code, listing = -1, ""
+    # `-z` brings a non-ASCII name through raw rather than octal-escaped, including one the
+    # locale cannot decode — a latin-1 filename committed on Linux. That used to raise out of
+    # `git_run` and was contained here by skipping the comparison; `git_run` now escapes the
+    # byte instead, so the name comes back as the same `str` the extraction's own path has and
+    # the comparison runs over the whole listing rather than being skipped.
+    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
     expected = {name for name in listing.split("\0") if name}
     missing = [
         name for name in expected if not (into / name).exists() and not (into / name).is_symlink()
@@ -168,16 +143,7 @@ def _extract(root: Path, ref: str, into: Path) -> None:
 def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
-    # Guarded for the reason `_extract` gives: `git_run` decodes stderr strictly, so git's own
-    # error text carrying a non-UTF-8 byte escapes as a bare `UnicodeDecodeError`. A `Failure`
-    # and not the `(-1, "")` skip, because this command has no verdict without a merge-base.
-    try:
-        code, merge_base = git_run(root, "merge-base", "HEAD", base)
-    except UnicodeDecodeError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
-            f"is no merge-base to compare against"
-        ) from None
+    code, merge_base = git_run(root, "merge-base", "HEAD", base)
     merge_base = merge_base.strip()
     # `git_run`'s own sentinel for "the binary could not be launched at all", which is not an
     # exit code and must not be rendered as one: `exited -1; is origin/main fetched?` sends a
