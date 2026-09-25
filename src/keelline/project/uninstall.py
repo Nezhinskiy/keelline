@@ -99,7 +99,7 @@ from keelline.attach.api import LEDGER
 from keelline.config.loader import loads, read_document
 from keelline.config.paths import KEELLINE_DIRECTORY, contained
 from keelline.errors import Refusal
-from keelline.fsops import remove_within, rmdir_within
+from keelline.fsops import path_key, remove_within, rmdir_within
 from keelline.project.footprint import prepare
 from keelline.project.ignored import refuse_ignored
 from keelline.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
@@ -200,13 +200,15 @@ def _rmdirs(root: Path, directories: Set[str]) -> None:
     `OSError`) leaves the directory where it is. A harness's own directory is never asked
     (`Harness.marker_dir`). It is the harness's before it is Keelline's, and detection reads its
     presence, so an empty one stays whoever made it: nothing records whether a person or `init`
-    did, and `docs/cli.md` says a later `init` detects the harness until it is removed.
+    did, and `docs/cli.md` says a later `init` detects the harness until it is removed. Compared
+    through `fsops.path_key`: a `[paths]` value under `.Claude/` prunes `.claude/` itself where case
+    folds, so a case variant of a marker directory is never asked either, on any filesystem.
     """
     from keelline.harnesses import HARNESSES
 
-    marker_dirs = {harness.marker_dir for harness in HARNESSES}
+    marker_dirs = {path_key(harness.marker_dir) for harness in HARNESSES}
     for directory in sorted(directories, key=lambda d: d.count("/"), reverse=True):
-        if directory in marker_dirs:
+        if path_key(directory) in marker_dirs:
             continue
         with contextlib.suppress(OSError):
             rmdir_within(root, directory)

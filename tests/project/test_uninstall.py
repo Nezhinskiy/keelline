@@ -515,6 +515,28 @@ def test_a_repository_keelline_never_initialised_is_refused(tmp_path: Path) -> N
 
 
 @needs_git
+def test_a_case_variant_of_a_harness_directory_is_never_pruned(tmp_path: Path) -> None:
+    """`[paths] roadmap = ".Claude/roadmap.md"`: where case folds, as on the default macOS and
+    Windows filesystems, `.Claude/` is `.claude/`, and pruning above the removed roadmap took an
+    empty `.claude/` with it, so a later `init` no longer detected the harness. The marker
+    directories are compared case-folded, so `.Claude/` stays on every filesystem (on Linux it
+    is an empty directory of its own, left like any directory a harness might read).
+
+    Mutation (oracle): "a case variant of a harness's own directory is pruned" -> the directory
+    is removed and the assertion reddens.
+    """
+    document = (
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        '[paths]\nroadmap = ".Claude/roadmap.md"\n\n[ci]\nmode = "none"\n'
+    )
+    root = initialised(tmp_path, document=document)
+    assert (root / ".Claude" / "roadmap.md").is_file()
+    _uninstall(root, tmp_path)
+    assert (root / ".Claude").is_dir()
+    assert not any((root / ".Claude").iterdir())
+
+
+@needs_git
 def test_a_harness_directory_a_person_made_stays_when_its_rule_goes(tmp_path: Path) -> None:
     # Mutation (oracle, advisory): drop the `marker_dirs` skip in `_prune` -> `.claude/` is
     # removed with the rule inside it, and the first assertion reddens.

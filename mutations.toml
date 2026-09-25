@@ -7057,3 +7057,10 @@ before = "        if record is not None and path_key(record.target) != path_key(
 after = "        if record is not None and record.target != target:"
 reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation"]
 
+# A harness's own directory is never pruned, and `.Claude/` is `.claude/` where case folds.
+[[mutation]]
+name = "a case variant of a harness's own directory is pruned"
+file = "src/keelline/project/uninstall.py"
+before = "        if path_key(directory) in marker_dirs:"
+after = "        if directory in marker_dirs:"
+reddens = ["tests/project/test_uninstall.py::test_a_case_variant_of_a_harness_directory_is_never_pruned"]
