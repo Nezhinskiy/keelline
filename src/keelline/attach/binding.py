@@ -122,6 +122,8 @@ def _recorded(overlay: Path, project: str) -> str | None:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
     except OSError as exc:
         raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{where} is not UTF-8 text") from None
     except tomllib.TOMLDecodeError as exc:
         # P10, and the same leak this branch has closed at three other sites. `tomllib` builds
         # its message as `f"{msg} (at line N, column M)"` and `msg` embeds the source for

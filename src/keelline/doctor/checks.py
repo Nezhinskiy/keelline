@@ -975,7 +975,7 @@ def _hook_entries(context: Context) -> Row:
             continue
         try:
             document = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             blind.append(label)
             continue
         try:

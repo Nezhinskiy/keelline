@@ -75,8 +75,19 @@ class Written:
 
 
 def read_machine(path: Path) -> dict[str, Any]:
-    """The machine file as a raw `dict`, exactly as `tomllib` parses it."""
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    """The machine file as a raw `dict`, exactly as `tomllib` parses it.
+
+    A file that is not UTF-8 or not TOML is the loader's `MachineConfigError`, the one failure
+    every reader of this file gives, naming the position and never the parser's message.
+    """
+    from keelline.config.loader import NOT_UTF8, MachineConfigError, toml_position
+
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 
 
 def _existing(path: Path) -> dict[str, Any]:

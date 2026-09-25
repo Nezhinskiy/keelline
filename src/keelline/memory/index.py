@@ -185,7 +185,7 @@ def _appended(path: Path | None) -> dict[str, str]:
         return {}
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return {}
     return {target: title for title, target in entries_in(text)}
 
@@ -505,7 +505,12 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
     be called without."""
     text = render_index(reconciled, config, store)
     path = _destination(store, config)
-    current = path.read_text(encoding="utf-8") if path.is_file() else None
+    try:
+        current = path.read_text(encoding="utf-8") if path.is_file() else None
+    except UnicodeDecodeError:
+        # Not what the render writes, whatever else it holds: drifted, and `keelline memory
+        # index` replaces it.
+        current = None
     caps = []
     if len(text.splitlines()) > config.native_caps.memory_index_lines:
         caps.append("memory_index_lines")

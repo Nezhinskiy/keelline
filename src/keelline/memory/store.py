@@ -256,7 +256,7 @@ def _registered_worktree(root: Path) -> Path | None:
         return None
     try:
         recorded = (private_dir / _BACK_POINTER).read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if not recorded or Path(recorded).parent.resolve() != root.resolve():
         return None
@@ -294,6 +294,8 @@ def overlay_root(machine: Path | None) -> Path | None:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise MachineConfigError(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise MachineConfigError(f"{path} is not UTF-8 text") from None
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
@@ -337,7 +339,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
         return False
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return False
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:

@@ -65,8 +65,8 @@ reddens = [
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/keelline/memory/trust.py"
-before = '    except (json.JSONDecodeError, UnicodeDecodeError) as exc:'
-after = '''    except (json.JSONDecodeError, UnicodeDecodeError):
+before = '    except json.JSONDecodeError as exc:'
+after = '''    except json.JSONDecodeError:
         return {}
     except RecursionError as exc:'''
 reddens = [
@@ -7408,3 +7408,39 @@ after = '''        object.__setattr__(self, "_predicted", True)
 reddens = [
   "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
 ]
+
+# A file a person or a repository owns that is not UTF-8 is its reader's own failure, never an
+# internal error: `keelline.toml` and the machine file, which most commands read first, and the
+# trust record, which fails loudly rather than reading as empty.
+[[mutation]]
+name = "a keelline.toml that is not UTF-8 crashes every command that loads it"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+after = """    except KeyError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[keelline.toml, as every command loads it]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[bugs-check-keelline-toml]",
+]
+
+[[mutation]]
+name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+after = """    except KeyError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
+]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
+file = "src/keelline/memory/trust.py"
+before = """    except UnicodeDecodeError:
+        raise UnreadableTrustRecord("""
+after = """    except KeyError:
+        raise UnreadableTrustRecord("""
+reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]

@@ -225,7 +225,7 @@ def _index(source: Path | None) -> list[str]:
         return []
     try:
         text = source.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return []
     if not text.strip():
         return []

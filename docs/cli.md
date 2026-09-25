@@ -697,7 +697,8 @@ replaced: it is a create-once artifact, so a repository that already has one is 
 for byte. The paths it declares are where the footprint lands. A repository with no
 `keelline.toml` gets one written from the detected values, headed by a comment naming the four
 keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced`, and
-`[ci] ref`. A file that is not valid TOML is a failure (`1`) naming the file. A repository that
+`[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure (`1`)
+naming the file. A repository that
 already carries `.keelline/manifest.json` is refused (`2`): re-running `init` is
 `keelline upgrade`.
 
@@ -783,8 +784,8 @@ every one of them through the scaffold engine, so every target goes through the 
 and none may leave the project root or pass through a symlink.
 
 Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED section
-names each, nothing was written and no manifest exists — or a `keelline.toml` that is not valid
-TOML, or the merged document the loader itself refuses (an unknown section or key, a `[project]
+names each, nothing was written and no manifest exists — or a `keelline.toml` that cannot be
+read, is not UTF-8 text or is not valid TOML, or the merged document the loader itself refuses (an unknown section or key, a `[project]
 name` outside its grammar, a value of the wrong type, a machine configuration file that does not
 load). `2` on a refusal above the plans: no `--yes`, a repository already initialised, a detected
 name outside the grammar, a `[paths]` value outside the plain-path grammar, naming git's control

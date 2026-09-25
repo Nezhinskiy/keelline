@@ -1330,6 +1330,19 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     assert checks._guarded("files", is_broken, context).status == "red"
 
 
+def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: Path) -> None:
+    # A `UnicodeDecodeError` is a `ValueError`, which `_guarded` renders red as a defect in this
+    # module; the file is the machine's or the repository's, and the walk says it could not read
+    # it, as it does for an `OSError`. Mutation (by hand): the decode error left out of the
+    # `except` -> this reddens on `UnicodeDecodeError`.
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
+    context = checks.Context(root, None, None, _stub(), {}, load(root, machine=_machine(tmp_path)))
+    row = checks._hook_entries(context)
+    assert "could not be read as hook entries" in row.detail
+
+
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
     # The quietest way this installation can be broken: no plugin root found at all means no
     # hook entry on this machine reaches Keelline, and `doctor` reports it as two `skip` rows —

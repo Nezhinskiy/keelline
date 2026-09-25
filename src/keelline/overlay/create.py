@@ -328,6 +328,8 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
         document = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise Failure(f"{relative} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{relative} is not UTF-8 text") from None
     except json.JSONDecodeError as exc:
         raise Failure(f"{relative} is not valid JSON: {exc}") from exc
     if not isinstance(document, dict):

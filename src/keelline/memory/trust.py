@@ -256,9 +256,14 @@ def _recorded(machine: Path | None) -> dict[str, str]:
         raise UnreadableTrustRecord(
             f"{path} cannot be read ({exc}); refusing to answer about trust or to overwrite it"
         ) from exc
+    except UnicodeDecodeError:
+        raise UnreadableTrustRecord(
+            f"{path} is not UTF-8 text; it holds every project's approval on this machine, so "
+            f"nothing here will overwrite it — repair or delete it"
+        ) from None
     try:
         raw = json.loads(text)
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except json.JSONDecodeError as exc:
         raise UnreadableTrustRecord(
             f"{path} is not valid JSON ({exc}); it holds every project's approval on this "
             f"machine, so nothing here will overwrite it — repair or delete it"

@@ -130,6 +130,10 @@ def _existing(root: Path) -> dict[str, object] | None:
         return None
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise Failure(f"{CONFIG_FILE} is not UTF-8 text; Keelline reads it only as UTF-8") from None
+    except OSError as exc:
+        raise Failure(f"{CONFIG_FILE} cannot be read ({type(exc).__name__})") from None
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
