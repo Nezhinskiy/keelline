@@ -200,6 +200,7 @@ def test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref(tmp_p
     assert allocation.warning is None
 
 
+@needs_git
 @pytest.mark.parametrize("code", [-1, 128])
 def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
@@ -230,12 +231,54 @@ def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
         assert "not UTF-8 text" in allocation.warning
 
 
-def test_outside_a_repository_there_is_no_history_to_warn_about(tmp_path: Path) -> None:
-    # `git log` exits 128 outside a work tree, and that is not a missed history: `bugs new` in
-    # a directory git does not know stays one line. Mutation (advisory): warn on every non-zero
-    # exit without asking whether this is a work tree — this reddens.
+@needs_git
+@pytest.mark.parametrize("git_runs", [True, False], ids=["git", "no-git"])
+def test_outside_a_repository_there_is_no_history_to_warn_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_runs: bool
+) -> None:
+    # `git log` exits 128 outside a work tree, and a `git` that cannot run answers `-1`; neither
+    # is a missed history where no `.git` exists: `bugs new` in a directory git does not know
+    # stays one line. Mutation (advisory): warn on every failed log without reading the disk —
+    # both cases redden.
     root, config = project(tmp_path)
+    if not git_runs:
+        monkeypatch.setenv("PATH", str(tmp_path / "no-git-here"))
     assert next_identifier(root, config, fetch=False).warning is None
+
+
+@needs_git
+def test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Found in review: the allocator asked `rev-parse --is-inside-work-tree` whether a failed log
+    # meant "no repository", and git refuses that question the same way it refused the log — a
+    # checkout it judges of dubious ownership (a bind mount under another uid in a container or
+    # CI), a linked worktree whose gitdir is gone. BR-005 on `other` went uncounted with no word.
+    # "No repository" is read off the disk now, where a `.git` entry is. The wrapper makes git
+    # judge the checkout foreign, as `safe.directory` would. Mutation (declared): the disk check
+    # replaced by the `rev-parse` question again — the warning is `None` and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / config.paths.bugs / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    commit_all(root, "five")
+    git(root, "checkout", "-q", "main")
+    real = shutil.which("git")
+    assert real is not None
+    wrappers = tmp_path / "bin"
+    wrappers.mkdir()
+    wrapper = wrappers / "git"
+    wrapper.write_text(
+        f'#!/bin/sh\nGIT_TEST_ASSUME_DIFFERENT_OWNER=1 exec "{real}" "$@"\n', encoding="utf-8"
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{wrappers}{os.pathsep}{os.environ['PATH']}")
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-002"
+    assert allocation.warning is not None
+    assert "git log exited 128" in allocation.warning
 
 
 @needs_git

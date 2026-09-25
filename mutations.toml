@@ -1119,6 +1119,20 @@ reddens = [
   "tests/ledger/test_write.py::test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty[128]",
 ]
 
+# "No repository" is read off the disk: git refuses `rev-parse --is-inside-work-tree` on a
+# checkout it judges of dubious ownership exactly as it refused the log, and the allocator took
+# that for "no repository" and dropped the history with no word.
+[[mutation]]
+name = "the allocator reads a repository git refuses as no repository"
+file = "src/keelline/ledger/write.py"
+before = """    if not in_work_tree(root):
+        return None"""
+after = """    if git_run(root, "rev-parse", "--is-inside-work-tree")[0] != 0:
+        return None"""
+reddens = [
+  "tests/ledger/test_write.py::test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository",
+]
+
 # A repository condition the operator can fix must reach them as findings (exit 1), never as an
 # internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
 [[mutation]]
@@ -7067,7 +7081,7 @@ reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_art
 [[mutation]]
 name = "a guard whose git timed out reads as no repository"
 file = "src/keelline/project/ignored.py"
-before = "    if _in_work_tree(root):\n        raise Refusal(UNANSWERED)"
+before = "    if in_work_tree(root):\n        raise Refusal(UNANSWERED)"
 after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
 reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]
 

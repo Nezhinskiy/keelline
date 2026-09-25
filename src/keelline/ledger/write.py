@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline import fsops
-from keelline.gitenv import NO_ANSWER, git_run
+from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 from keelline.identifiers import DIGITS, identifiers
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
 from keelline.ledger.entries import (
@@ -166,10 +166,13 @@ def _uncounted(root: Path, code: int) -> str | None:
     """What an unread history costs the allocator, or `None` where there is no history to miss.
 
     A failed log was an empty one, so every entry another ref holds went uncounted with no
-    word. Outside a work tree `git log` exits 128 and there is no history at all, which is not
-    a miss: `bugs new` in a directory git does not know stays one line.
+    word. Where no `.git` entry exists there is no history at all, which is not a miss: `bugs
+    new` in a directory git does not know stays one line. That is read off the disk
+    (`gitenv.in_work_tree`), because git refuses a question about a checkout it will not read —
+    dubious ownership, a worktree whose gitdir is gone — the same way it refused the log, and
+    asking it again read that repository as none. Every other failure is a miss, and says so.
     """
-    if code != -1 and git_run(root, "rev-parse", "--is-inside-work-tree")[0] != 0:
+    if not in_work_tree(root):
         return None
     cause = NO_ANSWER if code == -1 else f"git log exited {code}"
     return (

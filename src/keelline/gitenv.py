@@ -51,6 +51,19 @@ NO_ANSWER = (
 )
 
 
+def in_work_tree(root: Path) -> bool:
+    """Whether `root` or a directory above it holds a `.git` entry, which is how git itself finds
+    the repository: a directory in a clone, a file in a worktree or a submodule.
+
+    Read off the disk and never asked of git, because git refuses that question the same way it
+    refused the one before it: a `rev-parse` that times out, or that exits 128 on a checkout it
+    judges of dubious ownership (`safe.directory`) or on a worktree whose gitdir is gone, reads as
+    "no repository" — and a guard that took that answer let its caller through. `GIT_DIR` is
+    scrubbed from every `git` this project runs, so the `.git` entry is the one git would use.
+    """
+    return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
+
+
 def scrubbed_env() -> dict[str, str]:
     return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
 
