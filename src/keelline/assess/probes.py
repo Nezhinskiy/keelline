@@ -205,22 +205,82 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
     return Looked(tuple(f"{_WORKFLOWS}/{name}" for name in names))
 
 
-# CODEOWNERS patterns: the gitignore grammar without `!` and `[]`, which GitHub does not support.
-_TOKENS = re.compile(r"(/\*\*/|\*\*/|/\*\*|\*|\?)")
-_REGEX = {"/**/": "/(?:.*/)?", "**/": "(?:.*/)?", "/**": "/.*", "*": "[^/]*", "?": "[^/]"}
+def _glob(pattern: str, name: str) -> bool:
+    """One path component against one pattern component: `*` is any run of characters and `?`
+    is one, and everything else is itself.
+
+    No regex, and that is the point: a run of `*` compiled one `[^/]*` each backtracks
+    exponentially, and the pattern is the repository's. This walk keeps one resumption point,
+    the last `*`, so it takes at most `len(pattern) * len(name)` steps whatever the pattern.
+    """
+    p = n = 0
+    star, resume = -1, 0
+    while n < len(name):
+        if p < len(pattern) and pattern[p] in ("?", name[n]):
+            p, n = p + 1, n + 1
+        elif p < len(pattern) and pattern[p] == "*":
+            star, resume, p = p, n, p + 1
+        elif star >= 0:
+            resume += 1
+            p, n = star + 1, resume
+        else:
+            return False
+    return pattern[p:].strip("*") == ""
 
 
-def _pattern(text: str) -> re.Pattern[str]:
-    """A CODEOWNERS pattern (gitignore's rules, without `!` and `[]`) as a regex over a file's
-    path. A trailing `/` makes it directory-only: it owns what is below that directory and never
-    a file of that name. `/**/` and `**/` are zero or more directories, so adjacent ones match
-    as Git matches them."""
+def _components(pattern: tuple[str, ...], path: tuple[str, ...]) -> bool:
+    """Whether `pattern`'s components match `path`'s, whole. `**` as a whole component is zero
+    or more components, and one or more when it is the last: `a/**` is everything inside `a`,
+    never `a`.
+
+    A table rather than a recursion, filled from the pattern's end: `ahead[j]` says whether
+    the rest of the pattern matches `path[j:]`. Adjacent `**` are one `**`, and a pattern with
+    more other components than the path has cannot match, so the table is at most a few rows
+    whatever the repository wrote.
+    """
+    pattern = tuple(
+        part for i, part in enumerate(pattern) if part != "**" or pattern[i - 1 : i] != ("**",)
+    )
+    if sum(part != "**" for part in pattern) > len(path):
+        return False
+    end = len(path)
+    ahead = [j == end for j in range(end + 1)]
+    for i in range(len(pattern) - 1, -1, -1):
+        if pattern[i] == "**":
+            least = 1 if i == len(pattern) - 1 else 0
+            ahead = [any(ahead[j + least :]) for j in range(end + 1)]
+        else:
+            ahead = [
+                j < end and _glob(pattern[i], path[j]) and ahead[j + 1] for j in range(end + 1)
+            ]
+    return ahead[0]
+
+
+def _owns(text: str, path: str) -> bool:
+    """Whether the CODEOWNERS pattern `text` matches the file `path`, as GitHub reads it.
+
+    The grammar is gitignore's without `!` and `[]`, which GitHub does not support: a pattern
+    with no `/` but a trailing one matches at any depth, and any other is rooted. `**` is
+    special only as a whole component; any other run of `*` is one `*`. A pattern matching a
+    directory owns everything below it, and a trailing `/` makes it directory-only, so it never
+    owns a file of that name.
+
+    One rule is GitHub's and not git's: a last component of exactly `*` matches the directory's
+    own files and nothing nested (GitHub's documentation: `docs/*` owns `docs/getting-started.md`
+    and not `docs/build-app/troubleshooting.md`), where gitignore would match the directory
+    `docs/build-app` and everything below it.
+    """
     directory = text.endswith("/")
     anchored = text.startswith("/") or "/" in text.rstrip("/")
-    body = text.strip("/")
-    regex = "".join(_REGEX.get(part, re.escape(part)) for part in _TOKENS.split(body))
-    below = "/.+" if directory else "(?:/.*)?"
-    return re.compile(("" if anchored else "(?:.*/)?") + regex + below)
+    parts = tuple(text.strip("/").split("/"))
+    if not anchored:
+        parts = ("**", *parts)
+    names = tuple(path.split("/"))
+    if not directory and _components(parts, names):
+        return True
+    if parts[-1] == "*":
+        return False  # direct children only
+    return any(_components(parts, names[:depth]) for depth in range(1, len(names)))
 
 
 def _exact_file(path: Path) -> bool:
@@ -248,7 +308,7 @@ def _codeowners(context: ProbeContext) -> Looked:
         owners: list[str] = []
         for line in text.split("\n"):
             words = line.split("#", 1)[0].split()
-            if words and _pattern(words[0]).fullmatch(CI_WORKFLOW):
+            if words and _owns(words[0], CI_WORKFLOW):
                 owners = words[1:]
         return Looked(() if owners else (_UNOWNED,))
     return Looked((_UNOWNED,))

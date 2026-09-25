@@ -7614,20 +7614,36 @@ reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_li
 [[mutation]]
 name = "the codeowners probe reads a directory-only pattern as a file's owner"
 file = "src/keelline/assess/probes.py"
-before = '    below = "/.+" if directory else "(?:/.*)?"'
-after = '    below = "(?:/.*)?"'
+before = "    if not directory and _components(parts, names):"
+after = "    if _components(parts, names):"
 reddens = [
   "tests/assess/test_probes.py::test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name[directory-only]",
   "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
 ]
 
 [[mutation]]
-name = "the codeowners probe misses adjacent recursive wildcards"
+name = "the codeowners probe reads a recursive wildcard as at least one directory"
 file = "src/keelline/assess/probes.py"
-before = '_TOKENS = re.compile(r"(/\*\*/|\*\*/|/\*\*|\*|\?)")'
-after = '_TOKENS = re.compile(r"(\*\*/|/\*\*|\*|\?)")'
+before = "            least = 1 if i == len(pattern) - 1 else 0"
+after = "            least = 1"
 reddens = [
-  "tests/assess/test_probes.py::test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name[a-file-below]",
   "tests/assess/test_probes.py::test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included",
   "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
+]
+
+[[mutation]]
+name = "the codeowners probe reads a double star inside a component as recursive"
+file = "src/keelline/assess/probes.py"
+before = '        if pattern[i] == "**":'
+after = '        if pattern[i].startswith("**"):'
+reddens = ["tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar"]
+
+[[mutation]]
+name = "the codeowners probe reads a last star as owning nested files"
+file = "src/keelline/assess/probes.py"
+before = '    if parts[-1] == "*":'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[direct-children-only]",
 ]

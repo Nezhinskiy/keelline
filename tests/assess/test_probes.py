@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,7 +26,7 @@ from keelline.assess.probes import (
     PROFILE,
     PROFILE_NOT_SHIPPED,
     ProbeContext,
-    _pattern,
+    _owns,
     run_probes,
 )
 from keelline.config.loader import load, preset_defaults
@@ -306,6 +308,8 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         ("# /.github/ @owner\n", True),
         ("/.github/ @owner\n/.github/workflows/\n", True),
         ("/.github/workflows/ @owner\n*.md @docs\n", False),
+        ("/.github/workflows/* @owner\n", False),
+        ("/.github/* @owner\n", True),
     ],
     ids=[
         "no-file",
@@ -316,6 +320,8 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         "a-comment",
         "the-last-match-names-no-one",
         "a-later-line-that-does-not-match",
+        "the-workflows-files",
+        "direct-children-only",
     ],
 )
 def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
@@ -324,6 +330,8 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
     # GitHub reads the last matching line, and one with a pattern and no owner leaves the path
     # unowned. Mutation (declared): `owners = words[1:]` becomes `owners = ["x"]` -> the
     # owner-less last line reads as owned and the `the-last-match-names-no-one` case reddens.
+    # `direct-children-only` is GitHub's rule for a last `*` (declared; see the divergence case
+    # below).
     root = _repo(tmp_path)
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)
@@ -340,8 +348,8 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
 def test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name(
     tmp_path: Path, pattern: str, reported: bool
 ) -> None:
-    # Mutation (declared): `below` always `(?:/.*)?` -> the directory-only pattern owns the file
-    # of that name, and the first case reddens.
+    # Mutation (declared): the full-path match no longer skipped for a directory-only pattern ->
+    # it owns the file of that name, and the first case reddens.
     root = _repo(tmp_path)
     _write(root, ".github/CODEOWNERS", f"{pattern} @owner\n")
     assert bool(_items(root, tmp_path, "codeowners")) is reported
@@ -356,8 +364,8 @@ def test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included(
     tmp_path: Path, pattern: str
 ) -> None:
     # `/**/` stands for zero or more directories, so each pattern owns the workflow.
-    # Mutation (declared): `_TOKENS` loses its leading `/\*\*/` alternative -> `a/**/b` needs a
-    # directory between `a` and `b`, and both cases redden.
+    # Mutation (declared): a `**` that is not last matches one or more components -> `a/**/b`
+    # needs a directory between `a` and `b`, and both cases redden.
     root = _repo(tmp_path)
     _write(root, ".github/CODEOWNERS", f"{pattern} @owner\n")
     assert _items(root, tmp_path, "codeowners") == []
@@ -385,11 +393,17 @@ GRAMMAR = [
     "workflows/keelline.yml",
     ".github/workflows/*.yml",
     "/.github/*/keelline.yml",
-    "/.github/*",
     "docs/",
     "/.git*/",
     "/.github/workflow?/",
     "**/workflows/**",
+    "/.github/**yml",
+    ".github/**yml",
+    "/.github/workflows/keelline.yml/**",
+    "**",
+    "/.github/workflows*/",
+    "keelline.yml*",
+    "/.github/*/*/",
 ]
 
 
@@ -407,8 +421,9 @@ def _git_ignores(tmp_path: Path, pattern: str) -> bool:
 
 def test_the_matcher_agrees_with_git_on_its_grammar(tmp_path: Path) -> None:
     # An independent oracle for the patterns GitHub shares with gitignore. Mutations (declared):
-    # the directory-only `below` and the `/**/` alternative each make some pattern disagree.
-    ours = {p: _pattern(p).fullmatch(CI_WORKFLOW) is not None for p in GRAMMAR}
+    # the directory-only rule, `**` as zero or more components, and `**` special only as a
+    # whole component (`**yml` is `*yml`) each make some pattern disagree.
+    ours = {p: _owns(p, CI_WORKFLOW) for p in GRAMMAR}
     theirs = {p: _git_ignores(tmp_path, p) for p in GRAMMAR}
     assert ours == theirs
     assert {p for p, owned in theirs.items() if not owned} == {
@@ -416,7 +431,55 @@ def test_the_matcher_agrees_with_git_on_its_grammar(tmp_path: Path) -> None:
         "/.github/workflows/keelline.yml/",
         "workflows/keelline.yml",
         "docs/",
+        "/.github/**yml",
+        ".github/**yml",
+        "/.github/workflows/keelline.yml/**",
+        "/.github/*/*/",
     }
+
+
+def test_a_last_star_owns_direct_children_only_where_github_and_git_differ(
+    tmp_path: Path,
+) -> None:
+    # The one place this matcher is GitHub's and not git's. GitHub documents that `docs/*` owns
+    # the files directly in `docs` and not a file nested below one of its directories; git
+    # matches the directory itself, and so everything below it. Mutation (declared): the
+    # last-`*` rule dropped -> `/.github/*` owns the workflow as git reads it, and this reddens.
+    assert _git_ignores(tmp_path, "/.github/*")
+    assert not _owns("/.github/*", CI_WORKFLOW)
+    assert _owns("/.github/workflows/*", CI_WORKFLOW)
+    assert _owns("*", CI_WORKFLOW)
+
+
+# Each runs in a child with a deadline, so a matcher that backtracks fails this case instead of
+# hanging the suite. Every pattern is the repository's to write: a run of `*`, a run of `**`
+# components long enough to exhaust a recursion, and a component of alternating stars.
+BOUNDED = (
+    "from keelline.assess.probes import _owns\n"
+    "from keelline.project.api import CI_WORKFLOW\n"
+    "for pattern in ('*' * 100_000 + 'z', '**/' * 100_000 + 'z', '*e' * 50_000 + 'z',\n"
+    "                '/'.join(['*'] * 100_000)):\n"
+    "    print(_owns(pattern, CI_WORKFLOW))\n"
+)
+
+
+def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
+    # Found in review: a regex with one `[^/]*` per `*` took 2.4 s at twenty asterisks and grew
+    # sevenfold per four more, so one CODEOWNERS line could hold `keelline assess` for good.
+    # The matcher has no regex now, and no single-line mutation brings the backtracking back:
+    # `_glob` keeps one resumption point, and the component table visits each cell once.
+    # Mutation (advisory): adjacent `**` no longer collapsed -> the table grows to 100,000 rows
+    # and still answers in time, which is why the collapse is not this case's guard; the
+    # component-count bound dropped likewise. What this case holds is the absence of any
+    # exponential or recursive walk, measured by the deadline.
+    done = subprocess.run(
+        [sys.executable, "-c", BOUNDED],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert (done.returncode, done.stdout.split()) == (0, ["False"] * 4), done.stderr
 
 
 def test_a_codeowners_file_under_another_case_owns_nothing(tmp_path: Path) -> None:
