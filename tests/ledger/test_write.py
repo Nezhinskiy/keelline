@@ -8,18 +8,20 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
+from keelline.gitenv import git_run
 from keelline.ledger.check import EVIDENCE_LABEL, problems
 from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import render_index
 from keelline.ledger.scan import FIXTURE_MARKER
 from keelline.ledger.write import file_entry, next_identifier, renumber
-from tests.gitfixture import git
+from tests.gitfixture import git, plant_path
 
 CONFIG = """
 [keelline]
@@ -174,6 +176,69 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref(tmp_path: Path) -> None:
+    # Reproduced in review: with `core.quotePath=false`, `git log --name-only` prints a name in
+    # the ledger's history raw, one that is not UTF-8 is `git_run`'s `(-1, "")`, and the
+    # allocator read that as an empty history — handing out BR-002, which `other` holds, with no
+    # word. The log is asked with quoting forced on, so such a name comes back escaped and every
+    # ref still counts. Mutation (declared): drop `-c core.quotePath=true` — the history reads
+    # as no answer and this reddens on the identifier.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.quotePath", "false")
+    seed(root, config, 1)
+    commit_all(root)
+    git(root, "checkout", "-qb", "other")
+    (root / config.paths.bugs / "BR-005.md").write_text(entry(5), encoding="utf-8")
+    commit_all(root, "five")
+    git(root, "checkout", "-q", "main")
+    plant_path(root, f"{config.paths.bugs}/caf".encode() + b"\xe9.txt")
+    # Not `commit_all`: `add -A` would stage the planted name's removal, as no such file exists.
+    git(root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "planted")
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-006"
+    assert allocation.warning is None
+
+
+@pytest.mark.parametrize("code", [-1, 128])
+def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    # A timeout (30 s over `log --all`) or a `git` that cannot run left every other ref's
+    # entries uncounted with no word, and so did a log that failed inside a repository. The
+    # working tree still counts; the warning says what did not. Outside a repository there is
+    # no history to miss, which the next case pins. Mutation (declared): the warning arm never
+    # taken — the warning is `None` and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    seed(root, config, 1)
+    from keelline.ledger import write as module
+
+    real = git_run
+
+    def failing(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if "log" in args:
+            return code, ""
+        return real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", failing)
+    allocation = next_identifier(root, config, fetch=False)
+    assert allocation.identifier == "BR-002"
+    assert allocation.warning is not None
+    assert "history" in allocation.warning and "collide" in allocation.warning
+    if code == -1:
+        assert "not UTF-8 text" in allocation.warning
+
+
+def test_outside_a_repository_there_is_no_history_to_warn_about(tmp_path: Path) -> None:
+    # `git log` exits 128 outside a work tree, and that is not a missed history: `bugs new` in
+    # a directory git does not know stays one line. Mutation (advisory): warn on every non-zero
+    # exit without asking whether this is a work tree — this reddens.
+    root, config = project(tmp_path)
+    assert next_identifier(root, config, fetch=False).warning is None
+
+
+@needs_git
 def test_the_allocator_reads_the_git_source_with_the_shared_digit_rule(tmp_path: Path) -> None:
     # The `git log` reader used to respell the digit rule inline as `(\d{3,})` instead of
     # taking `DIGITS` from `keelline.identifiers`, which owns it. A third spelling is one the
@@ -199,9 +264,13 @@ def test_a_failed_fetch_is_reported_not_raised(
     root, config = project(tmp_path)
     from keelline.ledger import write as module
 
-    def failing(root: Path, *args: str, **kwargs: object) -> tuple[int, str]:
-        assert args[0] == "fetch"
-        return 128, ""
+    real = git_run
+
+    def failing(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        # Only the fetch fails; the history the allocator reads next is the real one.
+        if args[0] == "fetch":
+            return 128, ""
+        return real(where, *args, **kwargs)
 
     monkeypatch.setattr(module, "git_run", failing)
     allocation = next_identifier(root, config, fetch=True)

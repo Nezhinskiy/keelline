@@ -1092,6 +1092,33 @@ reddens = [
   "tests/ledger/test_scan.py::test_a_listing_git_cannot_hand_over_falls_back_to_the_walk_and_not_to_nothing",
 ]
 
+# The allocator read a history git gave no answer for as an empty one: under an owner's
+# `core.quotePath=false` one name in the ledger's history that is not UTF-8 made every other
+# ref's entries invisible, and `bugs new` handed out a number another branch holds, silently.
+# Quoting is forced on for that read, and a history still unread is named in the warning.
+[[mutation]]
+name = "the allocator reads a history with a raw name as no history"
+file = "src/keelline/ledger/write.py"
+before = """        "-c",
+        "core.quotePath=true",
+        "log","""
+after = """        "log","""
+reddens = [
+  "tests/ledger/test_write.py::test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref",
+]
+
+[[mutation]]
+name = "the allocator hands out a number with the history unread and no word"
+file = "src/keelline/ledger/write.py"
+before = """    if code != 0:
+        warning = _joined(warning, _uncounted(root, code))"""
+after = """    if False:
+        warning = _joined(warning, _uncounted(root, code))"""
+reddens = [
+  "tests/ledger/test_write.py::test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty[-1]",
+  "tests/ledger/test_write.py::test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty[128]",
+]
+
 # A repository condition the operator can fix must reach them as findings (exit 1), never as an
 # internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
 [[mutation]]
