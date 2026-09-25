@@ -7965,3 +7965,33 @@ file = "src/keelline/assess/report.py"
 before = '            emit(level, path, finding.line, f"{result.name}: {finding.rule}")'
 after = '            emit(level, path, finding.line, f"{result.name}: {finding.detail}")'
 reddens = ["tests/assess/test_report.py::test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_detail"]
+
+[[mutation]]
+name = "gate --base takes a short name, which a tag of the same spelling answers for"
+file = "src/keelline/assess/commands.py"
+before = "    if not BASE_REF.match(value):"
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_short_base_name_is_refused_at_the_parser"]
+
+# The step that judges must execute nothing the pull request wrote: a custom gate's files could
+# otherwise rewrite the verdict in this process's memory.
+[[mutation]]
+name = "gate --builtin runs the custom gates too"
+file = "src/keelline/assess/commands.py"
+before = '    if args.part == "builtin":'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those"]
+
+[[mutation]]
+name = "gate --only passes a name the configuration lacks on to the gates, which quote it"
+file = "src/keelline/assess/commands.py"
+before = "    if stray:"
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_name_the_configuration_does_not_have_is_refused_and_not_quoted"]
+
+[[mutation]]
+name = "gate admits a moved workflow pin that no release tag names"
+file = "src/keelline/assess/commands.py"
+before = "        released=lambda sha: is_released(sha, runner, cwd=root),"
+after = "        released=lambda sha: True,"
+reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused"]

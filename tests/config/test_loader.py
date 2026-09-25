@@ -162,8 +162,8 @@ def test_an_unsupported_schema_type_is_named_instead_of_read_as_a_string() -> No
 def test_load_can_be_told_it_is_not_interactive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `machine.py`'s docstring: "a caller that knows it is a hook, the MCP server or a `--gate`
-    # run says `interactive=False` rather than relying on the terminal check". `load` called
+    # `machine.py`'s docstring: "a caller that knows it is a hook, the MCP server or a `keelline
+    # gate` run says `interactive=False` rather than relying on the terminal check". `load` called
     # `machine_config_path()` with no argument, so the one shipped non-interactive caller had
     # no way to say it and fell back to the `isatty` sniff.
     home = tmp_path / "home"

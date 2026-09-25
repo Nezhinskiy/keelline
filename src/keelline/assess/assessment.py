@@ -35,6 +35,7 @@ import keelline
 from keelline.assess.gates import Gate, GateContext, GateResult, configured, run_gates
 from keelline.assess.model import Item, item
 from keelline.assess.probes import ProbeContext, run_probes
+from keelline.assess.rule import local_base
 from keelline.config.loader import load
 from keelline.errors import Refusal
 from keelline.findings import Severity
@@ -85,7 +86,7 @@ def assess(root: Path, *, machine: Path | None, base: str | None) -> Assessment:
     from keelline.presets import load_preset
 
     config = load(root, machine=machine)
-    base = base or f"refs/remotes/origin/{config.project.base_branch}"
+    base = base or local_base(config)
     results = run_gates(GateContext(root, config, base), config.gate_names)
     gates = configured(config)
     window = int(load_preset(config.keelline.preset)["assess"]["commit_window"])

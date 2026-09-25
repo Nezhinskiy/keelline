@@ -200,6 +200,7 @@ Keelline writes files. Being specific about which is the point of this section.
 | `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` refreshes what you have not touched, and `keelline uninstall` takes it back | `keelline init` |
 | `docs/keelline/rules/<profile>.md` (configurable) and `.claude/rules/keelline-<profile>.md` | The stack profile's rules, the one copy a project edits, and a path-scoped pointer at it for Claude Code (only when `[keelline] agents` lists `claude`) | `keelline init`, when `[keelline] profile` is set |
 | `.keelline/assessment.json` | The inventory `keelline assess` last wrote, format 1 — git-ignored | `keelline assess`; `keelline uninstall` removes it |
+| the file `--summary FILE` names | The gate's summary, appended; in CI the platform's job summary | `keelline gate --summary FILE` |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.keelline/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `keelline init` and `keelline upgrade`, when `[artifacts] local` lists them; `keelline uninstall` takes them back |
 | `.keelline/local/artifacts.json` | The record of the bytes Keelline last wrote under `.keelline/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `keelline uninstall` removes it |
@@ -299,6 +300,8 @@ keelline setup --git-hooks --uninstall                 # remove it; restore the 
 
 # Assessing a repository
 keelline assess                                       # every gate and probe; the whole inventory in .keelline/assessment.json
+keelline gate                                         # judge keelline.toml against the base, then run every configured gate
+keelline gate --only docs --only config               # a few of them; config is the configuration check
 
 # Diagnosing an installation
 keelline doctor                                       # sixteen checks over this installation, one line
@@ -313,8 +316,8 @@ keelline release notes --version 1.2.3                # assemble CHANGELOG.md fr
 keelline release hashes --check                       # the shipped files still match the release record
 ```
 
-Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, takes `--root` (default: the current
-directory) and `--machine` (read a machine configuration file other than the default);
+Every `memory`, `bugs`, `docs` and `plan` command, and `assess` and `gate`, takes `--root` (default:
+the current directory) and `--machine` (read a machine configuration file other than the default);
 `memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
 exception: its `--root` names the directory an overlay is created in or the overlay itself,
 not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and

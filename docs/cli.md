@@ -18,7 +18,8 @@ Three things hold everywhere:
   not a low-confidence result.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command, and `assess`, takes them with the same meaning, and `docs check` takes `--store` as well.
+  command, and `assess` and `gate`, takes them with the same meaning, and `docs check` takes
+  `--store` as well.
 
 | Option | Meaning |
 |---|---|
@@ -51,6 +52,7 @@ Three things hold everywhere:
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
 - [`keelline assess [--base REF] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---root-path---machine-path)
+- [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
@@ -709,6 +711,134 @@ severities, remedies — and never a path the repository chose: one table with a
 Exit codes: `0` when no gate would fail, whatever the probes found, so `0` means every gate
 could enforce now; `1` when a gate would fail, enforced or not, or when `keelline.toml` is
 missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal.
+
+## `keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
+
+The gate a pull request faces, runnable on your own checkout. One run:
+
+1. refuses a project root reached through a symbolic link, or spelled otherwise than git spells it;
+2. reads the base's `keelline.toml` at one exact commit, at the project's own path in the repository;
+3. judges this tree's `keelline.toml` against it, key by key (below);
+4. runs the configuration check and the configured gates under the configuration that judgement
+   chose, each enforcing or advisory as it says.
+
+Without `--only` it runs the configuration check and every configured gate: the built-in gates
+`[gates] builtin` keeps and the project's own `[gates.custom]`. `--only NAME` runs just the names
+given, each once; `config` is the configuration check. A name this run's configuration does not
+have is refused, counted and not quoted. Running it in a clone runs that clone's own gate
+commands, as [Configuration](#configuration) says.
+
+**`--builtin` and `--custom`.** `--builtin` runs the configuration check and the built-in gates
+and executes no command from `keelline.toml`; `--custom` runs the project's own gates alone and
+judges nothing. Each narrows the bare run, or `--only`'s names, to its kind, and skips a name of
+the other kind rather than refuse it. The reusable workflow runs them as two steps, the second
+only when the first passed. A custom gate's command is fixed by the base, but the files it
+executes — a `conftest.py`, a `Makefile`, a script — are the change under review, so for a custom
+gate the guarantee is "this command runs and must exit 0", and nothing about what it runs. An
+owner who wants those files pinned puts them under CODEOWNERS. Run bare on your own checkout,
+everything runs in one process. Narrowed to nothing — `--custom` on a project with no gate of its
+own — the run prints `nothing to run`, appends no summary and exits `0`.
+
+**What a pull request may change in `keelline.toml`.** Both copies go through the loader and are
+compared by what it derives — each key by its dotted name, each budget by its effective value,
+each custom gate's `run` on its own — never by byte. A comment, a key written out at its default,
+a reordered `enforced` or `[gates] builtin` list, and `installed` beside a list that says the same
+thing are no change at all. Each changed key gets one verdict:
+
+| Key | Admitted when | Verdict | Otherwise |
+|---|---|---|---|
+| `keelline.state` and `keelline.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
+| `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
+| `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
+| `budgets.<name>` | the effective value is at most the base's | `tightened` | `refused` |
+| `keelline.preset`, `keelline.profile`, `keelline.agents`, `project.name` | always: no gate reads them | `neutral` | — |
+| `keelline.version` and `ci.ref`, judged as one upgrade | the version is exactly the running Keelline's and not earlier than the base's, and a moved `ci.ref` is the commit `--workflow-sha` names and one of Keelline's release tags names | `upgrade` | as any other key |
+| any other key | — | — | `refused` while the base enforces any gate, `noted` while it enforces none |
+
+A preset switch is judged by what it moves: its own name is `neutral`, a budget it lowers
+`tightened`, and anything else it moves falls to "any other key". "Not earlier" is read the way
+`keelline upgrade` reads it — by the leading `X.Y.Z`, and a release after its own pre-release — and
+a pair Keelline does not order is refused. The run uses this tree's configuration unless a key was
+refused, and then the base's; it enforces the gates either side enforces. So a pull request that
+promotes a gate is held to that gate in its own run.
+
+**How a refused change lands.** While any gate enforces, a pull request cannot make a change the
+table refuses, and under `installed` that includes routine upkeep: a `[paths]` value,
+`[artifacts] local`, a `[ledger] code_roots` entry, a `[commit_messages] types` entry, a custom
+gate's `run`, `[gates] custom_timeout_seconds`, `[project] base_branch`. The owner makes such a
+change by pushing it directly to the base branch; every later pull request is judged against it.
+If you want that push to need you, and not an agent working with your credentials, protect the
+base branch at the repository level so that only you can push to it. Many projects do not need
+that, and it is an option, not a requirement.
+
+**What each input rests on.** The verdict holds where the repository has the settings
+[the reusable workflow](#the-reusable-workflow) names, and not otherwise.
+
+- *The base's commit.* `--base` takes a full 40-character commit id or a full `refs/…` name, and
+  nothing shorter: git resolves a short name through rules in which a tag called `origin/main`
+  wins over the remote-tracking branch of that name, and a full name that does not exist falls
+  through to a tag of the same spelling, so the name must also exist as itself. In CI the workflow
+  resolves the base once to a commit and passes that. Run locally, the default is
+  `refs/remotes/origin/<project.base_branch>`, read from this tree's own configuration, which is
+  why a local run is advice and never the authority. A clone without an `origin` remote names its
+  base with `--base`, such as `--base refs/heads/main`.
+- *The base's copy.* It is read at the project root's own path in the repository. A root reached
+  through a symbolic link below the repository's top, or spelled otherwise than git spells it, is
+  refused: either would look for the copy where the base has none, and a missing copy is the
+  bootstrap, where this tree decides. A link above the repository's top — `/tmp` on macOS, a linked
+  home directory — belongs to the machine and is admitted.
+- *The running Keelline and `--workflow-sha`.* In CI both are whatever the caller workflow's
+  `uses:` line selects. A pull request can edit that line; a required code-owner review of
+  `/.github/` is what keeps it out of the pull request's reach.
+- *Release tags.* A moved `[ci] ref` is admitted only at a commit one of Keelline's own `v*` tags
+  names, asked of the public repository.
+- *The verdict itself* is worth what the process that computed it is worth. It must execute
+  nothing the repository wrote: run it with `--builtin`, and start it as `python3 -P -m keelline`,
+  so that no module in the checkout can be imported in place of Keelline's own.
+
+Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused unless you pass
+`--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
+
+**Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
+were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
+per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
+in place of the count. Key names and gate names print; values from `keelline.toml` and a
+finding's detail never do.
+
+**`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
+one `error` per refused key, and one per finding or gate that could not run — `error` for an
+enforcing gate, `warning` for an advisory one. The message is `<gate>: <rule>`. `file=` is written
+from the repository's root and only for a path of letters, digits, `.`, `_`, `-` and `/`; any
+other path is annotated without a location, and a `commit` finding, which names a commit, has
+none. At most ten per level; past that one `notice` counts the rest, because the platform shows
+ten per level per step and drops the others without a word.
+
+**`--summary FILE`** appends a markdown table — each gate's mode, count and outcome, and each
+changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
+`config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`) and
+`gates` (`{name, enforcing, answered, count}` each). It lists no finding: `keelline assess --json`
+is where findings are serialised.
+
+**Reads** `keelline.toml`, the base's copy through git, every file a gate reads, and — only when
+`--workflow-sha` matches a moved `[ci] ref` — the public repository's tags. **Writes** nothing
+but the file `--summary` names; a custom gate writes whatever its command writes.
+
+A pull request that removes `keelline.toml` — `keelline uninstall` among them — fails the run:
+nothing says which gates run, and a run that cannot judge a change does not pass it. Such a
+change lands the way a refused key does, by a direct push to the base branch.
+
+Exits `0` when no enforcing gate failed or could not run and, when the configuration check ran,
+nothing was refused. `1` when an enforcing gate failed or could not run; when the configuration
+check refused a key; when the base is not in the checkout or git could not read its copy (the
+message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the
+one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` does not load. `2` on a refusal: a
+`--base` outside its grammar (before anything runs); a root reached through a symbolic link or
+spelled otherwise than git spells it; an `--only` name this run's configuration does not have;
+a `keelline.toml` that is itself a symbolic link; or a `[paths]` value on either side that leaves
+the root, passes through a symbolic link, or names `.git` or `.keelline`. Both copies are loaded
+against this tree's disk, so a change that turns a directory the base names into a symbolic link
+refuses the base's own load, and a base written for an older Keelline that this one no longer
+loads fails every pull request until the owner fixes it on the base branch.
 
 ## `keelline memory refs`
 
@@ -1839,15 +1969,15 @@ base branch itself the tree's copy must equal it byte for byte — once the base
 `installed`, or the run fails before a gate runs. While the base is still `initialised` or
 `adopting` the difference is one `::warning` annotation and the run goes on, which is the
 same advisory rule the next paragraph states for the gates themselves. A pull request that
-could turn its own gates off is not a gate; which keys a pull request may eventually change is
-a question `keelline gate` answers, and until it ships the answer is none. The base ref
-itself is the pull request's base as the platform reports it, the caller's `base:` on every
-other event, or the repository's default branch — none of the three readable out of the tree
-under review, and on a pull request a `base:` that disagrees with the platform's answer is
+could turn its own gates off is not a gate; which keys a pull request may change is the table
+`keelline gate` applies, and until this workflow runs that command the answer here is none. The
+base ref itself is the pull request's base as the platform reports it, the caller's `base:` on
+every other event, or the repository's default branch — none of the three readable out of the
+tree under review, and on a pull request a `base:` that disagrees with the platform's answer is
 refused rather than preferred. The call site is the remaining surface: `.github/` is under
-CODEOWNERS here, and a project adopting this workflow wants the same plus a required review
-and a required status check, because the `uses:` line and its `with:` block live in a file a
-pull request can edit.
+CODEOWNERS here, and a project adopting this workflow wants the same plus a required review and
+a required status check, because the `uses:` line and its `with:` block live in a file a pull
+request can edit.
 
 **Advisory until the base says `installed`.** While the base's state is `initialised` or
 `adopting`, or while the base carries no `keelline.toml` at all — the bootstrap, which is every
@@ -1994,7 +2124,7 @@ ref = ""                 # the commit of the Keelline release the workflow is pi
 gate_branch = "main"     # the branch a gate reads its configuration from
 
 [gates]
-builtin = ["docs", "bugs", "plan", "commit", "trail"]  # assess runs these; the workflow, later
+builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
 custom_timeout_seconds = 600  # how long one of your own gates may run
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
@@ -2011,9 +2141,10 @@ and which form, `gate_branch` is the branch the rendered workflow watches on a p
 default it passes as `base:`, and `ref` is written by `init` and judged by `doctor`'s `ci-ref`
 row. `[commit_messages] attribution_check` is read by `commit check` and `[artifacts] local` by
 the scaffold engine. `keelline assess` reads `[commit_messages] types` (its commit-vocabulary
-probe), `[keelline] enforced` (which gates it reports as enforcing) and all of `[gates]` (the
-gates it runs); nothing enforces by `enforced` or `[gates]` yet, and the command that will says
-so.
+probe), and it and
+[`keelline gate`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
+read `[keelline] enforced` and all of `[gates]`. The reusable workflow does not run
+`keelline gate` yet, so in CI nothing enforces by them.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -2028,25 +2159,24 @@ Keelline's own five the project means to run, all of them by default, and each
 `[gates.custom.<name>]` names one of the project's own: `run` is an argv to run from the
 project root, never through a shell, given `custom_timeout_seconds` to finish, and a non-zero
 exit is its one finding. A custom gate's name is one lowercase path segment, neither a built-in
-gate's name nor `config`, which names the configuration check. **`keelline assess` runs the
-configured set; the gate that enforces it ships later.** Until it does,
-[the reusable workflow](#the-reusable-workflow) runs every built-in check whatever
-`[gates] builtin` says, and runs no custom gate. A custom gate runs only from a command a person
-or a workflow runs on purpose — today
-[`keelline assess`](#keelline-assess---base-ref---root-path---machine-path) — never from a hook
-or `doctor`, so running such a command in a clone runs the commands that clone configured, as
-running its test suite would. A project that keeps its roadmap or its `AGENTS.md` out of git
-(`[artifacts] local`) drops `trail` or `docs` from `[gates] builtin`: those gates read the
-committed place, where the file is not.
+gate's name nor `config`, which names the configuration check. **`keelline assess` and
+`keelline gate` run the configured set**: the built-in gates `[gates] builtin` keeps, then every
+custom gate. [The reusable workflow](#the-reusable-workflow) does not run `keelline gate` yet:
+it still runs every built-in check whatever `[gates] builtin` says, and no custom gate. A custom
+gate runs only from a command a person or a workflow runs on purpose — `keelline assess` or
+`keelline gate` — never from a hook or `doctor`, so running such a command in a clone runs the
+commands that clone configured, as running its test suite would. A project that keeps its
+roadmap or its `AGENTS.md` out of git (`[artifacts] local`) drops `trail` or `docs` from
+`[gates] builtin`: those gates read the committed place, where the file is not.
 
-**Enforcement per gate ships with that gate.** `[keelline] enforced` is meant to list the gates
-promoted while a project adopts Keelline, and `state = "installed"` means every gate the project
-runs. Both keys are Keelline's to write (`keelline adopt begin` and `keelline adopt promote`,
-which ship later), and the loader already holds them together: an `initialised` project lists
-none, and an `installed` one lists every gate or none. `keelline assess` reads the list to
-report which gates enforce; nothing enforces by it yet. Until the gate ships, the reusable
-workflow enforces by `state` alone: once the base's state is `installed` a failed check fails
-the job, and before that every failure is a warning.
+**Enforcement is per gate.** `[keelline] enforced` lists the gates promoted while a project
+adopts Keelline, and `state = "installed"` means every gate the project runs. Both keys are
+Keelline's to write (`keelline adopt begin` and `keelline adopt promote`, which ship later), and
+the loader holds them together: an `initialised` project lists none, and an `installed` one
+lists every gate or none. `keelline assess` and `keelline gate` read them, gate by gate. The
+reusable workflow does not run `keelline gate` yet and enforces by `state` alone: once the
+base's state is `installed` a failed check fails the job, and before that every failure is a
+warning.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two

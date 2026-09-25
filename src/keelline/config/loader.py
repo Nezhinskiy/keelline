@@ -396,7 +396,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
 
     `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
     `machine.py`'s docstring says "a caller that knows it is a hook, the MCP server or a
-    `--gate` run says `interactive=False` rather than relying on the terminal check", and the
+    `keelline gate` run says `interactive=False` rather than relying on the terminal check", and the
     one shipped non-interactive caller — `hooks.commands.run_hook` — had no way to say it.
     `load` called `machine_config_path()` with no argument, so the path the docstring singles
     out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's

@@ -60,8 +60,9 @@ path: `overlay` renders and upgrades the private overlay, `attach` binds a repos
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
 of it. `project` holds the shipped project templates and `init`, the command that writes a
 repository's footprint from them, and `assess` runs the gates and the inventory over a
-repository as it is. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside
-it imports it, and tests reach its modules directly, as they do every area's.
+repository as it is, and judges a change's `keelline.toml` against what its base branch
+enforces (`keelline gate`). `assess` publishes no `api.py`: nothing under `src/` or `scripts/`
+outside it imports it, and tests reach its modules directly, as they do every area's.
 (`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
 `harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
 nor a `hooks.py`.)
