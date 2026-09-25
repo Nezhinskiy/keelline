@@ -28,6 +28,7 @@ Exit codes match the rest of the project: 0 all held, 1 findings.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import os
 import shutil
@@ -386,6 +387,145 @@ def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
         return Outcome(done.returncode, _executed(report))
 
 
+def anchor_finding(text: str, before: str) -> str | None:
+    """Why `before` cannot anchor a mutation in `text`, or `None` when it occurs exactly once.
+
+    The one anchor rule: `_check` applies it inside a run, and `static_findings` before any.
+    """
+    occurrences = text.count(before)
+    if occurrences == 0:
+        return (
+            "its `before` line is not in the file any more — the assertion and the line it is "
+            "about have drifted apart, so update the entry or delete it"
+        )
+    if occurrences > 1:
+        return f"its `before` line appears {occurrences} times; make it unique"
+    return None
+
+
+def collected_ids(root: Path, files: set[str]) -> frozenset[str] | None:
+    """Every test id a collection of `files` under `root` yields, or `None` if it failed.
+
+    The only way to see a parametrized id's bracketed part, which is built at collection time.
+    One `--collect-only` over just the files that carry such ids, so under a second here.
+    """
+    if not files:
+        return frozenset()
+    try:
+        done = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                *sorted(files),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
+    return frozenset(line.strip() for line in done.stdout.splitlines() if "::" in line)
+
+
+def undefined_tests(
+    reddens: tuple[str, ...],
+    root: Path,
+    *,
+    parsed: dict[Path, ast.Module | None] | None = None,
+    collected: frozenset[str] | None = None,
+) -> list[str]:
+    """The ids in `reddens` that name no test of theirs.
+
+    A plain id is resolved in its file's syntax tree: a top-level function, or a method of a
+    top-level class, by name. So a test defined by assignment, by import, by inheritance or
+    under an `if` reads as missing, and a function nested in another reads as present — neither
+    shape exists in this repository's `reddens`. A parametrized id is looked up whole in
+    `collected`, which `static_findings` computes once; given none, it is collected here.
+    `parsed` is a parse cache the caller may share across calls.
+    """
+    cache: dict[Path, ast.Module | None] = {} if parsed is None else parsed
+    if collected is None:
+        bracketed = {node_id.split("::", 1)[0] for node_id in reddens if "[" in node_id}
+        collected = collected_ids(root, bracketed) if bracketed else frozenset()
+    missing: list[str] = []
+    for node_id in reddens:
+        path, *names = node_id.split("[", 1)[0].split("::")
+        source = root / path
+        if source not in cache:
+            cache[source] = (
+                ast.parse(source.read_text(encoding="utf-8")) if source.is_file() else None
+            )
+        scope: ast.AST | None = cache[source]
+        for name in names:
+            body = getattr(scope, "body", [])
+            scope = next(
+                (
+                    node
+                    for node in body
+                    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+                    and node.name == name
+                ),
+                None,
+            )
+        if scope is None or not names or ("[" in node_id and node_id not in (collected or ())):
+            missing.append(node_id)
+    return missing
+
+
+def static_findings(mutations: list[Mutation]) -> list[str]:
+    """What is wrong with `mutations` that no pytest run is needed to see.
+
+    A file that does not exist, a `before` that does not occur exactly once, a `reddens` id that
+    names no test, and an entry repeating another's `(file, before, after)` — which proves
+    nothing the first did not, since an entry is caught when any of its ids reddens. One read
+    and one parse per file, and one collection for every parametrized id.
+    """
+    findings: list[str] = []
+    texts: dict[Path, str | None] = {}
+    seen: dict[tuple[Path, str, str], str] = {}
+    for mutation in mutations:
+        if mutation.file not in texts:
+            texts[mutation.file] = (
+                mutation.file.read_text(encoding="utf-8") if mutation.file.is_file() else None
+            )
+        text = texts[mutation.file]
+        anchor = (
+            f"{mutation.file.relative_to(ROOT)} does not exist"
+            if text is None
+            else anchor_finding(text, mutation.before)
+        )
+        if anchor is not None:
+            findings.append(f"{mutation.name}: {anchor}")
+        key = (mutation.file, mutation.before, mutation.after)
+        if key in seen:
+            findings.append(f"{mutation.name}: repeats the mutation of {seen[key]!r}")
+        seen.setdefault(key, mutation.name)
+    bracketed = {
+        node_id.split("::", 1)[0] for m in mutations for node_id in m.reddens if "[" in node_id
+    }
+    collected = collected_ids(ROOT, bracketed)
+    if collected is None:
+        return [*findings, f"pytest could not collect {', '.join(sorted(bracketed))}"]
+    parsed: dict[Path, ast.Module | None] = {}
+    for mutation in mutations:
+        findings.extend(
+            f"{mutation.name}: {node_id} names no test"
+            for node_id in undefined_tests(
+                mutation.reddens, ROOT, parsed=parsed, collected=collected
+            )
+        )
+    return findings
+
+
 def _check(mutation: Mutation, tree: Path) -> str | None:
     """`None` when the mutation was caught; the finding otherwise.
 
@@ -407,14 +547,9 @@ def _check(mutation: Mutation, tree: Path) -> str | None:
     if not subject.is_file():
         return f"{mutation.file.relative_to(ROOT)} does not exist"
     original = subject.read_text(encoding="utf-8")
-    occurrences = original.count(mutation.before)
-    if occurrences == 0:
-        return (
-            "its `before` line is not in the file any more — the assertion and the line it is "
-            "about have drifted apart, so update the entry or delete it"
-        )
-    if occurrences > 1:
-        return f"its `before` line appears {occurrences} times; make it unique"
+    anchor = anchor_finding(original, mutation.before)
+    if anchor is not None:
+        return anchor
     clean = _run(mutation.reddens, tree)
     if not clean.passed:
         return (
@@ -506,6 +641,14 @@ def main(argv: list[str]) -> int:
     ]
     if not mutations:
         print(f"no mutation matches {pattern!r}", file=sys.stderr)
+        return 1
+    # Before any pytest run: a drifted anchor or a missing test is found in about a second
+    # rather than at the end of a run that takes most of CI's oracle budget.
+    static = static_findings(mutations)
+    if static:
+        for finding in static:
+            print(f"FINDING  {finding}", file=sys.stderr)
+        print(f"\n{len(static)} declaration finding(s); nothing was run", file=sys.stderr)
         return 1
     named_tests = {ROOT / target.split("::", 1)[0] for m in mutations for target in m.reddens}
     watched = {m.file for m in mutations} | {path for path in named_tests if path.is_file()}

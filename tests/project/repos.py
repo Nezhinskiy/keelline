@@ -8,13 +8,39 @@ two copies of the fixture would drift the way the suite's twenty-three `git` hel
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
+import keelline
 from keelline.project.init import init
 from keelline.runner import Runner
+from keelline.scaffold import Manifest
 from tests.gitfixture import LsRemote, git
 
 BEFORE = "# ours, from before Keelline\n"
+# The smallest `keelline.toml` a test writes by hand: this build's version, a name, and no CI.
+DOCUMENT = (
+    f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+    '[ci]\nmode = "none"\n'
+)
+
+
+def repository(tmp_path: Path) -> Path:
+    """A git repository at `tmp_path / "widget"` holding only a README, with an origin."""
+    root = tmp_path / "widget"
+    root.mkdir(parents=True)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
+    (root / "README.md").write_text(BEFORE, encoding="utf-8")
+    return root
+
+
+def forge_record(root: Path, artifact_id: str, *, target: str, sha256: str) -> None:
+    """Rewrite one manifest record's place and digest, the way a pulled commit can."""
+    manifest = Manifest.read(root)
+    record = manifest.get(artifact_id)
+    assert record is not None, artifact_id
+    manifest.with_record(replace(record, target=target, sha256=sha256)).write(root)
 
 
 def initialised(
@@ -28,11 +54,7 @@ def initialised(
     """`init --yes` over a repository that already held a README, `document` as its
     `keelline.toml` when one is given, and each of `files` (a root-relative path and its text)
     written before `init` runs."""
-    root = tmp_path / "widget"
-    root.mkdir(parents=True)
-    git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
-    (root / "README.md").write_text(BEFORE, encoding="utf-8")
+    root = repository(tmp_path)
     if document:
         (root / "keelline.toml").write_text(document, encoding="utf-8")
     for relative, text in (files or {}).items():

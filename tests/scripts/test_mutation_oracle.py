@@ -600,3 +600,80 @@ def test_the_housekeeping_sweep_leaves_the_lock_alone(tmp_path: Path) -> None:
     assert str(leaked) in dropped, dropped
     assert str(lock) not in dropped, dropped
     assert lock.is_file()
+
+
+# --- the declaration itself, checked before any run -------------------------------------------
+#
+# `static_findings` is what the oracle's `main` asks first and what the suite asks of the real
+# declaration: every entry anchored exactly once, every `reddens` id a test, no mutation declared
+# twice. It needs no pytest run but one collection, for the parametrized ids.
+
+
+def test_a_before_line_must_occur_exactly_once(tmp_path: Path) -> None:
+    # Mutation (declared): the duplicate arm stops firing -> the second assertion reddens.
+    module = oracle(root=tmp_path)
+    assert module.anchor_finding("GUARD = True\n", "GUARD = True") is None
+    duplicated = module.anchor_finding("GUARD = True\nGUARD = True\n", "GUARD = True")
+    assert duplicated is not None and "2 times" in duplicated, duplicated
+    drifted = module.anchor_finding("GUARD = False\n", "GUARD = True")
+    assert drifted is not None and "drifted apart" in drifted, drifted
+
+
+def test_a_reddens_id_must_name_a_test_its_file_defines(tmp_path: Path) -> None:
+    # Mutations (declared): the name lookup accepts any name -> `test_member` is found for
+    # `test_renamed`, and a class's first method for `test_gone`, so both stop being reported;
+    # the collected-id lookup dropped -> `test_param[absent]` stops being reported.
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_probe.py").write_text(
+        "import pytest\n\n\ndef test_kept():\n    pass\n\n\n"
+        "class TestGroup:\n    def test_member(self):\n        pass\n\n\n"
+        '@pytest.mark.parametrize("x", [1], ids=["one"])\ndef test_param(x):\n    pass\n',
+        encoding="utf-8",
+    )
+    module = oracle(root=tmp_path)
+    ids = (
+        "tests/test_probe.py::test_kept",
+        "tests/test_probe.py::TestGroup::test_member",
+        "tests/test_probe.py::test_param[one]",
+        "tests/test_probe.py::test_renamed",
+        "tests/test_probe.py::TestGroup::test_gone",
+        "tests/test_probe.py::test_param[absent]",
+        "tests/test_absent.py::test_kept",
+        "tests/test_probe.py",
+    )
+    assert module.undefined_tests(ids, tmp_path) == [
+        "tests/test_probe.py::test_renamed",
+        "tests/test_probe.py::TestGroup::test_gone",
+        "tests/test_probe.py::test_param[absent]",
+        "tests/test_absent.py::test_kept",
+        "tests/test_probe.py",
+    ]
+
+
+def test_a_mutation_declared_twice_is_a_finding(tmp_path: Path) -> None:
+    # Mutation (declared): the repeat rule dropped -> the list below comes out empty.
+    subject = tmp_path / "guard.py"
+    subject.write_text("GUARD = True\n", encoding="utf-8")
+    module = oracle(root=tmp_path)
+    first = a_mutation(module, subject, ())
+    second = module.Mutation(
+        name="again", file=subject, before="GUARD = True", after="GUARD = False", reddens=()
+    )
+    assert module.static_findings([first, second]) == ["again: repeats the mutation of 'probe'"]
+
+
+def test_every_declared_entry_is_sound_before_any_run() -> None:
+    """`static_findings` over the real `mutations.toml` finds nothing.
+
+    No entry names this case, and none may: every mutation removes its own `before` line, so
+    this case would redden under all of them and prove nothing about any. Its guard is the
+    helpers above, whose entries are declared; it was watched red by duplicating one entry's
+    `before` line in its file and by renaming one `reddens` test.
+    """
+    module = oracle()
+    declared = module.declared()
+    # The walk first: an empty declaration would make the list below come out empty for a
+    # reason that is not about drift.
+    assert len(declared) > 400, len(declared)
+    assert module.static_findings(declared) == []
