@@ -119,6 +119,7 @@ def test_git_s_own_diagnostics_are_never_decoded_into_a_failure(tmp_path: Path) 
     assert out == ""
 
 
+@needs_git
 def test_a_stdin_this_process_cannot_encode_is_minus_one(tmp_path: Path) -> None:
     # A lone surrogate outside the escape range has no bytes under any codec, so git cannot be
     # asked the question at all: `(-1, "")`, the runner's own "git could not be given its
@@ -126,7 +127,9 @@ def test_a_stdin_this_process_cannot_encode_is_minus_one(tmp_path: Path) -> None
     # refuses inside a work tree, `memory.refs` keeps the reference as unresolved. Reachable in
     # practice under a non-UTF-8 locale, where a note's text holds characters that locale has
     # no byte for. Mutation (declared): drop `UnicodeEncodeError` from the `except` -> this
-    # reddens.
+    # reddens. `needs_git`, because where no `git` can be launched the `OSError` answers
+    # `(-1, "")` first and the case passes whatever the `except` holds — measured, with that
+    # mutation applied and no `git` on `PATH`: 1 passed.
     assert git_run(tmp_path, "check-ignore", "--stdin", stdin="\ud800") == (-1, "")
 
 
