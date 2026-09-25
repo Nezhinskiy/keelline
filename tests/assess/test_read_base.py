@@ -12,10 +12,13 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 import keelline
+from keelline import gitenv
+from keelline.assess import rule
 from keelline.assess.rule import (
     NOT_A_REPOSITORY,
     ROOT_UNANSWERED,
@@ -79,6 +82,17 @@ def test_a_commit_id_is_read_as_given(tmp_path: Path) -> None:
     assert read_base(project, sha) == BASE
 
 
+def test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap(
+    tmp_path: Path,
+) -> None:
+    # A 40-hex id is taken as given, so it must name a commit: read as a tree, the empty tree
+    # lists no `keelline.toml`, and the change would govern itself.
+    project = clone(tmp_path, BASE)
+    empty = git(project, "hash-object", "-t", "tree", "-w", os.devnull).strip()
+    with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
+        read_base(project, empty)
+
+
 def test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path(
     tmp_path: Path,
 ) -> None:
@@ -86,6 +100,17 @@ def test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path(
     assert repository_prefix(project / "sub") == "sub/"
     assert read_base(project / "sub", REMOTE_MAIN) == BASE
     assert read_base(project, REMOTE_MAIN) is None
+
+
+def test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy(
+    tmp_path: Path,
+) -> None:
+    # git reads a pathspec starting `:/` as "from the top": without `--literal-pathspecs`,
+    # `ls-tree -- :/x/keelline.toml` looks for `x/keelline.toml`, exits 0 and lists nothing, so a
+    # project kept under `:/x` would be the bootstrap and govern its own change.
+    project = clone(tmp_path, BASE, under=":/x")
+    assert repository_prefix(project / ":" / "x") == ":/x/"
+    assert read_base(project / ":" / "x", REMOTE_MAIN) == BASE
 
 
 def test_a_project_root_moved_behind_a_symlink_is_refused(tmp_path: Path) -> None:
@@ -126,6 +151,35 @@ def test_a_link_above_the_repository_is_the_machine_s_and_is_admitted(tmp_path: 
     assert read_base(through, REMOTE_MAIN) == BASE
 
 
+def test_a_root_that_is_itself_a_link_into_the_repository_is_refused(tmp_path: Path) -> None:
+    # No ancestor of the root resolves to git's top: the link names the project's directory, not
+    # the repository, so the root's own spelling says nothing about where the base keeps it.
+    project = clone(tmp_path, BASE, under="sub")
+    os.symlink(project / "sub", tmp_path / "link")
+    with pytest.raises(Refusal, match="symlink"):
+        read_base(tmp_path / "link", REMOTE_MAIN)
+
+
+def test_a_prefix_git_spells_otherwise_than_the_caller_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What a case-folding disk does, held on every platform: git answers `SUB/` for the root the
+    # caller spells `sub`. The base keeps one of the two, and nothing here can tell which.
+    project = clone(tmp_path, BASE, under="sub")
+    real = gitenv.git_run
+
+    def upper_prefix(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        code, out = real(root, *args, **kwargs)
+        if "--show-prefix" in args:
+            top, _, prefix = out.partition("\n")
+            out = f"{top}\n{prefix.upper()}"
+        return code, out
+
+    monkeypatch.setattr(rule, "git_run", upper_prefix)
+    with pytest.raises(Refusal, match="symlink"):
+        read_base(project / "sub", REMOTE_MAIN)
+
+
 @pytest.mark.parametrize(
     "spelling", ["project/SUB", "PROJECT/sub"], ids=["below-the-top", "the-top"]
 )
@@ -136,9 +190,8 @@ def test_a_root_spelled_otherwise_than_git_spells_it_is_refused(
     if not (project / "SUB").exists():
         pytest.skip("this file system tells `SUB` from `sub`")
     # On a case-folding disk `SUB` is `sub`, but the base has no `SUB/keelline.toml`. Spelled
-    # otherwise at the top itself, no ancestor of the root resolves to git's top at all: removing
-    # that refusal reddens `the-top`. Not declared as a mutation, because both cases skip on the
-    # Linux runner the oracle uses.
+    # otherwise at the top itself, no ancestor of the root resolves to git's top at all. Both
+    # skip on Linux; the two cases above hold the same refusals there.
     with pytest.raises(Refusal, match="symlink"):
         read_base(tmp_path / spelling, REMOTE_MAIN)
 

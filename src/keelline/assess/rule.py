@@ -133,7 +133,8 @@ def read_base(root: Path, base: str) -> str | None:
         root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"
     ).strip()
     path = f"{prefix}{CONFIG_FILE}"
-    # Literal: a directory named like pathspec magic (`:(exclude)…`, `*`) is a name here.
+    # Literal: git reads a pathspec starting `:/` as "from the top", so under a directory named
+    # `:` the listing would look elsewhere, answer nothing, and make the change the bootstrap.
     listed = _read(
         root,
         "--literal-pathspecs",

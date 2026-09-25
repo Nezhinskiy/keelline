@@ -7792,3 +7792,45 @@ reddens = [
   "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[lowers-a-budget]",
   "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
 ]
+
+# The base read, fix round: each git argument and refusal whose removal lets a change reach "no
+# copy on the base" — the bootstrap — held by a case that runs on every platform.
+[[mutation]]
+name = "a project under a directory named like pathspec magic reads no copy on the base"
+file = "src/keelline/assess/rule.py"
+before = '        "--literal-pathspecs",'
+after = '        "--no-pager",'
+reddens = ["tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy"]
+
+[[mutation]]
+name = "the base's copy is listed relative to the project root rather than the repository's top"
+file = "src/keelline/assess/rule.py"
+before = '        "--full-tree",'
+after = '        "--name-only",'
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path",
+  "tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy",
+]
+
+[[mutation]]
+name = "a base id that names a tree is read as if it named a commit"
+file = "src/keelline/assess/rule.py"
+before = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"'
+after = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", base'
+reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]
+
+[[mutation]]
+name = "a root that is itself a link into the repository is read at its own spelling"
+file = "src/keelline/assess/rule.py"
+before = """    if ancestor is None:
+        raise Refusal(ROOT_THROUGH_SYMLINK)"""
+after = """    if False:
+        raise Refusal(ROOT_THROUGH_SYMLINK)"""
+reddens = ["tests/assess/test_read_base.py::test_a_root_that_is_itself_a_link_into_the_repository_is_refused"]
+
+[[mutation]]
+name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
+file = "src/keelline/assess/rule.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if linked:"
+reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
