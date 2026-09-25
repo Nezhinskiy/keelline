@@ -32,8 +32,9 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence, Set
+from collections.abc import Sequence, Set
 from pathlib import Path
+from typing import Protocol
 
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import PROJECT_NAME, Config
@@ -154,45 +155,32 @@ def ours_locally(template: Template, current: str, target: str, digests: LocalDi
     return own and matches_render(template, current)
 
 
+class Ownership(Protocol):
+    """Which artifacts are built to write a place. `project.templates.Owners` is the relation,
+    and says why a ledger entry never reaches a place it calls another artifact's."""
+
+    def foreign(self, artifact_id: str, place: str) -> Set[str]: ...
+
+
 def left_copies(
     template: Template,
     config: Config,
     digests: LocalDigests,
-    withheld: Mapping[str, Set[str]],
+    owners: Ownership | None,
 ) -> tuple[str, ...]:
     """The copies kept out of git `digests` says Keelline left for `template` at a place this
     configuration no longer gives it: its id left `[artifacts] local`, or its `[paths]` value
     moved while it stayed there. Every place the ledger records for its id but its current one,
-    and none `withheld` keeps from it.
-
-    **An entry under one id never reaches another artifact's copy.** `withheld[template.id]` is
-    every target another artifact is built to write (`project.footprint.withheld`), and
-    `LOCAL_ARTIFACTS/<target>` for one of them is that artifact's place kept out of git, judged
-    under its own id or not at all. Without this, a clone that force-added a ledger entry under
-    `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest of
-    those unedited and so predictable bytes, had `upgrade` remove it as a relocated copy:
-    `upgrade` plans only the footprint pass, so no template of its plan claimed the file, and
-    nothing ever wrote it again.
-
-    The one exception is decided where the build is made and by nothing a repository writes:
-    `agents-md`'s region and the skeleton share `AGENTS.md` by design, so neither withholds the
-    other's place. A committed `[paths]` value can make two other targets coincide only in a
-    configuration the project area refuses before planning (`templates._no_file_of_another`),
-    and even then it only adds places to withhold, never removes one. An artifact's own earlier
-    places are in nobody's list (a `[paths]` value that moved is a place this configuration no
-    longer builds), so a copy left there is still judged.
-
-    Every place is compared through `fsops.path_key`: an entry naming
-    `.keelline/local/artifacts/claude.md` reaches the `CLAUDE.md` copy on a filesystem that folds
-    case, so it is that copy's place on every filesystem, withheld and never a left copy; and a
-    copy at a case variant of the artifact's own place is that place, not one left behind.
+    and none that `owners` calls another artifact's (`project.templates.Owners`). A copy at a case
+    variant of the artifact's own place is that place (`fsops.path_key`), not one left behind.
     """
     target, _ = effective_target(template, config)
-    others = {path_key(f"{LOCAL_ARTIFACTS}/{place}") for place in withheld.get(template.id, ())}
+    kept = f"{LOCAL_ARTIFACTS}/"
     return tuple(
         copy
         for copy in digests.targets_of(template.id)
-        if path_key(copy) != path_key(target) and path_key(copy) not in others
+        if path_key(copy) != path_key(target)
+        and not (owners is not None and owners.foreign(template.id, copy.removeprefix(kept)))
     )
 
 
@@ -200,13 +188,13 @@ def local_copies(
     template: Template,
     config: Config,
     digests: LocalDigests,
-    withheld: Mapping[str, Set[str]],
+    owners: Ownership | None,
 ) -> tuple[str, ...]:
     """Every file under `LOCAL_ARTIFACTS` `plan` judges as `template`'s: its effective target
     while `[artifacts] local` lists it, and its `left_copies`."""
     target, location = effective_target(template, config)
     current = (target,) if location is Location.LOCAL else ()
-    return (*current, *left_copies(template, config, digests, withheld))
+    return (*current, *left_copies(template, config, digests, owners))
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -300,14 +288,13 @@ def plan(
     templates: Sequence[Template],
     *,
     force: Sequence[str] = (),
-    withheld: Mapping[str, Set[str]] | None = None,
+    owners: Ownership | None = None,
 ) -> Plan:
     """What applying `templates` under `config` would do, decided and not yet written.
 
-    `withheld` is, for each artifact id, the targets whose places kept out of git no ledger
-    entry under that id may name, from the lane that built `templates`
-    (`project.footprint.withheld`); `left_copies` says what it guards. A lane whose templates are
-    never kept out of git has no ledger to guard and passes none.
+    `owners` is which artifacts the lane that built `templates` builds to write each place, and
+    `left_copies` says what it guards. A lane whose templates are never kept out of git (the
+    overlay's) has no ledger to guard and passes none.
     """
     validate_sources(config)
     manifest = Manifest.read(root)
@@ -344,7 +331,7 @@ def plan(
             actions.append(moved)
             record = None
         refused = False
-        for copy in left_copies(template, config, digests, withheld or {}):
+        for copy in left_copies(template, config, digests, owners):
             if path_key(copy) in planned:
                 continue
             try:

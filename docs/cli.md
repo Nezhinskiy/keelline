@@ -787,14 +787,14 @@ name` outside its grammar, a value of the wrong type, a machine configuration fi
 load). `2` on a refusal above the plans: no `--yes`, a repository already initialised, a detected
 name outside the grammar, a `[paths]` value outside the plain-path grammar, naming git's control
 directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink — all
-three refused by the loader before a plan exists — two artifacts of one pass that resolve to one
-file, which is named with the two `[paths]` keys to separate, two artifacts of either pass that
-resolve to one file (`roadmap = "CLAUDE.md"`, say), named the same way, since only the `AGENTS.md`
-skeleton and its region share a file by design, an `[artifacts] local` list naming a profile
-artifact, which every pointer at it reads at its committed path, one naming `config` or `gitignore`,
-which only work at the repository root, and a write git would hide, at an existing file a `[paths]`
-value chose, which the refusal names, or one git cannot answer for inside a repository because it
-timed out or is not installed (see `upgrade`'s boundary).
+three refused by the loader before a plan exists — two artifacts, of one pass or of either, that
+resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap = "CLAUDE.md"`),
+which is named with the two artifacts and their `[paths]` keys to separate, since only the
+`AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list naming a
+profile artifact, which every pointer at it reads at its committed path, one naming `config` or
+`gitignore`, which only work at the repository root, and a write git would hide, at an existing
+file a `[paths]` value chose, which the refusal names, or one git cannot answer for inside a
+repository because it timed out or is not installed (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,

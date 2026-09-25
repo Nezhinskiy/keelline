@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline.project.templates import Owners
 from keelline.scaffold import engine
 from keelline.scaffold.engine import apply, plan
 from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, MAX_ENTRIES, LocalDigests
@@ -255,16 +256,16 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
 def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git(
     tmp_path: Path,
 ) -> None:
-    # `withheld[roadmap]` is every place another artifact is built to write;
-    # `LOCAL_ARTIFACTS/<one of them>` is that artifact's copy, judged under its own id. A forged
-    # entry under `roadmap` naming `AGENTS.md`'s copy with its unedited digest removed it when no
-    # template of the plan targeted it. Mutation (oracle): "a ledger entry under one id reaches
-    # another artifact's copy kept out of git" -> the plan holds a `REMOVE` of that copy.
+    # `AGENTS.md` is a place `owners` gives `agents-md`, so `LOCAL_ARTIFACTS/AGENTS.md` is that
+    # artifact's copy, judged under its own id. A forged entry under `roadmap` naming it with its
+    # unedited digest removed it when no template of the plan targeted it. Mutation (oracle): "a
+    # ledger entry under one id reaches another artifact's copy kept out of git" -> the plan holds
+    # a `REMOVE` of that copy.
     _written(tmp_path)
     _ledger(tmp_path, {"roadmap": {LOCAL: digest("BODY\n")}})
     roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
-    withheld = {"roadmap": frozenset({"AGENTS.md"})}
-    planned = plan(tmp_path, a_config(tmp_path), [roadmap], withheld=withheld)
+    owners = Owners({"agents-md": frozenset({"AGENTS.md"}), "roadmap": frozenset({roadmap.target})})
+    planned = plan(tmp_path, a_config(tmp_path), [roadmap], owners=owners)
     assert LOCAL not in {a.target for a in planned.actions}
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
@@ -306,7 +307,7 @@ def test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_templa
 ) -> None:
     # The same-plan skip, compared the way the disk compares: an entry under `roadmap` at
     # `.../agents.md` names `agents-md`'s `.../AGENTS.md` where case folds, and with no
-    # `withheld` given the plan's own targets are the only guard. Mutation (oracle): "a left copy
+    # `owners` given the plan's own targets are the only guard. Mutation (oracle): "a left copy
     # at a case variant of a file the plan targets is judged twice" -> the plan removes the
     # variant, which on macOS is `agents-md`'s copy, and this reddens.
     _written(tmp_path)

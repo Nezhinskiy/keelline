@@ -374,7 +374,7 @@ def test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_valu
     clone's excludes ignore. For `roadmap` it is a place a `[paths]` value chose: the run is
     refused, and the file is neither overwritten with the roadmap nor removed. (The file of an
     artifact this configuration still builds, such as `CLAUDE.md`, is refused earlier, as
-    another artifact's file: `templates._no_file_of_another`.)
+    another artifact's file: `templates.Owners`.)
 
     Mutation (oracle): "an ignored write passes at any artifact's preset place" -> the file is
     overwritten or removed, and the refusal is never raised.

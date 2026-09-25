@@ -25,10 +25,13 @@ from keelline.project.templates import (
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
     NO_REF,
-    ONE_TARGET,
+    ONE_FILE,
+    OWN_NAME,
     PATH_KEYS,
     PROFILE,
     PROJECT,
+    SHARED_FILE,
+    Owners,
     fill,
     read,
 )
@@ -91,9 +94,9 @@ def test_the_claude_md_pointer_names_the_configured_instruction_file() -> None:
     session in that project following a dangling pointer, with nothing anywhere saying so.
 
     Mutation (oracle): `AGENTS_MD=p.agents_md` -> `AGENTS_MD=CLAUDE_MD` -> the pointer names the
-    pointer and the renamed case reddens. The self-pointer that mutation writes is the one
-    `_one_target_each` already refuses when a repository asks for it, so this is the only way to
-    reach it.
+    pointer and the renamed case reddens. The self-pointer that mutation writes is one the
+    collision refusal (`templates.Owners`) refuses when a repository asks for it, so this is the
+    only way to reach it.
     """
     config = preset_defaults("widget")
     by_id = {t.id: t for t in _prepared(config).once}
@@ -287,7 +290,7 @@ def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares
 
 
 def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
-    """DC3's premise, which nothing made true until now.
+    """The two-pass design's premise, which nothing made true until the collision refusal.
 
     `scaffold.engine.plan` has no duplicate-target detection and C2 is frozen, so with two
     `[paths]` keys aimed at one file both plans reported zero refusals, `apply` wrote both, the
@@ -301,13 +304,13 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     right to — measured, this docstring reddened that gate on its first draft.)
 
     Both passes, because the write-once pass collides too — `paths.agents_md = "CLAUDE.md"` puts
-    the skeleton and the pointer on one file.
+    the skeleton and the pointer on one file. One refusal holds both passes and the pair across
+    them, read off one relation (`templates.Owners`); a guard of its own for one pass, which this
+    test used to pin, was shadowed by it and is gone.
 
-    Exactly this pass's refusal: `_no_file_of_another` would refuse the same configuration a
-    step later, naming the pair without saying the pass would write one over the other, so a
-    looser assertion passed with this check gone (the mutation oracle found it surviving).
-
-    Mutation (oracle): drop the footprint pass's check -> the roadmap case reddens.
+    Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
+    no refusal, and every case reddens; "places are compared case-sensitively for ownership" ->
+    the case-variant case does.
     """
     config = preset_defaults("widget")
     footprint_clash = replace(
@@ -316,7 +319,7 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     with pytest.raises(Refusal) as caught:
         _prepared(footprint_clash)
     message = str(caught.value)
-    assert message == ONE_TARGET.format(
+    assert message == ONE_FILE.format(
         first="roadmap",
         first_key="paths.roadmap",
         second="roadmap-history",
@@ -325,8 +328,7 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     # The colliding value is the repository's own bytes and is named nowhere.
     assert "docs/x.md" not in message
     # One file where case folds, as on the default macOS and Windows filesystems, so one file
-    # here on every filesystem. Mutation (oracle): "two artifacts of one pass at case variants of
-    # one file are not one file" -> the cross-file refusal answers instead, and this reddens.
+    # here on every filesystem.
     variant = replace(
         config, paths=replace(config.paths, roadmap="docs/x.md", roadmap_history="docs/X.md")
     )
@@ -335,8 +337,39 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     assert str(caught.value) == message
 
     once_clash = replace(config, paths=replace(config.paths, agents_md="CLAUDE.md"))
-    with pytest.raises(Refusal, match=r"claude-md|agents-skeleton"):
+    with pytest.raises(Refusal) as caught:
         _prepared(once_clash)
+    assert str(caught.value) == ONE_FILE.format(
+        first="agents-skeleton",
+        first_key="paths.agents_md",
+        second="claude-md",
+        second_key=OWN_NAME,
+    )
+
+
+def test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_pair() -> None:
+    """`Owners` is what both the collision refusal and the ledger rule read, so its answers are
+    asked directly: the designed pair shares `AGENTS.md` and nothing else shares anything, a
+    place is one file in any case, and a place only another configuration builds (the workflow
+    under `mode = "none"`) is still another artifact's.
+
+    Mutations (oracle): "the AGENTS.md skeleton and its region stop sharing a file by design" ->
+    the pair's place is foreign to each; "places are compared case-sensitively for ownership" ->
+    `claude.md` is nobody's.
+    """
+    owners = _prepared(preset_defaults("widget")).owners
+    assert owners.foreign("agents-md", "AGENTS.md") == frozenset()
+    assert owners.foreign("agents-skeleton", "AGENTS.md") == frozenset()
+    assert owners.foreign("roadmap", "AGENTS.md") == SHARED_FILE
+    assert owners.foreign("roadmap", "CLAUDE.md") == {"claude-md"}
+    assert owners.foreign("roadmap", "claude.md") == {"claude-md"}
+    assert owners.foreign("claude-md", "CLAUDE.md") == frozenset()
+    assert owners.foreign("roadmap", CI_WORKFLOW) == {CI_ARTIFACT}
+    # A place nobody is built to write is nobody's.
+    assert owners.foreign("roadmap", "elsewhere/notes.md") == frozenset()
+    # Two ids a configuration put on one place are each other's, in any case.
+    placed = Owners({"a": frozenset({"x.md"}), "b": frozenset({"X.md"})})
+    assert placed.foreign("a", "x.md") == {"b"}
 
 
 def test_the_artifact_ids_the_commands_name_are_the_ones_the_templates_build() -> None:
@@ -559,9 +592,9 @@ def test_an_unknown_harness_name_is_counted_for_the_report() -> None:
 
 
 def test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name() -> None:
-    # A rendition's row is added where it is appended, not listed in `PATH_KEYS`, so this is the
-    # case that proves the row exists: without it the collision is a `KeyError`, not a refusal.
-    # Mutation (oracle): drop `keys.setdefault(template.id, OWN_NAME)` -> reddens.
+    # A rendition has no row in `PATH_KEYS`: its target is the harness's own fixed name, which is
+    # what the refusal calls an id with no row. Mutation (oracle): look the second id up with no
+    # fallback -> the collision is a `KeyError`, not a refusal, and this reddens.
     config = _python(("claude",))
     clash = replace(config, paths=replace(config.paths, roadmap=".claude/rules/keelline-python.md"))
     with pytest.raises(Refusal, match=r"claude-rules \(a fixed name of Keelline's own\)"):

@@ -16,9 +16,9 @@ from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
 from keelline.project.templates import (
-    ACROSS_PASSES,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
+    ONE_FILE,
     OWN_NAME,
 )
 from keelline.project.uninstall import (
@@ -669,7 +669,7 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
 
     Mutation (oracle): "an artifact may target a file another artifact is built to write" -> no
     refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap. Mutation (oracle):
-    "the cross-file refusal compares places case-sensitively" -> the `case-variant` cases raise
+    "places are compared case-sensitively for ownership" -> the `case-variant` cases raise
     nothing.
     """
     root = initialised(
@@ -701,7 +701,7 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     )
     with pytest.raises(Refusal) as refused:
         run()
-    assert str(refused.value) == ACROSS_PASSES.format(
+    assert str(refused.value) == ONE_FILE.format(
         first="claude-md",
         first_key=OWN_NAME,
         second="roadmap",

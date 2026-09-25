@@ -699,8 +699,8 @@ def test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_not
     written with the copy's own bytes first: where case folds that rewrites the copy unchanged,
     and where it does not it is a second file, so the same assertions hold on Linux.
 
-    Mutation (oracle): "a ledger entry reaches a case variant of another artifact's copy" ->
-    the dry run already plans a removal at the variant, and the `claude-md` case reddens. The
+    Mutation (oracle): "places are compared case-sensitively for ownership" -> the dry run
+    already plans a removal at the variant, and the `claude-md` case reddens. The
     `documentation-policy` case is held twice: that artifact is in `upgrade`'s own plan, so the
     same-plan skip, compared case-folded too, withholds its variant as well ("a left copy at a
     case variant of a file the plan targets is judged twice" is that guard's entry).

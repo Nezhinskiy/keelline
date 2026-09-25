@@ -5452,32 +5452,21 @@ reddens = [
   "tests/project/test_templates.py::test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line",
 ]
 
-# DC3's premise, which nothing made true: `scaffold.engine.plan` has no duplicate-target
-# detection and C2 is frozen, so two `[paths]` keys aimed at one file made both plans report zero
-# refusals, `apply` write both, the file hold only the second artifact's bytes, and the manifest
-# record two different `sha256` values for one target — the first artifact silently lost,
-# `upgrade` reading one record as hand-edited for ever, and `uninstall` removing a file holding
-# the other. The anchor is this module's own artifact list, a constant in the installed package:
-# which artifacts exist and which `[paths]` key each reads are Keelline's, and the repository
-# chooses only the values — which the refusal names by key and never by value.
-[[mutation]]
-name = "two artifacts of one pass may target one file again"
-file = "src/keelline/project/templates.py"
-before = "    _one_target_each(footprint, keys)"
-after = ""
-reddens = [
-  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
-]
-
-# Across the two passes, and against every place another artifact is built to write: only the
-# `AGENTS.md` skeleton and its region share a file. `roadmap = "CLAUDE.md"` passed both per-pass
-# checks, and with a forged ledger entry `upgrade` removed the `CLAUDE.md` kept out of git.
+# One refusal, read off one relation (`templates.Owners`), for every pair of artifacts at one
+# file: within a pass, where `scaffold.engine.plan` has no duplicate-target detection and two
+# `[paths]` keys aimed at one file had `apply` write both and the manifest record two digests for
+# one path; across the two passes; and against a file only another configuration builds. Only
+# the `AGENTS.md` skeleton and its region share a file. `roadmap = "CLAUDE.md"` passed the
+# per-pass checks there used to be, and with a forged ledger entry `upgrade` removed the
+# `CLAUDE.md` kept out of git. The anchor is this module's artifact list; the refusal names two
+# ids and their keys, never the value.
 [[mutation]]
 name = "an artifact may target a file another artifact is built to write"
 file = "src/keelline/project/templates.py"
-before = "    _no_file_of_another((*once, *footprint), could_write, keys)\n"
+before = "    _no_file_of_another(prepared)\n"
 after = ""
 reddens = [
+  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write",
   "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
@@ -5746,8 +5735,9 @@ reddens = [
 # the literal `@AGENTS.md` and was built with no `render` override at all, so a project that set
 # `[paths] agents_md` to anything else received a pointer at a file the run had not written,
 # beside the file it had — and `keelline docs check` passed over the pair, because nothing on
-# either side reads the other. The mutation writes the self-pointer `_one_target_each` refuses
-# when a repository asks for it, which is the only way left to reach that state.
+# either side reads the other. The mutation writes the self-pointer the collision refusal
+# (`templates.Owners`) refuses when a repository asks for it, which is the only way left to reach
+# that state.
 [[mutation]]
 name = "the CLAUDE.md pointer stops naming the configured instruction file"
 file = "src/keelline/project/templates.py"
@@ -6447,8 +6437,8 @@ reddens = [
 [[mutation]]
 name = "a harness rendition that collides is a KeyError instead of a refusal"
 file = "src/keelline/project/templates.py"
-before = "                keys.setdefault(template.id, OWN_NAME)"
-after = "                pass"
+before = "                second_key=PATH_KEYS.get(second, OWN_NAME),"
+after = "                second_key=PATH_KEYS[second],"
 reddens = [
   "tests/project/test_templates.py::test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name",
 ]
@@ -6658,7 +6648,7 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    judged = plan(root, config, once_body, force=once_force, withheld=withheld)"
+before = "    judged = plan(root, config, once_body, force=once_force, owners=owners)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
@@ -6867,7 +6857,7 @@ reddens = [
 [[mutation]]
 name = "a copy left kept out of git when its id left [artifacts] local is never judged"
 file = "src/keelline/scaffold/engine.py"
-before = "        for copy in left_copies(template, config, digests, withheld or {}):\n            if path_key(copy) in planned:"
+before = "        for copy in left_copies(template, config, digests, owners):\n            if path_key(copy) in planned:"
 after = "        for copy in ():\n            if path_key(copy) in planned:"
 reddens = [
   "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
@@ -6909,17 +6899,17 @@ reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_arti
 [[mutation]]
 name = "a left copy is judged only where [artifacts] local no longer lists its id"
 file = "src/keelline/scaffold/engine.py"
-before = "        if path_key(copy) != path_key(target) and path_key(copy) not in others\n"
+before = "        if path_key(copy) != path_key(target)\n"
 after = "        if template.id not in config.artifacts.local\n"
 reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
 
 # A ledger is read as untrusted, and an entry under one id must never reach another artifact's
 # own place kept out of git, whose unedited bytes are predictable: a clone could otherwise
-# force-add an entry that has `upgrade` delete a write-once artifact's copy.
+# force-add an entry that has `upgrade` delete a write-once artifact's copy (`templates.Owners`).
 [[mutation]]
 name = "a ledger entry under one id reaches another artifact's copy kept out of git"
 file = "src/keelline/scaffold/engine.py"
-before = " and path_key(copy) not in others"
+before = "        and not (owners is not None and owners.foreign(template.id, copy.removeprefix(kept)))\n"
 after = ""
 reddens = [
   "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
@@ -6928,14 +6918,22 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
 ]
 
-# The ledger's one exception comes from how the build is made, `templates.SHARED_FILE`: the
-# `AGENTS.md` region's copy left at the skeleton's place is the region's to take out.
+# The relation's one exception comes from how the build is made, `templates.SHARED_FILE`: the
+# `AGENTS.md` skeleton and its region share a file by design. It is one exception for both rules
+# that read the relation, so without it the collision refusal refuses every footprint (the
+# legitimate row reddens with I2), and the region's left copy at the skeleton's place, which is
+# the region's to take out, is never reached (the uninstall case reddens there first, at the
+# `init` that sets it up).
 [[mutation]]
-name = "the region's left copy at the AGENTS.md skeleton's place is withheld from it"
-file = "src/keelline/project/footprint.py"
-before = "if other != artifact_id and not {artifact_id, other} <= SHARED_FILE"
-after = "if other != artifact_id"
-reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
+name = "the AGENTS.md skeleton and its region stop sharing a file by design"
+file = "src/keelline/project/templates.py"
+before = "        return frozenset() if {artifact_id, *others} <= SHARED_FILE else others"
+after = "        return others"
+reddens = [
+  "tests/project/test_templates.py::test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_pair",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it",
+]
 
 # Within one plan, a left copy at a file another template of the plan targets is that template's
 # to judge; judged twice, its removal deleted the file from under an `unchanged` verdict.
@@ -6952,7 +6950,7 @@ reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_tem
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/keelline/project/uninstall.py"
-before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, withheld)\n    }\n"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, owners)\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
 
@@ -7031,33 +7029,19 @@ reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answe
 # The refusals are pure string rules; the ledger tests write the case variant as a file of its
 # own first. Either way each reddens on Linux, where the CI oracle runs, as on macOS.
 [[mutation]]
-name = "the cross-file refusal compares places case-sensitively"
+name = "places are compared case-sensitively for ownership"
 file = "src/keelline/project/templates.py"
-before = "            owners.setdefault(path_key(place), set()).add(artifact_id)\n    for template in templates:\n        others = owners.get(path_key(template.target), set()) - {template.id}\n"
-after = "            owners.setdefault(place, set()).add(artifact_id)\n    for template in templates:\n        others = owners.get(template.target, set()) - {template.id}\n"
+before = "            if owner != artifact_id and path_key(place) in {path_key(p) for p in places}"
+after = "            if owner != artifact_id and place in places"
 reddens = [
+  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
+  "tests/project/test_templates.py::test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_pair",
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[upgrade-case-variant]",
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[uninstall-case-variant]",
   "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write[case-variant]",
+  "tests/project/test_upgrade.py::test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing[claude-md]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-upgrade]",
-]
-
-[[mutation]]
-name = "two artifacts of one pass at case variants of one file are not one file"
-file = "src/keelline/project/templates.py"
-before = "        first = seen.get(path_key(template.target))"
-after = "        first = seen.get(template.target)"
-reddens = ["tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file"]
-
-[[mutation]]
-name = "a ledger entry reaches a case variant of another artifact's copy"
-file = "src/keelline/scaffold/engine.py"
-before = "    others = {path_key(f\"{LOCAL_ARTIFACTS}/{place}\") for place in withheld.get(template.id, ())}\n    return tuple(\n        copy\n        for copy in digests.targets_of(template.id)\n        if path_key(copy) != path_key(target) and path_key(copy) not in others\n"
-after = "    others = {f\"{LOCAL_ARTIFACTS}/{place}\" for place in withheld.get(template.id, ())}\n    return tuple(\n        copy\n        for copy in digests.targets_of(template.id)\n        if path_key(copy) != path_key(target) and copy not in others\n"
-reddens = [
-  "tests/project/test_upgrade.py::test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing[claude-md]",
-  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
 ]
 

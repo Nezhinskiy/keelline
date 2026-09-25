@@ -33,9 +33,9 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence, Set
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from functools import partial
+from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
 import keelline
@@ -151,10 +151,10 @@ BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was re
 # Which `[paths]` key each artifact's target is built from, so the collision refusal below can
 # name what to edit. Two statements of one thing, the way `PROJECT_FILES` and the shipped tree
 # are: `tests/project/test_templates.py` holds this mapping's key set to the artifact ids both
-# passes actually produce, so an artifact added without a line here reddens rather than reaching
-# a `KeyError` at the moment somebody's configuration collides. A harness's rendition is not
-# listed: its target is the harness's own fixed name, and `project_templates` adds its row where
-# it appends the rendition, so a harness added to the registry needs no line here.
+# passes actually produce, so an artifact added without a line here reddens rather than being
+# named by the wrong key at the moment somebody's configuration collides. A harness's rendition
+# is not listed: its target is the harness's own fixed name, which is what the refusal calls an
+# id with no row (`OWN_NAME`), so a harness added to the registry needs no line here.
 OWN_NAME = "a fixed name of Keelline's own"
 PATH_KEYS = {
     CONFIG_ARTIFACT: OWN_NAME,
@@ -175,26 +175,78 @@ PATH_KEYS = {
     CI_ARTIFACT: OWN_NAME,
     "profile-rules": "paths.keelline",
 }
-# The one pair of artifacts built to share a file: the `AGENTS.md` skeleton, written once, and
-# the region every later run refreshes inside it, both from `[paths] agents_md`. That sharing is
-# the reason there are two passes. No other two ids may resolve to one file, in either pass or
-# across them (`_no_file_of_another`), and the ledger of files kept out of git takes its one
-# exception from this pair and from nothing a configuration says (`footprint.withheld`).
+# The one pair of artifacts built to share a file, and the one exception `Owners` makes.
 SHARED_FILE = frozenset({"agents-skeleton", "agents-md"})
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
 # Keelline's own vocabulary. The colliding path is a repository-authored value and is not printed.
-ACROSS_PASSES = (
+ONE_FILE = (
     "{first} ({first_key}) and {second} ({second_key}) resolve to one file, and only the "
     "AGENTS.md skeleton and its region share a file by design: any other pair would have one "
     "artifact judged, overwritten or removed as the other. Separate them under [paths] in "
     "keelline.toml, then run the command again"
 )
-ONE_TARGET = (
-    "two artifacts of one pass resolve to the same file: {first} ({first_key}) and {second} "
-    "({second_key}). The engine writes a plan in order, so the second would replace the first "
-    "with no verb saying so and the manifest would record two different digests for one path — "
-    "separate them under [paths] in keelline.toml and run `keelline init --yes` again"
-)
+
+
+@dataclass(frozen=True)
+class Owners:
+    """Which artifacts this build is built to write each place: the one relation both rules that
+    ask "whose file is this?" read, so they cannot come apart.
+
+    **The relation.** `could_write` is `Prepared.could_write`: for each artifact id, every target
+    this build could produce for it under any configuration — this run's templates, the workflow
+    whatever `[ci] mode` says, every shipped profile's rules and each harness's rendition of them.
+    A place is `foreign` to an id when another id is built to write it. Which ids exist and where
+    each could write are this build's; the `[paths]` values those places are built from are
+    committed, and all a value can do here is add a place, never take one away. Places are one
+    file when `fsops.path_key` says so, as on the default filesystems of macOS and Windows, so
+    `roadmap = "claude.md"` is `CLAUDE.md`'s file on every filesystem and every rule below reddens
+    on Linux as on macOS.
+
+    **The one exception is `SHARED_FILE`**, and it is how the build is made: the `AGENTS.md`
+    skeleton, written once, and the region every later run refreshes inside it, both built from
+    `[paths] agents_md`, share a file by design, which is the reason there are two passes. Nothing
+    a repository writes makes another pair: a place two other ids reach because committed values
+    coincide is foreign to both.
+
+    **The collision refusal** (`_no_file_of_another`) refuses a template at a place foreign to its
+    id, in either pass, before anything is planned. Within one pass: `scaffold.engine.plan` has no
+    duplicate-target detection, so with `roadmap` and `roadmap_history` set to one path both plans
+    reported zero refusals, `apply` wrote both, the file held only the second artifact's bytes and
+    the manifest recorded two different digests for one path — the roadmap's trail block lost,
+    one record read as hand-edited for ever, and `uninstall` removing a file that held the other
+    artifact; `agents_md = "CLAUDE.md"` collides the same way in the write-once pass. Across the
+    passes, and against a file only another configuration builds (another profile's rules, a
+    harness's rule this project does not list, the workflow), because that is the same collision
+    a run later. The anchor is this module's artifact list, a constant in the installed package;
+    the refusal names two ids and their `[paths]` keys so that the remedy is one edit, and never
+    the value, which is the repository's bytes.
+
+    **The ledger rule** (`scaffold.engine.left_copies`): an entry of the ledger of files kept out
+    of git (`scaffold.local.LocalDigests`) under one id never names a place there foreign to that
+    id, which is another artifact's copy, judged under its own id or not at all. The ledger is
+    kept out of git and a clone can force-add it anyway. Without the rule, an entry under
+    `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest of those
+    unedited and so predictable bytes, had `upgrade` remove that copy as the roadmap's relocated
+    one: `upgrade` plans only the footprint pass, so no template of its plan claimed the file, and
+    nothing ever wrote it again. An exception taken from coinciding `[paths]` values instead of
+    from `SHARED_FILE` handed `roadmap` that place as soon as `roadmap = "CLAUDE.md"` was committed
+    beside the entry; the collision refusal stops that configuration first, and the relation
+    withholds the place from both ids anyway. An artifact's own earlier places are in nobody's
+    list (a `[paths]` value that moved is a place this configuration no longer builds), so a copy
+    it left there is still judged.
+    """
+
+    could_write: Mapping[str, frozenset[str]]
+
+    def foreign(self, artifact_id: str, place: str) -> frozenset[str]:
+        """Every other artifact built to write `place`, or none when that is `artifact_id`'s
+        alone or shared with it only as `SHARED_FILE` shares it."""
+        others = frozenset(
+            owner
+            for owner, places in self.could_write.items()
+            if owner != artifact_id and path_key(place) in {path_key(p) for p in places}
+        )
+        return frozenset() if {artifact_id, *others} <= SHARED_FILE else others
 
 
 @dataclass(frozen=True)
@@ -207,7 +259,7 @@ class Prepared:
     the workflow's one path, and each shipped profile's neutral rules and renditions, whichever of
     them this configuration asks for. `upgrade` and `uninstall` retire a recorded artifact this
     configuration no longer produces only at a target listed here for its id
-    (`footprint.retired_templates`).
+    (`footprint.retired_templates`), and `owners` is the relation read from it.
     """
 
     once: tuple[Template, ...]
@@ -219,6 +271,10 @@ class Prepared:
     # The profile's own artifacts in this footprint. Every reader of them, the `AGENTS.md`
     # pointer and each harness's rule, names the committed path.
     profiled: frozenset[str] = frozenset()
+
+    @cached_property
+    def owners(self) -> Owners:
+        return Owners(self.could_write)
 
 
 def read(name: str) -> str:
@@ -429,77 +485,19 @@ def _ci(
     )
 
 
-def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PATH_KEYS) -> None:
-    """Refuse a pass in which two artifacts resolve to one file (DC3).
-
-    DC3's two-pass design rests on "two artifacts cannot target one file in one pass" being
-    true, and nothing made it true: `scaffold.engine.plan` has no duplicate-target detection and
-    C2 is frozen, so the rule belongs where the targets are built. Measured before this guard,
-    with `paths.roadmap` and `paths.roadmap_history` set to one path: both plans reported zero
-    refusals, `apply` wrote both, the file held only `roadmap-history`'s bytes, and the manifest
-    recorded two different `sha256` values for one target — so the roadmap's trail block was
-    silently lost, `upgrade` would read one record as hand-edited for ever, and `uninstall` would
-    remove a file holding the other artifact. `paths.agents_md = "CLAUDE.md"` collides the same
-    way in the write-once pass.
-
-    **The anchor is this module's own artifact list**, a constant in the installed package: which
-    artifacts exist, and which `[paths]` key each one reads, are Keelline's and not a
-    repository's. What the repository chooses is the *values*, and the refusal names the two keys
-    so that the remedy is one edit — it never names the value, which is its bytes.
-
-    Only within a pass. `agents-skeleton` and `agents-md` deliberately target one file across the
-    two, which is the whole reason there are two. Compared through `fsops.path_key`: on a
-    filesystem that folds case, `docs/x.md` and `docs/X.md` are one file.
-    """
-    seen: dict[str, str] = {}
-    for template in templates:
-        first = seen.get(path_key(template.target))
-        if first is not None:
-            raise Refusal(
-                ONE_TARGET.format(
-                    first=first,
-                    first_key=keys[first],
-                    second=template.id,
-                    second_key=keys[template.id],
-                )
-            )
-        seen[path_key(template.target)] = template.id
-
-
-def _no_file_of_another(
-    templates: Sequence[Template],
-    could_write: Mapping[str, Set[str]],
-    keys: Mapping[str, str],
-) -> None:
-    """Refuse an artifact whose target is a file another artifact is built to write, in either
-    pass or in neither, `SHARED_FILE` aside.
-
-    `_one_target_each` holds each pass; this holds the rest. `[paths] roadmap = "CLAUDE.md"`
-    passed both passes' checks, and with a forged ledger entry under `roadmap` stamped with the
-    digest of the unedited `CLAUDE.md` Keelline kept out of git, `upgrade` removed that copy as
-    the roadmap's relocated one and created `CLAUDE.md` in its place. A value naming a file only
-    some other configuration builds (another profile's rules, a harness's rule this project does
-    not list, the workflow) is the same collision a run later, so `could_write` is the list, not
-    this run's templates. The anchor is the build's: which ids exist and where each could write
-    are computed here; the refusal names two ids and their keys, never the value. Places are
-    compared through `fsops.path_key`, so `roadmap = "claude.md"` is `CLAUDE.md`'s file too, as it
-    is on the default filesystems of macOS and Windows, and is refused on every filesystem.
-    """
-    owners: dict[str, set[str]] = {}
-    for artifact_id, places in could_write.items():
-        for place in places:
-            owners.setdefault(path_key(place), set()).add(artifact_id)
-    for template in templates:
-        others = owners.get(path_key(template.target), set()) - {template.id}
-        if not others or {template.id, *others} <= SHARED_FILE:
+def _no_file_of_another(prepared: Prepared) -> None:
+    """Refuse an artifact of either pass at a place `Owners.foreign` gives another artifact."""
+    for template in (*prepared.once, *prepared.footprint):
+        others = prepared.owners.foreign(template.id, template.target)
+        if not others:
             continue
         second = min(others - SHARED_FILE or others)
         raise Refusal(
-            ACROSS_PASSES.format(
+            ONE_FILE.format(
                 first=template.id,
-                first_key=keys.get(template.id, OWN_NAME),
+                first_key=PATH_KEYS.get(template.id, OWN_NAME),
                 second=second,
-                second_key=keys.get(second, OWN_NAME),
+                second_key=PATH_KEYS.get(second, OWN_NAME),
             )
         )
 
@@ -601,7 +599,6 @@ def project_templates(
     could_write[CI_ARTIFACT] = {CI_WORKFLOW}
     if workflow is None and reason is not None:
         skipped[CI_ARTIFACT] = reason
-    keys = dict(PATH_KEYS)
     profiled: set[str] = set()
     # Every shipped profile's artifacts are built, so `could_write` lists where each could land;
     # only the configured profile's, for the harnesses this project lists, join the footprint.
@@ -617,18 +614,14 @@ def project_templates(
             could_write.setdefault(template.id, set()).add(template.target)
             if wanted and name == config.keelline.profile:
                 footprint.append(template)
-                keys.setdefault(template.id, OWN_NAME)
                 profiled.add(template.id)
     # Where the workflow goes in the plan, after everything a command retires too, is
     # `footprint.prepare`'s to decide.
     if workflow is not None:
         footprint.append(workflow)
-    _one_target_each(once)
-    _one_target_each(footprint, keys)
     for template in (*once, *footprint):
         could_write.setdefault(template.id, set()).add(template.target)
-    _no_file_of_another((*once, *footprint), could_write, keys)
-    return Prepared(
+    prepared = Prepared(
         once,
         tuple(footprint),
         skipped,
@@ -636,3 +629,5 @@ def project_templates(
         unknown_harnesses=unknown_harnesses,
         profiled=frozenset(profiled),
     )
+    _no_file_of_another(prepared)
+    return prepared

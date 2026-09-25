@@ -16,7 +16,7 @@ from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
 from keelline.project.footprint import LOCAL_ROOT_ONLY
 from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import ACROSS_PASSES, NOT_ASKED, OWN_NAME
+from keelline.project.templates import NOT_ASKED, ONE_FILE, OWN_NAME
 from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
@@ -487,8 +487,8 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
     # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
     # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
     # init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file where
-    # case folds, and is refused on every filesystem ("the cross-file refusal compares places
-    # case-sensitively" reddens that case).
+    # case folds, and is refused on every filesystem ("places are compared case-sensitively for
+    # ownership" reddens that case).
     root = _repo(tmp_path)
     (root / "keelline.toml").write_text(
         f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
@@ -499,7 +499,7 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_wr
     with pytest.raises(Refusal) as refused:
         _init(root, tmp_path, ci=False)
     assert_snapshot_unchanged(root, before)
-    assert str(refused.value) == ACROSS_PASSES.format(
+    assert str(refused.value) == ONE_FILE.format(
         first="claude-md",
         first_key=OWN_NAME,
         second="roadmap",

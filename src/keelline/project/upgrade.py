@@ -146,9 +146,9 @@ def _footprint(
 ) -> tuple[Prepared, Plan, int]:
     records = Manifest.read(root).records
     passes = prepare(config, records, resolution=resolution, document=text, adopted=False)
-    # `withheld` covers the write-once pass this command never plans, too, so no ledger entry
+    # `owners` covers the write-once pass this command never plans, too, so no ledger entry
     # under a footprint id reaches a write-once artifact's copy kept out of git.
-    planned = plan(root, config, passes.footprint, force=force, withheld=passes.withheld)
+    planned = plan(root, config, passes.footprint, force=force, owners=passes.prepared.owners)
     return passes.prepared, planned, passes.orphans
 
 

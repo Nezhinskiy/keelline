@@ -135,7 +135,7 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
         # "docs/roadmap-history.md"`, with `roadmap_history` moved elsewhere, pass as
         # `roadmap-history`'s place, and a forged `roadmap` record overwrite an ignored file whose
         # bytes Keelline wrote. (A value naming a file another artifact is still built to write,
-        # such as `CLAUDE.md`, never reaches here: `templates._no_file_of_another` refuses it.)
+        # such as `CLAUDE.md`, never reaches here: `templates.Owners` refuses it.)
         # Exact, not `fsops.path_key`: this is an exemption, and a case variant of a preset place
         # is a value a `[paths]` key chose, so it stays subject to the guard.
         if action.target not in places.get(action.artifact_id, frozenset()):

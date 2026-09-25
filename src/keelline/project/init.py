@@ -183,9 +183,8 @@ def init(
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
     that says this repository is already initialised, a `keelline.toml` that is not TOML, a
     detected name outside the grammar, an adopted table holding a key that cannot be written
-    back bare (`_rendered`), a `Config` the loader refuses, a pass in which two artifacts
-    resolve to one file (`templates._one_target_each`), an artifact at a file another is built
-    to write (`templates._no_file_of_another`), a profile artifact `[artifacts] local`
+    back bare (`_rendered`), a `Config` the loader refuses, an artifact at a file another is
+    built to write, in either pass (`templates.Owners`), a profile artifact `[artifacts] local`
     would keep out of git (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block
     listed there (`footprint.refuse_local_root_only`), a planned write git ignores
     (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
@@ -229,9 +228,9 @@ def init(
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
     # So no ledger entry a clone force-added under one id reaches another artifact's copy kept
     # out of git (`scaffold.left_copies`).
-    withheld = passes.withheld
-    once = plan(root, config, prepared.once, withheld=withheld)
-    footprint = plan(root, config, passes.footprint, withheld=withheld)
+    owners = prepared.owners
+    once = plan(root, config, prepared.once, owners=owners)
+    footprint = plan(root, config, passes.footprint, owners=owners)
     refuse_ignored(root, config, once, footprint)
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
@@ -250,7 +249,7 @@ def init(
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
     # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
     # that says the bytes inside the markers are the same either way.
-    footprint = plan(root, config, passes.footprint, withheld=withheld)
+    footprint = plan(root, config, passes.footprint, owners=owners)
     apply(root, footprint)
     return InitReport(
         once,
