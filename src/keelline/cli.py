@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 from collections.abc import Iterable
@@ -111,12 +112,30 @@ def _emit(outcome: Any, as_json: bool) -> int:
     return outcome.exit_code
 
 
+def _printable(stream: object) -> None:
+    """Let a strict text stream print a character it has no bytes for as an escape.
+
+    A path git or the disk handed over in bytes that are not UTF-8 is a `str` with a surrogate
+    escape per byte, and a summary that names it reaches `print`. Under a UTF-8 locale such as
+    `en_US.UTF-8` stdout encodes strictly, so the command's own answer became `internal error:
+    UnicodeEncodeError`, exit 2. `backslashreplace` prints `\\udce9` instead. Only a strict
+    stream changes: one Python already set to `surrogateescape` (UTF-8 mode) writes the original
+    byte back, which is the path as it is on disk. Nothing machine-readable is affected — `--json`
+    and the hook's own output escape every non-ASCII character themselves, and the gate's
+    summary is a file — so this only reaches text that raised before.
+    """
+    if isinstance(stream, io.TextIOWrapper) and stream.errors == "strict":
+        stream.reconfigure(errors="backslashreplace")
+
+
 def run(argv: list[str] | None, *, parser: argparse.ArgumentParser) -> int:
     """Execute an already-built parser. Building it is `main`'s, so one judge owns that failure.
 
     An area's `register()` is called while the parser is built, and a broken one is the same
     class of failure as an area that raises at import — `_discovery_failed` judges both.
     """
+    _printable(sys.stdout)
+    _printable(sys.stderr)
     raw = list(sys.argv[1:] if argv is None else argv)
     args_in, as_json = split_json_flag(raw)
     args = parser.parse_args(args_in)
