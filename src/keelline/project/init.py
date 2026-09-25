@@ -96,6 +96,12 @@ class InitReport:
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
 
+    @property
+    def refused(self) -> bool:
+        """Whether either plan refused an artifact: the other way than a raised `Refusal` that
+        this command refuses, with nothing written."""
+        return bool(self.once.refusals or self.footprint.refusals)
+
 
 def _existing(root: Path) -> dict[str, object] | None:
     """The `keelline.toml` already in the repository, parsed, or `None`.

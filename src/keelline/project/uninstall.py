@@ -171,6 +171,12 @@ class UninstallReport:
     note: str
     kept_locally: int
 
+    @property
+    def refused(self) -> bool:
+        """Whether either plan refused an artifact: the other way than a raised `Refusal` that
+        this command refuses, with nothing removed."""
+        return bool(self.footprint.refusals or self.once.refusals)
+
 
 def _retire(templates: Sequence[Template], ids: Set[str]) -> tuple[Template, ...]:
     return tuple(replace(t, retired=True) for t in templates if t.id in ids)

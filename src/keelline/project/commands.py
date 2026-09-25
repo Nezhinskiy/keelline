@@ -114,7 +114,7 @@ def run_init(args: argparse.Namespace) -> Result:
         ci_line = f"CI: {pin.tag}@{pin.sha}"
     else:
         ci_line = "CI: the workflow pins the [ci] ref this repository already recorded"
-    refused = bool(report.once.refusals or report.footprint.refusals)
+    refused = report.refused
     lines = [
         HEADINGS[(refused, report.dry_run)],
         "",
@@ -213,7 +213,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         dry_run=args.dry_run,
         force=force,
     )
-    refused = bool(report.footprint.refusals)
+    refused = report.refused
     moved = "; ".join(f"[{m.key[0]}] {m.key[1]} {m.before} -> {m.after}" for m in report.moved)
     shown = render_report(report.footprint)
     lines = [
@@ -268,7 +268,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         dry_run=args.dry_run,
         force=force,
     )
-    refused = bool(report.footprint.refusals or report.once.refusals)
+    refused = report.refused
     # Through `printable`, the bound the reports use, so a forged target is `<id>` in both. A
     # file one pass left and a later action deletes is gone, not left: with Keelline's region
     # taken out of `AGENTS.md` by hand, the footprint pass skips the file and the write-once pass

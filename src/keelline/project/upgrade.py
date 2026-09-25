@@ -127,6 +127,12 @@ class UpgradeReport:
     # or refuses it, and then it may pin anything, so the CI line must not say it pins the ref.
     workflow_current: bool = False
 
+    @property
+    def refused(self) -> bool:
+        """Whether the plan refused an artifact: the other way than a raised `Refusal` that this
+        command refuses, with nothing written."""
+        return bool(self.footprint.refusals)
+
 
 def _printable(key: tuple[str, str], value: str) -> str:
     if key == ("keelline", "version"):

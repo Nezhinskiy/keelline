@@ -277,7 +277,10 @@ def _run(command: Command, root: Path, tmp_path: Path, *, dry_run: bool = False)
 
 
 def _refusals(report: Report) -> list[str]:
-    """The refusals a call returned in its report rather than raised."""
+    """The refusals a call returned in its report rather than raised, when the report says it
+    refused (`refused`, the one predicate the CLI's exit code reads too)."""
+    if not report.refused:
+        return []
     plans = (
         (report.footprint,)
         if isinstance(report, UpgradeReport)
@@ -292,7 +295,7 @@ def _outcome(command: Command, root: Path, tmp_path: Path) -> list[str] | None:
         report = _run(command, root, tmp_path)
     except Refusal as refused:
         return [str(refused)]
-    return _refusals(report) or None
+    return _refusals(report) if report.refused else None
 
 
 def _surround(root: Path, case: Case) -> None:
