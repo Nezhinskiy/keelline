@@ -7647,3 +7647,10 @@ reddens = [
   "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[direct-children-only]",
 ]
+
+[[mutation]]
+name = "the codeowners matcher retries the same position for ever"
+file = "src/keelline/assess/probes.py"
+before = "            resume += 1"
+after = "            resume += 0"
+reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_answered_promptly"]

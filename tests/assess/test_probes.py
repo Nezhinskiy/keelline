@@ -528,22 +528,28 @@ BOUNDED = (
 )
 
 
+DEADLINE_SECONDS = 20
+
+
 def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
     # Found in review: a regex with one `[^/]*` per `*` took 2.4 s at twenty asterisks and grew
     # sevenfold per four more, so one CODEOWNERS line could hold `keelline assess` for good.
-    # The matcher has no regex now, and no single-line mutation brings the backtracking back:
-    # `_glob` keeps one resumption point, and the component table visits each cell once.
-    # Mutation (advisory): adjacent `**` no longer collapsed -> the table grows to 100,000 rows
-    # and still answers in time, which is why the collapse is not this case's guard; the
-    # component-count bound dropped likewise. What this case holds is the absence of any
-    # exponential or recursive walk, measured by the deadline.
-    done = subprocess.run(
-        [sys.executable, "-c", BOUNDED],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=20,
-    )
+    # The matcher has no regex now: `_glob` keeps one resumption point and moves it on at every
+    # retry, and the component table visits each cell once. Mutation (declared): `resume += 1`
+    # becomes `resume += 0` -> `_glob` retries the same position for ever, the child runs past
+    # its deadline, and this reddens with the deadline's message. Mutation (advisory): adjacent
+    # `**` no longer collapsed, or the component-count bound dropped -> survives: either makes
+    # the table larger, not the walk any less linear, which is why neither is this case's guard.
+    try:
+        done = subprocess.run(
+            [sys.executable, "-c", BOUNDED],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEADLINE_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"the matcher ran past {DEADLINE_SECONDS} s on a pattern the repository wrote")
     assert (done.returncode, done.stdout.split()) == (0, ["False"] * 4), done.stderr
 
 
