@@ -203,6 +203,17 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
     return Looked(tuple(f"{_WORKFLOWS}/{name}" for name in names))
 
 
+# An owner as GitHub accepts one: `@user`, `@org/team`, or an email address. A user or an
+# organisation is letters, digits and hyphens, starting with a letter or digit; a team slug adds
+# `_` and `.`; an email is a local part, `@`, and a domain of dot-separated labels. Narrower
+# than GitHub where it differs, which is the side that warns: a line read as skipped here can
+# only leave an earlier line deciding, and a real owner on it would have owned the file anyway.
+# No class overlaps the character after it, so a word of any length is matched in linear time.
+_OWNER = re.compile(
+    r"@[A-Za-z0-9][A-Za-z0-9-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?"
+    r"|[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+"
+)
+
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
 # readings it is the smaller bound, so a file between them is read as unowned, the side that
 # warns.
@@ -316,7 +327,7 @@ def _codeowners(context: ProbeContext) -> Looked:
             words = line.split("#", 1)[0].split()
             # GitHub skips a line with an owner that is neither `@user`, `@org/team` nor an
             # email address, so such a line decides nothing.
-            if not words or not all("@" in word for word in words[1:]):
+            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):
                 continue
             if _owns(words[0], CI_WORKFLOW):
                 owners = words[1:]

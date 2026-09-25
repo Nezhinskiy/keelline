@@ -330,6 +330,12 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         ("/.github/ owner\n", True),
         ("/.github/\n/.github/workflows/ not-an-owner\n", True),
         ("/.github/ @owner someone@example.com @org/team\n", False),
+        ("/.github/ @\n", True),
+        ("/.github/ foo@\n", True),
+        ("/.github/ @@\n", True),
+        ("/.github/ @a b@c\n", True),
+        ("/.github/ @owner @org/\n", True),
+        ("/.github/ @Owner-1 first.last+tag@sub.example.org @my-org/team_a.b\n", False),
     ],
     ids=[
         "no-file",
@@ -345,6 +351,12 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         "an-owner-github-cannot-read",
         "a-skipped-line-decides-nothing",
         "every-owner-shape",
+        "a-bare-at",
+        "no-domain",
+        "two-ats",
+        "an-email-without-a-dot",
+        "an-empty-team",
+        "every-owner-shape-at-its-edges",
     ],
 )
 def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
@@ -356,8 +368,11 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
     # GitHub skips a line naming an owner that is neither `@user`, `@org/team` nor an email
     # address. Mutation (advisory): that `continue` dropped -> `an-owner-github-cannot-read` is
     # owned by `owner`, and `a-skipped-line-decides-nothing` by `not-an-owner`, where the
-    # owner-less line before it decides; both redden. `direct-children-only` is GitHub's rule
-    # for a last `*` (declared; see the divergence case below).
+    # owner-less line before it decides; both redden. Mutation (declared): the owner's shape
+    # read as any word holding `@` -> `a-bare-at`, `no-domain`, `two-ats`,
+    # `an-email-without-a-dot` and `an-empty-team` read as owned, and each reddens.
+    # `direct-children-only` is GitHub's rule for a last `*` (declared; see the divergence case
+    # below).
     root = _repo(tmp_path)
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)
