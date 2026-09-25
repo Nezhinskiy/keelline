@@ -31,9 +31,8 @@ defaults", so the dry run is how the user sees them before anything is written.
    skipped was already there and the run left it alone, with the reason beside it: in the
    `write-once:` report that reason is "create-once, and the file is already there", which is
    what an adopted `keelline.toml` gets.
-5. Tell the user how to undo it: `git checkout -- .` restores the files that were already
-   tracked, and the files the run created have to be deleted, `.keelline/manifest.json`
-   among them. There is no undo command yet — `keelline uninstall` ships later.
+5. Tell the user how to undo it: `keelline uninstall` removes what this run wrote and leaves
+   any file they edit afterwards; run it with `--dry-run` first.
 6. Ask the user to commit `keelline.toml`, `.keelline/manifest.json` and the footprint
    together. The manifest is what a later refresh reads to tell your edits from the tool's,
    and a footprint committed without it is a footprint nothing can maintain.
@@ -46,8 +45,8 @@ defaults", so the dry run is how the user sees them before anything is written.
   replaced, so the paths it declares are where the footprint lands. If the user wants a value
   chosen rather than detected, have them put it in that file and run the command again.
 - **A repository that already carries `.keelline/manifest.json` is refused**, and that is
-  correct: refreshing a footprint is `keelline upgrade`, which ships later. Relay the refusal
-  and stop; do not delete the manifest to get past it.
+  correct: refreshing a footprint is `keelline upgrade`. Relay the refusal and offer that
+  command; do not delete the manifest to get past it.
 - **Nothing is written when anything is refused.** An exit of 1 opens with a line saying so
   and carries a `REFUSED` section inside whichever report the refusal landed in, naming each
   artifact and why. No file was touched and no manifest exists. Relay every refused line, fix

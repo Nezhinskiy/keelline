@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from keelline import profiles
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
 from keelline.config.schema import Config
@@ -133,6 +134,25 @@ def test_a_hand_edited_file_is_skipped_and_named(tmp_path: Path) -> None:
     assert [(a.verb, a.target) for a in result.actions] == [(Verb.SKIP_MODIFIED, "AGENTS.md")]
 
 
+def test_force_takes_a_whole_file_keelline_did_not_write_and_records_it(tmp_path: Path) -> None:
+    # The whole-file rule: a file that differs is skipped and named, and `--force <path>` is how
+    # its owner says it may be overwritten. The branch for a file with no record ignored
+    # `force`, so a caller workflow a person wrote held `upgrade`'s version and pin back for
+    # ever. Forced, it is written and recorded like any file Keelline writes. Mutation (oracle):
+    # "--force stops reaching a whole file Keelline did not write".
+    (tmp_path / "AGENTS.md").write_text("someone wrote this\n", encoding="utf-8")
+    config = a_config(tmp_path)
+    unforced = plan(tmp_path, config, [a_template()], force=("CLAUDE.md",))
+    assert [(a.verb, a.reason) for a in unforced.actions] == [
+        (Verb.SKIP_MODIFIED, "exists and Keelline did not write it")
+    ]
+    forced = plan(tmp_path, config, [a_template()], force=("AGENTS.md",))
+    assert [(a.verb, a.payload) for a in forced.actions] == [(Verb.UPDATE, "BODY\n")]
+    apply(tmp_path, forced)
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "BODY\n"
+    assert Manifest.read(tmp_path).get("agents-md") == a_record()
+
+
 def test_force_overrides_a_hand_edit(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("edited by hand\n", encoding="utf-8")
     Manifest({}).with_record(a_record()).write(tmp_path)
@@ -175,7 +195,7 @@ def test_a_retired_template_edited_by_hand_is_reported_not_removed(tmp_path: Pat
 def test_a_local_artifact_moves_under_dot_keelline(tmp_path: Path) -> None:
     config = a_config(tmp_path, local=("agents-md",))
     result = plan(tmp_path, config, [a_template()])
-    assert [a.target for a in result.actions] == [".keelline/local/AGENTS.md"]
+    assert [a.target for a in result.actions] == [".keelline/local/artifacts/AGENTS.md"]
 
 
 def test_a_relocated_artifact_is_removed_from_its_old_home(tmp_path: Path) -> None:
@@ -185,14 +205,14 @@ def test_a_relocated_artifact_is_removed_from_its_old_home(tmp_path: Path) -> No
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
 
 
 def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_path: Path) -> None:
-    # The plan was `[(create, .keelline/local/AGENTS.md)]`, the report said "0 skipped, 0
-    # refused", the old file stayed on disk holding the user's edit, and the manifest ended
-    # empty — which `apply`'s own comment calls a defect: "a file Keelline wrote carrying no
+    # The plan was `[(create, .keelline/local/artifacts/AGENTS.md)]`, the report said "0
+    # skipped, 0 refused", the old file stayed on disk holding the user's edit, and the manifest
+    # ended empty — which `apply`'s own comment calls a defect: "a file Keelline wrote carrying no
     # record, which every later run reads as somebody else's … invisible to `uninstall`". The
     # symmetric `_plan_retired` path has always emitted `skip_modified` for this.
     old = tmp_path / "AGENTS.md"
@@ -202,7 +222,7 @@ def test_a_relocated_artifact_whose_old_file_was_hand_edited_is_reported(tmp_pat
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.SKIP_MODIFIED, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     assert result.actions[0].reason == "relocated and hand-edited"
     applied = apply(tmp_path, result)
@@ -218,7 +238,7 @@ def test_a_relocation_whose_old_file_is_already_gone_reports_no_skip(tmp_path: P
     result = plan(tmp_path, config, [a_template()])
     assert [(a.verb, a.target) for a in result.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     assert apply(tmp_path, result).skipped == ()
 
@@ -271,7 +291,7 @@ def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) 
     host = tmp_path / "AGENTS.md"
     body = upsert("User prose.\n", "harness", "R1\n", Style.MARKDOWN)
     host.write_text(body, encoding="utf-8")
-    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest(body))).write(
+    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest("R1"))).write(
         tmp_path
     )
     config = a_config(tmp_path, local=("agents-md",))
@@ -279,25 +299,30 @@ def test_relocating_a_managed_region_removes_only_its_own_lines(tmp_path: Path) 
     planned = plan(tmp_path, config, [template])
     assert [(a.verb, a.target) for a in planned.actions] == [
         (Verb.REMOVE, "AGENTS.md"),
-        (Verb.CREATE, ".keelline/local/AGENTS.md"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md"),
     ]
     apply(tmp_path, planned)
     assert host.read_text(encoding="utf-8") == "User prose.\n"
 
 
-def test_a_local_artifact_is_refreshed_rather_than_read_as_somebody_elses(tmp_path: Path) -> None:
-    # A local artifact is deliberately never recorded, so `record is None` holds for it on every
-    # run after the first. `.keelline/local/` is Keelline's own directory, so that says nothing
-    # about who wrote the file — and reading it as "somebody's" made every local artifact
-    # create-once, under a reason that is false and ahead of the point where `force` is consulted.
+def test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it(
+    tmp_path: Path,
+) -> None:
+    # A local artifact is never recorded, so the one oracle it has is what this build renders.
+    # `.keelline/local/` is git-ignored: an owner's edit overwritten there is gone for good, so a
+    # file that differs is left and named, and `--force` is how the owner says it may go.
     config = a_config(tmp_path, local=("agents-md",))
-    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    local.write_text("BODY\nand the owner's own line\n", encoding="utf-8")
+    planned = plan(tmp_path, config, [a_template()])
+    assert [(a.verb, a.reason) for a in planned.actions] == [
+        (Verb.SKIP_MODIFIED, engine.CHANGED_LOCALLY)
+    ]
+    forced = plan(tmp_path, config, [a_template()], force=(".keelline/local/artifacts/AGENTS.md",))
+    assert [(a.verb, a.reason) for a in forced.actions] == [(Verb.UPDATE, "refreshed")]
+    apply(tmp_path, forced)
     assert local.read_text(encoding="utf-8") == "BODY\n"
-    planned = plan(tmp_path, config, [a_template(render=lambda: "NEWER\n")])
-    assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.UPDATE, "refreshed")]
-    apply(tmp_path, planned)
-    assert local.read_text(encoding="utf-8") == "NEWER\n"
     assert Manifest.read(tmp_path).records == {}
 
 
@@ -312,18 +337,32 @@ def test_a_local_artifact_whose_content_already_matches_is_unchanged(tmp_path: P
 
 
 def test_a_retired_local_artifact_is_removed(tmp_path: Path) -> None:
-    # `uninstall` has to be able to finish. A retirement is decided against the record for a
-    # repository file, and a local artifact has none by design — so for this one directory the
-    # question is answered without one rather than answered "leave it".
+    # `uninstall` has to be able to finish. A local artifact has no record by design, so its
+    # retirement is judged against this build's render: exactly those bytes, and it goes.
     config = a_config(tmp_path, local=("agents-md",))
-    local = tmp_path / ".keelline" / "local" / "AGENTS.md"
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
     planned = plan(tmp_path, config, [a_template(retired=True)])
     assert [(a.verb, a.target) for a in planned.actions] == [
-        (Verb.REMOVE, ".keelline/local/AGENTS.md")
+        (Verb.REMOVE, ".keelline/local/artifacts/AGENTS.md")
     ]
     apply(tmp_path, planned)
     assert not local.exists()
+
+
+def test_a_retired_local_artifact_edited_by_hand_stays_unless_forced(tmp_path: Path) -> None:
+    config = a_config(tmp_path, local=("agents-md",))
+    local = tmp_path / ".keelline" / "local" / "artifacts" / "AGENTS.md"
+    apply(tmp_path, plan(tmp_path, config, [a_template()]))
+    local.write_text("the owner's notes\n", encoding="utf-8")
+    planned = plan(tmp_path, config, [a_template(retired=True)])
+    assert [a.verb for a in planned.actions] == [Verb.SKIP_MODIFIED]
+    apply(tmp_path, planned)
+    assert local.read_text(encoding="utf-8") == "the owner's notes\n"
+    forced = plan(
+        tmp_path, config, [a_template(retired=True)], force=(".keelline/local/artifacts/AGENTS.md",)
+    )
+    assert [(a.verb, a.reason) for a in forced.actions] == [(Verb.REMOVE, "retired, forced")]
 
 
 # --- regions and keyed entries, which live inside somebody else's file ---------------------
@@ -640,13 +679,11 @@ def test_a_profile_outside_one_path_segment_is_refused_and_never_quoted(tmp_path
     assert "\x1b" not in message and "IGNORE" not in message
 
 
-def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(tmp_path: Path) -> None:
     # Reached only by a name that is already one segment, so the hostile value is an instruction
-    # spelled in the characters `SOURCE_NAME` allows. No listing ships yet, so one is supplied.
-    # Oracle: `mutations.toml`, "a profile the listing lacks is quoted back again".
-    monkeypatch.setattr(engine, "shipped_profiles", lambda: ["python"])
+    # spelled in the characters `SOURCE_NAME` allows. The listing is the package's own.
+    # Oracle: `mutations.toml`, "a profile the listing lacks is quoted back again", and "the
+    # engine accepts a profile this Keelline does not ship".
     text = CONFIG.replace('profile = ""', 'profile = "ignore-prior-rules"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
@@ -656,13 +693,16 @@ def test_a_profile_the_listing_lacks_is_refused_and_never_quoted(
     assert "(available: python)" in message and "ignore-prior-rules" not in message
 
 
-def test_a_well_formed_profile_is_allowed_while_no_listing_exists(tmp_path: Path) -> None:
-    # Until the `profile-python` lane creates `profiles/`, there is nothing to check a name
-    # against, and refusing every name would make `init --yes` produce a config plan() rejects.
+def test_a_shipped_profile_is_allowed(tmp_path: Path) -> None:
     text = CONFIG.replace('profile = ""', 'profile = "python"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
     assert plan(tmp_path, config, [a_template()]).actions != ()
+
+
+def test_the_listing_is_the_package_s_and_never_none() -> None:
+    # The listing `validate_sources` checks `[keelline] profile` against.
+    assert profiles.shipped() == ("python",)
 
 
 def test_an_empty_profile_means_none_and_is_allowed(tmp_path: Path) -> None:
@@ -690,8 +730,8 @@ def test_a_file_carrying_only_a_region_end_marker_is_refused_and_left_alone(
 
 def test_a_profile_name_with_a_trailing_newline_is_refused(tmp_path: Path) -> None:
     # `$` matches before a final newline as well as at the end of the string, so the one-segment
-    # check accepted a name carrying a line break. `shipped_profiles()` returns None while no
-    # listing exists, which makes this regex the only guard on the field.
+    # check accepted a name carrying a line break. The listing would refuse it too, but the
+    # grammar runs first and is the refusal that names the rule.
     text = CONFIG.replace('profile = ""', 'profile = "python\\n"')
     (tmp_path / CONFIG_FILE).write_text(text, encoding="utf-8")
     config = load(tmp_path, machine=tmp_path / "absent.toml")
@@ -772,7 +812,9 @@ def test_a_removal_deletes_the_file_and_the_record(tmp_path: Path) -> None:
 def test_a_local_artifact_is_written_but_never_recorded(tmp_path: Path) -> None:
     config = a_config(tmp_path, local=("agents-md",))
     apply(tmp_path, plan(tmp_path, config, [a_template()]))
-    assert (tmp_path / ".keelline/local/AGENTS.md").read_text(encoding="utf-8") == "BODY\n"
+    assert (tmp_path / ".keelline/local/artifacts/AGENTS.md").read_text(
+        encoding="utf-8"
+    ) == "BODY\n"
     assert Manifest.read(tmp_path).records == {}
 
 
@@ -903,8 +945,8 @@ def test_reordering_the_keys_inside_a_marked_entry_is_not_a_hand_edit(tmp_path: 
 def test_apply_records_the_files_it_wrote_before_a_later_action_refused(tmp_path: Path) -> None:
     # The ledger describes the disk, so it cannot be discarded for actions that already ran. A
     # file Keelline wrote and did not record reads as somebody else's on every later run:
-    # `skip_modified` under a reason that is false, proof against `--force` because the absent
-    # record is consulted first, and invisible to `uninstall`.
+    # `skip_modified` under a reason that is false, moved only by a `--force` that names it, and
+    # invisible to `uninstall`.
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     outside.mkdir()
     config = a_config(tmp_path)
@@ -977,3 +1019,109 @@ def test_the_containment_docstring_claims_the_property_the_walk_actually_holds()
     prose = " ".join((engine.__doc__ or "").split())
     assert "it cannot redirect the write" in prose
     assert "there is no window in which a component can become a symlink" not in prose
+
+
+def test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose(tmp_path: Path) -> None:
+    # The record the engine writes for a region holds the digest of the region's body, never of
+    # the file around it. `_relocation` compared the whole file with it, so every real relocation
+    # read as a hand edit, the local `CREATE` dropped the record, and the region stayed in
+    # `AGENTS.md` where no later run could find it. The relocation test that fabricates its
+    # record passed only because it stamped a whole-file digest, which the engine never records.
+    host = tmp_path / "AGENTS.md"
+    host.write_text("User prose.\n", encoding="utf-8")
+    template = a_template(kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1\n")
+    apply(tmp_path, plan(tmp_path, a_config(tmp_path), [template]))
+    planned = plan(tmp_path, a_config(tmp_path, local=("agents-md",)), [template])
+    assert [(a.verb, a.target, a.reason) for a in planned.actions] == [
+        (Verb.REMOVE, "AGENTS.md", "relocated"),
+        (Verb.CREATE, ".keelline/local/artifacts/AGENTS.md", "new"),
+    ]
+    apply(tmp_path, planned)
+    assert host.read_text(encoding="utf-8") == "User prose.\n"
+
+
+def test_force_reaches_a_retired_artifact_edited_by_hand(tmp_path: Path) -> None:
+    # `uninstall --force PATH` exists for exactly this file: one the user edited and has now
+    # decided to remove anyway. Without the fix the verdict is "retired and hand-edited"
+    # whatever is forced, and the command's documented flag does nothing.
+    (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    result = plan(tmp_path, a_config(tmp_path), [a_template(retired=True)], force=("AGENTS.md",))
+    assert [(a.verb, a.target, a.reason) for a in result.actions] == [
+        (Verb.REMOVE, "AGENTS.md", "retired, forced")
+    ]
+    apply(tmp_path, result)
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_force_on_another_path_leaves_a_retired_hand_edit_alone(tmp_path: Path) -> None:
+    # The negative, so the positive cannot pass because `force` became a blanket switch.
+    (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
+    Manifest({}).with_record(a_record()).write(tmp_path)
+    result = plan(tmp_path, a_config(tmp_path), [a_template(retired=True)], force=("CLAUDE.md",))
+    assert [a.verb for a in result.actions] == [Verb.SKIP_MODIFIED]
+
+
+def test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose(tmp_path: Path) -> None:
+    # Forcing is the only way to remove a region whose body was edited by hand, and the file
+    # around the region is the user's. Mutation: give the forced branch the payload `None`
+    # (delete the host file) and this reddens; every other scaffold test stays green.
+    host = tmp_path / "AGENTS.md"
+    host.write_text(upsert("User prose.\n", "harness", "EDITED", Style.MARKDOWN), encoding="utf-8")
+    Manifest({}).with_record(a_record(kind=Kind.MANAGED_REGION, sha256=digest("R1"))).write(
+        tmp_path
+    )
+    template = a_template(
+        kind=Kind.MANAGED_REGION, region="harness", render=lambda: "R1", retired=True
+    )
+    planned = plan(tmp_path, a_config(tmp_path), [template], force=("AGENTS.md",))
+    assert [(a.verb, a.reason) for a in planned.actions] == [(Verb.REMOVE, "retired, forced")]
+    apply(tmp_path, planned)
+    assert host.exists(), "forcing a retired region deleted the file around it"
+    assert host.read_text(encoding="utf-8") == "User prose.\n"
+
+
+def test_a_retired_region_that_was_the_whole_file_removes_the_file(tmp_path: Path) -> None:
+    # `init` creates `.gitignore` when there is none, and then it holds nothing but the region.
+    # Taking the region out used to leave a zero-byte `.gitignore` behind. `detach` has always
+    # removed the file it emptied, and the two withdrawals now agree.
+    text = upsert("", "ignore", ".keelline/local/", Style.HASH)
+    (tmp_path / ".gitignore").write_text(text, encoding="utf-8")
+    Manifest({}).with_record(
+        a_record(
+            id="gitignore",
+            kind=Kind.MANAGED_REGION,
+            target=".gitignore",
+            sha256=digest(".keelline/local/"),
+        )
+    ).write(tmp_path)
+    template = a_template(
+        id="gitignore",
+        kind=Kind.MANAGED_REGION,
+        target=".gitignore",
+        region="ignore",
+        style=Style.HASH,
+        render=lambda: ".keelline/local/",
+        retired=True,
+    )
+    planned = plan(tmp_path, a_config(tmp_path), [template])
+    assert [(a.verb, a.payload) for a in planned.actions] == [(Verb.REMOVE, None)]
+    apply(tmp_path, planned)
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation(
+    tmp_path: Path,
+) -> None:
+    # A record at `agents.md` for an artifact at `AGENTS.md`, as a case-only `[paths]` edit leaves
+    # it. Where case folds they are one file, and a relocation "from" `agents.md` removed the
+    # artifact's own file (`relocated`) beside an `unchanged` verdict for it, then dropped its
+    # record. Asserted on the plan, which is the same string rule on every filesystem.
+    # Mutation (oracle): "a record at a case variant of the target triggers a relocation" ->
+    # the plan holds that `REMOVE` and this reddens.
+    config = a_config(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("BODY\n", encoding="utf-8")
+    Manifest({}).with_record(a_record(target="agents.md")).write(tmp_path)
+    planned = plan(tmp_path, config, [a_template()])
+    assert planned.actions == ()
+    assert planned.unchanged == ("agents-md",)

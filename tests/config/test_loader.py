@@ -15,7 +15,15 @@ from keelline.config.loader import (
     loads,
 )
 from keelline.config.paths import PathEscape
-from keelline.config.schema import CI_MODES, MEMORY_MODES, PROJECT_NAME, STATES
+from keelline.config.schema import (
+    BUILTIN_GATES,
+    CI_MODES,
+    MEMORY_MODES,
+    PROJECT_NAME,
+    STATES,
+    Config,
+    CustomGate,
+)
 
 HEAD = '[keelline]\nversion = "0.1.0"\npreset = "recommended"\n'
 MINIMAL = HEAD + '\n[project]\nname = "sample"\n'
@@ -463,3 +471,170 @@ def test_a_repeated_memory_group_is_one_group(tmp_path: Path) -> None:
     )
     config = load(tmp_path, machine=tmp_path / "absent.toml")
     assert config.memory.groups == ("developer", "specs")
+
+
+def _gated(tmp_path: Path, keelline: str = "", rest: str = "") -> Config:
+    """`MINIMAL` with `keelline` appended to its `[keelline]` table and `rest` after it."""
+    text = HEAD + keelline + '\n[project]\nname = "sample"\n' + rest
+    return loads(text, tmp_path, machine=tmp_path / "no-machine.toml")
+
+
+TESTS_GATE = '\n[gates.custom.tests]\nrun = ["pytest", "-q"]\n'
+
+
+def test_the_preset_runs_every_built_in_gate_in_the_one_order(tmp_path: Path) -> None:
+    # The preset is TOML and cannot import the tuple, so the one spelling is pinned here.
+    # Mutation: reorder the preset's `builtin` list and this reddens.
+    config = _gated(tmp_path)
+    assert config.gates.builtin == BUILTIN_GATES
+    assert config.gate_names == BUILTIN_GATES
+    assert config.gates.custom == {}
+
+
+def test_a_project_drops_a_built_in_gate_and_adds_its_own(tmp_path: Path) -> None:
+    config = _gated(
+        tmp_path,
+        rest='\n[gates]\nbuiltin = ["trail", "docs"]\n'
+        + TESTS_GATE
+        + '\n[gates.custom.lint]\nrun = ["ruff", "check"]\n',
+    )
+    # Built-ins in their own order whatever the document's, then the project's, sorted.
+    assert config.gate_names == ("docs", "trail", "lint", "tests")
+    assert config.gates.custom["tests"] == CustomGate(run=("pytest", "-q"))
+    assert config.gates.custom_timeout_seconds > 0
+
+
+@pytest.mark.parametrize(
+    "name",
+    ['"docs"', '"config"', '"Tests"', '"-rf"', '"x\\u001b[31m"'],
+    ids=["a-built-in", "the-configuration-check", "uppercase", "option-shaped", "escape"],
+)
+def test_a_custom_gate_name_outside_the_grammar_is_counted_and_never_quoted(
+    tmp_path: Path, name: str
+) -> None:
+    # Mutation: drop the `unusable` refusal and every case loads.
+    with pytest.raises(ConfigError) as caught:
+        _gated(tmp_path, rest=f'\n[gates.custom.{name}]\nrun = ["true"]\n')
+    message = str(caught.value)
+    assert message.startswith("[gates] custom names 1 gate(s) Keelline cannot run")
+    assert "\x1b" not in message and "[31m" not in message and "Tests" not in message
+
+
+@pytest.mark.parametrize(
+    ("table", "match"),
+    [
+        ("run = []", r"gates\.custom\.tests\.run must name a command"),
+        ('run = "pytest -q"', r"gates\.custom\.tests\.run must be a list of strings"),
+        ('run = ["pytest", "a\\u0000b"]', r"gates\.custom\.tests\.run holds a NUL"),
+        ('run = ["true"]\nshell = true', r"\[gates\.custom\.tests\] has unknown key\(s\): shell"),
+    ],
+    ids=["empty", "a-shell-string", "nul", "unknown-key"],
+)
+def test_a_custom_gate_runs_one_argv_or_is_refused(tmp_path: Path, table: str, match: str) -> None:
+    # The empty and NUL cases are the two argvs `subprocess` cannot run, refused here rather
+    # than raised as an internal error by whatever runs the gate. Mutation: drop either check
+    # and its case reddens.
+    with pytest.raises(ConfigError, match=match):
+        _gated(tmp_path, rest=f"\n[gates.custom.tests]\n{table}\n")
+
+
+def test_a_built_in_gate_keelline_does_not_have_is_counted_and_never_quoted(
+    tmp_path: Path,
+) -> None:
+    # Mutation: drop the `builtin` membership check and this reddens.
+    with pytest.raises(ConfigError) as caught:
+        _gated(tmp_path, rest='\n[gates]\nbuiltin = ["docs", "x\\u001b[31m"]\n')
+    message = str(caught.value)
+    assert message == (
+        "[gates] builtin names 1 gate(s) Keelline does not have; "
+        "the built-in gates are docs, bugs, plan, commit, trail"
+    )
+
+
+def test_an_adopting_project_enforces_exactly_what_it_promoted(tmp_path: Path) -> None:
+    # No mutation of its own: the positive half of the refusals below, which is what keeps each
+    # of them from passing by refusing everything.
+    config = _gated(tmp_path, 'state = "adopting"\nenforced = ["plan", "commit"]\n')
+    assert config.keelline.enforced == ("plan", "commit")
+    assert config.keelline.enforcing == frozenset({"plan", "commit"})
+
+
+def test_an_installed_project_enforces_every_configured_gate(tmp_path: Path) -> None:
+    # `installed` with no list is every gate, the project's own included: the fixtures and the
+    # documents written before the list existed say exactly this. Mutation: return `config`
+    # unchanged under `installed` and this reddens.
+    config = _gated(tmp_path, 'state = "installed"\n', TESTS_GATE)
+    assert config.keelline.enforcing == frozenset((*BUILTIN_GATES, "tests"))
+    spelled_out = _gated(
+        tmp_path,
+        'state = "installed"\nenforced = ["tests", "docs", "bugs", "plan", "commit", "trail"]\n',
+        TESTS_GATE,
+    )
+    assert spelled_out.keelline.enforcing == config.keelline.enforcing
+
+
+def test_an_installed_project_with_a_partial_list_is_refused(tmp_path: Path) -> None:
+    # One fact, stated twice, must agree: `installed` is every gate, so a list naming some of
+    # them contradicts it. Mutation: drop the refusal and this reddens.
+    with pytest.raises(ConfigError, match=r"lists 1 of the project's 5 gate\(s\)"):
+        _gated(tmp_path, 'state = "installed"\nenforced = ["docs"]\n')
+
+
+def test_a_gate_the_project_does_not_run_is_counted_and_never_quoted(tmp_path: Path) -> None:
+    # A dropped built-in is not a gate this project runs, so it cannot enforce either.
+    # Mutation: drop the membership check and this reddens.
+    with pytest.raises(ConfigError) as caught:
+        _gated(
+            tmp_path,
+            'state = "adopting"\nenforced = ["docs", "trail", "x\\u001b[31m"]\n',
+            '\n[gates]\nbuiltin = ["docs", "bugs", "plan", "commit"]\n',
+        )
+    message = str(caught.value)
+    assert message.startswith("[keelline] enforced names 2 gate(s) this project does not run")
+    assert "\x1b" not in message and "[31m" not in message
+
+
+def test_an_initialised_project_that_enforces_something_is_refused(tmp_path: Path) -> None:
+    # Mutation: drop the refusal and this reddens.
+    with pytest.raises(ConfigError, match="initialised project enforces nothing"):
+        _gated(tmp_path, 'state = "initialised"\nenforced = ["docs"]\n')
+
+
+def test_a_gate_named_twice_is_refused(tmp_path: Path) -> None:
+    # Mutation: drop the refusal and this reddens.
+    with pytest.raises(ConfigError, match="enforced names a gate twice"):
+        _gated(tmp_path, 'state = "adopting"\nenforced = ["docs", "docs"]\n')
+
+
+@pytest.mark.parametrize(
+    ("rest", "match"),
+    [
+        ('\n[gates]\nbuiltin = ["docs", "docs"]\n', r"^\[gates\] builtin names a gate twice$"),
+        ('\n[gates]\ncustom = "pytest"\n', r"^\[gates\.custom\] must be a table$"),
+        ('\n[gates.custom]\ntests = "pytest"\n', r"^\[gates\.custom\.tests\] must be a table$"),
+        (
+            "\n[gates]\ncustom_timeout_seconds = 0\n",
+            r"^gates\.custom_timeout_seconds must be a positive integer$",
+        ),
+    ],
+    ids=["builtin-twice", "custom-not-a-table", "entry-not-a-table", "no-time-at-all"],
+)
+def test_a_gates_table_in_the_wrong_shape_is_refused(tmp_path: Path, rest: str, match: str) -> None:
+    # Each refusal is the only thing between its value and a line that reads it as the right
+    # type or counts it once. Mutation: drop any one of the checks and its case reddens.
+    with pytest.raises(ConfigError, match=match):
+        _gated(tmp_path, rest=rest)
+
+
+def test_the_name_grammar_is_spelled_once() -> None:
+    # A project, a profile, an overlay owner and a custom gate are named in one grammar, and
+    # every other module derives from `PROJECT_NAME`. Mutation: spell `SOURCE_NAME` out again in
+    # `scaffold/engine.py` and this reddens naming the file.
+    spelling = PROJECT_NAME.pattern.removeprefix("^").removesuffix("\\Z")
+    src = Path(__file__).resolve().parents[2] / "src" / "keelline"
+    spelled = sorted(
+        path.relative_to(src).as_posix()
+        for path in src.rglob("*.py")
+        if spelling in path.read_text(encoding="utf-8")
+    )
+    assert spelled == ["config/schema.py"]

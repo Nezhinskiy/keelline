@@ -60,8 +60,9 @@ Today the discovered ones are `attach`, `docs`, `doctor`, `guards`, `hooks`, `le
 unbinds it again, and `doctor` reports on what every other area left behind and repairs none
 of it. `project` is the eleventh: it holds the shipped project templates and `init`, the
 command that writes a repository's footprint from them.
-(`config`, `presets`, `scaffold` and `templates` are subpackages and not areas — nothing
-discovers them, because they carry neither a `commands.py` nor a `hooks.py`.)
+(`config`, `presets`, `profiles`, `scaffold` and `templates` are subpackages and not areas, and
+`harnesses` is a module — nothing discovers them, because they carry neither a `commands.py`
+nor a `hooks.py`.)
 
 - `commands.py` with a `register(groups)` gives the area its CLI group.
 - `hooks.py` with a `register() -> list[Handler]` gives it hook handlers. Every import inside a

@@ -13,17 +13,18 @@ Codex, one Python package with **no runtime dependencies**.
 > `overlay upgrade`, `overlay publish-template` — and `attach`/`detach`, which bind a
 > repository to it and unbind it
 > again; `keelline init`, which writes a repository's footprint from the shipped project
-> templates; and `keelline doctor`, which reports on the result. The hooks file that wires all
+> templates, `keelline upgrade`, which refreshes it, and `keelline uninstall`, which takes it
+> back; and `keelline doctor`, which reports on the result. The hooks file that wires all
 > of it into a session ships too, so installing the plugin is enough to make the guards fire
 > and the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** `upgrade`,
-> `uninstall`, `assess` and the adoption state machine — so nothing refreshes or removes a
-> footprint once `init` has written it, and the gates stay advisory until you set
-> `[keelline] state` yourself; the [Quickstart](#quickstart) shows the three keys that are enough
-> to start a project by hand, which `init` reads as your answers — a run that writes the file
-> itself writes six, `[keelline] version`, `state` and `agents` beside `[project] name`,
+> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a
+> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
+> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three
+> keys that are enough to start a project by hand, which `init` reads as your answers — a run
+> that writes the file itself writes `[keelline] version`, `state` and `agents`, and `profile`
+> when the repository carries a shipped profile's markers, beside `[project] name`,
 > `base_branch` and `release_branch`, a `[ci]` table only when it has a released commit to pin
 > or `--no-ci` asks for none, and no `[memory]` table at all.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
@@ -194,8 +195,11 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `keelline init` writes the empty index and `docs/bugs/audits/README.md`; `keelline bugs new`, `bugs index` and `bugs renumber` after |
 | `docs/roadmap.md` and `docs/roadmap-history.md` (configurable) | The forward track and the closed phases; in the roadmap, `docs trail` owns only the listing between its two markers | `keelline init` writes both files; `keelline docs trail` rewrites the listing |
 | `docs/trail.toml` (beside the roadmap) | Which theme each design or plan document belongs to, and which are not plainly delivered. Read by `docs trail`, never written by it | `keelline init`, once; you after |
-| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` (ships later) refreshes what you have not touched | `keelline init` |
+| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` refreshes what you have not touched, and `keelline uninstall` takes it back | `keelline init` |
+| `docs/keelline/rules/<profile>.md` (configurable) and `.claude/rules/keelline-<profile>.md` | The stack profile's rules, the one copy a project edits, and a path-scoped pointer at it for Claude Code (only when `[keelline] agents` lists `claude`) | `keelline init`, when `[keelline] profile` is set |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
+| `.keelline/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `keelline init` and `keelline upgrade`, when `[artifacts] local` lists them; `keelline uninstall` takes them back |
+| `.keelline/local/artifacts.json` | The record of the bytes Keelline last wrote under `.keelline/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `keelline uninstall` removes it |
 | `~/.config/keelline/config.toml` | Machine-level settings: `[personal]`, `[overlay]`, `[machine]` | you, or `keelline setup` |
 | `~/.config/keelline/trust.json` | Which repositories' committed notes you have approved | `keelline memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
@@ -230,6 +234,10 @@ parser, and every registered command has a line — a test holds both.
 # Initialising a project
 keelline init --yes --dry-run                         # both reports, nothing written
 keelline init --yes                                   # write the footprint and record every file
+keelline upgrade --dry-run                            # what a newer Keelline would refresh
+keelline upgrade                                      # refresh untouched files; move version and pin
+keelline upgrade --force docs/roadmap.md              # overwrite one file you edited
+keelline uninstall --dry-run                          # what would go; what you edited stays
 
 # Memory
 keelline memory index                                 # render MEMORY.md from the notes
@@ -385,8 +393,8 @@ key. The `close-bug` skill walks the closing of an entry through these commands.
 registers; `agents/` ships a read-only `code-navigator`. Every skill is written in action
 language — never a harness tool's name — with the per-harness mapping in
 [skills/README.md](skills/README.md), and every `keelline …` invocation in a skill is
-parsed against the real parser by a test. Two wrappers (`upgrade`, `uninstall`) describe
-commands that ship later, and the test that holds them says which.
+parsed against the real parser by a test. A wrapper written ahead of its command is listed in
+that test until the command ships; none is today.
 
 ## Contributing
 

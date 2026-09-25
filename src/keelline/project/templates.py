@@ -8,6 +8,11 @@ under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAM
 shape-checked there — `GATE_BRANCH`, `CI_REF` — and a value outside its grammar costs the
 artifact rather than the run.
 
+This module builds templates and decides nothing about a manifest. Which recorded artifacts a
+configuration retires, what `[artifacts] local` may not move out of git, and the order of the
+footprint pass are the lifecycle policy `init`, `upgrade` and `uninstall` apply to what it
+builds, and they are `project.footprint`'s.
+
 **Every write-once file this renders answers to the configuration, including the two that look
 like fixed text.** `CLAUDE.md` is a one-line pointer and its one line is `[paths] agents_md`: it
 was the literal `@AGENTS.md`, so a project that renamed the instruction file got a pointer at a
@@ -28,28 +33,34 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from functools import partial
-from pathlib import Path
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
+from functools import cached_property, partial
+from typing import TYPE_CHECKING
 
 import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
+from keelline.config.layout import rules_file
+from keelline.config.loader import CONFIG_FILE
 from keelline.config.schema import Config
-from keelline.docs.api import trail_path
+from keelline.docs.api import trail_target
 from keelline.errors import Failure, Refusal
+from keelline.fsops import path_key
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
-from keelline.scaffold import Kind, Style, Template
+from keelline.scaffold import Kind, Style, Template, validate_sources
 from keelline.templates import tree
+
+if TYPE_CHECKING:
+    from keelline.profiles import Profile
 
 PROJECT = "project"
 # The provenance namespace for an artifact whose bytes this module *computes*, so that a record
 # of one never claims a file the wheel does not carry.
 #
 # `Template.source` becomes `Record.template` in `.keelline/manifest.json`, which is committed and
-# is what `upgrade` will read to find out where an artifact's bytes came from. Three artifacts
+# is where a reader finds out where an artifact's bytes came from. Three artifacts
 # here have no shipped file at all — `config` is the rendered document, `bug-index` is
 # `render_index([], config)`, `gitignore` is `IGNORE_BODY` — and all three recorded
 # `project/<id>`, a name absent from `PROJECT_FILES` and from the tree, which `read` itself
@@ -58,15 +69,26 @@ PROJECT = "project"
 # existed.
 #
 # A separate namespace rather than a name that looks readable: "there is no shipped file, these
-# bytes are built" is the honest answer, and a reader — `upgrade`, a person, `doctor` — can tell
+# bytes are built" is the honest answer, and a reader — a person, `doctor` — can tell
 # it from `project/roadmap.md` without asking the wheel. It stays one string, so the manifest
 # format is untouched. `_computed` is the only place it is spelled, and
 # `tests/project/test_templates.py` holds every source both passes build to one rule or the other.
 COMPUTED = "computed"
+# The provenance namespace for an artifact whose bytes are a shipped profile's file:
+# `profile/<name>/rules.md` names a file the wheel carries under `keelline/profiles/`.
+PROFILE = "profile"
 CLAUDE_MD = "CLAUDE.md"
-CONFIG_FILE = "keelline.toml"
 HARNESS_REGION = "harness"
 CI_WORKFLOW = ".github/workflows/keelline.yml"
+# The three artifact ids a command's own rules name, spelled once. The workflow is planned last
+# and kept through a `[ci] mode` this build merely does not render (`CI_ARTIFACT`); `rewrite_owned`
+# re-stamps the configuration's record (`CONFIG_ARTIFACT`); `uninstall` removes the ignore region
+# last, and neither of the two may be kept out of git (`IGNORE_ARTIFACT`). An id is also what
+# every initialised repository's committed manifest records, so none of them is renamed lightly:
+# `tests/project/test_templates.py` holds all three to the ids the templates build.
+CI_ARTIFACT = "ci-workflow"
+CONFIG_ARTIFACT = "config"
+IGNORE_ARTIFACT = "gitignore"
 # The grammar `[ci] gate_branch` must match before it is written into the rendered workflow.
 # The value is repository-authored and lands in two places in one YAML file — a `branches:`
 # list and a shell-free `${{ }}` default — so it is quoted there *and* held to a shape here:
@@ -84,20 +106,14 @@ CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
     "no released Keelline tag matches the version running, so there is no commit to pin; "
-    "`keelline upgrade` (ships later) writes it after the first release"
+    "`keelline upgrade` pins it once a release matches"
 )
-# Two remedies, picked by the kind of run, for the reason `NO_REF`'s comment gives: a run that
-# writes persists `.keelline/manifest.json`, and `init` refuses a repository that has one, so
-# "run again with the network reachable" is a remedy only a dry run can still take. After a run
-# that wrote, the document records no ref and nothing `init` does will add one.
-NOT_ASKED = "the public repository could not be asked for its tags, so there is no commit to pin; "
-NOT_ASKED_DRY = (
-    NOT_ASKED + "run `keelline init --yes` with the network reachable, and that run pins it"
-)
-NOT_ASKED_WRITTEN = NOT_ASKED + (
-    "the run that writes keelline.toml is the only one that pins, and `init` does not run twice "
-    "on one repository — write a released commit into [ci] ref and the workflow by hand, or "
-    "wait for `keelline upgrade` (ships later)"
+# One sentence that is true after either kind of run: before a manifest exists `init` can still
+# pin, and after one exists `upgrade` can.
+NOT_ASKED = (
+    "the public repository could not be asked for its tags, so there is no commit to pin; "
+    "`keelline init --yes` with the network reachable pins it, or `keelline upgrade` once "
+    "this repository is initialised"
 )
 UVX_LATER = (
     'the uvx form of the gate ships with a later lane; [ci] mode = "reusable" is what this '
@@ -116,19 +132,12 @@ NO_CI = "[ci] mode is none"
 # `NOT_ASKED` and `NO_TAG`, both of which send the operator to the network for a file they have
 # to edit by hand.
 #
-# The remedy names the one run that can still act on it. "Run `keelline init --yes` again" was
-# already dead where this sentence prints from a completed run: `apply` persists
-# `.keelline/manifest.json`, and `init` refuses a repository that has one ("re-running `init` is
-# `keelline upgrade`, which ships later"). Measured on a repository adopted with no `[ci] ref`:
-# the second run is a refusal, not a workflow. So the sentence says which run the pin has to be
-# in place for, and who writes the file after that.
+# The remedy names the command that acts on it: `upgrade` writes `[ci] ref` into any
+# `keelline.toml`, whoever wrote the file, because the key is Keelline's.
 NO_REF = (
     "the keelline.toml this repository already had records no [ci] ref, and `init` does not "
     "write into a document it did not create — so a workflow would pin a ref nothing records. "
-    "That is the whole reason, whatever this run could or could not resolve from the public "
-    "repository: write a released commit into [ci] ref by hand, and `keelline init --yes` "
-    "renders the workflow around it on a repository it has not initialised yet; on one it "
-    "already has, the workflow is yours to write, or wait for `keelline upgrade` (ships later)"
+    "`keelline upgrade` records a released commit there and renders the workflow around it"
 )
 BAD_REF = (
     "[ci] ref is not a full-length commit sha, so no workflow was rendered around it; the "
@@ -142,11 +151,13 @@ BAD_BRANCH = "[ci] gate_branch is not a plain branch name, so no workflow was re
 # Which `[paths]` key each artifact's target is built from, so the collision refusal below can
 # name what to edit. Two statements of one thing, the way `PROJECT_FILES` and the shipped tree
 # are: `tests/project/test_templates.py` holds this mapping's key set to the artifact ids both
-# passes actually produce, so an artifact added without a line here reddens rather than reaching
-# a `KeyError` at the moment somebody's configuration collides.
+# passes actually produce, so an artifact added without a line here reddens rather than being
+# named by the wrong key at the moment somebody's configuration collides. A harness's rendition
+# is not listed: its target is the harness's own fixed name, which is what the refusal calls an
+# id with no row (`OWN_NAME`), so a harness added to the registry needs no line here.
 OWN_NAME = "a fixed name of Keelline's own"
 PATH_KEYS = {
-    "config": OWN_NAME,
+    CONFIG_ARTIFACT: OWN_NAME,
     "agents-skeleton": "paths.agents_md",
     "claude-md": OWN_NAME,
     "documentation-policy": "paths.architecture",
@@ -159,25 +170,111 @@ PATH_KEYS = {
     "trail": "paths.roadmap",
     "specs-keep": "paths.specs",
     "plans-keep": "paths.plans",
-    "gitignore": OWN_NAME,
+    IGNORE_ARTIFACT: OWN_NAME,
     "agents-md": "paths.agents_md",
-    "ci-workflow": OWN_NAME,
+    CI_ARTIFACT: OWN_NAME,
+    "profile-rules": "paths.keelline",
 }
+# The one pair of artifacts built to share a file, and the one exception `Owners` makes.
+SHARED_FILE = frozenset({"agents-skeleton", "agents-md"})
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
 # Keelline's own vocabulary. The colliding path is a repository-authored value and is not printed.
-ONE_TARGET = (
-    "two artifacts of one pass resolve to the same file: {first} ({first_key}) and {second} "
-    "({second_key}). The engine writes a plan in order, so the second would replace the first "
-    "with no verb saying so and the manifest would record two different digests for one path — "
-    "separate them under [paths] in keelline.toml and run `keelline init --yes` again"
+ONE_FILE = (
+    "{first} ({first_key}) and {second} ({second_key}) resolve to one file, and only the "
+    "AGENTS.md skeleton and its region share a file by design: any other pair would have one "
+    "artifact judged, overwritten or removed as the other. Separate them under [paths] in "
+    "keelline.toml, then run the command again"
 )
 
 
 @dataclass(frozen=True)
+class Owners:
+    """Which artifacts this build is built to write each place: the one relation both rules that
+    ask "whose file is this?" read, so they cannot come apart.
+
+    **The relation.** `could_write` is `Prepared.could_write`: for each artifact id, every target
+    this build could produce for it under any configuration — this run's templates, the workflow
+    whatever `[ci] mode` says, every shipped profile's rules and each harness's rendition of them.
+    A place is `foreign` to an id when another id is built to write it. Which ids exist and where
+    each could write are this build's; the `[paths]` values those places are built from are
+    committed, and all a value can do here is add a place, never take one away. Places are one
+    file when `fsops.path_key` says so, as on the default filesystems of macOS and Windows, so
+    `roadmap = "claude.md"` is `CLAUDE.md`'s file on every filesystem and every rule below reddens
+    on Linux as on macOS.
+
+    **The one exception is `SHARED_FILE`**, and it is how the build is made: the `AGENTS.md`
+    skeleton, written once, and the region every later run refreshes inside it, both built from
+    `[paths] agents_md`, share a file by design, which is the reason there are two passes. Nothing
+    a repository writes makes another pair: a place two other ids reach because committed values
+    coincide is foreign to both.
+
+    **The collision refusal** (`_no_file_of_another`) refuses a template at a place foreign to its
+    id, in either pass, before anything is planned. Within one pass: `scaffold.engine.plan` has no
+    duplicate-target detection, so with `roadmap` and `roadmap_history` set to one path both plans
+    reported zero refusals, `apply` wrote both, the file held only the second artifact's bytes and
+    the manifest recorded two different digests for one path — the roadmap's trail block lost,
+    one record read as hand-edited for ever, and `uninstall` removing a file that held the other
+    artifact; `agents_md = "CLAUDE.md"` collides the same way in the write-once pass. Across the
+    passes, and against a file only another configuration builds (another profile's rules, a
+    harness's rule this project does not list, the workflow), because that is the same collision
+    a run later. The anchor is this module's artifact list, a constant in the installed package;
+    the refusal names two ids and their `[paths]` keys so that the remedy is one edit, and never
+    the value, which is the repository's bytes.
+
+    **The ledger rule** (`scaffold.engine.left_copies`): an entry of the ledger of files kept out
+    of git (`scaffold.local.LocalDigests`) under one id never names a place there foreign to that
+    id, which is another artifact's copy, judged under its own id or not at all. The ledger is
+    kept out of git and a clone can force-add it anyway. Without the rule, an entry under
+    `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest of those
+    unedited and so predictable bytes, had `upgrade` remove that copy as the roadmap's relocated
+    one: `upgrade` plans only the footprint pass, so no template of its plan claimed the file, and
+    nothing ever wrote it again. An exception taken from coinciding `[paths]` values instead of
+    from `SHARED_FILE` handed `roadmap` that place as soon as `roadmap = "CLAUDE.md"` was committed
+    beside the entry; the collision refusal stops that configuration first, and the relation
+    withholds the place from both ids anyway. An artifact's own earlier places are in nobody's
+    list (a `[paths]` value that moved is a place this configuration no longer builds), so a copy
+    it left there is still judged.
+    """
+
+    could_write: Mapping[str, frozenset[str]]
+
+    def foreign(self, artifact_id: str, place: str) -> frozenset[str]:
+        """Every other artifact built to write `place`, or none when that is `artifact_id`'s
+        alone or shared with it only as `SHARED_FILE` shares it."""
+        others = frozenset(
+            owner
+            for owner, places in self.could_write.items()
+            if owner != artifact_id and path_key(place) in {path_key(p) for p in places}
+        )
+        return frozenset() if {artifact_id, *others} <= SHARED_FILE else others
+
+
+@dataclass(frozen=True)
 class Prepared:
+    """Both passes, the reasons an artifact was not rendered, and every target this build could
+    write for each artifact id under any configuration.
+
+    `could_write` is built at the lines that build the templates, from the same calls, so it
+    cannot describe a target the footprint could not have: for the conditional artifacts it holds
+    the workflow's one path, and each shipped profile's neutral rules and renditions, whichever of
+    them this configuration asks for. `upgrade` and `uninstall` retire a recorded artifact this
+    configuration no longer produces only at a target listed here for its id
+    (`footprint.retired_templates`), and `owners` is the relation read from it.
+    """
+
     once: tuple[Template, ...]
     footprint: tuple[Template, ...]
     skipped: dict[str, str]
+    could_write: Mapping[str, frozenset[str]]
+    # How many names in `[keelline] agents` no harness answers to; counted, never quoted.
+    unknown_harnesses: int = 0
+    # The profile's own artifacts in this footprint. Every reader of them, the `AGENTS.md`
+    # pointer and each harness's rule, names the committed path.
+    profiled: frozenset[str] = frozenset()
+
+    @cached_property
+    def owners(self) -> Owners:
+        return Owners(self.could_write)
 
 
 def read(name: str) -> str:
@@ -286,8 +383,53 @@ def _computed(
     )
 
 
+def _profiled(artifact_id: str, target: str, profile: Profile) -> Template:
+    """An artifact whose bytes are a shipped profile's file, so its provenance names that file.
+
+    The third constructor beside `_template` and `_computed`, for the reason those two give for
+    being two: which namespace an artifact's bytes come from is decided at the line that builds
+    it.
+    """
+    from keelline.profiles import RULES_FILE
+
+    return Template(
+        id=artifact_id,
+        kind=Kind.TEMPLATE,
+        target=target,
+        source=f"{PROFILE}/{profile.name}/{RULES_FILE}",
+        render=lambda: profile.rules,
+    )
+
+
+def retired_stub(artifact_id: str, target: str) -> Template:
+    """A recorded artifact this build no longer produces, as the engine plans its retirement.
+
+    A whole file at the recorded target, which the engine judges by the file and the record
+    alone (`_plan_retired`), so `render` is a stub, built by `_computed` like every other
+    template with no shipped file. `footprint.retired_templates` decides which records get one.
+    """
+    return replace(_computed(artifact_id, target, lambda: ""), retired=True)
+
+
+PROFILE_BLOCK = (
+    "\n\nThe `{name}` profile's rules are in `{path}`. Before the first command:\n\n{lines}"
+)
+
+
+def _profile_block(profile: Profile | None, rules: str) -> str:
+    """The universal adapter: what every harness reading `AGENTS.md` is handed.
+
+    It opens with the blank line that separates it from the region's paragraph and ends without
+    a newline, so a project with no profile renders the region byte for byte as before.
+    """
+    if profile is None:
+        return ""
+    lines = "\n".join(f"- {line}" for line in profile.essentials)
+    return PROFILE_BLOCK.format(name=profile.name, path=rules, lines=lines)
+
+
 def _ci(
-    config: Config, resolution: Resolution, *, adopted: bool, dry_run: bool
+    config: Config, resolution: Resolution, *, adopted: bool
 ) -> tuple[Template | None, str | None]:
     """The rendered workflow, or the one sentence saying why this configuration gets none.
 
@@ -302,10 +444,10 @@ def _ci(
     so on a repository with a hand-written `keelline.toml` — the ordinary adoption path, under
     the preset's `[ci] mode = "reusable"` — an unreachable remote was reported as `NOT_ASKED`
     ("run `keelline init --yes` again with the network reachable") and a pre-release Keelline as
-    `NO_TAG`. Running again cannot help either one: `keelline.toml` is a `Kind.ONCE` artifact
-    already on disk, so no pin this run or any later run resolves is ever recorded, and the
-    workflow is skipped again for ever. The remote's answer is not what is missing here, and
-    `NO_REF` is the sentence that says what is.
+    `NO_TAG`. Running `init` again cannot help either one: `keelline.toml` is a `Kind.ONCE`
+    artifact already on disk, so no pin an `init` run resolves is ever recorded. The remote's
+    answer is not what is missing here, and `NO_REF` is the sentence that says what is, and
+    names the command that writes the key.
     """
     if config.ci.mode == "none":
         return None, NO_CI
@@ -316,7 +458,7 @@ def _ci(
         if adopted:
             return None, NO_REF
         if not resolution.asked:
-            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN
+            return None, NOT_ASKED
         if resolution.pin is None:
             return None, NO_TAG
         return None, NO_REF
@@ -324,22 +466,18 @@ def _ci(
         return None, BAD_REF
     if not GATE_BRANCH.match(config.ci.gate_branch):
         return None, BAD_BRANCH
-    # The trailing comment names the release when this run is the one that resolved the ref, and
-    # says where the ref came from otherwise — a `# v0.1.0` beside a ref the repository recorded
-    # would assert that some other release's commit is this one.
+    # Rendered from `config` alone: the same configuration renders the same bytes online,
+    # offline and before any release, so an up-to-date workflow never reads as refreshed.
     gate = config.ci.gate_branch
-    resolved = resolution.pin is not None and resolution.pin.sha == ref
-    note = f"# v{keelline.__version__}" if resolved else "# from [ci] ref"
     return (
         _template(
-            "ci-workflow",
+            CI_ARTIFACT,
             CI_WORKFLOW,
             "keelline.yml",
             render=lambda: fill(
                 read("keelline.yml"),
                 SLUG=keelline.REPOSITORY_SLUG,
                 REF=ref,
-                PIN_NOTE=note,
                 GATE_BRANCH=gate,
             ),
         ),
@@ -347,66 +485,56 @@ def _ci(
     )
 
 
-def _one_target_each(templates: Sequence[Template]) -> None:
-    """Refuse a pass in which two artifacts resolve to one file (DC3).
-
-    DC3's two-pass design rests on "two artifacts cannot target one file in one pass" being
-    true, and nothing made it true: `scaffold.engine.plan` has no duplicate-target detection and
-    C2 is frozen, so the rule belongs where the targets are built. Measured before this guard,
-    with `paths.roadmap` and `paths.roadmap_history` set to one path: both plans reported zero
-    refusals, `apply` wrote both, the file held only `roadmap-history`'s bytes, and the manifest
-    recorded two different `sha256` values for one target — so the roadmap's trail block was
-    silently lost, `upgrade` would read one record as hand-edited for ever, and `uninstall` would
-    remove a file holding the other artifact. `paths.agents_md = "CLAUDE.md"` collides the same
-    way in the write-once pass.
-
-    **The anchor is this module's own artifact list**, a constant in the installed package: which
-    artifacts exist, and which `[paths]` key each one reads, are Keelline's and not a
-    repository's. What the repository chooses is the *values*, and the refusal names the two keys
-    so that the remedy is one edit — it never names the value, which is its bytes.
-
-    Only within a pass. `agents-skeleton` and `agents-md` deliberately target one file across the
-    two, which is the whole reason there are two.
-    """
-    seen: dict[str, str] = {}
-    for template in templates:
-        first = seen.get(template.target)
-        if first is not None:
-            raise Refusal(
-                ONE_TARGET.format(
-                    first=first,
-                    first_key=PATH_KEYS[first],
-                    second=template.id,
-                    second_key=PATH_KEYS[template.id],
-                )
+def _no_file_of_another(prepared: Prepared) -> None:
+    """Refuse an artifact of either pass at a place `Owners.foreign` gives another artifact."""
+    for template in (*prepared.once, *prepared.footprint):
+        others = prepared.owners.foreign(template.id, template.target)
+        if not others:
+            continue
+        second = min(others - SHARED_FILE or others)
+        raise Refusal(
+            ONE_FILE.format(
+                first=template.id,
+                first_key=PATH_KEYS.get(template.id, OWN_NAME),
+                second=second,
+                second_key=PATH_KEYS.get(second, OWN_NAME),
             )
-        seen[template.target] = template.id
+        )
 
 
 def project_templates(
-    root: Path,
     config: Config,
     *,
     resolution: Resolution,
     document: str,
     adopted: bool,
-    dry_run: bool,
 ) -> Prepared:
     """The footprint this configuration asks for, split into the engine's two passes (DC3).
 
-    `trail_path` contains its answer against `root`, so `relative_to(root)` hands the engine
-    the relative target it re-contains rather than an absolute one it would refuse.
+    Nothing here reads the disk for a target: `trail_target` is a location, like every
+    `[paths]`-built target, and the engine contains each one when it plans it. So this can be
+    asked about paths no run will use, which `ignored._preset_places` does with the preset's.
 
     `adopted` says whether this run read a `keelline.toml` it did not write, and it is threaded
     rather than derived: `_ci` cannot tell the two kinds of run apart from a `Config` and a
     `Resolution`, and every sentence it can print about a missing `[ci] ref` is wrong for one of
     them. It has no default, because a caller that forgot one would silently get the wrong half.
-    `dry_run` is threaded for the same reason and with the same rule: the one remedy that
-    differs between a run that writes and one that does not is "run it again".
     """
+    from keelline.harnesses import HARNESSES, select
+    from keelline.profiles import load_profile, shipped
+
+    # The engine's rule first: an unshipped or malformed name is refused naming the grammar and
+    # the listing, before `load_profile`'s own refusal, which names neither.
+    validate_sources(config)
+    # Each shipped profile loaded once: every one is built below for `could_write`, and the
+    # configured one, which `validate_sources` has just held to the listing, is one of them.
+    loaded = {name: load_profile(name) for name in shipped()}
+    profile = loaded[config.keelline.profile] if config.keelline.profile else None
+    rules = rules_file(config, profile.name) if profile is not None else ""
+    harnesses, unknown_harnesses = select(config.keelline.agents)
     p = config.paths
     once = (
-        _computed("config", CONFIG_FILE, lambda: document, kind=Kind.ONCE),
+        _computed(CONFIG_ARTIFACT, CONFIG_FILE, lambda: document, kind=Kind.ONCE),
         _template(
             "agents-skeleton",
             p.agents_md,
@@ -436,11 +564,11 @@ def project_templates(
         _computed("bug-index", p.bug_index, lambda: render_index([], config)),
         _template("roadmap", p.roadmap, "roadmap.md"),
         _template("roadmap-history", p.roadmap_history, "roadmap-history.md"),
-        _template("trail", str(trail_path(root, config).relative_to(root)), "trail.toml"),
+        _template("trail", trail_target(config), "trail.toml"),
         _template("specs-keep", f"{p.specs}/.gitkeep", "gitkeep"),
         _template("plans-keep", f"{p.plans}/.gitkeep", "gitkeep"),
         _computed(
-            "gitignore",
+            IGNORE_ARTIFACT,
             ".gitignore",
             lambda: IGNORE_BODY,
             kind=Kind.MANAGED_REGION,
@@ -459,16 +587,47 @@ def project_templates(
                 ROADMAP=p.roadmap,
                 SPECS=p.specs,
                 PLANS=p.plans,
+                PROFILE=_profile_block(profile, rules),
             ),
             region=HARNESS_REGION,
         ),
     ]
     skipped: dict[str, str] = {}
-    workflow, reason = _ci(config, resolution, adopted=adopted, dry_run=dry_run)
+    could_write: dict[str, set[str]] = {}
+    workflow, reason = _ci(config, resolution, adopted=adopted)
+    # Where `_ci` builds the workflow, whatever `[ci] mode` asks for now.
+    could_write[CI_ARTIFACT] = {CI_WORKFLOW}
+    if workflow is None and reason is not None:
+        skipped[CI_ARTIFACT] = reason
+    profiled: set[str] = set()
+    # Every shipped profile's artifacts are built, so `could_write` lists where each could land;
+    # only the configured profile's, for the harnesses this project lists, join the footprint.
+    for name, candidate in loaded.items():
+        candidate_rules = rules_file(config, name)
+        built = [(True, _profiled("profile-rules", candidate_rules, candidate))]
+        for harness in HARNESSES:
+            if harness.render_profile is not None:
+                rendition = harness.render_profile(candidate, candidate_rules)
+                template = _computed(rendition.artifact_id, rendition.target, rendition.render)
+                built.append((harness in harnesses, template))
+        for wanted, template in built:
+            could_write.setdefault(template.id, set()).add(template.target)
+            if wanted and name == config.keelline.profile:
+                footprint.append(template)
+                profiled.add(template.id)
+    # Where the workflow goes in the plan, after everything a command retires too, is
+    # `footprint.prepare`'s to decide.
     if workflow is not None:
         footprint.append(workflow)
-    elif reason is not None:
-        skipped["ci-workflow"] = reason
-    _one_target_each(once)
-    _one_target_each(footprint)
-    return Prepared(once, tuple(footprint), skipped)
+    for template in (*once, *footprint):
+        could_write.setdefault(template.id, set()).add(template.target)
+    prepared = Prepared(
+        once,
+        tuple(footprint),
+        skipped,
+        could_write={artifact_id: frozenset(t) for artifact_id, t in could_write.items()},
+        unknown_harnesses=unknown_harnesses,
+        profiled=frozenset(profiled),
+    )
+    _no_file_of_another(prepared)
+    return prepared

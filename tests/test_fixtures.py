@@ -299,6 +299,10 @@ ORACLE_SECONDS_PER_ENTRY = 751 / 372
 # is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
 # runner, which also carries lint, types, the test run, the build and a wheel install.
 ORACLE_SETUP_SECONDS = 60
+# The runner-variance allowance the job's own comment in `ci.yml` reserves: a nominally 889 s job
+# was cancelled at 918 s, about 30 s of slip, and this doubles it. Projected without it, this test
+# stayed green some thirty entries past the point that comment says to raise the budget.
+ORACLE_VARIANCE_SECONDS = 60
 
 
 def _ci_jobs() -> dict[str, list[str]]:
@@ -386,7 +390,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     budget = int(bounds[0].split(":", 1)[1].strip()) * 60
     entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
     assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
-    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS
+    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS + ORACLE_VARIANCE_SECONDS
     assert budget >= projected, (
         f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "
         f"raise `timeout-minutes` on the {ORACLE_JOB!r} job, and say in the comment what the "

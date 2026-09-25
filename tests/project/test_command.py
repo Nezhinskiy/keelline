@@ -28,6 +28,7 @@ from keelline.project.templates import _ci
 from keelline.release.api import Resolution
 from keelline.runner import Completed
 from tests.gitfixture import git, needs_git
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
 @dataclass
@@ -40,7 +41,18 @@ class _Listing:
         return Completed(0, self.stdout, "")
 
 
-JSON_KEYS = {"dry_run", "adopted", "once", "footprint", "writes", "skipped", "pin", "asked", "note"}
+JSON_KEYS = {
+    "dry_run",
+    "adopted",
+    "once",
+    "footprint",
+    "writes",
+    "skipped",
+    "pin",
+    "asked",
+    "note",
+    "unknown_harnesses",
+}
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -131,6 +143,25 @@ def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
 
 
 @needs_git
+def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) -> None:
+    # The write-once half of `InitReport.refused`, which the case above cannot reach: its
+    # refusal is the footprint pass's. A `CLAUDE.md` that is a symlink is refused by the
+    # write-once pass alone, and the run must stop there with its report. Mutation (oracle):
+    # "init's refusal reads only the footprint plan" -> the run goes on to `apply`, whose own
+    # backstop refuses the plan: exit 2 with the engine's message, and no report.
+    root = _repo(tmp_path)
+    (tmp_path / "elsewhere.md").write_text("theirs\n", encoding="utf-8")
+    (root / "CLAUDE.md").symlink_to(tmp_path / "elsewhere.md")
+    before = snapshot(root)
+    code, printed = _invoke(root, tmp_path, "--yes", "--json")
+    assert code == 1, printed
+    data = json.loads(printed)
+    assert "REFUSED" in data["once"] and "REFUSED" not in data["footprint"]
+    assert data["summary"].startswith("refused, and nothing was written:")
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
 def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -213,7 +244,7 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
     `skipped or <a fallback>`, and neither the disjunct nor the fallback could ever fire.
     `templates._ci` returns a rendered workflow only for a `[ci] ref` that is non-empty and
     matches `CI_REF`, and a non-empty reason in every other arm; `init` then derives
-    `report.ref` as `"" if "ci-workflow" in prepared.skipped else config.ci.ref` -- its own
+    `report.ref` as `"" if "ci-workflow" in passes.skipped else config.ci.ref` -- its own
     comment calls the two "one value by construction", and `doctor`'s `ci-ref` row enforces it.
     So a run with no skip has a ref, and a sentence nobody can provoke has been deleted rather
     than left standing as a claim about a state the code forbids.
@@ -243,7 +274,7 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
         ("reusable", "a" * 40, False),
     ]:
         config = _ci_config(mode, ref, tmp_path)
-        workflow, reason = _ci(config, Resolution(None, True), adopted=adopted, dry_run=False)
+        workflow, reason = _ci(config, Resolution(None, True), adopted=adopted)
         if workflow is not None:
             # The half the deleted arm rested on: a workflow is planned only for a ref, so
             # `init`'s `report.ref` cannot be empty while `ci-workflow` is absent from `skipped`.
@@ -256,3 +287,23 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
             skipped += 1
     # Non-vacuous: both branches were actually taken.
     assert rendered and skipped
+
+
+@needs_git
+def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) -> None:
+    # `[keelline] agents` is repository-authored, so the report prints how many names went
+    # unserved and none of them. Mutation: print the loaded `agents` names beside the count on
+    # the note line -> the `cursor` and ESC assertion reddens. (Printing them instead of the
+    # count reddens the note assertion first, which proves nothing about the names.)
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        '[keelline]\nversion = "0.1.0"\nagents = ["claude", "cursor\\u001b[31m"]\n\n'
+        '[project]\nname = "widget"\n',
+        encoding="utf-8",
+    )
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert "note: 1 name(s) in [keelline] agents name no harness" in printed
+    assert "cursor" not in printed and "\x1b" not in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["unknown_harnesses"] == 1

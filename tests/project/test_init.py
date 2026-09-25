@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -10,10 +11,13 @@ import pytest
 
 import keelline
 from keelline.attach.api import IGNORE_REGION
-from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.loader import CONFIG_FILE, ConfigError, load
+from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
-from keelline.project.init import InitReport, init
-from keelline.project.templates import NOT_ASKED_DRY, NOT_ASKED_WRITTEN
+from keelline.project.footprint import LOCAL_ROOT_ONLY
+from keelline.project.init import HEADER, InitReport, init
+from keelline.project.templates import NOT_ASKED, ONE_FILE, OWN_NAME
+from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import LsRemote, git, needs_git
@@ -87,6 +91,78 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
 
 
 @needs_git
+def test_a_created_document_opens_with_a_header_naming_every_tool_owned_key(
+    tmp_path: Path,
+) -> None:
+    # The header is the file's own statement of which keys Keelline rewrites in place. It named
+    # `[keelline] version` and `state` while four keys are Keelline's to rewrite. Every key of
+    # `OWNED` is looked for, as `key` or as `[table] key` in backticks, and every table it names
+    # is named, so a fifth owned key or a dropped one reddens here. Mutations: restore the
+    # two-key header and this reddens on `[ci] ref`, the first missing key in sorted order; drop
+    # only "`enforced`" and it reddens on `enforced`.
+    root = _repo(tmp_path)
+    _init(root, tmp_path)
+    assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(HEADER)
+    assert len(OWNED) == 4
+    for table, key in sorted(OWNED):
+        assert re.search(rf"`(?:\[{table}\] )?{key}`", HEADER), (table, key)
+        assert f"`[{table}]" in HEADER, table
+
+
+@needs_git
+def test_an_adopted_document_s_gates_are_validated_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # `init` builds its `Config` from the tables it copies out of a hand-written document, so a
+    # table it does not copy is one it never validates, while every later load does: the run
+    # wrote a footprint for a document the next command refuses. Mutation: drop `"gates"` from
+    # `USER_OWNED` and `init` writes the footprint, so this reddens with DID NOT RAISE.
+    root = _repo(tmp_path)
+    hand_written = (
+        '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n'
+        '[gates]\nbuiltin = ["docs", "docs"]\n'
+    )
+    (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(ConfigError, match=r"^\[gates\] builtin names a gate twice$"):
+        _init(root, tmp_path)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("table", "hand_written"),
+    [
+        ("gates", '[gates.custom."x\\u001b[31m"]\nrun = ["true"]\n'),
+        ("paths", '[paths]\n"a b\\u001b[31m" = "docs"\n'),
+    ],
+    ids=["a-custom-gate-name", "a-paths-key"],
+)
+def test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table(
+    tmp_path: Path, table: str, hand_written: str
+) -> None:
+    # `init` renders the tables it copies out of a hand-written document with `tomlout.dumps`
+    # before `loads` runs, and `dumps` refuses a key that is not bare by quoting it with `!r`.
+    # A TOML key is arbitrary quoted text, so an adopted document put ESC into a refusal the
+    # `init` skill relays to a model, ahead of the loader's own count-only sentence. The refusal
+    # now names the table, which is Keelline's own vocabulary, and nothing the document wrote.
+    # Mutation: re-raise the serialiser's refusal as it was and both cases redden.
+    root = _repo(tmp_path)
+    document = '[keelline]\nversion = "0.0.1"\n\n[project]\nname = "chosen"\n\n' + hand_written
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as caught:
+        _init(root, tmp_path)
+    message = str(caught.value)
+    assert message == (
+        f"keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML "
+        "key, so nothing was written; rename it to letters, digits, `_` and `-`"
+    )
+    assert "\x1b" not in message and "[31m" not in message and "\\x1b" not in message
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
 def test_a_dry_run_writes_nothing_and_reports_both_plans(tmp_path: Path) -> None:
     # Mutation (oracle): move `apply(root, once)` above the `dry_run` return -> the snapshot
     # reddens.
@@ -148,12 +224,13 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
 
 
 @needs_git
-def test_an_initialised_repository_is_refused_and_says_upgrade_ships_later(tmp_path: Path) -> None:
-    # DC5. Mutation (oracle): drop the manifest guard -> the second call plans a second init.
+def test_an_initialised_repository_is_refused_and_offered_upgrade(tmp_path: Path) -> None:
+    # Mutation (oracle): drop the manifest guard -> the second call plans a second init.
     root = _repo(tmp_path)
     _init(root, tmp_path)
-    with pytest.raises(Refusal, match=r"upgrade.*ships later"):
+    with pytest.raises(Refusal, match="re-running `init` is `keelline upgrade`") as refused:
         _init(root, tmp_path)
+    assert "ships later" not in str(refused.value)
 
 
 @needs_git
@@ -214,8 +291,8 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == ADOPTED
     assert report.ref == ADOPTED and report.resolution.pin == Pin("v0.1.0", SHA)
     assert "ci-workflow" not in report.skipped
-    # And the comment beside the ref does not name a release this document does not record.
-    assert "# from [ci] ref" in workflow and "v0.1.0" not in workflow
+    # And nothing beside the ref names a release this document does not record.
+    assert f"check.yml@{ADOPTED}\n" in workflow and "v0.1.0" not in workflow
 
 
 @needs_git
@@ -274,33 +351,30 @@ def test_an_adopted_run_is_never_sent_to_the_network_for_a_file_it_must_edit(
 
 
 @needs_git
-def test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing(
-    tmp_path: Path,
-) -> None:
-    """`NOT_ASKED` had `NO_REF`'s defect on the path `NO_REF` does not cover.
+def test_an_unreachable_remote_is_answered_with_a_command_that_can_act(tmp_path: Path) -> None:
+    """`NOT_ASKED` names two commands, and each is taken here by the kind of run it is for.
 
-    On a bare repository with the remote unreachable, a run that writes records a
-    `keelline.toml` with no `[ci] ref` and persists `.keelline/manifest.json` — and the sentence
-    it printed was "run `keelline init --yes` again with the network reachable", which the very
-    next run refuses. Only a dry run can still take that remedy, so only a dry run is offered it,
-    and the case proves the remedy by taking it: the dry run's advice, followed with the network
-    back, pins.
+    A dry run has written nothing, so `init --yes` with the network back pins. A run that wrote
+    has persisted `.keelline/manifest.json`, so `init` refuses it and `upgrade` pins instead.
 
-    Mutation (oracle): "an unreachable remote tells a run that wrote to run again".
+    Mutation (oracle): "an unreachable remote is answered with the adoption path's reason instead
+    of its own".
     """
     offline = LsRemote(stdout="", code=128)
+    online = LsRemote(stdout=LISTING, code=0)
     dry_root = _repo(tmp_path / "dry")
     dry = _init(dry_root, tmp_path, runner=offline, dry_run=True)
-    assert dry.skipped["ci-workflow"] == NOT_ASKED_DRY
-    assert _init(dry_root, tmp_path, runner=LsRemote(stdout=LISTING, code=0)).ref == SHA
+    assert dry.skipped["ci-workflow"] == NOT_ASKED
+    assert _init(dry_root, tmp_path, runner=online).ref == SHA
 
     root = _repo(tmp_path / "written")
     written = _init(root, tmp_path, runner=offline)
-    reason = written.skipped["ci-workflow"]
-    assert reason == NOT_ASKED_WRITTEN
-    assert "again" not in reason and "[ci] ref" in reason
-    with pytest.raises(Refusal, match="re-running `init` is"):
-        _init(root, tmp_path, runner=LsRemote(stdout=LISTING, code=0))
+    assert written.skipped["ci-workflow"] == NOT_ASKED
+    upgrade(root, machine=tmp_path / "absent.toml", runner=online, dry_run=False, force=())
+    assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
+    assert f"check.yml@{SHA}\n" in (root / ".github" / "workflows" / "keelline.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 @needs_git
@@ -314,9 +388,8 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
     assert load(root, machine=tmp_path / "absent.toml").ci.ref == SHA
     body = (root / ".github" / "workflows" / "keelline.yml").read_text(encoding="utf-8")
     # The bare path, unchanged by the adoption fix: this run created the document, so the
-    # resolved sha is what it records and what the workflow pins, and the trailing comment names
-    # the release it really is.
-    assert f"check.yml@{SHA} # v0.1.0" in body
+    # resolved sha is what it records and what the workflow pins.
+    assert f"check.yml@{SHA}\n" in body
     assert report.ref == SHA
 
 
@@ -366,3 +439,88 @@ def test_no_ci_writes_mode_none_and_asks_no_remote(tmp_path: Path) -> None:
     _init(root, tmp_path, runner=runner, ci=False)
     assert load(root, machine=tmp_path / "absent.toml").ci.mode == "none"
     assert runner.calls == []
+
+
+@needs_git
+def test_a_python_repository_gets_the_profile_in_every_form_it_asked_for(tmp_path: Path) -> None:
+    # The fixture carries `.claude/` only, so `detect` answers `agents = ["claude"]` and the
+    # Claude rule is written: that is the point of the case.
+    root = _repo(tmp_path)
+    (root / ".claude").mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
+    _init(root, tmp_path, ci=False)
+    assert load(root, machine=tmp_path / "absent.toml").keelline.profile == "python"
+    assert (root / "docs" / "keelline" / "rules" / "python.md").is_file()
+    rule = (root / ".claude" / "rules" / "keelline-python.md").read_text(encoding="utf-8")
+    assert "`docs/keelline/rules/python.md`" in rule
+    assert "`docs/keelline/rules/python.md`" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert {"profile-rules", "claude-rules"} <= set(Manifest.read(root).records)
+
+
+@needs_git
+@pytest.mark.parametrize("local", [["config"], ["gitignore"], ["config", "gitignore"]])
+def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write(
+    tmp_path: Path, local: list[str]
+) -> None:
+    # Every command reads `keelline.toml` at the root, and the ignore block at the root is what
+    # keeps `.keelline/local/` out of git: a copy under `.keelline/local/artifacts/` is never
+    # read. Mutation (declared): "keelline.toml or the ignore block may be kept out of git".
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f'[artifacts]\nlocal = {json.dumps(local)}\n\n[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == LOCAL_ROOT_ONLY.format(names=" and ".join(local))
+
+
+@needs_git
+@pytest.mark.parametrize("value", ["CLAUDE.md", "claude.md"], ids=["exact", "case-variant"])
+def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write(
+    tmp_path: Path, value: str
+) -> None:
+    # `[paths] roadmap = "CLAUDE.md"`: each pass on its own has one artifact at that file, and
+    # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
+    # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
+    # init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file where
+    # case folds, and is refused on every filesystem ("places are compared case-sensitively for
+    # ownership" reddens that case).
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f'[paths]\nroadmap = "{value}"\n\n[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == ONE_FILE.format(
+        first="claude-md",
+        first_key=OWN_NAME,
+        second="roadmap",
+        second_key="paths.roadmap",
+    )
+
+
+@needs_git
+def test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # The rule meets a hand-written `keelline.toml`, not only the onboarding questions. If
+    # `_init` runs the CLI rather than the function, assert its exit 2 instead of the raise.
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\nprofile = "python"\n\n'
+        '[project]\nname = "widget"\n\n[artifacts]\nlocal = ["profile-rules"]\n\n'
+        '[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal, match="profile's artifacts"):
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)

@@ -32,10 +32,13 @@ def checker() -> ModuleType:
 
 
 def _wheel(path: Path, *, without: str | None = None) -> Path:
+    """A synthetic wheel holding what `WHEEL_MUST` names; keep this list in step with it."""
     names = [
         "keelline/presets/recommended.toml",
         *(f"keelline/templates/overlay/{r}" for r in OVERLAY_FILES),
         *(f"keelline/templates/project/{n}" for n in PROJECT_FILES),
+        "keelline/profiles/python/profile.toml",
+        "keelline/profiles/python/rules.md",
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:

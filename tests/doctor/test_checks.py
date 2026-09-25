@@ -33,6 +33,10 @@ from keelline.doctor import checks
 from keelline.doctor.api import OK, RED, SKIP, WARN, Check, run_checks
 from keelline.doctor.checks import (
     SETTINGS_FILES,
+    VERSION_AHEAD,
+    VERSION_BEHIND,
+    VERSION_UNORDERED,
+    VERSION_UNREADABLE,
     WORKFLOW,
     WORKFLOW_MAX_BYTES,
     plugin_root,
@@ -1188,6 +1192,47 @@ def test_a_project_declaring_another_keelline_version_is_named_without_quoting_i
     assert check.status == "warn"
     assert keelline.__version__ in check.detail
     assert "9.9.9-PROJECT" not in check.detail
+
+
+@pytest.mark.parametrize(
+    ("recorded", "remedy"),
+    [
+        ("0.0.1", VERSION_BEHIND),
+        ("99.0.0", VERSION_AHEAD),
+        ("99.0.0-rc1", VERSION_AHEAD),
+        ("v99.0.0", VERSION_UNREADABLE),
+    ],
+)
+def test_the_version_remedy_follows_the_direction_of_the_difference(
+    tmp_path: Path, recorded: str, remedy: str
+) -> None:
+    # `upgrade` refuses a project recording a newer Keelline, so that one is sent to the plugin.
+    # Mutation (oracle, advisory): `ahead = False` -> the newer case is sent to `upgrade` and
+    # reddens.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(LOCAL_ONLY.format(version=recorded), encoding="utf-8")
+    assert _by_name(_checks(tmp_path, root), "versions").remedy == remedy
+
+
+@pytest.mark.parametrize(
+    ("recorded", "running", "remedy"),
+    [
+        ("1.0.0", "1.0.0rc1", VERSION_AHEAD),
+        ("1.0.0rc1", "1.0.0", VERSION_BEHIND),
+        ("1.0.0rc1", "1.0.0rc2", VERSION_UNORDERED),
+    ],
+)
+def test_the_version_remedy_orders_a_release_after_its_pre_release_as_upgrade_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str, running: str, remedy: str
+) -> None:
+    # `upgrade` refuses by the same reader, so the row sends each case where `upgrade` would
+    # take it: a project on the release to the plugin, one on its pre-release to `upgrade`, and
+    # two pre-releases to be written by hand, not to the X.Y.Z that `upgrade` would then refuse
+    # as newer.
+    root = _initialised(tmp_path)
+    (root / CONFIG_FILE).write_text(LOCAL_ONLY.format(version=recorded), encoding="utf-8")
+    monkeypatch.setattr(keelline, "__version__", running)
+    assert _by_name(_checks(tmp_path, root), "versions").remedy == remedy
 
 
 def test_a_committed_attach_ledger_cannot_force_a_red_row(tmp_path: Path) -> None:

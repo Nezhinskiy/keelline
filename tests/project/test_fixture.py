@@ -61,12 +61,10 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
     config = load(root, machine=tmp_path / "absent.toml")
     document = (root / CONFIG_FILE).read_text(encoding="utf-8")
     prepared = project_templates(
-        root,
         config,
         resolution=Resolution(None, True),
         document=document,
         adopted=True,
-        dry_run=False,
     )
     once = plan(root, config, prepared.once)
     footprint = plan(root, config, prepared.footprint)
@@ -79,7 +77,7 @@ def test_the_smoke_fixture_is_a_project_init_has_nothing_left_to_create_in(tmp_p
         a.artifact_id for a in once.actions if a.verb is Verb.SKIP_MODIFIED
     }
     # And the provenance each record carries is the one this build would write. `Record.template`
-    # is committed and is what `upgrade` will read to find where an artifact's bytes came from,
+    # is committed and is where a reader finds out where an artifact's bytes came from,
     # and three of these artifacts compute their bytes rather than reading a shipped file — so a
     # record naming `project/<id>` for one of those points at a file the wheel does not carry.
     # This fixture's manifest carried exactly that for `gitignore` from the day it was grown.

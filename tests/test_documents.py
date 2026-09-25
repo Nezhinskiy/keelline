@@ -514,6 +514,18 @@ def test_the_configuration_block_shows_every_section_the_loader_accepts() -> Non
     assert set(shown) == set(SECTIONS), (sorted(set(shown)), sorted(SECTIONS))
 
 
+def test_the_configuration_block_lists_the_built_in_gates_in_their_one_order() -> None:
+    # The reference is prose and cannot import the tuple, so its one spelling of the built-in
+    # gates is pinned here. Mutation: reorder `builtin` in `docs/cli.md`'s block and this
+    # reddens.
+    from keelline.config.schema import BUILTIN_GATES
+
+    section = _CONFIGURATION_BLOCK.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md's `## Configuration` has no ```toml block"
+    listed = ", ".join(f'"{name}"' for name in BUILTIN_GATES)
+    assert f"\nbuiltin = [{listed}]" in section.group(1)
+
+
 # `plan check`'s rule count, stated in the reference and emitted by `docs/plans.py`. The
 # sentence said "Four rules" and then listed five, in one breath, for as long as the fifth rule
 # has existed. `base-unresolvable` is the refusal, not one of the rules the sentence counts.

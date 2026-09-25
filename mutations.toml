@@ -12,6 +12,9 @@
 #
 #     uv run python scripts/mutation_oracle.py
 #
+# `reddens` is an any-of list: an entry is caught when at least one named test goes red, so
+# name only tests that do, and put a test that must redden on its own in an entry of its own.
+#
 # This is not a coverage substitute and is not exhaustive — `--cov` is the breadth measure. It
 # is the set of invariants whose *guard* must be proven to be load-bearing rather than merely
 # executed, which is the distinction that let `open_within` be fully covered and still not
@@ -4285,12 +4288,15 @@ reddens = [
 # Re-pointed in wave 4, when `init` and the project templates shipped and left that sentence
 # holding exactly the four items the test's floor requires. The entry quotes two lines of prose
 # verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
-# caught it is reading every entry's `before` back out of its file and counting.
+# caught it is reading every entry's `before` back out of its file and counting. Re-pointed
+# again when the profile adapters rewrote the sentence to eight items that each leave it in the
+# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it; the
+# mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `upgrade`,\n> `uninstall`, `assess` and the adoption state machine \u2014 so nothing refreshes or removes a"
-after = "> discipline. **Not yet:** `upgrade` \u2014 so nothing refreshes or removes a"
+before = "> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a\n> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each\n> leaves this"
+after = "> discipline. **Not yet:** `assess` \u2014 each\n> leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -5048,7 +5054,7 @@ reddens = [
 [[mutation]]
 name = "the oracle's job keeps a budget that no longer fits its own set"
 file = ".github/workflows/ci.yml"
-before = "    timeout-minutes: 19"
+before = "    timeout-minutes: 25"
 after = "    timeout-minutes: 5"
 reddens = [
   "tests/test_fixtures.py::test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits",
@@ -5254,17 +5260,17 @@ reddens = [
 [[mutation]]
 name = "init applies the write-once pass before it has looked at either plan's refusals"
 file = "src/keelline/project/init.py"
-before = "    if dry_run or once.refusals or footprint.refusals:"
+before = "    if dry_run or report.refused:"
 after = "    if False:"
 reddens = [
   "tests/project/test_init.py::test_a_dry_run_writes_nothing_and_reports_both_plans",
   "tests/project/test_init.py::test_a_refused_footprint_writes_nothing_at_all",
 ]
 
-# DC5. The manifest is the record that this repository has been initialised, and it is the
-# only one: a second `init` over an initialised repository would re-plan every artifact
-# against a configuration it rebuilt from scratch. Refreshing a footprint is `keelline
-# upgrade`, which ships later, and the refusal says so rather than doing half of it. The
+# The manifest is the record that this repository has been initialised, and it is the only
+# one: a second `init` over an initialised repository would re-plan every artifact against a
+# configuration it rebuilt from scratch. Refreshing a footprint is `keelline upgrade`, and the
+# refusal says so rather than doing half of it. The
 # anchor is `.keelline/manifest.json`, whose path is the scaffold area's own constant and is
 # contained against the root before it is read.
 [[mutation]]
@@ -5273,7 +5279,7 @@ file = "src/keelline/project/init.py"
 before = "    if (root / MANIFEST_PATH).is_file():"
 after = "    if False:"
 reddens = [
-  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_says_upgrade_ships_later",
+  "tests/project/test_init.py::test_an_initialised_repository_is_refused_and_offered_upgrade",
 ]
 
 # P10, and the third leak of this family this branch closes. `tomllib` builds its message as
@@ -5446,21 +5452,25 @@ reddens = [
   "tests/project/test_templates.py::test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line",
 ]
 
-# DC3's premise, which nothing made true: `scaffold.engine.plan` has no duplicate-target
-# detection and C2 is frozen, so two `[paths]` keys aimed at one file made both plans report zero
-# refusals, `apply` write both, the file hold only the second artifact's bytes, and the manifest
-# record two different `sha256` values for one target — the first artifact silently lost,
-# `upgrade` reading one record as hand-edited for ever, and `uninstall` removing a file holding
-# the other. The anchor is this module's own artifact list, a constant in the installed package:
-# which artifacts exist and which `[paths]` key each reads are Keelline's, and the repository
-# chooses only the values — which the refusal names by key and never by value.
+# One refusal, read off one relation (`templates.Owners`), for every pair of artifacts at one
+# file: within a pass, where `scaffold.engine.plan` has no duplicate-target detection and two
+# `[paths]` keys aimed at one file had `apply` write both and the manifest record two digests for
+# one path; across the two passes; and against a file only another configuration builds. Only
+# the `AGENTS.md` skeleton and its region share a file. `roadmap = "CLAUDE.md"` passed the
+# per-pass checks there used to be, and with a forged ledger entry `upgrade` removed the
+# `CLAUDE.md` kept out of git. The anchor is this module's artifact list; the refusal names two
+# ids and their keys, never the value.
 [[mutation]]
-name = "two artifacts of one pass may target one file again"
+name = "an artifact may target a file another artifact is built to write"
 file = "src/keelline/project/templates.py"
-before = "    _one_target_each(footprint)"
+before = "    _no_file_of_another(prepared)\n"
 after = ""
 reddens = [
   "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write",
+  "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-upgrade]",
 ]
 
 # The highest-value new guard in the `project` area, and it had a test and no entry.
@@ -5602,7 +5612,7 @@ reddens = [
 ]
 
 # Committed provenance. `Template.source` becomes `Record.template` in `.keelline/manifest.json`,
-# which is tracked and is what `upgrade` will read to find out where an artifact's bytes came
+# which is tracked and is where a reader finds out where an artifact's bytes came
 # from. Three artifacts here compute their bytes rather than reading a shipped file, and all three
 # recorded `project/<id>` — a name `PROJECT_FILES` does not carry, that the wheel does not ship,
 # and that `read` refuses by name. Nothing raised, because each one overrides `render`; what was
@@ -5686,25 +5696,48 @@ reddens = [
   "tests/config/test_paths.py::test_a_paths_value_naming_gits_control_directory_is_refused_and_never_quoted",
 ]
 
+# Keelline's own directory, reserved the same way. `.keelline/local/` holds attach's ledger and
+# the local-only notes, state git never sees, and `agents-md` is a region inserted into whatever
+# file `[paths] agents_md` names. Measured before the rule: a committed
+# `agents_md = ".keelline/local/attach.json"` had `upgrade` exit 0 with `region_update
+# .keelline/local/attach.json (refreshed)`. The anchor is the resolved root and the
+# `KEELLINE_DIRECTORY` constant in the installed package; a clone authors only the value.
+[[mutation]]
+name = "a [paths] value may name Keelline's own directory"
+file = "src/keelline/config/paths.py"
+before = "        if names_keelline_directory(relative):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_paths.py::test_a_paths_value_inside_keellines_own_directory_is_refused_and_never_quoted",
+  "tests/project/test_upgrade.py::test_a_committed_path_into_keellines_own_directory_refuses_upgrade_before_any_write",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-another-artifact-s-hidden-copy-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
+]
+
 # The case half, on its own. A rule that matched `.git` exactly would be green on every test
 # above that does not spell `.GIT`, and the default filesystem on macOS is case-insensitive, so
 # `.GIT/hooks/pre-commit` reaches the developer's hook there.
 [[mutation]]
 name = "the control-directory rule stops folding case, so .GIT reaches the same directory"
 file = "src/keelline/fsops.py"
-before = "    return any(part.lower() == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
-after = "    return any(part == CONTROL_DIRECTORY for part in relative.split(\"/\"))"
+before = "    return any(part.lower() == name for part in relative.split(\"/\"))"
+after = "    return any(part == name for part in relative.split(\"/\"))"
 reddens = [
   "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
   "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
 ]
 
 # The pointer every Claude Code session in an adopting project follows. `CLAUDE.md` shipped as
 # the literal `@AGENTS.md` and was built with no `render` override at all, so a project that set
 # `[paths] agents_md` to anything else received a pointer at a file the run had not written,
 # beside the file it had — and `keelline docs check` passed over the pair, because nothing on
-# either side reads the other. The mutation writes the self-pointer `_one_target_each` refuses
-# when a repository asks for it, which is the only way left to reach that state.
+# either side reads the other. The mutation writes the self-pointer the collision refusal
+# (`templates.Owners`) refuses when a repository asks for it, which is the only way left to reach
+# that state.
 [[mutation]]
 name = "the CLAUDE.md pointer stops naming the configured instruction file"
 file = "src/keelline/project/templates.py"
@@ -5771,17 +5804,16 @@ reddens = [
   "tests/project/test_init.py::test_an_adopted_document_with_no_ref_gets_no_workflow_at_all",
 ]
 
-# `NO_REF`'s argument, on the path `NO_REF` does not cover: a run that writes persists the
-# manifest, and `init` refuses a repository that has one, so "run it again with the network
-# reachable" is a remedy only a dry run can take. The mutation gives it to every run.
+# An unreachable remote on a run that creates the document is answered with the two commands
+# that can still pin: `init --yes` before anything is written, `upgrade` after. The mutation
+# answers it with the adoption path's sentence instead, which blames a hand-written document
+# this run did not have and offers `init --yes` to nobody.
 [[mutation]]
-name = "an unreachable remote tells a run that wrote to run again"
+name = "an unreachable remote is answered with the adoption path's reason instead of its own"
 file = "src/keelline/project/templates.py"
-before = "            return None, NOT_ASKED_DRY if dry_run else NOT_ASKED_WRITTEN"
-after = "            return None, NOT_ASKED_DRY"
-reddens = [
-  "tests/project/test_init.py::test_an_unreachable_remote_offers_running_again_only_to_a_run_that_wrote_nothing",
-]
+before = "            return None, NOT_ASKED"
+after = "            return None, NO_REF"
+reddens = ["tests/project/test_init.py::test_an_unreachable_remote_is_answered_with_a_command_that_can_act"]
 
 # N5 of the wave-4 re-review. `contained()` took on the write's component rule, and
 # `contained_roots` catches its refusal and moves on — so `code_roots = ["src/"]` was silently
@@ -6235,3 +6267,1008 @@ after = '    if not name.replace("-", "").replace("_", "").isalnum():'
 reddens = [
   "tests/scaffold/test_containment.py::test_a_preset_name_with_a_non_ascii_letter_is_refused_by_the_rule",
 ]
+
+# The one writer into a `keelline.toml` somebody else owns: an edit is kept only when reading it
+# back gives exactly the document before it with that one key set. The multi-line case is the one
+# where the returned text still parses, which is the silent failure the read-back exists for.
+[[mutation]]
+name = "the tool-owned key editor returns an edit it never read back"
+file = "src/keelline/config/owned.py"
+before = "            proved = tomllib.loads(candidate) == expected"
+after = "            proved = True"
+reddens = [
+  "tests/config/test_owned.py::test_a_table_header_inside_a_multi_line_string_is_not_where_the_key_is",
+]
+
+[[mutation]]
+name = "the tool-owned key editor lets a parse failure quote the document"
+file = "src/keelline/config/owned.py"
+before = "    except tomllib.TOMLDecodeError as exc:"
+after = "    except KeyError as exc:"
+reddens = [
+  "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
+]
+
+# A region's record stamps the region's body, never the file around it, so its relocation is
+# judged by the region. The fabricated-record test is named too: its record now holds the digest
+# the engine really writes.
+[[mutation]]
+name = "a region's relocation is judged by the whole file's digest again"
+file = "src/keelline/scaffold/engine.py"
+before = "    if present is None or digest(present) != record.sha256:"
+after = "    if digest(old) != record.sha256:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_region_the_engine_recorded_itself_relocates_and_leaves_the_prose",
+  "tests/scaffold/test_engine.py::test_relocating_a_managed_region_removes_only_its_own_lines",
+]
+
+# `force` reaches the retired path too: a hand-edited retired artifact the user has decided to
+# remove anyway. The second entry is the guard against the data loss that forcing a region would
+# otherwise cause: with a forced payload of `None`, the prose around the region goes with it.
+[[mutation]]
+name = "force stops reaching a retired artifact edited by hand"
+file = "src/keelline/scaffold/engine.py"
+before = "    if ours or target in forced:"
+after = "    if ours:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_reaches_a_retired_artifact_edited_by_hand",
+  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
+]
+
+[[mutation]]
+name = "forcing a retired region deletes the file around it"
+file = "src/keelline/scaffold/engine.py"
+before = '''                _removal_payload(template, current),
+                "retired" if ours else "retired, forced",'''
+after = '''                _removal_payload(template, current) if ours else None,
+                "retired" if ours else "retired, forced",'''
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_on_a_retired_region_removes_the_region_and_keeps_the_prose",
+]
+
+[[mutation]]
+name = "a file that held only Keelline's region is rewritten empty instead of removed"
+file = "src/keelline/scaffold/engine.py"
+before = "        return remainder if remainder else None"
+after = "        return remainder"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_region_that_was_the_whole_file_removes_the_file",
+]
+
+# The gate set and per-gate enforcement. The first, fourth and fifth entries bound what a
+# repository-authored gate name may reach in a refusal; the second and third hold the one fact
+# `state` and `enforced` state together.
+[[mutation]]
+name = "the loader admits a gate the project does not run into [keelline] enforced"
+file = "src/keelline/config/loader.py"
+before = "    unknown = [name for name in keelline.enforced if name not in names]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "an installed project stops enforcing every gate it runs"
+file = "src/keelline/config/loader.py"
+before = "    return replace(config, keelline=replace(keelline, enforced=names))"
+after = "    return config"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_enforces_every_configured_gate",
+]
+
+[[mutation]]
+name = "an installed project's partial enforced list loads again"
+file = "src/keelline/config/loader.py"
+before = "    if keelline.enforced and set(keelline.enforced) != set(names):"
+after = "    if False:"
+reddens = [
+  "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
+]
+
+[[mutation]]
+name = "a custom gate's name reaches the loader's refusals unbounded"
+file = "src/keelline/config/loader.py"
+before = "    unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]"
+after = "    unusable: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_custom_gate_name_outside_the_grammar_is_counted_and_never_quoted",
+]
+
+[[mutation]]
+name = "the loader admits a built-in gate Keelline does not have"
+file = "src/keelline/config/loader.py"
+before = "    unknown = [name for name in gates.builtin if name not in BUILTIN_GATES]"
+after = "    unknown: list[str] = []"
+reddens = [
+  "tests/config/test_loader.py::test_a_built_in_gate_keelline_does_not_have_is_counted_and_never_quoted",
+]
+
+# An adoption plan is an ordinary plan, directly in `[paths] plans`, where `plan check` and the
+# trail already look. The nested and spec cases are the ones only the directory comparison refuses.
+[[mutation]]
+name = "an adoption plan is recognised outside [paths] plans"
+file = "src/keelline/config/layout.py"
+before = "        candidate.parent == PurePosixPath(config.paths.plans)"
+after = "        True"
+reddens = [
+  "tests/config/test_layout.py::test_an_adoption_plan_is_a_plan_whose_name_says_keelline",
+]
+
+# `init` renders the tables it copies out of a hand-written `keelline.toml` before the loader
+# sees them, and the serialiser quotes a key it cannot write bare. The refusal names the table
+# and never the key, which is repository-authored text no grammar has bounded.
+[[mutation]]
+name = "an adopted keelline.toml key reaches init's refusal quoted"
+file = "src/keelline/project/init.py"
+before = "            raise Refusal(UNWRITABLE_KEY.format(table=name)) from None"
+after = "            raise"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_key_that_is_not_bare_is_refused_naming_only_its_table",
+]
+
+[[mutation]]
+name = "a profile locator stops refusing a symlinked file the repository planted"
+file = "src/keelline/profiles/evaluate.py"
+before = "        try:\n            path = contained(root, relative)"
+after = "        try:\n            path = root / relative"
+reddens = [
+  "tests/profiles/test_evaluate.py::test_a_locator_through_a_symlink_out_of_the_root_resolves_to_nothing",
+]
+
+[[mutation]]
+name = "the engine accepts a profile this Keelline does not ship"
+file = "src/keelline/scaffold/engine.py"
+before = "    if profile not in shipped:"
+after = "    if False:"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_profile_the_listing_lacks_is_refused_and_never_quoted",
+]
+
+[[mutation]]
+name = "a harness's rendering is applied though the project does not list it"
+file = "src/keelline/harnesses.py"
+before = "    chosen = tuple(harness for harness in HARNESSES if harness.name in listed)"
+after = "    chosen = HARNESSES"
+reddens = [
+  "tests/project/test_templates.py::test_a_harness_not_listed_gets_no_file_of_its_own",
+  "tests/test_harnesses.py::test_select_answers_the_listed_harnesses_and_counts_the_rest",
+]
+
+[[mutation]]
+name = "a harness rendition that collides is a KeyError instead of a refusal"
+file = "src/keelline/project/templates.py"
+before = "                second_key=PATH_KEYS.get(second, OWN_NAME),"
+after = "                second_key=PATH_KEYS[second],"
+reddens = [
+  "tests/project/test_templates.py::test_a_rendition_that_collides_is_refused_naming_the_harness_s_fixed_name",
+]
+
+# A profile artifact kept out of git leaves the `AGENTS.md` pointer and every harness's rule
+# pointing at a committed path that holds nothing.
+[[mutation]]
+name = "a profile artifact kept out of git is written, and every pointer to it dangles"
+file = "src/keelline/project/footprint.py"
+before = "    if local:\n        raise Refusal(LOCAL_PROFILE"
+after = "    if False:\n        raise Refusal(LOCAL_PROFILE"
+reddens = [
+  "tests/project/test_templates.py::test_a_profile_artifact_kept_out_of_git_is_refused",
+  "tests/project/test_init.py::test_a_profile_kept_out_of_git_refuses_init_before_anything_is_written",
+  "tests/project/test_upgrade.py::test_a_profile_kept_out_of_git_refuses_upgrade_before_anything_is_written",
+]
+
+# `uninstall` does not apply the profile refusal `init` and `upgrade` apply, so a configuration
+# that lists a profile artifact in `[artifacts] local` can still be taken back.
+[[mutation]]
+name = "uninstall refuses a profile artifact kept out of git, so a configuration written before that rule can never be taken back"
+file = "src/keelline/project/footprint.py"
+before = "    if not removing:\n        refuse_local_profile(prepared, config)\n"
+after = "    if True:\n        refuse_local_profile(prepared, config)\n"
+reddens = ["tests/project/test_uninstall.py::test_a_profile_artifact_listed_local_after_init_is_still_taken_back"]
+
+# An artifact kept out of git has no record, and its directory is git-ignored: an edit
+# overwritten or removed there is gone for good, so it is judged against this build's render.
+[[mutation]]
+name = "an edited artifact kept out of git is refreshed over, and git cannot give it back"
+file = "src/keelline/scaffold/engine.py"
+before = "                and location is Location.LOCAL\n                and present is not None\n                and target not in forced\n"
+after = "                and False\n"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_local_artifact_that_is_not_this_build_s_bytes_is_left_and_force_takes_it",
+  "tests/project/test_upgrade.py::test_an_edited_artifact_kept_out_of_git_is_left_and_named",
+]
+
+[[mutation]]
+name = "a retired artifact kept out of git is removed whatever its bytes"
+file = "src/keelline/scaffold/engine.py"
+before = "        ours = ours_locally(template, current, target, digests)"
+after = "        ours = True"
+reddens = ["tests/scaffold/test_engine.py::test_a_retired_local_artifact_edited_by_hand_stays_unless_forced"]
+
+[[mutation]]
+name = "artifacts kept out of git share a directory with attach's ledger and the note store"
+file = "src/keelline/scaffold/local.py"
+before = 'LOCAL_ARTIFACTS = f"{LOCAL_ROOT}/artifacts"'
+after = "LOCAL_ARTIFACTS = LOCAL_ROOT"
+reddens = ["tests/scaffold/test_engine.py::test_a_local_artifact_moves_under_dot_keelline"]
+
+# `rewrite_owned` is the one writer of a tool-owned key. The `config` record is re-stamped only
+# when it described the file before the edit, and before the file is written, so an untouched
+# `keelline.toml` stays one `uninstall` recognises and an edited one is never blessed.
+[[mutation]]
+name = "a tool-owned rewrite re-stamps a keelline.toml a person edited, blessing the edit"
+file = "src/keelline/project/rewrite.py"
+before = "    if record is not None and record.sha256 == digest(text):"
+after = "    if record is not None:"
+reddens = ["tests/project/test_rewrite.py::test_an_edited_document_is_rewritten_and_its_record_never_blesses_the_edit"]
+
+[[mutation]]
+name = "a tool-owned rewrite writes the document before its record, and an interruption strands the record"
+file = "src/keelline/project/rewrite.py"
+before = "    stamped = None\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        failure = Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\")\n        if stamped is not None:\n            try:\n                manifest.write(root)\n            except ManifestError as restore:\n                raise failure from restore\n        raise failure from exc\n"
+after = "    try:\n        write_within(root, CONFIG_FILE, document)\n    except OSError as exc:\n        raise Refusal(f\"{CONFIG_FILE} cannot be written: {exc}\") from exc\n    if record is not None and record.sha256 == digest(text):\n        stamped = replace(record, sha256=digest(document), version=keelline.__version__)\n        manifest.with_record(stamped).write(root)\n"
+reddens = ["tests/project/test_rewrite.py::test_a_run_interrupted_between_its_two_writes_converges_on_the_next"]
+
+# The record is re-stamped before the write, so a write that fails must put it back: left naming
+# bytes the file never held, a next run computing other bytes (a later version, a new pin) never
+# re-stamps it, and `uninstall` keeps an untouched `keelline.toml` as edited for good.
+[[mutation]]
+name = "a failed write of keelline.toml leaves its record naming bytes the file never held"
+file = "src/keelline/project/rewrite.py"
+before = "        if stamped is not None:\n            try:\n                manifest.write(root)\n"
+after = "        if False:\n            try:\n                manifest.write(root)\n"
+reddens = ["tests/project/test_rewrite.py::test_a_write_that_fails_puts_the_record_back_so_a_run_with_other_bytes_still_restamps"]
+
+# `could_write` is the anchor retirement rests on: which ids exist and which targets each could
+# have are this build's, built at the lines that build the templates.
+[[mutation]]
+name = "the workflow's anchor follows [ci] mode, and switching the gate off strands it"
+file = "src/keelline/project/templates.py"
+before = '    could_write[CI_ARTIFACT] = {CI_WORKFLOW}'
+after = '    could_write[CI_ARTIFACT] = set()'
+reddens = ["tests/project/test_templates.py::test_every_target_any_configuration_writes_is_one_every_configuration_could"]
+
+# `upgrade` moves `[keelline] version`, `[ci] ref` and the workflow's pin together or not at all,
+# never moves a project backward, and retires the workflow only when `[ci] mode` asks for none.
+[[mutation]]
+name = "upgrade moves a project backward to the older Keelline running"
+file = "src/keelline/project/upgrade.py"
+before = "    if ahead:\n        raise Refusal(NEWER"
+after = "    if False:\n        raise Refusal(NEWER"
+reddens = ["tests/project/test_upgrade.py::test_a_project_recording_a_newer_keelline_is_refused"]
+
+# A recorded version with no leading `X.Y.Z` has no known direction, so moving it to the running
+# version could be moving it backward; `satisfies` answered `None` for it and the old guard read
+# that as "not newer". The mutation lets `None` through as "not newer" again.
+[[mutation]]
+name = "upgrade moves a recorded version it cannot read"
+file = "src/keelline/project/upgrade.py"
+before = "    if ahead is None and later(before.keelline.version, before.keelline.version) is None:"
+after = "    if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_recorded_version_with_no_leading_triple_is_refused_and_never_quoted"]
+
+# Two versions sharing one `X.Y.Z` and differing after it in a way `later` does not order (two
+# pre-releases, a post-release) have no known direction either, and are refused by their own
+# sentence, which names the running version rather than calling the recorded one unreadable.
+[[mutation]]
+name = "upgrade moves a version it cannot order"
+file = "src/keelline/project/upgrade.py"
+before = "    if ahead is None:\n        raise Refusal(UNORDERED"
+after = "    if False:\n        raise Refusal(UNORDERED"
+reddens = ["tests/project/test_upgrade.py::test_two_pre_releases_of_one_version_are_refused_as_unordered_and_never_quoted"]
+
+# Read by the triple alone, a release and its own pre-release were one version, so a pre-release
+# build moved a project recording the release down to itself and re-pinned it.
+[[mutation]]
+name = "a release reads as older than its own pre-release"
+file = "src/keelline/overlay/requires.py"
+before = "    if not suffix and _PRE_RELEASE.match(other):\n        return True"
+after = "    if not suffix and _PRE_RELEASE.match(other):\n        return False"
+reddens = [
+  "tests/overlay/test_requires.py::test_equal_triples_order_a_release_after_its_pre_release_and_nothing_else",
+  "tests/project/test_upgrade.py::test_a_pre_release_build_never_moves_a_project_recording_the_release_down_to_itself",
+]
+
+[[mutation]]
+name = "upgrade moves the version with no release to pin, and the gate refuses its own pull request"
+file = "src/keelline/project/upgrade.py"
+before = "        changes, held = {}, NO_RELEASE"
+after = "        held = NO_RELEASE"
+reddens = ["tests/project/test_upgrade.py::test_with_no_release_to_pin_neither_key_moves_and_the_report_says_why"]
+
+# A tool-owned key in a shape the editor cannot prove it rewrote is refused before any write,
+# never held silently while the footprint is written around it. The editor is asked even on the
+# path where the version would be held, and the comparison that looks equivalent is not.
+[[mutation]]
+name = "upgrade holds a version it cannot rewrite and writes the footprint anyway"
+file = "src/keelline/project/upgrade.py"
+before = "    elif pinned and rewrite(text, changes) != text:"
+after = "    elif pinned and before.keelline.version != running:"
+reddens = ["tests/project/test_upgrade.py::test_a_version_in_a_shape_the_editor_cannot_rewrite_is_refused_even_when_it_would_be_held"]
+
+[[mutation]]
+name = "upgrade moves version and ref past a workflow it did not rewrite"
+file = "src/keelline/project/upgrade.py"
+before = "    if pinned and document != text and not _rewrites_the_workflow(footprint):"
+after = "    if False:"
+reddens = ["tests/project/test_upgrade.py::test_a_hand_edited_workflow_holds_both_keys_until_it_is_forced"]
+
+[[mutation]]
+name = "upgrade retires the CI workflow for a mode it merely does not render"
+file = "src/keelline/project/footprint.py"
+before = '        retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")'
+after = "        retired = tuple(retired)"
+reddens = ["tests/project/test_upgrade.py::test_a_mode_this_build_does_not_render_is_not_a_request_to_delete_the_gate"]
+
+# The other half of the same policy: `uninstall` retires every record it may, the workflow of a
+# mode this build merely does not render included, or it is left, unlisted, beside a deleted
+# manifest.
+[[mutation]]
+name = "uninstall keeps a workflow the mode merely does not render, and leaves it unlisted"
+file = "src/keelline/project/footprint.py"
+before = "    if not removing:\n        retired = tuple("
+after = "    if True:\n        retired = tuple("
+reddens = ["tests/project/test_uninstall.py::test_a_workflow_the_mode_no_longer_renders_still_goes"]
+
+[[mutation]]
+name = "an upgrade dry run writes the footprint"
+file = "src/keelline/project/upgrade.py"
+before = "    if dry_run or report.refused:"
+after = "    if report.refused:"
+reddens = ["tests/project/test_upgrade.py::test_a_dry_run_writes_nothing_and_reports_everything"]
+
+# A report prints targets, and a target a committed manifest recorded is repository-authored:
+# only one inside the path grammar may print as itself.
+[[mutation]]
+name = "a report prints a committed manifest's target raw"
+file = "src/keelline/scaffold/report.py"
+before = '    return item.target if PATH_VALUE.match(item.target) else f"<{item.artifact_id}>"'
+after = "    return item.target"
+reddens = [
+  "tests/scaffold/test_report.py::test_a_target_outside_the_path_grammar_prints_as_its_artifact_id",
+  "tests/project/test_footprint_commands.py::test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id",
+]
+
+[[mutation]]
+name = "a --force path outside the root is dropped instead of refused"
+file = "src/keelline/project/commands.py"
+before = "            raise Refusal(FORCE_OUTSIDE)"
+after = "            continue"
+reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]
+
+# `uninstall`'s `ATTACHED` refusal. The attach ledger lives under `.keelline/local/`, so the count
+# of files kept out of git would still stop the real run; what this guard adds is the refusal's
+# remedy, and a dry run that refuses rather than reporting an attached repository as one it could
+# uninstall. The test asserts the exact sentence and an unchanged tree for both runs.
+[[mutation]]
+name = "an attached repository is counted as files kept out of git instead of being told to detach"
+file = "src/keelline/project/uninstall.py"
+before = "    if (root / LEDGER).is_file():"
+after = "    if False:"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
+
+[[mutation]]
+name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
+file = "src/keelline/project/uninstall.py"
+before = "    judged = passes.replan(once_body, force=once_force)"
+after = "    judged = once"
+reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
+
+# The count is a refusal before any write. Without it the check after the write-once pass still
+# keeps the ignore block, so what is lost is the promise that nothing is written: the footprint
+# and the write-once files go first, and then the run refuses.
+[[mutation]]
+name = "uninstall removes the footprint before it refuses the files kept out of git"
+file = "src/keelline/project/uninstall.py"
+before = "    if kept:\n        raise Refusal(KEPT_LOCALLY"
+after = "    if False:\n        raise Refusal(KEPT_LOCALLY"
+reddens = [
+  "tests/project/test_uninstall.py::test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them",
+  "tests/project/test_uninstall.py::test_an_edited_artifact_kept_out_of_git_refuses_until_it_is_forced",
+]
+
+[[mutation]]
+name = "forcing AGENTS.md's region deletes the skeleton and the prose written into it"
+file = "src/keelline/project/uninstall.py"
+before = "    once_force = tuple(path for path in force if path not in footprint_targets)"
+after = "    once_force = tuple(force)"
+reddens = ["tests/project/test_uninstall.py::test_forcing_agents_md_takes_the_region_out_and_keeps_the_skeleton_s_prose"]
+
+[[mutation]]
+name = "a retired file is removed whatever its bytes, so a committed path and record reach a local edit"
+file = "src/keelline/scaffold/engine.py"
+before = "        ours = present is not None and digest(present) == record.sha256"
+after = "        ours = True"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_committed_path_and_record_reach_only_bytes_the_same_commit_states",
+  "tests/project/test_uninstall.py::test_an_edited_file_stays_and_is_listed_and_force_takes_it",
+]
+
+# `--force` names the path the engine resolved. With the region and the skeleton both kept out of
+# git they share `.keelline/local/artifacts/AGENTS.md`, which `Template.target` does not say, and
+# a force meant for the region reaches the skeleton pass and deletes the file.
+[[mutation]]
+name = "a force meant for AGENTS.md's region reaches the skeleton kept out of git"
+file = "src/keelline/project/uninstall.py"
+before = "    footprint_targets = {effective_target(t, config)[0] for t in footprint_retired}"
+after = "    footprint_targets = {t.target for t in footprint_retired}"
+reddens = ["tests/project/test_uninstall.py::test_a_person_s_line_in_agents_md_survives_every_placement_and_stays_ignored[both-local-region-forced]"]
+
+# A `REMOVE` with a payload leaves a remainder. Counted as a deletion, a private remainder kept out
+# of git passes the check before any write, and the ignore block over it is only saved later.
+[[mutation]]
+name = "a region's remainder is counted as a deleted file"
+file = "src/keelline/scaffold/engine.py"
+before = "    return action.verb is Verb.REMOVE and action.payload is None"
+after = "    return action.verb is Verb.REMOVE"
+reddens = ["tests/project/test_uninstall.py::test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written"]
+
+# `uninstall`'s `KEPT_AFTER` refusal. The check before any write is a prediction; the disk after
+# the write-once pass is the fact. Drop the second and a remainder the prediction misjudged loses
+# its ignore block. The prediction is exact today, so the test makes it miss, and asserts the exact
+# sentence and that the ignore block, `keelline.toml` and the block's record are as they were.
+[[mutation]]
+name = "the ignore block goes while files are still under .keelline/local/"
+file = "src/keelline/project/uninstall.py"
+before = "    if left:"
+after = "    if False:"
+reddens = ["tests/project/test_uninstall.py::test_the_disk_after_the_write_once_pass_keeps_the_ignore_block_when_the_prediction_misses"]
+
+# Region and skeleton kept out of git share one file. An edited region there keeps the file, and a
+# person's line in the skeleton keeps it too, since no force reaches the skeleton at that path.
+# Counted as going, the run removes the footprint before it refuses, and tells the person to force
+# a path that is never forced there.
+[[mutation]]
+name = "every action at a shared file kept out of git is counted as removing it"
+file = "src/keelline/project/uninstall.py"
+before = "    if unlinks(action):\n        return True"
+after = "    if unlinks(action) or action.target in local_once:\n        return True"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write[skeleton]",
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_that_will_stay_refuses_before_any_write[region]",
+]
+
+# A retired record is judged against a whole-file stub, which names no region. A record kept
+# inside a host file that this build no longer produces is an orphan, so no `--force` can delete
+# the host file whole. One rule in `retired_templates`, so `upgrade` and `uninstall` both keep it.
+[[mutation]]
+name = "a region record this build does not produce is retired as a whole file"
+file = "src/keelline/project/footprint.py"
+before = "        and records[artifact_id].kind not in IN_FILE\n"
+after = ""
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_region_record_this_build_does_not_produce_is_an_orphan_and_its_host_file_stays",
+]
+
+# `keelline.toml` is what every later run needs to judge anything, so it goes after everything
+# but the ledger. Moved back into the write-once pass, a removal that fails later in the run
+# (`CLAUDE.md`, the ignore block) leaves a manifest and no configuration, and the next run keeps
+# what is left and drops the ledger: it never converges.
+[[mutation]]
+name = "keelline.toml is removed in the write-once pass, so a run stopped after it never converges"
+file = "src/keelline/project/uninstall.py"
+before = "    once_body = [t for t in once_retired if t.id != CONFIG_ARTIFACT]"
+after = "    once_body = list(once_retired)"
+reddens = [
+  "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[CLAUDE.md]",
+  "tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[.gitignore]",
+]
+
+# `keelline.toml` and the ignore block only work at the root, and `uninstall` removes both after
+# its check of what is left under `.keelline/local/`. Kept out of git, the check before any write
+# credits their removal and the check after it finds them still there: the footprint goes, the
+# run refuses part-way, and every later run refuses the same way.
+[[mutation]]
+name = "keelline.toml or the ignore block may be kept out of git"
+file = "src/keelline/project/footprint.py"
+before = "    if named:\n        raise Refusal(LOCAL_ROOT_ONLY"
+after = "    if False:\n        raise Refusal(LOCAL_ROOT_ONLY"
+reddens = [
+  "tests/project/test_uninstall.py::test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_before_any_write[config]",
+  "tests/project/test_init.py::test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_any_write",
+  "tests/project/test_upgrade.py::test_keelline_toml_kept_out_of_git_refuses_upgrade_before_any_write",
+]
+
+# The whole-file rule is "differs: skip it and name it, and `--force <path>` overwrites it". The
+# branch for a file with no record ignored `force`, so a caller workflow a person wrote held
+# `upgrade`'s version and pin back for ever, under a note whose one remedy did nothing. `forced`
+# is the caller's argv, compared with the target `plan` derived and contained, so no committed
+# file can force anything.
+[[mutation]]
+name = "--force stops reaching a whole file Keelline did not write"
+file = "src/keelline/scaffold/engine.py"
+before = "                and template.kind not in _IN_FILE\n                and target not in forced\n"
+after = "                and template.kind not in _IN_FILE\n"
+reddens = [
+  "tests/scaffold/test_engine.py::test_force_takes_a_whole_file_keelline_did_not_write_and_records_it",
+  "tests/project/test_upgrade.py::test_a_workflow_keelline_did_not_write_holds_both_keys_until_it_is_forced",
+]
+
+# A `[ci] ref` that is not a commit (`v1`, the documented opt-in to a moving Keelline) is the
+# project's own. Read as pinned, `upgrade` replaced it with a sha and rendered a workflow over
+# the choice, or held the version for ever behind a workflow written around it.
+[[mutation]]
+name = "upgrade repins a [ci] ref that is not a commit"
+file = "src/keelline/project/upgrade.py"
+before = """    pinned = before.ci.mode == \"reusable\" and (\n        not before.ci.ref or bool(CI_REF.match(before.ci.ref))\n    )\n"""
+after = "    pinned = before.ci.mode == \"reusable\"\n"
+reddens = [
+  "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[no-workflow]",
+  "tests/project/test_upgrade.py::test_a_ref_that_is_not_a_commit_is_the_projects_and_only_the_version_moves[own-workflow]",
+]
+
+# The manifest is the one record of what Keelline wrote. With `keelline.toml` gone nothing can be
+# judged, and the path that converges drops the manifest. While the manifest still records the
+# file, this command did not remove it (`apply` drops the record with the file) or a run removed
+# it and then did not write the manifest (killed, or the write failed), so the run refuses before
+# any write rather than leaving every recorded file untracked for good; restoring the file
+# converges either way.
+[[mutation]]
+name = "uninstall drops the manifest when a person deleted keelline.toml"
+file = "src/keelline/project/uninstall.py"
+before = "        if CONFIG_ARTIFACT in manifest.records:"
+after = "        if False:"
+reddens = ["tests/project/test_uninstall.py::test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored"]
+
+# A `[paths]` value is committed, and the promise that makes a region inserted wherever it points
+# acceptable is that the diff shows it. Git shows nothing for a file it ignores: a pulled commit
+# naming a git-ignored `.env` had `upgrade` append Keelline's region to it with only the manifest
+# in `git status`, and a record stating a predictable ignored file's digest had `uninstall` delete
+# it. One `check-ignore` before any write refuses the run for `init`, `upgrade` and `uninstall`
+# when an existing file at a place a `[paths]` value chose is ignored.
+[[mutation]]
+name = "a write git ignores goes ahead"
+file = "src/keelline/project/ignored.py"
+before = "        if ignored:\n            names"
+after = "        if False:\n            names"
+reddens = [
+  "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
+  "tests/project/test_ignored.py::test_init_refuses_an_existing_ignored_file_a_paths_value_names",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
+]
+
+# `LocalDigests` records what Keelline last wrote under `.keelline/local/artifacts/`, which the
+# committed manifest never does. With the render as the only oracle, an unedited copy read as
+# somebody's after any release that changed its template: `upgrade` skipped it and `uninstall`
+# refused over it, calling it edited; and a copy whose id left `[artifacts] local` was never
+# judged again, so `uninstall` refused for good, suggesting a `--force` nothing could reach.
+[[mutation]]
+name = "an unedited artifact kept out of git is skipped as not Keelline's once its template changes"
+file = "src/keelline/scaffold/engine.py"
+before = "                and not digests.matches(template.id, target, digest(present))\n"
+after = ""
+reddens = [
+  "tests/scaffold/test_local.py::test_an_unedited_copy_follows_a_changed_template",
+  "tests/project/test_upgrade.py::test_an_unedited_artifact_kept_out_of_git_follows_a_template_the_release_changed",
+]
+
+[[mutation]]
+name = "the ledger never vouches for bytes Keelline wrote kept out of git"
+file = "src/keelline/scaffold/engine.py"
+before = "    if present is not None and digests.matches(template.id, target, digest(present)):\n        return True"
+after = "    if False:\n        return True"
+reddens = [
+  "tests/scaffold/test_local.py::test_a_retired_unedited_copy_goes_after_its_template_changed",
+  "tests/project/test_uninstall.py::test_an_unedited_copy_kept_out_of_git_goes_after_its_template_changed",
+  "tests/project/test_uninstall.py::test_a_shared_agents_md_kept_out_of_git_goes_whole_after_its_templates_changed",
+]
+
+[[mutation]]
+name = "a copy left kept out of git when its id left [artifacts] local is never judged"
+file = "src/keelline/scaffold/engine.py"
+before = "        for copy in left_copies(template, config, digests, owners):\n            if path_key(copy) in planned:"
+after = "        for copy in ():\n            if path_key(copy) in planned:"
+reddens = [
+  "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
+  "tests/scaffold/test_local.py::test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it",
+]
+
+[[mutation]]
+name = "uninstall never judges an artifact only the ledger records"
+file = "src/keelline/project/uninstall.py"
+before = "    wanted = set(manifest.records) | set(config.artifacts.local) | digests.ids"
+after = "    wanted = set(manifest.records) | set(config.artifacts.local)"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_copy_left_when_its_id_left_the_local_list_goes_with_the_rest",
+  "tests/project/test_uninstall.py::test_a_changed_copy_left_by_the_local_list_is_named_and_force_is_a_remedy_that_works",
+]
+
+# The ledger is kept out of git, and a clone can force-add it anyway, so it authorizes nothing
+# beyond bytes its writer already names, under `.keelline/local/artifacts/`. Two layers, each
+# held by its own case: the reader drops a ledger naming anything outside that directory, and the
+# engine lets this build's render vouch for a file only at the artifact's own place there, so
+# anywhere else the recorded digest alone does.
+[[mutation]]
+name = "a ledger entry may name a file outside the artifacts directory"
+file = "src/keelline/scaffold/local.py"
+before = "            and target.startswith(f\"{LOCAL_ARTIFACTS}/\")\n"
+after = ""
+reddens = ["tests/scaffold/test_local.py::test_a_ledger_that_is_not_exactly_this_shape_is_absent"]
+
+[[mutation]]
+name = "a left copy away from its own place goes on the render alone"
+file = "src/keelline/scaffold/engine.py"
+before = "    own = path_key(target) == path_key(f\"{LOCAL_ARTIFACTS}/{template.target}\")"
+after = "    own = True"
+reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest"]
+
+# A `[paths]` value moved while the artifact stayed in `[artifacts] local`: the old copy is at a
+# place the ledger records for its id and this configuration no longer gives it, and is judged
+# there. Without it no action named the old copy, and `uninstall` refused over it for good.
+[[mutation]]
+name = "a left copy is judged only where [artifacts] local no longer lists its id"
+file = "src/keelline/scaffold/engine.py"
+before = "        if path_key(copy) != path_key(target)\n"
+after = "        if template.id not in config.artifacts.local\n"
+reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
+
+# A ledger is read as untrusted, and an entry under one id must never reach another artifact's
+# own place kept out of git, whose unedited bytes are predictable: a clone could otherwise
+# force-add an entry that has `upgrade` delete a write-once artifact's copy (`templates.Owners`).
+[[mutation]]
+name = "a ledger entry under one id reaches another artifact's copy kept out of git"
+file = "src/keelline/scaffold/engine.py"
+before = "        and not (owners is not None and owners.foreign(template.id, copy.removeprefix(kept)))\n"
+after = ""
+reddens = [
+  "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
+  "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
+]
+
+# The relation's one exception comes from how the build is made, `templates.SHARED_FILE`: the
+# `AGENTS.md` skeleton and its region share a file by design. It is one exception for both rules
+# that read the relation, so without it the collision refusal refuses every footprint (the
+# legitimate row reddens with I2), and the region's left copy at the skeleton's place, which is
+# the region's to take out, is never reached (the uninstall case reddens there first, at the
+# `init` that sets it up).
+[[mutation]]
+name = "the AGENTS.md skeleton and its region stop sharing a file by design"
+file = "src/keelline/project/templates.py"
+before = "        return frozenset() if {artifact_id, *others} <= SHARED_FILE else others"
+after = "        return others"
+reddens = [
+  "tests/project/test_templates.py::test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_pair",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it",
+]
+
+# Within one plan, a left copy at a file another template of the plan targets is that template's
+# to judge; judged twice, its removal deleted the file from under an `unchanged` verdict.
+[[mutation]]
+name = "a left copy at a file another template of the plan targets is judged twice"
+file = "src/keelline/scaffold/engine.py"
+before = "            if path_key(copy) in planned:\n                continue\n"
+after = "            if False:\n                continue\n"
+reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_template_s"]
+
+# The same guard for the copy a region left kept out of git when its id left `[artifacts] local`:
+# the footprint pass judges it at the skeleton's own file, so a force meant for it must not
+# reach the write-once pass there either.
+[[mutation]]
+name = "a force meant for a region's left copy reaches the skeleton kept out of git"
+file = "src/keelline/project/uninstall.py"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in passes.left_copies(t, digests)\n    }\n"
+after = ""
+reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
+
+# A removal takes the manifest record of the file it removed and no other. The copy an artifact
+# left kept out of git carries the artifact's id, and dropping by id alone took the live record of
+# its committed file with it, which every later run then read as nobody's.
+[[mutation]]
+name = "removing a file drops the record of whatever file its artifact now names"
+file = "src/keelline/scaffold/engine.py"
+before = "                if record is not None and path_key(record.target) == path_key(action.target):\n"
+after = "                if True:\n"
+reddens = [
+  "tests/scaffold/test_local.py::test_removing_a_left_copy_keeps_the_record_of_the_committed_file",
+  "tests/project/test_upgrade.py::test_forcing_a_left_copy_away_keeps_the_committed_file_recorded",
+]
+
+# `uninstall` prunes only directories its own removals emptied: a `[paths]` value is committed,
+# so a directory it merely names may be a person's, a git-ignored placeholder included. Three
+# ways back: pruning every configured place again, counting a removal that unlinked nothing (a
+# relocation whose old file was already gone) as one that emptied its directory, and pruning only
+# after a pass that finished, which strands the directories of a run stopped part-way.
+[[mutation]]
+name = "uninstall prunes above every place the configuration names"
+file = "src/keelline/project/uninstall.py"
+before = "    _apply(root, body)\n"
+after = "    _apply(root, body)\n    _prune(root, sorted(footprint_targets))\n"
+reddens = ["tests/project/test_uninstall.py::test_an_empty_directory_a_committed_path_names_stays_when_nothing_was_removed_from_it"]
+
+[[mutation]]
+name = "a removal that unlinked nothing prunes above its path"
+file = "src/keelline/project/uninstall.py"
+before = "    present = [target for target in unlinking if os.path.lexists(root / target)]"
+after = "    present = unlinking"
+reddens = ["tests/project/test_uninstall.py::test_a_relocation_with_no_old_file_prunes_no_directory_a_person_made"]
+
+[[mutation]]
+name = "a pass that stops part-way leaves the directories it emptied"
+file = "src/keelline/project/uninstall.py"
+before = "    try:\n        apply(root, planned)\n    finally:\n"
+after = "    apply(root, planned)\n    if True:\n"
+reddens = ["tests/project/test_footprint_commands.py::test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_finishes[docs/roadmap.md]"]
+
+# The guard's anchor for "a place a `[paths]` value chose" is Keelline's own: the preset's shipped
+# `[defaults.paths]` through this build's `project_templates`, asked per artifact id. Anchored on
+# the configuration itself, every `[paths]` value reads as the preset's place and nothing is
+# refused; asked of any id's places, `[paths] roadmap = "CLAUDE.md"` passes as `claude-md`'s, and a
+# forged `roadmap` record overwrites or removes an ignored `CLAUDE.md` Keelline wrote.
+[[mutation]]
+name = "an ignored write's place is judged against the configuration's own paths"
+file = "src/keelline/project/ignored.py"
+before = "    placed = replace(config, paths=defaults)"
+after = "    placed = config"
+reddens = [
+  "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
+]
+
+[[mutation]]
+name = "an ignored write passes at any artifact's preset place"
+file = "src/keelline/project/ignored.py"
+before = "        if action.target not in places.get(action.artifact_id, frozenset()):"
+after = "        if not any(action.target in each for each in places.values()):"
+reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice"]
+
+# Whether a failed `check-ignore` ran inside a repository is read off the disk, never asked of
+# the same `git`: a `rev-parse` that timed out beside it read as "no repository" and passed.
+[[mutation]]
+name = "a guard whose git timed out reads as no repository"
+file = "src/keelline/project/ignored.py"
+before = "    if _in_work_tree(root):\n        raise Refusal(UNANSWERED)"
+after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]
+
+# Paths are compared for identity case-folded (`fsops.path_key`): on the default macOS and Windows
+# filesystems `claude.md` is `CLAUDE.md`. Each entry below puts exact equality back at one site.
+# The refusals are pure string rules; the ledger tests write the case variant as a file of its
+# own first. Either way each reddens on Linux, where the CI oracle runs, as on macOS.
+[[mutation]]
+name = "places are compared case-sensitively for ownership"
+file = "src/keelline/project/templates.py"
+before = "            if owner != artifact_id and path_key(place) in {path_key(p) for p in places}"
+after = "            if owner != artifact_id and place in places"
+reddens = [
+  "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
+  "tests/project/test_templates.py::test_one_relation_says_whose_file_a_place_is_and_excepts_only_the_agents_md_pair",
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[upgrade-case-variant]",
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[uninstall-case-variant]",
+  "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write[case-variant]",
+  "tests/project/test_upgrade.py::test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing[claude-md]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
+]
+
+[[mutation]]
+name = "a left copy at a case variant of a file the plan targets is judged twice"
+file = "src/keelline/scaffold/engine.py"
+before = "    planned = {path_key(effective_target(template, config)[0]) for template in templates}"
+after = "    planned = {effective_target(template, config)[0] for template in templates}"
+reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_template_s"]
+
+# `_relocation`'s "a place this template could produce" is folded, so the folded trigger is what
+# keeps the engine from relocating a file onto itself: a record at a case variant of the target
+# is that file where case folds, and a relocation removed it beside an `unchanged` verdict.
+[[mutation]]
+name = "a record at a case variant of the target triggers a relocation"
+file = "src/keelline/scaffold/engine.py"
+before = "        if record is not None and path_key(record.target) != path_key(target):"
+after = "        if record is not None and record.target != target:"
+reddens = ["tests/scaffold/test_engine.py::test_a_record_at_a_case_variant_of_the_target_is_that_file_and_never_a_relocation"]
+
+# A harness's own directory is never pruned, and `.Claude/` is `.claude/` where case folds.
+[[mutation]]
+name = "a case variant of a harness's own directory is pruned"
+file = "src/keelline/project/uninstall.py"
+before = "        if path_key(directory) in marker_dirs:"
+after = "        if directory in marker_dirs:"
+reddens = ["tests/project/test_uninstall.py::test_a_case_variant_of_a_harness_directory_is_never_pruned"]
+
+# The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`)
+# is also named by the entries above whose guards it holds. The ones below are its own: the
+# shared `.git` predicate both call sites ask, and guards made to refuse more than they should,
+# which the legitimate cases catch.
+
+[[mutation]]
+name = "git's control directory is named by no path"
+file = "src/keelline/fsops.py"
+before = '    return names_component(relative, CONTROL_DIRECTORY)'
+after = '    return False'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-uninstall]",
+]
+
+[[mutation]]
+name = "the ignore guard refuses a fixed name in the clone's excludes"
+file = "src/keelline/project/ignored.py"
+before = '        if action.target not in places.get(action.artifact_id, frozenset()):'
+after = '        if True:'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+]
+
+[[mutation]]
+name = 'the ignore guard refuses a new file at an ignored place'
+file = "src/keelline/project/ignored.py"
+before = '        and os.path.lexists(root / action.target)'
+after = '        and True'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-new-file-at-an-ignored-place]",
+]
+
+[[mutation]]
+name = 'the ignore guard refuses an artifact kept out of git'
+file = "src/keelline/project/ignored.py"
+before = '        and not action.target.startswith(f"{LOCAL_ARTIFACTS}/")'
+after = '        and True'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+]
+
+[[mutation]]
+name = 'the ignore guard reads a tracked file as ignored'
+file = "src/keelline/project/ignored.py"
+before = '    code, out = git_run(root, "check-ignore", "--stdin", "-z", stdin="\0".join(sorted(chosen)))'
+after = '    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(chosen)))'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
+]
+
+# A refusal returned in a report rather than raised: every recorded artifact refused.
+
+[[mutation]]
+name = 'the engine refuses every recorded artifact'
+file = "src/keelline/scaffold/engine.py"
+before = '        if reason is not None:'
+after = '        if reason is not None or record is not None:'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-new-file-at-an-ignored-place]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-symlinked-directory-no-value-uses]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
+]
+
+# The oracle's own declaration check, run before any mutation and by the suite.
+
+[[mutation]]
+name = 'a duplicated before line is accepted as an anchor'
+file = "scripts/mutation_oracle.py"
+before = '    if occurrences > 1:'
+after = '    if occurrences > 99:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once",
+]
+
+[[mutation]]
+name = 'a reddens id naming a function its file lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '                    and node.name == name'
+after = '                    and bool(name)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a parametrized reddens id the collection lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if scope is None or not names or ("[" in node_id and node_id not in (collected or ())):'
+after = '        if scope is None or not names:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a mutation declared twice passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if key in seen:'
+after = '        if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
+
+# The planning seam every footprint command plans through (`footprint.Passes`). Each guard it
+# binds reached the three commands by hand once, and a plan made without the ownership relation
+# passed every test but one command's: bound here, a command cannot leave either behind. The
+# relation dropped from every plan: the forged cross-id ledger entry reaches the `CLAUDE.md`
+# copy kept out of git again. The ignore guard dropped from every prediction: a committed
+# `[paths]` value writes into, or a forged record removes, a file git ignores.
+[[mutation]]
+name = "a footprint command plans without the ownership relation"
+file = "src/keelline/project/footprint.py"
+before = "        return plan(self.root, self.config, templates, force=force, owners=self.owners)"
+after = "        return plan(self.root, self.config, templates, force=force)"
+reddens = [
+  "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
+]
+
+[[mutation]]
+name = "a footprint command predicts its plans without asking the ignore guard"
+file = "src/keelline/project/footprint.py"
+before = "        refuse_ignored(self.root, self.config, *plans, removing=self.removing)"
+after = "        pass"
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command[uninstall]",
+]
+
+# One definition of "the command refused" per report (`refused`), and it decides twice: whether
+# the command writes anything, and the heading and exit code it prints. Each half of each
+# definition is dropped once, and a case whose only refusal is that half's reddens: the run goes
+# on to `apply`, whose backstop refuses the plan with exit 2 and the engine's message instead of
+# the report, and `uninstall` has removed the footprint by the time the write-once plan refuses.
+[[mutation]]
+name = "init's refusal reads only the footprint plan"
+file = "src/keelline/project/init.py"
+before = "        return bool(self.once.refusals or self.footprint.refusals)"
+after = "        return bool(self.footprint.refusals)"
+reddens = ["tests/project/test_command.py::test_a_refused_write_once_pass_exits_one_and_writes_nothing"]
+
+[[mutation]]
+name = "init's refusal reads only the write-once plan"
+file = "src/keelline/project/init.py"
+before = "        return bool(self.once.refusals or self.footprint.refusals)"
+after = "        return bool(self.once.refusals)"
+reddens = ["tests/project/test_command.py::test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report"]
+
+[[mutation]]
+name = "upgrade's refusal reads no plan"
+file = "src/keelline/project/upgrade.py"
+before = "        return bool(self.footprint.refusals)"
+after = "        return False"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[upgrade-footprint]"]
+
+[[mutation]]
+name = "uninstall's refusal reads only the write-once plan"
+file = "src/keelline/project/uninstall.py"
+before = "        return bool(self.footprint.refusals or self.once.refusals)"
+after = "        return bool(self.once.refusals)"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[uninstall-footprint]"]
+
+[[mutation]]
+name = "uninstall's refusal reads only the footprint plan"
+file = "src/keelline/project/uninstall.py"
+before = "        return bool(self.footprint.refusals or self.once.refusals)"
+after = "        return bool(self.footprint.refusals)"
+reddens = ["tests/project/test_footprint_commands.py::test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing[uninstall-once]"]
+
+# `uninstall`'s dry run stops at its report whatever the plans say, as `init`'s and `upgrade`'s
+# do (their entries: "init applies the write-once pass before it has looked at either plan's
+# refusals", "an upgrade dry run writes the footprint").
+[[mutation]]
+name = "an uninstall dry run removes the footprint"
+file = "src/keelline/project/uninstall.py"
+before = "    if dry_run or report.refused:"
+after = "    if report.refused:"
+reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_region"]
+
+
+# Only the planning seam (`footprint.Passes`) imports the engine's planner or the ignore guard, so
+# every footprint command, the next one included, plans with both guards bound. The engine's
+# `owners` stays optional for the overlay lane; the import is the bypass, and this is its check.
+[[mutation]]
+name = "a footprint command imports the planner past the seam"
+file = "src/keelline/project/init.py"
+before = "from keelline.scaffold import MANIFEST_PATH, Plan, apply"
+after = "from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan"
+reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]

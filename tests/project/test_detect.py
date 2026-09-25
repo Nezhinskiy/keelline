@@ -57,3 +57,11 @@ def test_a_name_outside_the_grammar_is_refused_without_being_quoted(tmp_path: Pa
     with pytest.raises(Refusal) as caught:
         detect(root)
     assert "[project] name" in str(caught.value) and "my+repo" not in str(caught.value).lower()
+
+
+@needs_git
+def test_the_profile_is_the_one_whose_markers_the_repository_carries(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    assert detect(root).profile == ""
+    (root / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    assert detect(root).profile == "python"

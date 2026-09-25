@@ -44,6 +44,11 @@ WHEEL_MUST = (
     # build that dropped it would leave every installed Keelline unable to initialise anything
     # while the checkout's own suite stayed green.
     *(f"keelline/templates/project/{name}" for name in PROJECT_FILES),
+    # The one shipped profile. `keelline.profiles` reads it at runtime through
+    # `importlib.resources`, like the presets, so a build that dropped it would refuse
+    # `[keelline] profile = "python"` as unshipped on every installed Keelline.
+    "keelline/profiles/python/profile.toml",
+    "keelline/profiles/python/rules.md",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
 # without an interpreter of ours and the record they are checked against.

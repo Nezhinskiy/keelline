@@ -5,8 +5,8 @@ footprint is the second, because two artifacts cannot target one file in one pas
 planned before either is applied, so a refusal anywhere leaves nothing written and no
 manifest; the dry run reports both plans and writes nothing.
 
-A repository that already holds a `keelline.toml` and no manifest is adopted (P4). One that
-holds a manifest is refused: re-running `init` is `upgrade` (§7.3), which ships later.
+A repository that already holds a `keelline.toml` and no manifest is adopted. One that holds a
+manifest is refused: re-running `init` is `keelline upgrade`.
 
 **The workflow and `[ci] ref` are one value.** A resolved pin is written into the document
 only when this run is the one that creates it, and `templates._ci` renders the workflow from
@@ -20,11 +20,11 @@ already carries one the engine reports `skip_modified` — "create-once, and the
 there" — and the file comes back byte for byte. What the hand-written document does is decide
 the whole run: it is parsed, merged under Keelline's own two keys and the preset's defaults,
 and validated by `loads` before a byte is written, and the `Config` that comes out is what
-every target below is built from. The two tool-owned keys are written only into a file
+every target below is built from. The tool-owned keys are written only into a file
 Keelline itself creates, which is the only file whose header claims them.
 
 **Every value in the document this writes is either Keelline's own or the repository's own
-answer read back.** The tool-owned pair is `[keelline] version` and `state`; everything else
+answer read back.** The tool-owned keys are `config.owned.OWNED`; everything else
 is copied from a `keelline.toml` a person wrote, or — where there is none — detected under
 `PROJECT_NAME`'s grammar, which is the one thing `detect` refuses outside of. `loads` then
 validates the whole document before a byte is written, so a bad path or a bad name costs the
@@ -34,25 +34,27 @@ run rather than the repository.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import keelline
 from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
-from keelline.project.templates import project_templates
+from keelline.project.footprint import prepare
+from keelline.project.templates import CI_ARTIFACT
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
-from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
+from keelline.scaffold import MANIFEST_PATH, Plan, apply
 from keelline.tomlout import dumps
 
 STATE_NEW = "initialised"
-USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "commit_messages")
+USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "gates", "commit_messages")
 HEAD_KEYS = ("preset", "profile", "agents")
 HEADER = (
     "# Written by `keelline init`. Every key you leave out takes the preset's default;\n"
-    "# `[keelline] version` and `state` are Keelline's to rewrite, the rest are yours.\n\n"
+    "# `[keelline] version`, `state` and `enforced`, and `[ci] ref`, are Keelline's to\n"
+    "# rewrite in place; every other key is yours.\n\n"
 )
 # The pair is spelled literally because the intended reader is an agent relaying this sentence,
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
@@ -64,7 +66,13 @@ NEEDS_YES = (
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
-    "`keelline upgrade`, which ships later"
+    "`keelline upgrade`"
+)
+# The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
+# is the only thing this names: the key that failed is exactly the text no grammar has bounded.
+UNWRITABLE_KEY = (
+    "keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML key, "
+    "so nothing was written; rename it to letters, digits, `_` and `-`"
 )
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
@@ -85,6 +93,14 @@ class InitReport:
     # What `[ci] ref` says on disk after the run, which is what the rendered workflow pins;
     # empty when no workflow was planned. One field for both, because they are one value.
     ref: str = ""
+    # How many names in `[keelline] agents` no harness answers to; a count, never the names.
+    unknown_harnesses: int = 0
+
+    @property
+    def refused(self) -> bool:
+        """Whether either plan refused an artifact: the other way than a raised `Refusal` that
+        this command refuses, with nothing written."""
+        return bool(self.once.refusals or self.footprint.refusals)
 
 
 def _existing(root: Path) -> dict[str, object] | None:
@@ -134,6 +150,8 @@ def _tables(
     if "project" not in tables:
         found = detect(root)
         head.setdefault("agents", list(found.agents))
+        if found.profile:
+            head.setdefault("profile", found.profile)
         tables["project"] = {
             "name": found.name,
             "base_branch": found.base_branch,
@@ -144,6 +162,24 @@ def _tables(
     return tables
 
 
+def _rendered(tables: dict[str, dict[str, object]]) -> str:
+    """The document `loads` validates: `HEADER` and `tables`, rendered by `tomlout.dumps`.
+
+    Every table but Keelline's own head is copied out of a hand-written document, and `dumps`
+    refuses a key it cannot write bare by quoting it (`{name!r}`). A TOML key is arbitrary quoted
+    text, so that put repository bytes, ESC and all, into a refusal the `init` skill relays to a
+    model, ahead of the loader's own count-only answer. Each table is therefore rendered alone
+    first, and a refusal is re-raised naming the table and nothing the document wrote. Rendering
+    a table raises only for a key: every value `tomllib` can parse, `dumps` can emit.
+    """
+    for name, table in tables.items():
+        try:
+            dumps({name: table})
+        except Refusal:
+            raise Refusal(UNWRITABLE_KEY.format(table=name)) from None
+    return HEADER + dumps(tables)
+
+
 def init(
     root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
 ) -> InitReport:
@@ -151,9 +187,13 @@ def init(
 
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
     that says this repository is already initialised, a `keelline.toml` that is not TOML, a
-    detected name outside the grammar, a `Config` the loader refuses, a pass in which two
-    artifacts resolve to one file (`templates._one_target_each`), and finally a refusal in
-    either plan, which is returned rather than raised so the report can name the artifact.
+    detected name outside the grammar, an adopted table holding a key that cannot be written
+    back bare (`_rendered`), a `Config` the loader refuses, an artifact at a file another is
+    built to write, in either pass (`templates.Owners`), a profile artifact `[artifacts] local`
+    would keep out of git (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block
+    listed there (`footprint.refuse_local_root_only`), a planned write git ignores
+    (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
+    than raised so the report can name the artifact.
     """
     if not yes:
         raise Refusal(NEEDS_YES)
@@ -161,7 +201,8 @@ def init(
         raise Refusal(ALREADY)
     existing = _existing(root)
     tables = _tables(root, existing, ci=ci)
-    config = loads(HEADER + dumps(tables), root, machine=machine)
+    document = _rendered(tables)
+    config = loads(document, root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
     # the whole of its timeout for an answer nothing prints.
@@ -178,41 +219,36 @@ def init(
     # as red, so `init` said it had worked and the next `doctor` said it had not.
     if resolution.pin is not None and existing is None:
         tables.setdefault("ci", {})["ref"] = resolution.pin.sha
-        config = loads(HEADER + dumps(tables), root, machine=machine)
-    document = HEADER + dumps(tables)
-    prepared = project_templates(
-        root,
-        config,
-        resolution=resolution,
-        document=document,
-        adopted=existing is not None,
-        dry_run=dry_run,
+        document = _rendered(tables)
+        config = loads(document, root, machine=machine)
+    # No manifest yet, so nothing to retire: `prepare` for its refusals and the pass order.
+    passes = prepare(
+        root, config, {}, resolution=resolution, document=document, adopted=existing is not None
     )
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
-    ref = "" if "ci-workflow" in prepared.skipped else config.ci.ref
+    ref = "" if CI_ARTIFACT in passes.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
-    once = plan(root, config, prepared.once)
-    footprint = plan(root, config, prepared.footprint)
-    if dry_run or once.refusals or footprint.refusals:
-        return InitReport(
-            once,
-            footprint,
-            prepared.skipped,
-            resolution,
-            existing is not None,
-            dry_run,
-            note,
-            ref,
-        )
+    once, footprint = passes.predict((passes.once, ()), (passes.footprint, ()))
+    report = InitReport(
+        once,
+        footprint,
+        passes.skipped,
+        resolution,
+        existing is not None,
+        dry_run,
+        note,
+        ref,
+        passes.unknown_harnesses,
+    )
+    if dry_run or report.refused:
+        return report
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
     # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
     # that says the bytes inside the markers are the same either way.
-    footprint = plan(root, config, prepared.footprint)
+    footprint = passes.replan(passes.footprint)
     apply(root, footprint)
-    return InitReport(
-        once, footprint, prepared.skipped, resolution, existing is not None, False, note, ref
-    )
+    return replace(report, footprint=footprint)

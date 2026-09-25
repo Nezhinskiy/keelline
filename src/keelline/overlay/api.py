@@ -40,6 +40,12 @@ docstring asks of every other lane.
 `overlay-requires` row) and the `attach` area's session-start handler, which arrived with
 wave 4; the floor is one grammar and two readers, and the overlay's sync state is the
 overlay's question, asked where the overlay is owned.
+
+`later` is the same reader asked of two versions, for the `project` area's `upgrade`, which
+refuses to move a project backward, and `doctor`'s `versions` row, which points by direction: one
+comparison, so the two cannot disagree about which way a recorded version lies. `RELEASE` is
+that reader's `X.Y.Z` grammar whole, for `upgrade`, which prints a recorded version back only
+when it is one: a second spelling of the grammar would bound its components differently.
 """
 
 from keelline.overlay.create import Created, Initialised, create, init_instance, target_root
@@ -53,7 +59,7 @@ from keelline.overlay.layout import (
     OVERLAY_FILES,
     PLUGIN_MANIFEST,
 )
-from keelline.overlay.requires import requires_of, satisfies
+from keelline.overlay.requires import RELEASE, later, requires_of, satisfies
 from keelline.overlay.sync import Sync, overlay_sync
 
 __all__ = [
@@ -64,11 +70,13 @@ __all__ = [
     "MARKETPLACE_MANIFEST",
     "OVERLAY_FILES",
     "PLUGIN_MANIFEST",
+    "RELEASE",
     "Created",
     "Initialised",
     "Sync",
     "create",
     "init_instance",
+    "later",
     "overlay_fault",
     "overlay_sync",
     "require_overlay",

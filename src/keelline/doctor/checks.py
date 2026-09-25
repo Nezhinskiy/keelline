@@ -90,7 +90,7 @@ from keelline.memory.api import (
     render,
     resolve,
 )
-from keelline.overlay.api import PLUGIN_MANIFEST, requires_of, satisfies
+from keelline.overlay.api import PLUGIN_MANIFEST, later, requires_of, satisfies
 from keelline.release.api import (
     HASHED_FILES,
     UnreadableRecord,
@@ -330,16 +330,45 @@ def _not_initialised(context: Context) -> Row:
     return Row(OK, f"{CONFIG_FILE} loads", "")
 
 
+VERSION_BEHIND = "run `keelline upgrade`, which moves it and refreshes the footprint with it"
+VERSION_AHEAD = (
+    "update the Keelline plugin: this project records a newer Keelline than the one running, "
+    "and `keelline upgrade` never moves a project backward"
+)
+VERSION_UNREADABLE = (
+    "set [keelline] version to the X.Y.Z of the Keelline release this project was last upgraded "
+    "with: `keelline upgrade` refuses a version it cannot read rather than guess its direction"
+)
+VERSION_UNORDERED = (
+    "the two share one X.Y.Z and differ after it in a way Keelline does not order, such as two "
+    "pre-releases, and `keelline upgrade` refuses rather than guess the direction; set "
+    "[keelline] version to the version running here by hand if that is the one this project "
+    "should move to"
+)
+
+
 def _versions(context: Context) -> Row:
     running = keelline.__version__
-    if context.config.keelline.version == running:
+    recorded = context.config.keelline.version
+    if recorded == running:
         return Row(OK, f"the project and this Keelline are both {running}", "")
     # The project's own string is repository-authored and is not quoted back; what is printed
-    # is the version that is actually running, which is what the remedy needs anyway.
+    # is the version that is actually running. The remedy follows the direction: `upgrade`
+    # refuses a project that records a newer Keelline, so sending that one to it is a dead end.
+    # `later` is the reader `upgrade` refuses by, so the two agree: a leading `X.Y.Z` decides
+    # the direction when the two differ in it, a release is newer than its own pre-release, and
+    # a value without a leading `X.Y.Z`, or a pair `later` does not order, is sent to be written
+    # by hand. `later(v, v)` is `None` exactly when `v` has no leading `X.Y.Z`.
+    ahead = later(recorded, running)
+    if ahead is None:
+        readable = later(recorded, recorded) is not None
+        remedy = VERSION_UNORDERED if readable else VERSION_UNREADABLE
+    else:
+        remedy = VERSION_AHEAD if ahead else VERSION_BEHIND
     return Row(
         WARN,
         f"{CONFIG_FILE} declares a different Keelline version from the {running} running here",
-        f"set [keelline] version to {running} in {CONFIG_FILE}",
+        remedy,
     )
 
 
@@ -1288,7 +1317,7 @@ WORKFLOW_NOT_A_FILE = (
 )
 CI_REF_REMEDY = (
     f"set [ci] ref in {CONFIG_FILE} to a released commit and rewrite the workflow's uses: line "
-    f"to match; keelline upgrade (ships later) will move both"
+    f"to match, or run `keelline upgrade` once a release exists and it moves both"
 )
 # `git` itself having failed is a fact about this machine, not about `[ci] ref`, so it warns --
 # the same split `_guarded` makes and for the same reason: red gates the exit code.
@@ -1301,8 +1330,7 @@ NO_WORKFLOW = (
 )
 NO_WORKFLOW_REMEDY = (
     f'write {WORKFLOW} with a uses: line pinned to [ci] ref, or set [ci] mode = "none" if this '
-    f"repository is not meant to run the Keelline gate; keelline upgrade (ships later) will "
-    f"write it for you"
+    f"repository is not meant to run the Keelline gate; `keelline upgrade` renders it for you"
 )
 
 

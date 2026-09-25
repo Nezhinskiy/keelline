@@ -6,15 +6,16 @@ before it imports the submodule it wants, so a re-export list in `__init__.py` w
 whole area — and with it the configuration layer — into every `discover()` call.
 `tests/docs/test_surface.py` asserts the `__init__` imports nothing at all.
 
-**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
-and `tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
+**Nothing outside this area imports any name on this list but `trail_target`**, which the
+`project` area reads (the last two paragraphs say why), measured over `src/`, `scripts/` and
+`tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
 `keelline.docs.graph` and `keelline.docs.trail` directly, and every other lane runs the
-commands. So every name below is here on an argument rather than on a caller, and the argument
-is written beside it — a surface that survives a trim with no explanation is what made the trim
-necessary.
+commands. So every other name below is here on an argument rather than on a caller, and the
+argument is written beside it — a surface that survives a trim with no explanation is what made
+the trim necessary.
 
-What is left is the four checks this area *is*, one call each, and the one record one of them
-returns:
+The five besides `trail_target` are the four checks this area *is*, one call each, and the one
+record one of them returns:
 
 - `check_budgets`, `check_links` and `check_memory_graph` each answer one question about the
   documentation tree and return `Finding`s from `keelline.findings`, the leaf three areas
@@ -42,21 +43,28 @@ which is what `docs/commands.py` and this area's own tests already do; what went
 that another area reads it.
 
 **What is left is a smaller version of the same question, and it is the owner's.** The five
-below have no importer either, and they survive this pass on an argument about shape — one call
-per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s floor. Whether
-this area publishes at all is a structural decision, not a refactor's; `ledger/api.py` records
-the same finding about its own list.
+names above have no importer either, and they survive this pass on an argument about shape —
+one call per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s
+floor. Whether this area publishes at all is a structural decision, not a refactor's;
+`ledger/api.py` records the same finding about its own list.
 
 **`trail_path` returns, in wave 4.** The lane the wave-3 trim named as absent now exists: the
 `project` area ships `trail.toml` beside the roadmap template and must put it where `docs
 trail` reads it. The other nine trimmed names have no consumer yet and stay where they were
 written, reachable from `keelline.docs.trail`.
+
+**And gives way to `trail_target`, in wave 5.** `trail_path` contains its answer against the
+root, so the project area asking where the trail goes under the *preset's* `[paths]`, a place
+this configuration may never use, was refused whenever that place passed through a symlink. What
+the project area needs is the location, and the engine contains every target it plans;
+`trail_target` is that location, with no disk access, and `trail_path` stays in
+`keelline.docs.trail` for this area's own commands.
 """
 
 from keelline.docs.graph import check_memory_graph
 from keelline.docs.hygiene import check_budgets, check_links
 from keelline.docs.plans import Lint, lint
-from keelline.docs.trail import trail_path
+from keelline.docs.trail import trail_target
 
 __all__ = [
     "Lint",
@@ -64,5 +72,5 @@ __all__ = [
     "check_links",
     "check_memory_graph",
     "lint",
-    "trail_path",
+    "trail_target",
 ]

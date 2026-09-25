@@ -45,3 +45,20 @@ def test_the_environment_is_scrubbed(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("GIT_DIR", str(elsewhere / ".git"))
     code, _ = git_run(tmp_path, "rev-parse", "--is-inside-work-tree")
     assert code != 0
+
+
+@needs_git
+def test_the_product_s_git_reads_the_home_the_suite_gives_each_test(tmp_path: Path) -> None:
+    # `scrubbed_env` keeps `HOME` for real users, so under test the product's `git` would read
+    # the developer's global excludes; `tests/conftest.py` gives each test an empty one. This
+    # writes an excludes file there and sees the product's `check-ignore` honour it, so the
+    # `HOME` it reads is the sealed one and not the developer's. Mutation (advisory): drop the
+    # conftest's `setenv("HOME", ...)` -> the first assertion reddens, before anything could be
+    # written into the developer's real home.
+    home = Path.home()
+    assert home.is_relative_to(tmp_path.parent), home
+    (home / ".config" / "git").mkdir(parents=True)
+    (home / ".config" / "git" / "ignore").write_text("CLAUDE.md\n", encoding="utf-8")
+    git_run(tmp_path, "init", "-q")
+    code, out = git_run(tmp_path, "check-ignore", "--stdin", "-z", stdin="CLAUDE.md\0other.md")
+    assert (code, out) == (0, "CLAUDE.md\0")

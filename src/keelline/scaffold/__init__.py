@@ -5,12 +5,32 @@ lanes reach for directly: `owned_ids` for `doctor`'s provenance list, `mark` for
 builds `Template.entries`, and `drop` / `apply_entries` for `uninstall`. The three refusals a
 consumer has to catch by name are here too: a lane that cannot import `ManifestError`,
 `RegionError` or `EntriesError` from this list has no way to tell a bad merge from a bug except
-by catching `Refusal` whole. Importing a private module of this package from another area is a
-review finding; if a lane needs something this list does not carry, the list grows
-deliberately.
+by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall`, which must
+compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
+`Template.target` does not say) and must know which planned removal deletes a file rather than
+rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
+would drift from it. `ours_locally`, `local_copies` and `left_copies` are for `uninstall` too
+(the last two through the project area's planning seam, `project.footprint.Passes`): before any
+write it predicts whether the write-once pass will remove what a region's removal
+leaves in a file kept out of git, and that verdict, which file it is asked of, and which copy a
+`--force` meant for the footprint pass names, are the engine's own rule for such a file.
+`LocalDigests` and `LOCAL_DIGESTS` are the ledger that rule reads, which `uninstall` removes before
+the ignore block goes. `LOCAL_ARTIFACTS` is for the project area's guard against writes git
+ignores, which exempts the one directory Keelline keeps out of git on purpose. Importing a private
+module of this package from another area is a review finding; if a lane needs something this list
+does not carry, the list grows deliberately.
 """
 
-from keelline.scaffold.engine import apply, plan, shipped_profiles, validate_sources
+from keelline.scaffold.engine import (
+    apply,
+    effective_target,
+    left_copies,
+    local_copies,
+    ours_locally,
+    plan,
+    unlinks,
+    validate_sources,
+)
 from keelline.scaffold.entries import (
     EntriesError,
     apply_entries,
@@ -19,6 +39,7 @@ from keelline.scaffold.entries import (
     owned,
     owned_ids,
 )
+from keelline.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from keelline.scaffold.manifest import (
     FORMAT,
     MANIFEST_PATH,
@@ -31,15 +52,19 @@ from keelline.scaffold.manifest import (
 )
 from keelline.scaffold.model import Action, Applied, Plan, Refused, Template, Verb
 from keelline.scaffold.regions import RegionError, Style, drop, extract, upsert
-from keelline.scaffold.report import render_report
+from keelline.scaffold.report import printable, render_report
 
 __all__ = [
     "FORMAT",
+    "LOCAL_ARTIFACTS",
+    "LOCAL_DIGESTS",
+    "LOCAL_ROOT",
     "MANIFEST_PATH",
     "Action",
     "Applied",
     "EntriesError",
     "Kind",
+    "LocalDigests",
     "Location",
     "Manifest",
     "ManifestError",
@@ -54,14 +79,19 @@ __all__ = [
     "apply_entries",
     "digest",
     "drop",
+    "effective_target",
     "extract",
+    "left_copies",
+    "local_copies",
     "mark",
     "marker_id",
+    "ours_locally",
     "owned",
     "owned_ids",
     "plan",
+    "printable",
     "render_report",
-    "shipped_profiles",
+    "unlinks",
     "upsert",
     "validate_sources",
 ]

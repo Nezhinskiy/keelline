@@ -22,6 +22,7 @@ hook_output_chars = 10000
 state = "initialised"
 profile = ""
 agents = ["claude", "codex"]
+enforced = []
 
 [defaults.project]
 base_branch = "main"
@@ -39,6 +40,7 @@ bug_index = "docs/bug-reports.md"
 roadmap = "docs/roadmap.md"
 roadmap_history = "docs/roadmap-history.md"
 memory = "docs/memory"
+keelline = "docs/keelline"
 
 [defaults.memory]
 mode = "local-only"
@@ -57,6 +59,10 @@ local = []
 mode = "reusable"
 ref = ""
 gate_branch = "main"
+
+[defaults.gates]
+builtin = ["docs", "bugs", "plan", "commit", "trail"]
+custom_timeout_seconds = 600
 
 [defaults.commit_messages]
 attribution_check = true

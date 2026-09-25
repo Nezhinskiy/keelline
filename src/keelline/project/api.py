@@ -5,7 +5,7 @@ A module and not the package's `__init__`, for the reason `keelline.docs.api`,
 before it imports the submodule it wants, so a re-export list in `__init__.py` would pull this
 whole area into every `discover()` call.
 
-Three names, each with the consumer that reaches for it:
+Four names, each with the consumer that reaches for it:
 
 - `PROJECT_FILES`, for `scripts/check_artifacts.py`. It asks the built wheel whether the
   twelve shipped template files are actually in it, and before this list existed the only
@@ -21,6 +21,11 @@ Three names, each with the consumer that reaches for it:
   differ from the templates. That module's docstring states the measurement. A return type
   absent from this list is a value a consumer can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it.
+- `rewrite_owned`, for the lane that moves `[keelline] state` and `enforced` as a project is
+  adopted and its gates promoted (`adopt begin` and `adopt promote`, which ship later). It is
+  the one operation that rewrites a tool-owned key: a second copy in that lane would skip the
+  `config` record's re-stamp, and `uninstall` would then keep every promoted project's
+  `keelline.toml` as hand-edited.
 
 `read`, `fill`, `GATE_BRANCH`, `HARNESS_REGION` and `CI_WORKFLOW` are **not** here: they are
 this area's own, reached by `keelline.project.templates` and by nothing outside it. A lane that
@@ -28,10 +33,12 @@ needs one grows this list deliberately, in a commit that says which lane and why
 """
 
 from keelline.project.layout import PROJECT_FILES
+from keelline.project.rewrite import rewrite_owned
 from keelline.project.templates import Prepared, project_templates
 
 __all__ = [
     "PROJECT_FILES",
     "Prepared",
     "project_templates",
+    "rewrite_owned",
 ]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -10,6 +11,10 @@ from typing import ClassVar
 # a string, which `config.loader._schema_types` resolves with `typing.get_type_hints` to decide
 # how to coerce a value. Every name an annotation uses must stay resolvable from this module's
 # globals at runtime, so a type imported only under `TYPE_CHECKING` would break the loader.
+
+# The one grammar for a name Keelline answers to: a project, a profile, an overlay owner, a
+# custom gate. Each is one lowercase path segment whose leading class keeps it out of an option's
+# position in an argv. Every other module derives from this spelling rather than keeping its own.
 PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
 # The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
 # decides whether it may be written, and a shape rule cannot bound a charset.
@@ -42,6 +47,12 @@ PATH_VALUE = re.compile(
 # underscores, and anything else is counted rather than quoted.
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 STATES = ("initialised", "adopting", "installed")
+# The built-in gates, in the order every report lists them. `[gates] builtin` chooses among them
+# and `[gates.custom]` adds a project's own. The loader needs the names without importing an
+# area, which is why they live here; the area that runs them pins its objects to this tuple.
+BUILTIN_GATES = ("docs", "bugs", "plan", "commit", "trail")
+# The configuration check: a gate runner's other verdict, and never a gate's name.
+CONFIG_CHECK = "config"
 MEMORY_MODES = ("overlay", "in-repo", "local-only")
 CI_MODES = ("reusable", "uvx", "none")
 
@@ -53,6 +64,21 @@ class Keelline:
     preset: str
     profile: str
     agents: tuple[str, ...]
+    enforced: tuple[str, ...]
+
+    @property
+    def enforcing(self) -> frozenset[str]:
+        """The gates that fail a run rather than annotate it.
+
+        `enforced` as loaded, which under `installed` the loader has already filled with every
+        configured gate: `installed` meant "every gate enforces" before the list existed, and a
+        document written then says nothing else.
+
+        No command reads it in this release. It is the one reading of "which gates enforce"
+        for `keelline gate` and `keelline assess`, which ship later and each ask it per gate;
+        a lane that read `enforced` directly would skip the loader's `installed` rule.
+        """
+        return frozenset(self.enforced)
 
 
 @dataclass(frozen=True)
@@ -75,6 +101,7 @@ class Paths:
     roadmap: str
     roadmap_history: str
     memory: str
+    keelline: str
 
     def as_dict(self) -> dict[str, str]:
         return dict(self.__dict__)
@@ -154,6 +181,26 @@ class Ci:
 
 
 @dataclass(frozen=True)
+class CustomGate:
+    """A project's own gate: an argv run from the project root, never a shell string."""
+
+    run: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Gates:
+    """`[gates]`: which built-in gates run, and the project's own.
+
+    `custom` has a default because the loader fills it itself, table by table, after `_build`
+    has held the rest; it is the one schema field `_build` leaves out when it is absent.
+    """
+
+    builtin: tuple[str, ...]
+    custom_timeout_seconds: int
+    custom: Mapping[str, CustomGate] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class CommitMessages:
     attribution_check: bool
     types: tuple[str, ...]
@@ -179,5 +226,12 @@ class Config:
     ledger: Ledger
     artifacts: Artifacts
     ci: Ci
+    gates: Gates
     commit_messages: CommitMessages
     personal: Personal
+
+    @property
+    def gate_names(self) -> tuple[str, ...]:
+        """The gates this project runs: its built-ins in `BUILTIN_GATES` order, then its own."""
+        kept = tuple(name for name in BUILTIN_GATES if name in self.gates.builtin)
+        return kept + tuple(sorted(self.gates.custom))
