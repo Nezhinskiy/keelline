@@ -12,6 +12,9 @@
 #
 #     uv run python scripts/mutation_oracle.py
 #
+# `reddens` is an any-of list: an entry is caught when at least one named test goes red, so
+# name only tests that do, and put a test that must redden on its own in an entry of its own.
+#
 # This is not a coverage substitute and is not exhaustive — `--cov` is the breadth measure. It
 # is the set of invariants whose *guard* must be proven to be load-bearing rather than merely
 # executed, which is the distinction that let `open_within` be fully covered and still not
@@ -5108,24 +5111,6 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
 ]
 
-# The static half of drift detection: the same anchor rule `_check` applies inside a full run,
-# applied by the suite to every entry at the commit that causes the drift.
-[[mutation]]
-name = "a duplicated before line is accepted as an anchor"
-file = "scripts/mutation_oracle.py"
-before = '    if occurrences > 1:'
-after = '    if occurrences > 99:'
-reddens = ["tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once"]
-
-[[mutation]]
-name = "a reddens id naming a function its file lacks passes the static check"
-file = "scripts/mutation_oracle.py"
-before = '                    and node.name == name'
-after = '                    and bool(name)'
-reddens = [
-  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_function_its_file_defines",
-]
-
 [[mutation]]
 name = "the [paths] grammar check is dropped"
 file = "src/keelline/config/paths.py"
@@ -5495,6 +5480,8 @@ after = ""
 reddens = [
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write",
   "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-upgrade]",
 ]
 
 # The highest-value new guard in the `project` area, and it had a test and no entry.
@@ -5734,6 +5721,9 @@ after = "        if False:"
 reddens = [
   "tests/config/test_paths.py::test_a_paths_value_inside_keellines_own_directory_is_refused_and_never_quoted",
   "tests/project/test_upgrade.py::test_a_committed_path_into_keellines_own_directory_refuses_upgrade_before_any_write",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-another-artifact-s-hidden-copy-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
 ]
 
 # The case half, on its own. A rule that matched `.git` exactly would be green on every test
@@ -5747,6 +5737,9 @@ after = "    return any(part == name for part in relative.split(\"/\"))"
 reddens = [
   "tests/test_fsops.py::test_gits_control_directory_is_reserved_at_every_depth_and_in_any_case",
   "tests/config/test_paths.py::test_contained_refuses_gits_control_directory_at_any_depth_and_in_any_case",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-attach-s-ledger-case-folded-init]",
 ]
 
 # The pointer every Claude Code session in an adopting project follows. `CLAUDE.md` shipped as
@@ -6839,6 +6832,10 @@ reddens = [
   "tests/project/test_ignored.py::test_a_committed_path_naming_an_ignored_env_file_is_refused_before_upgrade_writes",
   "tests/project/test_ignored.py::test_init_refuses_an_existing_ignored_file_a_paths_value_names",
   "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
 ]
 
 # `LocalDigests` records what Keelline last wrote under `.keelline/local/artifacts/`, which the
@@ -6927,6 +6924,8 @@ after = ""
 reddens = [
   "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
   "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
 ]
 
 # The ledger's one exception comes from how the build is made, `templates.SHARED_FILE`: the
@@ -7040,6 +7039,8 @@ reddens = [
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[upgrade-case-variant]",
   "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[uninstall-case-variant]",
   "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write[case-variant]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-paths-value-at-another-artifact-s-file-case-folded-upgrade]",
 ]
 
 [[mutation]]
@@ -7056,6 +7057,8 @@ before = "    others = {path_key(f\"{LOCAL_ARTIFACTS}/{place}\") for place in wi
 after = "    others = {f\"{LOCAL_ARTIFACTS}/{place}\" for place in withheld.get(template.id, ())}\n    return tuple(\n        copy\n        for copy in digests.targets_of(template.id)\n        if path_key(copy) != path_key(target) and copy not in others\n"
 reddens = [
   "tests/project/test_upgrade.py::test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing[claude-md]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
 ]
 
 [[mutation]]
@@ -7082,3 +7085,113 @@ file = "src/keelline/project/uninstall.py"
 before = "        if path_key(directory) in marker_dirs:"
 after = "        if directory in marker_dirs:"
 reddens = ["tests/project/test_uninstall.py::test_a_case_variant_of_a_harness_directory_is_never_pruned"]
+
+# The footprint commands' hidden-write invariant (`tests/project/test_footprint_invariant.py`)
+# is also named by the entries above whose guards it holds. The ones below are its own: the
+# shared `.git` predicate both call sites ask, and guards made to refuse more than they should,
+# which the legitimate cases catch.
+
+[[mutation]]
+name = "git's control directory is named by no path"
+file = "src/keelline/fsops.py"
+before = '    return names_component(relative, CONTROL_DIRECTORY)'
+after = '    return False'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-git-s-hook-case-folded-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[a-new-file-under-git-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-git-s-hook-uninstall]",
+]
+
+[[mutation]]
+name = "the ignore guard refuses a fixed name in the clone's excludes"
+file = "src/keelline/project/ignored.py"
+before = '        if action.target not in places.get(action.artifact_id, frozenset()):'
+after = '        if True:'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+]
+
+[[mutation]]
+name = 'the ignore guard refuses a new file at an ignored place'
+file = "src/keelline/project/ignored.py"
+before = '        and os.path.lexists(root / action.target)'
+after = '        and True'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-new-file-at-an-ignored-place]",
+]
+
+[[mutation]]
+name = 'the ignore guard refuses an artifact kept out of git'
+file = "src/keelline/project/ignored.py"
+before = '        and not action.target.startswith(f"{LOCAL_ARTIFACTS}/")'
+after = '        and True'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+]
+
+[[mutation]]
+name = 'the ignore guard reads a tracked file as ignored'
+file = "src/keelline/project/ignored.py"
+before = '    code, out = git_run(root, "check-ignore", "--stdin", "-z", stdin="\0".join(sorted(chosen)))'
+after = '    code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin="\0".join(sorted(chosen)))'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
+]
+
+# A refusal returned in a report rather than raised: every recorded artifact refused.
+
+[[mutation]]
+name = 'the engine refuses every recorded artifact'
+file = "src/keelline/scaffold/engine.py"
+before = '        if reason is not None:'
+after = '        if reason is not None or record is not None:'
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-new-file-at-an-ignored-place]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-symlinked-directory-no-value-uses]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
+]
+
+# The oracle's own declaration check, run before any mutation and by the suite.
+
+[[mutation]]
+name = 'a duplicated before line is accepted as an anchor'
+file = "scripts/mutation_oracle.py"
+before = '    if occurrences > 1:'
+after = '    if occurrences > 99:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once",
+]
+
+[[mutation]]
+name = 'a reddens id naming a function its file lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '                    and node.name == name'
+after = '                    and bool(name)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a parametrized reddens id the collection lacks passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if scope is None or not names or ("[" in node_id and node_id not in (collected or ())):'
+after = '        if scope is None or not names:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_test_its_file_defines",
+]
+
+[[mutation]]
+name = 'a mutation declared twice passes the static check'
+file = "scripts/mutation_oracle.py"
+before = '        if key in seen:'
+after = '        if False:'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
