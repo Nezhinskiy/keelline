@@ -131,7 +131,8 @@ def test_a_comment_is_not_a_change(tmp_path: Path) -> None:
 )
 def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_path: Path) -> None:
     # Bytes and raw keys are never compared. Emptying `_UNORDERED` reddens the two reordered
-    # cases; it refuses more, so it is not declared as a mutation.
+    # cases: each becomes a `neutral` change that no reader can see. It admits and refuses
+    # nothing more, so it is not declared as a mutation.
     assert _judge(base, tree, tmp_path).changes == ()
 
 
