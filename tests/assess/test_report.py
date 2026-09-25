@@ -77,6 +77,15 @@ def test_refusals_share_the_cap_with_findings() -> None:
     assert lines[-1].startswith("::notice::2 more error annotation(s)")
 
 
+def test_a_run_that_did_not_judge_annotates_no_refusal() -> None:
+    # The custom step runs after the judging step and does not judge: the refusal is that
+    # step's to annotate, once. Mutation (advice): `if run.judged:` -> `if True:` in
+    # `workflow_commands` -> the refused key is annotated here too, and this reddens. Not
+    # declared: a second annotation of a refusal that already failed the run grants nothing.
+    run = _run([GateResult("tests", ())], [], [Change("paths.bugs", Verdict.REFUSED)], judged=False)
+    assert workflow_commands(run) == []
+
+
 def test_a_path_is_written_from_the_repository_s_root() -> None:
     # The platform places an annotation by the repository's path, and a project kept in a
     # subdirectory reports paths from its own root.

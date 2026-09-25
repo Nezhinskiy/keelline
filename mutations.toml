@@ -8013,3 +8013,24 @@ file = "src/keelline/assess/commands.py"
 before = "    custom = verdict.config.gates.custom"
 after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
+
+[[mutation]]
+name = "a gate run that judged passes although the rule refused a key"
+file = "src/keelline/assess/report.py"
+before = "        return 1 if self.blocking or (self.judged and self.verdict.refused) else 0"
+after = "        return 1 if self.blocking else 0"
+reddens = [
+  "tests/assess/test_report.py::test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused",
+  "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
+  "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
+]
+
+[[mutation]]
+name = "gate never counts the configuration check as run, so no refusal fails it"
+file = "src/keelline/assess/commands.py"
+before = "    gate_run = GateRun(verdict, results, judged=CONFIG_CHECK in only, prefix=prefix)"
+after = "    gate_run = GateRun(verdict, results, judged=False, prefix=prefix)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
+  "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
+]
