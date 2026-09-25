@@ -14,12 +14,13 @@ Codex, one Python package with **no runtime dependencies**.
 > repository to it and unbind it
 > again; `keelline init`, which writes a repository's footprint from the shipped project
 > templates, `keelline upgrade`, which refreshes it, and `keelline uninstall`, which takes it
-> back; and `keelline doctor`, which reports on the result. The hooks file that wires all
+> back; `keelline doctor`, which reports on the result; and `keelline assess`, which inventories
+> what stands between a repository and enforcement. The hooks file that wires all
 > of it into a session ships too, so installing the plugin is enough to make the guards fire
 > and the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a
+> discipline. **Not yet:** the adoption state machine, the memory MCP server, a
 > hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
 > leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three
 > keys that are enough to start a project by hand, which `init` reads as your answers — a run
@@ -48,7 +49,8 @@ adds:
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
-  earned them. Designed; the assessment engine ships later.
+  earned them. Designed; `keelline assess` reports what stands in the way, and the
+  promotion command ships later.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
@@ -197,6 +199,7 @@ Keelline writes files. Being specific about which is the point of this section.
 | `docs/trail.toml` (beside the roadmap) | Which theme each design or plan document belongs to, and which are not plainly delivered. Read by `docs trail`, never written by it | `keelline init`, once; you after |
 | `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/keelline.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `keelline init`, recorded in the manifest; `keelline upgrade` refreshes what you have not touched, and `keelline uninstall` takes it back | `keelline init` |
 | `docs/keelline/rules/<profile>.md` (configurable) and `.claude/rules/keelline-<profile>.md` | The stack profile's rules, the one copy a project edits, and a path-scoped pointer at it for Claude Code (only when `[keelline] agents` lists `claude`) | `keelline init`, when `[keelline] profile` is set |
+| `.keelline/assessment.json` | The inventory `keelline assess` last wrote, format 1 — git-ignored | `keelline assess`; `keelline uninstall` removes it |
 | `.keelline/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.keelline/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `keelline init` and `keelline upgrade`, when `[artifacts] local` lists them; `keelline uninstall` takes them back |
 | `.keelline/local/artifacts.json` | The record of the bytes Keelline last wrote under `.keelline/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `keelline uninstall` removes it |
@@ -204,7 +207,7 @@ Keelline writes files. Being specific about which is the point of this section.
 | `~/.config/keelline/trust.json` | Which repositories' committed notes you have approved | `keelline memory trust` |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/keelline/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
-| `.gitignore`, the `keelline:ignore` region | The block that keeps `.keelline/local/` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `keelline init`, or `attach` on a repository `init` has not set up |
+| `.gitignore`, the `keelline:ignore` region | The block that keeps `.keelline/local/` and `.keelline/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `keelline init`, or `attach` on a repository `init` has not set up |
 | `.keelline/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — git-ignored by the region `attach` itself writes | `keelline attach` |
 | `<overlay>/projects/<name>/project.toml` | Which remote this overlay is bound to for this project, and when it was first attached | `keelline attach` |
 
@@ -294,6 +297,9 @@ keelline setup --preset recommended --settings ~/dotfiles/claude/settings.json  
 keelline setup --git-hooks                             # install the commit-message hook into this repository
 keelline setup --git-hooks --uninstall                 # remove it; restore the hook it chained to
 
+# Assessing a repository
+keelline assess                                       # every gate and probe; the whole inventory in .keelline/assessment.json
+
 # Diagnosing an installation
 keelline doctor                                       # sixteen checks over this installation, one line
 keelline doctor --json                                # every check with its status, detail and remedy
@@ -307,7 +313,7 @@ keelline release notes --version 1.2.3                # assemble CHANGELOG.md fr
 keelline release hashes --check                       # the shipped files still match the release record
 ```
 
-Every `memory`, `bugs`, `docs` and `plan` command takes `--root` (default: the current
+Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, takes `--root` (default: the current
 directory) and `--machine` (read a machine configuration file other than the default);
 `memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
 exception: its `--root` names the directory an overlay is created in or the overlay itself,

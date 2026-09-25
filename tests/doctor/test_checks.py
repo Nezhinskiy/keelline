@@ -1256,7 +1256,7 @@ def test_a_committed_attach_ledger_cannot_force_a_red_row(tmp_path: Path) -> Non
     assert LEDGER in check.detail
     assert "could not run" not in check.detail
     # The reason the status matters rather than only the sentence: `red` is what gates the exit
-    # code, and wave 5's `assess` is planned to gate on it too.
+    # code.
     assert not any(row.status == "red" for row in checks), [
         (row.name, row.detail) for row in checks if row.status == "red"
     ]
@@ -1932,9 +1932,9 @@ def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor
     # DC2's own sentence, which is why this requirement has a row of its own rather than being
     # folded into `versions`: "a `local-only` project on a machine that records an overlay must
     # not go red for a requirement it has no relationship with". The finding is the same finding
-    # and says the same thing; only the level moves, because red gates the exit code and wave 5's
-    # `assess` is planned to gate on it. Asserted as the level AND the whole text, so this case
-    # cannot pass for the red case's reason or vice versa.
+    # and says the same thing; only the level moves, because red gates the exit code. Asserted
+    # as the level AND the whole text, so this case cannot pass for the red case's reason or
+    # vice versa.
     #
     # Mutation (declared): `unmet = RED if ... else WARN` -> `unmet = RED`.
     machine = _recorded_overlay(tmp_path, ">=99.0.0")

@@ -1280,10 +1280,10 @@ def _overlay_requires(context: Context) -> Row:
         # project on a machine that records an overlay must not go red for a requirement it has
         # no relationship with". `memory.mode` is what says whether this repository keeps its
         # notes in the overlay, and red is a statement that *this installation* is wrong -- it
-        # gates the exit code and wave 5's `assess` is planned to gate on it too. The machine
-        # owner is still told, at the level `pre-commit` uses in its analogous machine-scoped
-        # state. `memory.mode` is compared and never printed, exactly as `_attached` compares it
-        # one screen up; the literal is that comparison's second site and not a new vocabulary.
+        # gates the exit code. The machine owner is still told, at the level `pre-commit` uses
+        # in its analogous machine-scoped state. `memory.mode` is compared and never printed,
+        # exactly as `_attached` compares it one screen up; the literal is that comparison's
+        # second site and not a new vocabulary.
         unmet: Status = RED if context.config.memory.mode == "overlay" else WARN
         return Row(
             unmet,
@@ -1644,12 +1644,11 @@ def _guarded(name: str, check: Callable[[Context], Row], context: Context) -> Ch
     one `Ctrl-C` into sixteen red rows and a report, instead of stopping.
 
     **An `OSError` is a `warn` and everything else is a `red`, and the split is the point.**
-    `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it too, so a
-    red row is a statement that this installation is wrong. A file that could not be opened is
-    not that: the directories these checks read live on the machine, not in the installation —
-    an unreadable `${CLAUDE_PLUGIN_DATA}` was measured producing `diagnostics: red` and exit 1
-    with nothing wrong anywhere. Every other exception is a defect in this module and keeps its
-    red, because that is what the row is for.
+    `red` is what gates the exit code, so a red row is a statement that this installation is
+    wrong. A file that could not be opened is not that: the directories these checks read live
+    on the machine, not in the installation — an unreadable `${CLAUDE_PLUGIN_DATA}` was measured
+    producing `diagnostics: red` and exit 1 with nothing wrong anywhere. Every other exception
+    is a defect in this module and keeps its red, because that is what the row is for.
     """
     try:
         row = check(context)

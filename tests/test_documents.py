@@ -603,3 +603,25 @@ def test_the_verdict_table_is_the_shipped_sentences_and_not_a_second_spelling() 
     assert tuple(rows) == VERDICTS, [
         (row, sentence) for row, sentence in zip(rows, VERDICTS, strict=True) if row != sentence
     ]
+
+
+def _anchor(heading: str) -> str:
+    """GitHub's anchor for a heading: lower-cased, every character but a letter, a digit, a
+    space, `-` and `_` dropped, and each space a hyphen."""
+    kept = "".join(c for c in heading.lower() if c.isalnum() or c in " -_")
+    return kept.replace(" ", "-")
+
+
+def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
+    # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
+    # section a lane adds without its Contents line, or a heading renamed under a stale link, is
+    # a reference a reader cannot navigate. The floor is today's section count (41, with
+    # `init --questions` and `assess`), so a walk that found nothing, or half, cannot pass.
+    # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
+    text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    _, _, after = text.partition("## Contents\n")
+    contents, _, rest = after.partition("\n## ")
+    listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
+    headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
+    assert len(headings) >= 41, len(headings)
+    assert listed == [(heading, _anchor(heading)) for heading in headings]

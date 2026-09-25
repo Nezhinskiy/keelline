@@ -5,7 +5,7 @@ A module and not the package's `__init__`, for the reason `keelline.docs.api`,
 before it imports the submodule it wants, so a re-export list in `__init__.py` would pull this
 whole area into every `discover()` call.
 
-Five names, each with the consumer that reaches for it:
+Six names, each with the consumer that reaches for it:
 
 - `PROJECT_FILES`, for `scripts/check_artifacts.py`. It asks the built wheel whether the
   twelve shipped template files are actually in it, and before this list existed the only
@@ -29,6 +29,8 @@ Five names, each with the consumer that reaches for it:
 - `CI_WORKFLOW`, for `keelline assess`'s workflow and code-owners probes, which must name
   Keelline's own caller workflow and would otherwise spell it a third time beside `doctor`'s
   `WORKFLOW`.
+- `ASSESSMENT`, for `keelline assess`, which writes the inventory `uninstall` takes back: one
+  spelling of the path, so the file one writes is the file the other removes.
 
 `read`, `fill`, `GATE_BRANCH` and `HARNESS_REGION` are **not** here: they are
 this area's own, reached by `keelline.project.templates` and by nothing outside it. A lane that
@@ -38,8 +40,10 @@ needs one grows this list deliberately, in a commit that says which lane and why
 from keelline.project.layout import PROJECT_FILES
 from keelline.project.rewrite import rewrite_owned
 from keelline.project.templates import CI_WORKFLOW, Prepared, project_templates
+from keelline.project.uninstall import ASSESSMENT
 
 __all__ = [
+    "ASSESSMENT",
     "CI_WORKFLOW",
     "PROJECT_FILES",
     "Prepared",

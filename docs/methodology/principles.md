@@ -163,9 +163,10 @@ where it would pass, and only then enforce — and the decision to enforce shoul
 the base branch, never from the change under review.
 
 **What Keelline does today.** Not this, yet. The state machine (`initialised`, `adopting`,
-`installed`; `adopt --promote`) is designed and its state key is read by every command, but
-the assessment engine and the promotion command belong to a later work package. The gates
-that exist (`docs check`, `bugs check`, `plan check`, `commit check`) run as gates.
+`installed`; `adopt --promote`) is designed and its state key is read by every command.
+`keelline assess` reports what stands between a repository and enforcement, gate by gate; the
+promotion command belongs to a later work package. The gates that exist (`docs check`,
+`bugs check`, `plan check`, `commit check`) run as gates.
 
 **Why.** The alternative in the field is a constitution declared before the first commit
 [S11] or a process layer that tells the agent how to work without asking whether the

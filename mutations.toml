@@ -2480,8 +2480,8 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
 ]
 
-# `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it. A directory
-# this process cannot list is a fact about the machine, not about the installation.
+# `red` is what gates the exit code. A directory this process cannot list is a fact about the
+# machine, not about the installation.
 [[mutation]]
 name = "doctor renders an unreadable harness data root as a red row"
 file = "src/keelline/doctor/checks.py"
@@ -4354,13 +4354,13 @@ reddens = [
 # verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
 # caught it is reading every entry's `before` back out of its file and counting. Re-pointed
 # again when the profile adapters rewrote the sentence to eight items that each leave it in the
-# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it; the
-# mutation cuts it back to one.
+# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it, and
+# again as `assess` shipped; the mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a\n> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each\n> leaves this"
-after = "> discipline. **Not yet:** `assess` \u2014 each\n> leaves this"
+before = "> discipline. **Not yet:** the adoption state machine, the memory MCP server, a\n> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each\n> leaves this"
+after = "> discipline. **Not yet:** the adoption state machine \u2014 each\n> leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -5259,10 +5259,10 @@ reddens = [
 
 # DC2's own argument for giving the overlay's declared floor a row rather than folding it into
 # `versions`: a `local-only` project on a machine that records an overlay must not go red for a
-# requirement it has no relationship with. `red` is what gates the exit code, and wave 5's
-# `assess` is planned to gate on it too, so the level here is a verdict something downstream
-# reads -- an unconditional red makes `doctor` exit 1 in a repository that never opens the
-# overlay. `memory.mode` is the gate, and it is compared and never printed.
+# requirement it has no relationship with. `red` is what gates the exit code, so the level
+# here is a verdict something downstream reads -- an unconditional red makes `doctor` exit 1
+# in a repository that never opens the overlay. `memory.mode` is the gate, and it is compared
+# and never printed.
 [[mutation]]
 name = "an unrelated overlay's declared floor reddens a project that never reads it"
 file = "src/keelline/doctor/checks.py"
@@ -7903,3 +7903,24 @@ file = "src/keelline/assess/rule.py"
 before = '    if linked or spelled != prefix.rstrip("\n"):'
 after = "    if linked:"
 reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
+
+[[mutation]]
+name = "the assess summary prints each finding's path instead of a count"
+file = "src/keelline/assess/assessment.py"
+before = '        count = len(g.findings) if g.answered else "could not run"'
+after = '        count = ", ".join(f.path for f in g.findings) if g.answered else "could not run"'
+reddens = ["tests/assess/test_assessment.py::test_the_summary_prints_counts_and_never_a_path"]
+
+[[mutation]]
+name = "uninstall leaves the inventory assess wrote"
+file = "src/keelline/project/uninstall.py"
+before = "    for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):"
+after = "    for target in (MANIFEST_PATH.as_posix(),):"
+reddens = ["tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]"]
+
+[[mutation]]
+name = "a docs/cli.md section drops out of the Contents"
+file = "docs/cli.md"
+before = "- [`keelline memory fit`](#keelline-memory-fit)"
+after = ""
+reddens = ["tests/test_documents.py::test_the_cli_reference_contents_lists_every_section_in_order"]

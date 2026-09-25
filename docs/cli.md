@@ -18,7 +18,7 @@ Three things hold everywhere:
   not a low-confidence result.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command takes them with the same meaning, and `docs check` takes `--store` as well.
+  command, and `assess`, takes them with the same meaning, and `docs check` takes `--store` as well.
 
 | Option | Meaning |
 |---|---|
@@ -50,6 +50,7 @@ Three things hold everywhere:
 - [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
+- [`keelline assess [--base REF] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---root-path---machine-path)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
@@ -647,6 +648,66 @@ shallow to hold the ref (`fetch-depth: 0`). A `REF` shaped like an option is ref
 before git sees it. Uncommitted plans
 are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
 lints it. **Writes** nothing.
+
+## `keelline assess [--base REF] [--root PATH] [--machine PATH]`
+
+What stands between this repository, as it is, and enforcement. It reads the tree's own
+`keelline.toml` — not the base branch's: the question is about this tree, so this command is
+not a trust boundary — and runs every configured gate (see [Configuration](#configuration)): the
+built-ins `[gates] builtin` keeps, in their fixed order, then each `[gates.custom.<name>]`. A
+custom gate's output goes to standard error as it ran and nowhere else, so running `assess` in a
+clone runs the commands that clone configured, as running its test suite would. Then it runs the
+probes below, which read files and the git index and never run a tool or reach the network.
+
+`REF` is the revision `plan` and `commit` compare against, default
+`refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
+for it. Where that ref does not exist (no `origin`, or not fetched), `plan` reports
+`base-unresolvable` and `commit` could not run, and both count as failing.
+
+A gate that could not judge the tree — an unreadable plan, a range git cannot read, a custom
+gate that could not start or ran past `custom_timeout_seconds` — is failing: a gate that could
+not look has not passed. The summary says `could not run`; `--json` carries `answered: false`
+and a fixed `reason` naming the command that shows why.
+
+| Probe | Reads | Severity | Principle | Reported when |
+|---|---|---|---|---|
+| `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
+| `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
+| `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
+| `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
+| `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file; not judged under `[ci] mode = "none"` |
+| `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
+| `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
+
+A probe that could not look — a git query that failed or timed out, a settings file Keelline
+cannot read, a path through a symlink — reports a `could-not-look` warning naming where, and
+never reads as "nothing found". Two things are deliberately not inventoried: another tool's
+design-document directories, because Keelline names no other tool's convention; and
+[`keelline test audit-entrypoints`](#keelline-test-audit-entrypoints), which stays its own
+advisory command until its candidates are triaged.
+
+**Writes** `.keelline/assessment.json`, which the `keelline:ignore` region keeps out of git,
+overwritten on every run that gets that far and never read back: format `1`, with `format`,
+`keelline` (the version that wrote it), `base`, `state`, `enforcing` (the gates
+`[keelline] enforced` makes enforcing, every configured gate under `installed`), `gates` (per
+gate: `name`, `enforcing`, `answered`, `reason`, `count`, `failing`) and `items` (per item:
+`probe`, the gate or probe that found it; `rule`; `principle`, a number in
+[the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;
+`remedy`; `where`, at most 200 labels; and `count`, how many there were, never capped). A gate's
+findings become one item per rule, at `warning`. `--json` prints the same object with `summary`
+beside it. When git does not ignore the file where it is written, the summary ends with a note
+saying so. A symlinked `.keelline`, or something other than a file at the inventory's place, is
+a refusal and nothing is written.
+
+The summary prints counts and Keelline's own words — gate names, probe and rule ids,
+severities, remedies — and never a path the repository chose: one table with a row per gate
+(`gate`, `enforcing`, `findings`, `would fail`) and one with a row per item (`from`, `rule`,
+`severity`, `count`, `remedy`).
+
+Exit codes: `0` when no gate would fail, whatever the probes found, so `0` means every gate
+could enforce now; `1` when a gate would fail, enforced or not, or when `keelline.toml` is
+missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal.
 
 ## `keelline memory refs`
 
@@ -1778,7 +1839,7 @@ base branch itself the tree's copy must equal it byte for byte — once the base
 `adopting` the difference is one `::warning` annotation and the run goes on, which is the
 same advisory rule the next paragraph states for the gates themselves. A pull request that
 could turn its own gates off is not a gate; which keys a pull request may eventually change is
-a question the `assess` lane answers, and until it ships the answer is none. The base ref
+a question `keelline gate` answers, and until it ships the answer is none. The base ref
 itself is the pull request's base as the platform reports it, the caller's `base:` on every
 other event, or the repository's default branch — none of the three readable out of the tree
 under review, and on a pull request a `base:` that disagrees with the platform's answer is
@@ -1932,7 +1993,7 @@ ref = ""                 # the commit of the Keelline release the workflow is pi
 gate_branch = "main"     # the branch a gate reads its configuration from
 
 [gates]
-builtin = ["docs", "bugs", "plan", "commit", "trail"]  # validated now; honoured later
+builtin = ["docs", "bugs", "plan", "commit", "trail"]  # assess runs these; the workflow, later
 custom_timeout_seconds = 600  # how long one of your own gates may run
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
@@ -1948,10 +2009,10 @@ the file loads (`unknown section(s)`), so the grammar above is the whole of it. 
 and which form, `gate_branch` is the branch the rendered workflow watches on a push and the
 default it passes as `base:`, and `ref` is written by `init` and judged by `doctor`'s `ci-ref`
 row. `[commit_messages] attribution_check` is read by `commit check` and `[artifacts] local` by
-the scaffold engine. `[commit_messages] types`, `[keelline] enforced` and all of `[gates]` are
-read by nothing yet but the loader, which validates them; they are accepted so that a project
-can record its intent without the loader refusing the file, and the lane that reads each will
-say so.
+the scaffold engine. `keelline assess` reads `[commit_messages] types` (its commit-vocabulary
+probe), `[keelline] enforced` (which gates it reports as enforcing) and all of `[gates]` (the
+gates it runs); nothing enforces by `enforced` or `[gates]` yet, and the command that will says
+so.
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with two
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
@@ -1966,20 +2027,25 @@ Keelline's own five the project means to run, all of them by default, and each
 `[gates.custom.<name>]` names one of the project's own: `run` is an argv to run from the
 project root, never through a shell, given `custom_timeout_seconds` to finish, and a non-zero
 exit is its one finding. A custom gate's name is one lowercase path segment, neither a built-in
-gate's name nor `config`, which names the configuration check. **The keys are accepted and
-validated when the file loads; the gate that honours them ships later.** Until it does,
+gate's name nor `config`, which names the configuration check. **`keelline assess` runs the
+configured set; the gate that enforces it ships later.** Until it does,
 [the reusable workflow](#the-reusable-workflow) runs every built-in check whatever
-`[gates] builtin` says, and nothing runs a custom gate. When one does, it will run only from a
-command a person or a workflow runs on purpose, never from a hook or `doctor`, so running such a
-command in a clone runs the commands that clone configured, as running its test suite would.
+`[gates] builtin` says, and runs no custom gate. A custom gate runs only from a command a person
+or a workflow runs on purpose — today
+[`keelline assess`](#keelline-assess---base-ref---root-path---machine-path) — never from a hook
+or `doctor`, so running such a command in a clone runs the commands that clone configured, as
+running its test suite would. A project that keeps its roadmap or its `AGENTS.md` out of git
+(`[artifacts] local`) drops `trail` or `docs` from `[gates] builtin`: those gates read the
+committed place, where the file is not.
 
 **Enforcement per gate ships with that gate.** `[keelline] enforced` is meant to list the gates
 promoted while a project adopts Keelline, and `state = "installed"` means every gate the project
 runs. Both keys are Keelline's to write (`keelline adopt begin` and `keelline adopt promote`,
 which ship later), and the loader already holds them together: an `initialised` project lists
-none, and an `installed` one lists every gate or none. Nothing reads the list yet. Until the
-gate ships, the reusable workflow enforces by `state` alone: once the base's state is
-`installed` a failed check fails the job, and before that every failure is a warning.
+none, and an `installed` one lists every gate or none. `keelline assess` reads the list to
+report which gates enforce; nothing enforces by it yet. Until the gate ships, the reusable
+workflow enforces by `state` alone: once the base's state is `installed` a failed check fails
+the job, and before that every failure is a warning.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
 budgets, and the roadmap is also what `docs trail` writes into; `specs` and `plans` are the two

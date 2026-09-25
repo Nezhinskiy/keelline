@@ -171,7 +171,7 @@ jobs:
             state="$(git show "origin/$base:$file" | python3 -P -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"
             if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then
               if [ "$state" = installed ]; then
-                echo "::error file=$file::keelline.toml differs from origin/$base; a pull request may not change an installed project's gate configuration (the keys a pull request may change arrive with assess)"
+                echo "::error file=$file::keelline.toml differs from origin/$base; a pull request may not change an installed project's gate configuration (the keys a pull request may change arrive with keelline gate)"
                 exit 1
               fi
               echo "::warning file=$file::keelline.toml differs from origin/$base; advisory while the base's state is $state"

@@ -97,7 +97,8 @@ LEDGER = ".keelline/local/attach.json"
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
 IGNORE_REGION = "ignore"
-# §7.1 lists both: the ledger's directory, and the assessment file `assess` will write.
+# Both paths the ignore region keeps out of git: the ledger's directory, and the inventory
+# `keelline assess` writes.
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
 # The region body, spelled once. `init` (wave 4, the `project` area) records this same region
