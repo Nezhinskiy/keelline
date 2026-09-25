@@ -33,7 +33,16 @@ from keelline.project.uninstall import (
     uninstall,
 )
 from keelline.project.upgrade import upgrade
-from keelline.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, Verb, digest
+from keelline.scaffold import (
+    MANIFEST_PATH,
+    Kind,
+    LocalDigests,
+    Location,
+    Manifest,
+    Record,
+    Verb,
+    digest,
+)
 from tests.gitfixture import LsRemote, needs_git, run_git
 from tests.project.repos import BEFORE, initialised, tree
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -679,9 +688,7 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     )
     copy = ".keelline/local/artifacts/CLAUDE.md"
     sha = digest((root / copy).read_text(encoding="utf-8"))
-    (root / ".keelline" / "local" / "artifacts.json").write_text(
-        json.dumps({"format": 1, "artifacts": {"roadmap": {copy: sha}}}), encoding="utf-8"
-    )
+    LocalDigests().with_entry("roadmap", copy, sha).write(root)
     config = root / CONFIG_FILE
     config.write_text(
         config.read_text(encoding="utf-8").replace(

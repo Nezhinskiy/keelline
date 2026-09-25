@@ -8,10 +8,11 @@ two copies of the fixture would drift the way the suite's twenty-three `git` hel
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import keelline
+from keelline.config.loader import preset_defaults
 from keelline.project.init import init
 from keelline.runner import Runner
 from keelline.scaffold import Manifest
@@ -23,6 +24,13 @@ DOCUMENT = (
     f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
     '[ci]\nmode = "none"\n'
 )
+# Every `[paths]` value that defaults under `docs/`, moved off it, so a symlinked `docs` is on no
+# path the configuration uses. Derived from the preset, so a key added there is moved too.
+MOVED_OFF_DOCS = {
+    key: "planning/" + value.removeprefix("docs/")
+    for key, value in asdict(preset_defaults("widget").paths).items()
+    if value.startswith("docs/")
+}
 
 
 def repository(tmp_path: Path) -> Path:
@@ -35,12 +43,14 @@ def repository(tmp_path: Path) -> Path:
     return root
 
 
-def forge_record(root: Path, artifact_id: str, *, target: str, sha256: str) -> None:
-    """Rewrite one manifest record's place and digest, the way a pulled commit can."""
+def forge_record(root: Path, artifact_id: str, *, target: str, sha256: str | None = None) -> None:
+    """Rewrite one manifest record's place, and its digest when `sha256` is given, the way a
+    pulled commit can."""
     manifest = Manifest.read(root)
     record = manifest.get(artifact_id)
     assert record is not None, artifact_id
-    manifest.with_record(replace(record, target=target, sha256=sha256)).write(root)
+    forged = replace(record, target=target, sha256=record.sha256 if sha256 is None else sha256)
+    manifest.with_record(forged).write(root)
 
 
 def initialised(

@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ from keelline.project.commands import CI_LEFT, CI_PINNED
 from keelline.runner import Completed
 from keelline.scaffold import Kind, Location, Manifest, Record, digest
 from tests.gitfixture import git, needs_git
-from tests.project.repos import initialised, tree
+from tests.project.repos import forge_record, initialised, tree
 
 FORGED = "docs/\x1b[31mforged.md"
 # The commands every shared case runs through, and the invocations that print a report.
@@ -50,15 +50,6 @@ class _Listing:
 
     def run(self, argv: list[str], cwd: Path) -> Completed:
         return Completed(0, self.stdout, "")
-
-
-def _forge_the_roadmap_target(root: Path) -> None:
-    # A committed manifest can carry any `target`. The engine reports a left-behind file at the
-    # recorded target, and a report prints targets; only one the path grammar accepts may print.
-    manifest = Manifest.read(root)
-    record = manifest.get("roadmap")
-    assert record is not None
-    manifest.with_record(replace(record, target=FORGED)).write(root)
 
 
 @needs_git
@@ -100,7 +91,10 @@ def test_a_recorded_target_outside_the_path_grammar_prints_as_its_artifact_id(
     # `_relocation` answers a forged target with `skip_modified` at that target, and the run goes
     # on: exit 0, the file at the forged path untouched, and nothing of the target printed.
     root = initialised(tmp_path)
-    _forge_the_roadmap_target(root)
+    # A committed manifest can carry any `target`. The engine reports a left-behind file at
+    # the recorded target, and a report prints targets; only one the path grammar accepts
+    # may print.
+    forge_record(root, "roadmap", target=FORGED)
     code, data = _run(root, tmp_path, *argv)
     printed = json.dumps(data)
     assert code == 0, data["summary"]

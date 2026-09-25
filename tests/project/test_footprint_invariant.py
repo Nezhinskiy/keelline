@@ -34,14 +34,14 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import pytest
 
 from keelline.attach.write import LEDGER as ATTACH_LEDGER
-from keelline.config.loader import CONFIG_FILE, preset_defaults
+from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project.init import InitReport, init
 from keelline.project.uninstall import NOTHING, UninstallReport, uninstall
@@ -49,7 +49,7 @@ from keelline.project.upgrade import UpgradeReport, upgrade
 from keelline.scaffold import digest
 from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from tests.gitfixture import LsRemote, git, needs_git
-from tests.project.repos import DOCUMENT, forge_record, repository
+from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
 
 Command = Literal["init", "upgrade", "uninstall"]
 Report = InitReport | UpgradeReport | UninstallReport
@@ -214,13 +214,6 @@ HOSTILE = (
         plant={"claude.md": FOREIGN},
     ),
 )
-
-# Every value that defaults under `docs/`, moved off it, so a symlinked `docs` is on no path.
-MOVED_OFF_DOCS = {
-    key: "planning/" + value.removeprefix("docs/")
-    for key, value in asdict(preset_defaults("widget").paths).items()
-    if value.startswith("docs/")
-}
 
 LEGITIMATE = (
     Case(
