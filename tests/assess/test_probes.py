@@ -20,6 +20,7 @@ import keelline
 from keelline.assess import probes
 from keelline.assess.model import WHERE_CAP, Item
 from keelline.assess.probes import (
+    CODEOWNERS_MAX_BYTES,
     COULD_NOT_LOOK,
     COULD_NOT_LOOK_REMEDY,
     PROBES,
@@ -310,6 +311,9 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         ("/.github/workflows/ @owner\n*.md @docs\n", False),
         ("/.github/workflows/* @owner\n", False),
         ("/.github/* @owner\n", True),
+        ("/.github/ owner\n", True),
+        ("/.github/\n/.github/workflows/ not-an-owner\n", True),
+        ("/.github/ @owner someone@example.com @org/team\n", False),
     ],
     ids=[
         "no-file",
@@ -322,6 +326,9 @@ def test_foreign_workflows_are_listed_and_keelline_s_own_is_not(tmp_path: Path) 
         "a-later-line-that-does-not-match",
         "the-workflows-files",
         "direct-children-only",
+        "an-owner-github-cannot-read",
+        "a-skipped-line-decides-nothing",
+        "every-owner-shape",
     ],
 )
 def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
@@ -330,8 +337,11 @@ def test_codeowners_is_reported_unless_a_line_owns_the_workflows(
     # GitHub reads the last matching line, and one with a pattern and no owner leaves the path
     # unowned. Mutation (declared): `owners = words[1:]` becomes `owners = ["x"]` -> the
     # owner-less last line reads as owned and the `the-last-match-names-no-one` case reddens.
-    # `direct-children-only` is GitHub's rule for a last `*` (declared; see the divergence case
-    # below).
+    # GitHub skips a line naming an owner that is neither `@user`, `@org/team` nor an email
+    # address. Mutation (advisory): that `continue` dropped -> `an-owner-github-cannot-read` is
+    # owned by `owner`, and `a-skipped-line-decides-nothing` by `not-an-owner`, where the
+    # owner-less line before it decides; both redden. `direct-children-only` is GitHub's rule
+    # for a last `*` (declared; see the divergence case below).
     root = _repo(tmp_path)
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)
@@ -480,6 +490,17 @@ def test_a_pattern_of_many_wildcards_is_answered_promptly() -> None:
         timeout=20,
     )
     assert (done.returncode, done.stdout.split()) == (0, ["False"] * 4), done.stderr
+
+
+def test_a_codeowners_file_github_does_not_load_owns_nothing(tmp_path: Path) -> None:
+    # GitHub does not load a code-owners file of 3 MB or more. Mutation (advisory): the size
+    # check dropped -> the `*` line is read and owns the workflow, and this reddens.
+    root = _repo(tmp_path)
+    line = "* @owner\n"
+    _write(root, ".github/CODEOWNERS", line + "#" * (CODEOWNERS_MAX_BYTES - len(line)))
+    assert _shapes(_items(root, tmp_path, "codeowners")) == [("codeowners", (OWNED_WORKFLOWS,))]
+    _write(root, ".github/CODEOWNERS", line + "#" * (CODEOWNERS_MAX_BYTES - len(line) - 1))
+    assert _items(root, tmp_path, "codeowners") == []
 
 
 def test_a_codeowners_file_under_another_case_owns_nothing(tmp_path: Path) -> None:

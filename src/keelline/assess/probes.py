@@ -205,6 +205,12 @@ def _foreign_workflows(context: ProbeContext) -> Looked:
     return Looked(tuple(f"{_WORKFLOWS}/{name}" for name in names))
 
 
+# GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
+# readings it is the smaller bound, so a file between them is read as unowned, the side that
+# warns.
+CODEOWNERS_MAX_BYTES = 3_000_000
+
+
 def _glob(pattern: str, name: str) -> bool:
     """One path component against one pattern component: `*` is any run of characters and `?`
     is one, and everything else is itself.
@@ -302,13 +308,19 @@ def _codeowners(context: ProbeContext) -> Looked:
             path = contained(context.root, relative)
             if not _exact_file(path):
                 continue
+            if path.stat().st_size >= CODEOWNERS_MAX_BYTES:
+                return Looked((_UNOWNED,))  # GitHub does not load it
             text = path.read_text(encoding="utf-8")
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
         owners: list[str] = []
         for line in text.split("\n"):
             words = line.split("#", 1)[0].split()
-            if words and _owns(words[0], CI_WORKFLOW):
+            # GitHub skips a line with an owner that is neither `@user`, `@org/team` nor an
+            # email address, so such a line decides nothing.
+            if not words or not all("@" in word for word in words[1:]):
+                continue
+            if _owns(words[0], CI_WORKFLOW):
                 owners = words[1:]
         return Looked(() if owners else (_UNOWNED,))
     return Looked((_UNOWNED,))
