@@ -25,6 +25,7 @@ from keelline.project.templates import (
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
     NO_REF,
+    ONE_TARGET,
     PATH_KEYS,
     PROFILE,
     PROJECT,
@@ -302,6 +303,10 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     Both passes, because the write-once pass collides too — `paths.agents_md = "CLAUDE.md"` puts
     the skeleton and the pointer on one file.
 
+    Exactly this pass's refusal: `_no_file_of_another` would refuse the same configuration a
+    step later, naming the pair without saying the pass would write one over the other, so a
+    looser assertion passed with this check gone (the mutation oracle found it surviving).
+
     Mutation (oracle): drop the footprint pass's check -> the roadmap case reddens.
     """
     config = preset_defaults("widget")
@@ -311,8 +316,12 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     with pytest.raises(Refusal) as caught:
         _prepared(footprint_clash)
     message = str(caught.value)
-    assert "roadmap (paths.roadmap)" in message and "roadmap-history" in message
-    assert "paths.roadmap_history" in message
+    assert message == ONE_TARGET.format(
+        first="roadmap",
+        first_key="paths.roadmap",
+        second="roadmap-history",
+        second_key="paths.roadmap_history",
+    )
     # The colliding value is the repository's own bytes and is named nowhere.
     assert "docs/x.md" not in message
 
