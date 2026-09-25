@@ -148,6 +148,9 @@ class LocalDigests:
     def ids(self) -> frozenset[str]:
         return frozenset(artifact_id for artifact_id, _ in self.entries)
 
+    # The lookups below are exact: an entry authorizes only at the path it names, as Keelline
+    # wrote it. Which entries are consulted at all is decided case-folded, in
+    # `engine.left_copies`, so a case variant never widens what an entry reaches.
     def records(self, artifact_id: str, target: str) -> bool:
         return (artifact_id, target) in self.entries
 

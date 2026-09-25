@@ -270,6 +270,59 @@ def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
 
 
+VARIANT = ".keelline/local/artifacts/agents.md"
+
+
+def _variant(tmp_path: Path) -> None:
+    """`VARIANT` holding the same bytes as `LOCAL`. On a filesystem that folds case it is `LOCAL`
+    itself and this rewrites it unchanged; on one that does not, it is a second file, so the
+    rule below is held by the same assertions on Linux as on macOS."""
+    (tmp_path / VARIANT).write_text("BODY\n", encoding="utf-8")
+
+
+def test_a_case_variant_of_an_artifact_s_own_place_is_that_place_and_never_a_left_copy(
+    tmp_path: Path,
+) -> None:
+    # An entry for `agents-md` at `.../agents.md` while it lives at `.../AGENTS.md`: on the
+    # default macOS and Windows filesystems one file, so judging the variant as a copy left
+    # behind removed the artifact's own current copy, relocated onto itself. Mutation
+    # (advisory): compare the copy with the artifact's own place exactly in `left_copies` -> in
+    # `plan` the folded same-plan skip still withholds it (the artifact is in its own plan), so
+    # only with that skip made exact too does the plan hold a `REMOVE` at the variant; the fold
+    # in `left_copies` is what keeps `uninstall`'s prediction the same answer.
+    _written(tmp_path)
+    _variant(tmp_path)
+    _ledger(tmp_path, {"agents-md": {LOCAL: digest("BODY\n"), VARIANT: digest("BODY\n")}})
+    config = a_config(tmp_path, local=("agents-md",))
+    planned = plan(tmp_path, config, [a_template()])
+    assert VARIANT not in {a.target for a in planned.actions}
+    apply(tmp_path, planned)
+    assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
+    assert (tmp_path / VARIANT).read_text(encoding="utf-8") == "BODY\n"
+
+
+def test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_template_s(
+    tmp_path: Path,
+) -> None:
+    # The same-plan skip, compared the way the disk compares: an entry under `roadmap` at
+    # `.../agents.md` names `agents-md`'s `.../AGENTS.md` where case folds, and with no
+    # `withheld` given the plan's own targets are the only guard. Mutation (oracle): "a left copy
+    # at a case variant of a file the plan targets is judged twice" -> the plan removes the
+    # variant, which on macOS is `agents-md`'s copy, and this reddens.
+    _written(tmp_path)
+    _variant(tmp_path)
+    _ledger(
+        tmp_path, {"agents-md": {LOCAL: digest("BODY\n")}, "roadmap": {VARIANT: digest("BODY\n")}}
+    )
+    config = a_config(tmp_path, local=("agents-md", "roadmap"))
+    roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
+    planned = plan(tmp_path, config, [a_template(), roadmap])
+    assert VARIANT not in {a.target for a in planned.actions}
+    apply(tmp_path, planned)
+    assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
+    assert (tmp_path / VARIANT).read_text(encoding="utf-8") == "BODY\n"
+
+
 def test_a_ledger_past_its_entry_bound_is_absent(tmp_path: Path) -> None:
     files = {f".keelline/local/artifacts/f{n}.md": "0" * 64 for n in range(MAX_ENTRIES + 1)}
     _ledger(tmp_path, {"agents-md": files})

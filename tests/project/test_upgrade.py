@@ -673,6 +673,61 @@ def test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_
         assert_snapshot_unchanged(root, before)
 
 
+# Where `[artifacts] local` keeps an artifact.
+KEPT = ".keelline/local/artifacts"
+# The preset's `[paths] architecture`, where `documentation-policy` lives, joined rather than
+# spelled whole: `tests/test_neutral.py`'s denylist refused it spelled whole in this file.
+POLICY = "/".join(("docs", "architecture"))
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("local", "variant"),
+    [
+        ("claude-md", f"{KEPT}/claude.md"),
+        ("documentation-policy", f"{KEPT}/{POLICY}/Documentation.md"),
+    ],
+    ids=["claude-md", "documentation-policy"],
+)
+def test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing(
+    tmp_path: Path, local: str, variant: str
+) -> None:
+    """The cross-id forgery with the path's case changed, and no `[paths]` edit at all: on the
+    default macOS and Windows filesystems `.../claude.md` is the `CLAUDE.md` copy, and an entry
+    under `roadmap` naming it with the digest of those unedited bytes had `upgrade` remove it.
+    Places are compared case-folded, so it is withheld on every filesystem. The variant is
+    written with the copy's own bytes first: where case folds that rewrites the copy unchanged,
+    and where it does not it is a second file, so the same assertions hold on Linux.
+
+    Mutation (oracle): "a ledger entry reaches a case variant of another artifact's copy" ->
+    the dry run already plans a removal at the variant, and the `claude-md` case reddens. The
+    `documentation-policy` case is held twice: that artifact is in `upgrade`'s own plan, so the
+    same-plan skip, compared case-folded too, withholds its variant as well ("a left copy at a
+    case variant of a file the plan targets is judged twice" is that guard's entry).
+    """
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        f'\n[artifacts]\nlocal = ["{local}"]\n\n[ci]\nmode = "none"\n',
+    )
+    exact = {
+        "claude-md": f"{KEPT}/CLAUDE.md",
+        "documentation-policy": f"{KEPT}/{POLICY}/documentation.md",
+    }[local]
+    text = (root / exact).read_text(encoding="utf-8")
+    (root / variant).write_text(text, encoding="utf-8")
+    (root / ".keelline" / "local" / "artifacts.json").write_text(
+        json.dumps({"format": 1, "artifacts": {"roadmap": {variant: digest(text)}}}),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    for dry_run in (True, False):
+        report = _upgrade(root, tmp_path, NO_TAG, dry_run=dry_run)
+        assert variant not in {a.target for a in report.footprint.actions}
+        assert_snapshot_unchanged(root, before)
+    assert (root / exact).read_text(encoding="utf-8") == text
+
+
 @needs_git
 def test_forcing_a_left_copy_away_keeps_the_committed_file_recorded(tmp_path: Path) -> None:
     # The review's repro: `roadmap` taken out of `[artifacts] local` with its copy edited, so

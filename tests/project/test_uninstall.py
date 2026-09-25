@@ -629,9 +629,10 @@ def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_g
 
 
 @needs_git
+@pytest.mark.parametrize("value", ["CLAUDE.md", "claude.md"], ids=["exact", "case-variant"])
 @pytest.mark.parametrize("command", ["upgrade", "uninstall"])
 def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
-    tmp_path: Path, command: str
+    tmp_path: Path, command: str, value: str
 ) -> None:
     """The review's repro. `CLAUDE.md` is kept out of git, a clone force-adds a ledger entry under
     `roadmap` naming that copy with the digest of its unedited bytes, and commits one line,
@@ -641,8 +642,13 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     artifacts but the `AGENTS.md` skeleton and its region may resolve to one file: refused before
     any write, naming the two ids and the key, never the value.
 
+    `claude.md` is the same file on the default macOS and Windows filesystems, so it is refused
+    on every filesystem too.
+
     Mutation (oracle): "an artifact may target a file another artifact is built to write" -> no
-    refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap.
+    refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap. Mutation (oracle):
+    "the cross-file refusal compares places case-sensitively" -> the `case-variant` cases raise
+    nothing.
     """
     root = initialised(
         tmp_path,
@@ -657,7 +663,7 @@ def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
     config = root / CONFIG_FILE
     config.write_text(
         config.read_text(encoding="utf-8").replace(
-            "[artifacts]\n", '[paths]\nroadmap = "CLAUDE.md"\n\n[artifacts]\n'
+            "[artifacts]\n", f'[paths]\nroadmap = "{value}"\n\n[artifacts]\n'
         ),
         encoding="utf-8",
     )

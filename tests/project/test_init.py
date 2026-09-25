@@ -479,17 +479,20 @@ def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_a
 
 
 @needs_git
+@pytest.mark.parametrize("value", ["CLAUDE.md", "claude.md"], ids=["exact", "case-variant"])
 def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write(
-    tmp_path: Path,
+    tmp_path: Path, value: str
 ) -> None:
     # `[paths] roadmap = "CLAUDE.md"`: each pass on its own has one artifact at that file, and
     # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
     # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
-    # init writes both into one `CLAUDE.md` and this reddens.
+    # init writes both into one `CLAUDE.md` and this reddens. `claude.md` is the same file where
+    # case folds, and is refused on every filesystem ("the cross-file refusal compares places
+    # case-sensitively" reddens that case).
     root = _repo(tmp_path)
     (root / "keelline.toml").write_text(
         f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
-        '[paths]\nroadmap = "CLAUDE.md"\n\n[ci]\nmode = "none"\n',
+        f'[paths]\nroadmap = "{value}"\n\n[ci]\nmode = "none"\n',
         encoding="utf-8",
     )
     before = snapshot(root)

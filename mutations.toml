@@ -6852,8 +6852,8 @@ reddens = [
 [[mutation]]
 name = "a copy left kept out of git when its id left [artifacts] local is never judged"
 file = "src/keelline/scaffold/engine.py"
-before = "        for copy in left_copies(template, config, digests, withheld or {}):\n            if copy in planned:"
-after = "        for copy in ():\n            if copy in planned:"
+before = "        for copy in left_copies(template, config, digests, withheld or {}):\n            if path_key(copy) in planned:"
+after = "        for copy in ():\n            if path_key(copy) in planned:"
 reddens = [
   "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
   "tests/scaffold/test_local.py::test_a_changed_copy_whose_id_left_the_list_is_named_and_force_takes_it",
@@ -6884,8 +6884,8 @@ reddens = ["tests/scaffold/test_local.py::test_a_ledger_that_is_not_exactly_this
 [[mutation]]
 name = "a left copy away from its own place goes on the render alone"
 file = "src/keelline/scaffold/engine.py"
-before = "    return target == f\"{LOCAL_ARTIFACTS}/{template.target}\" and matches_render(template, current)"
-after = "    return matches_render(template, current)"
+before = "    own = path_key(target) == path_key(f\"{LOCAL_ARTIFACTS}/{template.target}\")"
+after = "    own = True"
 reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_artifact_s_own_place_vouches_only_by_its_digest"]
 
 # A `[paths]` value moved while the artifact stayed in `[artifacts] local`: the old copy is at a
@@ -6894,8 +6894,8 @@ reddens = ["tests/scaffold/test_local.py::test_a_ledger_entry_away_from_the_arti
 [[mutation]]
 name = "a left copy is judged only where [artifacts] local no longer lists its id"
 file = "src/keelline/scaffold/engine.py"
-before = "        copy for copy in digests.targets_of(template.id) if copy != target and copy not in others\n"
-after = "        copy for copy in digests.targets_of(template.id) if template.id not in config.artifacts.local\n"
+before = "        if path_key(copy) != path_key(target) and path_key(copy) not in others\n"
+after = "        if template.id not in config.artifacts.local\n"
 reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_moved_is_judged_and_force_reaches_it"]
 
 # A ledger is read as untrusted, and an entry under one id must never reach another artifact's
@@ -6904,8 +6904,8 @@ reddens = ["tests/project/test_uninstall.py::test_a_copy_left_when_its_path_move
 [[mutation]]
 name = "a ledger entry under one id reaches another artifact's copy kept out of git"
 file = "src/keelline/scaffold/engine.py"
-before = "if copy != target and copy not in others"
-after = "if copy != target"
+before = " and path_key(copy) not in others"
+after = ""
 reddens = [
   "tests/scaffold/test_local.py::test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git",
   "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
@@ -6925,7 +6925,7 @@ reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_
 [[mutation]]
 name = "a left copy at a file another template of the plan targets is judged twice"
 file = "src/keelline/scaffold/engine.py"
-before = "            if copy in planned:\n                continue\n"
+before = "            if path_key(copy) in planned:\n                continue\n"
 after = "            if False:\n                continue\n"
 reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_template_s"]
 
@@ -6945,7 +6945,7 @@ reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_
 [[mutation]]
 name = "removing a file drops the record of whatever file its artifact now names"
 file = "src/keelline/scaffold/engine.py"
-before = "                if record is not None and record.target == action.target:\n"
+before = "                if record is not None and path_key(record.target) == path_key(action.target):\n"
 after = "                if True:\n"
 reddens = [
   "tests/scaffold/test_local.py::test_removing_a_left_copy_keeps_the_record_of_the_committed_file",
@@ -7008,3 +7008,41 @@ file = "src/keelline/project/ignored.py"
 before = "    if _in_work_tree(root):\n        raise Refusal(UNANSWERED)"
 after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
 reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]
+
+# Paths are compared for identity case-folded (`fsops.path_key`): on the default macOS and Windows
+# filesystems `claude.md` is `CLAUDE.md`. Each entry below puts exact equality back at one site.
+# The refusals are pure string rules; the ledger tests write the case variant as a file of its
+# own first. Either way each reddens on Linux, where the CI oracle runs, as on macOS.
+[[mutation]]
+name = "the cross-file refusal compares places case-sensitively"
+file = "src/keelline/project/templates.py"
+before = "            owners.setdefault(path_key(place), set()).add(artifact_id)\n    for template in templates:\n        others = owners.get(path_key(template.target), set()) - {template.id}\n"
+after = "            owners.setdefault(place, set()).add(artifact_id)\n    for template in templates:\n        others = owners.get(template.target, set()) - {template.id}\n"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[upgrade-case-variant]",
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write[uninstall-case-variant]",
+  "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write[case-variant]",
+]
+
+[[mutation]]
+name = "two artifacts of one pass at case variants of one file are not one file"
+file = "src/keelline/project/templates.py"
+before = "        first = seen.get(path_key(template.target))"
+after = "        first = seen.get(template.target)"
+reddens = ["tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file"]
+
+[[mutation]]
+name = "a ledger entry reaches a case variant of another artifact's copy"
+file = "src/keelline/scaffold/engine.py"
+before = "    others = {path_key(f\"{LOCAL_ARTIFACTS}/{place}\") for place in withheld.get(template.id, ())}\n    return tuple(\n        copy\n        for copy in digests.targets_of(template.id)\n        if path_key(copy) != path_key(target) and path_key(copy) not in others\n"
+after = "    others = {f\"{LOCAL_ARTIFACTS}/{place}\" for place in withheld.get(template.id, ())}\n    return tuple(\n        copy\n        for copy in digests.targets_of(template.id)\n        if path_key(copy) != path_key(target) and copy not in others\n"
+reddens = [
+  "tests/project/test_upgrade.py::test_a_ledger_entry_at_a_case_variant_of_another_artifact_s_copy_reaches_nothing[claude-md]",
+]
+
+[[mutation]]
+name = "a left copy at a case variant of a file the plan targets is judged twice"
+file = "src/keelline/scaffold/engine.py"
+before = "    planned = {path_key(effective_target(template, config)[0]) for template in templates}"
+after = "    planned = {effective_target(template, config)[0] for template in templates}"
+reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_case_variant_of_a_file_the_plan_targets_is_that_template_s"]

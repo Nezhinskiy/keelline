@@ -38,7 +38,7 @@ from pathlib import Path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import PROJECT_NAME, Config
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, remove_within, write_within
+from keelline.fsops import UnsafePath, path_key, remove_within, write_within
 from keelline.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
 from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
@@ -150,7 +150,8 @@ def ours_locally(template: Template, current: str, target: str, digests: LocalDi
     present = _present_stamp(template, current)
     if present is not None and digests.matches(template.id, target, digest(present)):
         return True
-    return target == f"{LOCAL_ARTIFACTS}/{template.target}" and matches_render(template, current)
+    own = path_key(target) == path_key(f"{LOCAL_ARTIFACTS}/{template.target}")
+    return own and matches_render(template, current)
 
 
 def left_copies(
@@ -180,11 +181,18 @@ def left_copies(
     and even then it only adds places to withhold, never removes one. An artifact's own earlier
     places are in nobody's list (a `[paths]` value that moved is a place this configuration no
     longer builds), so a copy left there is still judged.
+
+    Every place is compared through `fsops.path_key`: an entry naming
+    `.keelline/local/artifacts/claude.md` reaches the `CLAUDE.md` copy on a filesystem that folds
+    case, so it is that copy's place on every filesystem, withheld and never a left copy; and a
+    copy at a case variant of the artifact's own place is that place, not one left behind.
     """
     target, _ = effective_target(template, config)
-    others = {f"{LOCAL_ARTIFACTS}/{place}" for place in withheld.get(template.id, ())}
+    others = {path_key(f"{LOCAL_ARTIFACTS}/{place}") for place in withheld.get(template.id, ())}
     return tuple(
-        copy for copy in digests.targets_of(template.id) if copy != target and copy not in others
+        copy
+        for copy in digests.targets_of(template.id)
+        if path_key(copy) != path_key(target) and path_key(copy) not in others
     )
 
 
@@ -305,10 +313,13 @@ def plan(
     manifest = Manifest.read(root)
     digests = LocalDigests.read(root)
     resolved_root = root.resolve()
+    # Exact, not `path_key`: a `--force` path is the operator's argv, compared with the path the
+    # report prints, and one that differs only in case forces nothing and is counted as naming no
+    # file, which is the safe way for a hand-typed path to be wrong.
     forced = set(force)
     # A left copy at a file another template of this plan now targets is that template's to
     # judge; its entry stays until that file is Keelline's again or gone.
-    planned = {effective_target(template, config)[0] for template in templates}
+    planned = {path_key(effective_target(template, config)[0]) for template in templates}
     actions: list[Action] = []
     refusals: list[Refused] = []
     unchanged: list[str] = []
@@ -322,7 +333,7 @@ def plan(
             continue
 
         record = manifest.get(template.id)
-        if record is not None and record.target != target:
+        if record is not None and path_key(record.target) != path_key(target):
             # The relocation reads and rewrites the artifact's own old file, so a refusal from
             # it is this artifact's refusal — the same rule the block below runs under.
             try:
@@ -334,7 +345,7 @@ def plan(
             record = None
         refused = False
         for copy in left_copies(template, config, digests, withheld or {}):
-            if copy in planned:
+            if path_key(copy) in planned:
                 continue
             try:
                 left = _left_locally(root, resolved_root, template, copy, digests, forced)
@@ -482,7 +493,8 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     could not have produced, one that no longer contains, and one whose bytes are not the ones
     recorded — each become a `skip_modified` naming the old path and saying which it was.
     """
-    if record.target not in (template.target, f"{LOCAL_ARTIFACTS}/{template.target}"):
+    producible = (template.target, f"{LOCAL_ARTIFACTS}/{template.target}")
+    if path_key(record.target) not in {path_key(place) for place in producible}:
         return _left_behind(
             template,
             record,
@@ -648,7 +660,7 @@ def apply(root: Path, planned: Plan) -> Applied:
                 # the live record of its committed file with it: that file then read as nobody's,
                 # `upgrade` never recorded it again, and `uninstall` left it unlisted.
                 record = manifest.get(action.artifact_id)
-                if record is not None and record.target == action.target:
+                if record is not None and path_key(record.target) == path_key(action.target):
                     manifest = manifest.without(frozenset({action.artifact_id}))
                 if action.payload is None:
                     digests = digests.without_file(action.target)

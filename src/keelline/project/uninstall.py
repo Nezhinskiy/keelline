@@ -181,7 +181,12 @@ def _retire(templates: Sequence[Template], ids: Set[str]) -> tuple[Template, ...
 
 
 def _kept_locally(root: Path, removing: Set[str]) -> int:
-    """How many files under `LOCAL_ROOT` this run leaves behind: counted, never named."""
+    """How many files under `LOCAL_ROOT` this run leaves behind: counted, never named.
+
+    Exact names, not `fsops.path_key`: a file whose name only case-folds to one the run removes
+    is, on a filesystem that does not fold case, a second file that stays, and counting it gone
+    would take the ignore block out from over it. Counting too many only refuses the run.
+    """
     base = contained(root, LOCAL_ROOT)
     kept = (p for p in base.rglob("*") if p.is_symlink() or not p.is_dir())
     return sum(1 for p in kept if f"{LOCAL_ROOT}/{p.relative_to(base).as_posix()}" not in removing)

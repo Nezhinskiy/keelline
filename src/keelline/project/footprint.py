@@ -109,6 +109,8 @@ def retired_templates(
         for artifact_id in sorted(records)
         if artifact_id not in produced
         and records[artifact_id].kind not in IN_FILE
+        # Exact: a record at a case variant of a place is an orphan, never touched, which only
+        # ever keeps a file.
         and records[artifact_id].target in could_write.get(artifact_id, frozenset())
     )
     orphans = sum(1 for artifact_id in records if artifact_id not in produced) - len(retired)

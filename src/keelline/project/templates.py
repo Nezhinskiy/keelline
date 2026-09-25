@@ -45,6 +45,7 @@ from keelline.config.loader import CONFIG_FILE
 from keelline.config.schema import Config
 from keelline.docs.api import trail_target
 from keelline.errors import Failure, Refusal
+from keelline.fsops import path_key
 from keelline.ledger.api import render_index
 from keelline.project.layout import PROJECT_FILES
 from keelline.release.api import Resolution
@@ -447,11 +448,12 @@ def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PA
     so that the remedy is one edit — it never names the value, which is its bytes.
 
     Only within a pass. `agents-skeleton` and `agents-md` deliberately target one file across the
-    two, which is the whole reason there are two.
+    two, which is the whole reason there are two. Compared through `fsops.path_key`: on a
+    filesystem that folds case, `docs/x.md` and `docs/X.md` are one file.
     """
     seen: dict[str, str] = {}
     for template in templates:
-        first = seen.get(template.target)
+        first = seen.get(path_key(template.target))
         if first is not None:
             raise Refusal(
                 ONE_TARGET.format(
@@ -461,7 +463,7 @@ def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PA
                     second_key=keys[template.id],
                 )
             )
-        seen[template.target] = template.id
+        seen[path_key(template.target)] = template.id
 
 
 def _no_file_of_another(
@@ -479,14 +481,16 @@ def _no_file_of_another(
     some other configuration builds (another profile's rules, a harness's rule this project does
     not list, the workflow) is the same collision a run later, so `could_write` is the list, not
     this run's templates. The anchor is the build's: which ids exist and where each could write
-    are computed here; the refusal names two ids and their keys, never the value.
+    are computed here; the refusal names two ids and their keys, never the value. Places are
+    compared through `fsops.path_key`, so `roadmap = "claude.md"` is `CLAUDE.md`'s file too, as it
+    is on the default filesystems of macOS and Windows, and is refused on every filesystem.
     """
     owners: dict[str, set[str]] = {}
     for artifact_id, places in could_write.items():
         for place in places:
-            owners.setdefault(place, set()).add(artifact_id)
+            owners.setdefault(path_key(place), set()).add(artifact_id)
     for template in templates:
-        others = owners.get(template.target, set()) - {template.id}
+        others = owners.get(path_key(template.target), set()) - {template.id}
         if not others or {template.id, *others} <= SHARED_FILE:
             continue
         second = min(others - SHARED_FILE or others)

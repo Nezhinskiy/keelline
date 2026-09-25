@@ -324,6 +324,15 @@ def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
     )
     # The colliding value is the repository's own bytes and is named nowhere.
     assert "docs/x.md" not in message
+    # One file where case folds, as on the default macOS and Windows filesystems, so one file
+    # here on every filesystem. Mutation (oracle): "two artifacts of one pass at case variants of
+    # one file are not one file" -> the cross-file refusal answers instead, and this reddens.
+    variant = replace(
+        config, paths=replace(config.paths, roadmap="docs/x.md", roadmap_history="docs/X.md")
+    )
+    with pytest.raises(Refusal) as caught:
+        _prepared(variant)
+    assert str(caught.value) == message
 
     once_clash = replace(config, paths=replace(config.paths, agents_md="CLAUDE.md"))
     with pytest.raises(Refusal, match=r"claude-md|agents-skeleton"):
