@@ -135,6 +135,8 @@ def read_base(root: Path, base: str) -> str | None:
     path = f"{prefix}{CONFIG_FILE}"
     # Literal: git reads a pathspec starting `:/` as "from the top", so under a directory named
     # `:` the listing would look elsewhere, answer nothing, and make the change the bootstrap.
+    # No `--` after `--end-of-options`: every argument past it is literal, and a `--` there is a
+    # path, which listed a top-level file of that name.
     listed = _read(
         root,
         "--literal-pathspecs",
@@ -143,7 +145,6 @@ def read_base(root: Path, base: str) -> str | None:
         "--name-only",
         "--end-of-options",
         commit,
-        "--",
         path,
     )
     if not listed:

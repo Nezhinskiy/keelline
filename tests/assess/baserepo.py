@@ -8,6 +8,7 @@ remote-tracking ref, and the remote-tracking ref is exactly what a base is read 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from tests.gitfixture import git
@@ -20,10 +21,13 @@ def commit(root: Path, subject: str) -> None:
     git(root, "commit", "-qm", subject)
 
 
-def clone(tmp_path: Path, base: str | bytes, *, under: str = "") -> Path:
+def clone(
+    tmp_path: Path, base: str | bytes, *, under: str = "", also: Mapping[str, str] | None = None
+) -> Path:
     """The clone; `under` is the project's directory inside the repository, `""` for the root.
 
-    `base` is the upstream's `keelline.toml`; bytes for a document that is not UTF-8.
+    `base` is the upstream's `keelline.toml`; bytes for a document that is not UTF-8. `also`
+    maps further files at the repository's top to their text, committed with the base.
     """
     upstream = tmp_path / "upstream"
     (upstream / under).mkdir(parents=True)
@@ -34,6 +38,8 @@ def clone(tmp_path: Path, base: str | bytes, *, under: str = "") -> Path:
     else:
         document.write_text(base, encoding="utf-8")
     (upstream / under / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
+    for name, text in (also or {}).items():
+        (upstream / name).write_text(text, encoding="utf-8")
     commit(upstream, "chore: base")
     project = tmp_path / "project"
     git(tmp_path, "clone", "-q", str(upstream), str(project))

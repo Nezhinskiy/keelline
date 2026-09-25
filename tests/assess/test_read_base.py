@@ -113,6 +113,25 @@ def test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_cop
     assert read_base(project / ":" / "x", REMOTE_MAIN) == BASE
 
 
+def test_a_file_named_like_the_separator_is_not_listed_as_the_base_s_copy(tmp_path: Path) -> None:
+    # After `--end-of-options` every argument is literal, a `--` included: `ls-tree` also listed a
+    # top-level file named `--`, so a project with no copy on its base failed as unreadable. A
+    # separator put back refuses more (a false failure), so it is not declared as a mutation.
+    project = clone(tmp_path, BASE, under="sub", also={"--": "not a separator\n"})
+    assert read_base(project, REMOTE_MAIN) is None
+    assert read_base(project / "sub", REMOTE_MAIN) == BASE
+
+
+def test_a_project_under_a_directory_named_like_an_option_reads_its_own_copy(
+    tmp_path: Path,
+) -> None:
+    # With no `--`, `--end-of-options` is what keeps `-x/keelline.toml` a path: dropping it makes
+    # `ls-tree` refuse the argument as an option, a false failure that refuses more, so it is
+    # not declared as a mutation.
+    project = clone(tmp_path, BASE, under="-x")
+    assert read_base(project / "-x", REMOTE_MAIN) == BASE
+
+
 def test_a_project_root_moved_behind_a_symlink_is_refused(tmp_path: Path) -> None:
     # The change moves the project and leaves a link where it was: git resolves the link and
     # looks for `newdir/keelline.toml` on the base, which has none, so the change would be the
