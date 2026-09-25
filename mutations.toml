@@ -7654,3 +7654,16 @@ file = "src/keelline/assess/probes.py"
 before = "            resume += 1"
 after = "            resume += 0"
 reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_answered_promptly"]
+
+[[mutation]]
+name = "the codeowners probe reads any word holding an at sign as an owner"
+file = "src/keelline/assess/probes.py"
+before = "            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '            if not words or not all("@" in word for word in words[1:]):'
+reddens = [
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[two-ats]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-email-without-a-dot]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-empty-team]",
+]
