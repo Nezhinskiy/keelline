@@ -175,6 +175,13 @@ PATH_KEYS = {
     CI_ARTIFACT: OWN_NAME,
     "profile-rules": "paths.keelline",
 }
+# The whole files a project may keep out of git, under `.keelline/local/artifacts/`, with every
+# gate still passing; `init --questions` offers exactly these. Every other artifact is read at its
+# committed path by a gate (`bug-index`, `ledger-audits`, `roadmap`, `trail`), has no purpose
+# outside git (the two `.gitkeep` files), works only at the root (`config`, `gitignore`), or is
+# read where it is committed (`CLAUDE.md`, the `AGENTS.md` skeleton and its region, the workflow,
+# the profile's rules and each harness's pointer to them).
+LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")
 # The one pair of artifacts built to share a file, and the one exception `Owners` makes.
 SHARED_FILE = frozenset({"agents-skeleton", "agents-md"})
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are

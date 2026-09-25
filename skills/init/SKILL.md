@@ -10,8 +10,9 @@ none, a `CLAUDE.md` pointer, an `AGENTS.md` skeleton where there is none and a m
 where there is one, an ignore block, the documentation skeleton the other commands expect,
 and — once a Keelline release exists to pin — a CI workflow calling the reusable gate.
 
-The questions ship with the onboarding lane. Until then `--yes` means "take the detected
-defaults", so the dry run is how the user sees them before anything is written.
+`keelline init --questions` prints the questions `init` would ask, each with the default
+`--yes` takes and where that came from, and writes nothing. `--yes` means "take the detected
+defaults", so the dry run is how the user sees the plan before anything is written.
 
 ## Walk
 

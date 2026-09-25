@@ -60,13 +60,17 @@ HEADER = (
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
 # them first" reads as two alternatives, one of which does not work.
 NEEDS_YES = (
-    "`keelline init` asks its questions through the onboarding lane, which ships later; today "
-    "it takes the detected defaults — pass --yes to accept them, or --yes --dry-run to read "
-    "them first"
+    "`keelline init` writes nothing without --yes; `keelline init --questions` prints the "
+    "detected defaults and where each came from — pass --yes to accept them, or --yes --dry-run "
+    "to read the plan first"
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
     "`keelline upgrade`"
+)
+ANSWER_SHEET = (
+    "this repository already has a keelline.toml, which answers the questions `init` would ask; "
+    "edit it, then run `keelline init --yes --dry-run` with no answer flag to read the plan"
 )
 # The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
 # is the only thing this names: the key that failed is exactly the text no grammar has bounded.
@@ -180,6 +184,19 @@ def _rendered(tables: dict[str, dict[str, object]]) -> str:
     return HEADER + dumps(tables)
 
 
+def precheck(root: Path, *, answering: bool) -> None:
+    """The refusals `init` and `init --questions` share, before anything beyond the root is read.
+
+    A manifest means `init` has already run, so re-running it is `keelline upgrade`. While
+    `answering` — the questions always are — a `keelline.toml` already answers every question,
+    so asking them over it would collect answers that nothing writes.
+    """
+    if (root / MANIFEST_PATH).is_file():
+        raise Refusal(ALREADY)
+    if answering and (root / CONFIG_FILE).is_file():
+        raise Refusal(ANSWER_SHEET)
+
+
 def init(
     root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
 ) -> InitReport:
@@ -197,8 +214,7 @@ def init(
     """
     if not yes:
         raise Refusal(NEEDS_YES)
-    if (root / MANIFEST_PATH).is_file():
-        raise Refusal(ALREADY)
+    precheck(root, answering=False)
     existing = _existing(root)
     tables = _tables(root, existing, ci=ci)
     document = _rendered(tables)

@@ -33,12 +33,19 @@ MOVED_OFF_DOCS = {
 }
 
 
-def repository(tmp_path: Path) -> Path:
-    """A git repository at `tmp_path / "widget"` holding only a README, with an origin."""
-    root = tmp_path / "widget"
+def repository(
+    tmp_path: Path,
+    *,
+    origin: str | None = "git@github.com:owner/widget.git",
+    directory: str = "widget",
+) -> Path:
+    """A git repository at `tmp_path / directory` holding only a README, with `origin` as its
+    origin remote, or none when `origin` is `None`."""
+    root = tmp_path / directory
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
+    if origin is not None:
+        git(root, "remote", "add", "origin", origin)
     (root / "README.md").write_text(BEFORE, encoding="utf-8")
     return root
 

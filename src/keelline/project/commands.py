@@ -70,8 +70,18 @@ UNKNOWN_HARNESSES = (
     "harnesses were given the AGENTS.md region only"
 )
 YES_HELP = (
-    "accept the detected defaults and write the footprint; without it nothing is written and "
-    "the command refuses, naming the lane that ships the questions"
+    "accept the detected defaults and write the footprint; without it nothing is written, and "
+    "the command refuses unless --questions asks it to print those defaults"
+)
+QUESTIONS_HELP = (
+    "print the defaults init would take, where each came from and the flag that changes it; "
+    "under --json, as a JSON Schema. Writes nothing"
+)
+# `--yes` is excluded by the parser. `--dry-run` and `--no-ci` are flags `--yes` takes, so one
+# mutually exclusive group cannot exclude them as well, and this refusal is that half of the rule.
+QUESTIONS_ALONE = (
+    "--questions writes nothing and takes no flag but --root, --machine and --json; the "
+    "answers go on `keelline init --yes`"
 )
 
 
@@ -80,11 +90,25 @@ def _pin(pin: Pin | None) -> dict[str, str] | None:
     return None if pin is None else {"tag": pin.tag, "sha": pin.sha}
 
 
+def run_questions(args: argparse.Namespace) -> Result:
+    """The questions `init` would ask, printed as a card and carried under `--json` as a JSON
+    Schema. Every value in either is bounded by a grammar or is Keelline's own vocabulary."""
+    from keelline.project.questions import card, questions
+
+    root = Path(args.root).resolve()
+    schema = questions(root, machine=Path(args.machine) if args.machine else None)
+    return Result(card(schema), {"questions": schema})
+
+
 def run_init(args: argparse.Namespace) -> Result:
     from keelline.project.init import init
     from keelline.project.templates import CI_ARTIFACT
     from keelline.runner import subprocess_runner
 
+    if args.questions:
+        if args.dry_run or not args.ci:
+            raise Refusal(QUESTIONS_ALONE)
+        return run_questions(args)
     root = Path(args.root).resolve()
     machine = Path(args.machine) if args.machine else None
     report = init(
@@ -320,7 +344,9 @@ def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `keelline.project.init`.
     parser = common_flags(groups.add_parser("init", help="write this repository's footprint"))
-    parser.add_argument("--yes", action="store_true", help=YES_HELP)
+    asking = parser.add_mutually_exclusive_group()
+    asking.add_argument("--yes", action="store_true", help=YES_HELP)
+    asking.add_argument("--questions", action="store_true", help=QUESTIONS_HELP)
     parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
     parser.set_defaults(func=run_init, ci=True)

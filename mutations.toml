@@ -7318,3 +7318,64 @@ file = "src/keelline/project/footprint.py"
 before = "        if not self._predicted:"
 after = "        if False:"
 reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicting_is_refused"]
+
+# `init --questions` prints what `detect` returns and carries it as a JSON Schema, so each
+# repository-authored value is held to its grammar before either sees it, the schema's patterns
+# are ones a JSON Schema validator reads, and the questions are refused, and write nothing,
+# wherever `init` would.
+[[mutation]]
+name = "origin/HEAD reaches the card unbounded"
+file = "src/keelline/project/detect.py"
+before = "    if not GATE_BRANCH.match(branch):"
+after = "    if not branch:"
+reddens = [
+  "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
+]
+
+[[mutation]]
+name = "an underivable name reaches the questions as their default"
+file = "src/keelline/project/detect.py"
+before = '        name, name_source = "", NOT_DERIVABLE'
+after = "        pass"
+reddens = [
+  "tests/project/test_questions.py::test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed",
+]
+
+[[mutation]]
+name = "the schema carries a Python anchor ECMA-262 does not read"
+file = "src/keelline/project/questions.py"
+before = '    return pattern.pattern.removesuffix("\\Z") + "$"'
+after = "    return pattern.pattern"
+reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anchored_for_ecma_262"]
+
+[[mutation]]
+name = "the questions are asked over a keelline.toml that already answers them"
+file = "src/keelline/project/init.py"
+before = "    if answering and (root / CONFIG_FILE).is_file():"
+after = "    if False:"
+reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
+
+[[mutation]]
+name = "a machine file that does not load stops the questions"
+file = "src/keelline/project/questions.py"
+before = "    except Failure:"
+after = "    except KeyError:"
+reddens = [
+  "tests/project/test_questions.py::test_a_machine_file_that_does_not_parse_still_yields_the_questions",
+]
+
+[[mutation]]
+name = "the questions take a flag that plans or writes"
+file = "src/keelline/project/commands.py"
+before = "        if args.dry_run or not args.ci:"
+after = "        if False:"
+reddens = ["tests/project/test_command.py::test_questions_take_no_flag_that_writes_or_plans"]
+
+[[mutation]]
+name = "an id offered as local names no whole file of the footprint"
+file = "src/keelline/project/templates.py"
+before = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")'
+after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-histroy")'
+reddens = [
+  "tests/project/test_templates.py::test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass",
+]

@@ -52,6 +52,7 @@ Three things hold everywhere:
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
+- [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
 - [`keelline upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-upgrade---dry-run---force-path---root-path---machine-path)
 - [`keelline uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#keelline-uninstall---dry-run---force-path---root-path---machine-path)
 - [`keelline overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#keelline-overlay-create---owner-owner---name-name---template----local---root-path)
@@ -675,18 +676,19 @@ deliberately does not resolve in *italics*. **Writes** nothing.
 Writes a repository's Keelline footprint, once. It is the only command that creates the
 documents every other command reads, and the only one that writes `keelline.toml`.
 
-**`--yes` is required, and it means "take the detected defaults".** The questions §8.1
-describes — the project's name, its base branch, its preset — ship with the onboarding lane;
-until then the command detects what it can, and an invocation without `--yes` is refused (`2`)
-saying so. What it detects: the project's name from `origin`'s last path segment, `.git`
-stripped and lower-cased, else the checkout's directory name; the base branch from
-`refs/remotes/origin/HEAD` with `origin/` stripped, else `main`; the agent surfaces from which
-of `.claude/` and `.codex/` the repository carries, both when it carries neither; and
-`[keelline] profile` from the first shipped profile whose markers sit at the root (`python`:
-`pyproject.toml`, `setup.py`, `setup.cfg`, a requirements file, a `Pipfile` or a lockfile),
-written only when one is found. Both name candidates, the remote's segment and the directory
-name, are repository-authored, so one outside `[project] name`'s grammar is refused naming the
-grammar and the remedy and never the value.
+**`--yes` is required, and it means "take the detected defaults".** Its questions — the project's
+name, its base branch, its agents, its profile, its memory mode and the files kept out of git — are
+printed by [`keelline init --questions`](#keelline-init---questions---root-path---machine-path),
+each with the default `--yes` takes and where that came from; an invocation with neither flag is
+refused (`2`) saying so. What it detects: the project's name from `origin`'s last path segment,
+`.git` stripped and lower-cased, else the checkout's directory name; the base branch from
+`refs/remotes/origin/HEAD` with `origin/` stripped when that is a plain branch name, else `main`;
+the agent surfaces from which of `.claude/` and `.codex/` the repository carries, both when it
+carries neither; and `[keelline] profile` from the first shipped profile whose markers sit at the
+root (`python`: `pyproject.toml`, `setup.py`, `setup.cfg`, a requirements file, a `Pipfile` or a
+lockfile), written only when one is found. Both name candidates, the remote's segment and the
+directory name, are repository-authored, so one outside `[project] name`'s grammar is refused naming
+the grammar and the remedy and never the value.
 
 **A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
 read and kept — the name, the paths, the memory mode, the budgets — and the file itself is not
@@ -801,6 +803,68 @@ report), `writes` (both plans' targets), `skipped`, `pin` (the release this run 
 `{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
 and so what the workflow pins, empty when no workflow was planned — and `unknown_harnesses`, how
 many names in `[keelline] agents` no harness answers to.
+
+---
+
+## `keelline init --questions [--root PATH] [--machine PATH]`
+
+Prints the values `keelline init --yes` would take for the six things a person may answer, where
+each came from, and the flag on `init --yes` that replaces it. It writes nothing. The `init` skill
+asks its questions from it, and a person reads it to see the defaults before choosing any.
+
+The summary is one line per question, `<key>: <default> (<where it came from>)`, then one line
+saying how each is answered:
+
+```text
+detected:
+  project.name: widget (origin remote)
+  project.base_branch: main (origin/HEAD)
+  keelline.agents: claude, codex (default)
+  keelline.profile: python (profile markers)
+  memory.mode: local-only (the preset's default)
+  artifacts.local: none (the preset's default)
+each is answered by a flag on `keelline init --yes`; `keelline init --questions --json` carries them as a JSON Schema
+```
+
+Where a value came from is one of a fixed set of phrases. The name comes from the
+`origin remote` or the `directory name`. When neither is one lowercase path segment the source
+is `not derivable`, and the value prints as `none; asked`, never as what the repository
+suggested. The base branch comes from `origin/HEAD` when that names a plain branch; otherwise it
+is the `default`, `main`. The agents come from the `harness directories` the root carries;
+otherwise the `default` is every harness. The profile comes from `profile markers`, or there are
+`no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
+Each default is exactly what `keelline init --yes` writes when that question is not answered.
+`origin/HEAD` goes stale after the remote's default branch is renamed, because git does not
+refresh it. That is why its source is printed: you can catch it.
+
+`--json` carries `questions`: a JSON Schema object (draft 2020-12) with six required
+`properties`. Each is keyed by the `keelline.toml` key its answer writes: `project.name`,
+`project.base_branch`, `keelline.agents`, `keelline.profile`, `memory.mode` and
+`artifacts.local`. Each property carries three keys: `default` (absent for a name that is not
+derivable), `x-keelline-source` (the phrase above) and `x-keelline-flag` (the `init --yes` flag
+that answers it). A choice is a `oneOf` of `const` and `title`, or `items.enum` for a list. The
+two free-text properties carry `pattern`, the grammar their flag enforces.
+
+The schema is modelled on MCP elicitation's flat form schema. A client may send it as a
+`requestedSchema` once it drops `pattern` and the `x-keelline-*` keys, which that subset does not
+carry. Harness ask tools take lists of questions and options rather than a schema, so the `init`
+skill asks one question per property. The flags validate the answers; the schema does not.
+
+It is refused (`2`) before anything beyond the root is read, in three cases:
+- the repository already carries `.keelline/manifest.json`: re-running `init` is
+  `keelline upgrade`;
+- it carries a `keelline.toml`, which answers these questions itself: edit it, then read the plan
+  with `keelline init --yes --dry-run`;
+- any flag is given but `--root`, `--machine` and `--json`.
+
+`--yes` beside it is a usage error from the parser.
+
+**Reads** `git` for the name and the base branch, which harness directories the root carries, each
+shipped profile's marker files at the root, and the machine configuration, to learn whether it
+records an overlay. A machine file that does not load reads as "not recorded"; `init` reports it
+when it loads it. **Writes** nothing.
+
+Exits `0` with the questions printed; `2` on a refusal.
 
 ---
 
