@@ -5108,6 +5108,24 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_housekeeping_sweep_leaves_the_lock_alone",
 ]
 
+# The static half of drift detection: the same anchor rule `_check` applies inside a full run,
+# applied by the suite to every entry at the commit that causes the drift.
+[[mutation]]
+name = "a duplicated before line is accepted as an anchor"
+file = "scripts/mutation_oracle.py"
+before = '    if occurrences > 1:'
+after = '    if occurrences > 99:'
+reddens = ["tests/scripts/test_mutation_oracle.py::test_a_before_line_must_occur_exactly_once"]
+
+[[mutation]]
+name = "a reddens id naming a function its file lacks passes the static check"
+file = "scripts/mutation_oracle.py"
+before = '                    and node.name == name'
+after = '                    and bool(name)'
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_reddens_id_must_name_a_function_its_file_defines",
+]
+
 [[mutation]]
 name = "the [paths] grammar check is dropped"
 file = "src/keelline/config/paths.py"

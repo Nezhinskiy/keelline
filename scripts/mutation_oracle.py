@@ -28,6 +28,7 @@ Exit codes match the rest of the project: 0 all held, 1 findings.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import os
 import shutil
@@ -386,6 +387,59 @@ def _run(targets: tuple[str, ...], cwd: Path) -> Outcome:
         return Outcome(done.returncode, _executed(report))
 
 
+def anchor_finding(text: str, before: str) -> str | None:
+    """Why `before` cannot anchor a mutation in `text`, or `None` when it occurs exactly once.
+
+    Shared by `_check`, which meets it inside a full run, and by the suite's static test over
+    `mutations.toml`, which meets it at the commit that causes it. Before the static test, an
+    entry whose line a task rewrote was noticed only by an unfiltered run twenty minutes later
+    — five times on one branch, once after the commit, which then needed a history rewrite.
+    """
+    occurrences = text.count(before)
+    if occurrences == 0:
+        return (
+            "its `before` line is not in the file any more — the assertion and the line it is "
+            "about have drifted apart, so update the entry or delete it"
+        )
+    if occurrences > 1:
+        return f"its `before` line appears {occurrences} times; make it unique"
+    return None
+
+
+def undefined_tests(reddens: tuple[str, ...], root: Path) -> list[str]:
+    """The ids in `reddens` whose file does not define the function they name.
+
+    Read from the syntax tree, not from a pytest collection: the whole of `mutations.toml` is
+    checked in well under a second, which is what lets it run with the suite. A parametrized
+    id's bracketed part is not checked here — only a collection can see parameter ids — and
+    stays the clean-tree run's to catch, as it always was.
+    """
+    missing: list[str] = []
+    parsed: dict[Path, ast.Module | None] = {}
+    for node_id in reddens:
+        path, *names = node_id.split("[", 1)[0].split("::")
+        source = root / path
+        if source not in parsed:
+            parsed[source] = (
+                ast.parse(source.read_text(encoding="utf-8")) if source.is_file() else None
+            )
+        scope: ast.AST | None = parsed[source]
+        for name in names:
+            body = getattr(scope, "body", [])
+            scope = next(
+                (
+                    node
+                    for node in body
+                    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+                    and node.name == name
+                ),
+                None,
+            )
+        if scope is None or not names:
+            missing.append(node_id)
+    return missing
+
+
 def _check(mutation: Mutation, tree: Path) -> str | None:
     """`None` when the mutation was caught; the finding otherwise.
 
@@ -407,14 +461,9 @@ def _check(mutation: Mutation, tree: Path) -> str | None:
     if not subject.is_file():
         return f"{mutation.file.relative_to(ROOT)} does not exist"
     original = subject.read_text(encoding="utf-8")
-    occurrences = original.count(mutation.before)
-    if occurrences == 0:
-        return (
-            "its `before` line is not in the file any more — the assertion and the line it is "
-            "about have drifted apart, so update the entry or delete it"
-        )
-    if occurrences > 1:
-        return f"its `before` line appears {occurrences} times; make it unique"
+    anchor = anchor_finding(original, mutation.before)
+    if anchor is not None:
+        return anchor
     clean = _run(mutation.reddens, tree)
     if not clean.passed:
         return (
