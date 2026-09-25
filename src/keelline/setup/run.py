@@ -66,12 +66,16 @@ installs, and for `create:` above `gh repo create` itself. Two controls:
   and nothing else, so a parent directory and a sibling worktree both passed — and this
   project's own `worktree-by-default` preset rule makes `--root` a worktree, which is exactly
   the shape that passed. It now also refuses a candidate that *holds* the project root, and a
-  candidate whose `git rev-parse --git-common-dir` is the project root's: what a repository
-  ships reaches its own checkouts and nowhere else, so refusing every checkout of it removes the
-  tree a clone can stage. It is not a claim that the same bytes cannot be somewhere else on the
-  machine — a separate clone of the same remote passes — only that the owner put them there.
-  When `git` cannot answer for the project root — it is not a repository, or `git` is not
-  installed — only the path arms stand, and that is stated rather than assumed.
+  candidate inside, holding or equal to any checkout `git worktree list` names for the project
+  root's repository, or its common directory: what a repository ships reaches its own checkouts
+  and nowhere else, so refusing every checkout of it removes the tree a clone can stage. `git`
+  is asked from the project's side only, with implicit bare repositories refused, because a
+  committed directory holding `HEAD`, `objects/` and `refs/` answered a question asked from
+  inside the candidate for itself. It is not a claim that the same bytes cannot be somewhere
+  else on the machine — a separate clone of the same remote passes — only that the owner put
+  them there. When `git` says the project root is in no repository — it is not one, or `git`
+  is not installed — only the path arms stand, and that is stated rather than assumed. Once
+  `git` has said there is a repository, a listing it cannot give is a refusal and not a pass.
 
 For `create:`, the destination is `home/<name>` and is knowable from the arguments
 (`overlay.api.target_root`), so it is checked before the call rather than after it: the first
@@ -492,20 +496,72 @@ def _check_settings_parent(settings: Path) -> None:
         )
 
 
-def _repository_of(path: Path) -> Path | None:
-    """The git common directory `path` sits in, or `None` when `git` cannot say it is in one.
+# `git` reads any directory holding `HEAD`, `objects/` and `refs/` as a bare repository of its
+# own when its discovery reaches one (`safe.bareRepository` unset means "all"), and those are
+# three paths any repository can commit. So a committed `ov/` answered `rev-parse` for itself,
+# not for the checkout it sits in. With `explicit`, git refuses to answer from inside one.
+_EXPLICIT_BARE = ("-c", "safe.bareRepository=explicit")
 
-    Asked from the nearest directory that exists, because the create branch asks this about a
-    destination that has not been created yet. `gitenv.git_run` scrubs `GIT_DIR` and
-    `GIT_WORK_TREE`, so an inherited one cannot make two unrelated trees answer alike.
+_UNLISTED = (
+    "`git` could not list the checkouts of the repository {root} is in, so no overlay root can be "
+    "shown to lie outside all of them. The overlay root is the machine's trust anchor, and a "
+    "question git did not answer is not taken as a yes; check that `git` runs here"
+)
+
+
+def _checkouts(project_root: Path) -> list[Path] | None:
+    """Every tree of the repository `project_root` is in — its common directory and each of its
+    worktrees — or `None` when `git` says it is in no repository.
+
+    **Asked from the project's side only.** The first version asked `rev-parse --git-common-dir`
+    from inside the *candidate* and compared the answers, which let the candidate's own bytes
+    choose the answer: a committed directory shaped like a bare repository reported itself as
+    its own common directory, so a clone's `ov/` in a sibling worktree was "another repository"
+    and was recorded. `git worktree list` from the project is the repository's own record of its
+    checkouts, which a clone cannot commit into.
+
+    Asked from the nearest directory that exists, because `--root` may name one that does not.
+    `gitenv.git_run` scrubs `GIT_DIR` and `GIT_WORK_TREE`, so an inherited one cannot
+    list a different repository's checkouts.
+
+    **A question git does not answer is a refusal once git has said there is a repository.**
+    `None` is kept for exactly one answer — git says no repository at all, with or without
+    implicit bare repositories — and then only the path arms stand. git answering only with
+    implicit bare repositories allowed means `project_root` sits in a directory that is a
+    repository by its shape alone, and a listing that fails, is empty or is not decodable
+    (`git_run` decodes with `text=True`) proves nothing about the candidate.
     """
-    start = path if path.is_dir() else path.parent
+    start = project_root if project_root.is_dir() else project_root.parent
     if not start.is_dir():
         return None
-    code, out = git_run(start, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    if code != 0 or not out.strip():
-        return None
-    return Path(out.strip()).resolve()
+    try:
+        code, out = git_run(
+            start, *_EXPLICIT_BARE, "rev-parse", "--path-format=absolute", "--git-common-dir"
+        )
+        if code != 0 or not out.strip():
+            code, out = git_run(start, "rev-parse", "--git-common-dir")
+            if code != 0 or not out.strip():
+                return None
+            raise Refusal(
+                f"{project_root} is inside a directory git reads as a bare repository only "
+                f"because it holds `HEAD`, `objects/` and `refs/` — three paths any repository "
+                f"can commit — so git cannot say which checkouts the project has. Run this "
+                f"command from the checkout itself"
+            )
+        common = Path(out.strip())
+        code, listing = git_run(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain")
+    except UnicodeDecodeError as exc:
+        raise Refusal(_UNLISTED.format(root=project_root)) from exc
+    worktrees = [
+        Path(line[len("worktree ") :])
+        for line in listing.splitlines()
+        if line.startswith("worktree ")
+    ]
+    # git always lists at least the main worktree, so an empty listing is not an answer either.
+    if code != 0 or not worktrees:
+        raise Refusal(_UNLISTED.format(root=project_root))
+    # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
+    return [common, *worktrees]
 
 
 def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
@@ -517,15 +573,18 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     is the sibling case the paths cannot see: `keelline.worktrees/wave-1` is not under
     `keelline/`, so a clone committing its own manifests at its own root passed both path arms
     whenever `--root` was one of its worktrees — and this project's own preset rule makes
-    `--root` a worktree by default.
+    `--root` a worktree by default. The `git` arm applies the three path arms to every tree
+    `_checkouts` names, and never runs `git` inside the candidate: see `_checkouts` for why
+    that question let a clone answer it.
 
-    **What it does not cover, stated rather than implied.** When `git` cannot answer for the
-    project root — `--root` is not a repository, or `git` is not installed — the `git` arm is
-    silent and only the paths stand. And what the whole check bounds is a repository *shipping* a
-    tree: committed contents reach that repository's own checkouts and nowhere else, so refusing
-    all of them removes the case a clone can stage. It is not a claim that no other directory on
-    the machine can hold the same bytes — a separate `git clone` of the same remote has its own
-    common directory and passes — only that the owner, and not the clone, put it there.
+    **What it does not cover, stated rather than implied.** When `git` says the project root is
+    in no repository — `--root` is not one, or `git` is not installed — the `git` arm is silent
+    and only the paths stand; any other failure to list the checkouts refuses. And what the
+    whole check bounds is a repository *shipping* a tree: committed contents reach that
+    repository's own checkouts and nowhere else, so refusing all of them removes the case a
+    clone can stage. It is not a claim that no other directory on the machine can hold the same
+    bytes — a separate `git clone` of the same remote has its own common directory and passes —
+    only that the owner, and not the clone, put it there.
     """
     resolved_candidate = candidate.resolve()
     resolved_project = project_root.resolve()
@@ -540,14 +599,20 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
             f"anchor and must live outside any repository an agent works in: a repository could "
             f"otherwise ship its own tree and have this command record it"
         )
-    project_repository = _repository_of(resolved_project)
-    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:
-        raise Refusal(
-            f"{candidate} is a checkout of the same repository as {project_root}, the project "
-            f"this command was run from. The overlay root is the machine's trust anchor and "
-            f"must live outside every checkout of a repository an agent works in — a worktree "
-            f"is not a different repository, and a clone ships its own tree into all of them"
-        )
+    for tree in _checkouts(resolved_project) or ():
+        resolved_tree = tree.resolve()
+        if (
+            resolved_candidate == resolved_tree
+            or resolved_tree in resolved_candidate.parents
+            or resolved_candidate in resolved_tree.parents
+        ):
+            raise Refusal(
+                f"{candidate} is inside a checkout of the same repository as {project_root}, "
+                f"the project this command was run from, holds one, or is one. The overlay root "
+                f"is the machine's trust anchor and must live outside every checkout of a "
+                f"repository an agent works in — a worktree is not a different repository, and "
+                f"a clone ships its own tree into all of them"
+            )
 
 
 @dataclass(frozen=True)

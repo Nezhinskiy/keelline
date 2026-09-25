@@ -2015,14 +2015,65 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_ro
 # And the case no path comparison can see. `git worktree add ../side` is git's own documented
 # layout and this repository's own convention: the other checkout is neither inside `--root` nor
 # above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
-# directories are one repository.
+# directories are one repository — and it is asked from the project's side, for the list of its
+# checkouts: asked from inside the candidate, a committed directory holding `HEAD`, `objects/`
+# and `refs/` answered for itself, and a clone's `ov/` in a sibling worktree was recorded.
 [[mutation]]
 name = "setup stops asking git whether the overlay is a checkout of the project"
 file = "src/keelline/setup/run.py"
-before = "    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:"
-after = "    if False:"
+before = """        if (
+            resolved_candidate == resolved_tree"""
+after = """        if False and (
+            resolved_candidate == resolved_tree"""
 reddens = [
   "tests/setup/test_setup.py::test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor",
+  "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
+]
+
+# Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
+# `--root` sits inside one: `ov/` is then the repository, its only checkout is itself, and the
+# sibling worktree's `ov/` passes. `safe.bareRepository=explicit` makes git refuse to answer
+# there, and the refusal below is what that non-answer turns into.
+[[mutation]]
+name = "setup stops asking git with implicit bare repositories refused"
+file = "src/keelline/setup/run.py"
+before = '_EXPLICIT_BARE = ("-c", "safe.bareRepository=explicit")'
+after = "_EXPLICIT_BARE: tuple[str, ...] = ()"
+reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
+
+[[mutation]]
+name = "setup stops refusing a root git reads as a bare repository by its shape"
+file = "src/keelline/setup/run.py"
+before = """            raise Refusal(
+                f"{project_root} is inside a directory git reads as a bare repository only """"
+after = """            return None
+            raise Refusal(
+                f"{project_root} is inside a directory git reads as a bare repository only """"
+reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
+
+# Once git has said the project is a repository, a question about its checkouts that git did not
+# answer is not "none of them holds the candidate". The old arm read exactly that: no answer for
+# the candidate was `None`, `None` differed from the project's common directory, and the
+# candidate was recorded. `git_run` decodes with `text=True`, so bytes git prints outside the
+# locale's encoding are the other way of not answering.
+[[mutation]]
+name = "setup stops refusing an overlay when git cannot list the project's checkouts"
+file = "src/keelline/setup/run.py"
+before = """    if code != 0 or not worktrees:
+        raise Refusal(_UNLISTED.format(root=project_root))"""
+after = """    if code != 0 or not worktrees:
+        return [common]"""
+reddens = [
+  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
+]
+
+[[mutation]]
+name = "setup stops refusing an overlay when git answers in undecodable bytes"
+file = "src/keelline/setup/run.py"
+before = "    except UnicodeDecodeError as exc:"
+after = "    except LookupError as exc:"
+reddens = [
+  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
 ]
 
 # §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the
