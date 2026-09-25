@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from keelline.project.templates import Owners
 from keelline.scaffold import engine
 from keelline.scaffold.engine import apply, plan
 from keelline.scaffold.local import LOCAL_DIGESTS, MAX_BYTES, MAX_ENTRIES, LocalDigests
@@ -253,6 +252,15 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"
 
 
+class _AgentsMdOwnsItsFile:
+    """The one answer the engine asks of the ownership relation, stubbed: `AGENTS.md` is
+    `agents-md`'s. The real relation is the project area's (`project.templates.Owners`), which
+    `scaffold` does not import, and neither does its test."""
+
+    def foreign(self, artifact_id: str, place: str) -> frozenset[str]:
+        return frozenset({"agents-md"} - {artifact_id}) if place == "AGENTS.md" else frozenset()
+
+
 def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git(
     tmp_path: Path,
 ) -> None:
@@ -264,8 +272,7 @@ def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_
     _written(tmp_path)
     _ledger(tmp_path, {"roadmap": {LOCAL: digest("BODY\n")}})
     roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
-    owners = Owners({"agents-md": frozenset({"AGENTS.md"}), "roadmap": frozenset({roadmap.target})})
-    planned = plan(tmp_path, a_config(tmp_path), [roadmap], owners=owners)
+    planned = plan(tmp_path, a_config(tmp_path), [roadmap], owners=_AgentsMdOwnsItsFile())
     assert LOCAL not in {a.target for a in planned.actions}
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"

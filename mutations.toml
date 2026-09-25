@@ -7262,3 +7262,13 @@ before = "    if dry_run or report.refused:"
 after = "    if report.refused:"
 reddens = ["tests/project/test_uninstall.py::test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_region"]
 
+
+# Only the planning seam (`footprint.Passes`) imports the engine's planner or the ignore guard, so
+# every footprint command, the next one included, plans with both guards bound. The engine's
+# `owners` stays optional for the overlay lane; the import is the bypass, and this is its check.
+[[mutation]]
+name = "a footprint command imports the planner past the seam"
+file = "src/keelline/project/init.py"
+before = "from keelline.scaffold import MANIFEST_PATH, Plan, apply"
+after = "from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan"
+reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]

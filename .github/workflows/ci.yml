@@ -136,14 +136,14 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
-    # measured), so the 555 entries `mutations.toml` now holds cost ~1120 s; checkout, `setup-uv`
+    # measured), so the 562 entries `mutations.toml` now holds cost ~1135 s; checkout, `setup-uv`
     # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
     # to ~60 s, which is the figure to re-measure from this job's own runs. Call the shape
-    # ~1180 s.
+    # ~1195 s.
     #
-    # 25 minutes is 1500 s, so the margin is ~320 s. Sixty of that absorbs runner variance — a
+    # 25 minutes is 1500 s, so the margin is ~305 s. Sixty of that absorbs runner variance — a
     # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
-    # leaves ~260 s, or roughly **128 further mutation entries** before this number has to move.
+    # leaves ~245 s, or roughly **121 further mutation entries** before this number has to move.
     # The budget test projects exactly this sum (entries x rate + 60 s + 60 s) and reddens when
     # it passes 1500 s. It was 19 minutes, sized for 387 entries, then 21 for the wave-5 review
     # fixes, which left ~9 entries of room; 25 is sized for the second half of that wave, which
