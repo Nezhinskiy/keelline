@@ -448,6 +448,11 @@ GRAMMAR = [
     "/.github/*/",
     "*/",
     "/*/",
+    "/***/keelline.yml",
+    "***/keelline.yml",
+    "/.github/****/",
+    "/.github/***",
+    "/.github/***yml",
 ]
 
 
@@ -466,7 +471,10 @@ def _git_ignores(tmp_path: Path, pattern: str) -> bool:
 def test_the_matcher_agrees_with_git_on_its_grammar(tmp_path: Path) -> None:
     # An independent oracle for the patterns GitHub shares with gitignore. Mutations (declared):
     # the directory-only rule, `**` as zero or more components, and `**` special only as a
-    # whole component (`**yml` is `*yml`) each make some pattern disagree.
+    # whole component (`**yml` is `*yml`) each make some pattern disagree. A whole component of
+    # three or more `*` is git's `**` (found by fuzzing against git; GitHub documents nothing
+    # here, so git decides). Mutation (advisory): that reading dropped -> `/***/keelline.yml`
+    # and its siblings disagree, and this reddens.
     ours = {p: _owns(p, CI_WORKFLOW) for p in GRAMMAR}
     theirs = {p: _git_ignores(tmp_path, p) for p in GRAMMAR}
     assert ours == theirs
@@ -479,6 +487,7 @@ def test_the_matcher_agrees_with_git_on_its_grammar(tmp_path: Path) -> None:
         ".github/**yml",
         "/.github/workflows/keelline.yml/**",
         "/.github/*/*/",
+        "/.github/***yml",
     }
 
 

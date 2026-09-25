@@ -275,8 +275,9 @@ def _owns(text: str, path: str) -> bool:
     """Whether the CODEOWNERS pattern `text` matches the file `path`, as GitHub reads it.
 
     The grammar is gitignore's without `!` and `[]`, which GitHub does not support: a pattern
-    with no `/` but a trailing one matches at any depth, and any other is rooted. `**` is
-    special only as a whole component; any other run of `*` is one `*`. A pattern matching a
+    with no `/` but a trailing one matches at any depth, and any other is rooted. A whole
+    component of two or more `*` is `**`, zero or more directories; any other run of `*` is one
+    `*`. A pattern matching a
     directory owns everything below it, and a trailing `/` makes it directory-only, so it never
     owns a file of that name.
 
@@ -289,7 +290,10 @@ def _owns(text: str, path: str) -> bool:
     """
     directory = text.endswith("/")
     anchored = text.startswith("/") or "/" in text.rstrip("/")
-    parts = tuple(text.strip("/").split("/"))
+    parts = tuple(
+        "**" if len(part) > 1 and not part.strip("*") else part
+        for part in text.strip("/").split("/")
+    )
     if not anchored:
         parts = ("**", *parts)
     names = tuple(path.split("/"))
