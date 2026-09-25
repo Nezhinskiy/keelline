@@ -7916,7 +7916,10 @@ name = "uninstall leaves the inventory assess wrote"
 file = "src/keelline/project/uninstall.py"
 before = "    for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):"
 after = "    for target in (MANIFEST_PATH.as_posix(),):"
-reddens = ["tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]"]
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+]
 
 [[mutation]]
 name = "a docs/cli.md section drops out of the Contents"
