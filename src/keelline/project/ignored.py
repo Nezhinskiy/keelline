@@ -131,9 +131,11 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
     places = _preset_places(config)
     chosen: dict[str, Action] = {}
     for action in existing:
-        # That artifact's own preset places: any id's would let `[paths] roadmap = "CLAUDE.md"`
-        # pass as `claude-md`'s place, and a forged `roadmap` record overwrite an ignored
-        # `CLAUDE.md` whose bytes Keelline wrote.
+        # That artifact's own preset places: any id's would let `[paths] roadmap =
+        # "docs/roadmap-history.md"`, with `roadmap_history` moved elsewhere, pass as
+        # `roadmap-history`'s place, and a forged `roadmap` record overwrite an ignored file whose
+        # bytes Keelline wrote. (A value naming a file another artifact is still built to write,
+        # such as `CLAUDE.md`, never reaches here: `templates._no_file_of_another` refuses it.)
         if action.target not in places.get(action.artifact_id, frozenset()):
             chosen.setdefault(action.target, action)
     if not chosen:

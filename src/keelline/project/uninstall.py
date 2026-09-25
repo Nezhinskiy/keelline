@@ -67,13 +67,16 @@ listed `skip_modified` otherwise, where `--force` with its path reaches it.
 
 **A refusal while writing is not a refusal before it.** The engine keeps what it applied, and
 records it, when a later write or removal fails; so does this command across its passes. Exit 2
-then means "stopped part-way": what was done is on disk and in the manifest, `keelline.toml` is
-still there, and running the command again re-plans from there to the end.
+then means "stopped part-way": what was done is on disk and in the manifest, and running the
+command again re-plans from there to the end. `keelline.toml` is still there, since it goes last,
+unless the last pass removed it and then could not write the manifest; that state is the next
+paragraph's, and restoring the file finishes it.
 
 **Without `keelline.toml`, nothing can be judged.** While the manifest still records the file
 (`CONFIG_ARTIFACT`), either something other than this command took it, a person deleting it above
-all, or a run of this command was killed inside `apply` after unlinking it and before writing the
-manifest: `apply` otherwise drops the record with the file, and writes the manifest even when a
+all, or a run of this command removed it inside `apply` and then never wrote the manifest: it was
+killed in between, or the manifest write itself failed (`Manifest.write` raising in `apply`'s
+`finally`). `apply` otherwise drops the record with the file, and writes the manifest even when a
 later action refuses. Going on would drop the manifest and leave every recorded file untracked for
 good, so the run refuses before any write and says to restore the file (`DELETED_CONFIG`), which is
 the remedy in both cases: a restored file is judged like any other, and the next run converges. With
@@ -150,9 +153,9 @@ NO_CONFIG = (
     "file(s) stay where they are, and only the ledger goes"
 )
 # Fixed text. The manifest still records `keelline.toml`, so something other than this command's
-# own removal took it (`apply` drops the record with the file), or a run was killed inside
-# `apply` before the manifest write; either way restoring it is the remedy, and git can usually
-# give it back.
+# own removal took it (`apply` drops the record with the file), or a run removed it and then did
+# not write the manifest (killed in between, or the manifest write failed); either way restoring
+# it is the remedy, and git can usually give it back.
 DELETED_CONFIG = (
     "keelline.toml is not there while .keelline/manifest.json still records it; without it "
     "nothing the manifest records can be judged, and going on would leave those files untracked "
@@ -320,9 +323,9 @@ def uninstall(
         removing=True,
     )
     orphans = passes.orphans
-    # Every place this build could write each artifact, for every plan and prediction below: a
-    # ledger entry under one id never reaches another's copy kept out of git (`left_copies`).
-    could_write = passes.prepared.could_write
+    # For every plan and prediction below: a ledger entry under one id never reaches another
+    # artifact's copy kept out of git (`scaffold.left_copies`).
+    withheld = passes.withheld
     digests = LocalDigests.read(root)
     # Retired: what the manifest records (every retirement `prepare` found among it), what
     # `[artifacts] local` keeps out of git, and every artifact the ledger says Keelline wrote a copy
@@ -341,11 +344,11 @@ def uninstall(
     # gives it, which the footprint pass judges: forced, it must not reach a skeleton sharing that
     # file either.
     footprint_targets |= {
-        copy for t in footprint_retired for copy in left_copies(t, config, digests, could_write)
+        copy for t in footprint_retired for copy in left_copies(t, config, digests, withheld)
     }
     once_force = tuple(path for path in force if path not in footprint_targets)
-    footprint = plan(root, config, footprint_retired, force=force, could_write=could_write)
-    once = plan(root, config, once_retired, force=once_force, could_write=could_write)
+    footprint = plan(root, config, footprint_retired, force=force, withheld=withheld)
+    once = plan(root, config, once_retired, force=once_force, withheld=withheld)
     # The later passes re-plan the same templates at the same targets, so these two plans name
     # every file the run can write or remove.
     refuse_ignored(root, config, footprint, once, removing=True)
@@ -357,7 +360,7 @@ def uninstall(
     local_once = {
         copy: template
         for template in once_body
-        for copy in local_copies(template, config, digests, could_write)
+        for copy in local_copies(template, config, digests, withheld)
     }
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
@@ -373,7 +376,7 @@ def uninstall(
     _apply(root, body)
     # Re-planned once the region is out of `AGENTS.md`, so an untouched skeleton is judged on the
     # bytes `init` recorded. The report carries the plans that ran, not the prediction above.
-    judged = plan(root, config, once_body, force=once_force, could_write=could_write)
+    judged = plan(root, config, once_body, force=once_force, withheld=withheld)
     _apply(root, judged)
     # What is on disk now decides, not the prediction: while anything is left under
     # `.keelline/local/`, the ignore region stays, and so does the manifest that records it.
@@ -383,9 +386,9 @@ def uninstall(
     _remove_local_artifacts(root)
     # The footprint's ignore region: what keeps `.keelline/local/` out of git, so it goes last.
     ignore_region = [t for t in footprint_retired if t.id == IGNORE_ARTIFACT]
-    ignore = plan(root, config, ignore_region, force=force, could_write=could_write)
+    ignore = plan(root, config, ignore_region, force=force, withheld=withheld)
     _apply(root, ignore)
-    last = plan(root, config, config_retired, force=once_force, could_write=could_write)
+    last = plan(root, config, config_retired, force=once_force, withheld=withheld)
     _apply(root, last)
     _remove_ledger(root)
     return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)

@@ -15,7 +15,12 @@ from keelline.attach.api import LEDGER
 from keelline.config.loader import CONFIG_FILE
 from keelline.errors import Refusal
 from keelline.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
-from keelline.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
+from keelline.project.templates import (
+    ACROSS_PASSES,
+    CONFIG_ARTIFACT,
+    IGNORE_ARTIFACT,
+    OWN_NAME,
+)
 from keelline.project.uninstall import (
     ATTACHED,
     DELETED_CONFIG,
@@ -621,6 +626,60 @@ def test_a_directory_where_the_assessment_belongs_is_left_and_the_ledger_still_g
         ".keelline/assessment.json",
         ".keelline/assessment.json/theirs.md",
     }
+
+
+@needs_git
+@pytest.mark.parametrize("command", ["upgrade", "uninstall"])
+def test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write(
+    tmp_path: Path, command: str
+) -> None:
+    """The review's repro. `CLAUDE.md` is kept out of git, a clone force-adds a ledger entry under
+    `roadmap` naming that copy with the digest of its unedited bytes, and commits one line,
+    `[paths] roadmap = "CLAUDE.md"`. Both commands' own checks held each pass on its own, so
+    `upgrade` removed the copy as the roadmap's relocated one and created `CLAUDE.md` in its
+    place, and the ledger rule took `CLAUDE.md` as a place `roadmap` could write too. No two
+    artifacts but the `AGENTS.md` skeleton and its region may resolve to one file: refused before
+    any write, naming the two ids and the key, never the value.
+
+    Mutation (oracle): "an artifact may target a file another artifact is built to write" -> no
+    refusal is raised, and `upgrade` creates `CLAUDE.md` over the roadmap.
+    """
+    root = initialised(
+        tmp_path,
+        document=f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n'
+        '\n[artifacts]\nlocal = ["claude-md"]\n\n[ci]\nmode = "none"\n',
+    )
+    copy = ".keelline/local/artifacts/CLAUDE.md"
+    sha = digest((root / copy).read_text(encoding="utf-8"))
+    (root / ".keelline" / "local" / "artifacts.json").write_text(
+        json.dumps({"format": 1, "artifacts": {"roadmap": {copy: sha}}}), encoding="utf-8"
+    )
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[artifacts]\n", '[paths]\nroadmap = "CLAUDE.md"\n\n[artifacts]\n'
+        ),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    run = (
+        (
+            lambda: upgrade(
+                root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=False, force=()
+            )
+        )
+        if command == "upgrade"
+        else (lambda: _uninstall(root, tmp_path))
+    )
+    with pytest.raises(Refusal) as refused:
+        run()
+    assert str(refused.value) == ACROSS_PASSES.format(
+        first="claude-md",
+        first_key=OWN_NAME,
+        second="roadmap",
+        second_key="paths.roadmap",
+    )
+    assert_snapshot_unchanged(root, before)
 
 
 @needs_git

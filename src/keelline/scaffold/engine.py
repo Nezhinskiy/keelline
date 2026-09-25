@@ -126,9 +126,10 @@ def unlinks(action: Action) -> bool:
 def matches_render(template: Template, current: str) -> bool:
     """Whether `current` holds exactly the bytes this build renders for `template`'s part of it.
 
-    For a file kept out of git, the fallback `ours_locally` asks at the artifact's own place when
-    `LocalDigests` records nothing there (no ledger yet, or one deleted); the ledger's digest is
-    the first answer. Private to this module since `uninstall` asks `ours_locally` instead.
+    For a file kept out of git, the second answer `ours_locally` gives, at the artifact's own
+    place only, when the ledger does not vouch for the bytes there: it records no entry for that
+    file (no ledger yet, or one deleted), or its entry records other bytes (the render changed
+    back, say). Private to this module since `uninstall` asks `ours_locally` instead.
     """
     _, stamp = _payload_and_stamp(template, current)
     present = _present_stamp(template, current)
@@ -156,38 +157,32 @@ def left_copies(
     template: Template,
     config: Config,
     digests: LocalDigests,
-    could_write: Mapping[str, Set[str]],
+    withheld: Mapping[str, Set[str]],
 ) -> tuple[str, ...]:
     """The copies kept out of git `digests` says Keelline left for `template` at a place this
     configuration no longer gives it: its id left `[artifacts] local`, or its `[paths]` value
     moved while it stayed there. Every place the ledger records for its id but its current one,
-    and none that is only another artifact's own place kept out of git.
+    and none `withheld` keeps from it.
 
-    **An entry under one id never reaches another artifact's copy.** `could_write` is every
-    target this build could write for each artifact id (`project.templates.Prepared`), and
-    `LOCAL_ARTIFACTS/<target>` for another id's target is that artifact's place kept out of git,
-    judged under its own id or not at all. Without this, a clone that force-added a ledger entry
-    under `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest
-    of those unedited and so predictable bytes, had `upgrade` remove it as a relocated copy:
+    **An entry under one id never reaches another artifact's copy.** `withheld[template.id]` is
+    every target another artifact is built to write (`project.footprint.withheld`), and
+    `LOCAL_ARTIFACTS/<target>` for one of them is that artifact's place kept out of git, judged
+    under its own id or not at all. Without this, a clone that force-added a ledger entry under
+    `roadmap` naming the `CLAUDE.md` Keelline had kept out of git, stamped with the digest of
+    those unedited and so predictable bytes, had `upgrade` remove it as a relocated copy:
     `upgrade` plans only the footprint pass, so no template of its plan claimed the file, and
     nothing ever wrote it again.
 
-    A place both ids could write stays this one's too: `agents-md`'s region and the skeleton
-    share `AGENTS.md` by design, and the region's copy left there is the region's to take out.
-    The artifact's own earlier places are in no one's `could_write` (a `[paths]` value that moved
-    is a place this configuration no longer builds), which is why the rule withholds another's
-    place rather than admitting only its own. Which ids exist and how each builds its targets are
-    this build's; the `[paths]` values the targets are built from are committed, and all they can
-    do here is withhold a copy from judgement, never offer one.
+    The one exception is decided where the build is made and by nothing a repository writes:
+    `agents-md`'s region and the skeleton share `AGENTS.md` by design, so neither withholds the
+    other's place. A committed `[paths]` value can make two other targets coincide only in a
+    configuration the project area refuses before planning (`templates._no_file_of_another`),
+    and even then it only adds places to withhold, never removes one. An artifact's own earlier
+    places are in nobody's list (a `[paths]` value that moved is a place this configuration no
+    longer builds), so a copy left there is still judged.
     """
     target, _ = effective_target(template, config)
-    own = {f"{LOCAL_ARTIFACTS}/{place}" for place in could_write.get(template.id, ())}
-    others = {
-        f"{LOCAL_ARTIFACTS}/{place}"
-        for artifact_id, places in could_write.items()
-        if artifact_id != template.id
-        for place in places
-    } - own
+    others = {f"{LOCAL_ARTIFACTS}/{place}" for place in withheld.get(template.id, ())}
     return tuple(
         copy for copy in digests.targets_of(template.id) if copy != target and copy not in others
     )
@@ -197,13 +192,13 @@ def local_copies(
     template: Template,
     config: Config,
     digests: LocalDigests,
-    could_write: Mapping[str, Set[str]],
+    withheld: Mapping[str, Set[str]],
 ) -> tuple[str, ...]:
     """Every file under `LOCAL_ARTIFACTS` `plan` judges as `template`'s: its effective target
     while `[artifacts] local` lists it, and its `left_copies`."""
     target, location = effective_target(template, config)
     current = (target,) if location is Location.LOCAL else ()
-    return (*current, *left_copies(template, config, digests, could_write))
+    return (*current, *left_copies(template, config, digests, withheld))
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -297,14 +292,14 @@ def plan(
     templates: Sequence[Template],
     *,
     force: Sequence[str] = (),
-    could_write: Mapping[str, Set[str]] | None = None,
+    withheld: Mapping[str, Set[str]] | None = None,
 ) -> Plan:
     """What applying `templates` under `config` would do, decided and not yet written.
 
-    `could_write` is every target this build could write for each artifact id, from the lane
-    that built `templates` (`project.templates.Prepared.could_write`); `left_copies` says what it
-    guards. A lane whose templates are never kept out of git has no ledger to guard and passes
-    none.
+    `withheld` is, for each artifact id, the targets whose places kept out of git no ledger
+    entry under that id may name, from the lane that built `templates`
+    (`project.footprint.withheld`); `left_copies` says what it guards. A lane whose templates are
+    never kept out of git has no ledger to guard and passes none.
     """
     validate_sources(config)
     manifest = Manifest.read(root)
@@ -338,7 +333,7 @@ def plan(
             actions.append(moved)
             record = None
         refused = False
-        for copy in left_copies(template, config, digests, could_write or {}):
+        for copy in left_copies(template, config, digests, withheld or {}):
             if copy in planned:
                 continue
             try:

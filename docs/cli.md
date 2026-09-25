@@ -780,19 +780,21 @@ ref is recorded, `.keelline/manifest.json`, and `.keelline/local/artifacts.json`
 every one of them through the scaffold engine, so every target goes through the containment walk
 and none may leave the project root or pass through a symlink.
 
-Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED
-section names each, nothing was written and no manifest exists — or a `keelline.toml` that is not
-valid TOML, or the merged document the loader itself refuses (an unknown section or key, a
-`[project] name` outside its grammar, a value of the wrong type, a machine configuration file
-that does not load). `2` on a refusal above the plans: no `--yes`, a repository already
-initialised, a detected name outside the grammar, a `[paths]` value outside the plain-path
-grammar, naming git's control directory or Keelline's own `.keelline/`, or reaching through a
-component that is a symlink — all three refused by the loader before a plan exists — two
-artifacts of one pass that resolve to one file, which is named with the two `[paths]` keys to
-separate, an `[artifacts] local` list naming a profile artifact, which every pointer at it reads
-at its committed path, one naming `config` or `gitignore`, which only work at the repository
-root, and a write git would hide, at an existing file a `[paths]` value chose, which the refusal
-names (see `upgrade`'s boundary).
+Exits `0` on success. `1` on a finding: either plan carries refusals — the report's REFUSED section
+names each, nothing was written and no manifest exists — or a `keelline.toml` that is not valid
+TOML, or the merged document the loader itself refuses (an unknown section or key, a `[project]
+name` outside its grammar, a value of the wrong type, a machine configuration file that does not
+load). `2` on a refusal above the plans: no `--yes`, a repository already initialised, a detected
+name outside the grammar, a `[paths]` value outside the plain-path grammar, naming git's control
+directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink — all
+three refused by the loader before a plan exists — two artifacts of one pass that resolve to one
+file, which is named with the two `[paths]` keys to separate, two artifacts of either pass that
+resolve to one file (`roadmap = "CLAUDE.md"`, say), named the same way, since only the `AGENTS.md`
+skeleton and its region share a file by design, an `[artifacts] local` list naming a profile
+artifact, which every pointer at it reads at its committed path, one naming `config` or `gitignore`,
+which only work at the repository root, and a write git would hide, at an existing file a `[paths]`
+value chose, which the refusal names, or one git cannot answer for inside a repository because it
+timed out or is not installed (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -809,12 +811,14 @@ Refreshes a repository's footprint after a Keelline update, keeping every hand e
 `.keelline/manifest.json` by hash, and never re-plans the write-once files: `keelline.toml`,
 `CLAUDE.md` and the `AGENTS.md` skeleton are yours after `init`.
 
-`--dry-run` reports everything and writes nothing. `--force PATH` overwrites or removes one
-file the report named `skip_modified`, as a path relative to `--root` exactly as the report
-prints it; repeat it for each file. A leading `./` is dropped, and an absolute path or one with a
-`..` component is refused (`2`) naming the rule. A forced path no planned action names — a typo,
-a case difference, or a file with nothing to force — is counted in a `note:` line and forces
-nothing.
+`--dry-run` reports everything and writes nothing. `--force PATH` overwrites or removes one file the
+report named `skip_modified`, as a path relative to `--root` exactly as the report prints it; repeat
+it for each file. It reaches a file you edited, one Keelline never wrote, and a changed or
+unrecorded copy under `.keelline/local/artifacts/`, but not a file left at an artifact's old place
+(`relocated and hand-edited`, or a recorded target the artifact cannot produce): that one is yours
+from then on, to keep or delete by hand. A leading `./` is dropped, and an absolute path or one with
+a `..` component is refused (`2`) naming the rule. A forced path no planned action names — a typo, a
+case difference, or a file with nothing to force — is counted in a `note:` line and forces nothing.
 
 **Four verdicts.** A file whose bytes are still the ones the manifest records is refreshed
 (`update`, or `region_update` for a managed region) when this Keelline renders it differently,
@@ -922,15 +926,16 @@ out of git, then `keelline.toml`, last, so the version is the commit point: a ru
 before it leaves the old version recorded, and the next run re-plans from there.
 
 Exits `0` when it applied the plan or there was nothing to do. `1` on a finding: the plan carries
-refusals — the report's REFUSED section names each, and nothing was written — or a
-`keelline.toml` that does not load, as for every command. `2` on a refusal before any write: the
-repository is not initialised, `keelline.toml` is missing, it records a newer Keelline, a
-version with no leading `X.Y.Z` or one Keelline does not order against the running one, a key is
-written in a shape the editor refuses, a profile artifact, `config` or `gitignore` is listed in
-`[artifacts] local`, git ignores an existing file the run would write or remove at a place a
-`[paths]` value chose, or a `--force` path leaves `--root`. `2` also when a file cannot be written
-or removed part-way through; what was already applied stays applied and recorded, and running the
-command again re-plans from there.
+refusals — the report's REFUSED section names each, and nothing was written — or a `keelline.toml`
+that does not load, as for every command. `2` on a refusal before any write: the repository is not
+initialised, `keelline.toml` is missing, it records a newer Keelline, a version with no leading
+`X.Y.Z` or one Keelline does not order against the running one, a key is written in a shape the
+editor refuses, two artifacts resolve to one file (named by artifact and `[paths]` key, as `init`
+names it), a profile artifact, `config` or `gitignore` is listed in `[artifacts] local`, git ignores
+(or inside a repository cannot say whether it ignores) an existing file the run would write or
+remove at a place a `[paths]` value chose, or a `--force` path leaves `--root`. `2` also when a file
+cannot be written or removed part-way through; what was already applied stays applied and recorded,
+and running the command again re-plans from there.
 
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
@@ -951,11 +956,12 @@ under `uvx` too. Any other record is counted in a `note:` line and left where it
 named, as is a record saying its artifact lived inside a file (a region) that this build no longer
 produces: a region comes out only through the template that names it, never as a whole file.
 
-`--dry-run` reports everything and writes nothing. `--force PATH` removes one file the report
-named `skip_modified`, as a path relative to `--root` exactly as the report prints it; repeat it
-for each file. The path rules are `upgrade`'s: a leading `./` is dropped, an absolute path or one
-with a `..` component is refused (`2`), and a forced path no planned action names is counted in a
-`note:` line and forces nothing.
+`--dry-run` reports everything and writes nothing. `--force PATH` removes one file the report named
+`skip_modified`, as a path relative to `--root` exactly as the report prints it; repeat it for each
+file. It reaches what `upgrade`'s `--force` reaches, and likewise not a file left at an artifact's
+old place (`relocated and hand-edited`), which is yours to keep or delete by hand. The path rules
+are `upgrade`'s: a leading `./` is dropped, an absolute path or one with a `..` component is refused
+(`2`), and a forced path no planned action names is counted in a `note:` line and forces nothing.
 
 **Two passes, the footprint first.** The footprint pass removes files and takes the regions out;
 a region taken out of a file that keeps other text is reported as
@@ -985,51 +991,55 @@ presence means the project uses that harness. So a later `init` detects that har
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay,
 so run `keelline detach` first; `keelline.toml` is missing while the manifest records it, so restore
 it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
-take them out of the list; `.keelline/local/` holds files this run would not remove, such as notes,
-or an artifact kept out of git that changed since Keelline wrote it, which the refusal counts and
-never names; git ignores an existing file the run would remove or rewrite at a place a `[paths]`
-value chose, which the refusal names; or a `--force` path leaves `--root`. The count is exact before
-anything is written, including what taking a region out of a file kept out of git would leave
-behind; the record of what Keelline wrote there, `.keelline/local/artifacts.json`, is Keelline's own
-and goes once nothing else is left, before the ignore block. Every artifact it records is judged, a
-copy left behind when its id left `[artifacts] local` or its `[paths]` value moved included, so an
-unedited one goes. Move the files out; one the report lists `skip_modified` in a file of its own
-there can be named with `--force` instead, but an `AGENTS.md` whose region and skeleton are both
-kept out of git shares one file, and forcing it takes only the region, so a line you wrote into that
-skeleton has to be moved. A dry run reports the count in a `note:` line instead of refusing, even
-when its plans also carry refusals, so its report still lists the edited file.
+take them out of the list; two artifacts resolve to one file, named as `init` names it;
+`.keelline/local/` holds files this run would not remove, such as notes, or an artifact kept out of
+git that changed since Keelline wrote it, which the refusal counts and never names; git ignores an
+existing file the run would remove or rewrite at a place a `[paths]` value chose, which the refusal
+names; or a `--force` path leaves `--root`. The count is exact before anything is written, including
+what taking a region out of a file kept out of git would leave behind; the record of what Keelline
+wrote there, `.keelline/local/artifacts.json`, is Keelline's own and goes once nothing else is left,
+before the ignore block. Every artifact it records is judged, a copy left behind when its id left
+`[artifacts] local` or its `[paths]` value moved included, so an unedited one goes. Move the files
+out; one the report lists `skip_modified` in a file of its own there can be named with `--force`
+instead, but an `AGENTS.md` whose region and skeleton are both kept out of git shares one file, and
+forcing it takes only the region, so a line you wrote into that skeleton has to be moved. A dry run
+reports the count in a `note:` line instead of refusing, even when its plans also carry refusals, so
+its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
 `.keelline/local/` after the write-once pass, which the count before any write should already have
 refused; move them out. What was removed stays removed and recorded, and `keelline.toml` and the
-manifest are still there, because they go last; so running the command again finishes from what the
-first run left, to the same end as a run that was never stopped.
+manifest are still there, because they go last, unless the last pass removed `keelline.toml` and
+then could not write the manifest, which the next paragraph covers; so running the command again
+finishes from what the first run left, to the same end as a run that was never stopped.
 
 **Without `keelline.toml`, nothing the manifest records can be judged.** While the manifest still
 records the file, the run is refused (`2`) before any write, dry run included: restore
 `keelline.toml` (from git, for instance) and run it again. This command drops that record as it
-removes the file, so the file was taken by something other than this command, or by a run of it
-killed after removing the file and before rewriting the manifest; either way the restored file is
-judged like any other, and the run then goes on to the end. When nothing records it — a run stopped
-between removing it and removing the manifest, or a `keelline.toml` the project wrote itself before
-`init`, which `init` never records — every recorded file stays, a `note:` line gives their count,
-and only the ledger goes, so `init` and this command no longer refuse the repository. No other
-directory is pruned then, because nothing says where the configuration put its artifacts.
+removes the file, so the file was taken by something other than this command, or by a run of it that
+removed the file and then did not rewrite the manifest, because it was killed in between or the
+manifest could not be written; either way the restored file is judged like any other, and the run
+then goes on to the end. When nothing records it — a run stopped between removing it and removing
+the manifest, or a `keelline.toml` the project wrote itself before `init`, which `init` never
+records — every recorded file stays, a `note:` line gives their count, and only the ledger goes, so
+`init` and this command no longer refuse the repository. No other directory is pruned then, because
+nothing says where the configuration put its artifacts.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
-build's. The `[paths]` value a target is built from and the digest a record carries are
-committed, so a commit can make `uninstall` remove a whole file only while it holds exactly the
-bytes the same commit records, and a region only where its key names; the diff shows both. No
-`[paths]` value may name git's control directory or Keelline's own `.keelline/`, and a symlinked
-`.keelline/` is refused. An existing file git ignores at a place a `[paths]` value chose is never
-removed or rewritten: the run is refused (`2`) before any removal, dry run included, by
-`upgrade`'s rule, naming the files. Take Keelline's part out of them by hand, or take the
-`[paths]` key out of `keelline.toml`; the run then leaves those files where they are and lists
-them. That includes a file Keelline itself created at an ignored place a `[paths]` value chose
-(`roadmap = "build/roadmap.md"` under an ignored `build/`, say): creating it was allowed because
-nothing was there, and by the time `uninstall` runs it exists, so this refusal meets it, and
-taking the key out is the remedy that finishes the run. A `CLAUDE.md` or `AGENTS.md` your own
-excludes ignore is taken back like any other. Run it on a checkout you trust.
+build's. The `[paths]` value a target is built from and the digest a record carries are committed,
+so a commit can make `uninstall` remove a whole file only while it holds exactly the bytes the same
+commit records, and a region only where its key names; the diff shows both. No `[paths]` value may
+name git's control directory or Keelline's own `.keelline/`, and a symlinked `.keelline/` is
+refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
+rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
+naming the files, and so is a run inside a repository whose `git` cannot answer because it timed out
+or is not installed. Take Keelline's part out of them by hand, or take the `[paths]` key out of
+`keelline.toml`; the run then leaves those files where they are and lists them. That includes a file
+Keelline itself created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
+under an ignored `build/`, say): creating it was allowed because nothing was there, and by the time
+`uninstall` runs it exists, so this refusal meets it, and taking the key out is the remedy that
+finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
+other. Run it on a checkout you trust.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a

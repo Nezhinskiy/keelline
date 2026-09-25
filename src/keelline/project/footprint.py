@@ -20,6 +20,7 @@ from keelline.project.templates import (
     CI_ARTIFACT,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
+    SHARED_FILE,
     Prepared,
     project_templates,
     retired_stub,
@@ -114,14 +115,37 @@ def retired_templates(
     return retired, orphans
 
 
+def withheld(could_write: Mapping[str, Set[str]]) -> dict[str, frozenset[str]]:
+    """For each artifact id, every target another artifact is built to write, whose place kept
+    out of git no ledger entry under that id may name (`scaffold.left_copies`).
+
+    `SHARED_FILE` is the one exception, and it is how the build is made: the `AGENTS.md`
+    skeleton and its region share a file by design, so neither withholds the other's place. A
+    place two other ids share because committed `[paths]` values coincide is never an exception:
+    `project_templates` refuses that configuration, and were it planned, the place would be
+    withheld from both.
+    """
+    return {
+        artifact_id: frozenset(
+            place
+            for other, places in could_write.items()
+            if other != artifact_id and not {artifact_id, other} <= SHARED_FILE
+            for place in places
+        )
+        for artifact_id in could_write
+    }
+
+
 @dataclass(frozen=True)
 class Passes:
     """What a command plans from: `prepared.once` is the write-once pass, `footprint` the
-    footprint pass, retirements included, and `orphans` the records neither touches."""
+    footprint pass, retirements included, `orphans` the records neither touches, and `withheld`
+    what each id's ledger entries may never name, for every plan of either pass."""
 
     prepared: Prepared
     footprint: tuple[Template, ...]
     orphans: int
+    withheld: Mapping[str, frozenset[str]]
 
 
 def prepare(
@@ -159,4 +183,4 @@ def prepare(
     if not removing:
         retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")
     footprint = sorted((*prepared.footprint, *retired), key=lambda t: t.id == CI_ARTIFACT)
-    return Passes(prepared, tuple(footprint), orphans)
+    return Passes(prepared, tuple(footprint), orphans, withheld(prepared.could_write))

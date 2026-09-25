@@ -154,9 +154,10 @@ UPGRADE_HEADINGS = {**HEADINGS, (False, True): "would upgrade:", (False, False):
 # `.keelline/local/artifacts/` that changed since Keelline wrote it or that nothing records.
 FORCE_HELP = (
     "overwrite or remove a file the report lists skip_modified because you edited it, Keelline "
-    "never wrote it, or it is a changed or unrecorded copy under .keelline/local/artifacts/; "
-    "give it as a path relative to --root, repeat for each file, and never name one you did not "
-    "mean"
+    "never wrote it, or it is a changed or unrecorded copy under .keelline/local/artifacts/ "
+    "(not one left at an artifact's old place, relocated and hand-edited, which is yours to keep "
+    "or delete by hand); give it as a path relative to --root, repeat for each file, and never "
+    "name one you did not mean"
 )
 # Fixed text: the value is what the operator typed, and the rule is what they can act on.
 FORCE_OUTSIDE = "--force takes a path relative to --root, with no '..' component"

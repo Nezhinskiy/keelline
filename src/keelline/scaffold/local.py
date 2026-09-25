@@ -16,21 +16,26 @@ removal of a file under `LOCAL_ARTIFACTS`, and `uninstall` removes it before the
 **It is read as untrusted, and it authorizes little.** The ignore block keeps it out of git, but a
 clone can force-add any file, and a clone's checkout then carries it. So it is read bounded
 (`MAX_BYTES`, `MAX_ENTRIES`), through the same `O_NOFOLLOW` walk writes use, shape-checked entry by
-entry, and a fault anywhere makes the whole ledger absent: absence only sends the engine back to
-the render rule, so it is never worth a refusal. Nothing in it is ever printed. An entry is
-consulted only under the id of a template this build produced, only for a file under
-`LOCAL_ARTIFACTS`, never for a place there that another artifact id could write
-(`engine.left_copies`), and only to overwrite or remove that file while its current bytes digest
-to exactly what the entry records; a file there whose bytes differ is left and named.
+entry, and a fault anywhere makes the whole ledger absent: absence sends the engine back to the
+render rule at each artifact's own place and loses sight of copies left at earlier places, both of
+which only ever keep a file where it is, so it is never worth a refusal. Nothing in it is ever
+printed. An entry is consulted only under the id of a template this build produced, only for a
+file under `LOCAL_ARTIFACTS`, never for a place there that another artifact is built to write
+(`engine.left_copies`, fed by `project.footprint.withheld`), and only to overwrite or remove that
+file while its current bytes digest to exactly what the entry records; a file there whose bytes
+differ is left and named.
 
 That is the manifest's boundary — a committed record reaches only bytes its committer already
 controls — and the second condition is what keeps it. A file a person wrote under
 `LOCAL_ARTIFACTS` has bytes nobody else can predict, but Keelline's own unedited renders there
 are exactly predictable: without it, an entry a clone force-added under one id, stamped with
 the digest of another artifact's unedited copy, removed that copy as a left-behind one. Which
-ids exist and where each could write are this build's (`project.templates.Prepared.could_write`);
-the `[paths]` values those places are built from are committed, and they can only withhold a
-file from an entry, never hand one to it.
+ids exist and where each could write are this build's (`project.templates.Prepared.could_write`),
+and so is the one pair allowed to share a file (`project.templates.SHARED_FILE`, the `AGENTS.md`
+skeleton and its region). The `[paths]` values those places are built from are committed: a
+value that puts one artifact on another's file is refused before anything is planned
+(`templates._no_file_of_another`), and short of that a value can only add a place to withhold,
+never hand one to an entry.
 """
 
 from __future__ import annotations
@@ -61,7 +66,8 @@ MAX_BYTES = 64 * 1024
 MAX_ENTRIES = 256
 GENERATED = (
     "Written by keelline: the bytes it last wrote for each artifact kept out of git. Never "
-    "commit it; deleting it only makes later runs judge those files by what they render."
+    "commit it. Deleted, later runs judge a copy at its artifact's own place by what they "
+    "render, and no longer find one left at an earlier place."
 )
 # An artifact id as this build spells them, bounded. An entry under any other id is a fault.
 _ID = re.compile(r"\A[a-z0-9][a-z0-9._-]{0,63}\Z")

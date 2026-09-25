@@ -16,7 +16,7 @@ from keelline.config.owned import OWNED
 from keelline.errors import Failure, Refusal
 from keelline.project.footprint import LOCAL_ROOT_ONLY
 from keelline.project.init import HEADER, InitReport, init
-from keelline.project.templates import NOT_ASKED
+from keelline.project.templates import ACROSS_PASSES, NOT_ASKED, OWN_NAME
 from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
@@ -476,6 +476,32 @@ def test_keelline_toml_or_the_ignore_block_kept_out_of_git_refuses_init_before_a
         _init(root, tmp_path, ci=False)
     assert_snapshot_unchanged(root, before)
     assert str(refused.value) == LOCAL_ROOT_ONLY.format(names=" and ".join(local))
+
+
+@needs_git
+def test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write(
+    tmp_path: Path,
+) -> None:
+    # `[paths] roadmap = "CLAUDE.md"`: each pass on its own has one artifact at that file, and
+    # across the two, `roadmap` and `claude-md` would share it. Refused with nothing written.
+    # Mutation (oracle): "an artifact may target a file another artifact is built to write" ->
+    # init writes both into one `CLAUDE.md` and this reddens.
+    root = _repo(tmp_path)
+    (root / "keelline.toml").write_text(
+        f'[keelline]\nversion = "{keelline.__version__}"\n\n[project]\nname = "widget"\n\n'
+        '[paths]\nroadmap = "CLAUDE.md"\n\n[ci]\nmode = "none"\n',
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _init(root, tmp_path, ci=False)
+    assert_snapshot_unchanged(root, before)
+    assert str(refused.value) == ACROSS_PASSES.format(
+        first="claude-md",
+        first_key=OWN_NAME,
+        second="roadmap",
+        second_key="paths.roadmap",
+    )
 
 
 @needs_git

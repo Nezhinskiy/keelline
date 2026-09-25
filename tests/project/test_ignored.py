@@ -368,25 +368,37 @@ def test_a_symlinked_place_only_the_preset_would_use_refuses_no_command(tmp_path
 def test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice(
     tmp_path: Path, command: str
 ) -> None:
-    """`[paths] roadmap = "CLAUDE.md"` and a forged `roadmap` record stating the bytes Keelline
-    wrote into `CLAUDE.md`, which this clone's excludes ignore. `CLAUDE.md` is `claude-md`'s
-    preset place, not `roadmap`'s, so for `roadmap` it is a place a `[paths]` value chose: the
-    run is refused, and `CLAUDE.md` is neither overwritten with the roadmap nor removed.
+    """`docs/roadmap-history.md` is `roadmap-history`'s preset place, not `roadmap`'s. A commit
+    moves `roadmap_history` elsewhere, points `roadmap` at that file, drops `roadmap-history`'s
+    record and forges a `roadmap` record stating the bytes Keelline wrote there, which this
+    clone's excludes ignore. For `roadmap` it is a place a `[paths]` value chose: the run is
+    refused, and the file is neither overwritten with the roadmap nor removed. (The file of an
+    artifact this configuration still builds, such as `CLAUDE.md`, is refused earlier, as
+    another artifact's file: `templates._no_file_of_another`.)
 
     Mutation (oracle): "an ignored write passes at any artifact's preset place" -> the file is
     overwritten or removed, and the refusal is never raised.
     """
     root = _repository(tmp_path)
-    _excluding(root, "CLAUDE.md")
+    _excluding(root, "docs/roadmap-history.md")
     (root / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
     _init(root, tmp_path)
-    claude = root / "CLAUDE.md"
-    written = claude.read_text(encoding="utf-8")
-    _forge_roadmap(root, "CLAUDE.md", written)
+    history = root / "docs" / "roadmap-history.md"
+    written = history.read_text(encoding="utf-8")
+    _append(
+        root / CONFIG_FILE,
+        '\n[paths]\nroadmap = "docs/roadmap-history.md"\nroadmap_history = "docs/history.md"\n',
+    )
+    manifest = Manifest.read(root).without(frozenset({"roadmap-history"}))
+    record = manifest.get("roadmap")
+    assert record is not None
+    manifest.with_record(
+        replace(record, target="docs/roadmap-history.md", sha256=digest(written))
+    ).write(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
         (_upgrade if command == "upgrade" else _uninstall)(root, tmp_path)
     text = IGNORED if command == "upgrade" else IGNORED_REMOVING
-    assert str(refused.value) == text.format(count=1, names="CLAUDE.md")
-    assert claude.read_text(encoding="utf-8") == written
+    assert str(refused.value) == text.format(count=1, names="docs/roadmap-history.md")
+    assert history.read_text(encoding="utf-8") == written
     assert_snapshot_unchanged(root, before)

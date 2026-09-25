@@ -33,7 +33,7 @@ the workflow pins that; where the adopted document records none, no workflow is 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
@@ -174,8 +174,20 @@ PATH_KEYS = {
     CI_ARTIFACT: OWN_NAME,
     "profile-rules": "paths.keelline",
 }
+# The one pair of artifacts built to share a file: the `AGENTS.md` skeleton, written once, and
+# the region every later run refreshes inside it, both from `[paths] agents_md`. That sharing is
+# the reason there are two passes. No other two ids may resolve to one file, in either pass or
+# across them (`_no_file_of_another`), and the ledger of files kept out of git takes its one
+# exception from this pair and from nothing a configuration says (`footprint.withheld`).
+SHARED_FILE = frozenset({"agents-skeleton", "agents-md"})
 # Fixed text with two artifact ids and two `[paths]` key names interpolated — all four are
 # Keelline's own vocabulary. The colliding path is a repository-authored value and is not printed.
+ACROSS_PASSES = (
+    "{first} ({first_key}) and {second} ({second_key}) resolve to one file, and only the "
+    "AGENTS.md skeleton and its region share a file by design: any other pair would have one "
+    "artifact judged, overwritten or removed as the other. Separate them under [paths] in "
+    "keelline.toml, then run the command again"
+)
 ONE_TARGET = (
     "two artifacts of one pass resolve to the same file: {first} ({first_key}) and {second} "
     "({second_key}). The engine writes a plan in order, so the second would replace the first "
@@ -452,6 +464,42 @@ def _one_target_each(templates: Sequence[Template], keys: Mapping[str, str] = PA
         seen[template.target] = template.id
 
 
+def _no_file_of_another(
+    templates: Sequence[Template],
+    could_write: Mapping[str, Set[str]],
+    keys: Mapping[str, str],
+) -> None:
+    """Refuse an artifact whose target is a file another artifact is built to write, in either
+    pass or in neither, `SHARED_FILE` aside.
+
+    `_one_target_each` holds each pass; this holds the rest. `[paths] roadmap = "CLAUDE.md"`
+    passed both passes' checks, and with a forged ledger entry under `roadmap` stamped with the
+    digest of the unedited `CLAUDE.md` Keelline kept out of git, `upgrade` removed that copy as
+    the roadmap's relocated one and created `CLAUDE.md` in its place. A value naming a file only
+    some other configuration builds (another profile's rules, a harness's rule this project does
+    not list, the workflow) is the same collision a run later, so `could_write` is the list, not
+    this run's templates. The anchor is the build's: which ids exist and where each could write
+    are computed here; the refusal names two ids and their keys, never the value.
+    """
+    owners: dict[str, set[str]] = {}
+    for artifact_id, places in could_write.items():
+        for place in places:
+            owners.setdefault(place, set()).add(artifact_id)
+    for template in templates:
+        others = owners.get(template.target, set()) - {template.id}
+        if not others or {template.id, *others} <= SHARED_FILE:
+            continue
+        second = min(others - SHARED_FILE or others)
+        raise Refusal(
+            ACROSS_PASSES.format(
+                first=template.id,
+                first_key=keys.get(template.id, OWN_NAME),
+                second=second,
+                second_key=keys.get(second, OWN_NAME),
+            )
+        )
+
+
 def project_templates(
     config: Config,
     *,
@@ -575,6 +623,7 @@ def project_templates(
     _one_target_each(footprint, keys)
     for template in (*once, *footprint):
         could_write.setdefault(template.id, set()).add(template.target)
+    _no_file_of_another((*once, *footprint), could_write, keys)
     return Prepared(
         once,
         tuple(footprint),

@@ -255,16 +255,16 @@ def test_a_left_copy_at_a_file_another_template_of_the_plan_targets_is_that_temp
 def test_an_entry_under_one_id_never_names_another_artifact_s_place_kept_out_of_git(
     tmp_path: Path,
 ) -> None:
-    # `could_write` is every place this build could put each artifact; `LOCAL_ARTIFACTS/<one of
-    # another id's places>` is that artifact's copy, judged under its own id. A forged entry under
-    # `roadmap` naming `AGENTS.md`'s copy with its unedited digest removed it when no template of
-    # the plan targeted it. Mutation (oracle): "a ledger entry under one id reaches another
-    # artifact's copy kept out of git" -> the plan holds a `REMOVE` of that copy.
+    # `withheld[roadmap]` is every place another artifact is built to write;
+    # `LOCAL_ARTIFACTS/<one of them>` is that artifact's copy, judged under its own id. A forged
+    # entry under `roadmap` naming `AGENTS.md`'s copy with its unedited digest removed it when no
+    # template of the plan targeted it. Mutation (oracle): "a ledger entry under one id reaches
+    # another artifact's copy kept out of git" -> the plan holds a `REMOVE` of that copy.
     _written(tmp_path)
     _ledger(tmp_path, {"roadmap": {LOCAL: digest("BODY\n")}})
     roadmap = a_template(id="roadmap", target="docs/roadmap.md", render=lambda: "R\n")
-    could_write = {"agents-md": frozenset({"AGENTS.md"}), "roadmap": frozenset({"docs/roadmap.md"})}
-    planned = plan(tmp_path, a_config(tmp_path), [roadmap], could_write=could_write)
+    withheld = {"roadmap": frozenset({"AGENTS.md"})}
+    planned = plan(tmp_path, a_config(tmp_path), [roadmap], withheld=withheld)
     assert LOCAL not in {a.target for a in planned.actions}
     apply(tmp_path, planned)
     assert (tmp_path / LOCAL).read_text(encoding="utf-8") == "BODY\n"

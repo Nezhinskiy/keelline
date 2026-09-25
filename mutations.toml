@@ -5466,6 +5466,19 @@ reddens = [
   "tests/project/test_templates.py::test_no_two_artifacts_of_one_pass_resolve_to_the_same_file",
 ]
 
+# Across the two passes, and against every place another artifact is built to write: only the
+# `AGENTS.md` skeleton and its region share a file. `roadmap = "CLAUDE.md"` passed both per-pass
+# checks, and with a forged ledger entry `upgrade` removed the `CLAUDE.md` kept out of git.
+[[mutation]]
+name = "an artifact may target a file another artifact is built to write"
+file = "src/keelline/project/templates.py"
+before = "    _no_file_of_another((*once, *footprint), could_write, keys)\n"
+after = ""
+reddens = [
+  "tests/project/test_uninstall.py::test_a_paths_value_naming_another_artifact_s_file_refuses_before_any_write",
+  "tests/project/test_init.py::test_a_paths_value_naming_another_artifact_s_file_refuses_init_before_any_write",
+]
+
 # The highest-value new guard in the `project` area, and it had a test and no entry.
 # `[ci] gate_branch` is repository-authored and is interpolated into two positions of a YAML file
 # GitHub executes — a `branches:` list and a `${{ }}` default — so it is quoted there *and* held
@@ -6634,7 +6647,7 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    judged = plan(root, config, once_body, force=once_force, could_write=could_write)"
+before = "    judged = plan(root, config, once_body, force=once_force, withheld=withheld)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
@@ -6782,9 +6795,10 @@ reddens = [
 
 # The manifest is the one record of what Keelline wrote. With `keelline.toml` gone nothing can be
 # judged, and the path that converges drops the manifest. While the manifest still records the
-# file, this command did not remove it (`apply` drops the record with the file) or a run was
-# killed inside `apply` before the manifest write, so the run refuses before any write rather
-# than leaving every recorded file untracked for good; restoring the file converges either way.
+# file, this command did not remove it (`apply` drops the record with the file) or a run removed
+# it and then did not write the manifest (killed, or the write failed), so the run refuses before
+# any write rather than leaving every recorded file untracked for good; restoring the file
+# converges either way.
 [[mutation]]
 name = "uninstall drops the manifest when a person deleted keelline.toml"
 file = "src/keelline/project/uninstall.py"
@@ -6838,7 +6852,7 @@ reddens = [
 [[mutation]]
 name = "a copy left kept out of git when its id left [artifacts] local is never judged"
 file = "src/keelline/scaffold/engine.py"
-before = "        for copy in left_copies(template, config, digests, could_write or {}):\n            if copy in planned:"
+before = "        for copy in left_copies(template, config, digests, withheld or {}):\n            if copy in planned:"
 after = "        for copy in ():\n            if copy in planned:"
 reddens = [
   "tests/scaffold/test_local.py::test_a_copy_whose_id_left_the_list_is_retired_while_its_bytes_are_keellines",
@@ -6897,6 +6911,15 @@ reddens = [
   "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
 ]
 
+# The ledger's one exception comes from how the build is made, `templates.SHARED_FILE`: the
+# `AGENTS.md` region's copy left at the skeleton's place is the region's to take out.
+[[mutation]]
+name = "the region's left copy at the AGENTS.md skeleton's place is withheld from it"
+file = "src/keelline/project/footprint.py"
+before = "if other != artifact_id and not {artifact_id, other} <= SHARED_FILE"
+after = "if other != artifact_id"
+reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
+
 # Within one plan, a left copy at a file another template of the plan targets is that template's
 # to judge; judged twice, its removal deleted the file from under an `unchanged` verdict.
 [[mutation]]
@@ -6912,7 +6935,7 @@ reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_tem
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/keelline/project/uninstall.py"
-before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, could_write)\n    }\n"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, withheld)\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
 
