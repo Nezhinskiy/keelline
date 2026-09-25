@@ -283,7 +283,9 @@ def _owns(text: str, path: str) -> bool:
     One rule is GitHub's and not git's: a last component of exactly `*` matches the directory's
     own files and nothing nested (GitHub's documentation: `docs/*` owns `docs/getting-started.md`
     and not `docs/build-app/troubleshooting.md`), where gitignore would match the directory
-    `docs/build-app` and everything below it.
+    `docs/build-app` and everything below it. The rule is about files, so it leaves `docs/*/`
+    alone: a directory-only pattern names directories, and each one it matches owns what is
+    below it, as git reads it.
     """
     directory = text.endswith("/")
     anchored = text.startswith("/") or "/" in text.rstrip("/")
@@ -293,7 +295,7 @@ def _owns(text: str, path: str) -> bool:
     names = tuple(path.split("/"))
     if not directory and _components(parts, names):
         return True
-    if parts[-1] == "*":
+    if parts[-1] == "*" and not directory:
         return False  # direct children only
     return any(_components(parts, names[:depth]) for depth in range(1, len(names)))
 

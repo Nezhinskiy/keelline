@@ -7641,7 +7641,7 @@ reddens = ["tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its
 [[mutation]]
 name = "the codeowners probe reads a last star as owning nested files"
 file = "src/keelline/assess/probes.py"
-before = '    if parts[-1] == "*":'
+before = '    if parts[-1] == "*" and not directory:'
 after = "    if False:"
 reddens = [
   "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",

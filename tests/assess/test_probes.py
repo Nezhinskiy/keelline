@@ -445,6 +445,9 @@ GRAMMAR = [
     "/.github/workflows*/",
     "keelline.yml*",
     "/.github/*/*/",
+    "/.github/*/",
+    "*/",
+    "/*/",
 ]
 
 
@@ -490,6 +493,18 @@ def test_a_last_star_owns_direct_children_only_where_github_and_git_differ(
     assert not _owns("/.github/*", CI_WORKFLOW)
     assert _owns("/.github/workflows/*", CI_WORKFLOW)
     assert _owns("*", CI_WORKFLOW)
+
+
+@pytest.mark.parametrize("pattern", ["/.github/*/", "*/", "/*/"])
+def test_a_directory_only_last_star_owns_what_is_below_each_directory_it_matches(
+    pattern: str,
+) -> None:
+    # GitHub's direct-children rule is about the files a last `*` names; a trailing `/` names
+    # directories instead, and a directory it matches owns everything below it, as git reads
+    # it (these three are in the git-agreement list too). Found in review: the rule ran before
+    # the directory check and left `docs/*/` owning nothing at all. Mutation (advisory):
+    # `and not directory` dropped from that rule -> each case reddens.
+    assert _owns(pattern, CI_WORKFLOW)
 
 
 # Each runs in a child with a deadline, so a matcher that backtracks fails this case instead of
