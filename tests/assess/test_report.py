@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from keelline.assess.gates import GateResult
-from keelline.assess.report import GateRun, summary, workflow_commands
+from keelline.assess.report import BOOTSTRAP, UNCHANGED, GateRun, summary, workflow_commands
 from keelline.assess.rule import Change, ConfigVerdict, Verdict
 from keelline.config.loader import preset_defaults
 from keelline.findings import Finding
@@ -126,13 +126,14 @@ def test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_deta
 
 
 def test_the_summary_says_how_the_configuration_was_judged() -> None:
-    # Advice, not declared: each branch is fixed text. Mutation: drop the `base_state is None`
-    # branch -> the bootstrap reads as "unchanged from the base" and the first assertion reddens.
+    # Advice, not declared: each branch is fixed text. Mutation: drop `config_line`'s
+    # `base_state is None` branch -> the bootstrap reads as "unchanged from the base" and the
+    # first assertion reddens.
     bootstrap = GateRun(
         ConfigVerdict(None, (), preset_defaults("widget"), frozenset()), (), judged=True
     )
-    assert "the base has none at this path, so this tree's decides" in summary(bootstrap)
-    assert "keelline.toml: unchanged from the base" in summary(_run([], []))
+    assert summary(bootstrap) == f"config: {BOOTSTRAP}\n"
+    assert summary(_run([], [])) == f"config: {UNCHANGED}\n"
     unanswered = GateResult("tests", (), answered=False, reason="could not start")
     advisory = _run([unanswered, GateResult("bugs", (_link(""),))], [], judged=False)
     text = summary(advisory)

@@ -17,6 +17,7 @@ import pytest
 
 import keelline
 from keelline.assess import rule
+from keelline.assess.report import BOOTSTRAP
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
@@ -347,6 +348,14 @@ def test_an_uncommitted_loosening_on_the_base_commit_is_still_refused(tmp_path: 
     code, out, _ = _gate(project, tmp_path, "--only", "config")
     assert code == 1
     assert "keelline.enforced" in out
+
+
+def test_a_base_with_no_copy_at_this_path_lets_the_tree_decide(tmp_path: Path) -> None:
+    # The bootstrap, printed in the one spelling the job summary uses too.
+    project = clone(tmp_path, BASE, under="sub")
+    _change(project, BASE)
+    code, out, _ = _gate(project, tmp_path, "--only", "config")
+    assert (code, out.strip()) == (0, f"config: {BOOTSTRAP}")
 
 
 def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Path) -> None:

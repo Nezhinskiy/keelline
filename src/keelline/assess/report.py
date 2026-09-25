@@ -29,8 +29,10 @@ ANNOTATION_CAP = 10
 
 REFUSED_KEY = "{key} may not change this way in a pull request"
 HELD = "{count} more {level} annotation(s) not shown; the job summary counts them all"
-BOOTSTRAP = "keelline.toml: the base has none at this path, so this tree's decides"
-UNCHANGED = "keelline.toml: unchanged from the base"
+# The two answers the configuration check gives without a key: spelled once, for the printed line
+# and the job summary alike.
+BOOTSTRAP = "the base has no keelline.toml at this path, so this tree's decides"
+UNCHANGED = "keelline.toml unchanged from the base"
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,18 @@ def workflow_commands(run: GateRun, *, cap: int = ANNOTATION_CAP) -> list[str]:
     return lines
 
 
+def config_line(verdict: ConfigVerdict) -> str:
+    """The configuration check's printed line: how many keys changed and which were refused, by
+    name, or one of the two answers without a key."""
+    if verdict.base_state is None:
+        return f"config: {BOOTSTRAP}"
+    if not verdict.changes:
+        return f"config: {UNCHANGED}"
+    refused = [c.key for c in verdict.changes if c.verdict is Verdict.REFUSED]
+    line = f"config: {len(verdict.changes)} change(s), {len(refused)} refused"
+    return line + (f": {', '.join(refused)}" if refused else "")
+
+
 def _outcome(result: GateResult, enforcing: bool) -> str:
     if not result.failing:
         return "passes"
@@ -113,12 +127,10 @@ def summary(run: GateRun) -> str:
             rows.append(f"| {result.name} | {mode} | {count} | {_outcome(result, enforcing)} |")
         blocks.append(rows)
     if run.judged:
-        if run.verdict.base_state is None:
-            blocks.append([BOOTSTRAP])
-        elif run.verdict.changes:
+        if run.verdict.base_state is not None and run.verdict.changes:
             rows = ["| keelline.toml key | verdict |", "|---|---|"]
             rows += [f"| {c.key} | {c.verdict.value} |" for c in run.verdict.changes]
             blocks.append(rows)
         else:
-            blocks.append([UNCHANGED])
+            blocks.append([config_line(run.verdict)])
     return "\n\n".join("\n".join(block) for block in blocks) + "\n"

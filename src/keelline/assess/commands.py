@@ -10,14 +10,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from keelline.areas import SubParsers
 from keelline.command import common_flags
 from keelline.result import Result
-
-if TYPE_CHECKING:
-    from keelline.assess.rule import ConfigVerdict
 
 ASSESS_HELP = (
     "every configured gate and the inventory: what stands between this repository and enforcement"
@@ -75,23 +71,11 @@ def base_ref(value: str) -> str:
     return value
 
 
-def _config_line(verdict: ConfigVerdict) -> str:
-    from keelline.assess.rule import Verdict
-
-    if verdict.base_state is None:
-        return "config: the base has no keelline.toml at this path, so this tree's decides"
-    if not verdict.changes:
-        return "config: keelline.toml unchanged from the base"
-    refused = [c.key for c in verdict.changes if c.verdict is Verdict.REFUSED]
-    line = f"config: {len(verdict.changes)} change(s), {len(refused)} refused"
-    return line + (f": {', '.join(refused)}" if refused else "")
-
-
 def run_gate(args: argparse.Namespace) -> Result:
     from keelline import __version__
     from keelline.assess import rule
     from keelline.assess.gates import GateContext, run_gates
-    from keelline.assess.report import GateRun, summary, workflow_commands
+    from keelline.assess.report import GateRun, config_line, summary, workflow_commands
     from keelline.config.loader import ConfigError, loads, read_document
     from keelline.config.schema import CONFIG_CHECK
     from keelline.errors import Refusal
@@ -142,7 +126,7 @@ def run_gate(args: argparse.Namespace) -> Result:
         GateContext(root, verdict.config, base), [n for n in only if n != CONFIG_CHECK]
     )
     gate_run = GateRun(verdict, results, judged=CONFIG_CHECK in only, prefix=prefix)
-    lines = [_config_line(verdict)] if gate_run.judged else []
+    lines = [config_line(verdict)] if gate_run.judged else []
     for result in results:
         mode = "enforcing" if result.name in verdict.enforcing else "advisory"
         count = f"{len(result.findings)} finding(s)" if result.answered else "could not run"
