@@ -8034,3 +8034,13 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
   "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
 ]
+
+[[mutation]]
+name = "gate reads the names to run off the tree, so the custom step skips a gate the base keeps"
+file = "src/keelline/assess/commands.py"
+before = "    configured = verdict.config.gate_names"
+after = "    configured = loads(tree_text, root, machine=machine, interactive=False).gate_names"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
+  "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]

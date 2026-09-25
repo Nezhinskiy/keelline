@@ -126,8 +126,8 @@ def test_a_built_in_gate_added_under_installed_enforces_in_the_run_that_adds_it(
     assert code == 1
     lines = out.splitlines()
     assert lines[0] == "config: 2 change(s), 0 refused"
-    assert lines[1].startswith("docs: enforcing, ")
-    assert lines[1] != "docs: enforcing, 0 finding(s)"
+    # The 400-line `AGENTS.md` breaks two budgets; "could not run" would not be this line.
+    assert lines[1] == "docs: enforcing, 2 finding(s)"
 
 
 def test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those(
@@ -182,7 +182,9 @@ def test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails(
 ) -> None:
     # A refused change runs under the base's configuration, and the enforcing set is still both
     # sides': here it names `tests`, which only the tree defines. The run neither runs the tree's
-    # command nor trips over the name — it fails on the refusal.
+    # command nor trips over the name — it fails on the refusal. With the names to run read off
+    # the tree, `run_gates` raises `KeyError('tests')`: exit 2, which this case catches, but the
+    # same mutation makes the custom step of the dropped-gate case below pass with nothing run.
     project = clone(tmp_path, BASE)
     tree = BASE.replace('["docs"]', '["docs", "tests"]') + MARKER
     _change(project, tree + '\n[paths]\nbugs = "elsewhere"\n')
@@ -223,8 +225,8 @@ def test_a_refused_change_is_checked_at_the_base_s_paths(tmp_path: Path) -> None
     assert code == 1
     lines = out.splitlines()
     assert lines[0] == "config: 1 change(s), 1 refused: paths.agents_md"
-    assert lines[1].startswith("docs: enforcing, ")
-    assert lines[1] != "docs: enforcing, 0 finding(s)"
+    # The 400-line `AGENTS.md` breaks two budgets; "could not run" would not be this line.
+    assert lines[1] == "docs: enforcing, 2 finding(s)"
 
 
 def test_a_custom_gate_the_base_does_not_enforce_runs_its_new_command(tmp_path: Path) -> None:
@@ -247,7 +249,8 @@ def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(
     # Which names are custom is the verdict's configuration's answer too: a change that drops
     # an enforced custom gate is refused and runs under the base's configuration, where the
     # gate still is. Read off the tree, the judging step would take it for a built-in and run
-    # its command in the process that judges.
+    # its command in the process that judges; and with the names to run read off the tree, the
+    # custom step would find nothing to run and pass without running the gate the base enforces.
     project = clone(tmp_path, ENFORCES_TESTS + MARKER)
     _change(project, BASE)
     code, out, _ = _gate(project, tmp_path, "--builtin")
@@ -298,8 +301,7 @@ def test_a_gate_the_base_does_not_enforce_passes_with_its_findings_reported(
     _change(project, plan, agents=OVER_BUDGET)
     code, out, _ = _gate(project, tmp_path, "--only", "docs")
     assert code == 0
-    assert out.startswith("docs: advisory, ")
-    assert "0 finding(s)" not in out
+    assert out.strip() == "docs: advisory, 2 finding(s)"
 
 
 def test_the_enforced_gate_fails_on_its_findings(tmp_path: Path) -> None:
@@ -307,7 +309,7 @@ def test_the_enforced_gate_fails_on_its_findings(tmp_path: Path) -> None:
     _change(project, BASE, agents=OVER_BUDGET)
     code, out, _ = _gate(project, tmp_path, "--only", "docs")
     assert code == 1
-    assert out.startswith("docs: enforcing, ")
+    assert out.strip() == "docs: enforcing, 2 finding(s)"
 
 
 def test_a_name_given_twice_runs_once(tmp_path: Path) -> None:
