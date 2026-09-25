@@ -147,11 +147,8 @@ def _tracked_env(context: ProbeContext) -> Looked:
 def _memory_history(context: ProbeContext) -> Looked:
     if context.config.memory.mode == "in-repo":
         return Looked()  # the store is meant to be committed
-    head = _head(context)
-    if head is None:
-        return Looked(unread=("git rev-parse",))
-    if not head:
-        return Looked()  # no commit yet
+    # Every ref, not `HEAD`'s history: notes committed on one branch are readable from a clone
+    # checked out on an orphan one. With no commit anywhere git answers 0 and prints nothing.
     store = context.config.paths.memory
     out = _git(context, "log", "--all", "--format=%H", "-1", "--", store)
     if out is None:

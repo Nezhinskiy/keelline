@@ -158,15 +158,29 @@ def test_committed_notes_in_an_in_repo_store_are_expected(tmp_path: Path) -> Non
 
 
 def test_a_repository_with_no_commit_has_no_history_to_report(tmp_path: Path) -> None:
-    # Neither "found" nor "could not look": there is no history yet. No single-line mutation
-    # reddens this. Dropping the no-commit return from `_memory_history` leaves the `git log
-    # --all` query, which on a repository with no commit exits 0 and prints nothing (measured):
-    # the probe then reports nothing for the same reason, so the early return saves a query
-    # and is not what this case holds. `_head`'s `None` branch is held by the next cases.
+    # Neither "found" nor "could not look": there is no history yet. `git log --all` on a
+    # repository with no commit exits 0 and prints nothing (measured, below), so the probe
+    # needs no question about `HEAD` first. Mutation (advisory): the query's `answers` narrowed
+    # to exclude 0 -> "could not look" and this reddens.
     root = _repo(tmp_path)
     _write(root, f"{MEMORY}/note.md", "a note\n")
     git(root, "add", "-A")
     assert _items(root, tmp_path, "memory-history") == []
+
+
+def test_notes_committed_on_another_branch_are_reported_from_an_orphan_one(
+    tmp_path: Path,
+) -> None:
+    # Every clone can read every ref's history, whichever branch is checked out. Asking `HEAD`
+    # first made an orphan branch with no commit of its own read as "no history" (found in
+    # review). Mutation (advisory): `"--all"` dropped from the query -> `HEAD` has no history,
+    # the query exits 128, and this reddens with "could not look".
+    root = _repo(tmp_path)
+    _write(root, f"{MEMORY}/note.md", "a note\n")
+    _commit(root)
+    git(root, "checkout", "-q", "--orphan", "fresh")
+    items = _items(root, tmp_path, "memory-history")
+    assert _shapes(items) == [("memory-history", (MEMORY,))]
 
 
 def _settings(entry: str) -> str:
@@ -248,7 +262,7 @@ def test_a_git_query_that_does_not_answer_is_not_nothing_found(
     # Every other git query says so too, and none reads as "nothing found".
     assert {i.probe: i.where for i in items if i.rule == COULD_NOT_LOOK} == {
         "tracked-env": ("git ls-files",),
-        "memory-history": ("git rev-parse",),
+        "memory-history": ("git log",),
         "commit-types": ("git rev-parse",),
     }
 
