@@ -697,8 +697,9 @@ gate: `name`, `enforcing`, `answered`, `reason`, `count`, `failing`) and `items`
 `remedy`; `where`, at most 200 labels; and `count`, how many there were, never capped). A gate's
 findings become one item per rule, at `warning`. `--json` prints the same object with `summary`
 beside it. When git does not ignore the file where it is written, the summary ends with a note
-saying so. A symlinked `.keelline`, or something other than a file at the inventory's place, is
-a refusal and nothing is written.
+saying so. A `.keelline` that is a symlink or not a directory, or a directory at the
+inventory's place, is a refusal and nothing is written. Anything else at that place, a symlink
+included, is replaced by the file, and what a symlink pointed at is left as it was.
 
 The summary prints counts and Keelline's own words — gate names, probe and rule ids,
 severities, remedies — and never a path the repository chose: one table with a row per gate
