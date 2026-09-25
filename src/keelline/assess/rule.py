@@ -50,7 +50,7 @@ from dataclasses import dataclass, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
-from keelline.config.loader import CONFIG_FILE, loads
+from keelline.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from keelline.config.schema import STATES, Budgets, Config
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
@@ -65,6 +65,10 @@ BASE_SHAPE = (
     "--base takes a full 40-character commit id or a full ref name starting with refs/: a "
     "shorter name is resolved by git, and a tag of the same spelling wins"
 )
+# The loader's own sentence for a tree copy that is not UTF-8, so the base's copy is refused in
+# the words the tree's is: git hands the blob over losslessly, with a surrogate escape for each
+# byte that is not UTF-8, and `tomllib` would parse those.
+BASE_NOT_UTF8 = NOT_UTF8.format(path=f"the base's {CONFIG_FILE}")
 NOT_A_REPOSITORY = (
     "the project root is not inside a git repository, so it has no base to compare with"
 )
@@ -121,7 +125,8 @@ def repository_prefix(root: Path) -> str:
 
 def read_base(root: Path, base: str) -> str | None:
     """The base's `keelline.toml` at the project's own path, or `None` when git listed nothing
-    there: the bootstrap, and the only answer that means it. Any other git failure fails the run.
+    there: the bootstrap, and the only answer that means it. Any other git failure fails the run,
+    and so does a copy that is not UTF-8 text, which is never parsed.
     """
     if not BASE_REF.match(base):
         raise Refusal(BASE_SHAPE)
@@ -149,7 +154,12 @@ def read_base(root: Path, base: str) -> str | None:
     )
     if not listed:
         return None
-    return _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}")
+    text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}")
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise Failure(BASE_NOT_UTF8) from None
+    return text
 
 
 class Verdict(StrEnum):

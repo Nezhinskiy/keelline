@@ -831,8 +831,8 @@ Exits `0` when no enforcing gate failed or could not run and, when the configura
 nothing was refused. `1` when an enforcing gate failed or could not run; when the configuration
 check refused a key; when the base is not in the checkout or git could not read its copy (the
 message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the
-one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` does not
-load. `2` on a refusal: a `--base` outside its grammar (before anything runs); a root reached
+one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not
+UTF-8 text or does not load. `2` on a refusal: a `--base` outside its grammar (before anything runs); a root reached
 through a symbolic link or spelled otherwise than git spells it; an `--only` name this run's
 configuration does not have; a `keelline.toml` that is itself a symbolic link; or a `[paths]` value
 on either side that leaves the root, passes through a symbolic link, or names `.git` or `.keelline`.

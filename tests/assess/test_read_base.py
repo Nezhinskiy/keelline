@@ -20,6 +20,7 @@ import keelline
 from keelline import gitenv
 from keelline.assess import rule
 from keelline.assess.rule import (
+    BASE_NOT_UTF8,
     NOT_A_REPOSITORY,
     ROOT_UNANSWERED,
     local_base,
@@ -233,12 +234,18 @@ def test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap(
 def test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap(
     tmp_path: Path,
 ) -> None:
-    # `git_run` answers `(-1, "")` when git's output is not UTF-8. Read as "listed nothing" or as
-    # an empty document, the change would govern itself, or be judged against no configuration.
+    # `git_run` decodes git's answer losslessly, so a blob that is not UTF-8 comes back as text
+    # carrying surrogate escapes, and `tomllib` accepts them: the base's bytes, which the
+    # loader refuses in the tree's own copy, would govern the run. Read as "listed nothing" or
+    # as an empty document instead, the change would govern itself, or be judged against no
+    # configuration. It is refused in the loader's words, and without the shallow-checkout
+    # remedy, which would send the owner to fetch history they already have. Mutation
+    # (declared): drop the refusal -> the base is returned and this reddens.
     project = clone(tmp_path, b'[keelline]\nversion = "\xff"\n')
     (project / "keelline.toml").write_text(BASE, encoding="utf-8")
-    with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
+    with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)) as caught:
         read_base(project, default_base(project))
+    assert "fetch-depth" not in str(caught.value)
 
 
 def test_a_root_outside_any_repository_is_a_failure(tmp_path: Path) -> None:

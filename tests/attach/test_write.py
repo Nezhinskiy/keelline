@@ -1126,15 +1126,17 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
     assert "1 of this project's memory groups" in message
 
 
-def test_a_worktree_listing_git_gave_no_answer_for_names_a_path_that_is_not_utf_8(
+def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `-1` from `git_run` is also a worktree path git printed in bytes that are not UTF-8 text,
-    # on a machine whose `git` runs fine; "check that `git` runs here" alone sends the owner to
-    # the wrong fault. Mutation (advisory): drop the clause about the path — this reddens.
+    # `-1` from `git_run` is a `git` that could not be run or ran past its bound: a fault on
+    # this machine, and never a listing of no worktrees, which would link memory into none of
+    # them. A worktree path that is not UTF-8 is no longer a cause — the listing is decoded
+    # losslessly — so the message does not send the owner looking for one. Mutation
+    # (advisory): put the UTF-8 clause back — the last assertion reddens.
     from keelline.attach import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
-    with pytest.raises(Failure, match="UTF-8 text") as caught:
+    with pytest.raises(Failure, match="check that `git` runs here") as caught:
         module._worktrees(tmp_path)
-    assert "check that `git` runs here" in str(caught.value)
+    assert "UTF-8" not in str(caught.value)

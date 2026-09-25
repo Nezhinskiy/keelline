@@ -159,11 +159,11 @@ def test_tracked_says_nothing_outside_a_git_repository(tmp_path: Path) -> None:
 def test_tracked_names_a_located_file_git_gave_no_answer_for_rather_than_passing_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `git_run`'s `(-1, "")` — git could not run, ran past its bound, or printed a name that is
-    # not UTF-8 under an owner's `core.quotePath=false` — read as "not untracked" and the check
-    # passed without having looked. It is its own answer now: the outcome names the locator
-    # under `unanswered`, and `located` stays what git did say. Mutation (advisory): `_untracked`
-    # answering `False` for `-1` again — no outcome comes back and this reddens.
+    # `git_run`'s `(-1, "")` — git could not be run or ran past its bound — read as "not
+    # untracked" and the check passed without having looked. It is its own answer now: the
+    # outcome names the locator under `unanswered`, and `located` stays what git did say.
+    # Mutation (advisory): `_untracked` answering `False` for `-1` again — no outcome comes back
+    # and this reddens.
     git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "lock.txt").write_text("", encoding="utf-8")
     # The package re-exports the function `evaluate` under the submodule's name, so the module

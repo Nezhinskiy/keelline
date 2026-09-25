@@ -202,8 +202,7 @@ def _untracked(root: Path, relative: str) -> bool | None:
     second probe asks it first. `code == 0` says so explicitly rather than trusting the empty
     output alone.
 
-    `None` is `git_run`'s `-1`: git could not run, ran past its bound, or printed the name in
-    bytes that are not UTF-8 (under an owner's `core.quotePath=false`). That is no answer, and
+    `None` is `git_run`'s `-1`: git could not run or ran past its bound. That is no answer, and
     reading it as "not untracked" passed a check that never looked.
     """
     code, out = git_run(root, "ls-files", "--others", "--exclude-standard", "--", relative)

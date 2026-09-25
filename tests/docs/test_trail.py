@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from collections.abc import Callable
@@ -14,6 +15,7 @@ from keelline.config.schema import Config
 from keelline.docs.trail import (
     END_MARKER,
     MARKER,
+    _ignored,
     read_trail,
     rebuild,
     render_listing,
@@ -295,6 +297,25 @@ def test_an_ignored_document_whose_name_is_not_ascii_is_not_listed(tmp_path: Pat
     (root / ".gitignore").write_text("docs/plans/2026-04-04-caf\u00e9.md\n", encoding="utf-8")
     (root / "docs" / "plans" / "2026-04-04-caf\u00e9.md").write_text("# doc\n", encoding="utf-8")
     assert "caf\u00e9" not in listing(root, config)
+
+
+@needs_git
+def test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others(
+    tmp_path: Path,
+) -> None:
+    # The listing asks `check-ignore --stdin` about every document it globbed off the disk in
+    # one call, and a Linux name that is not UTF-8 reaches Python with surrogate escapes. Encoded
+    # strictly, that one name made the whole question unaskable, `_ignored` answered "nothing is
+    # ignored", and a local-only document the owner had put in `.gitignore` was listed in the
+    # committed roadmap — the case `--no-index` exists for. Asked of the filter directly,
+    # because APFS refuses to create the name and `--no-index` matches patterns without reading
+    # the file. Mutation (declared, on `gitenv`): the question read as unaskable again -> the
+    # filter answers nothing and this reddens.
+    root, _ = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/local-only.md\n", encoding="utf-8")
+    plans = root / "docs" / "plans"
+    asked = [plans / "local-only.md", plans / os.fsdecode(b"2026-04-04-caf\xe9.md")]
+    assert _ignored(root, asked) == {plans / "local-only.md"}
 
 
 def test_a_tree_git_cannot_answer_for_still_lists_its_documents(tmp_path: Path) -> None:

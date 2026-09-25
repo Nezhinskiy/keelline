@@ -45,10 +45,9 @@ GIT_TIMEOUT_SECONDS = 5
 # What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
 # does not say which of the three it was, because none of them is an answer about the
 # repository: a caller that words `-1` as one cause — "git is not installed", "the fetch timed
-# out" — is wrong about the other two.
-NO_ANSWER = (
-    "git could not be run, ran past its time limit, or its input or output was not UTF-8 text"
-)
+# out" — is wrong about the other two. What git printed is never one of them: its output is
+# decoded losslessly, so an answer is always read.
+NO_ANSWER = "git could not be run, ran past its time limit, or could not be given its input"
 
 
 def in_work_tree(root: Path) -> bool:
@@ -71,21 +70,32 @@ def scrubbed_env() -> dict[str, str]:
 def git_run(
     root: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
 ) -> tuple[int, str]:
-    """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when there is no answer to read.
+    """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when git gave no answer.
 
     The one place this project runs `git` outside the memory store's own resolver: every
     argument list is built from constants by the caller, every pathspec follows `--`, and no
     configuration value reaches this list without `contained()` having refused the
-    `-`-shaped ones (§3). Resolved through PATH for the reason above: the machine owner's git
+    `-`-shaped ones. Resolved through PATH for the reason above: the machine owner's git
     must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
     "nothing matched", and that is an answer.
 
+    **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
+    common directory, a name in `ls-files` or a ref can hold one the locale cannot decode — a
+    latin-1 filename on Linux. Strict decoding raised `UnicodeDecodeError` out of every caller
+    as an internal error, and it did so for stderr too, which nobody reads; reading such output
+    as no answer instead threw a real answer away, and a caller that took "no answer" for
+    "nothing" then passed what it should have refused. Escaped, a byte comes back as the same
+    `str` `os.listdir` and `sys.argv` give for it, so an answer is compared with, and opens, the
+    path it names, and a name read off the disk goes back to git on `stdin` as its own bytes.
+    The answer is lossless rather than a placeholder, so every caller still decides about the
+    path that is really there. What it does not make safe is writing that `str` into a UTF-8
+    file or parsing it as UTF-8 text: a caller whose answer ends up in one checks it itself, as
+    `assess.rule.read_base` does for the base's `keelline.toml`.
+
     No answer is three things, and `NO_ANSWER` names all three: git could not be launched, it
-    ran past `timeout`, or the text crossing the pipe was not UTF-8. `text=True` decodes stdout
-    and stderr strictly and encodes `stdin` the same way, and git prints a committed path raw
-    wherever `-z` is asked for — `ls-files -z`, `diff --name-only -z` — so one tracked name
-    that is not UTF-8 raised `UnicodeDecodeError` out of every caller, a gate's included. What
-    this process cannot read is not an answer about the repository, so it is `(-1, "")` too.
+    ran past `timeout`, or `stdin` held a character the locale has no bytes for: a name from a
+    note or a file written in UTF-8, asked under a locale that is not. A name read off the disk
+    does not, wherever the filesystem's encoding is the locale's.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - see the docstring
@@ -93,10 +103,11 @@ def git_run(
             input=stdin,
             capture_output=True,
             text=True,
+            errors="surrogateescape",
             check=False,
             timeout=timeout,
             env=scrubbed_env(),
         )
-    except (OSError, subprocess.SubprocessError, UnicodeError):
+    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):
         return -1, ""
     return completed.returncode, completed.stdout

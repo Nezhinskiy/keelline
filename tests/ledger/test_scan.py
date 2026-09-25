@@ -8,11 +8,13 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.gitenv import git_run
 from keelline.ledger.scan import (
     FIXTURE_MARKER,
     FIXTURE_MARKER_WINDOW,
@@ -172,14 +174,35 @@ def test_git_enumerates_the_candidates_and_an_ignored_file_is_not_one(tmp_path: 
 
 
 @needs_git
-def test_a_listing_git_cannot_hand_over_falls_back_to_the_walk_and_not_to_nothing(
-    tmp_path: Path,
+def test_a_listing_git_gave_no_answer_for_falls_back_to_the_walk_and_not_to_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `ls-files -z` prints a tracked name raw, so one that is not UTF-8 is `git_run`'s
-    # `(-1, "")`. Read as an empty listing, that scanned no file at all and reported every
-    # reference as absent — the guard that says OK because it looked at nothing, which this
-    # module's walk fallback exists to prevent. Mutation (declared): answer the failed listing
-    # with the empty string again — the scan finds nothing and this reddens.
+    # `git_run`'s `(-1, "")` — git could not be run or ran past its bound — read as an empty
+    # listing scanned no file at all and reported every reference as absent: the guard that
+    # says OK because it looked at nothing, which this module's walk fallback exists to
+    # prevent. Only the listing is diverted, so the top-level probe still answers and the case
+    # reaches the listing's own arm. Mutation (declared): answer the failed listing with the
+    # empty string again — the scan finds nothing and this reddens.
+    from keelline.ledger import scan as module
+
+    root, config = project(tmp_path)
+    git(root, "init", "-q")
+    write(root, "src/a.py", "# BR-405\n")
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "ls-files" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    assert list(code_mentions(root, config)) == ["BR-405"]
+
+
+@needs_git
+def test_a_listed_name_that_is_not_utf_8_hides_no_other_file(tmp_path: Path) -> None:
+    # `ls-files -z` prints a tracked name raw; decoded losslessly it is one more name in the
+    # listing, and the files beside it are still scanned. The planted name has no file on this
+    # disk (APFS refuses one), so this also holds that a listed name the scan cannot open costs
+    # that name and not the scan.
     root, config = project(tmp_path)
     git(root, "init", "-q")
     write(root, "src/a.py", "# BR-405\n")

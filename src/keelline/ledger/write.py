@@ -99,8 +99,8 @@ def _fetch(root: Path) -> str | None:
     code, _ = git_run(root, "fetch", "--quiet", "origin", timeout=FETCH_TIMEOUT_SECONDS)
     if code == 0:
         return None
-    # `-1` is not only "could not run or timed out": a remote's message that is not UTF-8 text
-    # is `-1` too, from a fetch that ran, in time.
+    # `-1` is every cause `NO_ANSWER` names, not one of them: the warning says which question
+    # went unanswered and does not guess why.
     cause = (
         f"{NO_ANSWER}, so git fetch origin gave no answer"
         if code < 0
@@ -134,9 +134,10 @@ def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Alloca
     # Built from `paths.bugs` like every other path here: spelled literally, a rename would
     # make the allocator silently under-count and hand out a number some ref already holds.
     tracked = f"{config.paths.bugs}/"
-    # Quoting forced on: under an owner's `core.quotePath=false`, one name in this history that
-    # is not UTF-8 came back raw and made the whole answer unreadable. An entry's own name is
-    # ASCII, so quoting changes none of the names this counts.
+    # Quoting forced on, so under an owner's `core.quotePath=false` a name in this history that
+    # is not UTF-8 still comes back as ASCII, whatever decodes it; `git_run` reads the raw bytes
+    # losslessly too, so this is the second of two holds and not the only one. An entry's own
+    # name is ASCII, so quoting changes none of the names this counts.
     code, added = git_run(
         root,
         "-c",

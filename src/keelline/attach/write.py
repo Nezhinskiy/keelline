@@ -654,8 +654,7 @@ def _worktrees(root: Path) -> list[Path]:
     if code != 0:
         raise Failure(
             "`git` could not list this repository's worktrees, so memory cannot be linked into "
-            "them; the fault is on this machine — check that `git` runs here and that every "
-            "worktree's path is UTF-8 text"
+            "them; the fault is on this machine — check that `git` runs here"
         )
     # One record per blank-line-separated block. A block carrying `prunable` names a worktree
     # whose directory is gone and which nobody has `git worktree prune`d yet -- the state a

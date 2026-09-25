@@ -522,8 +522,10 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     `--root` a worktree by default.
 
     **What it does not cover, stated rather than implied.** When `git` cannot answer for the
-    project root — `--root` is not a repository, `git` is not installed, or the directory it
-    would print is not UTF-8 text — the `git` arm is silent and only the paths stand. And what
+    project root — `--root` is not a repository, or `git` could not be run or ran past its time
+    limit — the `git` arm is silent and only the paths stand. A common directory whose path is
+    not UTF-8 is an answer like any other: `git_run` decodes it losslessly, so two checkouts of
+    one repository still compare equal. And what
     the whole check bounds is a repository *shipping* a tree: committed contents reach that
     repository's own checkouts and nowhere else, so refusing all of them removes the case a
     clone can stage. It is not a claim that no other directory on

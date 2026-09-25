@@ -91,8 +91,7 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
     code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
-    # `-1` is `git_run`'s "no answer" — not launched, past its bound, or text that is not UTF-8,
-    # which `git archive`'s stderr is the whole of since the tar goes to a file — and not an exit
+    # `-1` is `git_run`'s "no answer" — not launched or past its bound — and not an exit
     # status: "exited -1" names no cause. A `Failure` and not the listing's skip below, because
     # there is no weaker answer available: nothing was extracted.
     if code == -1:
@@ -128,11 +127,12 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     # tree that really was missing files. The author had already judged this tree big enough
     # to need more than the default when giving `git archive` its 120.
     code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
-    # `-z` prints a tracked name raw, so a name this process cannot decode — a latin-1 filename
-    # committed on Linux — is `git_run`'s `(-1, "")` rather than a listing.
+    # `-z` prints a tracked name raw, and `git_run` decodes it losslessly: a latin-1 filename
+    # committed on Linux is one more expected name, spelled as the extraction's own path, so it
+    # can neither hide an export rule nor be reported missing when it is there.
     #
-    # A listing that cannot be read is no listing at all, which is exactly what a listing that
-    # could not be produced is, and both skip the comparison. Skipping is the right answer
+    # A listing git gave no answer for — it ran past its bound — is no listing at all, and the
+    # comparison is skipped. Skipping is the right answer
     # rather than a cop-out: this comparison exists to catch an export rule, it cannot answer
     # that question about a listing it never read, and raising on it would be one more
     # over-eager `Failure` on a healthy tree — the defect this whole comparison has now
@@ -156,9 +156,8 @@ def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribu
     merge_base = merge_base.strip()
     # `git_run`'s own sentinel for "no answer", which is not an exit code and must not be
     # rendered as one: `exited -1; is origin/main fetched?` sends a reader to fetch a ref when
-    # the answer is that there is no git here — or git's own error text, which quotes `base`,
-    # was not UTF-8. A `Failure` and not the listing's skip, because this command has no verdict
-    # without a merge-base.
+    # the answer is that there is no git here, or that it ran past its bound. A `Failure` and not
+    # the listing's skip, because this command has no verdict without a merge-base.
     if code == -1:
         raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")
     if code != 0 or not merge_base:

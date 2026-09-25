@@ -15,7 +15,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.ledger.check import EVIDENCE_LABEL, problems
 from keelline.ledger.entries import LedgerError, load_entries
 from keelline.ledger.index import render_index
@@ -178,11 +178,12 @@ def test_next_identifier_sees_entries_on_other_branches(tmp_path: Path) -> None:
 @needs_git
 def test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref(tmp_path: Path) -> None:
     # Reproduced in review: with `core.quotePath=false`, `git log --name-only` prints a name in
-    # the ledger's history raw, one that is not UTF-8 is `git_run`'s `(-1, "")`, and the
-    # allocator read that as an empty history — handing out BR-002, which `other` holds, with no
-    # word. The log is asked with quoting forced on, so such a name comes back escaped and every
-    # ref still counts. Mutation (declared): drop `-c core.quotePath=true` — the history reads
-    # as no answer and this reddens on the identifier.
+    # the ledger's history raw, and when `git_run` read an answer that was not UTF-8 as no
+    # answer, the allocator took that for an empty history — handing out BR-002, which `other`
+    # holds, with no word. Two things now hold it, each on its own: the log is asked with
+    # quoting forced on, so such a name comes back escaped, and `git_run` decodes raw bytes
+    # losslessly anyway. Measured: either one removed alone leaves this green, so neither has an
+    # oracle entry of its own; removing both reddens it on the identifier.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "core.quotePath", "false")
@@ -228,7 +229,7 @@ def test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty(
     assert allocation.warning is not None
     assert "history" in allocation.warning and "collide" in allocation.warning
     if code == -1:
-        assert "not UTF-8 text" in allocation.warning
+        assert NO_ANSWER in allocation.warning
 
 
 @needs_git
@@ -330,15 +331,15 @@ def test_a_failed_fetch_is_reported_not_raised(
 def test_a_fetch_that_gave_no_answer_names_every_cause_and_not_only_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `-1` is also a remote's message that is not UTF-8 text, which "could not run or timed
-    # out" misdiagnosed: the fetch ran, in time. Mutation (advisory): word `-1` as "could not
-    # run or timed out" again — this reddens.
+    # `-1` is every cause `NO_ANSWER` names, and the warning words it with that clause rather
+    # than with one cause of its own choosing. Mutation (advisory): word `-1` as "could not run
+    # or timed out" again — this reddens.
     root, config = project(tmp_path)
     from keelline.ledger import write as module
 
     monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
     warning = next_identifier(root, config, fetch=True).warning
-    assert warning is not None and "not UTF-8 text" in warning
+    assert warning is not None and NO_ANSWER in warning
 
 
 def test_renumber_moves_the_entry_rewrites_every_reference_and_leaves_a_void_pointer(

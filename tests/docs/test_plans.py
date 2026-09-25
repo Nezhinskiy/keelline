@@ -5,15 +5,19 @@ sample data.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
-from keelline.docs.plans import asserted_outcomes, lint
+from keelline.docs.plans import asserted_outcomes, lint, touched_plans
 from keelline.errors import Failure, Refusal
+from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import git, plant_path
 
 CONFIG = """
@@ -217,23 +221,61 @@ def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> 
 
 
 @needs_git
-def test_a_touched_path_git_prints_as_bytes_that_are_not_text_is_not_a_shallow_checkout(
+def test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted(
     tmp_path: Path,
 ) -> None:
-    # `diff --name-only -z` prints a committed name raw, and one that is not UTF-8 raised
-    # `UnicodeDecodeError` out of `plan check` and the `plan` gate. `git_run` answers `(-1, "")`
-    # for it now, and `-1` is not "the base does not resolve": that finding sends a reader to
-    # `fetch-depth: 0` in a clone that holds every ref. Still exit 1, with the cause in words.
-    # Mutation (advisory): drop the `code == -1` arm in `touched_plans` — the base-unresolvable
-    # finding comes back instead of the `Failure` and this reddens.
+    # `diff --name-only -z` prints a committed name raw. Decoded strictly, one latin-1 plan name
+    # raised `UnicodeDecodeError` out of `plan check` and the `plan` gate; read as no answer, it
+    # failed the gate on every run of a repository that holds one, a plan nobody could lint.
+    # Decoded losslessly, the name is the path on disk and the plan is linted like any other.
+    # The name is planted through the index because APFS refuses to create it; where the disk
+    # can hold it (Linux, where CI's oracle runs) the file is written too and its finding is the
+    # proof it was read. Mutation (declared, on `gitenv`): the answer read as no answer again ->
+    # `lint` raises and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "seed")
-    plant_path(root, b"docs/plans/2026-01-02-caf\xe9.md")
+    raw = b"docs/plans/2026-01-02-caf\xe9.md"
+    plant_path(root, raw, "no scope here\n")
     git(root, "commit", "-qm", "a plan whose name is not UTF-8")
-    with pytest.raises(Failure, match="not UTF-8 text") as caught:
-        lint(root, config, plans=[], base="HEAD~1")
+    named = root / os.fsdecode(raw)
+    assert touched_plans(root, "HEAD~1", root / "docs" / "plans") == [named]
+    try:
+        named.write_text("no scope here\n", encoding="utf-8")
+    except OSError:  # APFS: `Illegal byte sequence`
+        written = False
+    else:
+        written = True
+    result = lint(root, config, plans=[], base="HEAD~1")
+    assert result.linted == ([named] if written else [])
+    assert [f.rule for f in result.findings] == (["scope-missing"] if written else [])
+
+
+@needs_git
+def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git_run`'s `-1` — git could not be run or ran past its time limit — is not "the base
+    # does not resolve": that finding sends a reader to `fetch-depth: 0` in a clone that holds
+    # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
+    # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
+    # `touched_plans` — the base-unresolvable finding comes back instead of the `Failure` and
+    # this reddens.
+    from keelline.docs import plans as module
+
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "diff" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    with pytest.raises(Failure, match=re.escape(NO_ANSWER)) as caught:
+        lint(root, config, plans=[], base="HEAD")
     assert "fetch-depth" not in str(caught.value)
 
 

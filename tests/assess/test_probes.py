@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -269,20 +270,25 @@ def test_a_git_query_that_does_not_answer_is_not_nothing_found(
     }
 
 
-def test_a_path_git_cannot_decode_is_could_not_look_and_not_fatal(tmp_path: Path) -> None:
-    # `git ls-files -z` prints a committed name raw; one that is not UTF-8 is `git_run`'s no
-    # answer, which is "could not look" and never an exception out of the inventory. The other
-    # probes still answer. Mutation: as the case above's, declared there.
+def test_a_path_git_prints_raw_hides_no_committed_env_file(tmp_path: Path) -> None:
+    # `git ls-files -z` prints a committed name raw. Read as no answer, one planted latin-1 name
+    # turned the whole listing into `could-not-look`, and a committed `.env` beside it — the
+    # secret this probe exists to find — went unreported. The listing is decoded losslessly, so
+    # `.env` is found, and so is an `.env.` file whose own name is not UTF-8. Mutation
+    # (declared, on `gitenv`): the answer read as no answer again -> `could-not-look` comes back
+    # and this reddens.
     root = _repo(tmp_path)
     _write(root, "README.md", "x\n")
+    _write(root, ".env", "KEY=secret\n")
     git(root, "add", "-A")
     plant_path(root, b"caf\xe9.txt")
-    git(root, "commit", "-qm", "chore: a name git prints raw")
+    plant_path(root, b".env.caf\xe9")
+    git(root, "commit", "-qm", "chore: names git prints raw")
     items = _all(root, tmp_path)
     assert _shapes([i for i in items if i.probe == "tracked-env"]) == [
-        (COULD_NOT_LOOK, ("git ls-files",))
+        ("tracked-env", (".env", os.fsdecode(b".env.caf\xe9")))
     ]
-    assert [i for i in items if i.probe == "commit-types"] == []
+    assert [i for i in items if i.rule == COULD_NOT_LOOK] == []
 
 
 def test_workflows_through_a_symlinked_github_are_not_listed(tmp_path: Path) -> None:

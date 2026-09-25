@@ -132,9 +132,8 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
     `None` rather than an empty list when `root` is not the top of a checkout, so the caller
     falls back to walking instead of silently scanning nothing — a guard that reports OK
     because it looked at no files is the failure mode this whole module exists to prevent. The
-    listing itself answers the same way when git gave none: `git_output`'s `""` for a failure
-    is an empty listing, and `-z` prints a tracked name that is not UTF-8 raw, which is no
-    answer this process can read.
+    listing itself answers the same way when git gave none — it could not be run, or ran past
+    its bound: `git_output`'s `""` for a failure is an empty listing, which would scan no file.
     """
     toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()
     if not toplevel or Path(toplevel).resolve() != root.resolve():

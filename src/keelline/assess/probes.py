@@ -7,7 +7,7 @@ an item carries.
 
 **A probe that could not look says so.** Every git query runs under `QUERY_TIMEOUT_SECONDS`,
 and an exit that is not one of that query's own answers — `git_run`'s `-1` included, which is a
-timeout, a git that could not start, or output that is not UTF-8 — is `unread`. So is a file
+timeout or a git that could not start — is `unread`. So is a file
 the probe cannot read or parse, and a path through a symlink. `run_probes` turns `unread` into
 one `could-not-look` warning per probe and never into "nothing found": an empty answer read
 from a query that did not finish would say no secret is committed.

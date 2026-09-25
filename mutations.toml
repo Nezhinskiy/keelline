@@ -1025,18 +1025,62 @@ before = '    return completed.returncode, completed.stdout'
 after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
 reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
 
-# `text=True` decodes strictly and `-z` prints a tracked name raw, so one name that is not UTF-8
-# raised `UnicodeDecodeError` out of `git_run` and every caller — the `plan` gate and `plan
-# check` among them; `stdin` is encoded the same way. No readable answer is `(-1, "")`.
+# git speaks bytes, and `-z` prints a tracked name raw: decoded strictly, one name that is not
+# UTF-8 raised `UnicodeDecodeError` out of `git_run` and every caller, a gate's included, and so
+# did git's own stderr, which nobody reads; a name read off the disk failed the other way, on
+# `stdin`. Decoded with `surrogateescape`, the answer is the path itself.
 [[mutation]]
-name = "the git runner lets text that is not UTF-8 escape as a traceback"
+name = "the git runner decodes strictly again, so a non-UTF-8 byte is a traceback"
 file = "src/keelline/gitenv.py"
-before = "    except (OSError, subprocess.SubprocessError, UnicodeError):"
-after = "    except (OSError, subprocess.SubprocessError):"
+before = '            errors="surrogateescape",'
+after = '            errors="strict",'
 reddens = [
-  "tests/test_git_run.py::test_a_committed_path_that_is_not_utf_8_is_no_answer_and_not_a_traceback",
-  "tests/test_git_run.py::test_a_question_that_is_not_utf_8_is_no_answer_and_not_a_traceback",
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/test_git_run.py::test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names",
+  "tests/test_git_run.py::test_git_s_own_diagnostics_are_never_decoded_into_a_failure",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[merge-base]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[archive]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[ls-tree]",
 ]
+
+# The other way to read a byte that is not UTF-8, and the one that fails open: as no answer.
+# Four callers read that as "nothing" and passed what they exist to refuse — `setup` recorded a
+# sibling checkout of the project as the trust anchor, `test attribute` skipped the export-rule
+# comparison, the docs trail's ignore filter listed a local-only document in the roadmap, and
+# `assess` reported could-not-look over a committed `.env` — and the plan gate failed every run
+# of a repository holding one such plan name.
+[[mutation]]
+name = "the git runner reads an answer that is not UTF-8 as no answer again"
+file = "src/keelline/gitenv.py"
+before = """            errors="surrogateescape",
+            check=False,
+            timeout=timeout,
+            env=scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"""
+after = """            check=False,
+            timeout=timeout,
+            env=scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):"""
+reddens = [
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
+  "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
+  "tests/docs/test_trail.py::test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others",
+  "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
+  "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+]
+
+# A `stdin` with no bytes under the locale means git could not be asked: `(-1, "")`, never a
+# `UnicodeEncodeError` out of the caller.
+[[mutation]]
+name = "the git runner lets a stdin it cannot encode escape as a traceback"
+file = "src/keelline/gitenv.py"
+before = "    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"
+after = "    except (OSError, subprocess.SubprocessError):"
+reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_minus_one"]
 
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
 # the subset stays valid YAML only because the leading class is YAML's whole indicator set.
@@ -1079,7 +1123,7 @@ before = '    return FIXTURE_MARKER.encode("utf-8") in head'
 after = '    return False'
 reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
 
-# A listing git gave no answer for — a tracked name that is not UTF-8, a timeout — read as an
+# A listing git gave no answer for — git could not be run, or ran past its bound — read as an
 # empty one scanned no file and reported every reference absent. It falls back to the walk.
 [[mutation]]
 name = "the scan reads a listing git gave no answer for as no files"
@@ -1089,24 +1133,12 @@ before = """    if code != 0:
     return [root / name for name in listed.split("\\0") if name]"""
 after = """    return [root / name for name in listed.split("\\0") if name]"""
 reddens = [
-  "tests/ledger/test_scan.py::test_a_listing_git_cannot_hand_over_falls_back_to_the_walk_and_not_to_nothing",
+  "tests/ledger/test_scan.py::test_a_listing_git_gave_no_answer_for_falls_back_to_the_walk_and_not_to_nothing",
 ]
 
-# The allocator read a history git gave no answer for as an empty one: under an owner's
-# `core.quotePath=false` one name in the ledger's history that is not UTF-8 made every other
-# ref's entries invisible, and `bugs new` handed out a number another branch holds, silently.
-# Quoting is forced on for that read, and a history still unread is named in the warning.
-[[mutation]]
-name = "the allocator reads a history with a raw name as no history"
-file = "src/keelline/ledger/write.py"
-before = """        "-c",
-        "core.quotePath=true",
-        "log","""
-after = """        "log","""
-reddens = [
-  "tests/ledger/test_write.py::test_a_name_that_is_not_utf_8_in_history_does_not_hide_every_other_ref",
-]
-
+# The allocator read a history git gave no answer for as an empty one, and `bugs new` handed
+# out a number another branch holds, silently. A history still unread — git could not be run, or
+# ran past its bound — is named in the warning.
 [[mutation]]
 name = "the allocator hands out a number with the history unread and no word"
 file = "src/keelline/ledger/write.py"
@@ -3751,9 +3783,9 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
 ]
 
-# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "no answer" — not launched, past its
-# bound, or text that is not UTF-8 — and not an exit status; rendered as one it sends a reader
-# to fetch a ref that is not the problem. Two arms now read it, so each entry carries its own
+# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its
+# bound — and not an exit status; rendered as one it sends a reader to fetch a ref that is not
+# the problem. Two arms now read it, so each entry carries its own
 # `raise` line to name one of them.
 [[mutation]]
 name = "attribute reports an unlaunchable git as an exit code"
@@ -3764,7 +3796,6 @@ after = """    if False:
         raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
 reddens = [
   "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
-  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_is_no_answer_and_not_an_exit_code",
 ]
 
 [[mutation]]
@@ -3778,9 +3809,8 @@ reddens = [
   "tests/guards/test_attribute.py::test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code",
 ]
 
-# `-z` prints a tracked name raw, so one this process cannot decode is `git_run`'s `(-1, "")`: a
-# listing that cannot be read is no listing, and the comparison is skipped rather than blaming
-# an export rule for a healthy tree.
+# A listing git gave no answer for — it ran past its bound — is no listing, and the comparison is
+# skipped rather than blaming an export rule for a healthy tree.
 [[mutation]]
 name = "attribute reads a listing git gave no answer for as every file missing"
 file = "src/keelline/guards/attribute.py"
@@ -7708,6 +7738,17 @@ after = '        return ""'
 reddens = [
   "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
   "tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself",
+]
+
+# git hands the base's blob over losslessly, a surrogate escape for each byte that is not UTF-8,
+# and `tomllib` parses those: without the refusal, bytes the loader refuses in the tree's own
+# copy would govern the run.
+[[mutation]]
+name = "a base copy that is not UTF-8 is parsed and governs the run"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_NOT_UTF8) from None"
+after = "        pass"
+reddens = [
   "tests/assess/test_read_base.py::test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap",
 ]
 

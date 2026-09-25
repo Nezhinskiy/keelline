@@ -197,7 +197,7 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
     if code == -1:
         # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
-        # plan named in bytes that are not UTF-8 is a clone holding every ref.
+        # git that could not be run or ran past its bound is a clone that may hold every ref.
         raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
     if code != 0:
         return None
