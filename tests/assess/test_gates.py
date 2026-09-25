@@ -4,7 +4,6 @@ its area's command finds, and a project's own gate as its argv — bounded, and 
 from __future__ import annotations
 
 import shlex
-import shutil
 import subprocess
 import sys
 import time
@@ -27,19 +26,28 @@ from keelline.config.schema import BUILTIN_GATES, Config, CustomGate, Gates
 from keelline.errors import Failure
 from tests.assess.smoke import BASE as SMOKE_BASE
 from tests.assess.smoke import FIXTURE, smoke_repo
-from tests.gitfixture import git
+from tests.gitfixture import git, needs_git
 
-needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-
-# A child the command starts, which writes a marker after 1.5 s: the gate's bound is 1 s, so a
-# gate that ended only the command it started leaves this one to write.
+# The command starts a child and then sleeps. The child writes `started` at once and `late`
+# 2.5 s after: a gate that ended only the command it started leaves this one to write `late`.
+# `started` is what proves the descendant existed before the gate ended the command; without
+# it, a loaded machine that had not yet started the child would pass these cases vacuously.
 DELAYED_WRITER = (
     "import subprocess, sys, time\n"
     "subprocess.Popen([sys.executable, '-c', "
-    "'import pathlib, sys, time; time.sleep(1.5); pathlib.Path(sys.argv[1]).write_text(\"x\")', "
-    "sys.argv[1]])\n"
+    '\'import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text("x"); '
+    'time.sleep(2.5); pathlib.Path(sys.argv[2]).write_text("x")\', '
+    "sys.argv[1], sys.argv[2]])\n"
     "time.sleep(30)\n"
 )
+# Past the child's own 2.5 s from any moment it could have started in either case below.
+LATE_WAIT_SECONDS = 3.0
+STARTED_WAIT_SECONDS = 20.0
+
+
+def delayed_writer(tmp_path: Path) -> tuple[list[str], Path, Path]:
+    started, late = tmp_path / "started", tmp_path / "late"
+    return [sys.executable, "-c", DELAYED_WRITER, str(started), str(late)], started, late
 
 
 def fixture_config(tmp_path: Path) -> Config:
@@ -241,13 +249,15 @@ def test_a_custom_gate_past_its_time_limit_did_not_answer(tmp_path: Path) -> Non
 def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(tmp_path: Path) -> None:
     # A timeout case with one sleeping process cannot show this: it is the descendant — a test
     # runner a shell wrapper started — that must not run on after the gate has reported.
-    marker = tmp_path / "written-after-the-gate-reported"
-    command = [sys.executable, "-c", DELAYED_WRITER, str(marker)]
-    config = with_custom(fixture_config(tmp_path), command, seconds=1)
+    # A 2 s bound, so the child has started before the gate gives up on even a loaded machine;
+    # `started` asserts that it did.
+    command, started, late = delayed_writer(tmp_path)
+    config = with_custom(fixture_config(tmp_path), command, seconds=2)
     [probe] = results(tmp_path, config)
     assert not probe.answered
-    time.sleep(2.5)
-    assert not marker.exists()
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
 
 
 def test_an_interrupted_custom_gate_leaves_nothing_running(
@@ -255,8 +265,9 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
 ) -> None:
     # A terminal's Ctrl-C reaches Keelline's process group and not the command's own session,
     # so nothing but the gate itself can end the command's tree on the way out.
-    marker = tmp_path / "written-after-keelline-left"
-    command = [sys.executable, "-c", DELAYED_WRITER, str(marker)]
+    # The interrupt arrives once the child has written `started`, so there is a descendant to
+    # end; the wait for it is bounded, and a child that never starts fails the assertion below.
+    command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
     real = subprocess.Popen.wait
     calls: list[float | None] = []
@@ -264,14 +275,18 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
     def interrupted(self: subprocess.Popen[bytes], timeout: float | None = None) -> int:
         calls.append(timeout)
         if len(calls) == 1:
+            deadline = time.monotonic() + STARTED_WAIT_SECONDS
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
             raise KeyboardInterrupt
         return real(self, timeout=timeout)
 
     monkeypatch.setattr(subprocess.Popen, "wait", interrupted)
     with pytest.raises(KeyboardInterrupt):
         results(tmp_path, config)
-    time.sleep(2.5)
-    assert not marker.exists()
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
 
 
 def test_a_custom_gate_whose_command_does_not_exist_did_not_answer(tmp_path: Path) -> None:

@@ -36,7 +36,7 @@ against "hooks-core's smoke assertions", which import none of them). Each is sti
 written and is reachable by its own module; what went is the claim that another area reads it.
 `overlay/api.py` made the same ruling about a template tree published against "the release lane
 will need it": that lane grows the list when it arrives, which is what this docstring asks of
-every other lane. When `assess` arrived in wave 5 it needed one name, `commit_gate`, and none of
+every other lane. When `keelline assess` arrived it needed one name, `commit_gate`, and none of
 the twenty-nine.
 """
 

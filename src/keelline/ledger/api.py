@@ -55,9 +55,9 @@ The identifier grammar and the finding shape are **not** here: they are leaves
 them from there. The surface test pins every export to this area's own modules, so
 re-exporting a leaf would redden it.
 
-**`bugs_gate` arrived with the assess lane in wave 5.** It is `(root, config, base) ->
-list[Finding]`, the `bugs` gate's whole composition, and `bugs check` answers with the same
-function; `problems`, trimmed above, stays behind it in `keelline.ledger.check`.
+**`bugs_gate` arrived for `keelline assess`.** It is `(root, config, base) -> list[Finding]`,
+the `bugs` gate's whole composition, and `bugs check` answers with the same function;
+`problems`, trimmed above, stays behind it in `keelline.ledger.check`.
 """
 
 from keelline.ledger.check import bugs_gate
