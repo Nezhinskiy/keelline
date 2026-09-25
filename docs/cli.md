@@ -983,10 +983,10 @@ once it is empty, deepest first, and no other: an empty directory a `[paths]` va
 be yours. Then `keelline.toml`, which the write-once pass holds back for this point; then the
 ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/` once it is empty. A
 directory someone committed where a ledger file belongs stays. So does a harness's own directory
-(`.claude/`, `.codex/`), even when it is empty, whoever made it: `init` may have created `.claude/`
-to hold the rule it wrote there, but nothing records who made an empty directory, and to `init` its
-presence means the project uses that harness. So a later `init` detects that harness and lists it in
-`[keelline] agents` until you remove the directory.
+(`.claude/`, `.codex/`, or the same name in any other case), even when it is empty, whoever made it:
+`init` may have created `.claude/` to hold the rule it wrote there, but nothing records who made an
+empty directory, and to `init` its presence means the project uses that harness. So a later `init`
+detects that harness and lists it in `[keelline] agents` until you remove the directory.
 
 **Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay,
 so run `keelline detach` first; `keelline.toml` is missing while the manifest records it, so restore
