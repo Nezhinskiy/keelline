@@ -173,6 +173,9 @@ def test_a_link_above_the_repository_is_the_machine_s_and_is_admitted(tmp_path: 
 def test_a_root_that_is_itself_a_link_into_the_repository_is_refused(tmp_path: Path) -> None:
     # No ancestor of the root resolves to git's top: the link names the project's directory, not
     # the repository, so the root's own spelling says nothing about where the base keeps it.
+    # Removing that refusal crashes on the missing ancestor (an internal error, exit 2: it fails
+    # closed), and falling back to the root or to git's top is still refused by the spelling
+    # check, so no mutation of it reaches the bootstrap and it has no oracle entry.
     project = clone(tmp_path, BASE, under="sub")
     os.symlink(project / "sub", tmp_path / "link")
     with pytest.raises(Refusal, match="symlink"):

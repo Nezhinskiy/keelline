@@ -7820,15 +7820,6 @@ after = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", b
 reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]
 
 [[mutation]]
-name = "a root that is itself a link into the repository is read at its own spelling"
-file = "src/keelline/assess/rule.py"
-before = """    if ancestor is None:
-        raise Refusal(ROOT_THROUGH_SYMLINK)"""
-after = """    if False:
-        raise Refusal(ROOT_THROUGH_SYMLINK)"""
-reddens = ["tests/assess/test_read_base.py::test_a_root_that_is_itself_a_link_into_the_repository_is_refused"]
-
-[[mutation]]
 name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
 file = "src/keelline/assess/rule.py"
 before = '    if linked or spelled != prefix.rstrip("\n"):'
