@@ -5,7 +5,7 @@ A module and not the package's `__init__`, for the reason `keelline.docs.api`,
 before it imports the submodule it wants, so a re-export list in `__init__.py` would pull this
 whole area into every `discover()` call.
 
-Four names, each with the consumer that reaches for it:
+Five names, each with the consumer that reaches for it:
 
 - `PROJECT_FILES`, for `scripts/check_artifacts.py`. It asks the built wheel whether the
   twelve shipped template files are actually in it, and before this list existed the only
@@ -26,17 +26,21 @@ Four names, each with the consumer that reaches for it:
   the one operation that rewrites a tool-owned key: a second copy in that lane would skip the
   `config` record's re-stamp, and `uninstall` would then keep every promoted project's
   `keelline.toml` as hand-edited.
+- `CI_WORKFLOW`, for `keelline assess`'s workflow and code-owners probes, which must name
+  Keelline's own caller workflow and would otherwise spell it a third time beside `doctor`'s
+  `WORKFLOW`.
 
-`read`, `fill`, `GATE_BRANCH`, `HARNESS_REGION` and `CI_WORKFLOW` are **not** here: they are
+`read`, `fill`, `GATE_BRANCH` and `HARNESS_REGION` are **not** here: they are
 this area's own, reached by `keelline.project.templates` and by nothing outside it. A lane that
 needs one grows this list deliberately, in a commit that says which lane and why.
 """
 
 from keelline.project.layout import PROJECT_FILES
 from keelline.project.rewrite import rewrite_owned
-from keelline.project.templates import Prepared, project_templates
+from keelline.project.templates import CI_WORKFLOW, Prepared, project_templates
 
 __all__ = [
+    "CI_WORKFLOW",
     "PROJECT_FILES",
     "Prepared",
     "project_templates",

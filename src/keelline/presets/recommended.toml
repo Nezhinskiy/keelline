@@ -1,5 +1,5 @@
 # Owned by the foundation lane: [budgets], [native_caps], [defaults.*]; by the notes lane:
-# [rules]. The setup lane adds every other section.
+# [rules]; by the assess lane: [assess]. The setup lane adds every other section.
 
 [budgets]
 agents_md_lines = 300
@@ -17,6 +17,10 @@ volatile_ttl_days = 30
 memory_index_lines = 200
 memory_index_bytes = 25600
 hook_output_chars = 10000
+
+[assess]
+# How many commits `keelline assess` reads for the commit-vocabulary probe.
+commit_window = 100
 
 [defaults.keelline]
 state = "initialised"
