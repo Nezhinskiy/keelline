@@ -124,13 +124,13 @@ def unlinks(action: Action) -> bool:
     return action.verb is Verb.REMOVE and action.payload is None
 
 
-def matches_render(template: Template, current: str) -> bool:
+def _matches_render(template: Template, current: str) -> bool:
     """Whether `current` holds exactly the bytes this build renders for `template`'s part of it.
 
     For a file kept out of git, the second answer `ours_locally` gives, at the artifact's own
     place only, when the ledger does not vouch for the bytes there: it records no entry for that
     file (no ledger yet, or one deleted), or its entry records other bytes (the render changed
-    back, say). Private to this module since `uninstall` asks `ours_locally` instead.
+    back, say). `ours_locally` is the rule anything outside this module asks.
     """
     _, stamp = _payload_and_stamp(template, current)
     present = _present_stamp(template, current)
@@ -152,7 +152,7 @@ def ours_locally(template: Template, current: str, target: str, digests: LocalDi
     if present is not None and digests.matches(template.id, target, digest(present)):
         return True
     own = path_key(target) == path_key(f"{LOCAL_ARTIFACTS}/{template.target}")
-    return own and matches_render(template, current)
+    return own and _matches_render(template, current)
 
 
 class Ownership(Protocol):

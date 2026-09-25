@@ -30,9 +30,11 @@ from __future__ import annotations
 
 import configparser
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from keelline.config.paths import PathEscape, contained
 from keelline.gitenv import git_run
@@ -40,6 +42,7 @@ from keelline.profiles.model import Check, CheckKind, Locator, Profile
 
 _GLOB = frozenset("*?[")
 _TEXT_CAP = 1024 * 1024  # a profile reads configuration files, never anything this large
+_Document = TypeVar("_Document")
 
 
 @dataclass(frozen=True)
@@ -142,30 +145,28 @@ def _ini_value(parser: configparser.ConfigParser, address: tuple[str, ...]) -> s
     return parser.get(section, key) if parser.has_option(section, key) else None
 
 
-class _Parsed:
-    """Each file a profile's locators read, parsed once per `evaluate`.
+def _once(
+    root: Path, parse: Callable[[str], _Document | None]
+) -> Callable[[str], _Document | None]:
+    """`parse` of each file under `root`, read and parsed the first time a locator asks for it.
+    A file that cannot be read, or will not parse, is `None` for every locator that asks."""
 
-    Seventeen locators of the shipped profile read `pyproject.toml`, and each parsed it again.
-    A file that cannot be read, or will not parse, is `None` for every locator that asks, which
-    is what each of them concluded on its own.
-    """
+    @cache
+    def parsed(relative: str) -> _Document | None:
+        text = _read(root, relative)
+        return None if text is None else parse(text)
+
+    return parsed
+
+
+class _Parsed:
+    """Each file a profile's locators read, parsed once per `evaluate`: seventeen locators of the
+    shipped profile read `pyproject.toml`, and each parsed it again."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._toml: dict[str, dict[str, Any] | None] = {}
-        self._ini: dict[str, configparser.ConfigParser | None] = {}
-
-    def toml(self, relative: str) -> dict[str, Any] | None:
-        if relative not in self._toml:
-            text = _read(self.root, relative)
-            self._toml[relative] = None if text is None else _toml_document(text)
-        return self._toml[relative]
-
-    def ini(self, relative: str) -> configparser.ConfigParser | None:
-        if relative not in self._ini:
-            text = _read(self.root, relative)
-            self._ini[relative] = None if text is None else _ini_document(text)
-        return self._ini[relative]
+        self.toml = _once(root, _toml_document)
+        self.ini = _once(root, _ini_document)
 
 
 def _resolves(parsed: _Parsed, locator: Locator) -> bool:
