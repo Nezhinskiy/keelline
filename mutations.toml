@@ -3839,6 +3839,19 @@ reddens = [
   "tests/test_fixtures.py::test_a_differing_configuration_under_a_base_that_is_not_installed_warns",
 ]
 
+# The base step runs in the caller's checkout, and `python3 -c` puts that directory first on
+# `sys.path`. Without `-P` a `tomllib.py` the branch adds reads the base's configuration, so the
+# branch decides the state and with it whether any gate enforces — while `keelline.toml` itself
+# stays byte-equal and the equality rule has nothing to refuse.
+[[mutation]]
+name = "the base step's reader imports from the tree under review again"
+file = ".github/workflows/check.yml"
+before = '''            state="$(git show "origin/$base:$file" | python3 -P -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
+after = '''            state="$(git show "origin/$base:$file" | python3 -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
+reddens = [
+  "tests/test_fixtures.py::test_a_tomllib_the_branch_plants_does_not_read_the_bases_configuration",
+]
+
 # The rule that replaced four rounds of shape enumeration: a `run:` key owns every following
 # line indented past the key's column. Drop the continuation and every multi-line body — a block
 # scalar, an indented plain scalar, a plain scalar that continues onto the next line, a quoted

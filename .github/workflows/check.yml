@@ -162,8 +162,13 @@ jobs:
           # unreadable: a failure, never a default — `git show | python` without pipefail
           # turned a failed `git show` into `state=initialised`, which is the gate reporting
           # green with nothing enforced.
+          #
+          # `-P`, because this step's working directory is the tree under review and `python3 -c`
+          # puts it first on `sys.path`: a `tomllib.py` the branch adds would be the reader of
+          # the base's configuration, and so the author of `state`. The gate steps below run
+          # from the workspace root, which the caller's checkout cannot write into.
           if git cat-file -e "origin/$base:$file" 2>/dev/null; then
-            state="$(git show "origin/$base:$file" | python3 -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"
+            state="$(git show "origin/$base:$file" | python3 -P -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"
             if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then
               if [ "$state" = installed ]; then
                 echo "::error file=$file::keelline.toml differs from origin/$base; a pull request may not change an installed project's gate configuration (the keys a pull request may change arrive with assess)"

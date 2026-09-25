@@ -428,8 +428,9 @@ EXPECTED_BLOCKS = {
 EXPECTED_CHARACTERS = {
     # Re-measured when the import proof and the pull-request base refusal landed: 5030 -> 6503.
     # Kept level with the measurement rather than left where it was, because a floor with a
-    # thousand characters of headroom under it is a floor a truncation walks past.
-    "check.yml": 6503,
+    # thousand characters of headroom under it is a floor a truncation walks past. 6503 -> 6888
+    # when the base step's reader stopped importing from the tree under review.
+    "check.yml": 6888,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
     "ci.yml": 899,
     "release.yml": 1683,
@@ -816,6 +817,30 @@ def test_a_base_branch_with_no_configuration_is_advisory_and_not_refused(tmp_pat
 def test_an_installed_base_enforces(tmp_path: Path) -> None:
     project = _project_with_a_base(tmp_path, on_base=INSTALLED)
     code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
+    assert code == 0, printed
+    assert written["state"] == "installed", written
+    assert written["enforce"] == "true", written
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_a_tomllib_the_branch_plants_does_not_read_the_bases_configuration(
+    tmp_path: Path,
+) -> None:
+    # The step runs in the caller's checkout — the tree under review — and `python3 -c` puts
+    # the working directory first on `sys.path`. `tomllib` is not preloaded, so a branch that
+    # adds `tomllib.py` at the project's top chose the state the base's copy was read as, and
+    # with it whether any gate enforces. `keelline.toml` itself is untouched, so the equality
+    # rule has nothing to refuse: the planted reader is the whole of the change.
+    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    (project / "tomllib.py").write_text(
+        'def loads(text):\n    return {"keelline": {"state": "initialised"}}\n',
+        encoding="utf-8",
+    )
+    git(project, "add", "-A")
+    git(project, "commit", "-qm", "chore: a reader of our own")
+    code, written, printed = _run_base_step(project, tmp_path, PR_BASE="main")
     assert code == 0, printed
     assert written["state"] == "installed", written
     assert written["enforce"] == "true", written
