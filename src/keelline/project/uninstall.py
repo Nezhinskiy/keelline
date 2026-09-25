@@ -71,14 +71,16 @@ then means "stopped part-way": what was done is on disk and in the manifest, `ke
 still there, and running the command again re-plans from there to the end.
 
 **Without `keelline.toml`, nothing can be judged.** While the manifest still records the file
-(`CONFIG_ARTIFACT`), something other than this command took it, a person deleting it above all:
-this command's own removal goes through `apply`, which drops the record with the file. Going on
-would drop the manifest and leave every recorded file untracked for good, so the run refuses
-before any write and says to restore the file (`DELETED_CONFIG`). With no such record, either a
-run stopped after removing it and before the manifest, or the file was the project's own and
-never recorded; then the ledger goes, every recorded file stays, and the note gives their
-count, so the next run converges instead of refusing for ever. No directory is pruned on that
-path: nothing says where this configuration put its artifacts, and a target the manifest
+(`CONFIG_ARTIFACT`), either something other than this command took it, a person deleting it above
+all, or a run of this command was killed inside `apply` after unlinking it and before writing the
+manifest: `apply` otherwise drops the record with the file, and writes the manifest even when a
+later action refuses. Going on would drop the manifest and leave every recorded file untracked for
+good, so the run refuses before any write and says to restore the file (`DELETED_CONFIG`), which is
+the remedy in both cases: a restored file is judged like any other, and the next run converges. With
+no such record, either a run stopped after removing it and before the manifest, or the file was the
+project's own and never recorded; then the ledger goes, every recorded file stays, and the note
+gives their count, so the next run converges instead of refusing for ever. No directory is pruned on
+that path: nothing says where this configuration put its artifacts, and a target the manifest
 records is a committed string.
 """
 
@@ -148,7 +150,9 @@ NO_CONFIG = (
     "file(s) stay where they are, and only the ledger goes"
 )
 # Fixed text. The manifest still records `keelline.toml`, so something other than this command's
-# own removal took it (`apply` drops the record with the file), and git can usually give it back.
+# own removal took it (`apply` drops the record with the file), or a run was killed inside
+# `apply` before the manifest write; either way restoring it is the remedy, and git can usually
+# give it back.
 DELETED_CONFIG = (
     "keelline.toml is not there while .keelline/manifest.json still records it; without it "
     "nothing the manifest records can be judged, and going on would leave those files untracked "

@@ -25,17 +25,18 @@ leaves the document naming the old version, and the next run re-plans from there
 What anchors a write, and what does not. Which artifacts exist and which targets each could have
 come from this build. The `[paths]` value a target is built from, and the digest a record carries,
 come from committed files. For a whole file that means a commit can have this command rewrite it
-only while it holds exactly the bytes the same commit records. A managed region is different: it
-is inserted into whatever file its `[paths]` key names, recorded or not, so a commit that points
-`agents_md` at a tracked file gets the region written into it, and the diff of both shows it.
-What no committed value can reach is state git never sees: the loader refuses any `[paths]` value
-inside git's control directory or Keelline's own `.keelline/`, and `ignored.refuse_ignored`
-refuses the whole run, before any write, when git ignores an existing file it would write or
-remove at a place a `[paths]` value chose rather than the preset (`.keelline/local/artifacts/`
-exempt, which `[artifacts] local` asks for). A fixed name or a preset's place no repository value
-chose, and a file that is not there yet, are not refused. Outside a git work tree there is no diff
-to hide from, and no such guard. That is why `docs/cli.md` says to run it on
-a checkout you trust.
+only while it holds exactly the bytes the same commit records. `--force` aside: it overwrites a
+whole file whatever it holds, one nothing records included, but only at a path the operator gave
+exactly on the command line, which no commit can supply. A managed region is different: it is
+inserted into whatever file its `[paths]` key names, recorded or not, so a commit that points
+`agents_md` at a tracked file gets the region written into it, and the diff of both shows it. What
+no committed value can reach is state git never sees: the loader refuses any `[paths]` value inside
+git's control directory or Keelline's own `.keelline/`, and `ignored.refuse_ignored` refuses the
+whole run, before any write, when git ignores an existing file it would write or remove at a place a
+`[paths]` value chose rather than the preset (`.keelline/local/artifacts/` exempt, which
+`[artifacts] local` asks for). A fixed name or a preset's place no repository value chose, and a
+file that is not there yet, are not refused. Outside a git work tree there is no diff to hide from,
+and no such guard. That is why `docs/cli.md` says to run it on a checkout you trust.
 
 What prints is bounded. `Moved.before` is the repository's own value, so a version outside
 `X.Y.Z` prints as `(not a version)` and a ref outside `CI_REF` as `(not a commit)`. `Moved.after`

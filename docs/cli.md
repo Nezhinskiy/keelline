@@ -827,12 +827,11 @@ and skipped the same way when they are not.
 
 **What is rewritten in `keelline.toml`, and what is not.** Only the values Keelline owns:
 `[keelline] version` and, under `[ci] mode = "reusable"`, a `[ci] ref` that is a commit sha or
-empty. Every other byte stays
-where it was — comments, order, blank lines, your keys. A key written in a shape the editor does
-not rewrite in place (a dotted key, an inline table, a multi-line value) is refused (`2`) naming
-the key and the line to write by hand, before anything is written. When the manifest's `config`
-record still describes the file, it is re-stamped with the new bytes; when you have edited the
-file, it is not, so `keelline.toml` stays yours.
+empty. Every other byte stays where it was — comments, order, blank lines, your keys. A key written
+in a shape the editor does not rewrite in place (a dotted key, an inline table, a multi-line value)
+is refused (`2`) naming the key and the line to write by hand, before anything is written. When the
+manifest's `config` record still describes the file, it is re-stamped with the new bytes; when you
+have edited the file, it is not, so `keelline.toml` stays yours.
 
 **Version, `[ci] ref` and the workflow's pin move together or not at all.** Under
 `[ci] mode = "reusable"` the workflow pins Keelline by commit, so `[keelline] version`, `[ci] ref`
@@ -865,22 +864,21 @@ in a way Keelline does not order — two pre-releases, such as `1.0.0rc1` and `1
 post-release — and that refusal names the version running: set it to that by hand if it is the
 release the project should move to.
 
-**An artifact kept out of git is recorded out of git too.** One listed in `[artifacts] local`
-lives under `.keelline/local/artifacts/`, and the committed manifest never records it; instead
+**An artifact kept out of git is recorded out of git too.** One listed in `[artifacts] local` lives
+under `.keelline/local/artifacts/`, and the committed manifest never records it; instead
 `.keelline/local/artifacts.json`, which the ignore block keeps out of git like the artifacts,
 records the bytes Keelline last wrote there. A file still holding those bytes is refreshed like any
 other when this Keelline renders it differently. One that no longer does is `skip_modified`
-(`kept out of git, and changed since Keelline wrote it`), because nothing brings it back once it
-is overwritten, and `--force` with its path takes it; with that record gone, a file that is not
-exactly what this build writes is skipped the same way, saying nothing records what Keelline wrote
-there. When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there,
-the artifact is written at its new place and the copy the record names at the old one is
-removed while it holds exactly the bytes recorded for it (`relocated`); otherwise it is
-`skip_modified`, stays recorded until it is gone, and `--force` with its path takes it. The record
-is read as untrusted, since a clone can commit it anyway: anything but its own exact shape is
-read as no record at all, it is never printed, it names nothing outside
-`.keelline/local/artifacts/`, and it vouches only for a file there whose bytes are exactly the
-ones it states.
+(`kept out of git, and changed since Keelline wrote it`), because nothing brings it back once it is
+overwritten, and `--force` with its path takes it; with that record gone, a file that is not exactly
+what this build writes is skipped the same way, saying nothing records what Keelline wrote there.
+When an id leaves `[artifacts] local`, or its `[paths]` value moves while it stays there, the
+artifact is written at its new place and the copy the record names at the old one is removed while
+it holds exactly the bytes recorded for it (`relocated`); otherwise it is `skip_modified`, stays
+recorded until it is gone, and `--force` with its path takes it. The record is read as untrusted,
+since a clone can commit it anyway: anything but its own exact shape is read as no record at all, it
+is never printed, it names nothing outside `.keelline/local/artifacts/`, and it vouches only for a
+file there whose bytes are exactly the ones it states.
 
 **Retirement.** An artifact this configuration no longer produces — the profile's rules after
 `[keelline] profile` changes, its Claude Code pointer after `agents` drops `claude` — is removed
@@ -893,27 +891,28 @@ only through the template that names it, never as a whole file, which is `uninst
 
 **The boundary.** Which artifacts exist, and where each could be, are this build's. The `[paths]`
 value a target is built from and the digest a record carries are committed. For a whole file, a
-commit can make `upgrade` rewrite it only while it holds exactly the bytes the same commit
-records. A managed region is inserted into whatever file its key names: a commit that points
-`[paths] agents_md` at another tracked file gets the region written into that file, and the diff
-shows both the edit and the region. No `[paths]` value may name git's control directory or
-Keelline's own `.keelline/`, where attach's ledger and the local-only notes live out of git's
-sight; the loader refuses either, naming the key. And a committed `[paths]` value cannot put a
-write or a removal where git would hide it: the run is refused (`2`) before anything is written,
-dry run included, when all three of these hold for a file it would write or remove — the file
-exists, git ignores it, and it is at a place a `[paths]` value chose rather than where the preset
-puts that artifact. The refusal names each such file, as the report prints paths, and says to
-point the key at a path git does not ignore or take it out. A new file, a fixed name
-(`CLAUDE.md`, `keelline.toml`, `.gitignore`, the workflow, a harness's rule) and a preset's own
-place are never refused, so a `CLAUDE.md` in your global excludes or a `keelline.toml` in
-`.git/info/exclude` works as before. A tracked file that matches an ignore pattern is not
-ignored, because git shows every change to it; the artifacts `[artifacts] local` keeps under
-`.keelline/local/artifacts/` are exempt, since keeping them out of git is what that setting asks
-for; and outside a git work tree there is no guard, because there is no diff to hide from.
-Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer, because it
-timed out or is not installed, refuses the run rather than letting it through. Run it on a
-checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level
-hook entries, so an upgrade changes none.
+commit can make `upgrade` rewrite it only while it holds exactly the bytes the same commit records,
+`--force` aside: that overwrites a whole file whatever it holds, one nothing records included, but
+only at a path given exactly on the command line, which no commit can supply. A managed region is
+inserted into whatever file its key names: a commit that points `[paths] agents_md` at another
+tracked file gets the region written into that file, and the diff shows both the edit and the
+region. No `[paths]` value may name git's control directory or Keelline's own `.keelline/`, where
+attach's ledger and the local-only notes live out of git's sight; the loader refuses either, naming
+the key. And a committed `[paths]` value cannot put a write or a removal where git would hide it:
+the run is refused (`2`) before anything is written, dry run included, when all three of these hold
+for a file it would write or remove — the file exists, git ignores it, and it is at a place a
+`[paths]` value chose rather than where the preset puts that artifact. The refusal names each such
+file, as the report prints paths, and says to point the key at a path git does not ignore or take it
+out. A new file, a fixed name (`CLAUDE.md`, `keelline.toml`, `.gitignore`, the workflow, a harness's
+rule) and a preset's own place are never refused, so a `CLAUDE.md` in your global excludes or a
+`keelline.toml` in `.git/info/exclude` works as before. A tracked file that matches an ignore
+pattern is not ignored, because git shows every change to it; the artifacts `[artifacts] local`
+keeps under `.keelline/local/artifacts/` are exempt, since keeping them out of git is what that
+setting asks for; and outside a git work tree there is no guard, because there is no diff to hide
+from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer, because
+it timed out or is not installed, refuses the run rather than letting it through. Run it on a
+checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
+entries, so an upgrade changes none.
 
 **Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
 file an artifact targets, `git check-ignore` for each existing file a write or removal targets at
@@ -1001,20 +1000,21 @@ skeleton has to be moved. A dry run reports the count in a `note:` line instead 
 when its plans also carry refusals, so its report still lists the edited file.
 
 **Refused part-way** (`2`): a file that cannot be written or removed, or files still under
-`.keelline/local/` after the write-once pass, which the count before any write should already
-have refused; move them out. What was removed stays removed and recorded, and
-`keelline.toml` and the manifest are still there, because they go last; so running the command
-again finishes from what the first run left, to the same end as a run that was never stopped.
+`.keelline/local/` after the write-once pass, which the count before any write should already have
+refused; move them out. What was removed stays removed and recorded, and `keelline.toml` and the
+manifest are still there, because they go last; so running the command again finishes from what the
+first run left, to the same end as a run that was never stopped.
 
-**Without `keelline.toml`, nothing the manifest records can be judged.** While the manifest
-still records the file, it was taken by something other than this command, which drops that
-record as it removes the file, so the run is refused (`2`) before any write, dry run included:
-restore `keelline.toml` (from git, for instance) and run it again. When nothing records it — a
-run stopped between removing it and removing the manifest, or a `keelline.toml` the project
-wrote itself before `init`, which `init` never records — every recorded file stays, a `note:`
-line gives their count, and only the ledger goes, so `init` and this command no longer refuse
-the repository. No other directory is pruned then, because nothing says where the configuration
-put its artifacts.
+**Without `keelline.toml`, nothing the manifest records can be judged.** While the manifest still
+records the file, the run is refused (`2`) before any write, dry run included: restore
+`keelline.toml` (from git, for instance) and run it again. This command drops that record as it
+removes the file, so the file was taken by something other than this command, or by a run of it
+killed after removing the file and before rewriting the manifest; either way the restored file is
+judged like any other, and the run then goes on to the end. When nothing records it — a run stopped
+between removing it and removing the manifest, or a `keelline.toml` the project wrote itself before
+`init`, which `init` never records — every recorded file stays, a `note:` line gives their count,
+and only the ledger goes, so `init` and this command no longer refuse the repository. No other
+directory is pruned then, because nothing says where the configuration put its artifacts.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
 build's. The `[paths]` value a target is built from and the digest a record carries are
@@ -1031,12 +1031,12 @@ nothing was there, and by the time `uninstall` runs it exists, so this refusal m
 taking the key out is the remedy that finishes the run. A `CLAUDE.md` or `AGENTS.md` your own
 excludes ignore is taken back like any other. Run it on a checkout you trust.
 
-**Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every
-file an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
-`[paths]` value chose, and what is under `.keelline/local/`.
-**Writes** only removals, and region removals, through the scaffold engine, and the record of
-what it wrote kept out of git, `.keelline/local/artifacts.json`, which each pass rewrites as it
-removes what that record names; then removes that record, and the ledger.
+**Reads** `keelline.toml`, `.keelline/manifest.json`, `.keelline/local/artifacts.json`, every file
+an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
+`[paths]` value chose, and what is under `.keelline/local/`. **Writes** only removals, and region
+removals, through the scaffold engine, and the record of what it wrote kept out of git,
+`.keelline/local/artifacts.json`, which each pass rewrites as it removes what that record names;
+then removes that record, and the ledger.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED

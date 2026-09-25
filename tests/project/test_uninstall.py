@@ -398,11 +398,12 @@ def test_a_remainder_kept_out_of_git_is_counted_before_anything_is_written(tmp_p
 @needs_git
 def test_a_keelline_toml_deleted_by_hand_is_refused_until_it_is_restored(tmp_path: Path) -> None:
     # The manifest still records `keelline.toml`, and this command's own removal drops that
-    # record with the file, so a person deleted it. Going on dropped the manifest and left every
-    # recorded file untracked for good; now the run refuses before any write, dry run included,
-    # and restoring the file is a remedy that reaches the end. Mutation (oracle): "uninstall drops
-    # the manifest when a person deleted keelline.toml" -> the run removes the ledger instead of
-    # refusing, and the first assertion reddens.
+    # record with the file, so short of a run killed inside `apply` before the manifest write,
+    # something else took it: here, a person deleted it. Going on dropped the manifest and left
+    # every recorded file untracked for good; now the run refuses before any write, dry run
+    # included, and restoring the file is a remedy that reaches the end. Mutation (oracle):
+    # "uninstall drops the manifest when a person deleted keelline.toml" -> the run removes the
+    # ledger instead of refusing, and the first assertion reddens.
     root = initialised(tmp_path)
     config = root / CONFIG_FILE
     text = config.read_text(encoding="utf-8")

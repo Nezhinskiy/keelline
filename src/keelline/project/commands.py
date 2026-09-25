@@ -149,9 +149,14 @@ def run_init(args: argparse.Namespace) -> Result:
 # The refused lines are `init`'s, word for word: a refused plan wrote nothing, whichever command
 # planned it.
 UPGRADE_HEADINGS = {**HEADINGS, (False, True): "would upgrade:", (False, False): "upgraded:"}
+# What `--force` reaches is what `scaffold.plan` lets it reach: a file you edited, a whole file
+# Keelline never wrote at a path it writes (a caller workflow written by hand), and a copy under
+# `.keelline/local/artifacts/` that changed since Keelline wrote it or that nothing records.
 FORCE_HELP = (
-    "overwrite or remove this hand-edited file anyway, as a path relative to --root; repeat for "
-    "each file, and never for one you did not mean"
+    "overwrite or remove a file the report lists skip_modified because you edited it, Keelline "
+    "never wrote it, or it is a changed or unrecorded copy under .keelline/local/artifacts/; "
+    "give it as a path relative to --root, repeat for each file, and never name one you did not "
+    "mean"
 )
 # Fixed text: the value is what the operator typed, and the rule is what they can act on.
 FORCE_OUTSIDE = "--force takes a path relative to --root, with no '..' component"
