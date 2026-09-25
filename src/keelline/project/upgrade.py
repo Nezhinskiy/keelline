@@ -57,13 +57,12 @@ from keelline.config.owned import Value, rewrite
 from keelline.config.schema import Config
 from keelline.errors import Refusal
 from keelline.overlay.api import RELEASE, later
-from keelline.project.footprint import prepare
-from keelline.project.ignored import refuse_ignored
+from keelline.project.footprint import Passes, prepare
 from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
-from keelline.project.templates import CI_ARTIFACT, CI_REF, Prepared
+from keelline.project.templates import CI_ARTIFACT, CI_REF
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
-from keelline.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply, plan
+from keelline.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply
 
 NOT_INITIALISED = (
     f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; `keelline init` writes one"
@@ -143,13 +142,14 @@ def _footprint(
     text: str,
     resolution: Resolution,
     force: Sequence[str],
-) -> tuple[Prepared, Plan, int]:
+) -> tuple[Passes, Plan]:
+    """The footprint pass, predicted: the write-once pass is never planned here, and the
+    ownership relation `predict` binds covers it too, so no ledger entry under a footprint id
+    reaches a write-once artifact's copy kept out of git."""
     records = Manifest.read(root).records
-    passes = prepare(config, records, resolution=resolution, document=text, adopted=False)
-    # `owners` covers the write-once pass this command never plans, too, so no ledger entry
-    # under a footprint id reaches a write-once artifact's copy kept out of git.
-    planned = plan(root, config, passes.footprint, force=force, owners=passes.prepared.owners)
-    return passes.prepared, planned, passes.orphans
+    passes = prepare(root, config, records, resolution=resolution, document=text, adopted=False)
+    (planned,) = passes.predict((passes.footprint, force))
+    return passes, planned
 
 
 def _rewrites_the_workflow(footprint: Plan) -> bool:
@@ -207,11 +207,10 @@ def upgrade(
         changes, held = {}, NO_RELEASE
     document = rewrite(text, changes)
     config = loads(document, root, machine=machine)
-    prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
+    passes, footprint = _footprint(root, config, text, resolution, force)
     if pinned and document != text and not _rewrites_the_workflow(footprint):
         changes, held, config = {}, WORKFLOW_HELD, before
-        prepared, footprint, orphans = _footprint(root, config, text, resolution, force)
-    refuse_ignored(root, config, footprint)
+        passes, footprint = _footprint(root, config, text, resolution, force)
     moved = tuple(
         Moved(key, _printable(key, old), new)
         for key, old, new in (
@@ -225,8 +224,8 @@ def upgrade(
         moved,
         held,
         resolution,
-        prepared.skipped,
-        orphans,
+        passes.skipped,
+        passes.orphans,
         dry_run,
         _rewrites_the_workflow(footprint),
     )

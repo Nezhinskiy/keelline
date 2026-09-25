@@ -42,11 +42,10 @@ from keelline.config.loader import CONFIG_FILE, loads, toml_position
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.footprint import prepare
-from keelline.project.ignored import refuse_ignored
 from keelline.project.templates import CI_ARTIFACT
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
-from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan
+from keelline.scaffold import MANIFEST_PATH, Plan, apply
 from keelline.tomlout import dumps
 
 STATE_NEW = "initialised"
@@ -218,47 +217,41 @@ def init(
         config = loads(document, root, machine=machine)
     # No manifest yet, so nothing to retire: `prepare` for its refusals and the pass order.
     passes = prepare(
-        config, {}, resolution=resolution, document=document, adopted=existing is not None
+        root, config, {}, resolution=resolution, document=document, adopted=existing is not None
     )
-    prepared = passes.prepared
     # What `[ci] ref` says on disk after this run, and so what the workflow pins — empty exactly
     # when no workflow was planned. The two are one value by construction, which is the
     # invariant `templates._ci` states and `doctor`'s `ci-ref` row enforces.
-    ref = "" if CI_ARTIFACT in prepared.skipped else config.ci.ref
+    ref = "" if CI_ARTIFACT in passes.skipped else config.ci.ref
     note = VERB_NOTE if not (root / config.paths.agents_md).exists() else ""
-    # So no ledger entry a clone force-added under one id reaches another artifact's copy kept
-    # out of git (`scaffold.left_copies`).
-    owners = prepared.owners
-    once = plan(root, config, prepared.once, owners=owners)
-    footprint = plan(root, config, passes.footprint, owners=owners)
-    refuse_ignored(root, config, once, footprint)
+    once, footprint = passes.predict((passes.once, ()), (passes.footprint, ()))
     if dry_run or once.refusals or footprint.refusals:
         return InitReport(
             once,
             footprint,
-            prepared.skipped,
+            passes.skipped,
             resolution,
             existing is not None,
             dry_run,
             note,
             ref,
-            prepared.unknown_harnesses,
+            passes.unknown_harnesses,
         )
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a
     # `region_update` into the skeleton this pass has just written. `VERB_NOTE` is the sentence
     # that says the bytes inside the markers are the same either way.
-    footprint = plan(root, config, passes.footprint, owners=owners)
+    footprint = passes.replan(passes.footprint)
     apply(root, footprint)
     return InitReport(
         once,
         footprint,
-        prepared.skipped,
+        passes.skipped,
         resolution,
         existing is not None,
         False,
         note,
         ref,
-        prepared.unknown_harnesses,
+        passes.unknown_harnesses,
     )

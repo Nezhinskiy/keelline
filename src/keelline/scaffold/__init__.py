@@ -9,8 +9,9 @@ by catching `Refusal` whole. `effective_target` and `unlinks` are for `uninstall
 compare paths the way the engine resolves them (an `[artifacts] local` artifact lives where
 `Template.target` does not say) and must know which planned removal deletes a file rather than
 rewriting it without Keelline's part: both are the engine's facts, and a second copy of either
-would drift from it. `ours_locally`, `local_copies` and `left_copies` are for `uninstall` too:
-before any write it predicts whether the write-once pass will remove what a region's removal
+would drift from it. `ours_locally`, `local_copies` and `left_copies` are for `uninstall` too
+(the last two through the project area's planning seam, `project.footprint.Passes`): before any
+write it predicts whether the write-once pass will remove what a region's removal
 leaves in a file kept out of git, and that verdict, which file it is asked of, and which copy a
 `--force` meant for the footprint pass names, are the engine's own rule for such a file.
 `LocalDigests` and `LOCAL_DIGESTS` are the ledger that rule reads, which `uninstall` removes before

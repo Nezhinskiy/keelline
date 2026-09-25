@@ -224,7 +224,7 @@ def test_the_ci_line_has_no_arm_no_run_can_reach(tmp_path: Path) -> None:
     `skipped or <a fallback>`, and neither the disjunct nor the fallback could ever fire.
     `templates._ci` returns a rendered workflow only for a `[ci] ref` that is non-empty and
     matches `CI_REF`, and a non-empty reason in every other arm; `init` then derives
-    `report.ref` as `"" if "ci-workflow" in prepared.skipped else config.ci.ref` -- its own
+    `report.ref` as `"" if "ci-workflow" in passes.skipped else config.ci.ref` -- its own
     comment calls the two "one value by construction", and `doctor`'s `ci-ref` row enforces it.
     So a run with no skip has a ref, and a sentence nobody can provoke has been deleted rather
     than left standing as a claim about a state the code forbids.

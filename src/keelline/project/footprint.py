@@ -6,26 +6,40 @@ This module is the lifecycle policy the three commands apply to what it builds: 
 `[artifacts] local` may not move an artifact, which recorded artifacts a configuration retires,
 and the order of the footprint pass. `prepare` applies all of it in one sequence, because the
 rules arrived one entry point at a time and a command that spelled the sequence out again could
-leave one behind.
+leave one behind. What it returns, `Passes`, is also the one way a command plans those passes,
+for the same reason: the ownership relation and the ignore guard came to each command by hand,
+and a plan made without the first passed every test but one command's.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Set
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
+from pathlib import Path
 
 from keelline.config.schema import Config
 from keelline.errors import Refusal
+from keelline.project.ignored import refuse_ignored
 from keelline.project.templates import (
     CI_ARTIFACT,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
+    Owners,
     Prepared,
     project_templates,
     retired_stub,
 )
 from keelline.release.api import Resolution
-from keelline.scaffold import Kind, Record, Template
+from keelline.scaffold import (
+    Kind,
+    LocalDigests,
+    Plan,
+    Record,
+    Template,
+    left_copies,
+    local_copies,
+    plan,
+)
 
 # Fixed text with a count: the ids `[artifacts] local` lists are repository-authored, and which
 # of them matched is not printed, only how many.
@@ -118,15 +132,57 @@ def retired_templates(
 
 @dataclass(frozen=True)
 class Passes:
-    """What a command plans from: `prepared.once` is the write-once pass, `footprint` the
-    footprint pass, retirements included, and `orphans` the records neither touches."""
+    """The two passes a command plans under one configuration, and the one way to plan them.
 
-    prepared: Prepared
+    `once` is the write-once pass and `footprint` the footprint pass, retirements included and
+    the workflow last; `orphans` counts the records neither touches, and `skipped` and
+    `unknown_harnesses` are what the build said about this configuration. Every plan is made
+    with the ownership relation bound (`templates.Owners`), so no ledger entry under one id
+    reaches another artifact's copy kept out of git in any command's plan; `predict` also asks
+    the ignore guard (`ignored.refuse_ignored`) about everything it planned. A command that
+    plans through this cannot leave either guard behind, which is what the next one to plan the
+    footprint needs.
+    """
+
+    root: Path
+    config: Config
+    once: tuple[Template, ...]
     footprint: tuple[Template, ...]
     orphans: int
+    skipped: dict[str, str]
+    unknown_harnesses: int
+    owners: Owners
+    removing: bool
+
+    def predict(self, *passes: tuple[Sequence[Template], Sequence[str]]) -> tuple[Plan, ...]:
+        """Each `(templates, force)` planned, then refused as a whole when git ignores an
+        existing file one of the plans would write or remove at a place a `[paths]` value chose
+        (with `uninstall`'s remedy when `removing`).
+
+        A command asks it before any write, dry run included, for every template it can apply:
+        later passes re-plan the same templates at the same targets (`replan`), so these plans
+        name every file the run can touch, and its refusal comes before any of them.
+        """
+        plans = tuple(self.replan(templates, force=force) for templates, force in passes)
+        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        return plans
+
+    def replan(self, templates: Sequence[Template], *, force: Sequence[str] = ()) -> Plan:
+        """`templates` planned against the tree as it is now: after an earlier pass of the run
+        wrote, what `predict` already asked the ignore guard about."""
+        return plan(self.root, self.config, templates, force=force, owners=self.owners)
+
+    def left_copies(self, template: Template, digests: LocalDigests) -> tuple[str, ...]:
+        """`scaffold.left_copies` under this configuration and relation."""
+        return left_copies(template, self.config, digests, self.owners)
+
+    def local_copies(self, template: Template, digests: LocalDigests) -> tuple[str, ...]:
+        """`scaffold.local_copies` under this configuration and relation."""
+        return local_copies(template, self.config, digests, self.owners)
 
 
 def prepare(
+    root: Path,
     config: Config,
     records: Mapping[str, Record],
     *,
@@ -135,7 +191,8 @@ def prepare(
     adopted: bool,
     removing: bool = False,
 ) -> Passes:
-    """The two passes a command plans under `config`, against the manifest's `records`.
+    """The two passes a command plans at `root` under `config`, against the manifest's
+    `records`.
 
     **The refusals, in this order, before anything is planned.** `project_templates`' own (a
     profile this build does not ship, an artifact at another artifact's file); a profile artifact
@@ -161,4 +218,14 @@ def prepare(
     if not removing:
         retired = tuple(t for t in retired if t.id != CI_ARTIFACT or config.ci.mode == "none")
     footprint = sorted((*prepared.footprint, *retired), key=lambda t: t.id == CI_ARTIFACT)
-    return Passes(prepared, tuple(footprint), orphans)
+    return Passes(
+        root,
+        config,
+        prepared.once,
+        tuple(footprint),
+        orphans,
+        prepared.skipped,
+        prepared.unknown_harnesses,
+        prepared.owners,
+        removing,
+    )

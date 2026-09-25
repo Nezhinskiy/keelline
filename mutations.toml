@@ -6648,7 +6648,7 @@ reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refu
 [[mutation]]
 name = "uninstall plans the write-once pass before the region leaves AGENTS.md"
 file = "src/keelline/project/uninstall.py"
-before = "    judged = plan(root, config, once_body, force=once_force, owners=owners)"
+before = "    judged = passes.replan(once_body, force=once_force)"
 after = "    judged = once"
 reddens = ["tests/project/test_uninstall.py::test_an_untouched_footprint_leaves_only_what_was_there_before"]
 
@@ -6950,7 +6950,7 @@ reddens = ["tests/scaffold/test_local.py::test_a_left_copy_at_a_file_another_tem
 [[mutation]]
 name = "a force meant for a region's left copy reaches the skeleton kept out of git"
 file = "src/keelline/project/uninstall.py"
-before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in left_copies(t, config, digests, owners)\n    }\n"
+before = "    footprint_targets |= {\n        copy for t in footprint_retired for copy in passes.left_copies(t, digests)\n    }\n"
 after = ""
 reddens = ["tests/project/test_uninstall.py::test_forcing_a_region_copy_left_by_the_local_list_never_reaches_the_skeleton_beside_it"]
 
@@ -7178,4 +7178,34 @@ before = '        if key in seen:'
 after = '        if False:'
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_mutation_declared_twice_is_a_finding",
+]
+
+# The planning seam every footprint command plans through (`footprint.Passes`). Each guard it
+# binds reached the three commands by hand once, and a plan made without the ownership relation
+# passed every test but one command's: bound here, a command cannot leave either behind. The
+# relation dropped from every plan: the forged cross-id ledger entry reaches the `CLAUDE.md`
+# copy kept out of git again. The ignore guard dropped from every prediction: a committed
+# `[paths]` value writes into, or a forged record removes, a file git ignores.
+[[mutation]]
+name = "a footprint command plans without the ownership relation"
+file = "src/keelline/project/footprint.py"
+before = "        return plan(self.root, self.config, templates, force=force, owners=self.owners)"
+after = "        return plan(self.root, self.config, templates, force=force)"
+reddens = [
+  "tests/project/test_upgrade.py::test_a_ledger_entry_under_one_id_never_removes_another_artifact_s_copy_kept_out_of_git",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[cross-id-ledger-entry-case-folded-upgrade]",
+]
+
+[[mutation]]
+name = "a footprint command predicts its plans without asking the ignore guard"
+file = "src/keelline/project/footprint.py"
+before = "        refuse_ignored(self.root, self.config, *plans, removing=self.removing)"
+after = "        pass"
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-init]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-upgrade]",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[forged-record-at-an-ignored-file-uninstall]",
+  "tests/project/test_ignored.py::test_a_record_stating_a_predictable_ignored_file_reaches_it_for_neither_command[uninstall]",
 ]
