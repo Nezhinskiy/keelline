@@ -626,7 +626,8 @@ def test_a_reddens_id_must_name_a_function_its_file_defines(tmp_path: Path) -> N
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
     (tests_dir / "test_probe.py").write_text(
-        "def test_kept():\n    pass\n\n\nclass TestGroup:\n    def test_member(self):\n        pass\n",
+        "def test_kept():\n    pass\n\n\n"
+        "class TestGroup:\n    def test_member(self):\n        pass\n",
         encoding="utf-8",
     )
     module = oracle(root=tmp_path)
