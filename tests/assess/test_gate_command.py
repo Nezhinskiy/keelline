@@ -19,7 +19,7 @@ import keelline
 from keelline.assess import rule
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
-from tests.assess.baserepo import clone, commit
+from tests.assess.baserepo import AGENTS, clone, commit
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
@@ -190,6 +190,75 @@ def test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails(
     assert out.splitlines()[0].endswith("refused: paths.bugs")
     assert _heads(out) == ["config", *BUILTINS]
     assert not (project / "marker").exists()
+
+
+ENFORCES_TESTS = BASE.replace('["docs"]', '["docs", "tests"]')
+
+
+def test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces(
+    tmp_path: Path,
+) -> None:
+    # A custom gate's command is fixed by the base while the base enforces it: the change that
+    # re-commands it is refused, the judging step fails on that, and the custom step runs the
+    # base's command, never the change's.
+    project = clone(tmp_path, ENFORCES_TESTS + _custom("tests", "pass"))
+    _change(project, ENFORCES_TESTS + MARKER)
+    code, out, _ = _gate(project, tmp_path, "--builtin")
+    assert code == 1
+    assert out.splitlines()[0] == "config: 1 change(s), 1 refused: gates.custom.tests.run"
+    assert _heads(out) == ["config", *BUILTINS]
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert (code, out.strip()) == (0, "tests: enforcing, 0 finding(s)")
+    assert not (project / "marker").exists()
+
+
+def test_a_refused_change_is_checked_at_the_base_s_paths(tmp_path: Path) -> None:
+    # A refused `[paths]` value does not move where the gates look: here the change points
+    # `agents_md` at a small file and leaves the over-budget one where the base reads it.
+    project = clone(tmp_path, BASE)
+    (project / "NOTES.md").write_text(AGENTS, encoding="utf-8")
+    _change(project, BASE + '\n[paths]\nagents_md = "NOTES.md"\n', agents=OVER_BUDGET)
+    code, out, _ = _gate(project, tmp_path, "--only", "config", "--only", "docs")
+    assert code == 1
+    lines = out.splitlines()
+    assert lines[0] == "config: 1 change(s), 1 refused: paths.agents_md"
+    assert lines[1].startswith("docs: enforcing, ")
+    assert lines[1] != "docs: enforcing, 0 finding(s)"
+
+
+def test_a_custom_gate_the_base_does_not_enforce_runs_its_new_command(tmp_path: Path) -> None:
+    # The legitimate side of the two cases above: re-commanding a gate the base does not
+    # enforce is neutral, so the run is the tree's and the new command is the one that runs.
+    project = clone(tmp_path, BASE + _custom("tests", "pass"))
+    _change(project, BASE + MARKER)
+    code, out, _ = _gate(project, tmp_path, "--builtin")
+    assert code == 0, out
+    assert out.splitlines()[0] == "config: 1 change(s), 0 refused"
+    assert not (project / "marker").exists()
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert (code, out.strip()) == (0, "tests: advisory, 0 finding(s)")
+    assert (project / "marker").exists()
+
+
+def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(
+    tmp_path: Path,
+) -> None:
+    # Which names are custom is the verdict's configuration's answer too: a change that drops
+    # an enforced custom gate is refused and runs under the base's configuration, where the
+    # gate still is. Read off the tree, the judging step would take it for a built-in and run
+    # its command in the process that judges.
+    project = clone(tmp_path, ENFORCES_TESTS + MARKER)
+    _change(project, BASE)
+    code, out, _ = _gate(project, tmp_path, "--builtin")
+    assert code == 1
+    assert out.splitlines()[0] == (
+        "config: 2 change(s), 2 refused: gates.custom.tests.run, keelline.enforced"
+    )
+    assert _heads(out) == ["config", *BUILTINS]
+    assert not (project / "marker").exists()
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert (code, out.strip()) == (0, "tests: enforcing, 0 finding(s)")
+    assert (project / "marker").exists()
 
 
 def test_a_tree_without_keelline_toml_fails_and_names_the_file(tmp_path: Path) -> None:

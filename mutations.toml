@@ -7995,3 +7995,21 @@ file = "src/keelline/assess/commands.py"
 before = "        released=lambda sha: is_released(sha, runner, cwd=root),"
 after = "        released=lambda sha: True,"
 reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused"]
+
+[[mutation]]
+name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
+file = "src/keelline/assess/commands.py"
+before = "        GateContext(root, verdict.config, base), [n for n in only if n != CONFIG_CHECK]"
+after = "        GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base), [n for n in only if n != CONFIG_CHECK]"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces",
+  "tests/assess/test_gate_command.py::test_a_refused_change_is_checked_at_the_base_s_paths",
+  "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]
+
+[[mutation]]
+name = "gate --builtin reads which gates are custom off the tree, not the verdict's configuration"
+file = "src/keelline/assess/commands.py"
+before = "    custom = verdict.config.gates.custom"
+after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
+reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]

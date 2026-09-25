@@ -104,8 +104,11 @@ def run_gate(args: argparse.Namespace) -> Result:
     tree_text = read_document(root)
     if tree_text is None:
         raise ConfigError(NO_TREE_CONFIG)
-    tree = loads(tree_text, root, machine=machine, interactive=False)
-    base = args.base or rule.local_base(tree)
+    # The tree's configuration is read here for its default base alone and kept nowhere: every
+    # later decision is the verdict's, and a name for the tree's copy in scope is one a later
+    # line could pick in its place.
+    default = rule.local_base(loads(tree_text, root, machine=machine, interactive=False))
+    base = args.base or default
     runner = subprocess_runner()
     verdict = rule.judge(
         root,
@@ -116,9 +119,10 @@ def run_gate(args: argparse.Namespace) -> Result:
         workflow_sha=args.workflow_sha,
         released=lambda sha: is_released(sha, runner, cwd=root),
     )
-    # The configuration this run uses: the base's when anything was refused. `enforcing` is both
-    # sides', so it can name a gate only the refused tree defines; that gate is not run, and the
-    # refusal already fails the run.
+    # The configuration this run uses is the verdict's: the base's when anything was refused, so
+    # the names it runs, which of them are custom, and the paths and commands the gates read are
+    # all the base's then. `enforcing` is both sides', so it can name a gate only the refused
+    # tree defines; that gate is not run, and the refusal already fails the run.
     configured = verdict.config.gate_names
     only = tuple(dict.fromkeys(args.only or (CONFIG_CHECK, *configured)))
     stray = [name for name in only if name != CONFIG_CHECK and name not in configured]
