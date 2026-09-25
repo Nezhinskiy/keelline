@@ -7589,3 +7589,72 @@ before = """    except UnicodeDecodeError:
 after = """    except KeyError:
         raise UnreadableTrustRecord("""
 reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]
+
+# The base a change is judged against. A base with no `keelline.toml` at the project's path is the
+# bootstrap, where the change decides its own configuration, so each way of reaching it by
+# accident — a tag answering for the base, git failing and read as "no copy", a root the base
+# never had — is a guard.
+[[mutation]]
+name = "a short base name is resolved by git, and a tag of its spelling answers for the base"
+file = "src/keelline/assess/rule.py"
+before = "    if not BASE_REF.match(base):"
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_a_short_name_is_refused_because_a_tag_can_take_its_place"]
+
+[[mutation]]
+name = "a full ref name that does not exist is read as the tag of its spelling"
+file = "src/keelline/assess/rule.py"
+before = '    if base.startswith("refs/"):'
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself"]
+
+[[mutation]]
+name = "git failing to read the base is read as the base having no keelline.toml"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_UNREADABLE)"
+after = '        return ""'
+reddens = [
+  "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
+  "tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself",
+  "tests/assess/test_read_base.py::test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap",
+]
+
+[[mutation]]
+name = "a project root reached through a symlink reads the base at a path it never had"
+file = "src/keelline/assess/rule.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
+  "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
+]
+
+[[mutation]]
+name = "the ancestor that resolves to the top is looked for from the nearest end"
+file = "src/keelline/assess/rule.py"
+before = "    chain = (*reversed(lexical.parents), lexical)"
+after = "    chain = (lexical, *lexical.parents)"
+reddens = ["tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused"]
+
+[[mutation]]
+name = "a project in a subdirectory reads the base's copy at the repository's top"
+file = "src/keelline/assess/rule.py"
+before = '    path = f"{prefix}{CONFIG_FILE}"'
+after = "    path = CONFIG_FILE"
+reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path"]
+
+[[mutation]]
+name = "the local default base is a short name a tag can answer for"
+file = "src/keelline/assess/rule.py"
+before = '    return f"refs/remotes/origin/{config.project.base_branch}"'
+after = '    return f"origin/{config.project.base_branch}"'
+reddens = ["tests/assess/test_read_base.py::test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called"]
+
+[[mutation]]
+name = "a root outside any repository is judged as if git had answered"
+file = "src/keelline/assess/rule.py"
+before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if code != 0:"""
+after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if False:"""
+reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
