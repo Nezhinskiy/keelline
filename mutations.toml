@@ -4687,8 +4687,20 @@ reddens = [
 [[mutation]]
 name = "CONTRIBUTING's short version drops the mutation oracle again"
 file = "CONTRIBUTING.md"
-before = "uv run python scripts/mutation_oracle.py    # every declared mutation still reddens\n"
+before = "uv run python scripts/mutation_oracle.py          # every declared mutation still reddens\n"
 after = ""
+reddens = [
+  "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
+]
+
+# The suite runs across workers: 95 s against 335 s one test at a time, same tests, same
+# coverage. CI going back to one process is the side that goes quiet — every check stays green,
+# only slower — so it is the side that is measured.
+[[mutation]]
+name = "CI runs the suite one test at a time again"
+file = ".github/workflows/ci.yml"
+before = "        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92"
+after = "        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92"
 reddens = [
   "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
 ]

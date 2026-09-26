@@ -75,7 +75,7 @@ jobs:
         # invisible: the walk's loop was covered, just never with an escaping path.
         env:
           KEELLINE_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
-        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
+        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
       - name: Version discipline
         run: uv run keelline release check
       - name: Build
