@@ -4,19 +4,18 @@ makes, at a constant place a clone can shape only by committing something there.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 from keelline.assess.assessment import SKIPPED
 from keelline.assess.commands import BASE_NOT_THERE
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from keelline.config.paths import KEELLINE_DIRECTORY
 from keelline.project.api import ASSESSMENT
 from keelline.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
+from tests.cli import cli, custom_gate
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import DOCUMENT as BASE_DOCUMENT
 from tests.project.repos import repository
@@ -24,21 +23,15 @@ from tests.project.repos import repository
 CUSTOM_GATE = '\n[gates.custom.tests]\nrun = ["git", "--version"]\n'
 
 
-def _assess(root: Path, tmp_path: Path, *extra: str) -> int:
-    argv = ["assess", "--root", str(root), "--machine", str(tmp_path / "m.toml"), *extra]
-    return run(argv, parser=build_parser(discover_registrars()))
-
-
 @needs_git
-def test_assess_exits_zero_and_its_json_is_the_inventory(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_assess_exits_zero_and_its_json_is_the_inventory(tmp_path: Path) -> None:
     # Mutation: `--json` printing a document whose `items` is emptied (`run_assess` passing
     # `{**document(assessment), "items": []}` to `Result`) -> the equality below reddens, as long
     # as the smoke copy has an item at all, which the first assertion pins.
     root = smoke_repo(tmp_path)
-    assert _assess(root, tmp_path, "--base", BASE, "--json") == 0
-    printed = json.loads(capsys.readouterr().out)
+    code, out, _ = cli(root, tmp_path, "assess", "--base", BASE, "--json")
+    assert code == 0
+    printed = json.loads(out)
     written = json.loads((root / ASSESSMENT).read_text(encoding="utf-8"))
     assert written["items"] != []
     assert {k: v for k, v in printed.items() if k != "summary"} == written
@@ -46,7 +39,7 @@ def test_assess_exits_zero_and_its_json_is_the_inventory(
 
 @needs_git
 def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The path the `init` skill sends a new user down: a repository with no origin, where `plan`
     # and `commit` could not run, each with a remedy about plans and commit messages. `adopt
@@ -60,13 +53,13 @@ def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
     assert not answered.refused
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt keelline")
-    assert _assess(root, tmp_path) == 1
-    summary = capsys.readouterr().out
+    code, summary, _ = cli(root, tmp_path, "assess")
+    assert code == 1
     assert summary.rstrip().endswith(BASE_NOT_THERE.format(branch="develop")), summary
     # A base that is there leaves the note out: the failures are then the tree's own.
     head = git(root, "rev-parse", "HEAD").strip()
-    _assess(root, tmp_path, "--base", head)
-    assert "note: the base" not in capsys.readouterr().out
+    _, out, _ = cli(root, tmp_path, "assess", "--base", head)
+    assert "note: the base" not in out
 
 
 @needs_git
@@ -74,13 +67,11 @@ def test_assess_exits_one_when_a_gate_would_fail(tmp_path: Path) -> None:
     # Mutation: `exit_code=1 if assessment.would_fail else 0` becomes `exit_code=0` -> reddens.
     root = smoke_repo(tmp_path)
     (root / "AGENTS.md").write_text("".join("word\n" for _ in range(400)), encoding="utf-8")
-    assert _assess(root, tmp_path, "--base", BASE) == 1
+    assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 1
 
 
 @needs_git
-def test_a_symlinked_keelline_toml_is_refused_and_never_followed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_symlinked_keelline_toml_is_refused_and_never_followed(tmp_path: Path) -> None:
     # `keelline gate` refuses a committed symlink at `keelline.toml`, and `assess` read through
     # it: a link to `/dev/zero` ended the run by exhausting memory. Both read the file through
     # the one reader that refuses a link. Mutation (declared): `load` reading the file by
@@ -90,14 +81,15 @@ def test_a_symlinked_keelline_toml_is_refused_and_never_followed(
     elsewhere.write_bytes((root / CONFIG_FILE).read_bytes())
     (root / CONFIG_FILE).unlink()
     (root / CONFIG_FILE).symlink_to(elsewhere)
-    assert _assess(root, tmp_path, "--base", BASE) == 2
-    assert CONFIG_FILE in capsys.readouterr().err
+    code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 2
+    assert CONFIG_FILE in err
     assert not (root / ASSESSMENT).exists()
 
 
 @needs_git
 def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_through_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # Mutation: drop the `except UnsafePath` in `write` -> the frame reports an internal error,
     # still exit 2, and the message assertion reddens.
@@ -109,14 +101,15 @@ def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_thro
         child.unlink()
     keelline_directory.rmdir()
     keelline_directory.symlink_to(outside, target_is_directory=True)
-    assert _assess(root, tmp_path, "--base", BASE) == 2
-    assert f"refusing to write {ASSESSMENT}" in capsys.readouterr().err
+    code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 2
+    assert f"refusing to write {ASSESSMENT}" in err
     assert list(outside.iterdir()) == []
 
 
 @needs_git
 def test_a_file_where_keelline_s_directory_goes_is_a_refusal_and_is_left_as_it_was(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The other half of the same refusal: `.keelline` is a regular file, so the walk cannot open
     # it as a directory. No `mutations.toml` entry and no line of its own: the `except
@@ -130,24 +123,24 @@ def test_a_file_where_keelline_s_directory_goes_is_a_refusal_and_is_left_as_it_w
     keelline_directory.rmdir()
     keelline_directory.write_text("a person's file\n", encoding="utf-8")
     before = sorted(p.name for p in root.iterdir())
-    assert _assess(root, tmp_path, "--base", BASE) == 2
-    assert f"refusing to write {ASSESSMENT}: a directory on its path" in capsys.readouterr().err
+    code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 2
+    assert f"refusing to write {ASSESSMENT}: a directory on its path" in err
     assert keelline_directory.read_text(encoding="utf-8") == "a person's file\n"
     assert sorted(p.name for p in root.iterdir()) == before
 
 
 @needs_git
-def test_a_directory_where_the_inventory_goes_is_a_refusal(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_directory_where_the_inventory_goes_is_a_refusal(tmp_path: Path) -> None:
     # Mutation: drop the `except IsADirectoryError` in `write` -> an internal error, exit 2, and
     # the message assertion reddens.
     root = smoke_repo(tmp_path)
     held = root / ASSESSMENT / "held.txt"
     held.parent.mkdir()
     held.write_text("a person's file\n", encoding="utf-8")
-    assert _assess(root, tmp_path, "--base", BASE) == 2
-    assert "something that is not a file is there" in capsys.readouterr().err
+    code, _, err = cli(root, tmp_path, "assess", "--base", BASE)
+    assert code == 2
+    assert "something that is not a file is there" in err
     assert held.read_text(encoding="utf-8") == "a person's file\n"
 
 
@@ -162,16 +155,14 @@ def test_a_link_where_the_inventory_goes_is_replaced_and_its_target_is_untouched
     outside = tmp_path / "outside.txt"
     outside.write_text("a file outside the root\n", encoding="utf-8")
     (root / ASSESSMENT).symlink_to(outside)
-    assert _assess(root, tmp_path, "--base", BASE) == 0
+    assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 0
     assert not (root / ASSESSMENT).is_symlink()
     assert (root / ASSESSMENT).is_file()
     assert outside.read_text(encoding="utf-8") == "a file outside the root\n"
 
 
 @needs_git
-def test_a_custom_gate_runs_beside_the_built_ins(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_custom_gate_runs_beside_the_built_ins(tmp_path: Path) -> None:
     # The fixture is `installed`, so the custom gate enforces from the commit that adds it.
     # Mutation: `config.gates.builtin` passed to `run_gates` in place of `config.gate_names` ->
     # the custom gate never runs and the last gate is `trail`.
@@ -179,40 +170,38 @@ def test_a_custom_gate_runs_beside_the_built_ins(
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as document:
         document.write(CUSTOM_GATE)
     git(root, "commit", "-qam", "chore: a gate of our own")
-    assert _assess(root, tmp_path, "--base", "HEAD~1", "--json") == 0
-    gates = json.loads(capsys.readouterr().out)["gates"]
+    code, out, _ = cli(root, tmp_path, "assess", "--base", "HEAD~1", "--json")
+    assert code == 0
+    gates = json.loads(out)["gates"]
     assert gates[-1]["name"] == "tests"
     assert gates[-1]["enforcing"] is True
 
 
 @needs_git
-def test_builtin_runs_no_custom_gate_and_says_which_it_left_out(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_builtin_runs_no_custom_gate_and_says_which_it_left_out(tmp_path: Path) -> None:
     # `keelline assess` in a clone runs the commands the clone configured; a person who has not
     # agreed to that still gets an assessment. The gate that writes the marker must not run, and
     # the summary names what was left out rather than counting it as passing. Mutation
     # (declared): `builtin` ignored -> the marker appears.
     root = smoke_repo(tmp_path)
     marker = tmp_path / "marker"
-    argv = json.dumps([sys.executable, "-c", f"open({str(marker)!r}, 'w')"])
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as document:
-        document.write(f"\n[gates.custom.tests]\nrun = {argv}\n")
+        document.write(custom_gate("tests", f"open({str(marker)!r}, 'w')"))
     git(root, "commit", "-qam", "chore: a gate of our own")
-    assert _assess(root, tmp_path, "--base", "HEAD~1", "--builtin") == 0
+    code, out, _ = cli(root, tmp_path, "assess", "--base", "HEAD~1", "--builtin")
+    assert code == 0
     assert not marker.exists()
-    out = capsys.readouterr().out
     assert SKIPPED.format(names="tests") in out
     written = json.loads((root / ASSESSMENT).read_text(encoding="utf-8"))
     assert written["skipped"] == ["tests"]
     assert "tests" not in [gate["name"] for gate in written["gates"]]
-    assert _assess(root, tmp_path, "--base", "HEAD~1") == 0
+    assert cli(root, tmp_path, "assess", "--base", "HEAD~1")[0] == 0
     assert marker.exists()
 
 
 @needs_git
 def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_judge(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The first thing a person runs after `init`: `origin` is configured and never fetched, so
     # the default base does not exist. `plan` and `commit` could not run, one gate contract for
@@ -224,8 +213,9 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: keelline init")
-    assert _assess(root, tmp_path, "--json") == 1
-    printed = json.loads(capsys.readouterr().out)
+    code, out, _ = cli(root, tmp_path, "assess", "--json")
+    assert code == 1
+    printed = json.loads(out)
     failing = {g["name"]: g["answered"] for g in printed["gates"] if g["failing"]}
     assert failing == {"plan": False, "commit": False}
     assert printed["base"] == "refs/remotes/origin/main"
@@ -234,7 +224,7 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
 
 @needs_git
 def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_what_to_drop(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # Both gates read the committed place, where a file kept out of git is not, so both fail on
     # every run; the remedy that told the person to commit the roadmap was the wrong one, and the
@@ -248,8 +238,9 @@ def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_wha
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: keelline init")
     head = git(root, "rev-parse", "HEAD").strip()
-    assert _assess(root, tmp_path, "--base", head, "--json") == 1
-    printed = json.loads(capsys.readouterr().out)
+    code, out, _ = cli(root, tmp_path, "assess", "--base", head, "--json")
+    assert code == 1
+    printed = json.loads(out)
     failing = {g["name"] for g in printed["gates"] if g["failing"]}
     assert {"trail", "docs"} <= failing
     remedies = {i["probe"]: i["remedy"] for i in printed["items"] if i["probe"] in failing}
@@ -265,12 +256,12 @@ def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
     # frame's internal error, and the inventory the last finished run wrote stays. Mutation (by
     # hand): `write` moved above the probes -> a half-built inventory replaces it.
     root = smoke_repo(tmp_path)
-    assert _assess(root, tmp_path, "--base", BASE) == 0
+    assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 0
     before = (root / ASSESSMENT).read_bytes()
 
     def boom(context: object) -> list[object]:
         raise RuntimeError("a probe the command has no answer for")
 
     monkeypatch.setattr("keelline.assess.assessment.run_probes", boom)
-    assert _assess(root, tmp_path, "--base", BASE) == 2
+    assert cli(root, tmp_path, "assess", "--base", BASE)[0] == 2
     assert (root / ASSESSMENT).read_bytes() == before

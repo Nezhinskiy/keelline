@@ -136,7 +136,9 @@ that is not the mutation, and that reads as *caught*. The product's own bounds o
 such clock, so `tests/conftest.py` lifts every `git_run` bound to a floor of its own; a test
 about a bound running out sets `gitenv.BOUND_FLOOR_SECONDS` back to zero and passes a small
 bound of its own, as `tests/test_git_run.py` does. A `keelline` the suite starts as a separate
-process runs without the floor.
+process runs without the floor. The floor also hides a bound shrunk below git's own latency, so
+that file holds every bound a `git_run` call passes to at least a second, and a bound you add is
+a row in its table.
 
 ```toml
 [[mutation]]

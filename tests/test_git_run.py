@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import locale
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +15,7 @@ from keelline import gitenv
 from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import plant_path
 
+SRC = Path(__file__).resolve().parents[1] / "src"
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
@@ -243,20 +247,123 @@ def test_the_suite_floor_outlasts_a_bound_its_caller_asked_for(
 
 
 def test_the_product_ships_with_no_floor_under_its_bounds() -> None:
-    # Read from the source, because the suite has already raised the value this process sees.
-    # A floor above zero in the product would widen every bound a caller chose, the session-start
-    # sync's two seconds among them, whose handler shares a ten-second entry. Mutation (oracle):
-    # "the product ships a floor under every git bound" -> this reddens.
-    tree = ast.parse(Path(gitenv.__file__).read_text(encoding="utf-8"))
-    shipped = [
-        node.value
-        for node in tree.body
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == "BOUND_FLOOR_SECONDS"
-    ]
-    assert len(shipped) == 1 and isinstance(shipped[0], ast.Constant), shipped
-    assert shipped[0].value == 0
+    # Read in a fresh interpreter, because the suite has already raised the value this process
+    # sees, and as an import of the product leaves it: a reading of the source's annotated
+    # assignment alone missed a plain `BOUND_FLOOR_SECONDS = 60` below it, which is the value
+    # every caller then gets. A floor above zero in the product would widen every bound a caller
+    # chose, the session-start sync's two seconds among them, whose handler shares a ten-second
+    # entry. Mutations (oracle): "the product ships a floor under every git bound" and "a second
+    # assignment ships a floor under every git bound" -> this reddens.
+    shipped = subprocess.run(
+        [
+            sys.executable,
+            "-P",
+            "-c",
+            "from keelline import gitenv; print(gitenv.BOUND_FLOOR_SECONDS)",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(SRC)},
+    )
+    assert shipped.returncode == 0, shipped.stderr
+    assert float(shipped.stdout) == 0, shipped.stdout
+
+
+# Every named bound a product `git` runs under. The suite's floor lifts each one past git's
+# latency, so a bound shrunk below it — `QUERY_TIMEOUT_SECONDS = 0.001` — passed every test
+# that runs through it, and only an owner's machine would have met a `git` never given the time.
+GIT_RUN_BOUNDS = (
+    "keelline.gitenv.GIT_TIMEOUT_SECONDS",
+    "keelline.gitenv.QUERY_TIMEOUT_SECONDS",
+    "keelline.ledger.write.FETCH_TIMEOUT_SECONDS",
+    "keelline.overlay.sync.SYNC_TIMEOUT_SECONDS",
+    "keelline.guards.commit.LOG_TIMEOUT_SECONDS",
+    "keelline.guards.hygiene.STATUS_TIMEOUT_SECONDS",
+)
+# The doctor's `git ls-remote` goes through the `Runner` seam rather than `git_run`, and every
+# test stubs that seam, so a bound shrunk there passes the suite the same way.
+GIT_BOUNDS = (*GIT_RUN_BOUNDS, "keelline.doctor.checks.CI_REF_TIMEOUT_SECONDS")
+
+
+@pytest.mark.parametrize("bound", GIT_BOUNDS)
+def test_a_named_git_bound_leaves_git_a_second_to_answer(bound: str) -> None:
+    # A second is far above what a local `rev-parse` takes and far below every bound shipped,
+    # so the row fails on a bound shrunk by accident and on nothing a person would tune.
+    # Mutations (oracle): "the bound on a query that grows is shrunk below git's latency" and
+    # "the overlay sync's bound is shrunk below git's latency" -> their rows redden.
+    module, name = bound.rsplit(".", 1)
+    assert getattr(importlib.import_module(module), name) >= 1
+
+
+def test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound() -> None:
+    # `QUERY_TIMEOUT_SECONDS` is the wider bound for a `log --all` or a listing of every tracked
+    # file; narrower than the default for a five-second `rev-parse`, it is not wider at all.
+    # Mutation (oracle): "the default git bound outgrows the one for a query that grows" -> this
+    # reddens.
+    assert gitenv.QUERY_TIMEOUT_SECONDS >= gitenv.GIT_TIMEOUT_SECONDS
+
+
+def _default_of(
+    function: ast.FunctionDef | ast.AsyncFunctionDef, parameter: str
+) -> ast.expr | None:
+    arguments = function.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    defaulted = positional[len(positional) - len(arguments.defaults) :]
+    defaults = {a.arg: d for a, d in zip(defaulted, arguments.defaults, strict=True)}
+    for a, d in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True):
+        if d is not None:
+            defaults[a.arg] = d
+    return defaults.get(parameter)
+
+
+def _spelled(expression: ast.expr | None) -> str | None:
+    if isinstance(expression, ast.Name):
+        return expression.id
+    if isinstance(expression, ast.Attribute):
+        return expression.attr
+    return None
+
+
+def test_every_bound_a_git_run_call_passes_is_one_the_table_pins() -> None:
+    # The table above is only as good as its list: a call given a bound of its own that no row
+    # names — a new constant, or a literal below a second — would slip past it as the two above
+    # did past the suite. So every `git_run(..., timeout=...)` under `src/` is read: a literal
+    # must be at least a second, a name must be a row, and a parameter passed through must
+    # default to one. And every row must be reached, so none outlives its constant. Mutation
+    # (oracle): "the status query's bound is a literal below git's latency" -> this reddens.
+    pinned = {bound.rsplit(".", 1)[1] for bound in GIT_RUN_BOUNDS}
+    reached = {"GIT_TIMEOUT_SECONDS"}  # `git_run`'s own default, for a call that passes none
+    unpinned = []
+    for path in sorted((SRC / "keelline").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        enclosing = {
+            id(node): function
+            for function in ast.walk(tree)
+            if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for node in ast.walk(function)
+        }
+        for call in ast.walk(tree):
+            if not (isinstance(call, ast.Call) and _spelled(call.func) == "git_run"):
+                continue
+            given = next((k.value for k in call.keywords if k.arg == "timeout"), None)
+            where = f"{path.relative_to(SRC)}:{call.lineno}"
+            if given is None:
+                continue
+            if isinstance(given, ast.Constant):
+                if not (isinstance(given.value, int | float) and given.value >= 1):
+                    unpinned.append(where)
+                continue
+            name = _spelled(given)
+            function = enclosing.get(id(call))
+            if name not in pinned and function is not None and isinstance(given, ast.Name):
+                name = _spelled(_default_of(function, given.id))
+            if name in pinned:
+                reached.add(name)
+            else:
+                unpinned.append(where)
+    assert unpinned == []
+    assert reached == pinned
 
 
 def test_no_answer_names_each_cause_git_run_folds_into_minus_one() -> None:

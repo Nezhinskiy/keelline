@@ -1377,6 +1377,54 @@ before = "BOUND_FLOOR_SECONDS: float = 0"
 after = "BOUND_FLOOR_SECONDS: float = 60"
 reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
 
+# The same floor set by a plain assignment below the annotated one, which a reading of that one
+# line in the source missed: the value an import leaves is the one every caller gets.
+[[mutation]]
+name = "a second assignment ships a floor under every git bound"
+file = "src/keelline/gitenv.py"
+before = "BOUND_FLOOR_SECONDS: float = 0"
+after = "BOUND_FLOOR_SECONDS: float = 0\nBOUND_FLOOR_SECONDS = 60"
+reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
+
+# The suite's floor lifts every bound past git's latency, so a bound shrunk below it passes every
+# test that runs through it; a table of the named bounds holds each to a second.
+[[mutation]]
+name = "the bound on a query that grows is shrunk below git's latency"
+file = "src/keelline/gitenv.py"
+before = "QUERY_TIMEOUT_SECONDS = 30"
+after = "QUERY_TIMEOUT_SECONDS = 0.001"
+reddens = [
+  "tests/test_git_run.py::test_a_named_git_bound_leaves_git_a_second_to_answer[keelline.gitenv.QUERY_TIMEOUT_SECONDS]",
+  "tests/test_git_run.py::test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound",
+]
+
+[[mutation]]
+name = "the overlay sync's bound is shrunk below git's latency"
+file = "src/keelline/overlay/sync.py"
+before = "SYNC_TIMEOUT_SECONDS = 2.0"
+after = "SYNC_TIMEOUT_SECONDS = 0.001"
+reddens = [
+  "tests/test_git_run.py::test_a_named_git_bound_leaves_git_a_second_to_answer[keelline.overlay.sync.SYNC_TIMEOUT_SECONDS]",
+]
+
+[[mutation]]
+name = "the default git bound outgrows the one for a query that grows"
+file = "src/keelline/gitenv.py"
+before = "GIT_TIMEOUT_SECONDS = 5"
+after = "GIT_TIMEOUT_SECONDS = 60"
+reddens = [
+  "tests/test_git_run.py::test_a_query_that_grows_with_the_repository_is_given_at_least_the_default_bound",
+]
+
+# A call given a bound no row names slips past the table the way the table's rows slipped past
+# the suite, so every `timeout=` a `git_run` call passes is read.
+[[mutation]]
+name = "the status query's bound is a literal below git's latency"
+file = "src/keelline/guards/hygiene.py"
+before = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)'
+after = '    code, out = git_run(root, "status", "--porcelain", "--", timeout=0.001)'
+reddens = ["tests/test_git_run.py::test_every_bound_a_git_run_call_passes_is_one_the_table_pins"]
+
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
 # the subset stays valid YAML only because the leading class is YAML's whole indicator set.
 [[mutation]]
