@@ -7854,7 +7854,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/keelline/ledger/check.py"
-before = "    return problems(root, config)"
+before = "    return problems(root, config, base)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -7994,8 +7994,8 @@ reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicti
 [[mutation]]
 name = "origin/HEAD reaches the card unbounded"
 file = "src/keelline/project/detect.py"
-before = "    if not BRANCH_NAME.match(branch):"
-after = "    if not branch:"
+before = "        if BRANCH_NAME.match(head):"
+after = "        if head:"
 reddens = [
   "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
 ]
@@ -8130,8 +8130,8 @@ reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_i
 [[mutation]]
 name = "the codeowners probe reads an owner-less line as owned"
 file = "src/keelline/assess/probes.py"
-before = "                owners = words[1:]"
-after = '                owners = ["x"]'
+before = "            owners = words[1:]"
+after = '            owners = ["x"]'
 reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[the-last-match-names-no-one]"]
 
 [[mutation]]
@@ -8181,8 +8181,8 @@ reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_ans
 [[mutation]]
 name = "the codeowners probe reads any word holding an at sign as an owner"
 file = "src/keelline/assess/probes.py"
-before = "            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
-after = '            if not words or not all("@" in word for word in words[1:]):'
+before = "        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '        if not words or not all("@" in word for word in words[1:]):'
 reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
@@ -8459,7 +8459,7 @@ reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_t
 [[mutation]]
 name = "a tree with no ledger reports no citation of an entry file"
 file = "src/keelline/ledger/check.py"
-before = "        return _dangling_citations(root, config, set())"
+before = "        return _unledgered(root, config, base)"
 after = "        return found"
 reddens = [
   "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
@@ -9611,14 +9611,18 @@ reddens = [
   "tests/project/test_questions.py::test_no_file_a_gate_reads_at_its_committed_path_is_offered_as_local",
 ]
 
-# A `keelline.toml` this run creates gates the branch it names, so the caller it renders runs for
-# the repository's own pull requests.
+# A `keelline.toml` that leaves `[ci] gate_branch` out gates its own base branch, whether this run
+# created it or a person wrote it, so the caller it renders runs for the repository's own pull
+# requests.
 [[mutation]]
-name = "a fresh repository's caller gates the preset's branch, not its own"
-file = "src/keelline/project/init.py"
-before = '            tables.setdefault("ci", {})["gate_branch"] = branch'
-after = "            pass"
-reddens = ["tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose"]
+name = "a document that leaves [ci] gate_branch out gates main, not its base branch"
+file = "src/keelline/config/loader.py"
+before = '    return {"gate_branch": project.base_branch, **ci}'
+after = '    return {"gate_branch": "main", **ci}'
+reddens = [
+  "tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose",
+  "tests/project/test_answer_flags.py::test_an_adopted_document_s_workflow_gates_the_branch_its_file_names",
+]
 
 # An adopted `keelline.toml` is checked as every later command will load it: the text on disk,
 # with a missing `[keelline] version` added by the key editor while planning, before any network
@@ -10189,3 +10193,242 @@ file = "src/keelline/doctor/checks.py"
 before = "    if not (document.is_symlink() or document.is_file()):"
 after = "    if not document.is_file():"
 reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]"]
+
+# `origin/HEAD` is read as the full ref and only the exact `refs/remotes/origin/` prefix is
+# stripped: git shortens a ref only as far as it stays unambiguous, so a tag or a local branch
+# named `origin/<branch>` made the short form `remotes/origin/<branch>`, which passed the grammar
+# and became the base branch.
+[[mutation]]
+name = "origin/HEAD is read in its short form"
+file = "src/keelline/project/detect.py"
+before = '    code, out = git_run(root, "symbolic-ref", ref)'
+after = '    code, out = git_run(root, "symbolic-ref", "--short", ref)'
+reddens = [
+  "tests/project/test_detect.py::test_a_ref_named_like_the_remote_branch_never_reaches_the_base_branch",
+  "tests/project/test_detect.py::test_with_no_remote_head_the_base_branch_is_the_branch_checked_out",
+]
+
+[[mutation]]
+name = "a remote head outside refs/remotes/origin/ is read whole"
+file = "src/keelline/project/detect.py"
+before = '    return full.removeprefix(prefix) if full.startswith(prefix) else ""'
+after = "    return full.removeprefix(prefix)"
+reddens = [
+  "tests/project/test_detect.py::test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default",
+]
+
+# With no `origin` remote at all, the branch checked out is the base branch, held to the same
+# grammar, and the report says so when it is not `main`. With an `origin` and no `origin/HEAD` —
+# a repository created here and pushed, adopted from a feature branch — the default stands and
+# the report says how to record the remote's head.
+[[mutation]]
+name = "no remote head leaves the default whatever is checked out"
+file = "src/keelline/project/detect.py"
+before = '    current = _symbolic(root, "HEAD", HEADS_PREFIX)'
+after = "    current = None"
+reddens = [
+  "tests/project/test_detect.py::test_with_no_remote_head_the_base_branch_is_the_branch_checked_out",
+]
+
+[[mutation]]
+name = "the checked-out branch skips the grammar"
+file = "src/keelline/project/detect.py"
+before = "    if current and BRANCH_NAME.match(current):"
+after = "    if current:"
+reddens = [
+  "tests/project/test_detect.py::test_a_checked_out_branch_nothing_can_name_leaves_the_default",
+]
+
+[[mutation]]
+name = "the checked-out branch is never noted"
+file = "src/keelline/project/init.py"
+before = "        return HEAD_CURRENT"
+after = '        return ""'
+reddens = [
+  "tests/project/test_command.py::test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted",
+]
+
+[[mutation]]
+name = "an origin with no origin/HEAD takes the branch checked out"
+file = "src/keelline/project/detect.py"
+before = "    if has_origin:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all",
+  "tests/project/test_command.py::test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head",
+  "tests/project/test_questions.py::test_each_default_says_where_it_came_from",
+]
+
+[[mutation]]
+name = "the unrecorded remote head is never noted"
+file = "src/keelline/project/init.py"
+before = "        return HEAD_UNRECORDED"
+after = '        return ""'
+reddens = [
+  "tests/project/test_command.py::test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head",
+]
+
+# "No ledger" is read off the tree, which a pull request writes: the `bugs` gate asks its base
+# whether it carried the ledger, and with no ledger in the tree every mention of an identifier
+# dangles as much as a citation of its file. A base git cannot list is could not run.
+[[mutation]]
+name = "the uninitialised arm ignores the base's ledger"
+file = "src/keelline/ledger/check.py"
+before = "    if base and _base_has_ledger(root, config, base):"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding",
+  "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate",
+]
+
+[[mutation]]
+name = "a base git cannot list reads as a base with no ledger"
+file = "src/keelline/ledger/check.py"
+before = "    if code != 0:"
+after = "    if code < 0:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
+]
+
+[[mutation]]
+name = "the bugs gate's base reaches git shaped like an option"
+file = "src/keelline/ledger/check.py"
+before = '    if base.startswith("-"):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+]
+
+[[mutation]]
+name = "with no ledger a bare mention is not a finding"
+file = "src/keelline/ledger/check.py"
+before = "    found.extend(_dangling_mentions(root, config, empty))"
+after = "    pass"
+reddens = [
+  "tests/ledger/test_check.py::test_with_no_ledger_a_bare_mention_dangles_too",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate[mentioned]",
+]
+
+[[mutation]]
+name = "bugs check drops its --base"
+file = "src/keelline/ledger/commands.py"
+before = '    found = bugs_gate(root, config, args.base or "")'
+after = "    found = bugs_gate(root, config)"
+reddens = [
+  "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
+]
+
+# The verdict binds only when CODEOWNERS covers `/.github/`: a line owning only Keelline's
+# workflow leaves a pull request free to add a workflow whose job is named like the required
+# check. Where `codeowners` itself reports, this probe is silent, so one gap is one warning.
+[[mutation]]
+name = "the scope probe never asks past Keelline's workflow"
+file = "src/keelline/assess/probes.py"
+before = "    return Looked(tuple(label for label, owned in probed if not owned))"
+after = "    return Looked()"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported",
+]
+
+[[mutation]]
+name = "the scope probe asks about one extension"
+file = "src/keelline/assess/probes.py"
+before = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))'
+after = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml",))'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[one-extension]",
+]
+
+[[mutation]]
+name = "the scope probe asks at a name under Keelline's prefix"
+file = "src/keelline/assess/probes.py"
+before = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))'
+after = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/keelline-any-other.{ext}" for ext in ("yml", "yaml"))'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[keelline-s-prefix]",
+]
+
+[[mutation]]
+name = "the scope probe repeats what codeowners reports"
+file = "src/keelline/assess/probes.py"
+before = "    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):"
+after = "    if isinstance(found, Looked):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[the-caller-unowned]",
+]
+
+# A base the checkout lacks is why `plan`, `commit` and `bugs` fail, and the note says so, in
+# `assess` as in `adopt promote`, suggesting the project's own base branch.
+[[mutation]]
+name = "the missing-base note suggests main whatever the base branch"
+file = "src/keelline/assess/commands.py"
+before = "            lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))"
+after = '            lines.append(BASE_NOT_THERE.format(branch="main"))'
+reddens = [
+  "tests/assess/test_state.py::test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass[develop]",
+]
+
+[[mutation]]
+name = "assess never explains a base the checkout lacks"
+file = "src/keelline/assess/commands.py"
+before = '        summary += "\n\n" + BASE_NOT_THERE.format(branch=assessment.base_branch)'
+after = "        pass"
+reddens = [
+  "tests/assess/test_command.py::test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail",
+]
+
+# A name refusal words the grammar: the pattern ends in Python's `\Z`, which a reader, and every
+# other regex dialect, reads as something else.
+[[mutation]]
+name = "the --name refusal prints the pattern"
+file = "src/keelline/project/commands.py"
+before = '    name_rule = f"not {NAME_RULE}"'
+after = '    name_rule = f"not matching {PROJECT_NAME.pattern}"'
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing[name]",
+]
+
+[[mutation]]
+name = "a custom gate's name refusal prints the pattern"
+file = "src/keelline/config/loader.py"
+before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))"
+after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern))"
+reddens = [
+  "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
+]
+
+# A gate that could not judge the tree has no finding, so its one annotation is the reason; and a
+# probe's own listing that goes unanswered after the questions before it were answered is could
+# not look, never an empty listing.
+[[mutation]]
+name = "a gate that could not run is not annotated"
+file = "src/keelline/assess/report.py"
+before = '            emit(level, "", None, f"{result.name}: {result.reason}")'
+after = "            pass"
+reddens = [
+  "tests/assess/test_report.py::test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason",
+]
+
+[[mutation]]
+name = "a todo-markers grep that did not answer reads as no marker"
+file = "src/keelline/assess/probes.py"
+before = '        return Looked(unread=("git grep",))'
+after = "        return Looked()"
+reddens = [
+  "tests/assess/test_probes.py::test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look[todo-markers]",
+]
+
+[[mutation]]
+name = "a commit-types log that did not answer reads as no stray subject"
+file = "src/keelline/assess/probes.py"
+before = '''
+        return Looked(unread=("git log",))
+    fields = out.split("\0")'''
+after = '''
+        return Looked()
+    fields = out.split("\0")'''
+reddens = [
+  "tests/assess/test_probes.py::test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look[commit-types]",
+]

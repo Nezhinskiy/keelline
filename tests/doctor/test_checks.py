@@ -39,6 +39,7 @@ from keelline.doctor.checks import (
     VERSION_UNREADABLE,
     WORKFLOW,
     WORKFLOW_MAX_BYTES,
+    WORKFLOW_NOT_A_FILE,
     plugin_root,
 )
 from keelline.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
@@ -2152,11 +2153,13 @@ def test_the_alias_arm_answers_a_listing_without_it_and_a_git_that_failed(tmp_pa
     assert "could not be checked" in _by_name(unaskable, "ci-ref").detail
 
 
-# The join the FIFO case gives the row, and the only wall-clock number in this module. Six seconds
-# rather than one: it separates "answered" from "never answers", so it needs to be long enough that
-# no amount of machine load reads as the defect and short enough that the defect is not a hung
-# suite. The guarded row answers in milliseconds.
-_FIFO_CEILING_SECONDS = 6.0
+# A safety net for the FIFO case, never its verdict: that case fails on the row's status, and
+# this join only keeps a hang it did not foresee from hanging the suite. Six seconds used to be
+# the verdict itself, and at a load average near thirty the whole `run_checks` around the row
+# took three to four of them, so the margin was load's to spend. Two minutes is no margin load
+# can reach; the guarded row answers in milliseconds, and so does the unguarded one, since a
+# writer feeds the FIFO.
+_FIFO_SAFETY_JOIN_SECONDS = 120.0
 
 
 def test_a_workflow_that_is_not_a_regular_file_is_not_the_refs_own_verdict(tmp_path: Path) -> None:
@@ -2227,34 +2230,55 @@ def test_a_workflow_that_is_not_a_file_does_not_hang_the_row(tmp_path: Path) -> 
     back. `doctor` is documented as a one-line diagnostic and has no timeout of its own, so the
     guard is the whole of the fix.
 
-    The ceiling is wall-clock, which the repository keeps for the case it cannot avoid
-    (`tests/guards/test_bgcleanup.py` says so of its own three seconds). It only has to separate
-    "returned" from "never returns": the guarded row answers in milliseconds, and the unguarded
-    one answers at no time at all, so load on the machine cannot move the verdict. The row is
-    run in a daemon thread because a test that hangs is not a test that fails.
+    **The verdict is the row's status, and no clock decides it.** A writer thread holds the FIFO
+    open with the workflow `init` rendered, pinning `[ci] ref`, so a row that reads the path
+    instead of asking what it is gets an agreeing workflow back and answers `ok`; the guarded
+    row never opens it and warns that it is not a regular file. This case used to separate the
+    two by a six-second join around the whole of `run_checks`, which a loaded machine spent: the
+    guarded run measured three to four seconds at a load average near thirty. The join left is a
+    safety net for a hang nothing here foresees, and the row still runs in a daemon thread
+    because a test that hangs is not a test that fails.
 
     Mutation (oracle entry "doctor reads the rendered workflow without asking what it is"): the
-    `is_file()` guard is removed -> this case fails on the join.
+    `is_file()` guard is removed -> the row reads the fed workflow, answers `ok`, and the status
+    assertion reddens.
     """
     stub = _stub()
     stub.stdout = LISTING
     root = _configured(tmp_path, RELEASED, workflow_ref=RELEASED)
     workflow = root / WORKFLOW
+    agreeing = workflow.read_bytes()
     workflow.unlink()
     target = root / ".github" / "workflows" / "pipe"
     os.mkfifo(target)
     workflow.symlink_to(target)
+
+    def feed() -> None:
+        # Blocks in `open` until something opens the FIFO to read: the unguarded row, or the
+        # cleanup below. The bytes fit the pipe's buffer, so the write never waits on a reader.
+        try:
+            with target.open("wb") as pipe:
+                pipe.write(agreeing)
+        except BrokenPipeError:
+            pass
+
+    writer = threading.Thread(target=feed, daemon=True)
+    writer.start()
     answered: list[Check] = []
     thread = threading.Thread(
         target=lambda: answered.append(_by_name(_checks(tmp_path, root, runner=stub), "ci-ref")),
         daemon=True,
     )
     thread.start()
-    thread.join(timeout=_FIFO_CEILING_SECONDS)
-    assert not thread.is_alive(), (
-        f"the ci-ref row did not return within {_FIFO_CEILING_SECONDS}s with a FIFO at {WORKFLOW}"
-    )
-    assert answered[0].status == WARN and "is not a regular file" in answered[0].detail
+    thread.join(timeout=_FIFO_SAFETY_JOIN_SECONDS)
+    # Release the writer whichever way the row went: a non-blocking reader lets its `open` return.
+    reader = os.open(target, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        writer.join(timeout=_FIFO_SAFETY_JOIN_SECONDS)
+    finally:
+        os.close(reader)
+    assert not thread.is_alive(), f"the ci-ref row never returned with a FIFO at {WORKFLOW}"
+    assert (answered[0].status, answered[0].detail) == (WARN, WORKFLOW_NOT_A_FILE)
 
 
 def test_a_workflow_over_the_cap_is_not_the_refs_own_verdict(tmp_path: Path) -> None:

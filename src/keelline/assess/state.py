@@ -56,7 +56,8 @@ NO_TRAIL_STATE = (
 )
 NOT_A_GATE = "every name must be a configured gate, and config is the configuration check"
 NAMED_ENFORCES = (
-    "a gate named already enforces; name only gates that do not, or none for every gate left"
+    "one of the gates named already enforces; name only gates that do not yet, or none for "
+    "every gate left"
 )
 ALL_ENFORCE = "every configured gate already enforces; there is nothing left to promote"
 NO_GATE = "this project configures no gate, so there is nothing to promote"
@@ -192,7 +193,8 @@ def promote(
 ) -> Transition:
     """Enforce the named gates if every one of them passes now, or, with none named, each
     configured gate not yet enforcing that passes; `base` is what `plan` and `commit` judge a
-    range against, and what a custom gate's command must already be on (`machine` loads the
+    range against, what `bugs` reads a ledger the tree lacks from, and what a custom gate's
+    command must already be on (`machine` loads the
     base's copy, as the tree's was loaded)."""
     configured = config.gate_names
     if any(name not in configured for name in names):

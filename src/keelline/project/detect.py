@@ -7,11 +7,12 @@ way.
 
 **Three of them are repository-authored strings, and each is held to a grammar before it is
 returned:** the remote's last path segment and the checkout's directory name to `[project]
-name`'s, and `origin/HEAD`'s branch to the one a rendered workflow accepts. A name outside its
-grammar is refused naming the grammar and never the value, or, leniently, returned as `""` and
-`not derivable`, so `init --questions` asks for it rather than suggesting it. A branch outside
-its grammar is reported as the default. The agents and the profile are names from Keelline's
-own registries.
+name`'s, and `origin/HEAD`'s branch — or, in a repository with no `origin` remote at all, the
+branch checked out — to the one a rendered workflow accepts. A name outside its grammar is
+refused naming the grammar and never the value, or, leniently, returned as `""` and `not
+derivable`, so `init --questions` asks for it rather than suggesting it. A branch outside its
+grammar is reported as the default.
+The agents and the profile are names from Keelline's own registries.
 
 Each value also says where it came from, in one of this module's fixed phrases, because a
 default is only as good as its source: `origin/HEAD` is set by `git clone` and goes stale after
@@ -24,15 +25,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from keelline.config.schema import BRANCH_NAME, PROJECT_NAME
+from keelline.config.schema import BRANCH_NAME, NAME_RULE, PROJECT_NAME
 from keelline.errors import Refusal
 from keelline.gitenv import git_run
 from keelline.memory.api import GitUnavailable, origin_remote
 
 DEFAULT_BRANCH = "main"
+ORIGIN_PREFIX = "refs/remotes/origin/"
+HEADS_PREFIX = "refs/heads/"
 NOT_A_NAME = (
-    "the project name this repository suggests is not one lowercase path segment matching "
-    f"{PROJECT_NAME.pattern}, so `init` cannot choose one; answer it with `keelline init --yes "
+    f"the project name this repository suggests is not {NAME_RULE}, so `init` cannot choose "
+    "one; answer it with `keelline init --yes "
     "--name NAME`, or write `[project] name` into keelline.toml by hand and run `keelline init "
     "--yes` again, which keeps what you wrote"
 )
@@ -42,6 +45,7 @@ NOT_DERIVABLE = "not derivable"
 ORIGIN_REMOTE = "origin remote"
 DIRECTORY_NAME = "directory name"
 ORIGIN_HEAD = "origin/HEAD"
+CURRENT_BRANCH = "current branch"
 HARNESS_DIRECTORIES = "harness directories"
 PROFILE_MARKERS = "profile markers"
 NO_PROFILE_MARKERS = "no profile markers"
@@ -59,13 +63,20 @@ class Detected:
     # `origin/HEAD` named a branch outside the grammar, so the base branch is the default in its
     # place. A flag and never the name: the name is the text the grammar refused.
     head_refused: bool = False
+    # There is an `origin` remote and no `origin/HEAD` recorded for it, so the base branch is the
+    # default: the branch checked out is as likely a feature branch as the remote's default.
+    head_unrecorded: bool = False
 
 
-def _name(root: Path) -> tuple[str, str]:
+def _origin(root: Path) -> str | None:
+    """The `origin` remote's URL, or `None` when there is none or `git` could not say."""
     try:
-        origin = origin_remote(root)
+        return origin_remote(root)
     except GitUnavailable:
-        origin = None
+        return None
+
+
+def _name(root: Path, origin: str | None) -> tuple[str, str]:
     if origin:
         segment = origin.rstrip("/").replace(":", "/").rsplit("/", 1)[-1]
         # Lower-cased first, so `Widget.GIT` loses its suffix as `Widget.git` does.
@@ -73,16 +84,47 @@ def _name(root: Path) -> tuple[str, str]:
     return root.name.lower(), DIRECTORY_NAME
 
 
-def _remote_head(root: Path) -> str:
-    """The branch `origin/HEAD` names, unchecked, or `""` when git records none."""
-    code, out = git_run(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-    return out.strip().removeprefix("origin/") if code == 0 else ""
+def _symbolic(root: Path, ref: str, prefix: str) -> str | None:
+    """The branch the symbolic `ref` names below `prefix`, unchecked; `""` when it names a ref
+    outside `prefix`, and `None` when git records no such symbolic ref.
+
+    The full ref and never `--short`: git shortens a ref only as far as it stays unambiguous, so
+    a tag or a local branch named `origin/develop` made `origin/HEAD` read back as
+    `remotes/origin/develop`, which passed the grammar and was written as the base branch. The
+    clone carries the tag, so that was repository-authored input choosing the configuration.
+    """
+    code, out = git_run(root, "symbolic-ref", ref)
+    if code != 0:
+        return None
+    full = out.removesuffix("\n")
+    return full.removeprefix(prefix) if full.startswith(prefix) else ""
 
 
-def _base_branch(branch: str) -> tuple[str, str]:
-    if not BRANCH_NAME.match(branch):
-        return DEFAULT_BRANCH, DEFAULT
-    return branch, ORIGIN_HEAD
+def _base_branch(root: Path, *, has_origin: bool) -> tuple[str, str, bool, bool]:
+    """The base branch, where it came from, whether `origin/HEAD` named one outside the grammar,
+    and whether an `origin` remote has no `origin/HEAD` recorded; in both cases the default
+    stands in.
+
+    Only a repository with no `origin` remote at all takes the branch checked out, held to the
+    same grammar: a fresh repository on `develop` had `main` written as its base, and a workflow
+    that never ran for a pull request into `develop`. A repository created here and pushed
+    (`git push -u origin main`) has an `origin` and no `origin/HEAD`, since only `git clone` and
+    `git remote set-head` record one, and it is typically adopted from a feature branch: taking
+    that branch wrote it as the base, so the workflow gated the feature branch. There the default
+    stands, and the caller says how to record the remote's own. A detached or unreadable `HEAD`,
+    or a branch outside the grammar, leaves the default too.
+    """
+    head = _symbolic(root, "refs/remotes/origin/HEAD", ORIGIN_PREFIX)
+    if head is not None:
+        if BRANCH_NAME.match(head):
+            return head, ORIGIN_HEAD, False, False
+        return DEFAULT_BRANCH, DEFAULT, True, False
+    if has_origin:
+        return DEFAULT_BRANCH, DEFAULT, False, True
+    current = _symbolic(root, "HEAD", HEADS_PREFIX)
+    if current and BRANCH_NAME.match(current):
+        return current, CURRENT_BRANCH, False, False
+    return DEFAULT_BRANCH, DEFAULT, False, False
 
 
 def _agents(root: Path) -> tuple[tuple[str, ...], str]:
@@ -111,13 +153,15 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
     running `init` again is a remedy that reaches the end. `lenient` returns it as `""`, `not
     derivable`, instead, for a caller that asks rather than writes.
     """
-    name, name_source = _name(root)
+    origin = _origin(root)
+    name, name_source = _name(root, origin)
     if not PROJECT_NAME.match(name) and not lenient:
         raise Refusal(NOT_A_NAME)
     if not PROJECT_NAME.match(name):
         name, name_source = "", NOT_DERIVABLE
-    head = _remote_head(root)
-    base_branch, branch_source = _base_branch(head)
+    base_branch, branch_source, head_refused, head_unrecorded = _base_branch(
+        root, has_origin=origin is not None
+    )
     agents, agents_source = _agents(root)
     profile, profile_source = _profile(root)
     return Detected(
@@ -131,5 +175,6 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
             "agents": agents_source,
             "profile": profile_source,
         },
-        head_refused=bool(head) and branch_source == DEFAULT,
+        head_refused=head_refused,
+        head_unrecorded=head_unrecorded,
     )

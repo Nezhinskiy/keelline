@@ -22,6 +22,7 @@ from keelline.config.schema import (
     CI_MODES,
     CONFIG_CHECK,
     MEMORY_MODES,
+    NAME_RULE,
     PROJECT_NAME,
     SECTION_NAME,
     STATES,
@@ -84,7 +85,7 @@ GATES_BUILTIN_UNKNOWN = (
 GATES_BUILTIN_TWICE = "[gates] builtin names a gate twice"
 GATES_CUSTOM_NAME = (
     "[gates] custom names {count} gate(s) Keelline cannot run under that name: a custom gate's "
-    "name matches {pattern} and is neither a built-in gate's name nor `config`"
+    "name is {rule}, and neither a built-in gate's name nor `config`"
 )
 GATES_CUSTOM_TABLE = "[gates.custom.{name}] must be a table"
 GATES_CUSTOM_EMPTY = "gates.custom.{name}.run must name a command"
@@ -159,6 +160,19 @@ def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
 
 def _merged(raw: dict[str, Any], defaults: dict[str, Any], name: str) -> dict[str, Any]:
     return {**defaults.get(name, {}), **_table(raw, name)}
+
+
+def _gate_branch(ci: dict[str, Any], project: Project) -> dict[str, Any]:
+    """`[ci]` with `gate_branch` taken from `[project] base_branch` when the file leaves it out.
+
+    The rendered workflow runs only for pull requests into `gate_branch`, and `assess`, `plan
+    check` and `adopt promote` judge against `base_branch`. A fixed default of `main` made a
+    hand-written file that named `develop` as its base, and said nothing about `[ci]`, render a
+    workflow that never ran for a pull request into `develop` — local runs and CI judging two
+    different branches, with nothing printed. So the preset carries no `gate_branch`: left out,
+    it is the base branch, which the loader has already held to the branch grammar.
+    """
+    return {"gate_branch": project.base_branch, **ci}
 
 
 @cache
@@ -320,8 +334,7 @@ def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
     reserved = (*BUILTIN_GATES, CONFIG_CHECK)
     unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]
     if unusable:
-        pattern = PROJECT_NAME.pattern
-        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), pattern=pattern))
+        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))
     custom: dict[str, CustomGate] = {}
     for name, table in sorted(tables.items()):
         if not isinstance(table, dict):
@@ -499,9 +512,7 @@ def loads(
     _enum("keelline", "state", keelline.state, STATES)
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
-        raise ConfigError(
-            f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
-        )
+        raise ConfigError(f"project.name must be {NAME_RULE}")
     for key in ("base_branch", "release_branch"):
         # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
         # the text the grammar refused. The grammar is the one the rendered workflow holds
@@ -513,7 +524,7 @@ def loads(
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
     ledger = _build(Ledger, "ledger", _merged(raw, defaults, "ledger"))
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))
-    ci = _build(Ci, "ci", _merged(raw, defaults, "ci"))
+    ci = _build(Ci, "ci", _gate_branch(_merged(raw, defaults, "ci"), project))
     _enum("ci", "mode", ci.mode, CI_MODES)
     gates = _gates(raw, defaults)
     commit_messages = _build(
@@ -560,16 +571,17 @@ def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
     raw = load_preset(preset)
     defaults = dict(raw.get("defaults", {}))
     head = {**defaults.get("keelline", {}), "preset": preset, "version": __version__}
+    project_config = _build(Project, "project", {**defaults.get("project", {}), "name": project})
     return Config(
         keelline=_build(Keelline, "keelline", head),
-        project=_build(Project, "project", {**defaults.get("project", {}), "name": project}),
+        project=project_config,
         paths=_build(Paths, "paths", defaults.get("paths", {})),
         memory=_build(Memory, "memory", defaults.get("memory", {})),
         budgets=Budgets(preset=dict(raw.get("budgets", {}))),
         native_caps=_build(NativeCaps, "native_caps", dict(raw.get("native_caps", {}))),
         ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
         artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
-        ci=_build(Ci, "ci", defaults.get("ci", {})),
+        ci=_build(Ci, "ci", _gate_branch(dict(defaults.get("ci", {})), project_config)),
         gates=_gates({}, defaults),
         commit_messages=_build(
             CommitMessages, "commit_messages", defaults.get("commit_messages", {})

@@ -24,9 +24,9 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
-from keelline.config.schema import Config
+from keelline.config.schema import NAME_RULE, Config
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
-from keelline.project.init import HEAD_DEFAULTED
+from keelline.project.init import HEAD_CURRENT, HEAD_DEFAULTED, HEAD_UNRECORDED
 from keelline.project.templates import _ci
 from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
@@ -362,7 +362,7 @@ def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: P
     # (by hand): the note dropped from the report -> the note assertion reddens.
     root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
-    assert code == 0 and "origin/HEAD" not in printed, printed
+    assert code == 0 and HEAD_DEFAULTED not in printed, printed
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/`id`")
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
     assert code == 0, printed
@@ -373,6 +373,63 @@ def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: P
     # the note keyed on detection alone -> this reddens.
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
     assert code == 0 and "origin/HEAD" not in printed, printed
+
+
+@needs_git
+def test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head(
+    tmp_path: Path,
+) -> None:
+    # Created here, pushed with `git push -u origin main`, adopted from a feature branch: an
+    # `origin` and no `origin/HEAD`. The feature branch was written as the base, so the workflow
+    # gated it. Now `main` is written and the note names the command that records the remote's
+    # default. Mutations (oracle): "an origin with no origin/HEAD takes the branch checked out"
+    # -> the base branch assertion reddens; "the unrecorded remote head is never noted" -> the
+    # note assertion reddens.
+    root = repository(tmp_path)
+    git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    bare = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(root, "remote", "set-url", "origin", str(bare))
+    git(root, "push", "-q", "-u", "origin", "main")
+    git(root, "checkout", "-q", "-b", "chore/adopt-keelline")
+    code, printed = _invoke(root, tmp_path, "--yes")
+    assert code == 0 and f"note: {HEAD_UNRECORDED}" in printed, printed
+    assert "`git remote set-head origin --auto`" in HEAD_UNRECORDED
+    assert load(root).project.base_branch == "main"
+    assert "chore/adopt-keelline" not in (root / "keelline.toml").read_text(encoding="utf-8")
+    # Once `origin/HEAD` is recorded, it answers, and there is nothing to note.
+    other = repository(tmp_path / "b")
+    git(other, "commit", "-q", "--allow-empty", "-m", "one")
+    git(other, "remote", "set-url", "origin", str(bare))
+    git(other, "fetch", "-q", "origin")
+    git(other, "remote", "set-head", "origin", "--auto")
+    git(other, "checkout", "-q", "-b", "chore/adopt-keelline")
+    code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--json")
+    assert code == 0 and json.loads(printed)["head_note"] == "", printed
+    # An answered base branch replaced nothing.
+    git(other, "remote", "set-head", "origin", "--delete")
+    code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_UNRECORDED, printed
+    code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
+    assert code == 0 and HEAD_UNRECORDED not in printed, printed
+
+
+@needs_git
+def test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted(tmp_path: Path) -> None:
+    # With no `origin/HEAD`, a repository on `develop` takes `develop` as its base: the report
+    # says where the branch came from, so a person on a feature branch reads it before the
+    # workflow gates the wrong one. `main` is what the default was anyway, and says nothing.
+    # Mutation (oracle): "the checked-out branch is never noted" -> the note assertion reddens.
+    root = repository(tmp_path, origin=None)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and HEAD_CURRENT not in printed, printed
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and f"note: {HEAD_CURRENT}" in printed, printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_CURRENT
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
+    assert code == 0 and HEAD_CURRENT not in printed, printed
 
 
 def _answers(schema: dict[str, Any]) -> list[str]:
@@ -458,7 +515,13 @@ def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
     root = repository(tmp_path)
     with pytest.raises(SystemExit):
         _invoke(root, tmp_path, *argv)
-    assert "Not A Name" not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Not A Name" not in err
+    # The rule in words, never the pattern: Python's `\Z` reads as nothing to a person.
+    # Mutation (oracle): "the --name refusal prints the pattern" -> `name` reddens.
+    assert "\\Z" not in err
+    if "--name" in argv:
+        assert NAME_RULE in err
     assert not (root / ".keelline").exists() and not (root / "keelline.toml").exists()
 
 

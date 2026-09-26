@@ -33,6 +33,7 @@ from keelline.assess.probes import (
 )
 from keelline.config.loader import load, preset_defaults
 from keelline.findings import Severity
+from keelline.gitenv import git_run
 from keelline.presets import load_preset
 from keelline.project.api import CI_WORKFLOW
 from tests.assess.smoke import smoke_repo
@@ -268,6 +269,31 @@ def test_a_git_query_that_does_not_answer_is_not_nothing_found(
         "memory-history": ("git log",),
         "commit-types": ("git rev-parse",),
     }
+
+
+@pytest.mark.parametrize(
+    ("probe", "query", "where"),
+    [("todo-markers", "grep", "git grep"), ("commit-types", "log", "git log")],
+    ids=["todo-markers", "commit-types"],
+)
+def test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe: str, query: str, where: str
+) -> None:
+    # The two arms the case above never reaches: `todo-markers` asks nothing when there is no
+    # code root, and `commit-types` stops at `rev-parse` when every query fails. Here only the
+    # probe's own listing goes unanswered, after the questions before it were answered, so an
+    # empty listing would read as no marker and no stray subject. Mutations (oracle): "a
+    # todo-markers grep that did not answer reads as no marker" -> `todo-markers` reddens; "a
+    # commit-types log that did not answer reads as no stray subject" -> `commit-types` reddens.
+    root = _repo(tmp_path)
+    _write(root, "src/a.py", f"# {TO_DO}: one\n")
+    _commit(root, "wip")
+
+    def unanswered(root_: Path, *args: str, timeout: float) -> tuple[int, str]:
+        return (-1, "") if args[0] == query else git_run(root_, *args, timeout=timeout)
+
+    monkeypatch.setattr(probes, "git_run", unanswered)
+    assert _shapes(_items(root, tmp_path, probe)) == [(COULD_NOT_LOOK, (where,))]
 
 
 def test_a_path_git_prints_raw_hides_no_committed_env_file(tmp_path: Path) -> None:
@@ -609,9 +635,81 @@ def test_a_codeowners_file_through_a_symlink_is_could_not_look(tmp_path: Path) -
 
 
 def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Path) -> None:
-    # Mutation (advisory): the `ci.mode == "none"` early return dropped -> reddens.
+    # Mutation (advisory): the `ci.mode == "none"` early return dropped -> reddens. The scope
+    # probe's own return: dropped, a caller-only line reports under `mode = "none"` and reddens.
     root = _repo(tmp_path, tail='\n[ci]\nmode = "none"\n')
     assert _items(root, tmp_path, "codeowners") == []
+    _write(root, ".github/CODEOWNERS", f"/{CI_WORKFLOW} @owner\n")
+    assert _items(root, tmp_path, "codeowners-scope") == []
+
+
+@pytest.mark.parametrize(
+    ("relative", "codeowners", "unowned"),
+    [
+        (".github/CODEOWNERS", f"/{CI_WORKFLOW} @owner\n", (OWNED_WORKFLOWS, ".github/CODEOWNERS")),
+        (".github/CODEOWNERS", "/.github/ @owner\n", ()),
+        (".github/CODEOWNERS", "* @owner\n", ()),
+        (".github/CODEOWNERS", "/.github/workflows/ @owner\n", (".github/CODEOWNERS",)),
+        (
+            ".github/CODEOWNERS",
+            f"/{CI_WORKFLOW} @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        ("CODEOWNERS", "/.github/ @owner\n", ("CODEOWNERS",)),
+        ("CODEOWNERS", "* @owner\n", ()),
+        (".github/CODEOWNERS", "*.md @owner\n", ()),
+        (".github/CODEOWNERS", f"/.github/ @owner\n/{CI_WORKFLOW}\n", ()),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/keelline* @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/*.yml @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/*.yml @owner\n/.github/workflows/*.yaml @owner\n"
+            "/.github/CODEOWNERS @owner\n",
+            (),
+        ),
+    ],
+    ids=[
+        "the-caller-alone",
+        "github-directory",
+        "everything",
+        "the-workflows-directory",
+        "the-caller-and-the-file",
+        "a-root-file-outside-its-own-rule",
+        "a-root-file-under-everything",
+        "the-caller-unowned",
+        "the-caller-left-without-an-owner",
+        "keelline-s-prefix",
+        "one-extension",
+        "both-extensions",
+    ],
+)
+def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported(
+    tmp_path: Path, relative: str, codeowners: str, unowned: tuple[str, ...]
+) -> None:
+    # The verdict binds only when CODEOWNERS covers `/.github/`: a line owning only
+    # `keelline.yml` left a pull request free to add a workflow with a job named like the
+    # required check, and `codeowners` reported nothing. The scope probe asks about a workflow
+    # no project names and about the code-owners file itself, and stays silent where
+    # `codeowners` already reports, so one gap is one warning. The workflow probed carries no
+    # prefix of Keelline's and is asked under both extensions GitHub runs: a single
+    # `keelline-….yml` read as owned under `keelline*` and under `*.yml`, while a pull request
+    # could add `ci.yaml` or `other.yml`. Mutations (oracle): "the scope probe never asks past
+    # Keelline's workflow" -> `the-caller-alone` is clean and reddens; "the scope probe asks
+    # about one extension" -> `one-extension` is clean and reddens; "the scope probe asks at a
+    # name under Keelline's prefix" -> `keelline-s-prefix` is clean and reddens.
+    root = _repo(tmp_path)
+    _write(root, relative, codeowners)
+    items = _items(root, tmp_path, "codeowners-scope")
+    expected = [("codeowners-scope", Severity.WARNING, 7, unowned)] if unowned else []
+    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
 
 
 def test_commit_subjects_outside_the_vocabulary_are_counted_by_sha(tmp_path: Path) -> None:

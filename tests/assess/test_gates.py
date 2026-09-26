@@ -122,6 +122,20 @@ def test_the_bugs_gate_finds_a_broken_entry(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run(tmp_path: Path) -> None:
+    # With no ledger in the tree the gate asks the base whether it had one, and a base this
+    # clone does not have is no answer: could not run, which fails an enforced gate, and never
+    # "the base had none", which would pass the change that deleted the ledger.
+    root, config = smoke(tmp_path)
+    git(root, "rm", "-rq", config.paths.bugs, config.paths.bug_index)
+    [bugs] = results(root, config, "bugs", base="refs/remotes/origin/absent")
+    assert (bugs.answered, bugs.findings) == (False, ())
+    [bugs] = results(root, config, "bugs")
+    # The fixture's own code mentions its entry, which now dangles beside the removed ledger.
+    assert [finding.rule for finding in bugs.findings] == ["ledger-removed", "dangling-mention"]
+
+
+@needs_git
 def test_the_plan_gate_finds_a_plan_the_change_touches(tmp_path: Path) -> None:
     root, config = smoke(tmp_path)
     (root / config.paths.plans / "2026-09-20-new.md").write_text("# New\n", encoding="utf-8")
@@ -267,20 +281,35 @@ def test_a_custom_gate_past_its_time_limit_did_not_answer(tmp_path: Path) -> Non
     [probe] = results(tmp_path, config)
     assert not probe.answered
     assert probe.failing
-    assert (
-        probe.reason == "the command [gates.custom.probe] run names could not start, or ran past 1s"
-    )
+    assert probe.reason == "the command in [gates.custom.probe] run could not start, or ran past 1s"
 
 
-def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(tmp_path: Path) -> None:
+def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A timeout case with one sleeping process cannot show this: it is the descendant — a test
     # runner a shell wrapper started — that must not run on after the gate has reported.
-    # A 2 s bound, so the child has started before the gate gives up on even a loaded machine;
-    # `started` asserts that it did.
+    # Driven as the interrupt case below is: the bound expires once the child has written
+    # `started`, never on the clock, which raced a real 2 s limit against two interpreter
+    # start-ups and could give up before there was a descendant to end.
     command, started, late = delayed_writer(tmp_path)
-    config = with_custom(fixture_config(tmp_path), command, seconds=2)
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    real = subprocess.Popen.wait
+    calls: list[float | None] = []
+
+    def expired(self: subprocess.Popen[bytes], timeout: float | None = None) -> int:
+        calls.append(timeout)
+        if len(calls) == 1:
+            deadline = time.monotonic() + STARTED_WAIT_SECONDS
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+        return real(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", expired)
     [probe] = results(tmp_path, config)
     assert not probe.answered
+    assert calls[0] == 600  # the configured bound is the one the gate waited under
     assert started.exists()
     time.sleep(LATE_WAIT_SECONDS)
     assert not late.exists()

@@ -29,9 +29,9 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > project by hand, which `init` reads as your answers — a run that writes the file itself writes
 > `[keelline] version`, `state` and `agents`, and `profile` when the repository carries a
 > shipped profile's markers or `--profile` names one, beside `[project] name`, `base_branch`
-> and `release_branch`, a `[ci]` table only when it has a released commit to pin, `--no-ci`
-> asks for none, or the base branch is not `main`, a `[memory]` table only when
-> `--memory-mode` answers it, and an `[artifacts]` table only when `--local` does.
+> and `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci`
+> asks for none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]`
+> table only when `--local` does.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -265,6 +265,7 @@ keelline bugs new "A title" --severity high --area cli   # file an entry at the 
 keelline bugs index                                   # render the generated index
 keelline bugs index --check                           # fail if the committed index is stale
 keelline bugs check                                   # every rule the ledger holds, one pass
+keelline bugs check --base origin/main                # also fail a tree that deleted the base's ledger
 keelline bugs renumber BR-001 BR-002                  # move an entry; rewrite every mention
 
 # Documentation and plans

@@ -62,7 +62,6 @@ local = []
 [defaults.ci]
 mode = "reusable"
 ref = ""
-gate_branch = "main"
 
 [defaults.gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]

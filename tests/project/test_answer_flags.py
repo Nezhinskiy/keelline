@@ -144,34 +144,39 @@ def test_a_fresh_repository_gates_the_branch_it_chose(tmp_path: Path, how: str) 
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
     assert workflow.count(f'branches: ["{branch}"]') == 3
     assert f'base: "{branch}"' in workflow
-    if how == "main":
-        # Written only where it differs from the preset's, so a `main` repository's file is the
-        # one it always was.
-        assert "gate_branch" not in (root / CONFIG_FILE).read_text(encoding="utf-8")
+    # `gate_branch` is never written: left out, the loader takes it from `base_branch`, so a
+    # `main` repository's file is the one it always was and a `develop` one's follows its base.
+    assert "gate_branch" not in (root / CONFIG_FILE).read_text(encoding="utf-8")
 
 
 @needs_git
-def test_an_adopted_document_keeps_its_own_ci_and_its_workflow_agrees_with_it(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("ci_table", "gated"),
+    [("", "develop"), ('gate_branch = "main"\n', "main")],
+    ids=["left-out", "chosen"],
+)
+def test_an_adopted_document_s_workflow_gates_the_branch_its_file_names(
+    tmp_path: Path, ci_table: str, gated: str
 ) -> None:
-    # A `keelline.toml` a person wrote keeps its own `[ci]`: its base branch is `develop` and it
-    # left `gate_branch` at the preset's `main`, which is theirs to have chosen. The workflow is
-    # rendered from the merged configuration, so it must gate what the file says. Mutation (by
-    # hand): set `gate_branch` from `tables["project"]["base_branch"]` for every run -> the
-    # workflow gates `develop` while the file says `main`, and the `branches` assertion reddens.
+    # A `keelline.toml` a person wrote, whose base branch is `develop`. Left out, `[ci]
+    # gate_branch` is that base branch: a fixed `main` rendered a caller that never ran for a
+    # pull request into `develop`, while `assess` and `adopt promote` judged against `develop`,
+    # and nothing said so. Written out, it is the person's choice and is kept. The file comes
+    # back byte for byte either way. Mutation (oracle): "a document that leaves [ci] gate_branch
+    # out gates main, not its base branch" -> the `left-out` case reddens.
     root = repository(tmp_path)
     hand_written = (
         f'[keelline]\nversion = "{keelline.__version__}"\n\n'
         '[project]\nname = "widget"\nbase_branch = "develop"\n\n'
-        f'[ci]\nref = "{ADOPTED}"\n'
+        f'[ci]\nref = "{ADOPTED}"\n{ci_table}'
     )
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
     report = _init(root, tmp_path, Given(), runner=LsRemote(stdout=LISTING, code=0), ci=True)
     assert report.adopted and report.ref == ADOPTED
     assert (root / CONFIG_FILE).read_text(encoding="utf-8") == hand_written
-    assert load(root, machine=tmp_path / "absent.toml").ci.gate_branch == "main"
+    assert load(root, machine=tmp_path / "absent.toml").ci.gate_branch == gated
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
-    assert workflow.count('branches: ["main"]') == 3 and "develop" not in workflow
+    assert workflow.count(f'branches: ["{gated}"]') == 3 and f'base: "{gated}"' in workflow
 
 
 @needs_git

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from keelline.assess.assessment import SKIPPED
+from keelline.assess.commands import BASE_NOT_THERE
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from keelline.config.paths import KEELLINE_DIRECTORY
@@ -41,6 +42,31 @@ def test_assess_exits_zero_and_its_json_is_the_inventory(
     written = json.loads((root / ASSESSMENT).read_text(encoding="utf-8"))
     assert written["items"] != []
     assert {k: v for k, v in printed.items() if k != "summary"} == written
+
+
+@needs_git
+def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The path the `init` skill sends a new user down: a repository with no origin, where `plan`
+    # reports `base-unresolvable` and `commit` could not run, each with a remedy about plans and
+    # commit messages. `adopt promote` explained the missing base in a note, `assess` did not.
+    # Mutation (oracle): "assess never explains a base the checkout lacks" -> the note is gone.
+    root = repository(tmp_path, origin=None)
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+    answered = init(
+        root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False
+    )
+    assert not answered.refused
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "chore: adopt keelline")
+    assert _assess(root, tmp_path) == 1
+    summary = capsys.readouterr().out
+    assert summary.rstrip().endswith(BASE_NOT_THERE.format(branch="develop")), summary
+    # A base that is there leaves the note out: the failures are then the tree's own.
+    head = git(root, "rev-parse", "HEAD").strip()
+    _assess(root, tmp_path, "--base", head)
+    assert "note: the base" not in capsys.readouterr().out
 
 
 @needs_git

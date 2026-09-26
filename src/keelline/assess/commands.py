@@ -27,8 +27,9 @@ ASSESS_HELP = (
 # Any revision git resolves, unlike `gate` and `adopt promote`: `assess` is advice over a tree the
 # person chose, and nothing it answers governs a run or writes enforcement.
 BASE_HELP = (
-    "the revision the plan and commit gates compare against, any git resolves: the inventory is "
-    "advice and governs nothing; default refs/remotes/origin/<project.base_branch>"
+    "the revision the plan and commit gates compare against, and bugs reads a ledger the tree "
+    "lacks from, any git resolves: the inventory is advice and governs nothing; default "
+    "refs/remotes/origin/<project.base_branch>"
 )
 ASSESS_BUILTIN_HELP = (
     "the built-in gates and the probes only: no command from [gates.custom] runs, for a "
@@ -69,11 +70,15 @@ BEGUN = (
     "`keelline adopt promote` enforces it"
 )
 KEPT = "the plan passes plan check; the state stays {after}"
+# Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
 BASE_NOT_THERE = (
-    "note: the base plan and commit compare against is not in this checkout (no origin, or not "
-    "fetched), so plan reports base-unresolvable and commit could not run; fetch it, or pass "
-    "--base with a refs/ name or a commit id that exists, such as refs/heads/main"
+    "note: the base this run compares against is not in this checkout (no origin, or not "
+    "fetched), so the gates that read it cannot judge: plan reports base-unresolvable, and "
+    "commit, and bugs in a tree with no ledger, could not run; fetch it, or pass --base with a "
+    "refs/ name or a commit id that exists, such as refs/heads/{branch}"
 )
+# The gates that read the base, whose failure the note may explain.
+BASE_READERS = frozenset({"plan", "commit", "bugs"})
 WAITING = (
     "note: a custom gate is promoted once the base's keelline.toml has its command, since "
     "`keelline gate` runs it only then; land it on the base branch first, then promote it"
@@ -84,6 +89,17 @@ ONLY_UNKNOWN = (
 )
 
 
+def _base_missing(root: Path, base: str, failing: set[str]) -> bool:
+    """Whether a gate that reads the base failed, and the base is not in this checkout: then its
+    failure says nothing about the tree, and the note says why. The base is the parser's
+    grammar, the loader's, or a revision a person typed, and is not printed."""
+    from keelline.gitenv import git_run
+
+    if not failing & BASE_READERS:
+        return False
+    return git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options", base)[0] != 0
+
+
 def run_assess(args: argparse.Namespace) -> Result:
     from keelline.assess.assessment import NOT_IGNORED, assess, document, ignored, render, write
 
@@ -92,6 +108,8 @@ def run_assess(args: argparse.Namespace) -> Result:
     assessment = assess(root, machine=machine, base=args.base, builtin=args.builtin)
     write(root, assessment)
     summary = render(assessment)
+    if _base_missing(root, assessment.base, set(assessment.would_fail)):
+        summary += "\n\n" + BASE_NOT_THERE.format(branch=assessment.base_branch)
     if ignored(root) is False:
         summary += f"\n\n{NOT_IGNORED}"
     return Result(summary, document(assessment), exit_code=1 if assessment.would_fail else 0)
@@ -256,7 +274,6 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     from keelline.assess.report import FINDINGS_ELSEWHERE
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
-    from keelline.gitenv import git_run
 
     root, config = root_and_config(args)
     base = args.base or local_base(config)
@@ -272,11 +289,9 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     parts.append(f"state {transition.after}")
     lines = ["; ".join(parts)]
     if advisory:
-        judged = {*transition.failing, *transition.unanswered} & {"plan", "commit"}
-        # The base is the parser's grammar or the loader's, and is not printed either way.
-        found = git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options", base)[0]
-        if judged and found != 0:
-            lines.append(BASE_NOT_THERE)
+        judged = {*transition.failing, *transition.unanswered}
+        if _base_missing(root, base, judged):
+            lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))
         if transition.waiting:
             lines.append(WAITING)
         lines.append(FINDINGS_ELSEWHERE)

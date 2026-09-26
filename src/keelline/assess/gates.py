@@ -50,7 +50,7 @@ BASE = "<base>"  # where the base goes in a gate's command; the base itself is n
 
 COULD_NOT_RUN = "could not judge this tree; `keelline {command}` names the cause"
 CUSTOM_COULD_NOT_RUN = (
-    "the command [gates.custom.{name}] run names could not start, or ran past {seconds}s"
+    "the command in [gates.custom.{name}] run could not start, or ran past {seconds}s"
 )
 CUSTOM_REMEDY = "fix what [gates.custom.{name}] run reports; its output is printed as it ran"
 
@@ -97,7 +97,13 @@ BUILTIN: tuple[Gate, ...] = (
         "docs check",
         docs_gate,
     ),
-    Gate("bugs", 1, "run `keelline bugs check` and fix each finding", "bugs check", bugs_gate),
+    Gate(
+        "bugs",
+        1,
+        f"run `keelline bugs check --base {BASE}` and fix each finding",
+        f"bugs check --base {BASE}",
+        bugs_gate,
+    ),
     Gate(
         "plan",
         2,

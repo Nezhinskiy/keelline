@@ -51,7 +51,7 @@ Three things hold everywhere:
 - [`keelline test attribute --command CMD [--base REF]`](#keelline-test-attribute---command-cmd---base-ref)
 - [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`keelline bugs index [--check]`](#keelline-bugs-index---check)
-- [`keelline bugs check`](#keelline-bugs-check)
+- [`keelline bugs check [--base REF]`](#keelline-bugs-check---base-ref)
 - [`keelline bugs renumber OLD NEW`](#keelline-bugs-renumber-old-new)
 - [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
@@ -591,7 +591,7 @@ paragraph is recognised structurally rather than by an exact string, so an index
 older generated format is still read as generated rather than refused as hand-written content.
 **Writes** `<paths.bug_index>`.
 
-## `keelline bugs check`
+## `keelline bugs check [--base REF]`
 
 Every rule the ledger holds, in one pass: each entry parses under the flat frontmatter subset
 and its `id:` matches its filename; no entry restates `**Status:**`/`**Severity:**` in its
@@ -604,10 +604,14 @@ files and `[ledger] code_roots` has an entry (a `void` entry counts); every cita
 file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
 line; `--json` carries every finding with its `detail`, which may quote the repository and is
 why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
-generated index — the one rule is the citation rule, and every citation of an entry file dangles:
-with none it prints `nothing to check` and exits `0`, so the check can be required before the first
-entry, and a change that deletes the ledger still answers for what cites it. A generated index with
-no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
+generated index — every mention of an identifier and every citation of an entry file dangles, and
+with `--base <ref>` a ledger that commit carries (its `[paths] bugs` or `bug_index`) is one
+`ledger-removed` finding: with none of them it prints `nothing to check` and exits `0`, so the
+check can be required before the first entry, and a change that deletes the ledger answers for the
+ledger and for everything that refers to it. `--base` is what the `bugs` gate passes, the base it
+judges against; a base git cannot list fails (`1`) rather than read as a base with no ledger, and
+under a gate that is the gate not running. Without `--base` the tree alone is judged. A generated
+index with no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
 is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A
 file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither
 scanned nor swept. **Writes** nothing.
@@ -711,10 +715,12 @@ probes below, which read files and the git index and never run a tool or reach t
 commands you have not agreed to run. The summary names the custom gates it left out, which count
 toward no total, and the inventory lists them under `skipped`.
 
-`REF` is the revision `plan` and `commit` compare against, default
-`refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
-for it. Where that ref does not exist (no `origin`, or not fetched), `plan` reports
-`base-unresolvable` and `commit` could not run, and both count as failing.
+`REF` is the revision `plan` and `commit` compare against, and the one `bugs` asks whether it
+carried the ledger when the tree has none, default `refs/remotes/origin/<project.base_branch>` —
+the fully qualified name, so a tag cannot stand in for it. Where that ref does not exist (no
+`origin`, or not fetched), `plan` reports `base-unresolvable` and `commit` could not run, as does
+`bugs` in a tree with no ledger, and each counts as failing; a `note:` after the summary says the
+base is missing and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
 A gate that could not judge the tree — an unreadable plan, a range git cannot read, a custom
 gate that could not start or ran past `custom_timeout_seconds` — is failing: a gate that could
@@ -729,6 +735,7 @@ and a fixed `reason` naming the command that shows why.
 | `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file; not judged under `[ci] mode = "none"` |
+| `codeowners-scope` | the same file | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns both. `where` names `.github/workflows/`, the file, or both. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
 
@@ -855,7 +862,7 @@ that, and it is an option, not a requirement.
   resolves the base once to a commit and passes that. Run locally, the default is
   `refs/remotes/origin/<project.base_branch>`, read from this tree's own configuration, which is
   why a local run is advice and never the authority. A clone without an `origin` remote names its
-  base with `--base`, such as `--base refs/heads/main`.
+  base with `--base`, such as `--base refs/heads/<project.base_branch>`.
 - *The base's copy.* It is read at the project root's own path in the repository. A root reached
   through a symbolic link below the repository's top, or spelled otherwise than git spells it, is
   refused: either would look for the copy where the base has none, and a missing copy is the
@@ -971,10 +978,11 @@ editor names `state` and `enforced` together, one line each: as they stand when 
 the gates finds it, and as the command would write them when the write itself refuses, so
 following it either leaves the project as it was or makes the transition whole.
 
-`--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
-commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable
-workflow judges against `[ci] gate_branch`; where the two differ, pass `--base` to judge as CI
-will. Run on the base branch itself, that range is empty and those two gates pass having judged
+`--base` is what `plan` and `commit` judge a range against, and what `bugs` asks about a ledger
+the tree lacks, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
+`refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
+gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
+judge as CI will. Run on the base branch itself, that range is empty and those two gates pass having judged
 nothing; the pull request that carries a promotion faces every gate it promotes in its own run.
 A custom gate runs its command here, as it does under `keelline gate`, and only when that
 command is the one the base's `keelline.toml` gives it: a gate the base does not have, or has
@@ -987,8 +995,9 @@ the pull request that carries the promotion. A base that cannot be read, or has 
 that ran and did not pass to its finding count, `unanswered`, the gates that could not run, and
 `not_on_base`, the custom gates not run because the base does not have their command.
 When a gate stays advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or the gate's own command), and, when `plan` or `commit` is among them
-and the base is not in the checkout, a `note:` saying so and naming `--base`, since a
+(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs` is
+among them and the base is not in the checkout, a `note:` saying so and naming `--base` with the
+project's base branch, since a
 `base-unresolvable` finding is about the checkout and not the plan.
 
 **There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses
@@ -1036,8 +1045,8 @@ Without it nothing is written, and the refusal (`2`) names `--questions`.
 
 Each answer flag replaces one default and writes one key:
 - `--name` writes `[project] name`;
-- `--base-branch` writes `[project] base_branch` and `release_branch`, and `[ci] gate_branch`
-  when the branch is not `main`, so the workflow gates the branch pull requests merge into;
+- `--base-branch` writes `[project] base_branch` and `release_branch`; `[ci] gate_branch`,
+  left out, is that branch, so the workflow gates the branch pull requests merge into;
 - `--agent`, once per harness, writes `[keelline] agents`;
 - `--profile` writes `[keelline] profile`, an empty value meaning none;
 - `--memory-mode` writes `[memory] mode`;
@@ -1047,7 +1056,7 @@ The parser refuses a value outside its grammar or its choices (`2`), and it refu
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
 letters, digits, `.`, `_`, `-` and `/` and led by a letter or digit: no `..`, `//`, component
 starting with `.` or ending in `.lock`, no trailing `/` or `.`, and not `HEAD`. The same
-grammar holds `[ci] gate_branch` and a detected `origin/HEAD`. Answer flags reach only a
+grammar holds `[ci] gate_branch` and a detected base branch. Answer flags reach only a
 `keelline.toml` this run creates. Over one the repository already has, they are refused
 (`2`), because that file is the answer. Passing a default as its flag loads as the same
 configuration as not passing it.
@@ -1055,9 +1064,15 @@ configuration as not passing it.
 When nothing answers, `init` detects:
 - the project's name from `origin`'s last path segment, lower-cased and with `.git` stripped,
   else from the checkout's directory name;
-- the base branch from `refs/remotes/origin/HEAD` with `origin/` stripped, when that is a
-  plain branch name, else `main` — and, when it is not `main`, the same branch as
-  `[ci] gate_branch`, so the workflow gates the branch pull requests merge into;
+- the base branch from `refs/remotes/origin/HEAD`, read as the full ref with exactly
+  `refs/remotes/origin/` stripped, when that is a plain branch name, else `main` with a `note:`
+  saying so. An `origin` with no `origin/HEAD` — a repository created locally and pushed, since
+  only `git clone` and `git remote set-head` record one — gives `main`, with a `note:` naming
+  `git remote set-head origin --auto` and `--base-branch`: the branch checked out there is
+  typically the feature branch the adoption is made on. Only with no `origin` remote at all is
+  it the branch checked out, when that is a plain branch name, with a `note:` when it is not
+  `main`, else `main`. The workflow gates the same branch, since `[ci] gate_branch` left out is
+  the base branch;
 - the agent surfaces from which of `.claude/` and `.codex/` the repository carries, both when
   it carries neither;
 - `[keelline] profile` from the first shipped profile whose markers sit at the root
@@ -1225,8 +1240,9 @@ and so what the workflow pins, empty when no workflow was planned — `stamped`,
 run's plan adds `[keelline] version` to a `keelline.toml` you wrote — written only by a run that
 is neither a dry run nor refused — `unknown_harnesses`, how many names in `[keelline] agents` no
 harness answers to, and `head_note`, the `note:` line that says `main` replaced an
-`origin/HEAD` outside the plain-branch grammar (empty otherwise; the branch it named is never
-printed). An answered `--base-branch` replaced nothing, so it leaves `head_note` empty.
+`origin/HEAD` outside the plain-branch grammar (the branch it named is never printed), that
+`main` stands because `origin` has no `origin/HEAD` recorded, or that, with no `origin` remote,
+the branch checked out other than `main` became the base branch; empty otherwise. An answered `--base-branch` replaced nothing, so it leaves `head_note` empty.
 `custom_gates` lists the custom gates a `keelline.toml` you wrote configures, by name, and is empty
 when this run writes the file.
 
@@ -1255,10 +1271,12 @@ each is answered by the flag its line names, on `keelline init --yes`; `keelline
 Where a value came from is one of a fixed set of phrases. The name comes from the
 `origin remote`'s last path segment or, with no origin, the `directory name`; when that one is
 not a lowercase path segment the source is `not derivable`, and the value prints as
-`none; asked`, never as what the repository suggested. The base branch comes from `origin/HEAD` when that names a plain branch; otherwise it
-is the `default`, `main`. The agents come from the `harness directories` the root carries;
-otherwise the `default` is every harness. The profile comes from `profile markers`, or there are
-`no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
+`none; asked`, never as what the repository suggested. The base branch comes from `origin/HEAD`
+when that names a plain branch under `refs/remotes/origin/`; with no `origin` remote at all,
+from the `current branch` when that is a plain branch; otherwise, an `origin` with no
+`origin/HEAD` included, it is the `default`, `main`. The agents come from the `harness
+directories` the root carries; otherwise the `default` is every harness. The profile comes from
+`profile markers`, or there are `no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
 Each default is exactly what `keelline init --yes` writes when that question is not answered.
 `origin/HEAD` goes stale after the remote's default branch is renamed, because git does not
 refresh it. That is why its source is printed: you can catch it.
@@ -2311,7 +2329,8 @@ plan offers one. Everywhere else the verdict binds under six settings, and witho
 gates still run and still report but cannot stop a pull request that edits its own caller:
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
-  branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it;
+  branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
+  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;
@@ -2481,7 +2500,7 @@ local = []               # scaffold template ids whose artifact is written under
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
 ref = ""                 # the commit of the Keelline release the workflow is pinned to;
                          # `init` writes it; `v1` is the documented mutable opt-in
-gate_branch = "main"     # the branch a gate reads its configuration from
+gate_branch = "main"     # the branch the workflow gates; left out, [project] base_branch
 
 [gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
@@ -2498,20 +2517,23 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
-requests into it and pushes to it, and passes it as a literal `base:`; `init` writes it into the
-file it creates when the base branch it chose is not `main` — and `ref` is written by `init` and
-judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
+requests into it and pushes to it, and passes it as a literal `base:`; left out, it is `[project]
+base_branch`, so a file that names `develop` as its base gates `develop`, and `keelline upgrade`
+re-renders a caller you have not edited for that branch where an earlier release gated `main`;
+set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by `init` and judged by
+`doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
 `commit check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
 `keelline assess`, `keelline gate` and the reusable workflow.
 
-Every value above is what a key you leave out takes, from the `recommended` preset — with two
+Every value above is what a key you leave out takes, from the `recommended` preset — with three
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
 `[project] name` have no default at all and are yours to write: a file without `version` does
 not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
-`installed` above shows a set value, not what an omitted key takes. Everything from
-`[project] base_branch` down is the preset's default exactly as written. `[project]
+`installed` above shows a set value, not what an omitted key takes. `[ci] gate_branch` has no
+preset default: left out, it is `[project] base_branch`, whose default is `main`. Everything else
+from `[project] base_branch` down is the preset's default exactly as written. `[project]
 base_branch` and `release_branch` are branch names git accepts, from letters, digits, `.`, `_`,
 `-` and `/` (the grammar `--base-branch` and `[ci] gate_branch` follow); anything else does not
 load, and the refusal names the key and never the value.

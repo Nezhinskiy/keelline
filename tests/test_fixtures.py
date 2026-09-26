@@ -242,6 +242,13 @@ _SHORT_VERSION = re.compile(
     r"^## The short version\n.*?^```bash\n(.*?)^```", re.MULTILINE | re.DOTALL
 )
 _TEMPLATE_BLOCK = re.compile(r"^## Verification\n.*?^```\n(.*?)^```", re.MULTILINE | re.DOTALL)
+# The release's first step, "be on `main`, current, and green": a list item, so its block is
+# indented under the item.
+_RELEASE_BLOCK = re.compile(
+    r"^1\. \*\*Be on `main`, current, and green\.\*\*.*?^   ```bash\n(.*?)^   ```",
+    re.MULTILINE | re.DOTALL,
+)
+RELEASING = ROOT / "RELEASING.md"
 _COVERAGE_FLOOR = re.compile(r"--cov-fail-under=(\d+)")
 
 
@@ -273,6 +280,12 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     match = _TEMPLATE_BLOCK.search(PR_TEMPLATE.read_text(encoding="utf-8"))
     assert match is not None, "the pull-request template has no `## Verification` block"
     blocks[".github/pull_request_template.md"] = match.group(1)
+    # The release's own check ran the suite in one process and left the oracle out: a third
+    # copy of the list, and the one run last before a tag. Mutation (by hand): drop `-n auto`
+    # from `RELEASING.md`'s `pytest` line -> reddens naming it.
+    match = _RELEASE_BLOCK.search(RELEASING.read_text(encoding="utf-8"))
+    assert match is not None, "RELEASING.md's first step has no bash block"
+    blocks["RELEASING.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
     # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from

@@ -68,6 +68,7 @@ NOT_IGNORED = (
 @dataclass(frozen=True)
 class Assessment:
     base: str
+    base_branch: str  # `[project] base_branch`, for the note when `base` is not in the checkout
     state: str
     enforcing: tuple[str, ...]
     gates: tuple[GateResult, ...]
@@ -107,7 +108,15 @@ def assess(
     items = [i for r in results for i in _gate_items(gates[r.name], r)]
     items += run_probes(ProbeContext(root, config, window))
     enforcing = tuple(n for n in config.gate_names if n in config.keelline.enforcing)
-    return Assessment(base, config.keelline.state, enforcing, results, tuple(items), skipped)
+    return Assessment(
+        base,
+        config.project.base_branch,
+        config.keelline.state,
+        enforcing,
+        results,
+        tuple(items),
+        skipped,
+    )
 
 
 def document(assessment: Assessment) -> dict[str, Any]:

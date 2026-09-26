@@ -14,6 +14,10 @@ from keelline.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
 _INERT = "nothing to check: no ledger directory and no generated index"
+BASE_HELP = (
+    "also fail when this base ref carries the ledger and the tree has none, so a change that "
+    "deletes the ledger answers for it; without it the tree alone is judged"
+)
 
 
 def run_bugs_index(args: argparse.Namespace) -> Result:
@@ -47,8 +51,9 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     from keelline.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
-    found = bugs_gate(root, config)
-    # Before a ledger exists only a citation of an entry file is a finding, and there is none.
+    found = bugs_gate(root, config, args.base or "")
+    # Before a ledger exists only a reference to an entry, or a ledger the base carries, is a
+    # finding, and there is none.
     if not found and uninitialised(root, config):
         return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}
@@ -114,6 +119,7 @@ def register(groups: SubParsers) -> None:
     check = common_flags(
         sub.add_parser("check", help="validate the ledger, the index and every reference")
     )
+    check.add_argument("--base", default=None, help=BASE_HELP)
     check.set_defaults(func=run_bugs_check)
     renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
     renumber.add_argument("old")

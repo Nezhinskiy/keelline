@@ -23,8 +23,8 @@ def test_the_name_comes_from_origin_lower_cased_and_stripped(tmp_path: Path) -> 
     # hand): strip, then lower-case -> `widget.git`.
     upper = repository(tmp_path / "d", origin="https://github.com/Owner/Widget.GIT")
     assert detect(upper).name == "widget"
-    # No origin: the directory name, and every other value the default it falls back to, each
-    # saying so.
+    # No origin: the directory name, the branch checked out, and every other value the default
+    # it falls back to, each saying so.
     assert detect(repository(tmp_path / "c", origin=None, directory="Local")) == Detected(
         "local",
         "main",
@@ -32,7 +32,7 @@ def test_the_name_comes_from_origin_lower_cased_and_stripped(tmp_path: Path) -> 
         "",
         {
             "name": "directory name",
-            "base_branch": "default",
+            "base_branch": "current branch",
             "agents": "default",
             "profile": "no profile markers",
         },
@@ -59,6 +59,128 @@ def test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default(
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/`id`")
     found = detect(root)
     assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
+
+
+def _clone_on_develop(tmp_path: Path) -> Path:
+    """A clone whose `origin/HEAD` names `refs/remotes/origin/develop`, as `git clone` leaves it."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    git(upstream, "init", "-q", "-b", "develop")
+    git(upstream, "commit", "-q", "--allow-empty", "-m", "one")
+    git(tmp_path, "clone", "-q", str(upstream), "clone")
+    return tmp_path / "clone"
+
+
+@needs_git
+@pytest.mark.parametrize("shadow", ["tag", "branch"])
+def test_a_ref_named_like_the_remote_branch_never_reaches_the_base_branch(
+    tmp_path: Path, shadow: str
+) -> None:
+    # git shortens a ref only as far as it stays unambiguous, so with a tag or a local branch
+    # named `origin/develop`, `symbolic-ref --short` answered `remotes/origin/develop`, which
+    # passed the grammar and was written as the base branch: a workflow that never ran and a
+    # base no command could resolve. The clone carries the tag. Mutation (oracle): "origin/HEAD
+    # is read in its short form" -> both cases come back `remotes/origin/develop`.
+    root = _clone_on_develop(tmp_path)
+    if shadow == "tag":
+        git(root, "tag", "origin/develop")
+    else:
+        git(root, "branch", "origin/develop")
+    found = detect(root)
+    assert (found.base_branch, found.sources["base_branch"]) == ("develop", "origin/HEAD")
+    assert not found.head_refused
+
+
+@needs_git
+def test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default(
+    tmp_path: Path,
+) -> None:
+    # `origin/HEAD` pointed by hand at a local branch: `refs/heads/develop` passes the branch
+    # grammar whole, so only the exact `refs/remotes/origin/` prefix decides. Mutation (oracle):
+    # "a remote head outside refs/remotes/origin/ is read whole" -> `refs/heads/develop` comes
+    # back as the base branch.
+    root = _clone_on_develop(tmp_path)
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/heads/develop")
+    found = detect(root)
+    assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
+    assert found.head_refused
+
+
+@needs_git
+def test_with_no_remote_head_the_base_branch_is_the_branch_checked_out(tmp_path: Path) -> None:
+    # A repository nobody cloned has no `origin/HEAD`, and one on `develop` had `main` written as
+    # its base and a workflow that never ran for its own pull requests. Mutation (oracle): "no
+    # remote head leaves the default whatever is checked out" -> `main`, `default`.
+    root = repository(tmp_path, origin=None)
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+    found = detect(root)
+    assert (found.base_branch, found.sources["base_branch"]) == ("develop", "current branch")
+    assert not found.head_refused
+
+
+FEATURE = "chore/adopt-keelline"
+
+
+def _adopting(tmp_path: Path, shape: str) -> Path:
+    """A repository on the feature branch an adoption is made on, in one of three shapes: created
+    here and pushed (`origin`, no `origin/HEAD`), never pushed (no `origin`), or cloned (an
+    `origin/HEAD` naming `develop`)."""
+    if shape == "cloned":
+        root = _clone_on_develop(tmp_path)
+    else:
+        root = repository(tmp_path, origin=None)
+        git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    if shape == "pushed":
+        bare = tmp_path / "origin.git"
+        git(tmp_path, "init", "-q", "--bare", str(bare))
+        git(root, "remote", "add", "origin", str(bare))
+        git(root, "push", "-q", "-u", "origin", "main")
+    git(root, "checkout", "-q", "-b", FEATURE)
+    return root
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("shape", "expected"),
+    [
+        ("pushed", ("main", "default", True)),
+        ("unpushed", (FEATURE, "current branch", False)),
+        ("cloned", ("develop", "origin/HEAD", False)),
+    ],
+)
+def test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all(
+    tmp_path: Path, shape: str, expected: tuple[str, str, bool]
+) -> None:
+    # A repository created here and pushed with `git push -u origin main` has an `origin` and no
+    # `origin/HEAD` (only `git clone` and `git remote set-head` record one), and it is adopted
+    # from a feature branch: taking the branch checked out wrote the feature branch as the base,
+    # so the workflow gated it and `assess` compared the branch with itself. With an `origin`,
+    # the default stands and is flagged for the note; with none, the branch checked out is all
+    # there is to go on. Mutation (oracle): "an origin with no origin/HEAD takes the branch
+    # checked out" -> `pushed` comes back as the feature branch.
+    found = detect(_adopting(tmp_path, shape))
+    base_branch, source, unrecorded = expected
+    assert (found.base_branch, found.sources["base_branch"]) == (base_branch, source)
+    assert (found.head_unrecorded, found.head_refused) == (unrecorded, False)
+
+
+@needs_git
+@pytest.mark.parametrize("head", ["detached", "outside-the-grammar"])
+def test_a_checked_out_branch_nothing_can_name_leaves_the_default(
+    tmp_path: Path, head: str
+) -> None:
+    # A detached `HEAD` answers no branch, and `a+b` is a branch git accepts and the grammar
+    # does not: both leave the default, and neither is a remote head to report as refused.
+    # Mutation (oracle): "the checked-out branch skips the grammar" -> `a+b` comes back.
+    root = repository(tmp_path, origin=None)
+    git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    if head == "detached":
+        git(root, "checkout", "-q", "--detach")
+    else:
+        git(root, "checkout", "-q", "-b", "a+b")
+    found = detect(root)
+    assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
+    assert not found.head_refused
 
 
 @needs_git

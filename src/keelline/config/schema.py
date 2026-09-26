@@ -16,6 +16,12 @@ from typing import ClassVar
 # custom gate. Each is one lowercase path segment whose leading class keeps it out of an option's
 # position in an argv. Every other module derives from this spelling rather than keeping its own.
 PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# `PROJECT_NAME` in words, for every refusal a person reads: the pattern itself ends in Python's
+# `\Z`, which means nothing to a reader and something else to every other regex dialect.
+NAME_RULE = (
+    "one lowercase path segment: lowercase letters, digits, '.', '_' and '-', led by a letter "
+    "or digit"
+)
 # The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
 # decides whether it may be written, and a shape rule cannot bound a charset.
 #
@@ -48,7 +54,7 @@ PATH_VALUE = re.compile(
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 # The one grammar for a branch name Keelline reads or writes: `[project] base_branch` and
 # `release_branch`, which the loader holds to it, `[ci] gate_branch`, which a rendered workflow
-# is withheld over, `--base-branch`, and a detected `origin/HEAD`. Each is repository-authored or
+# is withheld over, `--base-branch`, and a detected base branch. Each is repository-authored or
 # typed, and each reaches a git ref, an output line or a YAML file GitHub executes, where quoting
 # alone would still admit a newline. Inside that character set it refuses what git's own
 # branch-name rules refuse (`git check-ref-format --branch`), so nothing names a branch no
