@@ -394,8 +394,9 @@ def warm_cache(tree: Path) -> Path:
         subprocess.run(
             [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
             cwd=tree,
+            # Captured and never decoded, as `_run`'s output is: what this leaves behind is the
+            # cache, and a byte no codec reads in the collection's output killed the oracle.
             capture_output=True,
-            text=True,
             timeout=300,
             check=False,
             env=_environment(tree, cache, writes_bytecode=True),

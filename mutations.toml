@@ -3410,6 +3410,20 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught",
 ]
 
+# The same strict decode in the other pytest the oracle launches: the collection that warms the
+# bytecode cache forgives only a timeout, so a byte no codec reads there ended the run.
+[[mutation]]
+name = "the oracle decodes its warming collection's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,"""
+after = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,
+            text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_collection_that_prints_an_undecodable_byte_still_warms_the_cache",
+]
+
 [[mutation]]
 name = "the scratch checkout's src no longer precedes the editable install"
 file = "scripts/mutation_oracle.py"
