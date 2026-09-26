@@ -12,9 +12,12 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -113,7 +116,9 @@ def test_a_run_where_every_named_test_skipped_proves_nothing(
     module = oracle(root=tmp_path)
     subject = tmp_path / "subject.py"
     subject.write_text("GUARD = True\n", encoding="utf-8")
-    monkeypatch.setattr(module, "_run", lambda _targets, _cwd: module.Outcome(code=0, executed=0))
+    monkeypatch.setattr(
+        module, "_run", lambda _targets, _cwd, **_kw: module.Outcome(code=0, executed=0)
+    )
     finding = module._check(
         a_mutation(module, subject, ("test_x.py::test_skipped_here",)), tmp_path
     )
@@ -423,6 +428,255 @@ def test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path(
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     monkeypatch.setenv("PYTHONPATH", str(root / "src"))
     assert module.main([]) == 0
+
+
+def _recommit(root: Path, files: dict[str, str]) -> None:
+    for relative, text in files.items():
+        (root / relative).write_text(text, encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "change")
+
+
+@needs_git
+def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The hazard the per-run empty cache used to answer, made certain rather than a matter of
+    # timing. `warm_cache` compiles `guard.py` from HEAD before the entry runs, and the entry's
+    # `after` is exactly as long as its `before`, so the mutated file differs from HEAD's in
+    # content only: a `.pyc` is trusted on mtime-in-whole-seconds and size, and with the
+    # mutated write left on HEAD's mtime the import system runs HEAD's bytecode, the guard
+    # holds, and the entry reads as surviving. `_check`'s stamp is what tells them apart.
+    #
+    # Mutation (declared): the stamp pinned at 0, so the mutated write keeps HEAD's mtime ->
+    # the entry survives, `main` returns 1, and this reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    _recommit(
+        root,
+        {
+            "mutations.toml": "[[mutation]]\n"
+            'name = "the guard is disarmed, byte for byte as long"\n'
+            'file = "src/pkg/guard.py"\n'
+            'before = "GUARD = True"\n'
+            'after = "GUARD = None"\n'
+            'reddens = ["tests/test_guard.py::test_the_guard_holds"]\n',
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    assert module.main([]) == 0
+
+
+def test_a_mutated_file_that_does_not_keep_its_stamp_is_a_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stamp is read back rather than assumed. A filesystem whose timestamps are coarser
+    # than a second would round two stamps into one and bring the stale-bytecode hazard back
+    # without a sound, so an mtime that did not take is a finding, not a run. Modelled by an
+    # `os.utime` that does nothing, which is what such a filesystem looks like from here.
+    #
+    # Mutation (declared): the read-back is disabled -> the entry runs against a mutated file
+    # carrying the clock's mtime, is caught, and the finding this asserts never appears.
+    module = oracle(root=tmp_path)
+    subject = tmp_path / "subject.py"
+    subject.write_text("GUARD = True\n", encoding="utf-8")
+    (tmp_path / "test_subject.py").write_text(
+        "import subject\n\n\ndef test_the_guard_holds() -> None:\n    assert subject.GUARD\n",
+        encoding="utf-8",
+    )
+    # HEAD's mtime far in the past, so the clock's own mtime on the mutated write cannot land
+    # on HEAD's plus the stamp by coincidence — a clean run takes about a second, which is
+    # exactly the first stamp.
+    os.utime(subject, (1_000_000_000, 1_000_000_000))
+    monkeypatch.setattr(module.os, "utime", lambda *_args, **_kwargs: None)
+    finding = module._check(
+        a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)), tmp_path
+    )
+    assert finding is not None
+    assert "did not keep the mtime it was given" in finding, finding
+    assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
+
+
+@needs_git
+def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two jobs sharing one checkout would interleave their mutations over one file and each
+    # would run against the other's — the hazard the scratch checkout removes, moved inside the
+    # oracle. Every pytest run appends the checkout it ran from; each run sleeps, so each job
+    # is still busy with its first entry when the other takes the second, and two jobs must
+    # show up as two checkouts, neither of them the repository.
+    #
+    # Mutation (declared): one checkout made however many jobs there are -> the jobs take
+    # turns with it, one checkout is recorded, and the count reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    entry = (
+        "[[mutation]]\n"
+        'name = "{name}"\n'
+        'file = "src/pkg/guard.py"\n'
+        'before = "GUARD = True"\n'
+        'after = "{after}"\n'
+        'reddens = ["tests/test_guard.py::test_the_guard_holds"]\n'
+    )
+    _recommit(
+        root,
+        {
+            "tests/test_guard.py": "import os\n"
+            "import time\n"
+            "from pathlib import Path\n"
+            "\n"
+            "from pkg.guard import GUARD\n"
+            "\n"
+            "\n"
+            "def test_the_guard_holds() -> None:\n"
+            "    with Path(os.environ['ORACLE_PROBE']).open('a', encoding='utf-8') as probe:\n"
+            "        probe.write(__file__ + '\\n')\n"
+            "    time.sleep(1)\n"
+            "    assert GUARD\n",
+            "mutations.toml": entry.format(name="disarmed", after="GUARD = False")
+            + "\n"
+            + entry.format(name="emptied", after="GUARD = 0"),
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    probe = tmp_path / "probe.txt"
+    monkeypatch.setenv("ORACLE_PROBE", str(probe))
+    assert module.main(["--jobs", "2"]) == 0
+    ran_from = {Path(line).parents[1] for line in probe.read_text(encoding="utf-8").splitlines()}
+    assert len(ran_from) == 2, ran_from
+    assert all(root.resolve() not in tree.resolve().parents for tree in ran_from), ran_from
+
+
+def test_every_run_keeps_its_temporary_files_to_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Several jobs run pytest at once, and pytest's default `--basetemp` is one directory per
+    # user that every one of them prunes on exit; a neighbour's `tmp_path` is protected only by
+    # a lock created just after it. On a four-job run one clean run of 1,138 failed with a test
+    # that passes alone every time and only writes under `tmp_path`. Each run now gets a base
+    # of its own, under this module's scratch, which is what the probe checks.
+    #
+    # Mutation (declared): the `--basetemp` argument dropped -> the test's `tmp_path` lands in
+    # pytest's shared default and the containment assertion reddens.
+    module = oracle(root=tmp_path)
+    probe = tmp_path / "probe.txt"
+    monkeypatch.setenv("ORACLE_PROBE", str(probe))
+    (tmp_path / "test_where.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_where(tmp_path: Path) -> None:\n"
+        "    Path(os.environ['ORACLE_PROBE']).write_text(str(tmp_path), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    assert module._run(("test_where.py::test_where",), tmp_path).passed
+    where = Path(probe.read_text(encoding="utf-8")).resolve()
+    assert Path(module.TEMPDIR).resolve() in where.parents, where
+
+
+def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) -> None:
+    # A job's pytest runs in a worker thread, where no signal reaches it. Without `_stop_runs`
+    # a terminate waited for every in-flight entry to finish both of its runs before the
+    # checkouts could be removed — long enough for a process manager's grace period to end in
+    # a `SIGKILL` that leaks them all. The sequential oracle never had this: `subprocess.run`
+    # killed its child as the `SystemExit` passed through it.
+    #
+    # Mutations (declared): the terminate dropped -> the thread is still waiting on a pytest
+    # that sleeps a minute, and the first assertion reddens; the refusal dropped -> the second
+    # `_run` starts pytest, and `pytest.raises` reddens.
+    module = oracle(root=tmp_path)
+    (tmp_path / "test_slow.py").write_text(
+        "import time\n\n\ndef test_slow() -> None:\n    time.sleep(60)\n\n\n"
+        "def test_quick() -> None:\n    pass\n",
+        encoding="utf-8",
+    )
+    waiting = threading.Thread(
+        target=module._run, args=(("test_slow.py::test_slow",), tmp_path), daemon=True
+    )
+    waiting.start()
+    try:
+        deadline = time.monotonic() + 30
+        while not module._live and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert module._live, "the slow run never started"
+        module._stop_runs()
+        waiting.join(timeout=10)
+        assert not waiting.is_alive(), "a stop left a pytest run going"
+        with pytest.raises(module.Stopped):
+            module._run(("test_slow.py::test_quick",), tmp_path)
+    finally:
+        # Under a mutation the sleeping pytest outlives the assertion; end it here so the
+        # oracle's mutated run costs the ten-second bound, not the whole minute.
+        for child in list(module._live):
+            child.kill()
+
+
+@needs_git
+def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stop wiring end to end, which the test above does not reach: that one calls
+    # `_stop_runs` itself, so `_prove`'s own arm could stop calling it and nothing would notice.
+    # A real `SIGTERM`, sent once a job's pytest is running, becomes `SystemExit` in the main
+    # thread; the arm must end that pytest — it sleeps for half a minute — and the checkouts must
+    # be gone when `main` returns. A terminate that waited for the entry instead is the one a
+    # process manager's grace period ends in a `SIGKILL`, leaking every checkout.
+    #
+    # Mutation (declared): the arm stops calling `_stop_runs` -> the job waits out the sleeping
+    # pytest and the time bound reddens. The fixture sleeps on its first run only, so that
+    # mutated run costs one sleep rather than the clean run's and the mutated run's both.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    _recommit(
+        root,
+        {
+            "tests/test_guard.py": "import os\n"
+            "import time\n"
+            "from pathlib import Path\n"
+            "\n"
+            "from pkg.guard import GUARD\n"
+            "\n"
+            "\n"
+            "def test_the_guard_holds() -> None:\n"
+            "    first = Path(os.environ['ORACLE_PROBE'])\n"
+            "    if not first.exists():\n"
+            "        first.write_text('ran', encoding='utf-8')\n"
+            "        time.sleep(30)\n"
+            "    assert GUARD\n",
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+
+    def terminate_once_pytest_runs() -> None:
+        deadline = time.monotonic() + 60
+        while not module._live and time.monotonic() < deadline:
+            time.sleep(0.05)
+        # Only while a run is live, which is only inside `scratch_checkout`, where the handler
+        # that turns the signal into `SystemExit` is installed; outside it this would end the
+        # test process.
+        if module._live:
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=terminate_once_pytest_runs, daemon=True).start()
+    started = time.monotonic()
+    with pytest.raises(SystemExit):
+        module.main([])
+    assert time.monotonic() - started < 20, "the terminate waited for the entry to finish"
+    assert not module._live
+    left = [
+        path for path in Path(module.TEMPDIR).glob(f"{module.SCRATCH_PREFIX}*") if path.is_dir()
+    ]
+    assert left == [], left
 
 
 @needs_git
