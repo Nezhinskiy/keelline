@@ -1949,8 +1949,11 @@ manifests must name it `keelline-overlay[-<owner>]` and `keelline-overlay-market
 which is what `overlay create` renders and `overlay init` renames, rather than merely being
 present; and it must lie outside the repository `--root` names — not inside it, not above it, and
 not in another checkout of it, since a worktree is not a different repository and a clone ships
-its tree into all of them. Where `git` cannot answer for `--root`, the path comparisons stand
-alone.
+its tree into all of them. The path comparisons stand alone only where `--root` is in no
+repository, or where `git` cannot be run and no `.git` is at or above the directory it was asked
+from. Everywhere else inside a checkout, a `git` that gives no answer, refuses the repository it
+found (another user's under `safe.directory`, or one whose `.git` it cannot read) or cannot list
+its checkouts is a refusal.
 
 **Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
 new or recorded overlay itself. Exits `0` on success, `2` on a refused `--overlay` (missing,

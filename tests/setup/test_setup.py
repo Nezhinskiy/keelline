@@ -806,8 +806,9 @@ def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refus
     # alike, exactly as a common directory really named so would read. Every other `git` call
     # passes through untouched.
     #
-    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the sibling
-    # checkout is recorded and this reddens.
+    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the guard, which
+    # refuses git's silence inside a checkout, refuses for that silence rather than naming the
+    # sibling checkout, and this reddens on the `same repository` match alone.
     clone = tmp_path / "clone"
     clone.mkdir()
     _git(clone, "init", "-q", "-b", "main")
@@ -1246,6 +1247,81 @@ def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
     )
     assert report.overlay == overlay
     assert overlay_root(machine) == overlay
+
+
+# A `git` that runs the real one as though another user owned every repository it opens, which
+# is how git's own suite drives `safe.directory`: git then refuses the repository with exit 128.
+# `where` limits it to the directories one arm of the guard asks from.
+DUBIOUS: dict[str, Callable[[Path], str]] = {
+    "every-call": lambda main: "true",
+    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
+    # directory, so this arm alone can refuse it.
+    "the-candidate-side": lambda main: (
+        f'case "$2" in "{main}"|"{main}"/*) true ;; *) false ;; esac'
+    ),
+}
+
+
+def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) -> None:
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        "#!/bin/sh\n"
+        f"if {where}; then\n"
+        "  GIT_TEST_ASSUME_DIFFERENT_OWNER=1\n"
+        "  export GIT_TEST_ASSUME_DIFFERENT_OWNER\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+@pytest.mark.parametrize("dubious", sorted(DUBIOUS))
+def test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dubious: str
+) -> None:
+    # Exit 128 inside a checkout is git saying there is a repository it will not describe —
+    # another user's under `safe.directory`, or one whose `.git` it cannot read — and the guard
+    # read it as git's "no repository": on every call only the path arm stood and the main
+    # checkout's `ov/` was recorded from a linked worktree; on the candidate side the walk went
+    # past it. The layout is the separate-git-dir one of the silent-git case above.
+    #
+    # Mutations (declared): the 128 refusal in `_ask` made `if False:` -> both cases record
+    # `s/ov`; the walk's question without the key dropped -> the candidate-side case records it.
+    main, sep = tmp_path / "s", tmp_path / "sep.git"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    (main / "README.md").write_text("x", encoding="utf-8")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    linked = tmp_path / "s.wt" / "w"
+    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
+    candidate = main / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    _dubious_git(tmp_path, monkeypatch, DUBIOUS[dubious](main.resolve()))
+    with pytest.raises(Refusal, match="refused to describe the repository"):
+        _record(tmp_path, candidate, linked)
+    assert overlay_root(tmp_path / "config.toml") is None
+
+
+def test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side: outside every checkout git's 128 is its ordinary "not a git repository",
+    # and no `.git` at or above the directory says there was nothing for it to describe.
+    # Mutation (declared): the `in_work_tree` condition dropped from the 128 arm -> refused.
+    project = tmp_path / "project"
+    project.mkdir()
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _seed_overlay(overlay)
+    _dubious_git(tmp_path, monkeypatch, "true")
+    _record(tmp_path, overlay, project)
+    assert overlay_root(tmp_path / "config.toml") == overlay
 
 
 @pytest.mark.parametrize("git_version", GITS)

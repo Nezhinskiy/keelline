@@ -14,5 +14,7 @@ bare repositories refused, for the checkouts that list names only by their git d
 are compared as the filesystem sees them, so a path spelled in another case on macOS is the same
 checkout. A `git` that says the project is a repository and then cannot list its checkouts is a
 refusal rather than a pass, and so is a project root inside a bare-shaped directory, and so is a
-`git` that cannot be run or runs past its time limit when asked from inside a checkout. An overlay
+`git` that cannot be run, runs past its time limit, or refuses the repository it found (one
+another user owns, under `safe.directory`, or one whose `.git` it cannot read) when asked from
+inside a checkout. An overlay
 that is a repository of its own elsewhere on disk is recorded as before.

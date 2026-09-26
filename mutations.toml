@@ -9724,3 +9724,47 @@ file = "src/keelline/docs/hygiene.py"
 before = '_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\[\]]+\]\(([^()]+)\)")'
 after = '_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")'
 reddens = ["tests/docs/test_hygiene.py::test_a_text_of_unclosed_links_is_read_in_linear_time"]
+
+# git's exit 128 inside a checkout is a repository it will not describe — another user's under
+# `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
+# overlay guard's path arm stand alone, as git's silence (`-1`) did: from a linked worktree the
+# main checkout's `ov/` was recorded as the machine's trust anchor.
+[[mutation]]
+name = "setup reads git refusing the repository inside a checkout as no repository"
+file = "src/keelline/setup/run.py"
+before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[every-call]",
+  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
+]
+
+[[mutation]]
+name = "the candidate-side walk steps past a repository git refuses under the bare key"
+file = "src/keelline/setup/run.py"
+before = "            _ask(start, *_COMMON_AND_CHECKOUT)"
+after = "            pass"
+reddens = [
+  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
+]
+
+[[mutation]]
+name = "setup refuses an overlay whenever git exits 128, checkout or not"
+file = "src/keelline/setup/run.py"
+before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
+after = "    if code == _GIT_REFUSED and not keyed:"
+reddens = [
+  "tests/setup/test_setup.py::test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay",
+]
+
+# Asked with `safe.bareRepository=explicit`, git's 128 can be it declining a bare-shaped
+# directory, which the caller tells apart by asking again without the key: refused at once, a
+# root inside a bare-shaped directory is refused for the wrong reason.
+[[mutation]]
+name = "a keyed question's 128 refuses before it is asked again without the key"
+file = "src/keelline/setup/run.py"
+before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
+after = "    if code == _GIT_REFUSED and in_work_tree(start):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
+]

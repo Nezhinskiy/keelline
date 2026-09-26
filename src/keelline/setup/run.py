@@ -542,11 +542,24 @@ def _nearest_directory(path: Path) -> Path:
 _SILENT_IN_A_CHECKOUT = (
     "`git` gave no answer asked from {start}, which is inside a checkout — {no_answer} — so no "
     "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
-    "the machine's trust anchor, and a question git did not answer is not taken as a yes"
+    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
+    "that `git` runs here and answers `git status` within a few seconds, then run this again"
 )
+_REFUSED_IN_A_CHECKOUT = (
+    "`git` refused to describe the repository {start} is in, which is inside a checkout — one "
+    "another user owns that `safe.directory` does not admit, or a `.git` it cannot read — so no "
+    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
+    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
+    "that `git status` runs there, then run this again"
+)
+# git's exit when it will not describe the repository it found: a checkout of dubious ownership,
+# an unreadable `.git`, a worktree whose git directory is gone, and, asked with `_EXPLICIT_BARE`,
+# a bare-shaped directory. Only the last is an answer, which is why a keyed question is asked
+# again without the key before its 128 counts.
+_GIT_REFUSED = 128
 
 
-def _ask(start: Path, *args: str) -> list[str] | None:
+def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
     """git's answer to `args` asked from `start`, one line per entry, or `None` when it gave
     none. `gitenv.git_run` decodes losslessly, so a path in bytes that are not UTF-8 is part of
     the answer and compares equal to itself.
@@ -559,10 +572,18 @@ def _ask(start: Path, *args: str) -> list[str] | None:
     (`gitenv.in_work_tree`), because the question cannot go to the git that just failed to
     answer it. Where it could, the silence refuses; where no `.git` is at or above `start`,
     there is no checkout for git to have named, and it is `None` as before.
+
+    **Nor is a git that refused the repository it found.** Exit 128 inside a checkout is git
+    saying there is a repository it will not describe — another user's, under `safe.directory`,
+    or one whose `.git` it cannot read — and read as `None` it let the path arm stand alone, as
+    `-1` did. It refuses too, except for a `keyed` question, asked with `_EXPLICIT_BARE`, whose
+    128 can be git declining a bare-shaped directory: its caller asks again without the key.
     """
     code, out = git_run(start, *args)
     if code == -1 and in_work_tree(start):
         raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=NO_ANSWER))
+    if code == _GIT_REFUSED and not keyed and in_work_tree(start):
+        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
     lines = out.splitlines()
     return lines if code == 0 and lines else None
 
@@ -577,19 +598,18 @@ def _repository(project_root: Path) -> _Repository | None:
     and was recorded. `git worktree list` is the repository's own record of its checkouts, which
     a clone cannot commit into.
 
-    **`None` means git gave no answer, with the key or without it**: `--root` is in no
-    repository, `safe.directory` refuses a repository another user owns, or its `.git` is
-    unreadable — or git could not be run or timed out where no `.git` is at or above `--root`.
-    `git_run` drops stderr, so these are not told apart, and only the path arm stands. None of
-    them is something a repository can commit. Every other way of not answering refuses: git
-    that could not be run or timed out inside a checkout (`_ask`), an answer that says `--root`
+    **`None` means git gave no answer where no `.git` is at or above `--root`**: it is in no
+    repository, or git could not be run or timed out there. Only the path arm stands, and
+    neither is something a repository can commit. Every other way of not answering refuses:
+    git that could not be run, timed out, or refused the repository it found (`safe.directory`,
+    an unreadable `.git`) inside a checkout (`_ask`), an answer that says `--root`
     is not inside a work tree (a root inside a bare-shaped directory has no checkout of its own
     to compare against), an answer git gives only without the key, and a listing that fails or
     is empty.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
-    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT)
+    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
     retried = False
     if answer is None:
         # git 2.38 and later refuse an implicit bare repository outright. Asked again without
@@ -609,7 +629,7 @@ def _repository(project_root: Path) -> _Repository | None:
         )
     if retried:
         raise Refusal(unlisted)
-    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain")
+    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", keyed=True)
     # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
     checkouts = tuple(
         Path(line[len("worktree ") :]) for line in listing or () if line.startswith("worktree ")
@@ -645,7 +665,11 @@ def _candidate_repository(candidate: Path) -> Path | None:
     """
     start = _nearest_directory(candidate)
     while True:
-        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT)
+        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
+        if answer is None and in_work_tree(start):
+            # A bare-shaped directory, which git declines under the key and describes without
+            # it, or a repository git refuses either way, which `_ask` refuses.
+            _ask(start, *_COMMON_AND_CHECKOUT)
         if answer is not None and len(answer) == 2 and answer[1] == "true":
             return Path(answer[0])
         if start == start.parent:
