@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.gitfixture import run_git
+from tests.gitfixture import needs_git, run_git
 
 ROOT = Path(__file__).resolve().parents[1]
 THIS = Path(__file__).resolve()
@@ -274,15 +274,37 @@ def tracked_files() -> list[Path]:
     if done.returncode == 0 and done.stdout:
         names = [n for n in done.stdout.decode("utf-8").split("\0") if n]
         return sorted(ROOT / n for n in names if (ROOT / n).is_file())
+    return walked(ROOT)
+
+
+def walked(root: Path) -> list[Path]:
+    """The fallback: every file under `root` minus the fixed exclusions."""
     # Anchored on the FIRST component: `tests/fixtures/hostile-project/.claude/settings.json`
-    # is a fixture to walk, not a configuration directory to skip.
+    # is a fixture to walk, not a configuration directory to skip. Coverage's data files are
+    # named rather than listed: each sits in the root and is its own first component.
     return sorted(
         p
-        for p in ROOT.rglob("*")
-        if p.is_file() and p.relative_to(ROOT).parts[0] not in FALLBACK_EXCLUDED
+        for p in root.rglob("*")
+        if p.is_file()
+        and (parts := p.relative_to(root).parts)[0] not in FALLBACK_EXCLUDED
+        and not (len(parts) == 1 and (p.name == ".coverage" or p.name.startswith(".coverage.")))
     )
 
 
+def test_the_fallback_walk_skips_coverage_data_in_the_root(tmp_path: Path) -> None:
+    # The sdist half of the test below. An unpacked sdist has no `.git`, so no `.gitignore`
+    # applies, and the contributor's `pytest -n auto --cov` leaves `.coverage` and one
+    # `.coverage.<host>.pid<pid>.X<random>x` per worker in the root: SQLite, undecodable, and
+    # counted against `UNDECODABLE` by whichever run a worker finished first. A root-level file
+    # is its own first component, so `FALLBACK_EXCLUDED` cannot name one; this is by file name.
+    #
+    # Mutation (declared): the coverage clause dropped from `walked` -> both files are walked.
+    for name in (".coverage", ".coverage.runner_host.pid4242.XaBcDeFx", "README.md"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert [p.name for p in walked(tmp_path)] == ["README.md"]
+
+
+@needs_git
 @pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
 def test_a_coverage_worker_file_is_not_a_file_the_gate_walks(tmp_path: Path) -> None:
     """The suite runs across workers, and under `--cov` each one leaves its own data file in

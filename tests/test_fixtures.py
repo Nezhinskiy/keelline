@@ -272,9 +272,8 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     blocks[".github/pull_request_template.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
-    # `pytest -n auto` among them: across workers the suite took 95 s where it took 335 s one
-    # test at a time, same tests, same coverage (measured 2026-09-26, ten cores). Mutation: drop
-    # `-n auto` from `ci.yml`'s `pytest` line -> reddens naming it.
+    # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from
+    # `ci.yml`'s `pytest` line -> reddens naming it.
     required = (
         "pytest -n auto",
         f"--cov-fail-under={floor.group(1)}",
@@ -440,9 +439,9 @@ EXPECTED_CHARACTERS = {
     # when the base step's reader stopped importing from the tree under review.
     "check.yml": 6888,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
-    # 899 -> 907 when the suite began running across workers: `-n auto` on the `pytest` line.
-    # 907 -> 1035 for the same `uses:` step becoming a `run:` one.
-    "ci.yml": 1035,
+    # 899 -> 1056: `-n auto` on the `pytest` line (+8) and the old-interpreter step becoming a
+    # `run:` (+149).
+    "ci.yml": 1056,
     "release.yml": 1683,
     "smoke-release.yml": 0,
     "smoke.yml": 3042,

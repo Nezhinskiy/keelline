@@ -59,13 +59,16 @@ jobs:
         # is set, so a wrong path here is a red job and not a quiet skip.
         #
         # uv's build rather than `setup-python`'s: macOS runners carry no 3.10, and
-        # `setup-python` spent 24 s of that job downloading one. `--no-bin` leaves PATH alone, so
-        # the project's own interpreter still wins there; `--no-project` asks for 3.10 alone
-        # rather than against this project's `requires-python`, which 3.10 is below by design.
+        # `setup-python` spent 24 s of that job downloading one. `--no-bin` keeps the runner's
+        # PATH as `setup-uv` left it; `--no-project` asks for 3.10 alone rather than against this
+        # project's `requires-python`, which 3.10 is below by design. The lookup is assigned on a
+        # line of its own because `bash -e` ignores a failed substitution inside `echo`'s
+        # argument, and an empty path must fail this step rather than reach the test empty.
         id: old-python
         run: |
           uv python install --no-bin 3.10
-          echo "python-path=$(uv python find --no-project 3.10)" >> "$GITHUB_OUTPUT"
+          old="$(uv python find --no-project 3.10)"
+          echo "python-path=$old" >> "$GITHUB_OUTPUT"
       - name: Install
         run: uv sync --locked
       - name: Lint and format

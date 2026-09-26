@@ -4717,6 +4717,29 @@ reddens = [
   "tests/test_neutral.py::test_a_coverage_worker_file_is_not_a_file_the_gate_walks",
 ]
 
+# The same files in an unpacked sdist, where no `.gitignore` applies and the fallback walk reads
+# the root directly: each is its own first component, so only a name test keeps it out.
+[[mutation]]
+name = "the fallback walk counts coverage's data files again"
+file = "tests/test_neutral.py"
+before = '        and not (len(parts) == 1 and (p.name == ".coverage" or p.name.startswith(".coverage.")))'
+after = "        and True"
+reddens = [
+  "tests/test_neutral.py::test_the_fallback_walk_skips_coverage_data_in_the_root",
+]
+
+# CI writes the old interpreter's path from a step output, so a failed lookup arrives as an
+# empty value rather than as no value. Read as "not named", it sent the launcher's version guard
+# to a PATH search that finds nothing on Linux, and the guard skipped green.
+[[mutation]]
+name = "an empty old-interpreter path is searched past instead of failing"
+file = "tests/test_launcher.py"
+before = "    if named is not None:"
+after = "    if named:"
+reddens = [
+  "tests/test_launcher.py::test_a_named_but_empty_old_interpreter_is_a_failure_not_a_search",
+]
+
 # §4.5 item 1. `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
 # constant `overlay/api.py` said had been trimmed *because* nothing outside the area imported
 # it. The boundary walk stopped at `src/`, so the false docstring and the violation merged
