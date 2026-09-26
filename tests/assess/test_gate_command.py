@@ -17,7 +17,7 @@ import pytest
 
 import keelline
 from keelline.assess import rule
-from keelline.assess.report import BOOTSTRAP, FINDINGS_ELSEWHERE
+from keelline.assess.report import BOOTSTRAP, FINDINGS_ELSEWHERE, NOT_ON_BASE
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
@@ -104,9 +104,10 @@ def test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding(tmp_path:
 def test_an_enforced_custom_gate_runs_its_command_and_fails_on_its_exit_status(
     tmp_path: Path,
 ) -> None:
-    project = clone(tmp_path, BASE)
-    tree = BASE.replace('["docs"]', '["docs", "tests"]') + _custom("tests", "raise SystemExit(3)")
-    _change(project, tree)
+    # The base has the command; the change enforces it, and is held to it in its own run.
+    failing = _custom("tests", "raise SystemExit(3)")
+    project = clone(tmp_path, BASE + failing)
+    _change(project, BASE.replace('["docs"]', '["docs", "tests"]') + failing)
     code, out, _ = _gate(project, tmp_path)
     assert code == 1
     assert "tests: enforcing, 1 finding(s)" in out.splitlines()
@@ -133,8 +134,7 @@ def test_a_built_in_gate_added_under_installed_enforces_in_the_run_that_adds_it(
 def test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those(
     tmp_path: Path,
 ) -> None:
-    project = clone(tmp_path, BASE)
-    _change(project, BASE + MARKER)
+    project = clone(tmp_path, BASE + MARKER)
     code, out, _ = _gate(project, tmp_path, "--builtin")
     assert code == 0, out
     assert not (project / "marker").exists()
@@ -229,9 +229,13 @@ def test_a_refused_change_is_checked_at_the_base_s_paths(tmp_path: Path) -> None
     assert lines[1] == "docs: enforcing, 2 finding(s)"
 
 
-def test_a_custom_gate_the_base_does_not_enforce_runs_its_new_command(tmp_path: Path) -> None:
+def test_a_custom_gate_the_base_does_not_enforce_waits_for_its_new_command_to_land(
+    tmp_path: Path,
+) -> None:
     # The legitimate side of the two cases above: re-commanding a gate the base does not
-    # enforce is neutral, so the run is the tree's and the new command is the one that runs.
+    # enforce is neutral, so the judging step passes. The new command is the change's own, and
+    # it runs once it has landed on the base; until then the gate is named as waiting, and
+    # waiting fails nothing, since the base enforces no command it lacks.
     project = clone(tmp_path, BASE + _custom("tests", "pass"))
     _change(project, BASE + MARKER)
     code, out, _ = _gate(project, tmp_path, "--builtin")
@@ -239,8 +243,92 @@ def test_a_custom_gate_the_base_does_not_enforce_runs_its_new_command(tmp_path: 
     assert out.splitlines()[0] == "config: 1 change(s), 0 refused"
     assert not (project / "marker").exists()
     code, out, _ = _gate(project, tmp_path, "--custom")
-    assert (code, out.strip()) == (0, "tests: advisory, 0 finding(s)")
-    assert (project / "marker").exists()
+    assert (code, out.strip()) == (0, f"tests: advisory, {NOT_ON_BASE}")
+    assert not (project / "marker").exists()
+
+
+POLICY_BASE = f"""[keelline]
+version = "{keelline.__version__}"
+state = "adopting"
+enforced = ["policy"]
+
+[project]
+name = "widget"
+
+[gates.custom.policy]
+run = ["sh", "scripts/policy.sh"]
+"""
+POLICY = {"scripts/policy.sh": "test ! -e forbidden.txt\n"}
+# A command that rewrites the enforced gate's script so that it passes whatever the tree holds.
+REWRITE_POLICY = """["sh", "-c", "printf 'exit 0\\n' > scripts/policy.sh"]"""
+
+
+def _forbidden(project: Path) -> None:
+    (project / "forbidden.txt").write_text("", encoding="utf-8")
+    commit(project, "feat: the file the enforced gate forbids")
+
+
+def test_a_custom_gate_the_change_adds_cannot_rewrite_what_an_enforced_gate_runs(
+    tmp_path: Path,
+) -> None:
+    # The attack, step by step. The base enforces `policy`, whose script refuses `forbidden.txt`,
+    # and the change adds that file. With nothing else, the custom step fails. The change also
+    # adds a gate `aaa`, which sorts first and rewrites the script to `exit 0`: adding a gate is
+    # a tightening, so the judging step passes, and before this fix the custom step ran `aaa`
+    # first and `policy` then passed over a script it never had on the base. Mutation (declared):
+    # the gates waiting for the base emptied, so `aaa` runs -> its line and the script reddens.
+    project = clone(tmp_path, POLICY_BASE, also=POLICY)
+    _forbidden(project)
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert (code, out.splitlines()[0]) == (1, "policy: enforcing, 1 finding(s)")
+    _change(project, POLICY_BASE + f"\n[gates.custom.aaa]\nrun = {REWRITE_POLICY}\n")
+    code, out, _ = _gate(project, tmp_path, "--builtin")
+    assert (code, out.splitlines()[0]) == (0, "config: 1 change(s), 0 refused")
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert code == 1
+    assert out.splitlines() == [
+        "policy: enforcing, 1 finding(s)",
+        f"aaa: advisory, {NOT_ON_BASE}",
+        FINDINGS_ELSEWHERE,
+    ]
+    assert (project / "scripts" / "policy.sh").read_text(encoding="utf-8") == POLICY[
+        "scripts/policy.sh"
+    ]
+    assert git(project, "status", "--porcelain") == ""
+
+
+def test_the_base_s_enforced_gates_run_before_an_advisory_gate_that_sorts_first(
+    tmp_path: Path,
+) -> None:
+    # The same attack with no new gate: the base already has an advisory gate that sorts first
+    # and runs files the change can edit, a test runner and its `conftest.py`, say, here reduced
+    # to the rewrite itself. The base's enforced gates run first, so what they execute is the
+    # change's as committed. Mutation (declared): every gate in configured order -> `a-tests`
+    # runs first, `policy` passes, and the run exits 0.
+    tests = f"\n[gates.custom.a-tests]\nrun = {REWRITE_POLICY}\n"
+    project = clone(tmp_path, POLICY_BASE + tests, also=POLICY)
+    _forbidden(project)
+    code, out, _ = _gate(project, tmp_path, "--custom")
+    assert code == 1
+    assert out.splitlines() == [
+        "policy: enforcing, 1 finding(s)",
+        "a-tests: advisory, 0 finding(s)",
+        FINDINGS_ELSEWHERE,
+    ]
+
+
+def test_under_the_bootstrap_no_custom_gate_has_landed_and_none_runs(tmp_path: Path) -> None:
+    # A base with no keelline.toml at this path has no command of its own, so the change's
+    # gates wait, the one it enforces included, and the run passes: the base enforces nothing
+    # that is left unrun. `--json` names them apart from the gates that ran.
+    project = clone(tmp_path, BASE, under="sub")
+    _change(project, BASE.replace('["docs"]', '["docs", "tests"]') + MARKER)
+    code, out, err = _gate(project, tmp_path, "--custom")
+    assert (code, out.strip()) == (0, f"tests: enforcing, {NOT_ON_BASE}"), err
+    assert not (project / "marker").exists()
+    code, out, _ = _gate(project, tmp_path, "--custom", "--json")
+    printed = json.loads(out)
+    assert (printed["gates"], printed["not_on_base"]) == ([], ["tests"])
 
 
 def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(

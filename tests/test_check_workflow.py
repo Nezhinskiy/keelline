@@ -469,9 +469,9 @@ def test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them(tmp_pa
     # A custom gate executes files the pull request can change, so it must never run in the
     # process that decides the verdict. The next step runs it, once the judging step passed.
     # Mutation (declared): the judging step loses `--builtin` and the marker appears.
-    workspace, base_sha = _clone(tmp_path)
+    # The gate is on the base: one the change adds waits until it lands there.
     marker = tmp_path / "marker"
-    _commit(workspace, CONFIG_FILE, BASE + _marker_gate(marker))
+    workspace, base_sha = _clone(tmp_path, BASE + _marker_gate(marker))
     code, printed, _ = _judge(workspace, base_sha, "")
     assert code == 0, printed
     assert not marker.exists(), printed
@@ -627,9 +627,8 @@ def test_the_custom_step_runs_only_the_custom_gates_only_names(tmp_path: Path) -
     # does not also run every command `[gates.custom]` names, and a leg named for a custom gate
     # runs that one. Mutation (declared): the custom step's loop is removed, and the `docs` leg
     # runs the marker gate.
-    workspace, base_sha = _clone(tmp_path)
     marker = tmp_path / "marker"
-    _commit(workspace, CONFIG_FILE, BASE + _marker_gate(marker))
+    workspace, base_sha = _clone(tmp_path, BASE + _marker_gate(marker))
     code, printed, _ = _judge(workspace, base_sha, "docs", step=CUSTOM)
     assert code == 0, printed
     assert not marker.exists(), printed

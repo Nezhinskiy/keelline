@@ -40,9 +40,15 @@ DELAYED_WRITER = (
     "sys.argv[1], sys.argv[2]])\n"
     "time.sleep(30)\n"
 )
-# Past the child's own 2.5 s from any moment it could have started in either case below.
+# The same child, from a command that exits 0 as soon as the child has written `started`: a
+# gate that passed and left its background work running into the gates after it.
+EXITING_WRITER = DELAYED_WRITER.replace(
+    "time.sleep(30)\n",
+    "import pathlib\nwhile not pathlib.Path(sys.argv[1]).exists():\n    time.sleep(0.05)\n",
+)
+# Past the child's own 2.5 s from any moment it could have started in the cases below.
 LATE_WAIT_SECONDS = 3.0
-STARTED_WAIT_SECONDS = 20.0
+STARTED_WAIT_SECONDS = 20
 
 
 def delayed_writer(tmp_path: Path) -> tuple[list[str], Path, Path]:
@@ -287,6 +293,41 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
     assert started.exists()
     time.sleep(LATE_WAIT_SECONDS)
     assert not late.exists()
+
+
+def test_a_custom_gate_that_exits_leaves_nothing_running(tmp_path: Path) -> None:
+    # A command that passes and leaves a child behind, a watcher or a server, say: the child
+    # would go on writing into the tree while a later gate runs, and after the result is out.
+    # The command exits only once the child has written `started`, so there is a descendant to
+    # end. Mutation (declared): the group kill after the command's own exit dropped -> `late`
+    # is written.
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = EXITING_WRITER
+    config = with_custom(fixture_config(tmp_path), command, seconds=STARTED_WAIT_SECONDS)
+    [probe] = results(tmp_path, config)
+    assert probe.answered
+    assert not probe.failing
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+def test_custom_gates_named_first_run_before_every_other_custom_gate(tmp_path: Path) -> None:
+    # `keelline gate` names the base's enforced gates first, so no other custom gate runs files
+    # before they do. The built-ins keep their place: they run nothing the repository wrote.
+    # Mutation (declared): every gate in configured order -> `first` is ignored and this reddens.
+    ran = tmp_path / "ran"
+    gates = {
+        name: CustomGate((sys.executable, "-c", f"open({str(ran)!r}, 'a').write({name!r})"))
+        for name in ("a", "b", "c")
+    }
+    config = fixture_config(tmp_path)
+    config = replace(config, gates=replace(config.gates, builtin=("docs",), custom=gates))
+    found = run_gates(
+        GateContext(tmp_path, config, SMOKE_BASE), ["c", "b", "a", "docs"], first=frozenset({"c"})
+    )
+    assert [result.name for result in found] == ["docs", "c", "a", "b"]
+    assert ran.read_text(encoding="utf-8") == "cab"
 
 
 def test_a_custom_gate_whose_command_does_not_exist_did_not_answer(tmp_path: Path) -> None:

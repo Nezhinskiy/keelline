@@ -7511,8 +7511,8 @@ reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imp
 # Every configured gate as a value (`keelline.assess.gates`), each a verdict CI reads once the
 # gates run through it: a gate that could not judge counts as failing, one gate's error never
 # stops the rest, each built-in finds what its area's command finds, and a custom gate is
-# bounded, reported by exit status, and ended whole — its whole process group, on a timeout and
-# on any other exit from the wait.
+# bounded, reported by exit status, and ended whole — its whole process group, on a timeout, on
+# any other exit from the wait, and after the command's own exit.
 [[mutation]]
 name = "a gate that could not judge counts as passing"
 file = "src/keelline/assess/gates.py"
@@ -7530,7 +7530,7 @@ reddens = ["tests/assess/test_gates.py::test_a_gate_that_raises_did_not_answer_a
 [[mutation]]
 name = "run_gates answers a repeated or reordered name as given"
 file = "src/keelline/assess/gates.py"
-before = "    return tuple(_guarded(gate, context) for name, gate in gates.items() if name in wanted)"
+before = "    return tuple(_guarded(gates[name], context) for name in order if name in wanted)"
 after = "    return tuple(_guarded(gates[name], context) for name in names)"
 reddens = ["tests/assess/test_gates.py::test_each_named_gate_runs_once_in_the_configured_order"]
 
@@ -7606,6 +7606,30 @@ file = "src/keelline/assess/gates.py"
 before = "            _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did"
 after = "            pass"
 reddens = ["tests/assess/test_gates.py::test_an_interrupted_custom_gate_leaves_nothing_running"]
+
+# A command that exits and leaves a child in the background, a watcher or a server: its group is
+# ended after the command's own exit too, or the child writes into the tree while the next gate
+# runs, and after the result is out.
+[[mutation]]
+name = "a custom gate that exits leaves its background children running"
+file = "src/keelline/assess/gates.py"
+before = "        _kill_group(process)  # after an exit of its own too"
+after = "        pass"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_that_exits_leaves_nothing_running"]
+
+# The custom gates share one checkout, so one that runs earlier can rewrite what a later one
+# executes. The base's enforced gates go first; in configured (name) order an advisory gate that
+# sorts first and runs the change's files, a test runner and its `conftest.py`, rewrites the
+# enforced gate's script before it runs.
+[[mutation]]
+name = "the base's enforced custom gates run in name order among the others"
+file = "src/keelline/assess/gates.py"
+before = "    order = sorted(gates, key=lambda name: name in custom and name not in first)"
+after = "    order = list(gates)"
+reddens = [
+  "tests/assess/test_gates.py::test_custom_gates_named_first_run_before_every_other_custom_gate",
+  "tests/assess/test_gate_command.py::test_the_base_s_enforced_gates_run_before_an_advisory_gate_that_sorts_first",
+]
 
 # The planning seam's checker has to see a planner however a module spells its way to it: from
 # the seam module's own top-level binding, and at the end of a dotted chain rooted at an imported
@@ -8265,12 +8289,37 @@ reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_re
 [[mutation]]
 name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
 file = "src/keelline/assess/commands.py"
-before = "        GateContext(root, verdict.config, base), [n for n in only if n != CONFIG_CHECK]"
-after = "        GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base), [n for n in only if n != CONFIG_CHECK]"
+before = "    context = GateContext(root, verdict.config, base)"
+after = "    context = GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base)"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces",
   "tests/assess/test_gate_command.py::test_a_refused_change_is_checked_at_the_base_s_paths",
   "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]
+
+# A custom gate the change adds or re-commands runs a command only the change vouches for, and
+# in the step that runs the base's enforced gates it could rewrite the script one of them is about
+# to execute. It waits until the base has its command. The case is the attack as reproduced: the
+# base enforces `policy`, the change adds the file `policy` refuses and a gate `aaa` that
+# rewrites `policy`'s script to `exit 0`.
+[[mutation]]
+name = "gate runs a custom gate whose command the base does not have"
+file = "src/keelline/assess/commands.py"
+before = "    waiting = tuple(name for name in only if name in custom and name not in verdict.landed)"
+after = "    waiting = ()"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_custom_gate_the_change_adds_cannot_rewrite_what_an_enforced_gate_runs",
+  "tests/assess/test_gate_command.py::test_under_the_bootstrap_no_custom_gate_has_landed_and_none_runs",
+]
+
+[[mutation]]
+name = "a custom gate counts as on the base whatever command the base gives it"
+file = "src/keelline/assess/rule.py"
+before = "            name for name, gate in custom.items() if self.base_custom.get(name) == gate"
+after = "            name for name, gate in custom.items()"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_custom_gate_the_change_adds_cannot_rewrite_what_an_enforced_gate_runs",
+  "tests/assess/test_gate_command.py::test_a_custom_gate_the_base_does_not_enforce_waits_for_its_new_command_to_land",
 ]
 
 [[mutation]]
@@ -8294,8 +8343,8 @@ reddens = [
 [[mutation]]
 name = "gate never counts the configuration check as run, so no refusal fails it"
 file = "src/keelline/assess/commands.py"
-before = "    gate_run = GateRun(verdict, results, judged=CONFIG_CHECK in only, prefix=prefix)"
-after = "    gate_run = GateRun(verdict, results, judged=False, prefix=prefix)"
+before = "        verdict, results, judged=CONFIG_CHECK in only, prefix=prefix, waiting=waiting"
+after = "        verdict, results, judged=False, prefix=prefix, waiting=waiting"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
   "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
@@ -9075,7 +9124,7 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (failing or unanswered)) or not promoted:"
+before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
 after = "    if not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_named_gates_are_promoted_all_together_or_not_at_all",
@@ -9084,8 +9133,8 @@ reddens = [
 [[mutation]]
 name = "a promotion with no names writes nothing once one gate fails"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (failing or unanswered)) or not promoted:"
-after = "    if failing or unanswered or not promoted:"
+before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
+after = "    if failing or unanswered or waiting or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
 ]
@@ -9389,6 +9438,34 @@ file = "src/keelline/assess/state.py"
 before = '    if "trail" in config.gate_names and declared_state(root, config, relative) is None:'
 after = "    if False:"
 reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_row_declares_no_state"]
+
+# A promotion enforces what the pull request carrying it runs, and `keelline gate` runs a custom
+# gate only with the base's own command: one the base lacks is neither run nor promoted, and a
+# base that cannot be read has no command.
+[[mutation]]
+name = "promote enforces a custom gate whose command the base does not have"
+file = "src/keelline/assess/state.py"
+before = "    waiting = _not_on_base(root, config, wanted, base=base, machine=machine)"
+after = "    waiting = ()"
+reddens = [
+  "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
+]
+
+[[mutation]]
+name = "a named promotion writes the gates that passed beside one that waits for the base"
+file = "src/keelline/assess/state.py"
+before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
+after = "    if (names and (failing or unanswered)) or not promoted:"
+reddens = [
+  "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
+]
+
+[[mutation]]
+name = "promote fails whole when the base's command cannot be read"
+file = "src/keelline/assess/state.py"
+before = "        landed = {}"
+after = "        raise"
+reddens = ["tests/assess/test_state.py::test_a_custom_gate_waits_when_the_base_cannot_be_read"]
 
 # A custom gate can leave `keelline.toml` unparseable before the promotion writes; relabelled as a
 # shape the editor does not rewrite, the remedy sends the person to edit two keys of a file that

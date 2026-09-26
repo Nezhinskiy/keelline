@@ -39,6 +39,7 @@ def clone(
         document.write_text(base, encoding="utf-8")
     (upstream / under / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
     for name, text in (also or {}).items():
+        (upstream / name).parent.mkdir(parents=True, exist_ok=True)
         (upstream / name).write_text(text, encoding="utf-8")
     commit(upstream, "chore: base")
     project = tmp_path / "project"

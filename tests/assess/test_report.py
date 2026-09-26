@@ -12,7 +12,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from keelline.assess.gates import GateResult
-from keelline.assess.report import BOOTSTRAP, UNCHANGED, GateRun, summary, workflow_commands
+from keelline.assess.report import (
+    BOOTSTRAP,
+    NOT_ON_BASE,
+    UNCHANGED,
+    GateRun,
+    summary,
+    workflow_commands,
+)
 from keelline.assess.rule import Change, ConfigVerdict, Verdict
 from keelline.config.loader import preset_defaults
 from keelline.findings import Finding
@@ -150,3 +157,18 @@ def test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused() -> 
     assert _run([], [], refused).exit_code == 1
     assert _run([], [], refused, judged=False).exit_code == 0
     assert _run([GateResult("docs", ())], ["docs"], [Change("x", Verdict.NOTED)]).exit_code == 0
+
+
+def test_a_gate_waiting_for_the_base_is_reported_and_fails_nothing() -> None:
+    # A custom gate the base does not have the command of was not run: the summary and the
+    # annotations say so, and even one the change enforces fails nothing, because the base
+    # enforces no command it lacks. Advice: fixed text, and the exit code holds `blocking`,
+    # which reads the results alone.
+    run = _run([], ["aaa"])
+    waiting = GateRun(run.verdict, (), judged=False, waiting=("aaa",))
+    assert summary(waiting) == (
+        "| gate | mode | findings | verdict |\n|---|---|---|---|\n"
+        f"| aaa | enforcing | not run | {NOT_ON_BASE} |\n"
+    )
+    assert workflow_commands(waiting) == [f"::warning::aaa: {NOT_ON_BASE}"]
+    assert waiting.exit_code == 0

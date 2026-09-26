@@ -4,10 +4,12 @@ each once it passes.
 `[keelline] state` is the lifecycle (`initialised`, `adopting`, `installed`) and `enforced` the
 gates promoted while adopting. `begin` checks an adoption plan and marks an `initialised`
 project `adopting`; `promote` runs gates strictly on the tree as it is and adds those that pass
-to `enforced`. Promoting the last configured gate writes `installed` and empties the list, which
-under `installed` means every configured gate, so a gate added later enforces from its first
-run. The state never moves back: there is no demotion, and loosening is an owner's edit of
-`keelline.toml`, which `keelline gate` refuses to a pull request while anything enforces.
+to `enforced`. A custom gate is promoted only once the base has its command, since `keelline
+gate` runs it only then: until it lands there it is not run, and waits. Promoting the last
+configured gate writes `installed` and empties the list, which under `installed` means every
+configured gate, so a gate added later enforces from its first run. The state never moves
+back: there is no demotion, and loosening is an owner's edit of `keelline.toml`, which
+`keelline gate` refuses to a pull request while anything enforces.
 
 **One write, at one place.** Both verbs change `keelline.toml`'s `state` and `enforced` through
 `rewrite_owned` and nothing else, so the manifest's record of an untouched document is
@@ -29,12 +31,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from keelline.assess.gates import GateContext, run_gates
+from keelline.assess.rule import read_base_gates
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
 from keelline.config.owned import OwnedKeyError, UnparsedDocument, rewrite
 from keelline.config.schema import CONFIG_CHECK, Config
 from keelline.docs.api import declared_state, lint
-from keelline.errors import Failure, Refusal
+from keelline.errors import Failure, KeellineError, Refusal
 from keelline.project.api import rewrite_owned
 from keelline.scaffold import Manifest
 
@@ -85,6 +88,7 @@ class Transition:
     promoted: tuple[str, ...] = ()
     failing: dict[str, int] = field(default_factory=dict)  # ran and did not pass: its count
     unanswered: tuple[str, ...] = ()  # could not run
+    waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
 
 
 def begin(root: Path, config: Config, plan: Path) -> Transition:
@@ -161,10 +165,34 @@ def _write(root: Path, state: str, enforced: tuple[str, ...]) -> None:
         raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None
 
 
-def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> Transition:
+def _not_on_base(
+    root: Path, config: Config, wanted: Sequence[str], *, base: str, machine: Path | None
+) -> tuple[str, ...]:
+    """The custom gates in `wanted` whose command the base's `keelline.toml` does not have.
+
+    `keelline gate` runs a custom gate only with the base's own command, so a promotion of one
+    the base lacks would enforce a command the pull request carrying it never runs. The base is
+    read only when a custom gate is wanted; a base that cannot be read, or has no copy, has no
+    command, so every such gate waits.
+    """
+    custom = config.gates.custom
+    asked = [name for name in wanted if name in custom]
+    if not asked:
+        return ()
+    try:
+        landed = read_base_gates(root, base, machine=machine)
+    except KeellineError:
+        landed = {}
+    return tuple(name for name in asked if landed.get(name) != custom[name])
+
+
+def promote(
+    root: Path, config: Config, names: Sequence[str], *, base: str, machine: Path | None
+) -> Transition:
     """Enforce the named gates if every one of them passes now, or, with none named, each
     configured gate not yet enforcing that passes; `base` is what `plan` and `commit` judge a
-    range against."""
+    range against, and what a custom gate's command must already be on (`machine` loads the
+    base's copy, as the tree's was loaded)."""
     configured = config.gate_names
     if any(name not in configured for name in names):
         raise Refusal(NOT_A_GATE)
@@ -185,15 +213,16 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
         return Transition(state, "installed")
     _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
-    results = run_gates(GateContext(root, config, base), wanted)
+    waiting = _not_on_base(root, config, wanted, base=base, machine=machine)
+    results = run_gates(GateContext(root, config, base), [n for n in wanted if n not in waiting])
     failing = {r.name: len(r.findings) for r in results if r.answered and r.failing}
     unanswered = tuple(r.name for r in results if not r.answered)
     promoted = tuple(r.name for r in results if not r.failing)
-    if (names and (failing or unanswered)) or not promoted:
-        return Transition(state, state, (), failing, unanswered)
+    if (names and (failing or unanswered or waiting)) or not promoted:
+        return Transition(state, state, (), failing, unanswered, waiting)
     enforced = enforcing | set(promoted)
     installed = enforced >= set(configured)
     after = "installed" if installed else "adopting"
     listed = () if installed else tuple(n for n in configured if n in enforced)
     _write(root, after, listed)
-    return Transition(state, after, promoted, failing, unanswered)
+    return Transition(state, after, promoted, failing, unanswered, waiting)

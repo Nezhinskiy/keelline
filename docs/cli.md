@@ -756,6 +756,22 @@ owner who wants those files pinned puts them under CODEOWNERS. Run bare on your 
 everything runs in one process. Narrowed to nothing — `--custom` on a project with no gate of its
 own — the run prints `nothing to run`, appends no summary and exits `0`.
 
+**Which custom gates run, and in what order.** A custom gate runs only with the command the
+base's `keelline.toml` gives it. One the change adds, or re-commands while the base does not
+enforce it, is not run: it prints `<name>: advisory, not run until the base has this command`
+(or `enforcing`, when the change enforces it), and runs from the first pull request after it
+lands on the base. It fails nothing meanwhile, since the base enforces no command it lacks, and
+under the bootstrap, where the base has no `keelline.toml`, no custom gate runs. The reason is
+that the custom gates share one checkout: a gate the change wrote, run before the base's
+enforced ones, could rewrite the script they are about to execute. For the same reason the
+built-in gates run first, then the custom gates the base enforces, then every other custom gate.
+Each custom gate runs in a session of its own, and its whole process group is ended when its
+command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
+background runs on into the next gate. Enforced gates that themselves run files the change can
+edit — two test runners, say — still share that one checkout, and one could rewrite what the
+other runs; one leg per gate isolates them (see "One row per gate" under
+[the reusable workflow](#the-reusable-workflow)).
+
 **What a pull request may change in `keelline.toml`.** Both copies go through the loader and are
 compared by what it derives — each key by its dotted name, each budget by its effective value,
 each custom gate's `run` on its own — never by byte. A comment, a key written out at its default,
@@ -822,13 +838,16 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
 were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
 per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
-in place of the count. A run that fails with a gate failing ends with one `details:` line saying
+in place of the count, and, after the gates that ran, `<name>: advisory, not run until the base
+has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
+that fails with a gate failing ends with one `details:` line saying
 where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate
 names print; values from `keelline.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
 one `error` per refused key, and one per finding or gate that could not run — `error` for an
-enforcing gate, `warning` for an advisory one. The message is `<gate>: <rule>`. `file=` is written
+enforcing gate, `warning` for an advisory one — and a `warning` per custom gate not run until the
+base has its command. The message is `<gate>: <rule>`. `file=` is written
 from the repository's root and only for a path of letters, digits, `.`, `_`, `-` and `/`; any
 other path is annotated without a location, and a `commit` finding, which names a commit, has
 none. At most ten per level; past that one `notice` counts the rest, because the platform shows
@@ -836,8 +855,9 @@ ten per level per step and drops the others without a word.
 
 **`--summary FILE`** appends a markdown table — each gate's mode, count and outcome, and each
 changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
-`config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`) and
-`gates` (`{name, enforcing, answered, count}` each). It lists no finding: `keelline assess --json`
+`config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
+`gates` (`{name, enforcing, answered, count}` each) and `not_on_base`, the custom gates not run
+until the base has their command. It lists no finding: `keelline assess --json`
 is where findings are serialised.
 
 **Reads** `keelline.toml`, the base's copy through git, every file a gate reads, and — only when
@@ -849,7 +869,7 @@ nothing says which gates run, and a run that cannot judge a change does not pass
 change lands the way a refused key does, by a direct push to the base branch.
 
 Exits `0` when no enforcing gate failed or could not run and, when the configuration check ran,
-nothing was refused. `1` when an enforcing gate failed or could not run; when the configuration
+nothing was refused; a custom gate not run until the base has its command changes neither. `1` when an enforcing gate failed or could not run; when the configuration
 check refused a key; when the base is not in the checkout or git could not read its copy (the
 message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the
 one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not
@@ -908,10 +928,16 @@ commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by defa
 workflow judges against `[ci] gate_branch`; where the two differ, pass `--base` to judge as CI
 will. Run on the base branch itself, that range is empty and those two gates pass having judged
 nothing; the pull request that carries a promotion faces every gate it promotes in its own run.
-A configured custom gate runs its command here, as it does under `keelline gate`.
+A custom gate runs its command here, as it does under `keelline gate`, and only when that
+command is the one the base's `keelline.toml` gives it: a gate the base does not have, or has
+with another command, is not run and not promoted, and is named `(not on the base)` with a
+`note:` saying to land it on the base branch first, because `keelline gate` would not run it in
+the pull request that carries the promotion. A base that cannot be read, or has no
+`keelline.toml`, has no command, so every custom gate waits.
 
 `--json` carries, on exit 0 or 1, `before`, `after`, `promoted`, `failing`, which maps each gate
-that ran and did not pass to its finding count, and `unanswered`, the gates that could not run.
+that ran and did not pass to its finding count, `unanswered`, the gates that could not run, and
+`not_on_base`, the custom gates not run because the base does not have their command.
 When a gate stays advisory, the summary ends with a line saying where its findings are
 (`keelline assess --json`, or the gate's own command), and, when `plan` or `commit` is among them
 and the base is not in the checkout, a `note:` saying so and naming `--base`, since a
@@ -926,7 +952,7 @@ list, or `keelline.toml` no longer loads.
 | Exit | Meaning |
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
-| 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
+| 1 | a gate failed, could not run, or is a custom gate whose command the base does not have: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
 | 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `keelline.toml` refused |
 
 ## `keelline memory refs`
@@ -2187,6 +2213,13 @@ The list is yours to keep: a gate it leaves out never runs, and a custom gate ad
 gate it names, because `only:` sits in a file a pull request can edit: a change that loosens
 what the base enforces fails every leg. Require every leg's check, not only one.
 
+A leg is also the one real isolation between custom gates. Within one job they share a
+checkout, and the base's enforced gates run before every other custom gate for that reason; but
+two enforced gates that each run files the change can edit — a test suite and its
+`conftest.py`, a `Makefile` — still run one after the other in that checkout, and the first can
+rewrite what the second executes. A leg per such gate gives each a checkout no other gate has
+touched.
+
 **Where the configuration comes from.** `keelline gate` reads `keelline.toml` from the base
 commit and compares the tree's copy with it key by key: a change that makes enforcement
 stricter is admitted, and any other change is refused while anything enforces (the
@@ -2251,9 +2284,10 @@ the job. What enforces is what the base's `[keelline] enforced` names, with any 
 itself adds there, and every configured gate once `[keelline] state` is `installed`.
 `keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
 before it said, so a project fixing its documents does not pay a round trip per finding. A
-custom gate is a command from `keelline.toml`, and a pull request that adds one runs it in the
-second step, as it would run a test it added: the job's token is `contents: read` and neither
-checkout keeps it, and the verdict was decided before the command started.
+custom gate is a command from `keelline.toml`, and runs in the second step only with the
+command the base gives it: a pull request that adds one, or re-commands one, has it run from the
+first pull request after it lands. The job's token is `contents: read` and neither checkout keeps
+it, and the verdict was decided before any command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
 `@dev` are a moving Keelline running against your repository. `keelline init` writes that pin,

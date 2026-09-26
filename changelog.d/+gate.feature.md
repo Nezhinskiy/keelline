@@ -4,6 +4,12 @@ tighten, runs the configuration check and every configured gate (built-in or the
 advisory or enforcing as the verdict says, and prints the verdict the reusable workflow acts on.
 `--builtin` runs no command from `keelline.toml`, and `--custom` runs only those.
 
+A custom gate runs only with the command the base's `keelline.toml` gives it: one a pull request
+adds or re-commands is reported as not run until it lands on the base, and fails nothing
+meanwhile. The custom gates the base enforces run before every other custom gate, and each
+gate's whole process tree ends when its command does, so no gate can rewrite what an enforced
+one executes before it runs, or leave work running into the next.
+
 What a pull request may change is judged key by key over what the loader derives, never by byte:
 it may enforce more gates and move its state forward, add a gate, drop or re-command one the base
 does not enforce, and lower a budget; the preset's name, the profile, the harnesses and the

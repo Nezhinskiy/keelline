@@ -11,6 +11,16 @@ A gate that could not judge the tree is not a passing gate: its result is `answe
 the configured bound, never from an exception's text or the base, because both can carry what a
 repository authored. A custom gate's output goes to this process's standard error as it ran and
 is read by nothing here, so none of it reaches a result.
+
+**A custom gate's tree ends with it.** Its command runs in a session of its own, and the whole
+process group is ended however the command finishes — exit, timeout or interrupt — so nothing it
+left in the background writes into the tree while a later gate runs or after the result is out.
+
+**Order.** The built-ins run first, in configured order: they execute nothing the repository
+wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
+gate executes files the change can edit, so one that ran earlier could rewrite what a later one
+executes; `keelline gate` names the base's enforced gates in `first`, so no other custom gate
+runs before them.
 """
 
 from __future__ import annotations
@@ -118,10 +128,15 @@ class _NotAnswered(Exception):
         self.reason = reason
 
 
-def _end(process: subprocess.Popen[bytes]) -> None:
-    """End the command's whole process group and reap it, within `KILL_WAIT_SECONDS`."""
+def _kill_group(process: subprocess.Popen[bytes]) -> None:
+    """SIGKILL the command's whole process group; a group already empty is nothing to end."""
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
+
+
+def _end(process: subprocess.Popen[bytes]) -> None:
+    """End the command's whole process group and reap it, within `KILL_WAIT_SECONDS`."""
+    _kill_group(process)
     process.wait(timeout=KILL_WAIT_SECONDS)
 
 
@@ -134,8 +149,9 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             # Both streams go to this process's standard error untouched, so a person and a CI
             # log see them as they ran and `--json` on standard output stays one object. A
             # session of its own puts everything the command starts in one process group, which
-            # a timeout ends whole: `subprocess.run(timeout=...)` kills the command alone, and a
-            # test runner it started keeps writing after the gate has reported.
+            # is ended whole however the command finishes: `subprocess.run(timeout=...)` kills
+            # the command alone, and a test runner it started keeps writing after the gate has
+            # reported.
             process = subprocess.Popen(  # noqa: S603
                 list(argv),
                 cwd=root,
@@ -156,6 +172,10 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             # so an interrupted run ends the command's tree itself before it leaves.
             _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did
             raise
+        # The command is reaped, and what it started may still run: a watcher or a server left
+        # in the background, still writing into the tree while a later gate runs. The group's id
+        # stays taken while any member lives, so this reaches the command's own descendants.
+        _kill_group(process)  # after an exit of its own too
         if code == 0:
             return []
         return [Finding("exit-status", "", None, f"exited {code}")]
@@ -195,12 +215,17 @@ def _guarded(gate: Gate, context: GateContext) -> GateResult:
     return GateResult(gate.name, tuple(found))
 
 
-def run_gates(context: GateContext, names: Sequence[str]) -> tuple[GateResult, ...]:
-    """A result for each configured gate `names` asks for, each run once, in configured order.
+def run_gates(
+    context: GateContext, names: Sequence[str], *, first: frozenset[str] = frozenset()
+) -> tuple[GateResult, ...]:
+    """A result for each configured gate `names` asks for, each run once: the built-ins and the
+    custom gates `first` names, then every other custom gate, each group in configured order.
 
     One gate that does not answer never stops another. A name the configuration does not hold is
     a `KeyError`: callers validate names before they ask.
     """
     gates = configured(context.config)
     wanted = {gates[name].name for name in names}
-    return tuple(_guarded(gate, context) for name, gate in gates.items() if name in wanted)
+    custom = context.config.gates.custom
+    order = sorted(gates, key=lambda name: name in custom and name not in first)
+    return tuple(_guarded(gates[name], context) for name in order if name in wanted)

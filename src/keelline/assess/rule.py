@@ -40,19 +40,21 @@ to the base branch.
 
 The run then uses the tree's configuration, or the base's when anything was refused, and
 enforces the gates either side enforces: adding the tree's never loosens, and a refusal already
-fails the run. Key names print; values never do.
+fails the run. A custom gate executes only with the base's own command (`ConfigVerdict.landed`),
+so a gate the change adds or re-commands waits until it lands on the base. Key names print;
+values never do.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
 from keelline.config.loader import CONFIG_FILE, NOT_UTF8, ConfigError, loads
-from keelline.config.schema import STATES, Budgets, Config
+from keelline.config.schema import STATES, Budgets, Config, CustomGate
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
 from keelline.overlay.api import later
@@ -202,10 +204,28 @@ class ConfigVerdict:
     changes: tuple[Change, ...]  # sorted by key
     config: Config  # the tree's, or the base's when anything was refused
     enforcing: frozenset[str]  # the base's and the tree's
+    # The base's own custom gates and enforcing set, which decide which of the run's custom
+    # gates execute and in what order; none under the bootstrap.
+    base_custom: Mapping[str, CustomGate] = field(default_factory=dict)
+    base_enforcing: frozenset[str] = frozenset()
 
     @property
     def refused(self) -> bool:
         return any(change.verdict is Verdict.REFUSED for change in self.changes)
+
+    @property
+    def landed(self) -> frozenset[str]:
+        """The run's custom gates whose command is the base's own, and so the ones that execute.
+
+        A gate the change adds or re-commands is a command only the change has vouched for: run
+        in the same step as the base's enforced gates, it could rewrite the files they execute
+        before they run. It runs once it has landed on the base. Under the bootstrap no gate
+        has, and under a refusal the run is the base's configuration, so every gate has.
+        """
+        custom = self.config.gates.custom
+        return frozenset(
+            name for name, gate in custom.items() if self.base_custom.get(name) == gate
+        )
 
 
 @dataclass(frozen=True)
@@ -326,6 +346,16 @@ def _values(config: Config) -> dict[str, object]:
     return values
 
 
+def read_base_gates(root: Path, base: str, *, machine: Path | None) -> Mapping[str, CustomGate]:
+    """The base's custom gates by name, loaded as `judge` loads the base's copy; none when the
+    base has no `keelline.toml` at the project's path. Raises as `read_base` and the loader do."""
+    text = read_base(root, base)
+    if text is None:
+        return {}
+    config = loads(text, root, machine=machine, interactive=False, label=BASE_COPY)
+    return config.gates.custom
+
+
 def judge(
     root: Path,
     base_text: str | None,
@@ -367,5 +397,12 @@ def judge(
         if before.get(key) != after.get(key)
     )
     enforcing = base.keelline.enforcing | tree.keelline.enforcing
-    verdict = ConfigVerdict(base.keelline.state, changes, tree, enforcing)
+    verdict = ConfigVerdict(
+        base.keelline.state,
+        changes,
+        tree,
+        enforcing,
+        base_custom=base.gates.custom,
+        base_enforcing=base.keelline.enforcing,
+    )
     return replace(verdict, config=base) if verdict.refused else verdict

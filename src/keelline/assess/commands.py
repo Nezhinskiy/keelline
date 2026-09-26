@@ -69,6 +69,10 @@ BASE_NOT_THERE = (
     "fetched), so plan reports base-unresolvable and commit could not run; fetch it, or pass "
     "--base with a refs/ name or a commit id that exists, such as refs/heads/main"
 )
+WAITING = (
+    "note: a custom gate is promoted once the base's keelline.toml has its command, since "
+    "`keelline gate` runs it only then; land it on the base branch first, then promote it"
+)
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
     "the configuration check, and every other name is a gate from [gates]"
@@ -105,6 +109,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     from keelline.assess.gates import GateContext, run_gates
     from keelline.assess.report import (
         FINDINGS_ELSEWHERE,
+        NOT_ON_BASE,
         GateRun,
         config_line,
         summary,
@@ -157,15 +162,25 @@ def run_gate(args: argparse.Namespace) -> Result:
         only = tuple(name for name in only if name not in custom)
     elif args.part == "custom":
         only = tuple(name for name in only if name in custom)
-    results = run_gates(
-        GateContext(root, verdict.config, base), [n for n in only if n != CONFIG_CHECK]
+    # A custom gate executes only with the base's own command, and the base's enforced gates
+    # run before any other: a gate the change adds or re-commands runs files it wrote, and run
+    # first it could rewrite what an enforced gate executes. It waits until it lands on the base,
+    # and never fails the run meanwhile, since the base enforces no command it lacks.
+    waiting = tuple(name for name in only if name in custom and name not in verdict.landed)
+    names = [n for n in only if n != CONFIG_CHECK and n not in waiting]
+    context = GateContext(root, verdict.config, base)
+    results = run_gates(context, names, first=verdict.base_enforcing)
+    gate_run = GateRun(
+        verdict, results, judged=CONFIG_CHECK in only, prefix=prefix, waiting=waiting
     )
-    gate_run = GateRun(verdict, results, judged=CONFIG_CHECK in only, prefix=prefix)
     lines = [config_line(verdict)] if gate_run.judged else []
     for result in results:
         mode = "enforcing" if result.name in verdict.enforcing else "advisory"
         count = f"{len(result.findings)} finding(s)" if result.answered else "could not run"
         lines.append(f"{result.name}: {mode}, {count}")
+    for name in waiting:
+        mode = "enforcing" if name in verdict.enforcing else "advisory"
+        lines.append(f"{name}: {mode}, {NOT_ON_BASE}")
     data = {
         "config": {
             "judged": gate_run.judged,
@@ -183,6 +198,7 @@ def run_gate(args: argparse.Namespace) -> Result:
             }
             for r in results
         ],
+        "not_on_base": list(waiting),
     }
     if not lines:
         # Not a refusal: the workflow runs `--custom` on every caller, most of which have no
@@ -211,6 +227,7 @@ def _transition(transition: Transition) -> dict[str, object]:
         "promoted": list(transition.promoted),
         "failing": dict(transition.failing),
         "unanswered": list(transition.unanswered),
+        "not_on_base": list(transition.waiting),
     }
 
 
@@ -233,10 +250,12 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
 
     root, config = root_and_config(args)
     base = args.base or local_base(config)
-    transition = promote(root, config, args.gates, base=base)
+    machine = Path(args.machine) if args.machine else None
+    transition = promote(root, config, args.gates, base=base, machine=machine)
     # Gate names only: the loader holds each to a grammar, and a count is Keelline's own.
     advisory = [f"{name} ({count} finding(s))" for name, count in transition.failing.items()]
     advisory += [f"{name} (could not run)" for name in transition.unanswered]
+    advisory += [f"{name} (not on the base)" for name in transition.waiting]
     parts = [f"promoted: {', '.join(transition.promoted) or 'nothing'}"]
     if advisory:
         parts.append(f"still advisory: {', '.join(advisory)}")
@@ -248,6 +267,8 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
         found = git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options", base)[0]
         if judged and found != 0:
             lines.append(BASE_NOT_THERE)
+        if transition.waiting:
+            lines.append(WAITING)
         lines.append(FINDINGS_ELSEWHERE)
     data = _transition(transition)
     return Result("\n".join(lines), data, exit_code=1 if advisory else 0)

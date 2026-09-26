@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.assess.commands import BASE_NOT_THERE
+from keelline.assess.commands import BASE_NOT_THERE, WAITING
 from keelline.assess.report import FINDINGS_ELSEWHERE
 from keelline.assess.state import NO_SUCH_PLAN, begin, promote
 from keelline.cli import build_parser, discover_registrars, run
@@ -105,9 +105,23 @@ def _custom(name: str, code: str) -> str:
     return f"\n[gates.custom.{name}]\nrun = {json.dumps([sys.executable, '-c', code])}\n"
 
 
-def _with_marker_gate(root: Path) -> None:
+def _land(root: Path, subject: str = "chore: a custom gate") -> str:
+    """Commit the tree as it is and name the commit: a base that has the tree's custom gates,
+    which is the only base a custom gate is promoted against."""
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", subject)
+    return git(root, "rev-parse", "HEAD").strip()
+
+
+def _add_marker_gate(root: Path) -> None:
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write(_custom(MARKER, f"open({MARKER!r}, 'w').close()"))
+
+
+def _with_marker_gate(root: Path) -> str:
+    """The marker gate, landed: the base the promotion is judged against from here on."""
+    _add_marker_gate(root)
+    return _land(root)
 
 
 def test_begin_marks_adopting_and_keeps_every_other_byte_and_the_record(tmp_path: Path) -> None:
@@ -187,7 +201,7 @@ def test_begin_never_moves_an_installed_project_back(tmp_path: Path) -> None:
     # Mutation (declared): `if state != "initialised":` made `if False:` -> `begin` writes
     # `adopting` over `installed`.
     root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), [], base=base)
+    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     before = _document(root)
     transition = begin(root, _config(root, tmp_path), root / ADOPTION)
     assert (transition.before, transition.after) == ("installed", "installed")
@@ -200,7 +214,9 @@ def test_a_named_gate_that_passes_is_enforced_without_begin_first(tmp_path: Path
     # Mutation: `after` kept at the current state when not installing -> `enforced` is written
     # under `initialised`, and reloading the document refuses it.
     root, base = _project(tmp_path)
-    transition = promote(root, _config(root, tmp_path), ["docs"], base=base)
+    transition = promote(
+        root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml"
+    )
     assert (transition.before, transition.after, transition.promoted) == (
         "initialised",
         "adopting",
@@ -215,7 +231,9 @@ def test_named_gates_are_promoted_all_together_or_not_at_all(tmp_path: Path) -> 
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
     before = _document(root)
-    transition = promote(root, _config(root, tmp_path), ["docs", "bugs"], base=base)
+    transition = promote(
+        root, _config(root, tmp_path), ["docs", "bugs"], base=base, machine=tmp_path / "m.toml"
+    )
     assert transition.promoted == ()
     assert set(transition.failing) == {"docs"}
     assert (transition.before, transition.after) == ("initialised", "initialised")
@@ -229,7 +247,7 @@ def test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named(
     # -> nothing is written once `docs` fails, and the four that passed stay advisory.
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
-    transition = promote(root, _config(root, tmp_path), [], base=base)
+    transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     passing = tuple(name for name in BUILTIN_GATES if name != "docs")
     assert transition.promoted == passing
     assert list(transition.failing) == ["docs"]
@@ -243,7 +261,7 @@ def test_promoting_every_configured_gate_installs_the_project(tmp_path: Path) ->
     # Mutation (declared): `after = "adopting"` always -> the state stays adopting with every
     # gate listed.
     root, base = _project(tmp_path)
-    transition = promote(root, _config(root, tmp_path), [], base=base)
+    transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert (transition.after, transition.promoted, transition.failing) == (
         "installed",
         BUILTIN_GATES,
@@ -263,13 +281,13 @@ def test_nothing_left_to_promote_on_an_installed_project_is_refused_rather_than_
     # Refusal(ALL_ENFORCE)` made `return Transition(state, state)` -> the second bare call
     # returns, and the `pytest.raises` reddens.
     root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), ["docs"], base=base)
+    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
     with pytest.raises(Refusal, match="already enforces"):
-        promote(root, _config(root, tmp_path), ["docs"], base=base)
-    promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
+    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     before = _document(root)
     with pytest.raises(Refusal, match="already enforces"):
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert _document(root) == before
 
 
@@ -280,7 +298,7 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
     # and the state still says adopting, so a bare `promote` completes it without running one.
     # Mutation (declared): the completion's branch made to refuse as under `installed` -> the
     # bare call raises the "nothing left" refusal, and this case alone reddens.
-    root, base = _project(tmp_path)
+    root, _ = _project(tmp_path)
     kept = [name for name in BUILTIN_GATES if name != "trail"]
     listed = ", ".join(f'"{name}"' for name in (*kept, MARKER))
     _set(
@@ -290,8 +308,8 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
     )
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write("\n[gates]\nbuiltin = [" + ", ".join(f'"{n}"' for n in kept) + "]\n")
-    _with_marker_gate(root)
-    transition = promote(root, _config(root, tmp_path), [], base=base)
+    base = _with_marker_gate(root)
+    transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert (transition.before, transition.after, transition.promoted) == (
         "adopting",
         "installed",
@@ -319,7 +337,7 @@ def test_a_project_with_no_gate_is_refused_rather_than_installed(
         assert _config(root, tmp_path).keelline.state == "adopting"
     before = _document(root)
     with pytest.raises(Refusal, match="configures no gate"):
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert _document(root) == before
 
 
@@ -336,7 +354,7 @@ def test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be(
     _set(root, 'state = "initialised"\n', f'state = "adopting"\nenforced = [\n{multiline}]\n')
     before = _document(root)
     with pytest.raises(OwnedKeyError) as refused:
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     message = str(refused.value)
     assert '`state = "installed"`' in message
     assert "`enforced = []`" in message
@@ -357,10 +375,12 @@ def test_a_named_gate_already_enforcing_is_refused_and_nothing_is_written(tmp_pa
     # In-comment, not declared: this refusal guards no write the all-or-nothing rule does not
     # already hold; dropping it re-runs `docs` and writes the same list plus `bugs`.
     root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), ["docs"], base=base)
+    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
     before = _document(root)
     with pytest.raises(Refusal, match="already enforces"):
-        promote(root, _config(root, tmp_path), ["docs", "bugs"], base=base)
+        promote(
+            root, _config(root, tmp_path), ["docs", "bugs"], base=base, machine=tmp_path / "m.toml"
+        )
     assert _document(root) == before
 
 
@@ -370,7 +390,7 @@ def test_a_name_that_is_not_a_configured_gate_is_refused(tmp_path: Path) -> None
     root, base = _project(tmp_path)
     for name in ("config", "lint"):
         with pytest.raises(Refusal, match="configured gate"):
-            promote(root, _config(root, tmp_path), [name], base=base)
+            promote(root, _config(root, tmp_path), [name], base=base, machine=tmp_path / "m.toml")
 
 
 @pytest.mark.parametrize(
@@ -394,12 +414,12 @@ def test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_r
     # the editor's own refusal on told the person to write them: `state = "installed"`, which
     # enforces every gate with none of them earned, or `enforced = ["config"]`, which does not
     # load. Mutation: re-raising the editor's refusal unchanged -> the message assertions redden.
-    root, base = _project(tmp_path)
+    root, _ = _project(tmp_path)
     _set(root, old, new)
-    _with_marker_gate(root)
+    base = _with_marker_gate(root)
     before = _document(root)
     with pytest.raises(OwnedKeyError) as refused:
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     message = str(refused.value)
     assert '`state = "initialised"`' in message
     assert "`enforced = []`" in message
@@ -415,7 +435,7 @@ def test_an_uneditable_document_s_remedy_names_the_list_as_it_stands(tmp_path: P
     root, base = _project(tmp_path)
     _set(root, 'state = "initialised"\n', 'state = "adopting"\nenforced = [\n  "docs",\n]\n')
     with pytest.raises(OwnedKeyError) as refused:
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     message = str(refused.value)
     assert '`state = "adopting"`' in message
     assert '`enforced = ["docs"]`' in message
@@ -428,12 +448,13 @@ def test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml(tmp_pa
     # says so with the parser's position; relabelled as "a shape Keelline does not rewrite", the
     # remedy sent the person to edit two keys in a file that does not load. Mutation (declared):
     # the parse refusal relabelled again -> the shape sentence comes back.
-    root, base = _project(tmp_path)
+    root, _ = _project(tmp_path)
     corrupt = f"open({CONFIG_FILE!r}, 'a').write('[[broken')"
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write(_custom("corrupt", corrupt))
+    base = _land(root)
     with pytest.raises(OwnedKeyError) as refused:
-        promote(root, _config(root, tmp_path), ["corrupt"], base=base)
+        promote(root, _config(root, tmp_path), ["corrupt"], base=base, machine=tmp_path / "m.toml")
     message = str(refused.value)
     assert "is not valid TOML" in message
     assert "shape" not in message
@@ -444,13 +465,13 @@ def test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs(tmp_pa
     # parse refuses the write; found only there, it was found after every gate, a custom
     # command included, had run. Mutation (declared): the pre-check's `Manifest.read` made
     # `pass` -> the marker gate runs and the marker appears.
-    root, base = _project(tmp_path)
-    _with_marker_gate(root)
+    root, _ = _project(tmp_path)
+    base = _with_marker_gate(root)
     manifest = root / ".keelline" / "manifest.json"
     manifest.write_text("{not json", encoding="utf-8")
     before = _document(root)
     with pytest.raises(ManifestError):
-        promote(root, _config(root, tmp_path), [], base=base)
+        promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert not (root / MARKER).exists()
     assert _document(root) == before
 
@@ -459,12 +480,75 @@ def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:
     # A custom gate is promoted as a built-in is: its command runs, and its name joins the list.
     # Mutation: `run_gates` handed only the built-in names of `wanted` -> nothing runs, nothing
     # is promoted, and the marker is absent.
-    root, base = _project(tmp_path)
-    _with_marker_gate(root)
-    transition = promote(root, _config(root, tmp_path), [MARKER], base=base)
+    root, _ = _project(tmp_path)
+    base = _with_marker_gate(root)
+    transition = promote(
+        root, _config(root, tmp_path), [MARKER], base=base, machine=tmp_path / "m.toml"
+    )
     assert (root / MARKER).exists()
     assert transition.promoted == (MARKER,)
     assert _config(root, tmp_path).keelline.enforced == (MARKER,)
+
+
+def test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted(tmp_path: Path) -> None:
+    # `keelline gate` runs a custom gate only with the base's own command, so a promotion of
+    # one the base lacks would enforce a command the pull request carrying it never ran. It is
+    # not run here either, and waits: named beside a gate that passes it stops the whole
+    # promotion, and with no names every other gate is promoted. Mutations (declared): nothing
+    # waits -> the marker gate runs and is promoted; a waiting gate left out of the named rule
+    # -> `docs` is written alone.
+    root, base = _project(tmp_path)
+    _add_marker_gate(root)
+    before = _document(root)
+    transition = promote(
+        root, _config(root, tmp_path), ["docs", MARKER], base=base, machine=tmp_path / "m.toml"
+    )
+    assert (transition.promoted, transition.waiting) == ((), (MARKER,))
+    assert not (root / MARKER).exists()
+    assert _document(root) == before
+    transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
+    assert not (root / MARKER).exists()
+    assert (transition.promoted, transition.waiting) == (BUILTIN_GATES, (MARKER,))
+    assert MARKER not in _config(root, tmp_path).keelline.enforcing
+
+
+def test_a_custom_gate_waits_when_the_base_cannot_be_read(tmp_path: Path) -> None:
+    # The fixture's default base does not exist: git cannot answer what the base's command is,
+    # so the gate waits as for a base without it, and the built-ins still run. Mutation
+    # (declared): the unreadable base raised -> the whole promotion fails.
+    root, _ = _project(tmp_path)
+    _with_marker_gate(root)
+    missing = "refs/remotes/origin/no-such-branch"
+    transition = promote(
+        root, _config(root, tmp_path), [], base=missing, machine=tmp_path / "m.toml"
+    )
+    assert transition.waiting == (MARKER,)
+    assert "docs" in transition.promoted
+    assert not (root / MARKER).exists()
+
+
+def test_a_custom_gate_the_base_runs_another_command_for_waits_and_the_command_says_why(
+    tmp_path: Path,
+) -> None:
+    # Re-commanded on this branch, the gate's command is not the base's either. The summary
+    # names it and says what to do, and `--json` lists it apart from the gates that ran.
+    root, _ = _project(tmp_path)
+    with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
+        stream.write(_custom(MARKER, "pass"))
+    base = _land(root)
+    text = _document(root).replace(_custom(MARKER, "pass"), "")
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    _add_marker_gate(root)
+    code, out, err = _cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base)
+    assert code == 1, err
+    assert out.splitlines() == [
+        f"promoted: nothing; still advisory: {MARKER} (not on the base); state initialised",
+        WAITING,
+        FINDINGS_ELSEWHERE,
+    ]
+    assert not (root / MARKER).exists()
+    code, out, _ = _cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base, "--json")
+    assert json.loads(out)["not_on_base"] == [MARKER]
 
 
 def test_adopt_begin_json_carries_the_state_on_each_side_and_nothing_else(tmp_path: Path) -> None:
@@ -558,9 +642,10 @@ def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Pa
     # A custom gate whose command cannot start stays advisory, is named as one that could not
     # run, and nothing is written. Mutation: the unanswered names left out of `advisory` in
     # `run_adopt_promote` -> the summary loses the name and the command exits 0.
-    root, base = _project(tmp_path)
+    root, _ = _project(tmp_path)
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
         stream.write('\n[gates.custom.absent]\nrun = ["keelline-test-no-such-command"]\n')
+    base = _land(root)
     before = _document(root)
     code, out, err = _cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
     assert code == 1, err
@@ -591,8 +676,8 @@ def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
 
     before = planned()
     begin(root, _config(root, tmp_path), root / ADOPTION)
-    promote(root, _config(root, tmp_path), ["docs"], base=base)
-    promote(root, _config(root, tmp_path), [], base=base)
+    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
+    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     assert _config(root, tmp_path).keelline.state == "installed"
     assert planned() == before
 
@@ -602,7 +687,7 @@ def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) ->
     # wrote. Mutation: skipping `rewrite_owned`'s re-stamp -> `uninstall` keeps the file.
     root, base = _project(tmp_path)
     begin(root, _config(root, tmp_path), root / ADOPTION)
-    promote(root, _config(root, tmp_path), [], base=base)
+    promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
     code, _, err = _cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()

@@ -402,7 +402,8 @@ def _adopt(command: Literal["adopt-begin", "adopt-promote"], root: Path, tmp_pat
                 stream.write(f'"{row}" = "in progress"\n')
         begin(root, config, plan)
         return
-    transition = promote(root, config, ["docs"], base=local_base(config))
+    base = local_base(config)
+    transition = promote(root, config, ["docs"], base=base, machine=tmp_path / "absent.toml")
     # The row's non-vacuity: a promotion that wrote nothing never reached the write path.
     assert transition.promoted == ("docs",), transition
 

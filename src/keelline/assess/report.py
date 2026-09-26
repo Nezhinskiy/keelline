@@ -13,7 +13,9 @@ word, so every command goes through one emitter capped per level, and past the c
 `::notice::` counts what was held back.
 
 **What fails the run.** An enforced gate that is failing, and, when the configuration check ran,
-a key the rule refused. An advisory gate's findings are annotated and never fail it.
+a key the rule refused. An advisory gate's findings are annotated and never fail it, and nor does
+a custom gate left waiting because the base does not have its command: the base enforces no
+command it lacks.
 """
 
 from __future__ import annotations
@@ -39,6 +41,9 @@ FINDINGS_ELSEWHERE = (
     "details: `keelline assess --json` lists every finding, and each gate's own command shows "
     "its own"
 )
+# A custom gate whose command the base does not have: the change added or re-commanded it, and
+# it runs once it lands there.
+NOT_ON_BASE = "not run until the base has this command"
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,7 @@ class GateRun:
     results: tuple[GateResult, ...]
     judged: bool  # whether the configuration check ran, and so whether a refusal counts
     prefix: str = ""  # the project root inside the repository, as `repository_prefix` gives it
+    waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
 
     @property
     def blocking(self) -> tuple[str, ...]:
@@ -96,6 +102,8 @@ def workflow_commands(run: GateRun, *, cap: int = ANNOTATION_CAP) -> list[str]:
         for finding in result.findings:
             path = finding.path if located_here else ""
             emit(level, path, finding.line, f"{result.name}: {finding.rule}")
+    for name in run.waiting:
+        emit("warning", "", None, f"{name}: {NOT_ON_BASE}")
     for level, count in held.items():
         if count:
             lines.append(f"::notice::{HELD.format(count=count, level=level)}")
@@ -124,13 +132,16 @@ def summary(run: GateRun) -> str:
     """The job summary, as markdown: each gate's mode, count and outcome, then, when the
     configuration check ran, each changed key's verdict. Counts and names only."""
     blocks: list[list[str]] = []
-    if run.results:
+    if run.results or run.waiting:
         rows = ["| gate | mode | findings | verdict |", "|---|---|---|---|"]
         for result in run.results:
             enforcing = result.name in run.verdict.enforcing
             count = len(result.findings) if result.answered else "could not run"
             mode = "enforcing" if enforcing else "advisory"
             rows.append(f"| {result.name} | {mode} | {count} | {_outcome(result, enforcing)} |")
+        for name in run.waiting:
+            mode = "enforcing" if name in run.verdict.enforcing else "advisory"
+            rows.append(f"| {name} | {mode} | not run | {NOT_ON_BASE} |")
         blocks.append(rows)
     if run.judged:
         if run.verdict.base_state is not None and run.verdict.changes:
