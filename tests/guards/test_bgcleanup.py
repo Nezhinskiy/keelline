@@ -421,14 +421,19 @@ def test_a_long_option_cluster_does_not_hang_the_closed_handler() -> None:
     The ceiling is deliberately loose rather than tight: a slower machine is allowed to be
     several times slower than this one without turning a real regression into a flake, and
     three seconds is still far below the defect it is here to catch.
+
+    CPU time, not wall time, because the defect is work and `judge` does all of it in this
+    process. Across ten workers the wall clock measures the scheduler: on 2026-09-26 one full
+    `pytest -n auto --cov` run took this call to 4.6 s of wall time, and in the next the same
+    call was 1.85 s of wall for 1.15 s of CPU.
     """
     token = "-" + "c" * 60_000 + "0"
     command = f"bash {token} 'echo hi'"
     assert len(command) <= MAX_COMMAND_CHARS  # inside the cap, so the command IS read
 
-    start = time.perf_counter()
+    start = time.process_time()
     judge(command, background=True)
-    assert time.perf_counter() - start < 3.0
+    assert time.process_time() - start < 3.0
 
 
 def test_a_trailing_restore_without_a_trap_is_warned_about() -> None:
