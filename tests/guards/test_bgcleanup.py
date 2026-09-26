@@ -418,22 +418,27 @@ def test_a_long_option_cluster_does_not_hang_the_closed_handler() -> None:
     10.14 s for 20k / 40k / 60k characters, which is the 4x-per-doubling signature. The same
     call now takes 0.13 s at 60k.
 
-    The ceiling is deliberately loose rather than tight: a slower machine is allowed to be
-    several times slower than this one without turning a real regression into a flake, and
-    three seconds is still far below the defect it is here to catch.
-
-    CPU time, not wall time, because the defect is work and `judge` does all of it in this
-    process. Across ten workers the wall clock measures the scheduler: on 2026-09-26 one full
-    `pytest -n auto --cov` run took this call to 4.6 s of wall time, and in the next the same
-    call was 1.85 s of wall for 1.15 s of CPU.
+    Measured as a RATIO against a benign cluster of the same length, not against a clock. An
+    absolute ceiling of three seconds held on one machine and failed on another: under coverage
+    across four workers on a CI runner the fixed call spent 3.07 s of CPU (Python 3.12,
+    2026-09-26), because coverage traces `judge`'s pure-Python scan line by line and shared cores
+    stretch the same work into more CPU-seconds. Both calls below run through `judge` back to
+    back, so whatever inflates one inflates the other. A `b` cluster takes the same path to the
+    same verdict but gives the flag pattern nothing to backtrack over. Measured: 1.0 with the
+    fixed pattern and 1.1 under coverage; with the old one, 48 and 19. Five sits between them
+    with room on both sides.
     """
-    token = "-" + "c" * 60_000 + "0"
-    command = f"bash {token} 'echo hi'"
+    cluster = "c" * 60_000
+    command = f"bash -{cluster}0 'echo hi'"
     assert len(command) <= MAX_COMMAND_CHARS  # inside the cap, so the command IS read
 
-    start = time.process_time()
-    judge(command, background=True)
-    assert time.process_time() - start < 3.0
+    def cpu(text: str) -> float:
+        start = time.process_time()
+        judge(text, background=True)
+        return time.process_time() - start
+
+    benign = cpu(command.replace(cluster, "b" * len(cluster)))
+    assert cpu(command) < 5 * benign
 
 
 def test_a_trailing_restore_without_a_trap_is_warned_about() -> None:
