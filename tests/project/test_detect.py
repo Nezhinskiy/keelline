@@ -61,13 +61,14 @@ def test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default(
     assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
 
 
-def _clone_on_develop(tmp_path: Path) -> Path:
-    """A clone whose `origin/HEAD` names `refs/remotes/origin/develop`, as `git clone` leaves it."""
+def _clone_on_develop(tmp_path: Path, *, remote: str = "origin") -> Path:
+    """A clone whose `<remote>/HEAD` names `refs/remotes/<remote>/develop`, as `git clone` leaves
+    it."""
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     git(upstream, "init", "-q", "-b", "develop")
     git(upstream, "commit", "-q", "--allow-empty", "-m", "one")
-    git(tmp_path, "clone", "-q", str(upstream), "clone")
+    git(tmp_path, "clone", "-q", "-o", remote, str(upstream), "clone")
     return tmp_path / "clone"
 
 
@@ -122,19 +123,23 @@ FEATURE = "chore/adopt-keelline"
 
 
 def _adopting(tmp_path: Path, shape: str) -> Path:
-    """A repository on the feature branch an adoption is made on, in one of three shapes: created
-    here and pushed (`origin`, no `origin/HEAD`), never pushed (no `origin`), or cloned (an
-    `origin/HEAD` naming `develop`)."""
+    """A repository on the feature branch an adoption is made on: created here and pushed to
+    `origin` or to `upstream` (a remote, no `origin/HEAD`), never pushed (no remote), cloned (an
+    `origin/HEAD` naming `develop`), or cloned with `-o upstream` (`upstream/HEAD` naming
+    `develop`, and no `origin`)."""
     if shape == "cloned":
         root = _clone_on_develop(tmp_path)
+    elif shape == "cloned-as-upstream":
+        root = _clone_on_develop(tmp_path, remote="upstream")
     else:
         root = repository(tmp_path, origin=None)
         git(root, "commit", "-q", "--allow-empty", "-m", "one")
-    if shape == "pushed":
-        bare = tmp_path / "origin.git"
+    if shape in ("pushed", "pushed-to-upstream"):
+        remote = "origin" if shape == "pushed" else "upstream"
+        bare = tmp_path / f"{remote}.git"
         git(tmp_path, "init", "-q", "--bare", str(bare))
-        git(root, "remote", "add", "origin", str(bare))
-        git(root, "push", "-q", "-u", "origin", "main")
+        git(root, "remote", "add", remote, str(bare))
+        git(root, "push", "-q", "-u", remote, "main")
     git(root, "checkout", "-q", "-b", FEATURE)
     return root
 
@@ -144,24 +149,51 @@ def _adopting(tmp_path: Path, shape: str) -> Path:
     ("shape", "expected"),
     [
         ("pushed", ("main", "default", True)),
+        ("pushed-to-upstream", ("main", "default", True)),
+        ("cloned-as-upstream", ("main", "default", True)),
         ("unpushed", (FEATURE, "current branch", False)),
         ("cloned", ("develop", "origin/HEAD", False)),
     ],
 )
-def test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all(
+def test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all(
     tmp_path: Path, shape: str, expected: tuple[str, str, bool]
 ) -> None:
     # A repository created here and pushed with `git push -u origin main` has an `origin` and no
-    # `origin/HEAD` (only `git clone` and `git remote set-head` record one), and it is adopted
-    # from a feature branch: taking the branch checked out wrote the feature branch as the base,
-    # so the workflow gated it and `assess` compared the branch with itself. With an `origin`,
-    # the default stands and is flagged for the note; with none, the branch checked out is all
-    # there is to go on. Mutation (oracle): "an origin with no origin/HEAD takes the branch
-    # checked out" -> `pushed` comes back as the feature branch.
+    # `origin/HEAD` (until `git clone`, `git remote set-head`, or a `git fetch` from git 2.48 on
+    # records one), and it is adopted from a feature branch: taking the branch checked out wrote
+    # the feature branch as the base, so the workflow gated it and `assess` compared the branch
+    # with itself. The same holds for a repository whose only remote is `upstream`, pushed or
+    # cloned with `-o upstream`: a remote is there, and only `origin/HEAD` is read. With any
+    # remote the default stands and is flagged for the note; with none, the branch checked out
+    # is all there is to go on. Mutations (oracle): "a remote with no origin/HEAD takes the
+    # branch checked out" -> all three remote shapes come back as the feature branch; "only an
+    # origin remote keeps the default" -> the two `upstream` shapes do.
     found = detect(_adopting(tmp_path, shape))
     base_branch, source, unrecorded = expected
     assert (found.base_branch, found.sources["base_branch"]) == (base_branch, source)
     assert (found.head_unrecorded, found.head_refused) == (unrecorded, False)
+    assert not found.remotes_unknown
+
+
+@needs_git
+def test_a_repository_whose_remotes_git_cannot_list_keeps_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Whether there is a remote is the whole question the checked-out branch hangs on, so a `git
+    # remote` that gave no answer is not "no remote": the default stands, flagged for a note of
+    # its own. Mutation (oracle): "remotes git cannot list read as none" -> the feature branch
+    # comes back.
+    from keelline.gitenv import git_run as real
+
+    root = _adopting(tmp_path, "unpushed")
+
+    def unanswered(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
+        return (-1, "") if args[0] == "remote" else real(where, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("keelline.project.detect.git_run", unanswered)
+    found = detect(root)
+    assert (found.base_branch, found.sources["base_branch"]) == ("main", "default")
+    assert (found.remotes_unknown, found.head_unrecorded) == (True, False)
 
 
 @needs_git

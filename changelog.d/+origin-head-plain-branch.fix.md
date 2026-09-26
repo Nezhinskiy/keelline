@@ -2,8 +2,9 @@
 under `refs/remotes/origin/`; any other name the remote reported is replaced by `main` rather than
 written into `keelline.toml`, and the report says so in a `note:` line without repeating the name.
 A tag or a local branch called `origin/<branch>` no longer turns the base branch into
-`remotes/origin/<branch>`. With no `origin` remote at all, the branch checked out is the base
-branch, with a `note:` when it is not `main`. A repository created locally and pushed has an
-`origin` and no `origin/HEAD`: there the base branch stays `main`, never the feature branch you
-may be adopting from, and the `note:` names `git remote set-head origin --auto` and
-`--base-branch`.
+`remotes/origin/<branch>`. With no remote at all, the branch checked out is the base branch,
+with a `note:` when it is not `main`. A repository created locally and pushed has a remote and no
+`origin/HEAD`, and so does one whose only remote is `upstream`: there the base branch stays
+`main`, never the feature branch you may be adopting from, and the `note:` names `--base-branch`,
+and `git remote set-head origin --auto` where the remote is `origin`. Where git cannot list the
+remotes, the base branch stays `main` too, with a `note:` saying so.

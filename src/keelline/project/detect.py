@@ -7,16 +7,17 @@ way.
 
 **Three of them are repository-authored strings, and each is held to a grammar before it is
 returned:** the remote's last path segment and the checkout's directory name to `[project]
-name`'s, and `origin/HEAD`'s branch — or, in a repository with no `origin` remote at all, the
-branch checked out — to the one a rendered workflow accepts. A name outside its grammar is
+name`'s, and `origin/HEAD`'s branch — or, in a repository with no remote at all, the branch
+checked out — to the one a rendered workflow accepts. A name outside its grammar is
 refused naming the grammar and never the value, or, leniently, returned as `""` and `not
 derivable`, so `init --questions` asks for it rather than suggesting it. A branch outside its
 grammar is reported as the default.
 The agents and the profile are names from Keelline's own registries.
 
 Each value also says where it came from, in one of this module's fixed phrases, because a
-default is only as good as its source: `origin/HEAD` is set by `git clone` and goes stale after
-the remote's default branch is renamed, since git does not refresh it.
+default is only as good as its source: `origin/HEAD` is set by `git clone`, `git remote
+set-head`, or a `git fetch` from git 2.48 on that finds none, and goes stale after the remote's
+default branch is renamed, since git does not refresh one it has.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from keelline.config.schema import BRANCH_NAME, NAME_RULE, PROJECT_NAME
 from keelline.errors import Refusal
-from keelline.gitenv import git_run
+from keelline.gitenv import git_run, in_work_tree
 from keelline.memory.api import GitUnavailable, origin_remote
 
 DEFAULT_BRANCH = "main"
@@ -63,9 +64,12 @@ class Detected:
     # `origin/HEAD` named a branch outside the grammar, so the base branch is the default in its
     # place. A flag and never the name: the name is the text the grammar refused.
     head_refused: bool = False
-    # There is an `origin` remote and no `origin/HEAD` recorded for it, so the base branch is the
-    # default: the branch checked out is as likely a feature branch as the remote's default.
+    # There is a remote and no `origin/HEAD` recorded, so the base branch is the default: the
+    # branch checked out is as likely a feature branch as the remote's default.
     head_unrecorded: bool = False
+    # git could not list the remotes of the repository this is in, so whether there is one is not
+    # known and the base branch is the default rather than the branch checked out.
+    remotes_unknown: bool = False
 
 
 def _origin(root: Path) -> str | None:
@@ -100,31 +104,46 @@ def _symbolic(root: Path, ref: str, prefix: str) -> str | None:
     return full.removeprefix(prefix) if full.startswith(prefix) else ""
 
 
-def _base_branch(root: Path, *, has_origin: bool) -> tuple[str, str, bool, bool]:
-    """The base branch, where it came from, whether `origin/HEAD` named one outside the grammar,
-    and whether an `origin` remote has no `origin/HEAD` recorded; in both cases the default
-    stands in.
+def _remotes(root: Path) -> bool | None:
+    """Whether the repository has any remote; `None` when git gave no answer inside one.
 
-    Only a repository with no `origin` remote at all takes the branch checked out, held to the
-    same grammar: a fresh repository on `develop` had `main` written as its base, and a workflow
+    Outside a repository there is no remote and no branch checked out, so that is `False`.
+    """
+    code, out = git_run(root, "remote")
+    if code == 0:
+        return bool(out.strip())
+    return None if in_work_tree(root) else False
+
+
+def _base_branch(root: Path) -> tuple[str, str, bool, bool, bool]:
+    """The base branch, where it came from, whether `origin/HEAD` named one outside the grammar,
+    whether a remote has no `origin/HEAD` recorded, and whether git could not list the remotes;
+    in each of the last three the default stands in.
+
+    Only a repository with no remote at all takes the branch checked out, held to the same
+    grammar: a fresh repository on `develop` had `main` written as its base, and a workflow
     that never ran for a pull request into `develop`. A repository created here and pushed
-    (`git push -u origin main`) has an `origin` and no `origin/HEAD`, since only `git clone` and
-    `git remote set-head` record one, and it is typically adopted from a feature branch: taking
-    that branch wrote it as the base, so the workflow gated the feature branch. There the default
-    stands, and the caller says how to record the remote's own. A detached or unreadable `HEAD`,
-    or a branch outside the grammar, leaves the default too.
+    (`git push -u origin main`) has a remote and no `origin/HEAD` until `git clone`, `git remote
+    set-head`, or a `git fetch` from git 2.48 on records one, and it is typically adopted from a
+    feature branch: taking that branch wrote it as the base, so the workflow gated the feature
+    branch. So does one whose only remote is `upstream`, pushed or cloned with `-o upstream`:
+    only `origin/HEAD` is read. There the default stands, and the caller says how to answer it.
+    A detached or unreadable `HEAD`, or a branch outside the grammar, leaves the default too.
     """
     head = _symbolic(root, "refs/remotes/origin/HEAD", ORIGIN_PREFIX)
     if head is not None:
         if BRANCH_NAME.match(head):
-            return head, ORIGIN_HEAD, False, False
-        return DEFAULT_BRANCH, DEFAULT, True, False
-    if has_origin:
-        return DEFAULT_BRANCH, DEFAULT, False, True
+            return head, ORIGIN_HEAD, False, False, False
+        return DEFAULT_BRANCH, DEFAULT, True, False, False
+    remotes = _remotes(root)
+    if remotes is None:
+        return DEFAULT_BRANCH, DEFAULT, False, False, True
+    if remotes:
+        return DEFAULT_BRANCH, DEFAULT, False, True, False
     current = _symbolic(root, "HEAD", HEADS_PREFIX)
     if current and BRANCH_NAME.match(current):
-        return current, CURRENT_BRANCH, False, False
-    return DEFAULT_BRANCH, DEFAULT, False, False
+        return current, CURRENT_BRANCH, False, False, False
+    return DEFAULT_BRANCH, DEFAULT, False, False, False
 
 
 def _agents(root: Path) -> tuple[tuple[str, ...], str]:
@@ -159,9 +178,7 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
         raise Refusal(NOT_A_NAME)
     if not PROJECT_NAME.match(name):
         name, name_source = "", NOT_DERIVABLE
-    base_branch, branch_source, head_refused, head_unrecorded = _base_branch(
-        root, has_origin=origin is not None
-    )
+    base_branch, branch_source, head_refused, head_unrecorded, remotes_unknown = _base_branch(root)
     agents, agents_source = _agents(root)
     profile, profile_source = _profile(root)
     return Detected(
@@ -177,4 +194,5 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
         },
         head_refused=head_refused,
         head_unrecorded=head_unrecorded,
+        remotes_unknown=remotes_unknown,
     )

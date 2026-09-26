@@ -10262,14 +10262,51 @@ reddens = [
 ]
 
 [[mutation]]
-name = "an origin with no origin/HEAD takes the branch checked out"
+name = "a remote with no origin/HEAD takes the branch checked out"
 file = "src/keelline/project/detect.py"
-before = "    if has_origin:"
+before = "    if remotes:"
 after = "    if False:"
 reddens = [
-  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all",
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all[pushed-expected0]",
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all[pushed-to-upstream-expected1]",
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all[cloned-as-upstream-expected2]",
   "tests/project/test_command.py::test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head",
   "tests/project/test_questions.py::test_each_default_says_where_it_came_from",
+]
+
+# Any remote keeps the default, not only one called `origin`: a repository whose one remote is
+# `upstream`, pushed there or cloned with `-o upstream`, is adopted from a feature branch too.
+[[mutation]]
+name = "only an origin remote keeps the default"
+file = "src/keelline/project/detect.py"
+before = "        return bool(out.strip())"
+after = '        return "origin" in out.split()'
+reddens = [
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all[pushed-to-upstream-expected1]",
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_remote_at_all[cloned-as-upstream-expected2]",
+  "tests/project/test_command.py::test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_answer_it[pushed]",
+  "tests/project/test_command.py::test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_answer_it[cloned]",
+]
+
+# No answer to `git remote` inside a repository is not "no remote", so the branch checked out is
+# not taken on it, and the note says git could not tell.
+[[mutation]]
+name = "remotes git cannot list read as none"
+file = "src/keelline/project/detect.py"
+before = "    return None if in_work_tree(root) else False"
+after = "    return False"
+reddens = [
+  "tests/project/test_detect.py::test_a_repository_whose_remotes_git_cannot_list_keeps_the_default",
+  "tests/project/test_command.py::test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own",
+]
+
+[[mutation]]
+name = "remotes git cannot list are never noted"
+file = "src/keelline/project/init.py"
+before = "        return HEAD_REMOTES_UNKNOWN"
+after = '        return ""'
+reddens = [
+  "tests/project/test_command.py::test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own",
 ]
 
 [[mutation]]

@@ -26,7 +26,12 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
 from keelline.config.schema import NAME_RULE, Config
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
-from keelline.project.init import HEAD_CURRENT, HEAD_DEFAULTED, HEAD_UNRECORDED
+from keelline.project.init import (
+    HEAD_CURRENT,
+    HEAD_DEFAULTED,
+    HEAD_REMOTES_UNKNOWN,
+    HEAD_UNRECORDED,
+)
 from keelline.project.templates import _ci
 from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
@@ -406,12 +411,63 @@ def test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_reco
     git(other, "checkout", "-q", "-b", "chore/adopt-keelline")
     code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--json")
     assert code == 0 and json.loads(printed)["head_note"] == "", printed
-    # An answered base branch replaced nothing.
     git(other, "remote", "set-head", "origin", "--delete")
     code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["head_note"] == HEAD_UNRECORDED, printed
+    # An answered base branch replaced nothing.
     code, printed = _invoke(other, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
     assert code == 0 and HEAD_UNRECORDED not in printed, printed
+
+
+@needs_git
+@pytest.mark.parametrize("shape", ["pushed", "cloned"])
+def test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_answer_it(
+    tmp_path: Path, shape: str
+) -> None:
+    # Only `origin/HEAD` is read, so a repository whose one remote is `upstream` — created here
+    # and pushed there, or cloned with `-o upstream`, which records `upstream/HEAD` — has no
+    # head detection reads. It is still a repository with a remote, adopted from a feature
+    # branch, so `main` stands and the note names `--base-branch`, which answers it whatever the
+    # remote is called. Mutation (oracle): "only an origin remote keeps the default" -> the
+    # feature branch is written.
+    bare = tmp_path / "upstream.git"
+    if shape == "pushed":
+        root = repository(tmp_path, origin=None)
+        git(root, "commit", "-q", "--allow-empty", "-m", "one")
+        git(tmp_path, "init", "-q", "--bare", str(bare))
+        git(root, "remote", "add", "upstream", str(bare))
+        git(root, "push", "-q", "-u", "upstream", "main")
+    else:
+        seed = repository(tmp_path / "seed", origin=None)
+        git(seed, "commit", "-q", "--allow-empty", "-m", "one")
+        git(tmp_path, "clone", "-q", "--bare", str(seed), str(bare))
+        git(tmp_path, "clone", "-q", "-o", "upstream", str(bare), "widget")
+        root = tmp_path / "widget"
+    git(root, "checkout", "-q", "-b", "chore/adopt-keelline")
+    code, printed = _invoke(root, tmp_path, "--yes", "--name", "widget")
+    assert code == 0 and f"note: {HEAD_UNRECORDED}" in printed, printed
+    assert "--base-branch BRANCH" in HEAD_UNRECORDED
+    assert load(root).project.base_branch == "main"
+
+
+@needs_git
+def test_remotes_git_cannot_list_leave_main_with_a_note_of_their_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No answer to `git remote` is not "no remote": the branch checked out is not taken, and the
+    # note says git could not tell. Mutation (oracle): "remotes git cannot list are never noted"
+    # -> the note is missing.
+    from keelline.gitenv import git_run as real
+
+    root = repository(tmp_path, origin=None)
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "remote" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.project.detect.git_run", unanswered)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert code == 0 and json.loads(printed)["head_note"] == HEAD_REMOTES_UNKNOWN, printed
 
 
 @needs_git
