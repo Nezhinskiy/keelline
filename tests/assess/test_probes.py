@@ -609,9 +609,57 @@ def test_a_codeowners_file_through_a_symlink_is_could_not_look(tmp_path: Path) -
 
 
 def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Path) -> None:
-    # Mutation (advisory): the `ci.mode == "none"` early return dropped -> reddens.
+    # Mutation (advisory): the `ci.mode == "none"` early return dropped -> reddens. The scope
+    # probe's own return: dropped, a caller-only line reports under `mode = "none"` and reddens.
     root = _repo(tmp_path, tail='\n[ci]\nmode = "none"\n')
     assert _items(root, tmp_path, "codeowners") == []
+    _write(root, ".github/CODEOWNERS", f"/{CI_WORKFLOW} @owner\n")
+    assert _items(root, tmp_path, "codeowners-scope") == []
+
+
+@pytest.mark.parametrize(
+    ("relative", "codeowners", "unowned"),
+    [
+        (".github/CODEOWNERS", f"/{CI_WORKFLOW} @owner\n", (OWNED_WORKFLOWS, ".github/CODEOWNERS")),
+        (".github/CODEOWNERS", "/.github/ @owner\n", ()),
+        (".github/CODEOWNERS", "* @owner\n", ()),
+        (".github/CODEOWNERS", "/.github/workflows/ @owner\n", (".github/CODEOWNERS",)),
+        (
+            ".github/CODEOWNERS",
+            f"/{CI_WORKFLOW} @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        ("CODEOWNERS", "/.github/ @owner\n", ("CODEOWNERS",)),
+        ("CODEOWNERS", "* @owner\n", ()),
+        (".github/CODEOWNERS", "*.md @owner\n", ()),
+        (".github/CODEOWNERS", f"/.github/ @owner\n/{CI_WORKFLOW}\n", ()),
+    ],
+    ids=[
+        "the-caller-alone",
+        "github-directory",
+        "everything",
+        "the-workflows-directory",
+        "the-caller-and-the-file",
+        "a-root-file-outside-its-own-rule",
+        "a-root-file-under-everything",
+        "the-caller-unowned",
+        "the-caller-left-without-an-owner",
+    ],
+)
+def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported(
+    tmp_path: Path, relative: str, codeowners: str, unowned: tuple[str, ...]
+) -> None:
+    # The verdict binds only when CODEOWNERS covers `/.github/`: a line owning only
+    # `keelline.yml` left a pull request free to add a workflow with a job named like the
+    # required check, and `codeowners` reported nothing. The scope probe asks about a workflow
+    # no project names and about the code-owners file itself, and stays silent where
+    # `codeowners` already reports, so one gap is one warning. Mutation (oracle): "the scope
+    # probe never asks past Keelline's workflow" -> `the-caller-alone` is clean and reddens.
+    root = _repo(tmp_path)
+    _write(root, relative, codeowners)
+    items = _items(root, tmp_path, "codeowners-scope")
+    expected = [("codeowners-scope", Severity.WARNING, 7, unowned)] if unowned else []
+    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == expected
 
 
 def test_commit_subjects_outside_the_vocabulary_are_counted_by_sha(tmp_path: Path) -> None:

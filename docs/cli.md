@@ -711,6 +711,7 @@ and a fixed `reason` naming the command that shows why.
 | `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file; not judged under `[ci] mode = "none"` |
+| `codeowners-scope` | the same file | warning | 7 | the caller workflow is owned, but a workflow a pull request could add or the code-owners file itself is not: anything short of a `/.github/` rule in a file kept at `.github/CODEOWNERS`; `where` names `.github/workflows/`, the file, or both. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
 
@@ -2288,7 +2289,8 @@ plan offers one. Everywhere else the verdict binds under six settings, and witho
 gates still run and still report but cannot stop a pull request that edits its own caller:
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
-  branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it;
+  branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
+  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;

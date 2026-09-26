@@ -7807,8 +7807,8 @@ reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_i
 [[mutation]]
 name = "the codeowners probe reads an owner-less line as owned"
 file = "src/keelline/assess/probes.py"
-before = "                owners = words[1:]"
-after = '                owners = ["x"]'
+before = "            owners = words[1:]"
+after = '            owners = ["x"]'
 reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[the-last-match-names-no-one]"]
 
 [[mutation]]
@@ -7858,8 +7858,8 @@ reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_ans
 [[mutation]]
 name = "the codeowners probe reads any word holding an at sign as an owner"
 file = "src/keelline/assess/probes.py"
-before = "            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
-after = '            if not words or not all("@" in word for word in words[1:]):'
+before = "        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '        if not words or not all("@" in word for word in words[1:]):'
 reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
@@ -9875,4 +9875,25 @@ before = '    found = bugs_gate(root, config, args.base or "")'
 after = "    found = bugs_gate(root, config)"
 reddens = [
   "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
+]
+
+# The verdict binds only when CODEOWNERS covers `/.github/`: a line owning only Keelline's
+# workflow leaves a pull request free to add a workflow whose job is named like the required
+# check. Where `codeowners` itself reports, this probe is silent, so one gap is one warning.
+[[mutation]]
+name = "the scope probe never asks past Keelline's workflow"
+file = "src/keelline/assess/probes.py"
+before = "    return Looked(tuple(label for label, path in probed if not _governed(text, path)))"
+after = "    return Looked()"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported",
+]
+
+[[mutation]]
+name = "the scope probe repeats what codeowners reports"
+file = "src/keelline/assess/probes.py"
+before = "    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):"
+after = "    if isinstance(found, Looked):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[the-caller-unowned]",
 ]

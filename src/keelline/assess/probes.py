@@ -67,6 +67,8 @@ _ENV_KEEP = (".example", ".sample", ".template")
 _CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")  # GitHub's order
 _WORKFLOWS = ".github/workflows"
 _UNOWNED = f"{_WORKFLOWS}/"
+# A workflow no project names so: a line owns it only by owning the workflows directory, or more.
+_ANY_WORKFLOW = f"{_WORKFLOWS}/keelline-probe-any-other-workflow.yml"
 # What reading a file the repository wrote can raise: a path through a symlink, a file that
 # cannot be opened, bytes that are not UTF-8 (a `ValueError`), a settings shape the engine
 # refuses, and JSON nested past the parser's depth, which `json` answers with `RecursionError`.
@@ -312,14 +314,11 @@ def _exact_file(path: Path) -> bool:
     return path.is_file() and path.name in os.listdir(path.parent)
 
 
-def _codeowners(context: ProbeContext) -> Looked:
-    """Whether the line governing Keelline's workflow names an owner, read as GitHub reads it:
-    the first code-owners file that exists under its exact name, and the last matching line in
-    it. A line with a pattern and no owner leaves the path unowned."""
-    from keelline.project.api import CI_WORKFLOW
-
-    if context.config.ci.mode == "none":
-        return Looked()  # Keelline renders no workflow to protect
+def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
+    """The code-owners file GitHub reads, as `(its path, its text)`: the first of `_CODEOWNERS`
+    that exists under its exact name. Otherwise what the `codeowners` probe reports: nothing
+    owns the workflow when there is no file or GitHub would not load it, and a file that cannot
+    be read is could not look."""
     for relative in _CODEOWNERS:
         try:
             path = contained(context.root, relative)
@@ -327,20 +326,59 @@ def _codeowners(context: ProbeContext) -> Looked:
                 continue
             if path.stat().st_size >= CODEOWNERS_MAX_BYTES:
                 return Looked((_UNOWNED,))  # GitHub does not load it
-            text = path.read_text(encoding="utf-8")
+            return relative, path.read_text(encoding="utf-8")
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
-        owners: list[str] = []
-        for line in text.split("\n"):
-            words = line.split("#", 1)[0].split()
-            # GitHub skips a line with an owner that is neither `@user`, `@org/team` nor an
-            # email address, so such a line decides nothing.
-            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):
-                continue
-            if _owns(words[0], CI_WORKFLOW):
-                owners = words[1:]
-        return Looked(() if owners else (_UNOWNED,))
     return Looked((_UNOWNED,))
+
+
+def _governed(text: str, path: str) -> bool:
+    """Whether the line governing `path` names an owner, read as GitHub reads it: the last
+    matching line wins, and a line with a pattern and no owner leaves the path unowned."""
+    owners: list[str] = []
+    for line in text.split("\n"):
+        words = line.split("#", 1)[0].split()
+        # GitHub skips a line with an owner that is neither `@user`, `@org/team` nor an
+        # email address, so such a line decides nothing.
+        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):
+            continue
+        if _owns(words[0], path):
+            owners = words[1:]
+    return bool(owners)
+
+
+def _codeowners(context: ProbeContext) -> Looked:
+    """Whether the line governing Keelline's workflow names an owner, in the code-owners file
+    GitHub reads."""
+    from keelline.project.api import CI_WORKFLOW
+
+    if context.config.ci.mode == "none":
+        return Looked()  # Keelline renders no workflow to protect
+    found = _codeowners_file(context)
+    if isinstance(found, Looked):
+        return found
+    return Looked() if _governed(found[1], CI_WORKFLOW) else Looked((_UNOWNED,))
+
+
+def _codeowners_scope(context: ProbeContext) -> Looked:
+    """Where Keelline's workflow is owned, what else under `.github/` is not: a workflow a pull
+    request adds, probed at a name no project gives one, and the code-owners file itself.
+
+    A line owning only `keelline.yml` makes `codeowners` clean while a pull request can still add
+    a workflow with a job named like the required check, which GitHub accepts; only a rule as
+    wide as `/.github/` closes that. Silent wherever `codeowners` itself reports — no file, the
+    workflow unowned, a file it could not read — so one gap is one warning.
+    """
+    from keelline.project.api import CI_WORKFLOW
+
+    if context.config.ci.mode == "none":
+        return Looked()
+    found = _codeowners_file(context)
+    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):
+        return Looked()
+    relative, text = found
+    probed = ((_UNOWNED, _ANY_WORKFLOW), (relative, relative))
+    return Looked(tuple(label for label, path in probed if not _governed(text, path)))
 
 
 def _commit_types(context: ProbeContext) -> Looked:
@@ -410,6 +448,15 @@ PROBES: tuple[Probe, ...] = (
         "add a CODEOWNERS line covering /.github/ and require code-owner review on the gate "
         "branch: a pull request can otherwise rewrite the workflow that judges it",
         _codeowners,
+    ),
+    Probe(
+        "codeowners-scope",
+        7,
+        Severity.WARNING,
+        "widen the CODEOWNERS line that owns Keelline's workflow to /.github/, and keep the file "
+        "at .github/CODEOWNERS: a pull request can otherwise add a workflow whose job is named "
+        "like the required check",
+        _codeowners_scope,
     ),
     Probe(
         "commit-types",
