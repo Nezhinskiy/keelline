@@ -125,7 +125,7 @@ def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> No
     card and the marketplace row; the Codex listing is the third storefront. All four
     advertised "an adoption state machine" while `keelline assess` did not exist and the
     README listed it under **Not yet**, and nothing in `keelline release check` or
-    `RELEASING.md` looked. Mutation (declared): put the adoption state machine back into
+    `RELEASING.md` looked. Mutation (declared): put the memory MCP server into
     `pyproject.toml`'s description -> reddens naming the file.
 
     What this cannot see is a paraphrase. The Codex listing's `shortDescription` said "earned

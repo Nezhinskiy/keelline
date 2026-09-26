@@ -21,8 +21,8 @@ Six names, each with the consumer that reaches for it:
   differ from the templates. That module's docstring states the measurement. A return type
   absent from this list is a value a consumer can hold and cannot declare, and
   `tests/test_surfaces.py` derives that rule rather than restating it.
-- `rewrite_owned`, for the lane that moves `[keelline] state` and `enforced` as a project is
-  adopted and its gates promoted (`adopt begin` and `adopt promote`, which ship later). It is
+- `rewrite_owned`, for `keelline adopt begin` and `keelline adopt promote`, which move
+  `[keelline] state` and `enforced` as a project is adopted and its gates promoted. It is
   the one operation that rewrites a tool-owned key: a second copy in that lane would skip the
   `config` record's re-stamp, and `uninstall` would then keep every promoted project's
   `keelline.toml` as hand-edited.

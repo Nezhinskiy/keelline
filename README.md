@@ -2,9 +2,9 @@
 
 A methodology harness for coding agents: a bug ledger that lives in the repository, a
 working memory whose index is rendered rather than written, guards that fail closed where
-the platform lets them, and — designed, not yet shipped — an adoption state machine that
-runs gates advisory until a repository has earned them. One plugin for Claude Code and
-Codex, one Python package with **no runtime dependencies**.
+the platform lets them, and an adoption state machine that runs each gate advisory until the
+repository has earned it. One plugin for Claude Code and Codex, one Python package with
+**no runtime dependencies**.
 
 > **Pre-1.0.** What ships: the memory store and its trust gate; the scaffolding engine that
 > writes files into a repository; the guards over a shell call, a commit message and a test
@@ -20,14 +20,14 @@ Codex, one Python package with **no runtime dependencies**.
 > and the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
 > `release`, whose three commands (`check`, `notes`, `hashes`) are this repository's own
-> discipline. **Not yet:** the adoption state machine, the memory MCP server, a
-> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes — each
-> leaves this list in the change that ships it. The [Quickstart](#quickstart) shows the three
-> keys that are enough to start a project by hand, which `init` reads as your answers — a run
-> that writes the file itself writes `[keelline] version`, `state` and `agents`, and `profile`
-> when the repository carries a shipped profile's markers, beside `[project] name`,
-> `base_branch` and `release_branch`, a `[ci]` table only when it has a released commit to pin
-> or `--no-ci` asks for none, and no `[memory]` table at all.
+> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form
+> of the gate, and adapters for Cursor or Hermes — each leaves this list in the change that
+> ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start a
+> project by hand, which `init` reads as your answers — a run that writes the file itself writes
+> `[keelline] version`, `state` and `agents`, and `profile` when the repository carries a
+> shipped profile's markers, beside `[project] name`, `base_branch` and `release_branch`, a
+> `[ci]` table only when it has a released commit to pin or `--no-ci` asks for none, and no
+> `[memory]` table at all.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -49,8 +49,8 @@ adds:
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
 - **An enforcement state machine** in which gates run advisory until the repository has
-  earned them. Designed; `keelline assess` reports what stands in the way, and the
-  promotion command ships later.
+  earned them. `keelline assess` says what stands in the way, and `keelline adopt promote`
+  enforces a gate once it passes.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`
   binds a repository to it. It also *declares* the Keelline it needs, in its plugin manifest;
@@ -302,6 +302,9 @@ keelline setup --git-hooks --uninstall                 # remove it; restore the 
 keelline assess                                       # every gate and probe; the whole inventory in .keelline/assessment.json
 keelline gate                                         # judge keelline.toml against the base, then run every configured gate
 keelline gate --only docs --only config               # a few of them; config is the configuration check
+keelline adopt begin docs/plans/2026-09-23-keelline-adoption.md   # check the adoption plan; the project is adopting
+keelline adopt promote docs                           # enforce one gate, if it passes now
+keelline adopt promote                                # enforce every gate that passes now; name the rest
 
 # Diagnosing an installation
 keelline doctor                                       # sixteen checks over this installation, one line
@@ -316,12 +319,13 @@ keelline release notes --version 1.2.3                # assemble CHANGELOG.md fr
 keelline release hashes --check                       # the shipped files still match the release record
 ```
 
-Every `memory`, `bugs`, `docs` and `plan` command, and `assess` and `gate`, takes `--root` (default:
-the current directory) and `--machine` (read a machine configuration file other than the default);
-`memory` commands and `docs check` take `--store` as well. `keelline overlay` is the
-exception: its `--root` names the directory an overlay is created in or the overlay itself,
-not a project root, and it reads no `keelline.toml`. `--json` is accepted anywhere and
-prints one machine-readable object instead of one line. The commands that report a list of
+Every `memory`, `bugs`, `docs` and `plan` command, and `assess`, `gate` and `adopt`, takes
+`--root` (default: the current directory) and `--machine` (read a machine configuration file
+other than the default); `memory` commands and `docs check` take `--store` as well.
+`keelline overlay` is the exception: its `--root` names the directory an overlay is created in
+or the overlay itself, not a project root, and it reads no `keelline.toml`. `--json` is accepted
+anywhere and prints one machine-readable object instead of one line.
+The commands that report a list of
 findings — `bugs check`, `docs check`, `memory refs`, `plan check`, `test audit-entrypoints` —
 all spell it `findings`, whatever their summary line calls them; every other command's keys
 are its own and are listed with it in [docs/cli.md](docs/cli.md).

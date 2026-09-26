@@ -18,8 +18,8 @@ Three things hold everywhere:
   not a low-confidence result.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
-  command, and `assess` and `gate`, takes them with the same meaning, and `docs check` takes
-  `--store` as well.
+  command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
+  takes `--store` as well.
 
 | Option | Meaning |
 |---|---|
@@ -53,6 +53,8 @@ Three things hold everywhere:
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
 - [`keelline assess [--base REF] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---root-path---machine-path)
 - [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
+- [`keelline adopt begin PLAN [--root PATH] [--machine PATH]`](#keelline-adopt-begin-plan---root-path---machine-path)
+- [`keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---root-path---machine-path)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---no-ci---root-path---machine-path)
 - [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
@@ -844,6 +846,59 @@ on either side that leaves the root, passes through a symbolic link, or names `.
 Both copies are loaded against this tree's disk, so a change that turns a directory the base names
 into a symbolic link refuses the base's own load, and a base written for an older Keelline that this
 one no longer loads fails every pull request until the owner fixes it on the base branch.
+
+## `keelline adopt begin PLAN [--root PATH] [--machine PATH]`
+
+Starts a project's adoption with a plan. `PLAN`, read from the current directory when it is
+relative, must be a markdown file directly under `[paths] plans` with `keelline` as a word of its
+name — `2026-09-23-keelline-adoption.md`, or `2026-09-23-keelline-adoption-api.md` for one of
+several — spelled as the file is on disk, and it must pass `keelline plan check`. An
+`initialised` project is marked `adopting`. A project already past that keeps its state: a
+project may carry any number of adoption plans, nothing records which, and a plan is found by its
+name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it, which does not need
+`begin` first. **Writes** `keelline.toml`'s `[keelline] state` through the same editor as
+`keelline upgrade`, and the manifest's record of it when that record still describes the file.
+
+| Exit | Meaning |
+|---|---|
+| 0 | the plan passes `plan check`; the project is `adopting`, or already was past `initialised` |
+| 1 | the plan has findings under `plan check`, and nothing was written |
+| 2 | `PLAN` is not an adoption plan, or `keelline.toml` is refused |
+
+## `keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`
+
+Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
+`[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
+enforces each one that passes, names the rest with their finding counts, and exits 1 if any
+failed. With names, they pass together or nothing is written, and a named gate that already
+enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
+`installed` and `enforced` is emptied: under `installed` an empty list means every configured
+gate, so a gate the project adds later enforces from its first run. An `adopting` project whose
+every configured gate already enforces — one that removed the last gate it had not promoted —
+is moved to `installed` with no gate run. The state never moves back. Everything that could
+refuse the write is checked before the first gate runs.
+
+`--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
+commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable
+workflow judges against `[ci] gate_branch`; where the two differ, pass `--base` to judge as CI
+will. Run on the base branch itself, that range is empty and those two gates pass having judged
+nothing; the pull request that carries a promotion faces every gate it promotes in its own run.
+A configured custom gate runs its command here, as it does under `keelline gate`.
+
+`--json` carries, on exit 0 or 1, `before`, `after`, `promoted`, `failing`, which maps each gate
+that ran and did not pass to its finding count, and `unanswered`, the gates that could not run.
+
+**There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses
+it to any pull request while anything enforces. It lands only through a push that bypasses
+branch protection, which is an owner's act and not a command. Removing or renaming a gate that
+`[keelline] enforced` lists is such an edit, and the same push must take the name out of that
+list, or `keelline.toml` no longer loads.
+
+| Exit | Meaning |
+|---|---|
+| 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
+| 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, or `keelline.toml` refused |
 
 ## `keelline memory refs`
 
@@ -2279,7 +2334,7 @@ those gates read the committed place, where the file is not.
 
 **Enforcement is per gate.** `[keelline] enforced` lists the gates promoted while a project
 adopts Keelline, and `state = "installed"` means every gate the project runs. Both keys are
-Keelline's to write (`keelline adopt begin` and `keelline adopt promote`, which ship later),
+Keelline's to write (`keelline adopt begin` and `keelline adopt promote`),
 and the loader holds them together: an `initialised` project lists none, and an `installed`
 one lists every gate or none. So there are three shapes and no others: `initialised` with
 an empty list (nothing has begun), `adopting` with any list of configured gates, each named

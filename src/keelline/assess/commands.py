@@ -1,6 +1,8 @@
 """The assess area's commands: `keelline assess` runs every configured gate and the inventory's
 probes over the repository as it is, writes the inventory, and prints counts; `keelline gate`
-judges a change's `keelline.toml` against its base's and runs the gates as that judgement says.
+judges a change's `keelline.toml` against its base's and runs the gates as that judgement says;
+`keelline adopt begin` and `keelline adopt promote` move a project's gates from advisory to
+enforcing, one at a time, as each passes.
 
 Every module a handler needs is imported inside it, so discovering this area imports neither the
 gates nor the presets.
@@ -10,10 +12,14 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags
+from keelline.command import common_flags, root_and_config
 from keelline.result import Result
+
+if TYPE_CHECKING:
+    from keelline.assess.state import Transition
 
 ASSESS_HELP = (
     "every configured gate and the inventory: what stands between this repository and enforcement"
@@ -43,6 +49,19 @@ NO_TREE_CONFIG = (
     "the run fails rather than pass a change it cannot judge"
 )
 NOTHING_TO_RUN = "nothing to run: no configured gate of the kind asked for"
+ADOPT_HELP = "the adoption state machine: begin with a plan, then promote gates as they pass"
+BEGIN_HELP = "check an adoption plan and mark an initialised project adopting"
+PLAN_HELP = (
+    "a markdown file directly under [paths] plans, with keelline as a word of its name; "
+    "a relative path is read from the current directory"
+)
+PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
+GATES_HELP = "configured gate names (default: every gate not yet enforcing)"
+BEGUN = (
+    "adopting: the plan passes plan check, and every gate stays advisory until "
+    "`keelline adopt promote` enforces it"
+)
+KEPT = "the plan passes plan check; the state stays {after}"
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
     "the configuration check, and every other name is a gate from [gates]"
@@ -164,6 +183,44 @@ def run_gate(args: argparse.Namespace) -> Result:
     return Result("\n".join(lines), data, exit_code=gate_run.exit_code)
 
 
+def _transition(transition: Transition) -> dict[str, object]:
+    """`--json` for both verbs: the state before and after, and what each gate run came to."""
+    return {
+        "before": transition.before,
+        "after": transition.after,
+        "promoted": list(transition.promoted),
+        "failing": dict(transition.failing),
+        "unanswered": list(transition.unanswered),
+    }
+
+
+def run_adopt_begin(args: argparse.Namespace) -> Result:
+    from keelline.assess.state import begin
+
+    root, config = root_and_config(args)
+    transition = begin(root, config, Path(args.plan))
+    changed = transition.after != transition.before
+    summary = BEGUN if changed else KEPT.format(after=transition.after)
+    return Result(summary, _transition(transition))
+
+
+def run_adopt_promote(args: argparse.Namespace) -> Result:
+    from keelline.assess.rule import local_base
+    from keelline.assess.state import promote
+
+    root, config = root_and_config(args)
+    transition = promote(root, config, args.gates, base=args.base or local_base(config))
+    # Gate names only: the loader holds each to a grammar, and a count is Keelline's own.
+    advisory = [f"{name} ({count} finding(s))" for name, count in transition.failing.items()]
+    advisory += [f"{name} (could not run)" for name in transition.unanswered]
+    parts = [f"promoted: {', '.join(transition.promoted) or 'nothing'}"]
+    if advisory:
+        parts.append(f"still advisory: {', '.join(advisory)}")
+    parts.append(f"state {transition.after}")
+    data = _transition(transition)
+    return Result("; ".join(parts), data, exit_code=1 if advisory else 0)
+
+
 def register(groups: SubParsers) -> None:
     parser = common_flags(groups.add_parser("assess", help=ASSESS_HELP))
     parser.add_argument("--base", default=None, help=BASE_HELP)
@@ -183,3 +240,13 @@ def register(groups: SubParsers) -> None:
     gate.add_argument("--annotate", action="store_true", help=ANNOTATE_HELP)
     gate.add_argument("--summary", default=None, metavar="FILE", help=SUMMARY_HELP)
     gate.set_defaults(func=run_gate)
+
+    adopt = groups.add_parser("adopt", help=ADOPT_HELP)
+    adopt_sub = adopt.add_subparsers(dest="command", metavar="<command>")
+    start = common_flags(adopt_sub.add_parser("begin", help=BEGIN_HELP))
+    start.add_argument("plan", metavar="PLAN", help=PLAN_HELP)
+    start.set_defaults(func=run_adopt_begin)
+    promotion = common_flags(adopt_sub.add_parser("promote", help=PROMOTE_HELP))
+    promotion.add_argument("gates", nargs="*", metavar="GATE", help=GATES_HELP)
+    promotion.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)
+    promotion.set_defaults(func=run_adopt_promote)

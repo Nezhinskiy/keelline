@@ -7,13 +7,13 @@ whole area — and with it the configuration layer — into every `discover()` c
 `tests/docs/test_surface.py` asserts the `__init__` imports nothing at all.
 
 **Outside this area, `project` imports `trail_target` (the paragraphs on `trail_path` and
-`trail_target` say why) and `keelline.assess.gates` imports the three gate functions (the last
-paragraph); nothing imports any other name on this list**, measured over `src/`, `scripts/` and
-`tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
-`keelline.docs.graph` and `keelline.docs.trail` directly, and every other lane runs the
-commands. So every other name below is here on an argument rather than on a caller, and the
-argument is written beside it — a surface that survives a trim with no explanation is what made
-the trim necessary.
+`trail_target` say why), `keelline.assess.gates` imports the three gate functions (the last
+paragraph) and `keelline.assess.state` imports `lint`, to check an adoption plan; nothing imports
+any other name on this list**, measured over `src/`, `scripts/` and `tests/`: this area's own
+tests reach `keelline.docs.plans`, `keelline.docs.hygiene`, `keelline.docs.graph` and
+`keelline.docs.trail` directly, and every other lane runs the commands. So every other name below
+is here on an argument rather than on a caller, and the argument is written beside it — a surface
+that survives a trim with no explanation is what made the trim necessary.
 
 The five besides `trail_target` and the three gate functions are the four checks this area
 *is*, one call each, and the one record one of them returns:
@@ -43,11 +43,12 @@ why. Each of the ten is still where it was written and is reachable from `keelli
 which is what `docs/commands.py` and this area's own tests already do; what went is the claim
 that another area reads it.
 
-**What is left is a smaller version of the same question, and it is the owner's.** The five
-names above have no importer either, and they survive this pass on an argument about shape —
-one call per check rather than the machinery behind it — and on `tests/test_surfaces.py`'s
-floor. Whether this area publishes at all is a structural decision, not a refactor's;
-`ledger/api.py` records the same finding about its own list.
+**What is left is a smaller version of the same question, and it is the owner's.** Of the five
+names above, `lint` has one importer, `keelline.assess.state`, and the other four none; they
+survive this pass on an argument about shape — one call per check rather than the machinery
+behind it — and on `tests/test_surfaces.py`'s floor. Whether this area publishes at all is a
+structural decision, not a refactor's; `ledger/api.py` records the same finding about its own
+list.
 
 **`trail_path` returns, in wave 4.** The lane the wave-3 trim named as absent now exists: the
 `project` area ships `trail.toml` beside the roadmap template and must put it where `docs

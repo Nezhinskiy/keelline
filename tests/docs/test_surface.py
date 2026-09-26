@@ -15,9 +15,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     #
     # Ten names left in the wave-3 refactor pass: the trail half, published in one sentence
     # about `templates`, a lane `docs/plans/2026-09-17-wave-3-install-path.md` puts out of
-    # scope. Outside this area `project` imports `trail_target` and `keelline.assess.gates` the
-    # three gate functions; the other five below have no importer, so they stay on the argument
-    # written beside them in `api.py`.
+    # scope. Outside this area `project` imports `trail_target`, `keelline.assess.gates` the
+    # three gate functions and `keelline.assess.state` `lint`; the other names below have no
+    # importer, so they stay on the argument written beside them in `api.py`.
     required = {
         # the four checks this area is, one call each
         "check_budgets",

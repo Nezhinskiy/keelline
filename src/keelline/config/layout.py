@@ -7,9 +7,8 @@ can account for them and a reader can find them. The project's documents stay at
 An adoption document is an ordinary plan: it sits directly in `[paths] plans`, where `plan
 check` and the trail already look, and the word `keelline` in its file name is what marks it
 (`<date>-keelline-adoption.md`, `<date>-keelline-adoption-<slug>.md`). Nothing records one, so
-a project may carry any number of them. `is_adoption_plan` and `ADOPTION_WORD` have no caller in
-this release: they are the one spelling of that rule, for `keelline adopt begin`, which ships
-later and recognises the plan it is handed by it.
+a project may carry any number of them. `is_adoption_plan` and `ADOPTION_WORD` are the one
+spelling of that rule; `keelline adopt begin` recognises the plan it is handed by it.
 """
 
 from __future__ import annotations

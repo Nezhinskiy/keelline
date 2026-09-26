@@ -14,5 +14,6 @@ This repository is initialised with Keelline. `keelline.toml` names its document
 its note store. `docs/bug-reports.md` is a generated index over `docs/bugs/` — never edit it by hand;
 `keelline bugs index` renders it. `docs/roadmap.md` carries the design-and-plan trail between its
 markers, which `keelline docs trail` rewrites; specs live under `docs/specs/` and plans under
-`docs/plans/`. Gates run advisory until `[keelline] state` in `keelline.toml` is `installed`.
+`docs/plans/`. Each gate runs advisory until it enforces: `keelline adopt promote` enforces the
+gates that pass, and `keelline assess` says which would.
 <!-- keelline:harness:end -->
