@@ -38,7 +38,7 @@ import keelline
 from keelline.assess.gates import Gate, GateContext, GateResult, configured, run_gates
 from keelline.assess.model import Item, item
 from keelline.assess.probes import ProbeContext, run_probes
-from keelline.assess.rule import local_base
+from keelline.config.layout import local_base
 from keelline.config.loader import CONFIG_FILE, NOT_THERE, ConfigError, loads, read_document
 from keelline.errors import Refusal
 from keelline.findings import Severity

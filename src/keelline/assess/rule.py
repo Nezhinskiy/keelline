@@ -11,7 +11,8 @@ copy", and every name and path git would resolve on the caller's behalf is pinne
 **Which commit.** In CI it is a full commit id the workflow resolved once from the remote-tracking
 ref of the base branch, whose name comes from the platform or from the caller workflow's literal
 input, which code owners guard (`docs/cli.md#the-reusable-workflow` names the repository
-settings). Locally it is `local_base`, the remote-tracking ref of `[project] base_branch`, and
+settings). Locally it is `config.layout.local_base`, the remote-tracking ref of `[project]
+base_branch`, and
 advice only: a local run judges nothing anyone else relies on. Either way `--base` is a full
 commit id or a full `refs/…` name, never a short one, because git resolves a short name through
 the tags first and a tag of the same spelling would stand in for the branch.
@@ -90,12 +91,6 @@ ROOT_THROUGH_SYMLINK = (
     "its real path"
 )
 BASE_REF = re.compile(r"\A(?:[0-9a-f]{40}|refs/[A-Za-z0-9._/-]+)\Z")
-
-
-def local_base(config: Config) -> str:
-    """The base a local run is judged against: the remote-tracking ref of the base branch, named
-    in full, so no tag can stand in for it while it exists."""
-    return f"refs/remotes/origin/{config.project.base_branch}"
 
 
 def _read(root: Path, *args: str) -> str:

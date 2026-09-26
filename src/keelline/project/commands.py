@@ -15,7 +15,7 @@ this area's fixed sentences, or a tag and a commit the *release* area resolved f
 repository's own tags. The project's name and its `[ci]` values reach none of them.
 
 **The workflow is claimed only when nothing skipped it, and the ref it names is the one on
-disk.** `_ci` reaches its `GATE_BRANCH` check *after* the pin has resolved, so a repository with
+disk.** `_ci` reaches its branch-grammar check *after* the pin has resolved, so a repository with
 a resolved tag and a `gate_branch` outside the grammar has a pin and no workflow; keying the CI
 line on the pin told that repository `CI: <tag>@<sha>` while `skipped["ci-workflow"]` said the
 opposite in `--json`. The key in `skipped` is the authority — `_ci` returns a template or a
@@ -411,24 +411,20 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     the rule and never the value; every other answer is a `choices`, whose error quotes only
     the operator's own argument.
     """
-    from keelline.config.schema import MEMORY_MODES, PROJECT_NAME
+    from keelline.config.schema import BRANCH_NAME, BRANCH_RULE, MEMORY_MODES, PROJECT_NAME
     from keelline.harnesses import HARNESSES
     from keelline.profiles import shipped
-    from keelline.project.templates import GATE_BRANCH, LOCAL_ELIGIBLE
+    from keelline.project.templates import LOCAL_ELIGIBLE
 
     answers = parser.add_argument_group(
         "answers", "each replaces one default; `keelline init --questions` lists them"
     )
     name_rule = f"not one lowercase path segment matching {PROJECT_NAME.pattern}"
-    branch_rule = (
-        "not a plain branch name: letters, digits, '.', '_', '-' and '/', led by a letter or "
-        "digit, and one git accepts (no '..' or '//', no component starting with '.' or ending "
-        "in '.lock', no trailing '/' or '.', and not HEAD)"
-    )
+    branch_rule = f"not a plain branch name: {BRANCH_RULE}"
     answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
     answers.add_argument(
         "--base-branch",
-        type=_grammar(GATE_BRANCH, branch_rule),
+        type=_grammar(BRANCH_NAME, branch_rule),
         help="[project] base_branch and release_branch",
     )
     answers.add_argument(

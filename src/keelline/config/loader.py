@@ -16,6 +16,8 @@ from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import contained, validate_paths
 from keelline.config.schema import (
+    BRANCH_NAME,
+    BRANCH_RULE,
     BUILTIN_GATES,
     CI_MODES,
     CONFIG_CHECK,
@@ -492,6 +494,12 @@ def loads(
         raise ConfigError(
             f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
         )
+    for key in ("base_branch", "release_branch"):
+        # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
+        # the text the grammar refused. The grammar is the one the rendered workflow holds
+        # `[ci] gate_branch` to; git could not have such a branch anyway.
+        if not BRANCH_NAME.match(getattr(project, key)):
+            raise ConfigError(f"project.{key} is not a plain branch name: {BRANCH_RULE}")
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
     memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)

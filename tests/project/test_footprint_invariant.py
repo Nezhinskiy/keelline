@@ -59,9 +59,9 @@ from typing import Literal
 import pytest
 
 from keelline.assess.assessment import assess, write
-from keelline.assess.rule import local_base
 from keelline.assess.state import begin, promote
 from keelline.attach.write import LEDGER as ATTACH_LEDGER
+from keelline.config.layout import local_base
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import KEELLINE_DIRECTORY
 from keelline.errors import Refusal

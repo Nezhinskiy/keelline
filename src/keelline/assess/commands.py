@@ -95,6 +95,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     from keelline.assess import rule
     from keelline.assess.gates import GateContext, run_gates
     from keelline.assess.report import GateRun, config_line, summary, workflow_commands
+    from keelline.config.layout import local_base
     from keelline.config.loader import ConfigError, loads, read_document
     from keelline.config.schema import CONFIG_CHECK
     from keelline.errors import Refusal
@@ -110,7 +111,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     # The tree's configuration is read here for its default base alone and kept nowhere: every
     # later decision is the verdict's, and a name for the tree's copy in scope is one a later
     # line could pick in its place.
-    default = rule.local_base(loads(tree_text, root, machine=machine, interactive=False))
+    default = local_base(loads(tree_text, root, machine=machine, interactive=False))
     base = args.base or default
     runner = subprocess_runner()
     verdict = rule.judge(
@@ -206,8 +207,8 @@ def run_adopt_begin(args: argparse.Namespace) -> Result:
 
 
 def run_adopt_promote(args: argparse.Namespace) -> Result:
-    from keelline.assess.rule import local_base
     from keelline.assess.state import promote
+    from keelline.config.layout import local_base
 
     root, config = root_and_config(args)
     transition = promote(root, config, args.gates, base=args.base or local_base(config))

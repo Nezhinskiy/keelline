@@ -273,11 +273,12 @@ def run_test_audit(args: argparse.Namespace) -> Result:
 
 
 def run_test_attribute(args: argparse.Namespace) -> Result:
+    from keelline.config.layout import local_base
     from keelline.guards.attribute import attribute
     from keelline.runner import subprocess_runner
 
     root, config = _root_and_config(args)
-    base = args.base or f"origin/{config.project.base_branch}"
+    base = args.base or local_base(config)
     result = attribute(root, command=args.command, base=base, runner=subprocess_runner())
     data = {
         "runs": {
@@ -332,6 +333,6 @@ def register(groups: SubParsers) -> None:
     attribute.add_argument(
         "--base",
         default=None,
-        help="ref to compare against (default: origin/<project.base_branch>)",
+        help="ref to compare against (default: refs/remotes/origin/<project.base_branch>)",
     )
     attribute.set_defaults(func=run_test_attribute)

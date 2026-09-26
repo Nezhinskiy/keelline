@@ -25,10 +25,10 @@ from keelline.assess.rule import (
     BASE_NOT_UTF8,
     NOT_A_REPOSITORY,
     ROOT_UNANSWERED,
-    local_base,
     read_base,
     repository_prefix,
 )
+from keelline.config.layout import local_base
 from keelline.config.loader import load
 from keelline.errors import Failure, Refusal
 from tests.assess.baserepo import clone, commit, shadow

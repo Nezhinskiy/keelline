@@ -169,7 +169,7 @@ def register(groups: SubParsers) -> None:
         plan_sub.add_parser("check", help="lint the plans a change touches, or the named ones")
     )
     lint.add_argument(
-        "--base", default=None, help="base ref (default: origin/<project.base_branch>)"
+        "--base", default=None, help="base ref (default: refs/remotes/origin/<project.base_branch>)"
     )
     lint.add_argument("paths", nargs="*", help="plans to lint instead of the diff")
     lint.set_defaults(func=run_plan_check)

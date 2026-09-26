@@ -32,9 +32,10 @@ Six names, each with the consumer that reaches for it:
 - `ASSESSMENT`, for `keelline assess`, which writes the inventory `uninstall` takes back: one
   spelling of the path, so the file one writes is the file the other removes.
 
-`read`, `fill`, `GATE_BRANCH` and `HARNESS_REGION` are **not** here: they are
-this area's own, reached by `keelline.project.templates` and by nothing outside it. A lane that
-needs one grows this list deliberately, in a commit that says which lane and why.
+`read`, `fill` and `HARNESS_REGION` are **not** here: they are this area's own, reached by
+`keelline.project.templates` and by nothing outside it. The branch grammar a rendered workflow
+holds `[ci] gate_branch` to is `config.schema.BRANCH_NAME`, which the loader applies too. A lane
+that needs one grows this list deliberately, in a commit that says which lane and why.
 """
 
 from keelline.project.layout import PROJECT_FILES

@@ -46,6 +46,26 @@ PATH_VALUE = re.compile(
 # schema field, every `Budgets.NAMES` entry, every section — is lowercase words joined by
 # underscores, and anything else is counted rather than quoted.
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
+# The one grammar for a branch name Keelline reads or writes: `[project] base_branch` and
+# `release_branch`, which the loader holds to it, `[ci] gate_branch`, which a rendered workflow
+# is withheld over, `--base-branch`, and a detected `origin/HEAD`. Each is repository-authored or
+# typed, and each reaches a git ref, an output line or a YAML file GitHub executes, where quoting
+# alone would still admit a newline. Inside that character set it refuses what git's own
+# branch-name rules refuse (`git check-ref-format --branch`), so nothing names a branch no
+# repository can have: `..`, `//`, a component starting with `.`, a component ending in `.lock`,
+# a trailing `/` or `.`, and the name `HEAD` itself. `@{` and `-` at the start are outside the
+# set already. The lookaheads end on `$`, which ECMA-262 reads as the end too, so
+# `init --questions` can hand the pattern to a JSON Schema client.
+BRANCH_NAME = re.compile(
+    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"
+    r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z"
+)
+# `BRANCH_NAME` in words, for a refusal a person reads; a change to the grammar changes this.
+BRANCH_RULE = (
+    "letters, digits, '.', '_', '-' and '/', led by a letter or digit, and one git accepts "
+    "(no '..' or '//', no component starting with '.' or ending in '.lock', no trailing '/' or "
+    "'.', and not HEAD)"
+)
 STATES = ("initialised", "adopting", "installed")
 # The built-in gates, in the order every report lists them. `[gates] builtin` chooses among them
 # and `[gates.custom]` adds a project's own. The loader needs the names without importing an

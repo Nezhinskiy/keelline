@@ -397,8 +397,8 @@ def test_the_pin_is_written_and_the_workflow_rendered_when_a_release_matches(
 
 @needs_git
 def test_a_gate_branch_outside_the_grammar_leaves_a_pin_with_no_workflow(tmp_path: Path) -> None:
-    # The arm `commands.py` used to report as a success: `_ci` checks `GATE_BRANCH` after the pin
-    # has resolved, so this repository has a pin, no workflow, and a `skipped` entry. All three
+    # The arm `commands.py` used to report as a success: `_ci` checks the branch grammar after the
+    # pin has resolved, so this repository has a pin, no workflow, and a `skipped` entry. All three
     # are asserted, because it is the combination that made the summary lie.
     root = _repo(tmp_path)
     # A recorded ref as well, because the branch check is reached only once there is a ref to

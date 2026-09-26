@@ -24,11 +24,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from keelline.config.schema import PROJECT_NAME
+from keelline.config.schema import BRANCH_NAME, PROJECT_NAME
 from keelline.errors import Refusal
 from keelline.gitenv import git_run
 from keelline.memory.api import GitUnavailable, origin_remote
-from keelline.project.templates import GATE_BRANCH
 
 DEFAULT_BRANCH = "main"
 NOT_A_NAME = (
@@ -81,7 +80,7 @@ def _remote_head(root: Path) -> str:
 
 
 def _base_branch(branch: str) -> tuple[str, str]:
-    if not GATE_BRANCH.match(branch):
+    if not BRANCH_NAME.match(branch):
         return DEFAULT_BRANCH, DEFAULT
     return branch, ORIGIN_HEAD
 

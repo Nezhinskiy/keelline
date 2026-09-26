@@ -5552,13 +5552,13 @@ reddens = [
 # GitHub executes — the two `branches:` lists and the literal `base:` — so it is quoted there
 # *and* held to a shape here, because quoting alone still admits a newline, which closes the
 # string and lets further keys be written into the workflow. The anchor is `GATE_BRANCH`, a
-# compiled constant in the installed package; the party bounded is the repository, which cannot
+# compiled constant in the installed package (now `BRANCH_NAME`); the party bounded is the repository, which cannot
 # move it. A value outside the grammar costs the artifact rather than the run, and the sentence
 # names the key and the grammar and never the value.
 [[mutation]]
 name = "a gate_branch outside the grammar is interpolated into the rendered workflow"
 file = "src/keelline/project/templates.py"
-before = "    if not GATE_BRANCH.match(config.ci.gate_branch):"
+before = "    if not BRANCH_NAME.match(config.ci.gate_branch):"
 after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
@@ -7486,7 +7486,7 @@ reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicti
 [[mutation]]
 name = "origin/HEAD reaches the card unbounded"
 file = "src/keelline/project/detect.py"
-before = "    if not GATE_BRANCH.match(branch):"
+before = "    if not BRANCH_NAME.match(branch):"
 after = "    if not branch:"
 reddens = [
   "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
@@ -7764,7 +7764,7 @@ reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_rea
 
 [[mutation]]
 name = "the local default base is a short name a tag can answer for"
-file = "src/keelline/assess/rule.py"
+file = "src/keelline/config/layout.py"
 before = '    return f"refs/remotes/origin/{config.project.base_branch}"'
 after = '    return f"origin/{config.project.base_branch}"'
 reddens = ["tests/assess/test_read_base.py::test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called"]
@@ -9150,7 +9150,7 @@ reddens = [
 # branch no repository can have. Each rule dropped once.
 [[mutation]]
 name = "the gate branch grammar takes a '..' git refuses"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/config/schema.py"
 before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 after = '''    r"^(?!HEAD$)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 reddens = [
@@ -9161,7 +9161,7 @@ reddens = [
 
 [[mutation]]
 name = "the gate branch grammar takes a '.lock' component git refuses"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/config/schema.py"
 before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 after = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)"'''
 reddens = [
@@ -9171,7 +9171,7 @@ reddens = [
 
 [[mutation]]
 name = "the gate branch grammar takes the name HEAD git refuses"
-file = "src/keelline/project/templates.py"
+file = "src/keelline/config/schema.py"
 before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 reddens = [
@@ -9189,3 +9189,26 @@ file = "skills/README.md"
 before = "`request_user_input` in the modes that offer it"
 after = "the ask tool in the modes that offer it"
 reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_for_both_harnesses"]
+
+# The loader holds `[project] base_branch` and `release_branch` to the branch grammar: the value
+# becomes `refs/remotes/origin/<it>`, reaches `test attribute`'s and `plan check`'s messages, and
+# `keelline gate` blamed `--base` for it.
+[[mutation]]
+name = "a project branch outside the branch grammar loads"
+file = "src/keelline/config/loader.py"
+before = "        if not BRANCH_NAME.match(getattr(project, key)):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[spaced-base_branch]",
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[range-release_branch]",
+  "tests/assess/test_gate_command.py::test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base",
+]
+
+# git resolves a short `origin/<branch>` through `refs/tags/` first: a tag of that spelling on the
+# change's head made `plan check`'s range empty, and it printed OK having linted nothing.
+[[mutation]]
+name = "plan check's default base is a short name a tag can shadow"
+file = "src/keelline/docs/plans.py"
+before = "    base = base or local_base(config)"
+after = '    base = base or f"origin/{config.project.base_branch}"'
+reddens = ["tests/docs/test_plans.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base"]

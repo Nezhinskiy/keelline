@@ -73,6 +73,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from keelline.config.layout import local_base
 from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
@@ -330,7 +331,7 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
 
 def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = None) -> Lint:
     plans_dir = contained(root, config.paths.plans)
-    base = base or f"origin/{config.project.base_branch}"
+    base = base or local_base(config)
     unlinted: list[Path] = []
     if plans:
         missing = [p for p in plans if not p.is_file()]

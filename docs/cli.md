@@ -494,7 +494,8 @@ Run one failing command three times and say what the three exit codes mean. The 
    base's tip: a base branch that advanced after the fork would otherwise carry commits that
    are not "before this change" into the before side.
 
-`--base` defaults to `origin/<[project] base_branch>`; pass it to compare against another ref.
+`--base` defaults to `refs/remotes/origin/<[project] base_branch>`, named in full so that no tag of
+the short spelling stands in for it; pass it to compare against another ref.
 
 **This command writes nothing**, and nothing in it runs `git checkout`, `git stash` or `git
 reset`: the two committed trees are extracted into a temporary directory that is removed before
@@ -536,8 +537,8 @@ command to the failing test rather than asking for a wider cap.
 asked for), `merge_base` (the commit actually extracted) and `verdict`. Record the last four
 where the failure is discussed: a verdict without its inputs cannot be re-run.
 
-Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is origin/main
-fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
+Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is
+refs/remotes/origin/main fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
 archived tree's own `.gitattributes` excluded them, and `2` when `--base` is shaped like an
 option, which is refused above the first subprocess rather than handed to `git` as one.
 
@@ -645,7 +646,9 @@ listing every document on disk; outside one, every document is listed. **Writes*
 ## `keelline plan check [--base REF] [PATH …]`
 
 With `PATH` arguments, lint exactly those plans; without, the plans under `[paths] plans` that
-`REF...HEAD` touches, `REF` defaulting to `origin/<project.base_branch>`. Five rules, each from a
+`REF...HEAD` touches, `REF` defaulting to `refs/remotes/origin/<project.base_branch>`, the
+fully qualified name, as for `keelline assess` and `keelline gate`, so a tag called
+`origin/<branch>` cannot stand in for it. Five rules, each from a
 retrospective: every backticked path resolves unless the line says `(create)` or declares it
 on a `Create:`/`Test:` line; no step is phrased as already knowing its answer (`confirm that
 nothing …`, `verify no …`, `check that it does not …`); a `**Scope:**` line with content is
@@ -2401,7 +2404,10 @@ exceptions, and one line that is an example rather than a default. `[keelline] v
 not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
 `installed` above shows a set value, not what an omitted key takes. Everything from
-`[project] base_branch` down is the preset's default exactly as written.
+`[project] base_branch` down is the preset's default exactly as written. `[project]
+base_branch` and `release_branch` are branch names git accepts, from letters, digits, `.`, `_`,
+`-` and `/` (the grammar `--base-branch` and `[ci] gate_branch` follow); anything else does not
+load, and the refusal names the key and never the value.
 
 **Gates.** A gate is one check run over a pull request. `[gates] builtin` names which of
 Keelline's own five the project runs, all of them by default, and each

@@ -427,6 +427,21 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     assert out.strip() == "bugs: enforcing, 1 finding(s)"
 
 
+def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
+    tmp_path: Path,
+) -> None:
+    # With no `--base`, the default is `refs/remotes/origin/<base_branch>`, and a value outside
+    # git's branch grammar was refused in `--base`'s words, a flag nobody passed. The loader
+    # names the key now, and prints none of the value.
+    project = clone(tmp_path, BASE)
+    _change(project, BASE + 'base_branch = "main ::error::forged"\n')
+    code, out, err = _gate(project, tmp_path)
+    assert code == 1
+    assert out == ""
+    assert "project.base_branch is not a plain branch name" in err
+    assert "--base" not in err and "forged" not in err
+
+
 def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     code, _, err = _gate(project, tmp_path, "--base", "refs/remotes/origin/absent")

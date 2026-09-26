@@ -5,7 +5,7 @@ Under the module root beside `templates/overlay/` and resolved by `keelline.temp
 everything else is the footprint pass. Every target is a `config.paths` value, which the
 loader has bounded to `PATH_VALUE` (P10) and contained; what this module adds is a file name
 under it. A value that reaches a rendered file (`gate_branch` and `ref` into YAML) is quoted or
-shape-checked there — `GATE_BRANCH`, `CI_REF` — and a value outside its grammar costs the
+shape-checked there — `BRANCH_NAME`, `CI_REF` — and a value outside its grammar costs the
 artifact rather than the run.
 
 This module builds templates and decides nothing about a manifest. Which recorded artifacts a
@@ -42,7 +42,7 @@ import keelline
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.layout import rules_file
 from keelline.config.loader import CONFIG_FILE
-from keelline.config.schema import Config
+from keelline.config.schema import BRANCH_NAME, Config
 from keelline.docs.api import trail_target
 from keelline.errors import Failure, Refusal
 from keelline.fsops import path_key
@@ -89,22 +89,12 @@ CI_WORKFLOW = ".github/workflows/keelline.yml"
 CI_ARTIFACT = "ci-workflow"
 CONFIG_ARTIFACT = "config"
 IGNORE_ARTIFACT = "gitignore"
-# The grammar `[ci] gate_branch` must match before it is written into the rendered workflow.
-# The value is repository-authored and lands in three places in one YAML file — the two
-# `branches:` lists and the literal `base:` — so it is quoted there *and* held to a shape here:
-# quoting alone would still admit a newline, which closes the string and writes further keys.
-# Inside that character set it refuses what git's own branch-name rules refuse
-# (`git check-ref-format --branch`), so a caller never names a branch no repository can have:
-# `..`, `//`, a component starting with `.`, a component ending in `.lock`, a trailing `/` or
-# `.`, and the name `HEAD` itself. `@{` and `-` at the start are outside the set already. The
-# lookaheads end on `$`, which ECMA-262 reads as the end too, so `init --questions` can hand the
-# pattern to a JSON Schema client.
-GATE_BRANCH = re.compile(
-    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"
-    r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z"
-)
+# `[ci] gate_branch` is held to `config.schema.BRANCH_NAME` before it is written into the
+# rendered workflow. The value is repository-authored and lands in the YAML file's `branches:`
+# lists and its literal `base:`, so it is quoted there *and* held to a shape: quoting alone would
+# still admit a newline, which closes the string and writes further keys.
 # The grammar `[ci] ref` must match before it is written into the rendered workflow's `uses:`
-# line, for the same reason `GATE_BRANCH` exists and with the same provenance: the value is
+# line, for the same reason the branch grammar is applied and with the same provenance: the value is
 # repository-authored — on the adoption path it is whatever `keelline.toml` already carried —
 # and it lands in a YAML file GitHub executes. A full-length sha and nothing else: it is the
 # only immutable reference a reusable workflow can take (D16), it is the only form `doctor`'s
@@ -482,7 +472,7 @@ def _ci(
         return None, NO_REF
     if not CI_REF.match(ref):
         return None, BAD_REF
-    if not GATE_BRANCH.match(config.ci.gate_branch):
+    if not BRANCH_NAME.match(config.ci.gate_branch):
         return None, BAD_BRANCH
     # Rendered from `config` alone: the same configuration renders the same bytes online,
     # offline and before any release, so an up-to-date workflow never reads as refreshed.

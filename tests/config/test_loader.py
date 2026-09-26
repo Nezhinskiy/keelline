@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -637,6 +638,43 @@ def test_the_name_grammar_is_spelled_once() -> None:
     # every other module derives from `PROJECT_NAME`. Mutation: spell `SOURCE_NAME` out again in
     # `scaffold/engine.py` and this reddens naming the file.
     spelling = PROJECT_NAME.pattern.removeprefix("^").removesuffix("\\Z")
+    src = Path(__file__).resolve().parents[2] / "src" / "keelline"
+    spelled = sorted(
+        path.relative_to(src).as_posix()
+        for path in src.rglob("*.py")
+        if spelling in path.read_text(encoding="utf-8")
+    )
+    assert spelled == ["config/schema.py"]
+
+
+@pytest.mark.parametrize("key", ["base_branch", "release_branch"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("main branch", id="spaced"),
+        pytest.param("a..b", id="range"),
+        pytest.param("x\u001b[31mRED\nINJECTED ::error::forged", id="escapes"),
+        pytest.param("HEAD", id="head"),
+    ],
+)
+def test_a_project_branch_outside_the_branch_grammar_is_refused_by_name(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    # `[project] base_branch` becomes `refs/remotes/origin/<it>`, `test attribute`'s refusal
+    # and `plan check`'s messages print it, and `keelline gate` blamed `--base`, which nobody
+    # passed, for it. Held here, at the one place both keys are read, to the grammar the rendered
+    # workflow holds `[ci] gate_branch` to, and refused naming the key and never the value.
+    # Mutation (declared): the check dropped -> nothing is raised.
+    text = MINIMAL + f"{key} = {json.dumps(value)}\n"
+    with pytest.raises(ConfigError, match=rf"project\.{key} is not a plain branch name") as caught:
+        loads(text, tmp_path, machine=tmp_path / "absent.toml")
+    assert "RED" not in str(caught.value) and "INJECTED" not in str(caught.value)
+
+
+def test_the_branch_grammar_is_spelled_once() -> None:
+    # One grammar for a branch name, read by the loader, the workflow renderer, detection, the
+    # questions and `--base-branch`. Mutation: spell it out again in `project/templates.py`.
+    spelling = r"(?!HEAD$)(?!.*\.\.)"
     src = Path(__file__).resolve().parents[2] / "src" / "keelline"
     spelled = sorted(
         path.relative_to(src).as_posix()

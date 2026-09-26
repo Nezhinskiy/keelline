@@ -20,8 +20,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from keelline.config.schema import MEMORY_MODES, PROJECT_NAME
-from keelline.project.templates import GATE_BRANCH, LOCAL_ELIGIBLE
+from keelline.config.schema import BRANCH_NAME, MEMORY_MODES, PROJECT_NAME
+from keelline.project.templates import LOCAL_ELIGIBLE
 
 # Each question's `keelline.toml` key, and the flag on `keelline init --yes` that answers it.
 FLAGS = {
@@ -57,7 +57,7 @@ def ecma(pattern: re.Pattern[str]) -> str:
 
 
 NAME_PATTERN = ecma(PROJECT_NAME)
-BRANCH_PATTERN = ecma(GATE_BRANCH)
+BRANCH_PATTERN = ecma(BRANCH_NAME)
 
 
 def _overlay_recorded(machine: Path | None) -> bool:

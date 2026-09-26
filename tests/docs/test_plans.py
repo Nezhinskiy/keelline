@@ -186,6 +186,31 @@ def test_without_paths_only_the_plans_the_diff_touches_are_linted(tmp_path: Path
 
 
 @needs_git
+def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base(
+    tmp_path: Path,
+) -> None:
+    # git resolves a short `origin/main` through `refs/tags/` first, so a tag of that spelling
+    # on the change's own head made the default base the head, the range empty, and `plan
+    # check` printed OK having linted nothing, while the `plan` gate, which names the base in
+    # full, failed. One spelling of the default now. Mutation (declared): `lint`'s default
+    # spelled `origin/<base_branch>` again -> nothing is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-qb", "feature")
+    new = plan(root, "no scope here\n", "2026-01-02-new.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "new plan")
+    git(root, "tag", "origin/main", "HEAD")
+    result = lint(root, config, plans=[])
+    assert result.linted == [new]
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
 def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
     tmp_path: Path,
 ) -> None:

@@ -11,7 +11,7 @@ import pytest
 
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.loader import CONFIG_FILE, preset_defaults
-from keelline.config.schema import Config
+from keelline.config.schema import BRANCH_NAME, Config
 from keelline.errors import Failure, Refusal
 from keelline.harnesses import HARNESSES
 from keelline.ledger.api import render_index
@@ -23,7 +23,6 @@ from keelline.project.templates import (
     CI_WORKFLOW,
     COMPUTED,
     CONFIG_ARTIFACT,
-    GATE_BRANCH,
     IGNORE_ARTIFACT,
     LOCAL_ELIGIBLE,
     NO_REF,
@@ -237,7 +236,7 @@ def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line
 
     On the adoption path it is whatever `keelline.toml` already carried, and the loader bounds it
     to "a string" and nothing more — so it is held to `CI_REF` before it is written, exactly as
-    `gate_branch` is held to `GATE_BRANCH`, and a value outside the grammar costs the artifact
+    `gate_branch` is held to `BRANCH_NAME`, and a value outside the grammar costs the artifact
     rather than the run. The anchor is `CI_REF`, a constant in the installed package that nothing
     a repository writes can move.
 
@@ -715,16 +714,16 @@ BRANCH_NAMES = (
 @needs_git
 @pytest.mark.parametrize("name", BRANCH_NAMES)
 def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: str) -> None:
-    # `[ci] gate_branch`, `--base-branch` and a detected `origin/HEAD` are all held to
-    # `GATE_BRANCH` before a rendered caller names the branch; a name git itself refuses as a
-    # branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a component starting
-    # with `.`, the name `HEAD`) is a caller that can never run, so the grammar refuses it too,
-    # and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate branch grammar
-    # takes a '..' git refuses", "the gate branch grammar takes a '.lock' component git refuses"
-    # and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`, `.lock` and
-    # `HEAD` cases redden.
+    # `[ci] gate_branch`, `--base-branch`, a detected `origin/HEAD` and the loaded `[project]`
+    # branches are all held to `BRANCH_NAME` before a rendered caller names the branch; a name git
+    # itself refuses as a branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a
+    # component starting with `.`, the name `HEAD`) is a caller that can never run, so the grammar
+    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate
+    # branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock' component
+    # git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`,
+    # `.lock` and `HEAD` cases redden.
     accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
-    assert bool(GATE_BRANCH.match(name)) == accepted, name
+    assert bool(BRANCH_NAME.match(name)) == accepted, name
 
 
 @pytest.mark.parametrize("name", ["a..b", "a//b", "a/", "a.lock", "a/.b", "HEAD"])
