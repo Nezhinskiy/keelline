@@ -611,10 +611,10 @@ check can be required before the first entry, and a change that deletes the ledg
 ledger and for everything that refers to it. `--base` is what the `bugs` gate passes, the base it
 judges against; a base git cannot list fails (`1`) rather than read as a base with no ledger, and
 under a gate that is the gate not running. Without `--base` the tree alone is judged. A generated
-index with no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
-is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A
-file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither
-scanned nor swept. **Writes** nothing.
+index with no directory behind it is a deleted ledger and exits `1`. Git enumerates the files
+where the root is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands
+in elsewhere. A file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample
+identifiers and is neither scanned nor swept. **Writes** nothing.
 
 ## `keelline bugs renumber OLD NEW`
 
@@ -992,13 +992,13 @@ following it either leaves the project as it was or makes the transition whole.
 the tree lacks, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
 `refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
 gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
-judge as CI will. Run on the base branch itself, that range is empty and those two gates pass having judged
-nothing; the pull request that carries a promotion faces every gate it promotes in its own run.
-A custom gate runs its command here, as it does under `keelline gate`, and only when that
-command is the one the base's `keelline.toml` gives it: a gate the base does not have, or has
-with another command, is not run and not promoted, and is named `(not on the base)` with a
-`note:` saying to land it on the base branch first, because `keelline gate` would not run it in
-the pull request that carries the promotion. A base that cannot be read, or has no
+judge as CI will. Run on the base branch itself, that range is empty and those two gates pass
+having judged nothing; the pull request that carries a promotion faces every gate it promotes in
+its own run. A custom gate runs its command here, as it does under `keelline gate`, and only
+when that command is the one the base's `keelline.toml` gives it: a gate the base does not have,
+or has with another command, is not run and not promoted, and is named `(not on the base)` with
+a `note:` saying to land it on the base branch first, because `keelline gate` would not run it
+in the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
 `--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
@@ -1291,10 +1291,11 @@ when that names a plain branch under `refs/remotes/origin/`; with no remote at a
 `current branch` when that is a plain branch; otherwise, a remote with no `origin/HEAD` and
 remotes git could not list included, it is the `default`, `main`. The agents come from the `harness
 directories` the root carries; otherwise the `default` is every harness. The profile comes from
-`profile markers`, or there are `no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
-Each default is exactly what `keelline init --yes` writes when that question is not answered.
-`origin/HEAD` goes stale after the remote's default branch is renamed, because git does not
-refresh one it has. That is why its source is printed: you can catch it.
+`profile markers`, or there are `no profile markers`. The memory mode and the files kept out of
+git are `the preset's default`. Each default is exactly what `keelline init --yes` writes when
+that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
+renamed, because git does not refresh one it has. That is why its source is printed: you can
+catch it.
 
 `--json` carries `questions`: a JSON Schema object (draft 2020-12) with six required
 `properties`. Each is keyed by the `keelline.toml` key its answer writes: `project.name`,

@@ -632,11 +632,11 @@ def _ledgered(tmp_path: Path, mention: str) -> Path:
 def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
     tmp_path: Path, mention: str
 ) -> None:
-    # The review's shape: a bare `BR-001` in code and the whole ledger deleted — directory and
-    # index — answered "nothing to check" and passed. So did deleting the mentions with it. The
-    # base's ledger is one finding, and a mention left behind is another. Mutations (oracle):
-    # "the uninitialised arm ignores the base's ledger" reddens both cases; "with no ledger a
-    # bare mention is not a finding" reddens `mentioned`.
+    # A change that deletes the ledger: a bare `BR-001` in code and the whole ledger deleted —
+    # directory and index — answered "nothing to check" and passed. So did deleting the
+    # mentions with it. The base's ledger is one finding, and a mention left behind is another.
+    # Mutations (oracle): "the uninitialised arm ignores the base's ledger" reddens both cases;
+    # "with no ledger a bare mention is not a finding" reddens `mentioned`.
     project = _ledgered(tmp_path, mention)
     code, out, _ = cli(project, tmp_path, "gate", "--builtin", "--only", "bugs")
     assert (code, out.splitlines()[1]) == (0, "bugs: enforcing, 0 finding(s)"), out

@@ -4309,10 +4309,9 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
 ]
 
-# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its
-# bound — and not an exit status; rendered as one it sends a reader to fetch a ref that is not
-# the problem. Two arms now read it, so each entry carries its own
-# `raise` line to name one of them.
+# `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its bound — and not an
+# exit status; rendered as one it sends a reader to fetch a ref that is not the problem. Two arms
+# now read it, so each entry carries its own `raise` line to name one of them.
 [[mutation]]
 name = "attribute reports an unlaunchable git as an exit code"
 file = "src/keelline/guards/attribute.py"
@@ -5353,9 +5352,9 @@ reddens = [
   "tests/release/test_hashes.py::test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning",
 ]
 
-# §4.4. `git ls-tree -r` grows with the repository and ran on `gitenv`'s cap for queries that
-# do not; on timeout `git_run` answers `(-1, "")` and the export-rule comparison is skipped
-# with no note, so the verdict is computed from a truncated tree.
+# `git ls-tree -r` grows with the repository and ran on `gitenv`'s cap for queries that do not;
+# on timeout `git_run` answers `(-1, "")` and the export-rule comparison is skipped with no
+# note, so the verdict is computed from a truncated tree.
 [[mutation]]
 name = "the tree listing goes back on the argument-free timeout"
 file = "src/keelline/guards/attribute.py"
@@ -8409,7 +8408,7 @@ reddens = [
   "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
 ]
 
-# The base read, fix round: each git argument and refusal whose removal lets a change reach "no
+# Reading the base's copy: each git argument and refusal whose removal lets a change reach "no
 # copy on the base" — the bootstrap — held by a case that runs on every platform.
 [[mutation]]
 name = "a project under a directory named like pathspec magic reads no copy on the base"

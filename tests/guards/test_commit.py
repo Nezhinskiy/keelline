@@ -696,9 +696,9 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", 0)
     assert commits_in(Path("/nowhere"), "a..b") == []
 
-    # `seen["timeout"] == LOG_TIMEOUT_SECONDS` alone is the lane memory's "expectation read
-    # from the subject": both sides move together, so it survives every edit to the constant
-    # and reddens only when `timeout=` is dropped entirely. The fixed literal is its pair.
+    # `seen["timeout"] == LOG_TIMEOUT_SECONDS` alone is an expectation read from the subject
+    # under test: both sides move together, so it survives every edit to the constant and
+    # reddens only when `timeout=` is dropped entirely. The fixed literal is its pair.
     assert seen["timeout"] == LOG_TIMEOUT_SECONDS
     assert LOG_TIMEOUT_SECONDS == 60
 
