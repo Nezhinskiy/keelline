@@ -1039,9 +1039,13 @@ When nothing answers, `init` detects:
   else from the checkout's directory name;
 - the base branch from `refs/remotes/origin/HEAD`, read as the full ref with exactly
   `refs/remotes/origin/` stripped, when that is a plain branch name, else `main` with a `note:`
-  saying so; where no clone recorded an `origin/HEAD`, from the branch checked out, when that is
-  a plain branch name, with a `note:` when it is not `main`, else `main`. The workflow gates the
-  same branch, since `[ci] gate_branch` left out is the base branch;
+  saying so. An `origin` with no `origin/HEAD` — a repository created locally and pushed, since
+  only `git clone` and `git remote set-head` record one — gives `main`, with a `note:` naming
+  `git remote set-head origin --auto` and `--base-branch`: the branch checked out there is
+  typically the feature branch the adoption is made on. Only with no `origin` remote at all is
+  it the branch checked out, when that is a plain branch name, with a `note:` when it is not
+  `main`, else `main`. The workflow gates the same branch, since `[ci] gate_branch` left out is
+  the base branch;
 - the agent surfaces from which of `.claude/` and `.codex/` the repository carries, both when
   it carries neither;
 - `[keelline] profile` from the first shipped profile whose markers sit at the root
@@ -1209,9 +1213,9 @@ and so what the workflow pins, empty when no workflow was planned — `stamped`,
 run's plan adds `[keelline] version` to a `keelline.toml` you wrote — written only by a run that
 is neither a dry run nor refused — `unknown_harnesses`, how many names in `[keelline] agents` no
 harness answers to, and `head_note`, the `note:` line that says `main` replaced an
-`origin/HEAD` outside the plain-branch grammar (the branch it named is never printed), or that,
-with no `origin/HEAD`, the branch checked out other than `main` became the base branch; empty
-otherwise. An answered `--base-branch` replaced nothing, so it leaves `head_note` empty.
+`origin/HEAD` outside the plain-branch grammar (the branch it named is never printed), that
+`main` stands because `origin` has no `origin/HEAD` recorded, or that, with no `origin` remote,
+the branch checked out other than `main` became the base branch; empty otherwise. An answered `--base-branch` replaced nothing, so it leaves `head_note` empty.
 `custom_gates` lists the custom gates a `keelline.toml` you wrote configures, by name, and is empty
 when this run writes the file.
 
@@ -1241,10 +1245,11 @@ Where a value came from is one of a fixed set of phrases. The name comes from th
 `origin remote`'s last path segment or, with no origin, the `directory name`; when that one is
 not a lowercase path segment the source is `not derivable`, and the value prints as
 `none; asked`, never as what the repository suggested. The base branch comes from `origin/HEAD`
-when that names a plain branch under `refs/remotes/origin/`; with no `origin/HEAD` at all, from
-the `current branch` when that is a plain branch; otherwise it is the `default`, `main`. The agents come from the `harness directories` the root carries;
-otherwise the `default` is every harness. The profile comes from `profile markers`, or there are
-`no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
+when that names a plain branch under `refs/remotes/origin/`; with no `origin` remote at all,
+from the `current branch` when that is a plain branch; otherwise, an `origin` with no
+`origin/HEAD` included, it is the `default`, `main`. The agents come from the `harness
+directories` the root carries; otherwise the `default` is every harness. The profile comes from
+`profile markers`, or there are `no profile markers`. The memory mode and the files kept out of git are `the preset's default`.
 Each default is exactly what `keelline init --yes` writes when that question is not answered.
 `origin/HEAD` goes stale after the remote's default branch is renamed, because git does not
 refresh it. That is why its source is printed: you can catch it.

@@ -79,8 +79,11 @@ def test_each_default_says_where_it_came_from(tmp_path: Path) -> None:
     # fallback reports `harness directories` -> the agents assertion reddens.
     defaults = _defaults(_schema(tmp_path, repository(tmp_path)))
     assert defaults["project.name"] == ("widget", "origin remote")
-    # No `origin/HEAD` in a repository nobody cloned: the branch checked out, which is `main`.
-    assert defaults["project.base_branch"] == ("main", "current branch")
+    # An `origin` with no `origin/HEAD`, as a repository created here and pushed has it: the
+    # default, never the branch checked out, which may be the feature branch being adopted from.
+    assert defaults["project.base_branch"] == ("main", "default")
+    no_origin = _defaults(_schema(tmp_path / "b", repository(tmp_path / "b", origin=None)))
+    assert no_origin["project.base_branch"] == ("main", "current branch")
     assert defaults["keelline.agents"] == (["claude", "codex"], "default")
     assert defaults["keelline.profile"] == ("", "no profile markers")
 

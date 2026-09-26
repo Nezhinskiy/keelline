@@ -9796,8 +9796,10 @@ reddens = [
   "tests/project/test_detect.py::test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default",
 ]
 
-# With no `origin/HEAD` — a repository nobody cloned — the branch checked out is the base branch,
-# held to the same grammar, and the report says so when it is not `main`.
+# With no `origin` remote at all, the branch checked out is the base branch, held to the same
+# grammar, and the report says so when it is not `main`. With an `origin` and no `origin/HEAD` —
+# a repository created here and pushed, adopted from a feature branch — the default stands and
+# the report says how to record the remote's head.
 [[mutation]]
 name = "no remote head leaves the default whatever is checked out"
 file = "src/keelline/project/detect.py"
@@ -9823,6 +9825,26 @@ before = "        return HEAD_CURRENT"
 after = '        return ""'
 reddens = [
   "tests/project/test_command.py::test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted",
+]
+
+[[mutation]]
+name = "an origin with no origin/HEAD takes the branch checked out"
+file = "src/keelline/project/detect.py"
+before = "    if has_origin:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_detect.py::test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all",
+  "tests/project/test_command.py::test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head",
+  "tests/project/test_questions.py::test_each_default_says_where_it_came_from",
+]
+
+[[mutation]]
+name = "the unrecorded remote head is never noted"
+file = "src/keelline/project/init.py"
+before = "        return HEAD_UNRECORDED"
+after = '        return ""'
+reddens = [
+  "tests/project/test_command.py::test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_record_the_head",
 ]
 
 # "No ledger" is read off the tree, which a pull request writes: the `bugs` gate asks its base

@@ -59,7 +59,9 @@ def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     """
     root = repository(tmp_path)
     git(root, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
-    code, _, err = _cli(root, tmp_path, "init", "--yes", "--no-ci")
+    # Answered rather than detected: the fixture has an origin and no `origin/HEAD`, where `init`
+    # keeps `main` whatever is checked out.
+    code, _, err = _cli(root, tmp_path, "init", "--yes", "--no-ci", "--base-branch", branch)
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt keelline")

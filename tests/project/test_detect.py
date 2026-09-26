@@ -118,6 +118,52 @@ def test_with_no_remote_head_the_base_branch_is_the_branch_checked_out(tmp_path:
     assert not found.head_refused
 
 
+FEATURE = "chore/adopt-keelline"
+
+
+def _adopting(tmp_path: Path, shape: str) -> Path:
+    """A repository on the feature branch an adoption is made on, in one of three shapes: created
+    here and pushed (`origin`, no `origin/HEAD`), never pushed (no `origin`), or cloned (an
+    `origin/HEAD` naming `develop`)."""
+    if shape == "cloned":
+        root = _clone_on_develop(tmp_path)
+    else:
+        root = repository(tmp_path, origin=None)
+        git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    if shape == "pushed":
+        bare = tmp_path / "origin.git"
+        git(tmp_path, "init", "-q", "--bare", str(bare))
+        git(root, "remote", "add", "origin", str(bare))
+        git(root, "push", "-q", "-u", "origin", "main")
+    git(root, "checkout", "-q", "-b", FEATURE)
+    return root
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("shape", "expected"),
+    [
+        ("pushed", ("main", "default", True)),
+        ("unpushed", (FEATURE, "current branch", False)),
+        ("cloned", ("develop", "origin/HEAD", False)),
+    ],
+)
+def test_a_feature_branch_is_the_base_only_where_there_is_no_origin_at_all(
+    tmp_path: Path, shape: str, expected: tuple[str, str, bool]
+) -> None:
+    # A repository created here and pushed with `git push -u origin main` has an `origin` and no
+    # `origin/HEAD` (only `git clone` and `git remote set-head` record one), and it is adopted
+    # from a feature branch: taking the branch checked out wrote the feature branch as the base,
+    # so the workflow gated it and `assess` compared the branch with itself. With an `origin`,
+    # the default stands and is flagged for the note; with none, the branch checked out is all
+    # there is to go on. Mutation (oracle): "an origin with no origin/HEAD takes the branch
+    # checked out" -> `pushed` comes back as the feature branch.
+    found = detect(_adopting(tmp_path, shape))
+    base_branch, source, unrecorded = expected
+    assert (found.base_branch, found.sources["base_branch"]) == (base_branch, source)
+    assert (found.head_unrecorded, found.head_refused) == (unrecorded, False)
+
+
 @needs_git
 @pytest.mark.parametrize("head", ["detached", "outside-the-grammar"])
 def test_a_checked_out_branch_nothing_can_name_leaves_the_default(

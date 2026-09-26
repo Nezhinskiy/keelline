@@ -105,10 +105,19 @@ HEAD_DEFAULTED = (
 )
 # Fixed text too, though the branch passed the grammar: one sentence whatever it is called.
 HEAD_CURRENT = (
-    "no origin/HEAD is recorded, so [project] base_branch and release_branch are the branch "
-    "checked out now, and so is the branch the workflow gates; if pull requests merge into "
-    "another branch, answer it with `keelline init --yes --base-branch BRANCH` while nothing is "
-    "written, or set [project] base_branch and release_branch in keelline.toml"
+    "this repository has no origin remote, so [project] base_branch and release_branch are the "
+    "branch checked out now, and so is the branch the workflow gates; if pull requests merge "
+    "into another branch, answer it with `keelline init --yes --base-branch BRANCH` while "
+    "nothing is written, or set [project] base_branch and release_branch in keelline.toml"
+)
+# An `origin` with no `origin/HEAD`: a repository created here and pushed. The branch checked
+# out is not taken, since it is typically the feature branch the adoption is made on.
+HEAD_UNRECORDED = (
+    "origin has no origin/HEAD recorded, so [project] base_branch and release_branch are main, "
+    "and so is the branch the workflow gates; `git remote set-head origin --auto` records the "
+    "remote's default branch for the next run, or answer it with `keelline init --yes "
+    "--base-branch BRANCH` while nothing is written, or set [project] base_branch and "
+    "release_branch in keelline.toml"
 )
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
@@ -151,7 +160,8 @@ class InitReport:
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
     # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar;
-    # `HEAD_CURRENT` when, with no remote head, it is a checked-out branch other than `main`.
+    # `HEAD_UNRECORDED` when it is the default because `origin` has no remote head recorded;
+    # `HEAD_CURRENT` when, with no `origin` at all, it is a checked-out branch other than `main`.
     head_note: str = ""
     # Whether this run's plan adds `[keelline] version` to a `keelline.toml` a person wrote. It
     # is written only by a run that is neither a dry run nor refused.
@@ -249,9 +259,12 @@ def _tables(
 
 def _head_note(found: Detected) -> str:
     """The note for a base branch that no remote head named: the default standing in for one
-    outside the grammar, or, with none recorded, a checked-out branch other than `main`."""
+    outside the grammar or for one `origin` never recorded, or, with no `origin` at all, a
+    checked-out branch other than `main`."""
     if found.head_refused:
         return HEAD_DEFAULTED
+    if found.head_unrecorded:
+        return HEAD_UNRECORDED
     if found.sources.get("base_branch") == CURRENT_BRANCH and found.base_branch != DEFAULT_BRANCH:
         return HEAD_CURRENT
     return ""
