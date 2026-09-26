@@ -6518,7 +6518,7 @@ reddens = [
 [[mutation]]
 name = "the tool-owned key editor lets a parse failure quote the document"
 file = "src/keelline/config/owned.py"
-before = "    except tomllib.TOMLDecodeError as exc:"
+before = "    except UNPARSEABLE as exc:"
 after = "    except KeyError as exc:"
 reddens = [
   "tests/config/test_owned.py::test_a_document_that_does_not_parse_is_refused_by_position_alone",
@@ -9523,3 +9523,108 @@ before = "        raise Refusal(BASE_REFUSED.format(reason=exc)) from None"
 after = "        raise"
 reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
 
+# `tomllib` reads nested arrays by recursion, so a document nested a few thousand levels deep
+# raises `RecursionError`, not `TOMLDecodeError`. Uncaught, it was an internal error, and in a
+# gate run it ended every gate: no `config:` line, no enforced gate's result. Every reader of a
+# document somebody else wrote answers it as one that does not parse.
+[[mutation]]
+name = "the TOML readers answer a document nested past the parser as an internal error"
+file = "src/keelline/config/loader.py"
+before = "UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)"
+after = "UNPARSEABLE = (tomllib.TOMLDecodeError,)"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
+  "tests/assess/test_gate_command.py::test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+]
+
+[[mutation]]
+name = "keelline.toml nested past the parser is an internal error"
+file = "src/keelline/config/loader.py"
+before = """
+        raw = tomllib.loads(text)
+    except UNPARSEABLE as exc:
+"""
+after = """
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[loads]",
+  "tests/assess/test_gate_command.py::test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side[tree]",
+  "tests/assess/test_gate_command.py::test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side[base]",
+]
+
+[[mutation]]
+name = "a machine file nested past the parser is an internal error"
+file = "src/keelline/config/loader.py"
+before = """
+    except UNPARSEABLE as exc:
+        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+"""
+after = """
+    except tomllib.TOMLDecodeError as exc:
+        raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[personal]",
+]
+
+[[mutation]]
+name = "a trail.toml nested past the parser escapes its reader"
+file = "src/keelline/docs/trail.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
+]
+
+[[mutation]]
+name = "a gate that recurses past the limit ends every gate after it"
+file = "src/keelline/assess/gates.py"
+before = "    except RecursionError:"
+after = "    except ZeroDivisionError:"
+reddens = [
+  "tests/assess/test_gates.py::test_a_gate_that_recurses_past_the_limit_did_not_answer_and_the_rest_still_run",
+]
+
+[[mutation]]
+name = "the owned-key editor meets a document nested past the parser as an internal error"
+file = "src/keelline/config/owned.py"
+before = """
+        expected: dict[str, Any] = tomllib.loads(text)
+    except UNPARSEABLE as exc:
+"""
+after = """
+        expected: dict[str, Any] = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+"""
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[owned-rewrite]",
+]
+
+[[mutation]]
+name = "init meets an adopted keelline.toml nested past the parser as an internal error"
+file = "src/keelline/project/init.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[init]",
+]
+
+[[mutation]]
+name = "setup meets a machine file nested past the parser as an internal error"
+file = "src/keelline/setup/machine.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[machine]",
+]
+
+[[mutation]]
+name = "attach meets an overlay record nested past the parser as an internal error"
+file = "src/keelline/attach/binding.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
+]

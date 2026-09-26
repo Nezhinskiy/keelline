@@ -201,6 +201,24 @@ def test_a_gate_that_raises_did_not_answer_and_every_gate_after_it_still_runs(
     assert [result.name for result in found] == list(BUILTIN_GATES)
 
 
+@needs_git
+def test_a_gate_that_recurses_past_the_limit_did_not_answer_and_the_rest_still_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A backstop behind every reader: a `RecursionError` out of any gate is that gate not
+    # answering, never an internal error that ends the run. Mutation (declared): the
+    # `RecursionError` arm dropped -> it escapes `run_gates`.
+    root, config = smoke(tmp_path)
+
+    def recursing(*args: object) -> list[object]:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr("keelline.docs.hygiene.check_budgets", recursing)
+    found = results(root, config)
+    assert [result.name for result in found if not result.answered] == ["docs"]
+    assert [result.name for result in found] == list(BUILTIN_GATES)
+
+
 def test_the_configured_set_is_the_kept_built_ins_then_the_custom_gates(tmp_path: Path) -> None:
     # Mutation (advisory): `configured` returning every built-in and every custom gate, whatever
     # `[gates] builtin` keeps — this reddens.

@@ -72,7 +72,7 @@ def _read(root: Path, name: str) -> str | None:
         raise MalformedSource(f"{name} is not UTF-8 text") from None
     try:
         return _parse(name, text)
-    except tomllib.TOMLDecodeError as exc:
+    except (tomllib.TOMLDecodeError, RecursionError) as exc:
         raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
     except json.JSONDecodeError as exc:
         raise MalformedSource(f"{name} is not valid JSON: {exc}") from None
@@ -106,7 +106,7 @@ def _pyproject(root: Path) -> dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except UnicodeDecodeError:
         raise MalformedSource(f"{PYPROJECT} is not UTF-8 text") from None
-    except tomllib.TOMLDecodeError as exc:
+    except (tomllib.TOMLDecodeError, RecursionError) as exc:
         raise MalformedSource(f"{PYPROJECT} is not valid TOML: {exc}") from None
 
 

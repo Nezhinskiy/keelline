@@ -49,6 +49,7 @@ from pathlib import Path
 import keelline
 from keelline.config.loader import (
     CONFIG_FILE,
+    UNPARSEABLE,
     loads,
     preset_defaults,
     read_document,
@@ -178,7 +179,7 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
         return None
     try:
         return text, tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
 

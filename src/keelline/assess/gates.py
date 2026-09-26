@@ -212,6 +212,10 @@ def _guarded(gate: Gate, context: GateContext) -> GateResult:
         return GateResult(gate.name, (), False, exc.reason)
     except KeellineError:
         return GateResult(gate.name, (), False, COULD_NOT_RUN.format(command=gate.command))
+    except RecursionError:
+        # A backstop: every reader of a repository's TOML answers a document nested past the
+        # parser's recursion as unreadable, and a reader that did not would end every gate.
+        return GateResult(gate.name, (), False, COULD_NOT_RUN.format(command=gate.command))
     return GateResult(gate.name, tuple(found))
 
 

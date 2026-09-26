@@ -30,7 +30,7 @@ import tomllib
 from collections.abc import Mapping
 from typing import Any
 
-from keelline.config.loader import CONFIG_FILE, toml_position
+from keelline.config.loader import CONFIG_FILE, UNPARSEABLE, toml_position
 from keelline.errors import Refusal
 from keelline.tomlout import quoted
 
@@ -132,7 +132,7 @@ def rewrite(text: str, changes: Mapping[tuple[str, str], Value]) -> str:
         raise ValueError(f"{sorted(stray)} is not a tool-owned key")
     try:
         expected: dict[str, Any] = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise UnparsedDocument(
             UNPARSED.format(file=CONFIG_FILE, position=toml_position(exc))
         ) from None
@@ -149,7 +149,7 @@ def rewrite(text: str, changes: Mapping[tuple[str, str], Value]) -> str:
         expected.setdefault(table, {})[key] = _plain(value)
         try:
             proved = tomllib.loads(candidate) == expected
-        except tomllib.TOMLDecodeError:
+        except UNPARSEABLE:
             proved = False
         if not proved:
             raise refusal

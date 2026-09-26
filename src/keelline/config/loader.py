@@ -57,6 +57,12 @@ CONFIG_FILE = "keelline.toml"
 # reworded upstream does not move it.
 _TOML_POSITION = re.compile(r"\((?:at line \d+, column \d+|at end of document)\)\Z")
 NO_POSITION = "(at a position tomllib did not report)"
+# `tomllib` reads nested arrays and inline tables by recursion, so a document nested a few
+# thousand levels deep — `a = [[[…]]]` — raises `RecursionError` and not `TOMLDecodeError`.
+# Uncaught, that is an internal error, the class Keelline keeps for its own defects, and in a
+# gate run it ended every gate. Every reader of a document somebody else wrote catches both.
+UNPARSEABLE = (tomllib.TOMLDecodeError, RecursionError)
+TOO_DEEP = "(nested deeper than the parser reads)"
 SECTIONS = (
     "keelline",
     "project",
@@ -125,7 +131,7 @@ class MachineConfigError(ConfigError):
     """
 
 
-def toml_position(exc: tomllib.TOMLDecodeError) -> str:
+def toml_position(exc: tomllib.TOMLDecodeError | RecursionError) -> str:
     """The `(at line N, column M)` suffix `tomllib` appends, with its message text dropped.
 
     One extractor for every caller in this package that reports a document it did not write,
@@ -135,8 +141,11 @@ def toml_position(exc: tomllib.TOMLDecodeError) -> str:
 
     A suffix this cannot find is reported as absent rather than as the message: a `tomllib` that
     stopped appending a position would otherwise take this guard with it silently, which is the
-    shape every other bounded value in this file refuses.
+    shape every other bounded value in this file refuses. A document nested past the parser's
+    recursion has no position, and says so.
     """
+    if isinstance(exc, RecursionError):
+        return TOO_DEEP
     found = _TOML_POSITION.search(str(exc))
     return found.group(0) if found is not None else NO_POSITION
 
@@ -383,7 +392,7 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         raise MachineConfigError(
             UNREADABLE.format(path=machine, error=type(exc).__name__)
         ) from None
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
         values.update(_table(raw, "personal"))
@@ -475,7 +484,7 @@ def loads(
     path = label or root / CONFIG_FILE
     try:
         raw = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise ConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:

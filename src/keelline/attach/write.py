@@ -456,7 +456,7 @@ def _first_attach(record: Path) -> str | None:
         return None
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError):
         return None
     value = raw.get("first_attach")
     return value if isinstance(value, str) and value else None

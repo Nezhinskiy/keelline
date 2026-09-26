@@ -369,6 +369,47 @@ def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(
     assert (project / "marker").exists()
 
 
+NESTED = "a = " + "[" * 2000 + "]" * 2000 + "\n"  # past the parser's recursion
+
+
+def test_a_trail_toml_nested_past_the_parser_is_one_gate_that_could_not_run(
+    tmp_path: Path,
+) -> None:
+    # `tomllib` recurses on nested arrays, and a `RecursionError` out of `read_trail` was an
+    # internal error that ended the whole run: no `config:` line, no result for the enforced
+    # gate. It is one gate that could not run, and the rest still answer. No mutation here: the
+    # reader's catch and `_guarded`'s backstop each answer this alone, so each is declared
+    # against its own case (`tests/config/test_deep_toml.py`, `tests/assess/test_gates.py`).
+    project = clone(tmp_path, BASE, also={"docs/roadmap.md": "# Roadmap\n"})
+    (project / "docs" / "trail.toml").write_text(NESTED, encoding="utf-8")
+    commit(project, "docs: a trail nested past the parser")
+    code, out, err = _gate(project, tmp_path, "--builtin")
+    assert code == 0, err
+    lines = out.splitlines()
+    assert lines[:2] == [
+        "config: keelline.toml unchanged from the base",
+        "docs: enforcing, 0 finding(s)",
+    ]
+    assert "trail: advisory, could not run" in lines
+
+
+@pytest.mark.parametrize("side", ["tree", "base"])
+def test_a_keelline_toml_nested_past_the_parser_does_not_load_naming_the_side(
+    tmp_path: Path, side: str
+) -> None:
+    # "Does not load", as for any document that does not parse, and never an internal error;
+    # the base's copy is named as the base's. Mutation (declared): `loads` catching
+    # `TOMLDecodeError` alone -> `internal error: RecursionError`, exit 2.
+    nested = BASE + "\n[gates]\n" + NESTED.replace("a = ", "x = ")
+    project = clone(tmp_path, nested if side == "base" else BASE)
+    _change(project, nested if side == "tree" else BASE)
+    code, out, err = _gate(project, tmp_path, "--builtin")
+    assert (code, out) == (1, ""), err
+    assert "internal error" not in err
+    assert "not valid TOML (nested deeper than the parser reads)" in err
+    assert ("the base's keelline.toml" in err) is (side == "base")
+
+
 def test_a_tree_without_keelline_toml_fails_and_names_the_file(tmp_path: Path) -> None:
     # `keelline uninstall` in a pull request: nothing says which gates run. Mutation (advice):
     # drop the `tree_text is None` check -> `loads(None)` is an internal error, exit 2, and the

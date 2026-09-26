@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
-from keelline.config.loader import toml_position
+from keelline.config.loader import UNPARSEABLE, toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.errors import Failure
@@ -114,7 +114,7 @@ def read_trail(path: Path) -> Trail:
         return Trail((), {})
     try:
         raw: dict[str, Any] = tomllib.loads(read_document(path, path))
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
         # several of its faults — a duplicate table is reported with the table's name in it —
         # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files

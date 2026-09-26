@@ -298,7 +298,7 @@ def overlay_root(machine: Path | None) -> Path | None:
         raise MachineConfigError(f"{path} is not UTF-8 text") from None
     try:
         raw = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except (tomllib.TOMLDecodeError, RecursionError) as exc:
         raise MachineConfigError(f"{path} is not valid TOML: {exc}") from exc
     section = raw.get("overlay")
     if not isinstance(section, dict):
@@ -339,7 +339,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
         return False
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError):
         return False
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:

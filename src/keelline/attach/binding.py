@@ -30,7 +30,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from keelline.config.loader import load, toml_position
+from keelline.config.loader import UNPARSEABLE, load, toml_position
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -124,7 +124,7 @@ def _recorded(overlay: Path, project: str) -> str | None:
         raise Failure(f"{where} cannot be read ({type(exc).__name__})") from exc
     except UnicodeDecodeError:
         raise Failure(f"{where} is not UTF-8 text") from None
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         # P10, and the same leak this branch has closed at three other sites. `tomllib` builds
         # its message as `f"{msg} (at line N, column M)"` and `msg` embeds the source for
         # several of its faults -- a duplicate table is reported with the table's name in it --
