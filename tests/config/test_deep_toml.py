@@ -98,9 +98,8 @@ Case = Callable[[Path], object]
 def test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse(
     tmp_path: Path, read: Case, raised: type[Exception]
 ) -> None:
-    # Mutation (declared for the gate's path, `loads`, `_personal` and `read_trail`; by hand for
-    # the rest): the reader's `RecursionError` dropped from its catch -> it escapes and this
-    # case reddens with the wrong exception.
+    # Mutation (declared, one per reader): the reader's `RecursionError` dropped from its catch
+    # -> it escapes and this case reddens with the wrong exception.
     with pytest.raises(raised):
         read(tmp_path)
 
@@ -118,7 +117,8 @@ def test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one(
     tmp_path: Path, read: Case, answer: object
 ) -> None:
     # Two readers answer "nothing recorded" for a record they cannot parse; a deep one is such a
-    # record. Mutation (by hand): `RecursionError` dropped from either catch -> it escapes.
+    # record. Mutation (declared, one per reader): `RecursionError` dropped from either catch ->
+    # it escapes.
     assert read(tmp_path) == answer
 
 

@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from keelline.config.loader import UNPARSEABLE
 from keelline.errors import Failure
 from keelline.release.hashes import HASHED_FILES, RECORD, drift
 
@@ -70,12 +71,13 @@ def _read(root: Path, name: str) -> str | None:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise MalformedSource(f"{name} is not UTF-8 text") from None
+    # `json` answers nesting past its depth with `RecursionError` too, so the arm that catches it
+    # names the language by the source: a deep `plugin.json` was reported as "not valid TOML".
+    language = "JSON" if name.endswith(".json") else "TOML"
     try:
         return _parse(name, text)
-    except (tomllib.TOMLDecodeError, RecursionError) as exc:
-        raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
-    except json.JSONDecodeError as exc:
-        raise MalformedSource(f"{name} is not valid JSON: {exc}") from None
+    except (json.JSONDecodeError, *UNPARSEABLE) as exc:
+        raise MalformedSource(f"{name} is not valid {language}: {exc}") from None
 
 
 def collect(root: Path) -> dict[str, str | None]:
@@ -106,7 +108,7 @@ def _pyproject(root: Path) -> dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except UnicodeDecodeError:
         raise MalformedSource(f"{PYPROJECT} is not UTF-8 text") from None
-    except (tomllib.TOMLDecodeError, RecursionError) as exc:
+    except UNPARSEABLE as exc:
         raise MalformedSource(f"{PYPROJECT} is not valid TOML: {exc}") from None
 
 

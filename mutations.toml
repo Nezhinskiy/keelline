@@ -9623,6 +9623,73 @@ reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
 ]
 
+[[mutation]]
+name = "the overlay root's reader meets a machine file nested past the parser as an internal error"
+file = "src/keelline/memory/store.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[store-overlay-root]",
+]
+
+[[mutation]]
+name = "the binding check meets an overlay record nested past the parser as an internal error"
+file = "src/keelline/memory/store.py"
+before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
+after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[store-bound]",
+]
+
+[[mutation]]
+name = "attach's first-attach date meets an overlay record nested past the parser as an internal error"
+file = "src/keelline/attach/write.py"
+before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
+after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[first-attach]",
+]
+
+[[mutation]]
+name = "release check meets a version source nested past the parser as an internal error"
+file = "src/keelline/release/versions.py"
+before = "    except (json.JSONDecodeError, *UNPARSEABLE) as exc:"
+after = "    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-read]",
+]
+
+[[mutation]]
+name = "release check meets a pyproject.toml nested past the parser as an internal error"
+file = "src/keelline/release/versions.py"
+before = "    except UNPARSEABLE as exc:"
+after = "    except tomllib.TOMLDecodeError as exc:"
+reddens = [
+  "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[versions-pyproject]",
+]
+
+# `json` answers nesting past its depth with `RecursionError` as `tomllib` does, and the arm that
+# catches both used to be the TOML one: a deep `plugin.json` was reported as "not valid TOML".
+[[mutation]]
+name = "release check calls a malformed JSON source not valid TOML"
+file = "src/keelline/release/versions.py"
+before = '    language = "JSON" if name.endswith(".json") else "TOML"'
+after = '    language = "TOML"'
+reddens = [
+  "tests/release/test_versions.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.claude-plugin/plugin.json]",
+  "tests/release/test_versions.py::test_a_manifest_nested_past_the_parser_is_reported_as_json[.codex-plugin/plugin.json]",
+  "tests/release/test_versions.py::test_a_malformed_source_is_reported_with_its_filename[.claude-plugin/plugin.json-{not json-JSON]",
+]
+
+[[mutation]]
+name = "a profile check meets a repository TOML file nested past the parser as an internal error"
+file = "src/keelline/profiles/evaluate.py"
+before = "    except UNPARSEABLE:"
+after = "    except tomllib.TOMLDecodeError:"
+reddens = [
+  "tests/profiles/test_evaluate.py::test_a_file_that_does_not_parse_resolves_to_nothing[nested-past-the-stack]",
+]
+
 # Two readers of `keelline.toml` followed two rules: `read_document` refuses a symlink, and
 # `load` read the file with a plain `read_text`, so `adopt`, `bugs check`, `plan check` and the
 # rest followed a clone's `keelline.toml -> /dev/zero` until memory ran out. `load` reads through

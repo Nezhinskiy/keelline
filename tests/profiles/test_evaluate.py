@@ -87,9 +87,9 @@ def test_a_boolean_is_matched_as_toml_spells_it(tmp_path: Path) -> None:
 def test_a_file_that_does_not_parse_resolves_to_nothing(tmp_path: Path, text: str) -> None:
     # A repository chooses these bytes. About a kilobyte of nested arrays is enough for
     # `tomllib` to raise `RecursionError` rather than `TOMLDecodeError` (measured on 3.13.0 at a
-    # depth of 500), and a raise here would end the whole evaluation, not one locator. Advisory
-    # output, so the mutation stays here: drop `RecursionError` from `_toml_value`'s `except`
-    # -> `nested-past-the-stack` reddens.
+    # depth of 500), and a raise here would end the whole evaluation, not one locator. Mutations:
+    # drop `RecursionError` from `_toml_document`'s catch (declared) or from `_toml_value`'s
+    # (by hand; advisory output) -> `nested-past-the-stack` reddens.
     check = _check(CheckKind.PRESENT, Locator("a.toml", toml="tool.checker"))
     (tmp_path / "a.toml").write_text(text, encoding="utf-8")
     assert [o.check.id for o in evaluate(_profile(check), tmp_path)] == ["present-check"]

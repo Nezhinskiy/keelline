@@ -53,6 +53,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from keelline.config.loader import UNPARSEABLE
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
@@ -298,7 +299,7 @@ def overlay_root(machine: Path | None) -> Path | None:
         raise MachineConfigError(f"{path} is not UTF-8 text") from None
     try:
         raw = tomllib.loads(text)
-    except (tomllib.TOMLDecodeError, RecursionError) as exc:
+    except UNPARSEABLE as exc:
         raise MachineConfigError(f"{path} is not valid TOML: {exc}") from exc
     section = raw.get("overlay")
     if not isinstance(section, dict):
@@ -339,7 +340,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
         return False
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError):
+    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
         return False
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:

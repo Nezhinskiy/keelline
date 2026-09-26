@@ -40,6 +40,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, TypeVar
 
+from keelline.config.loader import UNPARSEABLE
 from keelline.config.paths import PathEscape, contained
 from keelline.gitenv import git_run, in_work_tree
 from keelline.profiles.model import Check, CheckKind, Locator, Profile
@@ -105,7 +106,7 @@ def _toml_document(text: str) -> dict[str, Any] | None:
     """
     try:
         return tomllib.loads(text)
-    except (tomllib.TOMLDecodeError, RecursionError):
+    except UNPARSEABLE:
         return None
 
 

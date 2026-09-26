@@ -354,6 +354,25 @@ def test_a_malformed_source_is_reported_with_its_filename(
     assert kind in str(raised.value)
 
 
+# Past `json`'s own depth on every supported interpreter: 3.11 stops near 1000, 3.12 and 3.13
+# between 5000 and 10000 (measured on 3.11.15, 3.12.13 and 3.13.0).
+JSON_DEPTH = 100_000
+
+
+@pytest.mark.parametrize("name", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
+def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, name: str) -> None:
+    # `json` answers nesting past its depth with `RecursionError`, not `JSONDecodeError`, and the
+    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Mutation
+    # (declared): the language chosen without the source's name -> "TOML", and this reddens.
+    root = _repo(tmp_path)
+    (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
+    with pytest.raises(RecursionError):
+        json.loads((root / name).read_text())
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(f"{name} is not valid JSON: ")
+
+
 @pytest.mark.parametrize(
     "body",
     ['package = "not-a-list"\n', "package = [1, 2]\n"],

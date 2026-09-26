@@ -58,7 +58,7 @@ from keelline.attach.permissions import (
     overlay_entries,
     settings_document,
 )
-from keelline.config.loader import load
+from keelline.config.loader import UNPARSEABLE, load
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
@@ -456,7 +456,7 @@ def _first_attach(record: Path) -> str | None:
         return None
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError):
+    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
         return None
     value = raw.get("first_attach")
     return value if isinstance(value, str) and value else None
