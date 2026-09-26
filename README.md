@@ -265,6 +265,7 @@ keelline bugs new "A title" --severity high --area cli   # file an entry at the 
 keelline bugs index                                   # render the generated index
 keelline bugs index --check                           # fail if the committed index is stale
 keelline bugs check                                   # every rule the ledger holds, one pass
+keelline bugs check --base origin/main                # also fail a tree that deleted the base's ledger
 keelline bugs renumber BR-001 BR-002                  # move an entry; rewrite every mention
 
 # Documentation and plans

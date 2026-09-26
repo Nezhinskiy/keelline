@@ -2487,8 +2487,10 @@ the file loads (`unknown section(s)`), so the grammar above is the whole of it. 
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
 requests into it and pushes to it, and passes it as a literal `base:`; left out, it is `[project]
-base_branch`, so a file that names `develop` as its base gates `develop` — and `ref` is written by
-`init` and judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
+base_branch`, so a file that names `develop` as its base gates `develop`, and `keelline upgrade`
+re-renders a caller you have not edited for that branch where an earlier release gated `main`;
+set `[ci] gate_branch = "main"` to keep the old one — and `ref` is written by `init` and judged by
+`doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
 `commit check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
 `keelline assess`, `keelline gate` and the reusable workflow.

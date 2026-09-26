@@ -152,13 +152,13 @@ jobs:
     #
     # 12 minutes is 720 s: less both allowances that leaves 600 s, which at this rate holds
     # roughly **1,900 entries** in all, and at twice the rate — a runner with half the CPUs —
-    # about 950. No count of today's entries is written here, because every change that adds
-    # one would falsify it: the budget test counts `mutations.toml` itself, projects exactly this
-    # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the measurement rather than at it,
-    # because a bound this job hits is a cancelled check, not a finding; and below the old 25,
-    # because a hung pytest should cost twelve minutes, not twenty-five. Not sharded: a matrix
-    # would rename the `oracle` check the branch protection requires, and multiply the setup
-    # cost; the parallelism lives inside the job instead.
+    # about 950. No count of today's entries is written here, because every change that adds one
+    # would falsify it: the budget test counts `mutations.toml` itself, projects exactly this
+    # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
+    # measurement rather than at it, because a bound this job hits is a cancelled check, not a
+    # finding; and below the old 25, because a hung pytest should cost twelve minutes, not
+    # twenty-five. Not sharded: a matrix would rename the `oracle` check the branch protection
+    # requires, and multiply the setup cost; the parallelism lives inside the job instead.
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
