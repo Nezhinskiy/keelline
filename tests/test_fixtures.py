@@ -435,8 +435,9 @@ EXPECTED_CHARACTERS = {
     # thousand characters of headroom under it is a floor a truncation walks past. 6503 -> 6888
     # when the base step's reader stopped importing from the tree under review. 6888 -> 4776
     # when the base step stopped reading the state and the five gate steps and the shell verdict
-    # became two `keelline gate` steps: the logic they held moved into the command.
-    "check.yml": 4776,
+    # became two `keelline gate` steps: the logic they held moved into the command. 4776 -> 4773
+    # when a comment stopped calling the custom step a judging step.
+    "check.yml": 4773,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
     "ci.yml": 899,
     "release.yml": 1683,
@@ -620,13 +621,13 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # collects the right NUMBER of bodies and truncates each of them to its first line passes a
     # count and fails a size. The per-file assertions above are what do the work now; these are
     # the whole-set restatement, at the measured values rather than at half of them.
-    # Re-measured when `check.yml` became one job running `keelline gate`: 32 bodies, 10,400
-    # characters (check.yml 4,776, ci.yml 899, release.yml 1,683, smoke.yml 3,042,
+    # Re-measured when `check.yml` became one job running `keelline gate`: 32 bodies, 10,397
+    # characters (check.yml 4,773, ci.yml 899, release.yml 1,683, smoke.yml 3,042,
     # smoke-release.yml 0). The 12,127 before it counted the shell verdict and the state
     # reader that moved into the command; the floor is the sum of the per-file figures above, so
     # the two restate each other rather than one carrying slack the other does not.
     assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 10_400, sum(len(block) for block in read)
+    assert sum(len(block) for block in read) >= 10_397, sum(len(block) for block in read)
 
 
 def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:

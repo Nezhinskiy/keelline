@@ -140,7 +140,7 @@ jobs:
     # fixture. The fixture-as-repository run is `installed-plugin`'s `doctor` step and
     # `tests/test_fixtures.py`. The `owner/repo@ref` forms live in smoke-release.yml: a
     # reusable-workflow ref is resolved when the run is created, `uses:` takes no expression, and
-    # neither `@dev` nor `@v1` resolves from a wave branch.
+    # neither `@dev` nor `@v1` names the commit a pull request is testing.
     uses: ./.github/workflows/check.yml
     with:
       path: tests/fixtures/smoke-project

@@ -1985,8 +1985,8 @@ before anything else runs — resolves the base to one commit, and runs `keellin
 it in two steps. The first, "The configuration and the built-in gates", judges the configuration
 and runs the built-in gates, and executes nothing your repository wrote. The second, "The
 project's own gates", runs the commands `[gates.custom]` names, and only if the first passed.
-Each gate is advisory or enforcing, with every finding as an annotation and a table in each
-step's summary. No resolver and no build backend; the network is the two checkouts and whatever
+Each gate is advisory or enforcing, with every finding as an annotation, and each step that runs
+a check appends a table to the job summary. No resolver and no build backend; the network is the two checkouts and whatever
 `setup-python` fetches when the runner has no matching interpreter cached. It is one job because
 a job is billed by the whole minute: a push costs one runner-minute, not one per gate. Its
 check, in the caller `init` writes, is `check / gates`. The job is cancelled after 15 minutes;
@@ -2048,8 +2048,10 @@ On a pull request, the tree is the merge commit the platform built from the base
 the event fired, while the base commit is read when the job checks out. A base that tightened
 in between makes the change appear to undo that tightening, and the configuration check refuses
 it. That fails closed; re-run the job, or update the branch. On a push to the gate branch the
-base is the pushed commit itself, so that run judges the configuration against itself: it
-proves the gates run, and the pull request's run is the one that decided.
+base is the branch's tip when the job checks out, which is usually the pushed commit itself: that
+run judges the configuration against itself, it proves the gates run, and the pull request's run
+is the one that decided. If a later push has moved the branch by then, the run judges the pushed
+commit against that later tip, and fails closed in the same way when the tip tightened.
 
 **What makes the verdict binding.** The caller workflow is part of every pull request: a pull
 request can edit its `uses:` line, its `on:` filter and its `base:`, or add a job of its own
@@ -2109,7 +2111,7 @@ known to work — it is not a form this reference tells you to write.
 three scripts, extracted from this file, against real clones: a `base:` naming a branch the
 author pushed, a tag named like the base, a change that loosens what the base enforces, a
 custom gate that must not run in the judging step, and `only:`. `tests/assess/test_read_base.py`
-holds the refusal of a root reached through a symbolic link, which both judging steps run
+holds the refusal of a root reached through a symbolic link, which both gate steps run
 first. `.github/workflows/smoke.yml` installs this plugin from the checkout with the real
 harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json` entry the
 event it is filed under through the *installed* wrapper, runs `doctor` over the result, runs the
@@ -2243,9 +2245,9 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 **Ten sections, and the list is closed**: a section this block does not show is refused when
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
-and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull requests into it
-and pushes to it, and passes it as a literal `base:` — and `ref` is written by `init` and
-judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by `commit
+and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
+requests into it and pushes to it, and passes it as a literal `base:` — and `ref` is written by
+`init` and judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by `commit
 check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
 `keelline assess`, `keelline gate` and the reusable workflow.

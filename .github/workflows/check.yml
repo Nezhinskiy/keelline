@@ -130,7 +130,7 @@ jobs:
               ;;
           esac
           # A root reached through a symbolic link is refused by `keelline gate` itself, which
-          # both judging steps run before any gate: one implementation of that rule, not two.
+          # both gate steps run before any gate: one implementation of that rule, not two.
           # **On a pull request the platform's answer wins, and a `base:` that disagrees is
           # refused rather than preferred.** The workflow file a `pull_request` run executes comes
           # from the merge commit, the author's copy, and `with: base:` lives in it. A `base:`

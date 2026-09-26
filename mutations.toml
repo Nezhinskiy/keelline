@@ -5518,10 +5518,10 @@ reddens = [
 # `[ci] gate_branch` is repository-authored and is interpolated into three places of a YAML file
 # GitHub executes — the two `branches:` lists and the literal `base:` — so it is quoted there
 # *and* held to a shape here, because quoting alone still admits a newline, which closes the
-# string and lets further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
-# the installed package; the party bounded is the repository, which cannot move it. A value
-# outside the grammar costs the artifact rather than the run, and the sentence names the key and
-# the grammar and never the value.
+# string and lets further keys be written into the workflow. The anchor is `GATE_BRANCH`, a
+# compiled constant in the installed package; the party bounded is the repository, which cannot
+# move it. A value outside the grammar costs the artifact rather than the run, and the sentence
+# names the key and the grammar and never the value.
 [[mutation]]
 name = "a gate_branch outside the grammar is interpolated into the rendered workflow"
 file = "src/keelline/project/templates.py"
