@@ -272,7 +272,10 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     blocks[".github/pull_request_template.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
+    # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from
+    # `ci.yml`'s `pytest` line -> reddens naming it.
     required = (
+        "pytest -n auto",
         f"--cov-fail-under={floor.group(1)}",
         "scripts/mutation_oracle.py",
         "ruff check .",
@@ -418,7 +421,9 @@ EXPECTED_BLOCKS = {
     "check.yml": 10,
     # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
     # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
-    "ci.yml": 13,
+    # 13 -> 14 when the interpreter below the floor came from `uv python install` rather than
+    # from `setup-python`: a `uses:` step became a `run:` one.
+    "ci.yml": 14,
     "release.yml": 7,
     "smoke-release.yml": 0,
     "smoke.yml": 6,
@@ -434,7 +439,9 @@ EXPECTED_CHARACTERS = {
     # when the base step's reader stopped importing from the tree under review.
     "check.yml": 6888,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
-    "ci.yml": 899,
+    # 899 -> 1056: `-n auto` on the `pytest` line (+8) and the old-interpreter step becoming a
+    # `run:` (+149).
+    "ci.yml": 1056,
     "release.yml": 1683,
     "smoke-release.yml": 0,
     "smoke.yml": 3042,
