@@ -626,7 +626,9 @@ not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap
 the listing unable to lie by silence: a state naming a document that no longer exists fails
 (`1`) before anything is written, and a document that enters the listing without a declared
 state is written as `delivered` and then reported (`1`) — a design is written before the thing
-is built. That second guard fires on the writing path only: a row enters the listing through
+is built. A listing that named no document before, such as a new project's first, reports none
+of them, so the first design and plan need their states declared before the first run. That
+second guard fires on the writing path only: a row enters the listing through
 `docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
 against, so a defaulted `delivered` that was committed over that report is invisible to CI.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern that does not
