@@ -17,19 +17,17 @@ narrower test that states it, and a scenario that one mutation reddens proves le
 
 from __future__ import annotations
 
-import io
 import json
-from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 import keelline
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
 from keelline.config.schema import BUILTIN_GATES
 from keelline.project.templates import CI_WORKFLOW, CONFIG_ARTIFACT
 from keelline.scaffold import Manifest, digest
+from tests.cli import cli
 from tests.gitfixture import LsRemote, git, needs_git, run_git
 from tests.project.repos import repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -45,14 +43,6 @@ TRAIL = f"{PurePosixPath(PATHS.roadmap).parent}/trail.toml"
 SHA = "c" * 40
 # The one policy file a person is most likely to rewrite, and a whole-file template.
 POLICY = "documentation-policy"
-
-
-def _cli(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str, str]:
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-        code = run([*argv, *flags], parser=parser)
-    return code, out.getvalue(), err.getvalue()
 
 
 @pytest.fixture
@@ -87,14 +77,14 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
 ) -> None:
     # 1-2. The questions: the base branch is the one `origin/HEAD` names, not `main`.
     root = _fresh_develop_repository(tmp_path)
-    code, out, err = _cli(root, tmp_path, "init", "--questions", "--json")
+    code, out, err = cli(root, tmp_path, "init", "--questions", "--json")
     assert code == 0, err
     asked = json.loads(out)["questions"]["properties"]
     assert asked["project.base_branch"]["default"] == "develop"
     assert asked["project.base_branch"]["x-keelline-source"] == "origin/HEAD"
 
     # 3. `init --yes` with one answer, pinned to the release the stub lists; commit it all.
-    code, out, err = _cli(root, tmp_path, "init", "--yes", "--name", "widget")
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--name", "widget")
     assert code == 0, out + err
     assert f"CI: v{keelline.__version__}@{SHA}" in out, out
     git(root, "add", "-A")
@@ -103,7 +93,7 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
 
     # 4. The inventory: a fresh tree fails no gate against its own commit, and the file is
     # written where the ignore region keeps it out of git.
-    code, out, err = _cli(root, tmp_path, "assess", "--base", initialised)
+    code, out, err = cli(root, tmp_path, "assess", "--base", initialised)
     assert code == 0, out + err
     assert "0 of 5 gate(s) would fail" in out, out
     assert run_git(root, "check-ignore", "-q", ".keelline/assessment.json").returncode == 0
@@ -116,28 +106,28 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     rows = [f"{PurePosixPath(p).parent.name}/{PurePosixPath(p).name}" for p in (DESIGN, PLAN)]
     _write(root, TRAIL, trail + "".join(f'"{row}" = "in progress"\n' for row in rows))
     git(root, "add", "-A")
-    code, out, err = _cli(root, tmp_path, "docs", "trail")
+    code, out, err = cli(root, tmp_path, "docs", "trail")
     assert code == 0, out + err
-    code, out, err = _cli(root, tmp_path, "docs", "trail", "--check")
+    code, out, err = cli(root, tmp_path, "docs", "trail", "--check")
     assert code == 0, out + err
     # Accurate, not only current: the first documents a listing ever holds are not reported
     # when they carry no state, and would read `delivered` before anything was built.
     roadmap = (root / PATHS.roadmap).read_text(encoding="utf-8")
     for row in rows:
         assert f"[`{row}`]" in roadmap and f"{row}) — in progress" in roadmap, roadmap
-    code, out, err = _cli(root, tmp_path, "plan", "check", str(root / PLAN))
+    code, out, err = cli(root, tmp_path, "plan", "check", str(root / PLAN))
     assert code == 0, out + err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the keelline adoption design and plan")
 
     # 6. `adopt begin`.
-    code, out, err = _cli(root, tmp_path, "adopt", "begin", str(root / PLAN))
+    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / PLAN))
     assert code == 0, out + err
     assert load(root, machine=tmp_path / "absent.toml").keelline.state == "adopting"
 
     # 7. `adopt promote`, judged against the `init` commit. The fresh tree passes all five
     # built-ins over that range, so every one is promoted and the project is installed.
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "--base", initialised, "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--base", initialised, "--json")
     assert code == 0, out + err
     promoted = json.loads(out)
     assert promoted["promoted"] == list(BUILTIN_GATES), promoted
@@ -149,10 +139,10 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     policy = root / record.target
     edited = policy.read_text(encoding="utf-8") + "\nOur own rule.\n"
     policy.write_text(edited, encoding="utf-8")
-    code, out, err = _cli(root, tmp_path, "upgrade", "--dry-run")
+    code, out, err = cli(root, tmp_path, "upgrade", "--dry-run")
     assert code == 0, out + err
     assert f"skip_modified  {record.target}  " in out, out
-    code, out, err = _cli(root, tmp_path, "upgrade")
+    code, out, err = cli(root, tmp_path, "upgrade")
     assert code == 0, out + err
     assert policy.read_text(encoding="utf-8") == edited
     # The stub was the only way out: `init` and both `upgrade` runs asked it, and asked it
@@ -173,7 +163,7 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     assert workflow.count('branches: ["develop"]') == 3 and 'base: "develop"' in workflow
     assert f"@{SHA}" in workflow
     for argv in (("docs", "check"), ("docs", "trail", "--check")):
-        code, out, err = _cli(root, tmp_path, *argv)
+        code, out, err = cli(root, tmp_path, *argv)
         assert code == 0, (argv, out + err)
     config_record = Manifest.read(root).get(CONFIG_ARTIFACT)
     assert config_record is not None
@@ -193,21 +183,21 @@ def test_a_versionless_answer_sheet_goes_through_the_same_confirmation(
     (root / CONFIG_FILE).write_text(sheet, encoding="utf-8")
     before = snapshot(root)
 
-    code, out, err = _cli(root, tmp_path, "init", "--yes", "--dry-run")
+    code, out, err = cli(root, tmp_path, "init", "--yes", "--dry-run")
     assert code == 0, out + err
     assert "this run would write it" in out, out
     assert_snapshot_unchanged(root, before)
 
     (root / "CLAUDE.md").mkdir()
     blocked = snapshot(root)
-    code, out, err = _cli(root, tmp_path, "init", "--yes")
+    code, out, err = cli(root, tmp_path, "init", "--yes")
     assert code == 1, out + err
     assert out.startswith("refused, and nothing was written:"), out
     assert "this run would write it" in out, out
     assert_snapshot_unchanged(root, blocked)
 
     (root / "CLAUDE.md").rmdir()
-    code, out, err = _cli(root, tmp_path, "init", "--yes")
+    code, out, err = cli(root, tmp_path, "init", "--yes")
     assert code == 0, out + err
     assert "this run wrote it" in out, out
     written = (root / CONFIG_FILE).read_text(encoding="utf-8")
@@ -218,6 +208,6 @@ def test_a_versionless_answer_sheet_goes_through_the_same_confirmation(
     # `assess` loads the stamped file. It exits 1 because this repository has no
     # `origin/main` to judge a range against, so `plan` and `commit` could not look; that is
     # the inventory working, not the file failing to load, which would be a `failed:` line.
-    code, out, err = _cli(root, tmp_path, "assess")
+    code, out, err = cli(root, tmp_path, "assess")
     assert code == 1 and err == "", out + err
     assert out.startswith("assessment: state initialised; "), out

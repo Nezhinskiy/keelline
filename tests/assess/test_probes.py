@@ -36,6 +36,7 @@ from keelline.findings import Severity
 from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.presets import load_preset
 from keelline.project.api import CI_WORKFLOW
+from tests.assess.baserepo import commit
 from tests.assess.smoke import smoke_repo
 from tests.gitfixture import git, needs_git, plant_path, run_git
 
@@ -73,11 +74,6 @@ def _write(root: Path, relative: str, text: str) -> Path:
     return path
 
 
-def _commit(root: Path, message: str = "chore: the files") -> None:
-    git(root, "add", "-A")
-    git(root, "commit", "-qm", message)
-
-
 def _all(root: Path, tmp_path: Path) -> list[Item]:
     config = load(root, machine=tmp_path / "m.toml")
     return run_probes(ProbeContext(root, config, WINDOW))
@@ -106,7 +102,7 @@ def test_todo_markers_names_each_file_in_the_code_roots_once(tmp_path: Path) -> 
     root = _repo(tmp_path)
     _write(root, "src/a.txt", f"{TO_DO}: one\n{FIX_ME}: two\n")
     _write(root, "notes.txt", f"{TO_DO}: not code\n")
-    _commit(root)
+    commit(root, "chore: the files")
     items = _items(root, tmp_path, "todo-markers")
     assert [(i.rule, i.severity, i.principle, i.where, i.count) for i in items] == [
         ("todo-markers", Severity.ADVICE, 1, ("src/a.txt",), 1)
@@ -120,7 +116,7 @@ def test_the_count_is_whole_past_the_cap(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     for n in range(WHERE_CAP + 50):
         _write(root, f"src/f{n:04}.txt", f"{TRIPLE_X}\n")
-    _commit(root)
+    commit(root, "chore: the files")
     (item,) = _items(root, tmp_path, "todo-markers")
     assert len(item.where) == WHERE_CAP
     assert item.count == WHERE_CAP + 50
@@ -130,10 +126,10 @@ def test_a_tracked_env_file_is_a_warning_and_an_example_is_not(tmp_path: Path) -
     # Mutation (declared): the predicate's `== ".env"` becomes `== ".nothing"` -> reddens.
     root = _repo(tmp_path)
     _write(root, ".env.example", "KEY=\n")
-    _commit(root)
+    commit(root, "chore: the files")
     assert _items(root, tmp_path, "tracked-env") == []
     _write(root, ".env", "KEY=secret\n")
-    _commit(root)
+    commit(root, "chore: the files")
     items = _items(root, tmp_path, "tracked-env")
     assert [(i.rule, i.severity, i.where) for i in items] == [
         ("tracked-env", Severity.WARNING, (".env",))
@@ -146,7 +142,7 @@ def test_committed_notes_are_reported_when_the_store_is_not_in_repo(tmp_path: Pa
     # `return Looked()` -> reddens.
     root = _repo(tmp_path)
     _write(root, f"{MEMORY}/note.md", "a note\n")
-    _commit(root)
+    commit(root, "chore: the files")
     items = _items(root, tmp_path, "memory-history")
     assert [(i.rule, i.severity, i.principle, i.where) for i in items] == [
         ("memory-history", Severity.WARNING, 8, (MEMORY,))
@@ -157,7 +153,7 @@ def test_committed_notes_in_an_in_repo_store_are_expected(tmp_path: Path) -> Non
     # Mutation (advisory): the `in-repo` early return dropped -> the note is reported, reddens.
     root = _repo(tmp_path, tail='\n[memory]\nmode = "in-repo"\n')
     _write(root, f"{MEMORY}/note.md", "a note\n")
-    _commit(root)
+    commit(root, "chore: the files")
     assert _items(root, tmp_path, "memory-history") == []
 
 
@@ -181,7 +177,7 @@ def test_notes_committed_on_another_branch_are_reported_from_an_orphan_one(
     # the query exits 128, and this reddens with "could not look".
     root = _repo(tmp_path)
     _write(root, f"{MEMORY}/note.md", "a note\n")
-    _commit(root)
+    commit(root, "chore: the files")
     git(root, "checkout", "-q", "--orphan", "fresh")
     items = _items(root, tmp_path, "memory-history")
     assert _shapes(items) == [("memory-history", (MEMORY,))]
@@ -257,7 +253,7 @@ def test_a_git_query_that_does_not_answer_is_not_nothing_found(
     # the probe reads `""` as nothing found and this reddens.
     root = _repo(tmp_path)
     _write(root, ".env", "KEY=secret\n")
-    _commit(root)
+    commit(root, "chore: the files")
     monkeypatch.setattr(probes, "git_run", lambda *_a, **_k: (-1, ""))
     items = _all(root, tmp_path)
     assert _shapes([i for i in items if i.probe == "tracked-env"]) == [
@@ -287,7 +283,7 @@ def test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look(
     # commit-types log that did not answer reads as no stray subject" -> `commit-types` reddens.
     root = _repo(tmp_path)
     _write(root, "src/a.py", f"# {TO_DO}: one\n")
-    _commit(root, "wip")
+    commit(root, "wip")
 
     def unanswered(root_: Path, *args: str, timeout: float) -> tuple[int, str]:
         return (-1, "") if args[0] == query else git_run(root_, *args, timeout=timeout)
@@ -721,7 +717,7 @@ def test_commit_subjects_outside_the_vocabulary_are_counted_by_sha(tmp_path: Pat
         ("feat: one\u2028line", "fix(x): two\x1cparts", "wip", "Update README.md")
     ):
         _write(root, f"f{n}.txt", f"{n}\n")
-        _commit(root, subject)
+        commit(root, subject)
     shas = git(root, "log", "--format=%H", "-2").split()
     items = _items(root, tmp_path, "commit-types")
     assert [(i.rule, i.severity, i.principle) for i in items] == [
@@ -807,7 +803,7 @@ def test_a_probe_s_attributes_are_the_item_s(tmp_path: Path) -> None:
     # `principle=None` in `run_probes` -> reddens.
     root = _repo(tmp_path)
     _write(root, ".env", "KEY=secret\n")
-    _commit(root, "wip")
+    commit(root, "wip")
     by_id = {probe.id: probe for probe in PROBES}
     items = [i for i in _all(root, tmp_path) if i.probe in by_id]
     assert {i.probe for i in items} >= {"tracked-env", "commit-types", "codeowners"}

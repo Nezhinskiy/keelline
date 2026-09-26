@@ -9,11 +9,8 @@ message, and all five built-in gates pass on the tree as `_project` leaves it.
 
 from __future__ import annotations
 
-import io
 import json
 import re
-import sys
-from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -21,7 +18,6 @@ import pytest
 from keelline.assess.commands import BASE_NOT_THERE, WAITING
 from keelline.assess.report import FINDINGS_ELSEWHERE
 from keelline.assess.state import NO_SUCH_PLAN, begin, promote
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
 from keelline.config.owned import OwnedKeyError
 from keelline.config.schema import BUILTIN_GATES, Config
@@ -29,6 +25,7 @@ from keelline.errors import Failure, Refusal
 from keelline.project.templates import CONFIG_ARTIFACT
 from keelline.project.upgrade import upgrade
 from keelline.scaffold import Manifest, ManifestError, digest
+from tests.cli import cli, custom_gate
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import repository
 
@@ -42,14 +39,6 @@ OVER_BUDGET = "".join("word\n" for _ in range(400))
 MARKER = "marker"
 
 
-def _cli(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str, str]:
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(tmp_path / "m.toml")]
-    with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-        code = run([*argv, *flags], parser=parser)
-    return code, out.getvalue(), err.getvalue()
-
-
 def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     """A repository on `branch` that `init --yes --no-ci` wrote, committed, then an adoption plan
     committed with the trail that lists it; the root, and the first commit's full id.
@@ -61,14 +50,14 @@ def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
     git(root, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
     # Answered rather than detected: the fixture has an origin and no `origin/HEAD`, where `init`
     # keeps `main` whatever is checked out.
-    code, _, err = _cli(root, tmp_path, "init", "--yes", "--no-ci", "--base-branch", branch)
+    code, _, err = cli(root, tmp_path, "init", "--yes", "--no-ci", "--base-branch", branch)
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt keelline")
     (root / ADOPTION).write_text(PLAN, encoding="utf-8")
     _declare(root, "in progress")
     git(root, "add", "-A")
-    code, _, err = _cli(root, tmp_path, "docs", "trail")
+    code, _, err = cli(root, tmp_path, "docs", "trail")
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the keelline adoption plan")
@@ -103,11 +92,6 @@ def _set(root: Path, old: str, new: str) -> None:
     (root / CONFIG_FILE).write_text(text.replace(old, new), encoding="utf-8")
 
 
-def _custom(name: str, code: str) -> str:
-    """A `[gates.custom.<name>]` table running `code` under this interpreter."""
-    return f"\n[gates.custom.{name}]\nrun = {json.dumps([sys.executable, '-c', code])}\n"
-
-
 def _land(root: Path, subject: str = "chore: a custom gate") -> str:
     """Commit the tree as it is and name the commit: a base that has the tree's custom gates,
     which is the only base a custom gate is promoted against."""
@@ -118,7 +102,7 @@ def _land(root: Path, subject: str = "chore: a custom gate") -> str:
 
 def _add_marker_gate(root: Path) -> None:
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
-        stream.write(_custom(MARKER, f"open({MARKER!r}, 'w').close()"))
+        stream.write(custom_gate(MARKER, f"open({MARKER!r}, 'w').close()"))
 
 
 def _with_marker_gate(root: Path) -> str:
@@ -454,7 +438,7 @@ def test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml(tmp_pa
     root, _ = _project(tmp_path)
     corrupt = f"open({CONFIG_FILE!r}, 'a').write('[[broken')"
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
-        stream.write(_custom("corrupt", corrupt))
+        stream.write(custom_gate("corrupt", corrupt))
     base = _land(root)
     with pytest.raises(OwnedKeyError) as refused:
         promote(root, _config(root, tmp_path), ["corrupt"], base=base, machine=tmp_path / "m.toml")
@@ -537,12 +521,12 @@ def test_a_custom_gate_the_base_runs_another_command_for_waits_and_the_command_s
     # names it and says what to do, and `--json` lists it apart from the gates that ran.
     root, _ = _project(tmp_path)
     with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
-        stream.write(_custom(MARKER, "pass"))
+        stream.write(custom_gate(MARKER, "pass"))
     base = _land(root)
-    text = _document(root).replace(_custom(MARKER, "pass"), "")
+    text = _document(root).replace(custom_gate(MARKER, "pass"), "")
     (root / CONFIG_FILE).write_text(text, encoding="utf-8")
     _add_marker_gate(root)
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base)
+    code, out, err = cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base)
     assert code == 1, err
     assert out.splitlines() == [
         f"promoted: nothing; still advisory: {MARKER} (not on the base); state initialised",
@@ -550,7 +534,7 @@ def test_a_custom_gate_the_base_runs_another_command_for_waits_and_the_command_s
         FINDINGS_ELSEWHERE,
     ]
     assert not (root / MARKER).exists()
-    code, out, _ = _cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base, "--json")
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", MARKER, "--base", base, "--json")
     assert json.loads(out)["not_on_base"] == [MARKER]
 
 
@@ -558,7 +542,7 @@ def test_adopt_begin_json_carries_the_state_on_each_side_and_nothing_else(tmp_pa
     # `begin` runs no gate, so its document has no gate keys to leave empty. Mutation: passing
     # the promotion's document to `Result` -> the key set reddens.
     root, _ = _project(tmp_path)
-    code, out, err = _cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION), "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION), "--json")
     assert code == 0, err
     printed = json.loads(out)
     assert {k: v for k, v in printed.items() if k != "summary"} == {
@@ -572,17 +556,17 @@ def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
     # the second `gate` still prints `docs: advisory`.
     root, _ = _project(tmp_path)
     head = git(root, "rev-parse", "HEAD").strip()
-    code, out, err = _cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION))
+    code, out, err = cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION))
     assert code == 0, err
     assert "adopting" in out
     assert _config(root, tmp_path).keelline.state == "adopting"
-    code, out, err = _cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
+    code, out, err = cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
     assert (code, out.splitlines()) == (0, ["docs: advisory, 0 finding(s)"]), err
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "docs", "--base", head, "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "docs", "--base", head, "--json")
     assert code == 0, err
     printed = json.loads(out)
     assert (printed["promoted"], printed["failing"]) == (["docs"], {})
-    code, out, err = _cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
+    code, out, err = cli(root, tmp_path, "gate", "--only", "docs", "--base", head)
     assert (code, out.splitlines()) == (0, ["docs: enforcing, 0 finding(s)"]), err
 
 
@@ -598,7 +582,7 @@ def test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not
     # have. Mutation (oracle): "the missing-base note suggests main whatever the base branch" ->
     # `develop` reddens.
     root, _ = _project(tmp_path, branch=branch)
-    code, out, err = _cli(root, tmp_path, "adopt", "promote")
+    code, out, err = cli(root, tmp_path, "adopt", "promote")
     assert code == 1, err
     lines = out.splitlines()
     assert "still advisory: plan (could not run), commit (could not run)" in lines[0]
@@ -615,13 +599,13 @@ def test_every_command_that_runs_gates_gives_a_gate_the_same_json_row(tmp_path: 
     # --json rows drop a gate's reason and failing".
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
-    code, out, err = _cli(root, tmp_path, "assess", "--base", base, "--json")
+    code, out, err = cli(root, tmp_path, "assess", "--base", base, "--json")
     assert code == 1, err
     assessed = {row["name"]: row for row in json.loads(out)["gates"]}
-    code, out, err = _cli(root, tmp_path, "gate", "--base", base, "--json")
+    code, out, err = cli(root, tmp_path, "gate", "--base", base, "--json")
     assert code == 0, err
     assert {row["name"]: row for row in json.loads(out)["gates"]} == assessed
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "--base", base, "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--base", base, "--json")
     assert code == 1, err
     printed = json.loads(out)
     promoted = set(printed["promoted"])
@@ -637,7 +621,7 @@ def test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists(tmp_path:
     # advisory.
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "--base", base, "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "--base", base, "--json")
     assert code == 1, err
     printed = json.loads(out)
     assert printed["promoted"] == [name for name in BUILTIN_GATES if name != "docs"]
@@ -651,12 +635,12 @@ def test_adopt_promote_with_no_base_judges_against_the_base_branch(tmp_path: Pat
     # once the ref exists at the first commit, the same call promotes it. Mutation: defaulting
     # to a ref other than the base branch's -> the second call exits 1.
     root, base = _project(tmp_path)
-    code, out, _ = _cli(root, tmp_path, "adopt", "promote", "plan", "--json")
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "plan", "--json")
     assert code == 1
     assert json.loads(out)["promoted"] == []
     branch = _config(root, tmp_path).project.base_branch
     git(root, "update-ref", f"refs/remotes/origin/{branch}", base)
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "plan", "--json")
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "plan", "--json")
     assert code == 0, err
     assert json.loads(out)["promoted"] == ["plan"]
 
@@ -666,7 +650,7 @@ def test_adopt_begin_prints_no_path_and_exits_2_on_a_plan_that_is_not_one(tmp_pa
     root, _ = _project(tmp_path)
     stray = root / "2026-09-24-keelline-adoption.md"
     stray.write_text(PLAN, encoding="utf-8")
-    code, out, err = _cli(root, tmp_path, "adopt", "begin", str(stray))
+    code, out, err = cli(root, tmp_path, "adopt", "begin", str(stray))
     assert code == 2
     assert "adoption plan" in err
     assert str(stray) not in out + err
@@ -681,7 +665,7 @@ def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Pa
         stream.write('\n[gates.custom.absent]\nrun = ["keelline-test-no-such-command"]\n')
     base = _land(root)
     before = _document(root)
-    code, out, err = _cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
+    code, out, err = cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
     assert code == 1, err
     assert out.splitlines() == [
         "promoted: nothing; still advisory: absent (could not run); state initialised",
@@ -722,6 +706,6 @@ def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) ->
     root, base = _project(tmp_path)
     begin(root, _config(root, tmp_path), root / ADOPTION)
     promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
-    code, _, err = _cli(root, tmp_path, "uninstall")
+    code, _, err = cli(root, tmp_path, "uninstall")
     assert code == 0, err
     assert not (root / CONFIG_FILE).exists()

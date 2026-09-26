@@ -15,17 +15,14 @@ a command's first read meets, `keelline.toml` and the machine file.
 
 from __future__ import annotations
 
-import io
 import os
 from collections.abc import Callable
-from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
 from keelline.attach import binding, permissions, write
 from keelline.attach.binding import Binding
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load, read_document
 from keelline.errors import Failure, Refusal
 from keelline.memory import bundles, index, store, trust
@@ -36,6 +33,7 @@ from keelline.project.init import _existing
 from keelline.release import versions
 from keelline.setup.machine import read_machine
 from keelline.setup.run import _read_document
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 
@@ -230,13 +228,6 @@ def test_an_undecodable_worktree_back_pointer_is_no_registered_worktree(tmp_path
     assert store._registered_worktree(linked) is None
 
 
-def _cli(root: Path, tmp_path: Path, *argv: str, machine: Path | None = None) -> int:
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(machine or tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()):
-        return int(run([*argv, *flags], parser=parser))
-
-
 @needs_git
 @pytest.mark.parametrize(
     ("argv", "planted"),
@@ -248,7 +239,7 @@ def _cli(root: Path, tmp_path: Path, *argv: str, machine: Path | None = None) ->
     ids=["init-machine", "init-keelline-toml", "bugs-check-keelline-toml"],
 )
 def test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv: tuple[str, ...], planted: str
+    tmp_path: Path, argv: tuple[str, ...], planted: str
 ) -> None:
     # Through the real parser: the exit code and the frame's own word for it are what a person
     # and a relaying agent read, and `internal error` told them the fault was Keelline's.
@@ -256,20 +247,23 @@ def test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash(
     machine = _plant(tmp_path / "machine.toml") if planted == "machine" else None
     if planted == CONFIG_FILE:
         _config(root)
-    assert _cli(root, tmp_path, *argv, machine=machine) == 1
-    stderr = capsys.readouterr().err
+    code, _, stderr = cli(root, tmp_path, *argv, machine=machine)
+    assert code == 1
     assert "failed:" in stderr and "not UTF-8 text" in stderr and "internal error" not in stderr
 
 
 @needs_git
 def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The machine file changes one title of the questions and nothing else, so a broken one
     # reads as recording no overlay, however it is broken.
     root = repository(tmp_path)
-    assert _cli(root, tmp_path, "init", "--questions", machine=_plant(tmp_path / "m.toml")) == 0
-    assert "internal error" not in capsys.readouterr().err
+    code, _, stderr = cli(
+        root, tmp_path, "init", "--questions", machine=_plant(tmp_path / "m.toml")
+    )
+    assert code == 0
+    assert "internal error" not in stderr
 
 
 # The neighbour the same probe found: `keelline.toml` and the machine file are the first thing
