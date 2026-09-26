@@ -360,7 +360,8 @@ def _enforcement(config: Config) -> Config:
 
     Under `installed` the loaded list becomes every configured gate, so `Keelline.enforcing` is
     the list and nothing else, and a gate added to an installed project enforces from the run
-    that adds it.
+    that adds it — for a custom gate under `keelline gate`, from the first run after it lands on
+    the base, since that command runs none before.
     """
     keelline = config.keelline
     names = config.gate_names

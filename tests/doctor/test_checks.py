@@ -298,7 +298,28 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
         (root / "keelline.toml").symlink_to(target)
     row = _by_name(_checks(tmp_path, root), "not-initialised")
     assert row.status == "red"
-    assert row.detail.startswith("keelline.toml is here and does not load (PathEscape)")
+    # Said in words, never as the class the loader raised: "(PathEscape)" named Keelline's own
+    # exception and not the rule. Mutation (oracle): "doctor names a symlinked keelline.toml by
+    # the loader's exception class" -> the generic line comes back and this reddens.
+    assert row.detail.startswith("keelline.toml is a symbolic link, which no command follows")
+    assert "PathEscape" not in row.detail + row.remedy
+    assert "real file" in row.remedy
+
+
+def test_a_configuration_that_does_not_load_is_described_in_words(tmp_path: Path) -> None:
+    # The loader's message is built from the file's own keys and values and is not quoted, and
+    # the class it raised is Keelline's vocabulary, not a reason: the row says the file does not
+    # load and names a command that prints why.
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "keelline.toml").write_text("[keelline\n", encoding="utf-8")
+    row = _by_name(_checks(tmp_path, root), "not-initialised")
+    assert row.status == "red"
+    assert row.detail == (
+        "keelline.toml is here and does not load, so nothing else can be checked against it"
+    )
+    assert "keelline docs check" in row.remedy
+    assert "Error" not in row.detail + row.remedy
 
 
 def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:

@@ -17,8 +17,9 @@ standard error as it ran and is read by nothing here, so none of it reaches a re
 **A custom gate's process group ends with it.** Its command runs in a session of its own, and
 that session's process group is ended however the command finishes — exit, timeout or
 interrupt — so nothing it left in the background in that group writes into the tree while a later
-gate runs or after the result is out. A descendant that starts a session of its own (`setsid`)
-has left the group, and is not reached.
+gate runs or after the result is out. A descendant that leaves the command's process group (a
+new session, or a job-control shell's own group) is not reached, and nor is one Keelline may not
+signal (a sudo or setuid descendant).
 
 **Order.** The built-ins run first, in configured order: they execute nothing the repository
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
@@ -143,7 +144,9 @@ def _kill_group(process: subprocess.Popen[bytes]) -> None:
     """SIGKILL the command's whole process group; a group with nothing left to end is no fault.
 
     Empty, the group answers `ProcessLookupError`; left with only the exited, unreaped command,
-    macOS answers `PermissionError` rather than nothing, as it does for any group of zombies.
+    macOS answers `PermissionError` rather than nothing, as it does for any group of zombies. A
+    member Keelline may not signal, a sudo or setuid descendant, answers `PermissionError` too,
+    and is not ended: the command's own exit still answers for the gate.
     """
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(process.pid, signal.SIGKILL)
@@ -190,9 +193,10 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             # Both streams go to this process's standard error untouched, so a person and a CI
             # log see them as they ran and `--json` on standard output stays one object. A
             # session of its own puts what the command starts in one process group, unless a
-            # descendant starts a session of its own, and that group is ended however the command
-            # finishes: `subprocess.run(timeout=...)` kills the command alone, and a test runner
-            # it started keeps writing after the gate has reported.
+            # descendant leaves it (a new session, or a job-control shell's own group), and that
+            # group is ended however the command finishes: `subprocess.run(timeout=...)` kills
+            # the command alone, and a test runner it started keeps writing after the gate has
+            # reported.
             process = subprocess.Popen(  # noqa: S603
                 list(argv),
                 cwd=root,
@@ -210,7 +214,7 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             raise not_answered from None
         except BaseException:
             # A terminal's Ctrl-C reaches Keelline's process group, not the command's session,
-            # so an interrupted run ends the command's tree itself before it leaves.
+            # so an interrupted run ends the command's process group itself before it leaves.
             _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did
             raise
         # The command has exited, and what it started may still run: a watcher or a server left

@@ -389,6 +389,45 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
     assert "uv.lock" in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    ("name", "body", "shape"),
+    [
+        (".claude-plugin/plugin.json", "[]", "its top level is not an object"),
+        (".codex-plugin/plugin.json", '"0.1.0"', "its top level is not an object"),
+        ("pyproject.toml", 'project = "x"\n', "its project is not a table"),
+        (".claude-plugin/marketplace.json", "[]", "its top level is not an object"),
+        (".claude-plugin/marketplace.json", '{"plugins": ["version"]}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", '{"plugins": "x"}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", "{not json", "is not valid JSON"),
+    ],
+    ids=[
+        "claude-manifest-list",
+        "codex-manifest-string",
+        "project-not-a-table",
+        "marketplace-list",
+        "marketplace-entry-string",
+        "marketplace-plugins-string",
+        "marketplace-not-json",
+    ],
+)
+def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, body: str, shape: str
+) -> None:
+    # The lockfile's class, in every other source: valid JSON or TOML of the wrong shape decodes
+    # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
+    # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
+    # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
+    # passed in silence. Mutations (oracle): "a manifest whose top level is not an object is read
+    # with .get" and "the marketplace reads a plugins value that is not a list of objects".
+    root = _repo(tmp_path)
+    (root / name).write_text(body)
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(name) and shape in str(raised.value), raised.value
+    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert name in capsys.readouterr().err
+
+
 def test_the_cli_command_exits_one_on_a_malformed_source(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

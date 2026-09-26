@@ -1762,16 +1762,27 @@ def run_checks(
             ),
             *(Check(name, SKIP, f"{blamed} does not load", "") for name in rest),
         ]
-    except (Failure, Refusal) as exc:
+    except (Failure, Refusal):
         # The message is not quoted: the loader builds it out of the file's own keys and values.
+        # Nor is the class it raised, which is Keelline's vocabulary and not a reason: the row
+        # says the rule in words, and names a command that prints the loader's own message.
+        if document.is_symlink():
+            detail = (
+                f"{CONFIG_FILE} is a symbolic link, which no command follows, so nothing else "
+                f"can be checked against it"
+            )
+            remedy = "replace the link with the real file, then run `keelline doctor` again"
+        else:
+            detail = (
+                f"{CONFIG_FILE} is here and does not load, so nothing else can be checked "
+                f"against it"
+            )
+            remedy = (
+                f"`keelline docs check` prints why; run `keelline doctor` again after fixing "
+                f"{CONFIG_FILE}"
+            )
         return [
-            Check(
-                first,
-                RED,
-                f"{CONFIG_FILE} is here and does not load ({type(exc).__name__}), so nothing "
-                f"else can be checked against it",
-                f"run `keelline doctor` again after fixing {CONFIG_FILE}",
-            ),
+            Check(first, RED, detail, remedy),
             *(Check(name, SKIP, f"{CONFIG_FILE} does not load", "") for name in rest),
         ]
     context = _context(

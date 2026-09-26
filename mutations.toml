@@ -10465,3 +10465,83 @@ file = "src/keelline/assess/commands.py"
 before = "        \"gates\": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],"
 after = "        \"gates\": [gate_row(r, enforcing=False) for r in transition.results],"
 reddens = ["tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row"]
+
+# A version source of the wrong shape decodes cleanly, so the decoder's catches never see it:
+# a `.get` on a list or a string was an internal error naming no file. Each reader asks the
+# shape it reads in, and the marketplace's rule stops reading a string entry with `in`.
+[[mutation]]
+name = "a manifest whose top level is not an object is read with .get"
+file = "src/keelline/release/versions.py"
+before = "    if not isinstance(document, dict):"
+after = "    if False:"
+reddens = [
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[claude-manifest-list]",
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-list]",
+]
+
+[[mutation]]
+name = "a pyproject.toml whose project is not a table is read with .get"
+file = "src/keelline/release/versions.py"
+before = "        if not isinstance(project, dict):"
+after = "        if False:"
+reddens = [
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[project-not-a-table]",
+]
+
+[[mutation]]
+name = "the marketplace reads a plugins value that is not a list of objects"
+file = "src/keelline/release/versions.py"
+before = "    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):"
+after = "    if False:"
+reddens = [
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-entry-string]",
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-plugins-string]",
+]
+
+[[mutation]]
+name = "a marketplace that is not JSON ends release check as an internal error"
+file = "src/keelline/release/versions.py"
+before = "    except (json.JSONDecodeError, RecursionError) as exc:"
+after = "    except ():"
+reddens = [
+  "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
+]
+
+# A symlinked `keelline.toml` is refused by every command; `doctor` said so as the loader's class
+# name, "(PathEscape)", which is not a reason a person can act on.
+[[mutation]]
+name = "doctor names a symlinked keelline.toml by the loader's exception class"
+file = "src/keelline/doctor/checks.py"
+before = "        if document.is_symlink():"
+after = "        if False:"
+reddens = [
+  "tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[regular-file]",
+]
+
+# A group the gate may not signal answers `PermissionError`: on macOS a group left with only the
+# exited, unreaped command, anywhere a sudo or setuid descendant. The command's exit still
+# answers for the gate; the error must not end the whole run.
+[[mutation]]
+name = "a group the gate may not signal ends the gate run"
+file = "src/keelline/assess/gates.py"
+before = "    with contextlib.suppress(ProcessLookupError, PermissionError):"
+after = "    with contextlib.suppress(ProcessLookupError):"
+reddens = [
+  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[pass]",
+  "tests/assess/test_gates.py::test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status[raise SystemExit(3)]",
+]
+
+# Where `os.waitid` is missing (macOS before Python 3.13), the exit is waited for with
+# `Popen.wait`; without the fallback the gate raises AttributeError out of the run.
+[[mutation]]
+name = "a custom gate asks for os.waitid where the platform has none"
+file = "src/keelline/assess/gates.py"
+before = '''    if not hasattr(os, "waitid"):
+        process.wait(timeout=seconds)
+        return'''
+after = '''    if False:
+        process.wait(timeout=seconds)
+        return'''
+reddens = [
+  "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
+]

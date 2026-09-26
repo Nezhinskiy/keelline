@@ -400,6 +400,28 @@ def test_without_waitid_a_custom_gate_still_answers_and_ends_its_group(
     assert not late.exists()
 
 
+@pytest.mark.parametrize("source", ["pass", "raise SystemExit(3)"])
+def test_a_group_the_gate_may_not_signal_still_leaves_the_exit_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    # macOS answers `PermissionError` for a group left with only the exited, unreaped command,
+    # and any platform does for a descendant Keelline may not signal (a sudo or setuid one),
+    # which is then not ended. Either way the command's own exit is the gate's answer. Driven
+    # portably: every `killpg` refuses. Mutation (oracle): "a group the gate may not signal ends
+    # the gate run" -> `PermissionError` escapes `run_gates` and this reddens.
+    def refused(pid: int, sig: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", refused)
+    [probe] = results(
+        tmp_path, with_custom(fixture_config(tmp_path), [sys.executable, "-c", source])
+    )
+    assert probe.answered
+    assert [finding.detail for finding in probe.findings] == (
+        [] if source == "pass" else ["exited 3"]
+    )
+
+
 def test_custom_gates_named_first_run_before_every_other_custom_gate(tmp_path: Path) -> None:
     # `keelline gate` names the base's enforced gates first, so no other custom gate runs files
     # before they do. The built-ins keep their place: they run nothing the repository wrote.

@@ -806,9 +806,9 @@ run. The reusable workflow runs them as two steps, the second only when the firs
 custom gate's command is fixed by the base, but the files it executes — a `conftest.py`, a
 `Makefile`, a script — are the change under review, so for a custom gate the guarantee is "this
 command runs and must exit 0", and nothing about what it runs. An owner who wants those files
-pinned puts them under CODEOWNERS. Run bare on your own checkout,
-everything runs in one process. Narrowed to nothing — `--custom` on a project with no gate of its
-own — the run prints `nothing to run`, appends no summary and exits `0`.
+pinned puts them under CODEOWNERS. Run bare on your own checkout, everything runs in one
+process. Narrowed to nothing — `--custom` on a project with no gate of its own — the run prints
+`nothing to run`, appends no summary and exits `0`.
 
 **Which custom gates run, and in what order.** A custom gate runs only with the command the
 base's `keelline.toml` gives it. One the change adds, or re-commands while the base does not
@@ -821,8 +821,9 @@ enforced ones, could rewrite the script they are about to execute. For the same 
 built-in gates run first, then the custom gates the base enforces, then every other custom gate.
 Each custom gate runs in a session of its own, and the command's process group is ended when
 the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
-background in that group runs on into the next gate. A process that starts a session of its
-own (`setsid`) has left the group and is not ended. Enforced gates that themselves run files
+background in that group runs on into the next gate. A descendant that leaves the command's
+process group (a new session, or a job-control shell's own group) is not ended, and nor is one
+Keelline may not signal (a sudo or setuid descendant). Enforced gates that themselves run files
 the change can edit — two test runners, say — still share that one checkout, and one could
 rewrite what the other runs; one leg per gate isolates them (see "One row per gate" under
 [the reusable workflow](#the-reusable-workflow)).
@@ -2161,7 +2162,8 @@ run it.
 One more case is not a skip but produces fifteen of them: with no `keelline.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
 The red row is the one to act on. A `keelline.toml` that is a symbolic link is one that does not
-load, whatever it points at.
+load, whatever it points at, and the row says it is a link; for any other, the row names
+`keelline docs check`, which prints the loader's own message.
 
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
 project chose and Keelline's own vocabulary print freely; a repository-authored string does not.
