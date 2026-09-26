@@ -372,3 +372,22 @@ def test_no_module_the_checkout_carries_is_imported_by_a_gate_step(
     # The marker first: a planted module that ran is the finding, whatever it then broke.
     assert not marker.exists(), printed
     assert code == 0, printed
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_the_custom_step_runs_only_the_custom_gates_only_names(tmp_path: Path) -> None:
+    # A matrix leg's `only:` reaches the custom step too, so a leg named for a built-in gate
+    # does not also run every command `[gates.custom]` names, and a leg named for a custom gate
+    # runs that one. Mutation (declared): the custom step's loop is removed, and the `docs` leg
+    # runs the marker gate.
+    workspace, base_sha = _clone(tmp_path)
+    marker = tmp_path / "marker"
+    _commit(workspace, CONFIG_FILE, BASE + _marker_gate(marker))
+    code, printed, _ = _judge(workspace, base_sha, "docs", step=CUSTOM)
+    assert code == 0, printed
+    assert not marker.exists(), printed
+    code, printed, _ = _judge(workspace, base_sha, "tests", step=CUSTOM)
+    assert code == 0, printed
+    assert marker.exists(), printed

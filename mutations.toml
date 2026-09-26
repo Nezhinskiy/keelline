@@ -8294,3 +8294,26 @@ after = "        run: python3 -P -c 'import keelline'"
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
+
+# The custom step reads `only:` the way the judging step does, so a matrix leg named for one
+# gate runs that gate. Drop its loop and every leg runs every custom gate's command, each one
+# reported under the leg's name.
+[[mutation]]
+name = "the custom step runs every custom gate whatever only: names"
+file = ".github/workflows/check.yml"
+before = '          for name in $ONLY; do custom+=("--only=$name"); done'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
+]
+
+# The custom step's process reports whether an enforcing custom gate passed, so a module the
+# checkout carries must not load in it either.
+[[mutation]]
+name = "the custom step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
