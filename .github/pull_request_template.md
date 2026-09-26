@@ -17,7 +17,7 @@ the one section whose job is to establish reviewer trust is the one that must no
 -->
 
 ```
-uv run pytest --cov --cov-fail-under=92
+uv run pytest -n auto --cov --cov-fail-under=92
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run python scripts/mutation_oracle.py

@@ -7,12 +7,12 @@ those rules.
 ## The short version
 
 ```bash
-uv sync                                     # once
-uv run pytest --cov --cov-fail-under=92     # the suite, at CI's coverage floor
+uv sync                                           # once
+uv run pytest -n auto --cov --cov-fail-under=92   # the suite across workers, at CI's floor
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
-uv run python scripts/mutation_oracle.py    # every declared mutation still reddens
-uv run keelline release check               # version discipline
+uv run python scripts/mutation_oracle.py          # every declared mutation still reddens
+uv run keelline release check                     # version discipline
 ```
 
 All five run in CI on Linux for Python 3.11, 3.12 and 3.13, and on macOS for 3.13 — including
