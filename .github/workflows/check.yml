@@ -164,12 +164,16 @@ jobs:
             echo "base_sha=$base_sha"
             echo "root=project/${p:-.}"
           } >> "$GITHUB_OUTPUT"
+      # The step that judges. `--builtin` executes no command from `keelline.toml`, and `-P -s`
+      # put neither the working directory nor the user site directory on `sys.path`, so nothing
+      # the pull request wrote runs in the process that holds the verdict. It may not fail
+      # quietly: `keelline gate` already exits 0 for an advisory gate's findings, so
+      # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+      # `only:` is split on whitespace and never globbed, and each name travels as `--only=NAME`,
+      # so it is always that flag's value, whatever it looks like; `--builtin` runs the
+      # configuration check whatever `only:` names, so a leg that names one gate still judges the
+      # change's `keelline.toml` against the base's.
       - name: The configuration and the built-in gates
-        # The step that judges. `--builtin` executes no command from `keelline.toml`, and `-P -s`
-        # put neither the working directory nor the user site directory on `sys.path`, so nothing
-        # the pull request wrote runs in the process that holds the verdict. It may not fail
-        # quietly: `keelline gate` already exits 0 for an advisory gate's findings, so
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
         env:
           PYTHONPATH: keelline/src
           ROOT: ${{ steps.base.outputs.root }}
@@ -177,25 +181,20 @@ jobs:
           WORKFLOW_SHA: ${{ job.workflow_sha }}
           ONLY: ${{ inputs.only }}
         run: |
-          # `only:` is split on whitespace and never globbed, and each name travels as
-          # `--only=NAME`, so it is always that flag's value, whatever it looks like.
           set -f
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          # `--builtin` runs the configuration check whatever `only:` names, so a leg that
-          # names one gate still judges the change's `keelline.toml` against the base's.
           python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
+      # The commands `[gates.custom]` names, and only after the step above passed: under the
+      # default `if: success()` they never run after a refusal or an enforced built-in's failure,
+      # and never `if: always()`. They execute files the pull request can change, with the
+      # runner's privileges, so by the time they run the verdict is out of their reach and only
+      # their own results are left to them. The runner image and the interpreter above are all
+      # they get: a command that needs the project's toolchain installs it itself. `only:` is read
+      # as in the step above.
       - name: The project's own gates
-        # The commands `[gates.custom]` names, and only after the step above passed: under the
-        # default `if: success()` they never run after a refusal or an enforced built-in's
-        # failure, and never `if: always()`. They execute files the pull request can change,
-        # with the runner's privileges, so by the time they run the verdict is out of their
-        # reach and only their own results are left to them. The runner image and the
-        # interpreter above are all they get: a command that needs the project's toolchain
-        # installs it itself. The shell is spelled apart from the step above on purpose, so
-        # each line an oracle entry names is found once in this file.
         env:
           PYTHONPATH: keelline/src
           ROOT: ${{ steps.base.outputs.root }}
@@ -203,9 +202,9 @@ jobs:
           WORKFLOW_SHA: ${{ job.workflow_sha }}
           ONLY: ${{ inputs.only }}
         run: |
-          set -o noglob
-          custom=()
-          for name in $ONLY; do custom+=("--only=$name"); done
-          set +o noglob
+          set -f
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
           python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
-            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${custom[@]}"
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"

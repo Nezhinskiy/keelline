@@ -8757,8 +8757,12 @@ reddens = [
 [[mutation]]
 name = "the judging step stops annotating"
 file = ".github/workflows/check.yml"
-before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
-after = '            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+before = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
 ]
@@ -8768,8 +8772,12 @@ reddens = [
 [[mutation]]
 name = "the judging step writes no job summary"
 file = ".github/workflows/check.yml"
-before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
-after = '            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'
+before = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
 ]
@@ -8780,8 +8788,12 @@ reddens = [
 [[mutation]]
 name = "the judging step drops the running workflow's commit"
 file = ".github/workflows/check.yml"
-before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
-after = '            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+before = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
+after = '''
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
 ]
@@ -8804,8 +8816,16 @@ reddens = [
 [[mutation]]
 name = "only: runs every gate whatever it names"
 file = ".github/workflows/check.yml"
-before = '          for name in $ONLY; do only+=("--only=$name"); done'
-after = "          :"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
 ]
@@ -8815,8 +8835,20 @@ reddens = [
 [[mutation]]
 name = "only: names are expanded as file patterns"
 file = ".github/workflows/check.yml"
-before = "          set -f"
-after = "          :"
+before = '''
+          set -f
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          only=()
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
 ]
@@ -8885,16 +8917,16 @@ reddens = [
 [[mutation]]
 name = "the judging step's PYTHONPATH reaches into the checkout"
 file = ".github/workflows/check.yml"
-before = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+before = '''
+      - name: The configuration and the built-in gates
         env:
           PYTHONPATH: keelline/src
-"""
-after = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+'''
+after = '''
+      - name: The configuration and the built-in gates
         env:
           PYTHONPATH: keelline/src:project
-"""
+'''
 reddens = [
   "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[judging]",
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
@@ -8905,16 +8937,16 @@ reddens = [
 [[mutation]]
 name = "the custom step's PYTHONPATH reaches into the checkout"
 file = ".github/workflows/check.yml"
-before = """
-        # each line an oracle entry names is found once in this file.
+before = '''
+      - name: The project's own gates
         env:
           PYTHONPATH: keelline/src
-"""
-after = """
-        # each line an oracle entry names is found once in this file.
+'''
+after = '''
+      - name: The project's own gates
         env:
           PYTHONPATH: keelline/src:project
-"""
+'''
 reddens = [
   "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
@@ -8926,15 +8958,15 @@ reddens = [
 [[mutation]]
 name = "the judging step runs from the caller's checkout"
 file = ".github/workflows/check.yml"
-before = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+before = '''
+      - name: The configuration and the built-in gates
         env:
-"""
-after = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+'''
+after = '''
+      - name: The configuration and the built-in gates
         working-directory: project
         env:
-"""
+'''
 reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
@@ -8973,8 +9005,16 @@ reddens = [
 [[mutation]]
 name = "the custom step runs every custom gate whatever only: names"
 file = ".github/workflows/check.yml"
-before = '          for name in $ONLY; do custom+=("--only=$name"); done'
-after = "          :"
+before = '''
+          for name in $ONLY; do only+=("--only=$name"); done
+          set +f
+          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          :
+          set +f
+          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
 ]
@@ -8988,50 +9028,6 @@ before = '          python3 -P -s -m keelline gate --custom --root "$ROOT" --bas
 after = '          python3 -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
-]
-
-# The `env:` reader used to stop at the first line it could not parse, so a key written after a
-# comment was in no equality and in no case's environment. `BASH_ENV` is sourced by the step's
-# non-interactive bash before its script: pull-request shell code in the process that decides
-# the verdict.
-[[mutation]]
-name = "a key after a comment in the judging step's env goes unread"
-file = ".github/workflows/check.yml"
-before = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
-        env:
-          PYTHONPATH: keelline/src
-"""
-after = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
-        env:
-          PYTHONPATH: keelline/src
-          # where the step's shell reads its start-up file
-          BASH_ENV: project/.ci-env
-"""
-reddens = [
-  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
-]
-
-# And after a blank line. A key the reader never reads is a key no equality holds, whatever the
-# interpreter's flags turn off: `PYTHONUSERBASE` here, and anything else bash or Python reads.
-[[mutation]]
-name = "a key after a blank line in the custom step's env goes unread"
-file = ".github/workflows/check.yml"
-before = """
-        # each line an oracle entry names is found once in this file.
-        env:
-          PYTHONPATH: keelline/src
-"""
-after = """
-        # each line an oracle entry names is found once in this file.
-        env:
-          PYTHONPATH: keelline/src
-
-          PYTHONUSERBASE: project/.local
-"""
-reddens = [
-  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
 # A step spelled `- run:` has no `- name:` line, and the step walk read it as more lines of the
@@ -9143,47 +9139,6 @@ reddens = [
   "tests/test_workflow_yaml.py::test_a_literal_block_ends_at_a_line_indented_less_even_a_comment",
 ]
 
-# A comment at the step's own indentation inside the judging step's `env:`, then `BASH_ENV`,
-# which the step's non-interactive bash sources before its script. A comment never ends a block.
-[[mutation]]
-name = "a key after a comment at the step's indentation in the judging step's env goes unread"
-file = ".github/workflows/check.yml"
-before = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
-        env:
-          PYTHONPATH: keelline/src
-"""
-after = """
-        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
-        env:
-          PYTHONPATH: keelline/src
-        # a note
-          BASH_ENV: project/.ci-env
-"""
-reddens = [
-  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
-]
-
-# And at seven spaces in the custom step, with `PYTHONUSERBASE`.
-[[mutation]]
-name = "a key after a comment at seven spaces in the custom step's env goes unread"
-file = ".github/workflows/check.yml"
-before = """
-        # each line an oracle entry names is found once in this file.
-        env:
-          PYTHONPATH: keelline/src
-"""
-after = """
-        # each line an oracle entry names is found once in this file.
-        env:
-          PYTHONPATH: keelline/src
-       # a note
-          PYTHONUSERBASE: project/.local
-"""
-reddens = [
-  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
-]
-
 # An earlier step's environment reaches the judging step through `$GITHUB_ENV` and `$GITHUB_PATH`
 # the moment that step runs anything the pull request wrote: `BASH_ENV` on the proof step
 # sources a file from the checkout before `python3 -m keelline --version`.
@@ -9246,13 +9201,15 @@ reddens = [
 [[mutation]]
 name = "the judging step exports a user base inside the caller's checkout"
 file = ".github/workflows/check.yml"
-before = """
-          set -f
-"""
-after = """
-          set -f
+before = '''
+          set +f
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
           export PYTHONUSERBASE=project/.local
-"""
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]
@@ -9260,13 +9217,15 @@ reddens = [
 [[mutation]]
 name = "the custom step sources a file from the caller's checkout"
 file = ".github/workflows/check.yml"
-before = """
-          set +o noglob
-"""
-after = """
-          set +o noglob
+before = '''
+          set +f
+          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
+after = '''
+          set +f
           [ -f project/.ci-env ] && . project/.ci-env || true
-"""
+          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]

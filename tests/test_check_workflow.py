@@ -172,13 +172,12 @@ SCRIPTS: dict[str, list[str]] = {
         '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
     ],
     CUSTOM: [
-        "set -o noglob",
-        "custom=()",
-        'for name in $ONLY; do custom+=("--only=$name"); done',
-        "set +o noglob",
+        "set -f",
+        "only=()",
+        'for name in $ONLY; do only+=("--only=$name"); done',
+        "set +f",
         KEELLINE_INVOCATIONS[2],
-        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY"'
-        ' "${custom[@]}"',
+        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
     ],
 }
 
