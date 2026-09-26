@@ -883,6 +883,12 @@ A pull request that removes `keelline.toml` — `keelline uninstall` among them 
 nothing says which gates run, and a run that cannot judge a change does not pass it. Such a
 change lands the way a refused key does, by a direct push to the base branch.
 
+A gate that could not run fails the run only when it enforces, whatever stopped it — a refusal
+raised inside the gate included, such as a path its own configuration names that turns out to be
+a symbolic link. An advisory gate stopped that way prints `could not run` and is a warning
+annotation, and the run can still exit `0`; the gate's own command, which the remedy names,
+shows the refusal itself.
+
 Exits `0` when no enforcing gate failed or could not run and, when the configuration check ran,
 nothing was refused; a custom gate not run until the base has its command changes neither. `1` when an enforcing gate failed or could not run; when the configuration
 check refused a key; when the base is not in the checkout or git could not read its copy (the
