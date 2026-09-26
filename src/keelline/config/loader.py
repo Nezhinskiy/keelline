@@ -454,14 +454,22 @@ def read_document(root: Path) -> str | None:
 
 
 def loads(
-    text: str, root: Path, *, machine: Path | None = None, interactive: bool | None = False
+    text: str,
+    root: Path,
+    *,
+    machine: Path | None = None,
+    interactive: bool | None = False,
+    label: str | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `keelline.toml`'s contents, without reading a file.
 
     `load` is "read the file, then `loads`"; `init --yes` needs a `Config` for a document it
     has not written to disk yet, so the parse-and-validate half is this function on its own.
+    `label` is what a refusal calls the document when it is not the file at `root`: the base's
+    copy `keelline gate` reads out of git is validated against the tree's disk, and a refusal
+    naming `<root>/keelline.toml` would send its owner to a file with nothing wrong in it.
     """
-    path = root / CONFIG_FILE
+    path = label or root / CONFIG_FILE
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:

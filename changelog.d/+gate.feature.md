@@ -14,4 +14,5 @@ configuration, and a gate either side enforces enforces.
 
 Both copies of `keelline.toml` are read as UTF-8, whatever the locale: a base copy that is not
 UTF-8 text fails the run (exit 1) in the words the tree's own copy fails in, and is never
-parsed.
+parsed. A base copy that does not load fails the run too, and the message names the base's copy,
+which only a direct push to the base branch can fix; it is never read as the base having none.

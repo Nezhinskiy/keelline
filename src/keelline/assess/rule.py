@@ -50,7 +50,7 @@ from dataclasses import dataclass, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
-from keelline.config.loader import CONFIG_FILE, NOT_UTF8, loads
+from keelline.config.loader import CONFIG_FILE, NOT_UTF8, ConfigError, loads
 from keelline.config.schema import STATES, Budgets, Config
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
@@ -69,6 +69,13 @@ BASE_SHAPE = (
 # the words the tree's is: git hands the blob over losslessly, with a surrogate escape for each
 # byte that is not UTF-8, and `tomllib` would parse those.
 BASE_NOT_UTF8 = NOT_UTF8.format(path=f"the base's {CONFIG_FILE}")
+# What the loader calls the base's copy, so its reason names the right file: the loader's own
+# words would name `<root>/keelline.toml`, which is the change's copy.
+BASE_COPY = f"the base's {CONFIG_FILE}"
+BASE_DOES_NOT_LOAD = (
+    "the base's keelline.toml governs this change and does not load, so the change cannot be "
+    "judged; fix it on the base branch by a direct push ({reason})"
+)
 NOT_A_REPOSITORY = (
     "the project root is not inside a git repository, so it has no base to compare with"
 )
@@ -333,7 +340,14 @@ def judge(
     tree = loads(tree_text, root, machine=machine, interactive=False)
     if base_text is None:
         return ConfigVerdict(None, (), tree, tree.keelline.enforcing)
-    base = loads(base_text, root, machine=machine, interactive=False)
+    try:
+        base = loads(base_text, root, machine=machine, interactive=False, label=BASE_COPY)
+    except ConfigError as exc:
+        # Never the bootstrap: read as "no copy", the change would decide its own configuration.
+        # The machine file is not the base's: both sides read it, and the tree's load above has
+        # already answered for it. A `Refusal`, such as a symlink the change planted on a path
+        # only the base's `[paths]` names, passes through and fails the run as well.
+        raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None
     sides = _Sides(base, tree, running, workflow_sha, released)
     before, after = _values(base), _values(tree)
     changes = tuple(

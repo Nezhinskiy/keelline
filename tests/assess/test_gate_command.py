@@ -360,6 +360,46 @@ def test_a_base_with_no_copy_at_this_path_lets_the_tree_decide(tmp_path: Path) -
     assert (code, out.strip()) == (0, f"config: {BOOTSTRAP}")
 
 
+@pytest.mark.parametrize(
+    "broken",
+    [
+        pytest.param(BASE + "\n[bogus]\nx = 1\n", id="unknown-section"),
+        pytest.param(BASE + "\n[[broken\n", id="not-toml"),
+    ],
+)
+def test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy(
+    tmp_path: Path, broken: str
+) -> None:
+    # The base's copy governs the change, and one that does not load is never the bootstrap:
+    # read as "no copy", the tree would decide its own configuration. The tree here is valid,
+    # so a message naming the tree's file sends the owner to a file with nothing wrong in it.
+    # Mutation (declared): the base's load failure answered as the bootstrap -> exit 0, and
+    # every gate runs under the tree's configuration.
+    project = clone(tmp_path, broken)
+    _change(project, BASE)
+    code, out, err = _gate(project, tmp_path)
+    assert code == 1
+    assert out == ""
+    assert "the base's keelline.toml" in err
+    assert str(project) not in err
+
+
+def test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass(tmp_path: Path) -> None:
+    # Both sides load against the tree's disk, so a change can plant what the base's `[paths]`
+    # then meets: a symlink on a path only the base names. The base's load refuses, and the
+    # refusal fails the run rather than letting the tree judge itself. Mutation (by hand): the
+    # base's load wrapped to answer any error as the bootstrap -> exit 0.
+    moved = BASE + '\n[paths]\nroadmap = "elsewhere/roadmap.md"\n'
+    project = clone(tmp_path, moved)
+    (tmp_path / "target").mkdir()
+    (project / "elsewhere").symlink_to(tmp_path / "target", target_is_directory=True)
+    _change(project, BASE)
+    code, out, err = _gate(project, tmp_path)
+    assert code == 2
+    assert out == ""
+    assert "symlink" in err
+
+
 def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     code, _, err = _gate(project, tmp_path, "--base", "refs/remotes/origin/absent")

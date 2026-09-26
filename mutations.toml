@@ -7945,6 +7945,29 @@ before = '    if linked or spelled != prefix.rstrip("\n"):'
 after = "    if linked:"
 reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
 
+# The base's copy governs the change, so one that does not load fails the run: read as "no copy",
+# it would be the bootstrap, and the change would judge itself. The second entry is the wider
+# mistake, a handler that answers any error that way: a change can make the base's load refuse,
+# by planting a symlink on a path only the base's `[paths]` names.
+[[mutation]]
+name = "a base keelline.toml that does not load is read as the base having none"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None"
+after = "        return ConfigVerdict(None, (), tree, tree.keelline.enforcing)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unknown-section]",
+  "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[not-toml]",
+]
+
+[[mutation]]
+name = "any error loading the base's copy is read as the base having none"
+file = "src/keelline/assess/rule.py"
+before = "    except ConfigError as exc:"
+after = """    except Exception:
+        return ConfigVerdict(None, (), tree, tree.keelline.enforcing)
+    except ConfigError as exc:"""
+reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
+
 [[mutation]]
 name = "the assess summary prints each finding's path instead of a count"
 file = "src/keelline/assess/assessment.py"
