@@ -1993,12 +1993,8 @@ reddens = [
 [[mutation]]
 name = "setup stops refusing an overlay root inside the project"
 file = "src/keelline/setup/run.py"
-before = """    if (
-        resolved_candidate == resolved_project
-        or resolved_project in resolved_candidate.parents
-        or resolved_candidate in resolved_project.parents
-    ):"""
-after = "    if False:"
+before = "    if any(_same(part, b) for part in (a, *a.parents)):"
+after = "    if any(_same(part, b) for part in (a,)):"
 reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
 
 # The arm that was missing, and the one this project's own way of working walks into: `--root` is
@@ -2008,21 +2004,124 @@ reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_i
 [[mutation]]
 name = "setup stops refusing an overlay root that holds the project"
 file = "src/keelline/setup/run.py"
-before = "        or resolved_candidate in resolved_project.parents"
-after = "        or False"
+before = "    return any(_same(part, a) for part in b.parents)"
+after = "    return False"
 reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_root_is_refused"]
 
 # And the case no path comparison can see. `git worktree add ../side` is git's own documented
 # layout and this repository's own convention: the other checkout is neither inside `--root` nor
 # above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
-# directories are one repository.
+# directories are one repository — and it is asked from the project's side, for the list of its
+# checkouts: asked from inside the candidate, a committed directory holding `HEAD`, `objects/`
+# and `refs/` answered for itself, and a clone's `ov/` in a sibling worktree was recorded.
 [[mutation]]
 name = "setup stops asking git whether the overlay is a checkout of the project"
 file = "src/keelline/setup/run.py"
-before = "    if project_repository is not None and _repository_of(resolved_candidate) == project_repository:"
+before = "        if _overlaps(resolved_candidate, checkout.resolve()):"
+after = "        if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate",
+]
+
+# Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
+# `--root` sits inside one: `ov/` is then the repository, its only checkout is itself, and the
+# sibling worktree's `ov/` passes. `--is-inside-work-tree` in the same answer is what refuses
+# it on every git, whatever a committed `ov/config` says. `safe.bareRepository=explicit` has no entry of its own: every refusal here is
+# proven with it removed (the tests' `ignores-safe-bare` cases), and what it adds — git never
+# reading a committed `config` inside a bare-shaped directory — is nothing a test can observe.
+[[mutation]]
+name = "setup stops refusing a root git does not read as inside a checkout"
+file = "src/keelline/setup/run.py"
+before = '    if answer[1] != "true":'
+after = "    if False:"
+reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
+
+# Once git has said the project is a repository, a question about its checkouts that git did not
+# answer is not "none of them holds the candidate". The old arm read exactly that: no answer for
+# the candidate was `None`, `None` differed from the project's common directory, and the
+# candidate was recorded. `git_run` decodes with `text=True`, so bytes git prints outside the
+# locale's encoding are the other way of not answering.
+[[mutation]]
+name = "setup stops refusing an overlay when git cannot list the project's checkouts"
+file = "src/keelline/setup/run.py"
+before = """    if not checkouts:
+        raise Refusal(unlisted)"""
+after = """    if not checkouts:
+        return _Repository(Path(answer[0]), [])"""
+reddens = [
+  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
+]
+
+[[mutation]]
+name = "setup stops refusing an overlay when git answers in undecodable bytes"
+file = "src/keelline/setup/run.py"
+before = "    except UnicodeDecodeError as exc:"
+after = "    except LookupError as exc:"
+reddens = [
+  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
+]
+
+# git refusing to answer with `safe.bareRepository=explicit` and answering without it is either
+# a bare-shaped directory, which the answer says, or git not answering the first time; neither
+# is a listing of the project's checkouts.
+[[mutation]]
+name = "setup takes an answer git gave only without the key"
+file = "src/keelline/setup/run.py"
+before = """    if retried:
+        raise Refusal(unlisted)"""
+after = """    if retried:
+        pass"""
+reddens = [
+  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
+]
+
+# `git worktree list` names the main checkout of a `--separate-git-dir` repository, and of a
+# submodule, by its git directory, which does not record where the checkout is. From a linked
+# worktree that checkout was on no list, so its `ov/` passed; git asked from the candidate's side
+# finds it through the checkout's `.git`.
+[[mutation]]
+name = "setup stops asking git from the candidate's side"
+file = "src/keelline/setup/run.py"
+before = "    if found is not None and _same(found.resolve(), repository.common.resolve()):"
 after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor",
+  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+  "tests/setup/test_setup.py::test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule",
+]
+
+# The candidate is where a clone puts a bare-shaped directory, and git refuses to answer from
+# inside one; asked once, the candidate side would say nothing exactly when it matters.
+[[mutation]]
+name = "the candidate-side walk stops at the first directory git will not answer for"
+file = "src/keelline/setup/run.py"
+before = "        start = start.parent"
+after = "        return None"
+reddens = [
+  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+]
+
+# On a git that ignores `safe.bareRepository`, `ov/` answers for itself, and its committed
+# `config` or `commondir` can make that answer "not bare" with a common directory anywhere. Only an
+# answer that says the directory is inside a work tree comes through a checkout's `.git`, which a
+# repository cannot commit, so the walk goes on past every other one.
+[[mutation]]
+name = "the candidate-side walk takes an answer from outside a work tree as the candidate's"
+file = "src/keelline/setup/run.py"
+before = '        if answer is not None and len(answer) == 2 and answer[1] == "true":'
+after = "        if answer is not None and len(answer) == 2:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+]
+
+[[mutation]]
+name = "setup asks git about --root from a directory that does not exist"
+file = "src/keelline/setup/run.py"
+before = """    while not path.is_dir() and path != path.parent:
+        path = path.parent"""
+after = """    if not path.is_dir():
+        path = path.parent"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
 ]
 
 # §12's row, and the reason `doctor` has a provenance list at all: "a hook entry adds the

@@ -5,9 +5,11 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from keelline import gitenv
 from keelline.attach.api import read_binding
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import overlay_root
@@ -759,12 +761,12 @@ def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: P
     # documented layout and this repository's own convention, and a worktree beside the checkout
     # is neither inside it nor above it. The clone's manifests sit in the *other* checkout of
     # the same repository, so both path arms passed and the tree a clone ships was recorded.
-    # `git rev-parse --git-common-dir` is what tells two checkouts of one repository apart from
-    # two repositories.
+    # `git worktree list`, asked from the project, is what tells two checkouts of one repository
+    # apart from two repositories.
     #
-    # Mutation ("setup stops asking git whether the overlay is a checkout of the project"): the
-    # common-directory arm becomes `if False:` → the sibling checkout is recorded and this
-    # reddens. The path arms cannot catch it, which is the point of the entry.
+    # No mutation reddens this alone: the project's listing and the candidate-side walk both
+    # refuse it. Each is proven by a test only it catches — the bare-shaped directory that
+    # claims to be a checkout, and the separate-git-dir checkout.
     clone = tmp_path / "clone"
     clone.mkdir()
     _git(clone, "init", "-q", "-b", "main")
@@ -810,6 +812,342 @@ def test_an_overlay_outside_every_checkout_is_still_recorded(tmp_path: Path) -> 
     )
     assert report.overlay == overlay
     assert overlay_root(machine) == overlay
+
+
+def _commit_a_bare_shaped_directory(checkout: Path) -> Path:
+    """Commit `ov/` into `checkout`, shaped like a bare repository and carrying the overlay's
+    two manifests; `ov/`.
+
+    `HEAD`, `objects/` and `refs/` are three paths any repository can commit, and `git`'s
+    discovery reads a directory holding all three as a bare repository of its own when
+    `safe.bareRepository` is unset. With the manifests beside them, `ov/` in every checkout is a
+    tree the clone shipped and that reads as an overlay.
+    """
+    shaped = checkout / "ov"
+    (shaped / "objects").mkdir(parents=True)
+    (shaped / "refs").mkdir()
+    (shaped / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (shaped / "objects" / ".keep").write_text("", encoding="utf-8")
+    (shaped / "refs" / ".keep").write_text("", encoding="utf-8")
+    _seed_overlay(shaped)
+    _git(checkout, "add", "-A")
+    _git(checkout, "commit", "-qm", "init")
+    return shaped
+
+
+def _clone_with_a_bare_shaped_directory(tmp_path: Path, ov_config: str = "") -> tuple[Path, Path]:
+    """A project repository that commits a bare-shaped `ov/` (and `ov_config` as its `config`,
+    when given), plus two sibling worktrees of it; `(main checkout, the worktrees' parent)`."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _git(project, "init", "-q", "-b", "main")
+    if ov_config:
+        (project / "ov").mkdir()
+        (project / "ov" / "config").write_text(ov_config, encoding="utf-8")
+    _commit_a_bare_shaped_directory(project)
+    worktrees = tmp_path / "proj.wt"
+    _git(project, "worktree", "add", "-q", str(worktrees / "wave-1"), "-b", "wave-1")
+    _git(project, "worktree", "add", "-q", str(worktrees / "wave-2"), "-b", "wave-2")
+    return project, worktrees
+
+
+# `safe.bareRepository` arrived in git 2.38, and an older git ignores a `-c` key it does not
+# know. "ignores-safe-bare" stands that git in by emptying the pair, so the refusals that must not
+# depend on it are proven on the git CI has.
+GITS = ["current", "ignores-safe-bare"]
+
+
+def _as(git_version: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    if git_version == "ignores-safe-bare":
+        monkeypatch.setattr("keelline.setup.run._EXPLICIT_BARE", ())
+
+
+def _record(tmp_path: Path, overlay: Path, project_root: Path) -> None:
+    setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=FakeRunner(),
+        yes=True,
+        overlay=str(overlay),
+        project_root=project_root,
+    )
+
+
+@pytest.mark.parametrize("git_version", GITS)
+@pytest.mark.parametrize("root", ["proj", "proj.wt/wave-2", "proj.wt/wave-2/no/such/dir"])
+def test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: str, git_version: str
+) -> None:
+    # The sibling-checkout arm asked `git rev-parse --git-common-dir` *from inside the
+    # candidate*, and git answered for the committed `ov/` rather than for the checkout it sits
+    # in: `proj.wt/wave-1/ov` reported itself as its own common directory, so it was "not the
+    # same repository" and was recorded — while `proj.wt/wave-1` itself was refused. The
+    # checkouts are now listed from the project's side, which the candidate's bytes cannot reach.
+    #
+    # The listing and the candidate-side arm each refuse this layout, so breaking either one
+    # leaves it refused: the test below proves the listing alone, and the separate-git-dir test
+    # the candidate side alone. A `--root` that does not exist is asked about from its nearest
+    # directory that does, where it used to be asked from its parent and nothing else.
+    #
+    # Mutation ("setup asks git about --root from a directory that does not exist"): the walk
+    # up becomes one step → `no/such` does not exist, git gives no answer, only the path arm
+    # stands and the third root reddens.
+    _as(git_version, monkeypatch)
+    _clone_with_a_bare_shaped_directory(tmp_path)
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, tmp_path / "proj.wt" / "wave-1" / "ov", tmp_path / root)
+    assert not (tmp_path / "config.toml").exists(), "refused above the first write"
+
+
+@pytest.mark.parametrize("git_version", GITS)
+def test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
+) -> None:
+    # A committed `ov/config` saying `core.bare = false` makes a git that ignores
+    # `safe.bareRepository` answer from inside `ov/` with `ov/` as a repository that is *not*
+    # bare. The listing refuses the sibling regardless, and the candidate-side walk takes only
+    # an answer from inside a work tree, which `ov/` never gives, so both arms refuse it; the
+    # test below proves the listing alone, and the separate-git-dir test's `claims-a-checkout`
+    # case proves the walk alone.
+    _as(git_version, monkeypatch)
+    project = tmp_path / "proj"
+    project.mkdir()
+    _git(project, "init", "-q", "-b", "main")
+    (project / "ov").mkdir()
+    (project / "ov" / "config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
+    _commit_a_bare_shaped_directory(project)
+    linked = tmp_path / "proj.wt" / "wave-1"
+    _git(project, "worktree", "add", "-q", str(linked), "-b", "wave-1")
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, linked / "ov", project)
+
+
+@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout"])
+@pytest.mark.parametrize("git_version", GITS)
+def test_a_root_inside_a_bare_shaped_directory_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
+) -> None:
+    # The same shape from the project's side: run from `proj/ov`, git's own discovery stops at
+    # `ov/` and names *it* as the repository, whose only "checkout" is itself — so the sibling
+    # `proj.wt/wave-1/ov` lies outside every listed checkout and every path arm. git's answer
+    # says `ov/` is not inside a work tree — even when a committed `ov/config` says
+    # `core.bare = false` (`claims-a-checkout`) — and on every git version that is what refuses:
+    # a project root with no checkout of its own to compare against is not one.
+    #
+    # Mutation ("setup stops refusing a root git does not read as inside a checkout"): the
+    # `--is-inside-work-tree` refusal becomes `if False:` → the current-git cases fall to the
+    # retry's refusal, which does not say "bare repository", and the other cases are recorded.
+    _as(git_version, monkeypatch)
+    config = "[core]\n\tbare = false\n" if ov_config == "claims-a-checkout" else ""
+    project, _ = _clone_with_a_bare_shaped_directory(tmp_path, config)
+    with pytest.raises(Refusal, match="bare repository"):
+        _record(tmp_path, tmp_path / "proj.wt" / "wave-1" / "ov", project / "ov")
+    assert not (tmp_path / "config.toml").exists(), "refused above the first write"
+
+
+def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Why the listing stays the arm that decides: it does not depend on git answering from the
+    # candidate's side at all. Here every question asked from anywhere but the project root
+    # times out, so the candidate-side walk finds nothing, and the sibling's `ov/` is refused by
+    # the project's own record of its checkouts alone.
+    #
+    # Mutation ("setup stops asking git whether the overlay is a checkout of the project"): the
+    # per-checkout comparison becomes `if False:` → the sibling is recorded.
+    project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
+    real = gitenv.git_run
+
+    def silent_off_the_project(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if "rev-parse" in args and root.resolve() != project.resolve():
+            return -1, ""
+        return real(root, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.setup.run.git_run", silent_off_the_project)
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, worktrees / "wave-1" / "ov", project)
+
+
+@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout", "points-elsewhere"])
+@pytest.mark.parametrize("git_version", GITS)
+def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
+) -> None:
+    # `git worktree list` does not name every checkout. With `--separate-git-dir` the main
+    # worktree is listed as the git directory (`sep.git`), which does not record where its work
+    # tree is, so from the linked worktree `s.wt/w` the main checkout `s` is on no list and its
+    # `ov/` passed every listed arm. The candidate-side arm walks up from the candidate to the
+    # first repository git answers for that is not bare — `s`, through its `.git` file — and
+    # refuses when that is the project's. It can only add a refusal: whatever the candidate's
+    # bytes make git answer, the listing's refusals still stand.
+    #
+    # Mutation ("setup stops asking git from the candidate's side"): the candidate-side
+    # refusal becomes `if False:` → `s/ov` is recorded and both cases redden.
+    # Mutation ("the candidate-side walk stops at the first directory git will not answer
+    # for"): the step to the parent becomes `return None` → git refuses `ov/` as a bare
+    # repository, the walk never reaches `s`, and the current-git case reddens.
+    #
+    # On a git that ignores the key, `ov/` answers for itself, and what it commits can shape
+    # that answer: `claims-a-checkout` commits `ov/config` saying `core.bare = false`, and
+    # `points-elsewhere` commits `ov/commondir` naming a second bare-shaped `ov2/` whose config
+    # says the same, so the answer is "not bare" with a common directory off the walk. Neither
+    # can make git say `ov/` is inside a work tree, and the walk goes on past it.
+    # Mutation ("the candidate-side walk takes an answer from outside a work tree as the
+    # candidate's"): the `answer[1] == "true"` condition is dropped → the walk stops at `ov/`
+    # and every `ignores-safe-bare` case reddens.
+    _as(git_version, monkeypatch)
+    main, sep = tmp_path / "s", tmp_path / "sep.git"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    not_bare = "[core]\n\tbare = false\n"
+    if ov_config == "claims-a-checkout":
+        (main / "ov").mkdir()
+        (main / "ov" / "config").write_text(not_bare, encoding="utf-8")
+    if ov_config == "points-elsewhere":
+        other = main / "ov2"
+        (other / "objects").mkdir(parents=True)
+        (other / "refs").mkdir()
+        (other / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (other / "objects" / ".keep").write_text("", encoding="utf-8")
+        (other / "refs" / ".keep").write_text("", encoding="utf-8")
+        (other / "config").write_text(not_bare, encoding="utf-8")
+        (main / "ov").mkdir()
+        (main / "ov" / "commondir").write_text("../ov2\n", encoding="utf-8")
+    _commit_a_bare_shaped_directory(main)
+    linked = tmp_path / "s.wt" / "w"
+    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, main / "ov", linked)
+
+
+@pytest.mark.parametrize("git_version", GITS)
+def test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
+) -> None:
+    # The second layout the listing names by its git directory: a submodule's own checkout is
+    # listed as `sup/.git/modules/sub`, so from a linked worktree of the submodule `sup/sub` is
+    # on no list. The candidate-side walk reaches it through `sup/sub/.git`.
+    #
+    # Mutation ("setup stops asking git from the candidate's side"): as above, both cases.
+    _as(git_version, monkeypatch)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    _git(sub, "init", "-q", "-b", "main")
+    _commit_a_bare_shaped_directory(sub)
+    sup = tmp_path / "sup"
+    sup.mkdir()
+    _git(sup, "init", "-q", "-b", "main")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "sub")
+    _git(sup, "commit", "-qm", "add the submodule")
+    linked = tmp_path / "sup.wt"
+    _git(sup / "sub", "worktree", "add", "-q", str(linked), "-b", "w")
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, sup / "sub" / "ov", linked)
+
+
+def test_a_sibling_checkout_spelled_in_another_case_is_still_refused(tmp_path: Path) -> None:
+    # On a volume that folds case — macOS's default — `PROJ.WT/wave-1/ov` is the sibling
+    # checkout's `ov/`, and `Path.resolve()` keeps the case it was given, so a string comparison
+    # against the listed `proj.wt/wave-1` said "outside". Directories are now compared as the
+    # filesystem sees them.
+    #
+    # No mutation entry: the oracle runs on Linux, where this layout cannot exist and the test
+    # skips, so an entry would be reported as proving nothing. `_overlaps`' own arms are pinned
+    # by the entries on the inside and holds tests.
+    project, _ = _clone_with_a_bare_shaped_directory(tmp_path)
+    candidate = tmp_path / "PROJ.WT" / "wave-1" / "ov"
+    if not candidate.is_dir():
+        pytest.skip("this filesystem is case-sensitive")
+    with pytest.raises(Refusal, match="same repository"):
+        _record(tmp_path, candidate, project)
+
+
+# Stands for "git printed bytes the locale cannot decode": `git_run` raises rather than answer.
+UNDECODABLE = (-2, "undecodable")
+
+FAILURES: dict[str, Callable[[tuple[str, ...]], tuple[int, str] | None]] = {
+    # What the listing call answers.
+    "listing-exit": lambda args: (128, "") if "worktree" in args else None,
+    "listing-empty": lambda args: (0, "") if "worktree" in args else None,
+    "listing-undecodable": lambda args: UNDECODABLE if "worktree" in args else None,
+    # What the project-side `rev-parse` answers.
+    "common-undecodable": lambda args: UNDECODABLE if "rev-parse" in args else None,
+    "answers-only-without-the-key": (
+        lambda args: (128, "") if "rev-parse" in args and "-c" in args else None
+    ),
+}
+
+
+@pytest.mark.parametrize("failure", sorted(FAILURES))
+def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    # Once git has said the project is a repository, "no answer" about its checkouts is not
+    # "none of them holds the candidate". It used to be: a `git` that gave no answer for the
+    # candidate returned `None`, `None` differed from the project's common directory, and the
+    # candidate was recorded. And `gitenv.git_run` decodes with `text=True`, so a path git
+    # prints in bytes that are not the locale's encoding raised `UnicodeDecodeError` out of
+    # `setup` as an internal error.
+    #
+    # Mutation ("setup stops refusing an overlay when git cannot list the project's
+    # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
+    # legitimate-looking overlay below is recorded and `listing-exit` and `listing-empty`
+    # redden.
+    # Mutation ("setup stops refusing an overlay when git answers in undecodable bytes"): the
+    # `except UnicodeDecodeError` arm becomes `except LookupError` → the error escapes instead
+    # of a `Refusal` and the two `-undecodable` cases redden.
+    # Mutation ("setup takes an answer git gave only without the key"): the refusal after the
+    # retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    _git(project, "init", "-q", "-b", "main")
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _git(overlay, "init", "-q", "-b", "main")
+    _seed_overlay(overlay)
+    real = gitenv.git_run
+
+    def failing(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        answer = FAILURES[failure](args)
+        if answer is None:
+            return real(root, *args, **kwargs)
+        if answer == UNDECODABLE:
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return answer
+
+    monkeypatch.setattr("keelline.setup.run.git_run", failing)
+    with pytest.raises(Refusal, match="could not list"):
+        _record(tmp_path, overlay, project)
+
+
+@pytest.mark.parametrize("git_version", GITS)
+def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
+) -> None:
+    # The legitimate user the tests above must not lose: a project with a main checkout and a
+    # sibling worktree, as this project's own preset lays it out, and an overlay that is a
+    # repository of its own beside both. Its root is under no checkout and holds none, and git
+    # asked from inside it answers with its own repository, so it is recorded — from either
+    # checkout, and on either git.
+    _as(git_version, monkeypatch)
+    project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _git(overlay, "init", "-q", "-b", "main")
+    _seed_overlay(overlay)
+    for root in (project, worktrees / "wave-1"):
+        machine = tmp_path / f"{root.name}.toml"
+        report = setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=machine,
+            runner=FakeRunner(),
+            yes=True,
+            overlay=str(overlay),
+            project_root=root,
+        )
+        assert report.overlay == overlay
+        assert overlay_root(machine) == overlay
 
 
 def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path: Path) -> None:
