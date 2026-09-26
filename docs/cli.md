@@ -859,6 +859,7 @@ project may carry any number of adoption plans, nothing records which, and a pla
 name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it, which does not need
 `begin` first. **Writes** `keelline.toml`'s `[keelline] state` through the same editor as
 `keelline upgrade`, and the manifest's record of it when that record still describes the file.
+`--json` carries, on exit 0, `before` and `after`, the state on each side.
 
 | Exit | Meaning |
 |---|---|
@@ -901,7 +902,7 @@ list, or `keelline.toml` no longer loads.
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
 | 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced |
-| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, or `keelline.toml` refused |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, an `initialised` project that configures no gate, or `keelline.toml` refused |
 
 ## `keelline memory refs`
 

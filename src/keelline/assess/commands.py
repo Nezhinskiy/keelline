@@ -184,7 +184,7 @@ def run_gate(args: argparse.Namespace) -> Result:
 
 
 def _transition(transition: Transition) -> dict[str, object]:
-    """`--json` for both verbs: the state before and after, and what each gate run came to."""
+    """`--json` for `adopt promote`: the state before and after, and what each gate came to."""
     return {
         "before": transition.before,
         "after": transition.after,
@@ -201,7 +201,8 @@ def run_adopt_begin(args: argparse.Namespace) -> Result:
     transition = begin(root, config, Path(args.plan))
     changed = transition.after != transition.before
     summary = BEGUN if changed else KEPT.format(after=transition.after)
-    return Result(summary, _transition(transition))
+    # The state on each side and nothing else: `begin` runs no gate.
+    return Result(summary, {"before": transition.before, "after": transition.after})
 
 
 def run_adopt_promote(args: argparse.Namespace) -> Result:

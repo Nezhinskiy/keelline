@@ -258,6 +258,21 @@ def test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed
     assert "enforced = []" in _document(root)
 
 
+def test_an_initialised_project_with_no_gate_is_refused_rather_than_installed(
+    tmp_path: Path,
+) -> None:
+    # With nothing configured nothing is wanted, and the completion that is right for an
+    # adopting project would install one that never earned a gate. Mutation (declared): the
+    # refusal's condition made `if False:` -> the project is written `installed`.
+    root, base = _project(tmp_path)
+    with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
+        stream.write("\n[gates]\nbuiltin = []\n")
+    before = _document(root)
+    with pytest.raises(Refusal, match="configures no gate"):
+        promote(root, _config(root, tmp_path), [], base=base)
+    assert _document(root) == before
+
+
 def test_a_named_gate_already_enforcing_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
     # In-comment, not declared: this refusal guards no write the all-or-nothing rule does not
     # already hold; dropping it re-runs `docs` and writes the same list plus `bugs`.
@@ -351,6 +366,19 @@ def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:
     assert (root / MARKER).exists()
     assert transition.promoted == (MARKER,)
     assert _config(root, tmp_path).keelline.enforced == (MARKER,)
+
+
+def test_adopt_begin_json_carries_the_state_on_each_side_and_nothing_else(tmp_path: Path) -> None:
+    # `begin` runs no gate, so its document has no gate keys to leave empty. Mutation: passing
+    # the promotion's document to `Result` -> the key set reddens.
+    root, _ = _project(tmp_path)
+    code, out, err = _cli(root, tmp_path, "adopt", "begin", str(root / ADOPTION), "--json")
+    assert code == 0, err
+    printed = json.loads(out)
+    assert {k: v for k, v in printed.items() if k != "summary"} == {
+        "before": "initialised",
+        "after": "adopting",
+    }
 
 
 def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:

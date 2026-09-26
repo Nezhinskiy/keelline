@@ -48,6 +48,7 @@ NAMED_ENFORCES = (
     "a gate named already enforces; name only gates that do not, or none for every gate left"
 )
 ALL_ENFORCE = "every configured gate already enforces; there is nothing left to promote"
+NO_GATE = "this project configures no gate, so there is nothing to promote"
 UNEDITABLE = (
     "[keelline] state or enforced is written in a shape Keelline does not rewrite in place, so no "
     "gate ran and nothing was written; write each on one line as it stands now, `state = {state}` "
@@ -126,6 +127,10 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
     if not wanted:
         if state == "installed":
             raise Refusal(ALL_ENFORCE)
+        if state == "initialised":
+            # Nothing enforces yet, so nothing is wanted only when nothing is configured: no
+            # gate was earned, and completing the state would install a project that has none.
+            raise Refusal(NO_GATE)
         # Every configured gate enforces and the state never said so: complete it.
         rewrite_owned(root, {("keelline", "state"): "installed", ("keelline", "enforced"): ()})
         return Transition(state, "installed")
