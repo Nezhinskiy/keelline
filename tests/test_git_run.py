@@ -99,8 +99,8 @@ def test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names(tmp_path: Path) 
     # trail's ignore filter then read "nothing is ignored" and listed a local-only document in
     # the committed roadmap. `check-ignore --no-index` echoes what it was sent, so an ignored
     # name coming back equal to itself proves both halves: the bytes git matched were the
-    # name's own, and the answer decodes back to what the caller holds. Mutations (declared,
-    # the two entries above) redden this too.
+    # name's own, and the answer decodes back to what the caller holds. Mutation (declared):
+    # encode `stdin` strictly again -> the question cannot be asked and this reddens.
     git_run(tmp_path, "init", "-q")
     (tmp_path / ".gitignore").write_text("caf*\n", encoding="utf-8")
     code, out = git_run(tmp_path, "check-ignore", "--no-index", "--stdin", "-z", stdin=DECODED_NAME)
@@ -109,11 +109,11 @@ def test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names(tmp_path: Path) 
 
 @needs_git
 def test_git_s_own_diagnostics_are_never_decoded_into_a_failure(tmp_path: Path) -> None:
-    # `capture_output` decodes stderr with the same codec, and nothing reads it: a git whose
-    # error text quoted one non-UTF-8 byte turned an ordinary non-zero exit — an answer every
-    # caller has an arm for — into a traceback, or into `-1` with git's own exit code lost.
-    # `update-index` on a missing path names it on stderr, raw. Mutations (declared, the two
-    # entries above) redden this too.
+    # Text mode decoded stderr with the same codec, and nothing reads it: a git whose error
+    # text quoted one non-UTF-8 byte turned an ordinary non-zero exit — an answer every caller
+    # has an arm for — into a traceback, or into `-1` with git's own exit code lost. Now it is
+    # never decoded. `update-index` on a missing path names it on stderr, raw. Mutation
+    # (declared): decode git's stderr again -> this reddens.
     git_run(tmp_path, "init", "-q")
     code, out = git_run(tmp_path, "update-index", "--add", "--", DECODED_NAME)
     assert code not in (0, -1)
@@ -132,6 +132,36 @@ def test_a_stdin_this_process_cannot_encode_is_minus_one(tmp_path: Path) -> None
     # `(-1, "")` first and the case passes whatever the `except` holds — measured, with that
     # mutation applied and no `git` on `PATH`: 1 passed.
     assert git_run(tmp_path, "check-ignore", "--stdin", stdin="\ud800") == (-1, "")
+
+
+# A carriage return, which a name may carry on every POSIX filesystem, APFS included. Every `-z`
+# query prints it raw.
+CR_NAME = "plan\rx.md"
+
+
+@needs_git
+def test_a_carriage_return_in_a_name_comes_back_as_itself(tmp_path: Path) -> None:
+    # Text mode translated line endings in git's answer, so `ls-files -z` handed back
+    # `plan\nx.md`, a name nothing on disk carries: the answer was lossless for every byte but
+    # this one. Planted in the index, so the case does not depend on the disk. Mutation
+    # (declared): decode through a text-mode wrapper again -> this reddens.
+    git_run(tmp_path, "init", "-q")
+    plant_path(tmp_path, CR_NAME.encode())
+    assert git_run(tmp_path, "ls-files", "-z") == (0, f"{CR_NAME}\0")
+
+
+@needs_git
+def test_a_carriage_return_asked_on_stdin_is_matched_and_answered_as_itself(
+    tmp_path: Path,
+) -> None:
+    # The same byte through the other direction and back: `check-ignore --no-index` echoes the
+    # ignored name, and the echo came back with its `\r` turned into `\n`, so the docs trail read
+    # a gitignored plan so named as not ignored and wrote it into the committed roadmap.
+    # Mutation (declared, the entry above) reddens this too.
+    git_run(tmp_path, "init", "-q")
+    (tmp_path / ".gitignore").write_text("plan*\n", encoding="utf-8")
+    code, out = git_run(tmp_path, "check-ignore", "--no-index", "--stdin", "-z", stdin=CR_NAME)
+    assert (code, out) == (0, f"{CR_NAME}\0")
 
 
 # A name that is valid UTF-8 and not ASCII: the filesystem spells it `café.md` on every

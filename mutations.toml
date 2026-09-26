@@ -1119,26 +1119,24 @@ reddens = ["tests/test_identifiers.py::test_the_fixes_claim_shares_the_digit_rul
 [[mutation]]
 name = "the git runner collapses every non-zero exit into could-not-run"
 file = "src/keelline/gitenv.py"
-before = '    return completed.returncode, completed.stdout'
-after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
+before = '    return completed.returncode, answer'
+after = '    return (completed.returncode, answer) if completed.returncode == 0 else (-1, "")'
 reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
 
 # git speaks bytes, and `-z` prints a tracked name raw: decoded strictly, one name that is not
-# UTF-8 raised `UnicodeDecodeError` out of `git_run` and every caller, a gate's included, and so
-# did git's own stderr, which nobody reads; a name read off the disk failed the other way, on
-# `stdin`. Decoded with `surrogateescape`, the answer is the path itself.
+# UTF-8 raised `UnicodeDecodeError` out of `git_run` and every caller, a gate's included. Decoded
+# with `surrogateescape`, the answer is the path itself.
 [[mutation]]
 name = "the git runner decodes strictly again, so a non-UTF-8 byte is a traceback"
 file = "src/keelline/gitenv.py"
-before = '            errors="surrogateescape",'
-after = '            errors="strict",'
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = completed.stdout.decode(codec)'
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
-  "tests/test_git_run.py::test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names",
-  "tests/test_git_run.py::test_git_s_own_diagnostics_are_never_decoded_into_a_failure",
-  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[merge-base]",
-  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[archive]",
-  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[ls-tree]",
+  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
+  "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
+  "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
+  "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
 ]
 
 # The other way to read a byte that is not UTF-8, and the one that fails open: as no answer.
@@ -1150,26 +1148,62 @@ reddens = [
 [[mutation]]
 name = "the git runner reads an answer that is not UTF-8 as no answer again"
 file = "src/keelline/gitenv.py"
-before = """            errors="surrogateescape",
-            check=False,
-            timeout=timeout,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"""
-after = """            check=False,
-            timeout=timeout,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError, UnicodeError):"""
+before = """    answer = completed.stdout.decode(codec, "surrogateescape")
+    return completed.returncode, answer"""
+after = """    try:
+        answer = completed.stdout.decode(codec)
+    except UnicodeDecodeError:
+        return -1, ""
+    return completed.returncode, answer"""
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
   "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
-  "tests/docs/test_trail.py::test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others",
-  "tests/docs/test_trail.py::test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+]
+
+# The same byte in the other direction: a name read off a Linux disk carries surrogate escapes,
+# and encoded strictly it made the whole `stdin` question unaskable — the docs trail's ignore
+# filter then answered "nothing is ignored" and listed a local-only document in the roadmap.
+[[mutation]]
+name = "the git runner cannot ask about a name read off the disk in bytes that are not UTF-8"
+file = "src/keelline/gitenv.py"
+before = '        given = None if stdin is None else stdin.encode(codec, "surrogateescape")'
+after = '        given = None if stdin is None else stdin.encode(codec)'
+reddens = [
+  "tests/test_git_run.py::test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names",
+  "tests/docs/test_trail.py::test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others",
+  "tests/docs/test_trail.py::test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8",
+]
+
+# git's own stderr, which nobody reads, quotes a name raw — a ref, a path — and decoding it at all
+# turned an ordinary non-zero exit, an answer every caller has an arm for, into a traceback.
+[[mutation]]
+name = "the git runner decodes git's own diagnostics again"
+file = "src/keelline/gitenv.py"
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = completed.stdout.decode(codec, "surrogateescape") + completed.stderr.decode(codec)[:0]'
+reddens = [
+  "tests/test_git_run.py::test_git_s_own_diagnostics_are_never_decoded_into_a_failure",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[merge-base]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[archive]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[ls-tree]",
   "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+]
+
+# Text mode translated line endings in git's answer: a `\r` in a name printed raw by a `-z`
+# query came back as `\n`, a different name, and a gitignored plan so named went into the
+# committed roadmap. The mutation is what `text=True` did, spelled as the wrapper it used.
+[[mutation]]
+name = "the git runner translates a carriage return in git's answer again"
+file = "src/keelline/gitenv.py"
+before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
+after = '    answer = __import__("io").TextIOWrapper(__import__("io").BytesIO(completed.stdout), codec, "surrogateescape").read()'
+reddens = [
+  "tests/test_git_run.py::test_a_carriage_return_in_a_name_comes_back_as_itself",
+  "tests/test_git_run.py::test_a_carriage_return_asked_on_stdin_is_matched_and_answered_as_itself",
+  "tests/docs/test_trail.py::test_an_ignored_document_whose_name_holds_a_carriage_return_is_not_listed",
 ]
 
 # git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path

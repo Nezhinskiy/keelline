@@ -87,8 +87,8 @@ def pipe_encoding() -> str:
 
 def answer_bytes(answer: str) -> bytes:
     """The bytes git printed for a `git_run` answer, for a caller that must read them as UTF-8
-    whatever the locale: decoding is lossless both ways, so this is exact, except that text
-    mode has already turned each `\\r\\n` and lone `\\r` into `\\n`.
+    whatever the locale: decoding is lossless both ways and nothing translates a line ending,
+    so this is exact.
     """
     return answer.encode(pipe_encoding(), "surrogateescape")
 
@@ -113,9 +113,17 @@ def git_run(
     answer" for "nothing" then passed what it should have refused. Escaped, and in the
     filesystem's codec (`pipe_encoding`), a byte comes back as the same `str` `os.listdir` and
     `sys.argv` give for it, so an answer is compared with, and opens, the path it names, and a
-    name read off the disk goes back to git on `stdin` as its own bytes. The answer is lossless
-    rather than a placeholder, so every caller still decides about the path that is really
-    there. What it does not make safe is writing that `str` into a UTF-8
+    name read off the disk goes back to git on `stdin` as its own bytes.
+
+    **In bytes, and decoded here rather than by `subprocess`.** Text mode translates line endings
+    on the way in: each `\\r\\n` and each lone `\\r` in git's answer came back as `\\n`, so a name
+    holding a carriage return, printed raw by every `-z` query, came back as a different name —
+    a gitignored plan so named was read as not ignored and went into the committed roadmap.
+    Nothing is translated now, either way, and git's own stderr, which nobody reads, is never
+    decoded at all.
+
+    The answer is lossless rather than a placeholder, so every caller still decides about the
+    path that is really there. What it does not make safe is writing that `str` into a UTF-8
     file or parsing it as UTF-8 text: a caller whose answer ends up in one checks it itself, as
     `assess.rule.read_base` does for the base's `keelline.toml`.
 
@@ -124,17 +132,18 @@ def git_run(
     name from a note or a file written in UTF-8, asked on Linux under a locale that is not. A
     name read off the disk never does, because it was decoded with that same codec.
     """
+    codec = pipe_encoding()
     try:
+        given = None if stdin is None else stdin.encode(codec, "surrogateescape")
         completed = subprocess.run(  # noqa: S603 - see the docstring
             ["git", "-C", str(root), *args],  # noqa: S607 - PATH on purpose, see the module docstring
-            input=stdin,
+            input=given,
             capture_output=True,
-            encoding=pipe_encoding(),
-            errors="surrogateescape",
             check=False,
             timeout=timeout,
             env=scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError, UnicodeEncodeError):
         return -1, ""
-    return completed.returncode, completed.stdout
+    answer = completed.stdout.decode(codec, "surrogateescape")
+    return completed.returncode, answer

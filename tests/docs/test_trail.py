@@ -304,6 +304,23 @@ def test_an_ignored_document_whose_name_is_not_ascii_is_not_listed(tmp_path: Pat
 
 
 @needs_git
+def test_an_ignored_document_whose_name_holds_a_carriage_return_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    # Measured: `check-ignore -z` echoed the ignored name raw and the runner's
+    # text mode turned its `\r` into `\n`, so the answer never equalled the path asked about and
+    # a gitignored local plan was written into the committed roadmap. APFS holds the name, so
+    # this runs everywhere. Mutation (declared, on `gitenv`): decode through a text-mode wrapper
+    # again -> this reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/2026-04-04-local*\n", encoding="utf-8")
+    (root / "docs" / "plans" / "2026-04-04-local\rx.md").write_text("# doc\n", encoding="utf-8")
+    text = listing(root, config)
+    assert "local" not in text
+    assert "widget-design" in text
+
+
+@needs_git
 def test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others(
     tmp_path: Path,
 ) -> None:

@@ -328,9 +328,9 @@ def test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code(
     # The real thing, on every platform: git's error for a base it cannot resolve quotes the
     # base, raw, on stderr. Decoded strictly that stderr was a traceback; read as no answer it
     # became `-1`, and git's own exit status — the answer, "this ref is not here" — was lost for
-    # a sentence about git not running. Decoded losslessly, the exit code reaches the message.
-    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the no-answer
-    # sentence comes back and this reddens.
+    # a sentence about git not running. Never decoded, the exit code reaches the message.
+    # Mutation (declared, on `gitenv`): decode git's stderr again -> the byte raises out of
+    # `attribute` and this reddens.
     root = _repo(tmp_path)
     with pytest.raises(Failure, match="exited 128") as caught:
         attribute(root, command="true", base=os.fsdecode(b"caf\xe9"), runner=_Coded({}))
@@ -346,13 +346,12 @@ def test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict(
     # carrying one non-UTF-8 byte raised out of `attribute`, or turned an answered call into
     # no answer. What is left to prove is that a diagnostic nobody reads changes nothing.
     #
-    # Diverted at the `subprocess` seam and not at `git_run`, so the decode under test is the
-    # runner's own: the real `git` still answers, with one latin-1 byte on stderr ahead of it.
+    # Diverted at the `subprocess` seam and not at `git_run`, so the runner under test is the
+    # real one: the real `git` still answers, with one latin-1 byte on stderr ahead of it.
     # Only `git` argv is diverted, so `tar` runs as it is.
     #
-    # Mutations (declared, on `gitenv`): the decode made strict again -> the byte raises out of
-    # `attribute` and every case reddens; the answer read as no answer again -> the merge-base
-    # and archive cases redden (the listing's skip still reaches a verdict).
+    # Mutation (declared, on `gitenv`): decode git's stderr again -> the byte raises out of
+    # `attribute` and every case reddens.
     root = _repo(tmp_path)
     real = subprocess.run
 
