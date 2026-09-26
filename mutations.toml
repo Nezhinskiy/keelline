@@ -8886,7 +8886,7 @@ reddens = [
 [[mutation]]
 name = "promote runs the gates before it knows it can write"
 file = "src/keelline/assess/state.py"
-before = "    _refuse_an_uneditable_document(root, state)  # trial rewrite; before any gate runs"
+before = "    _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs"
 after = "    pass"
 reddens = [
   "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
@@ -8894,6 +8894,19 @@ reddens = [
 
 # An adopting project whose every configured gate already enforces is completed to `installed`;
 # with the branch gone, the completion is the "nothing left" refusal an installed project gets.
+# The trial rewrite sets values no document holds, so the editor's own refusal, which names the
+# value it was setting as the line to write by hand, would tell a person to write
+# `state = "installed"` with no gate earned. The remedy names the values as they stand.
+[[mutation]]
+name = "the uneditable-document refusal names the trial's made-up values as the remedy"
+file = "src/keelline/assess/state.py"
+before = "    except OwnedKeyError:"
+after = "    except ValueError:"
+reddens = [
+  "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
+  "tests/assess/test_state.py::test_an_uneditable_document_s_remedy_names_the_list_as_it_stands",
+]
+
 [[mutation]]
 name = "an adopting project whose every gate enforces is refused rather than installed"
 file = "src/keelline/assess/state.py"

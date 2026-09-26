@@ -278,19 +278,53 @@ def test_a_name_that_is_not_a_configured_gate_is_refused(tmp_path: Path) -> None
             promote(root, _config(root, tmp_path), [name], base=base)
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        pytest.param(
+            'state = "initialised"\n',
+            'state = "initialised"\nenforced = [\n]\n',
+            id="a-two-line-enforced",
+        ),
+        pytest.param('state = "initialised"\n', '"state" = "initialised"\n', id="a-quoted-state"),
+    ],
+)
 def test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs(
-    tmp_path: Path,
+    tmp_path: Path, old: str, new: str
 ) -> None:
     # Mutation (declared): the trial rewrite made `pass` -> the marker gate runs before the
     # write refuses, so the marker appears.
+    #
+    # The remedy names what the document holds now. The trial sets made-up values, and passing
+    # the editor's own refusal on told the person to write them: `state = "installed"`, which
+    # enforces every gate with none of them earned, or `enforced = ["config"]`, which does not
+    # load. Mutation: re-raising the editor's refusal unchanged -> the message assertions redden.
     root, base = _project(tmp_path)
-    _set(root, 'state = "initialised"\n', 'state = "initialised"\nenforced = [\n]\n')
+    _set(root, old, new)
     _with_marker_gate(root)
     before = _document(root)
-    with pytest.raises(OwnedKeyError):
+    with pytest.raises(OwnedKeyError) as refused:
         promote(root, _config(root, tmp_path), [], base=base)
+    message = str(refused.value)
+    assert '`state = "initialised"`' in message
+    assert "`enforced = []`" in message
+    assert "installed" not in message
+    assert "config" not in message
     assert not (root / MARKER).exists()
     assert _document(root) == before
+
+
+def test_an_uneditable_document_s_remedy_names_the_list_as_it_stands(tmp_path: Path) -> None:
+    # An adopting project whose list is written over two lines: the remedy gives the list it
+    # holds, one line, and not the trial's.
+    root, base = _project(tmp_path)
+    _set(root, 'state = "initialised"\n', 'state = "adopting"\nenforced = [\n  "docs",\n]\n')
+    with pytest.raises(OwnedKeyError) as refused:
+        promote(root, _config(root, tmp_path), [], base=base)
+    message = str(refused.value)
+    assert '`state = "adopting"`' in message
+    assert '`enforced = ["docs"]`' in message
+    assert "config" not in message
 
 
 def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:

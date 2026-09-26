@@ -30,7 +30,7 @@ from pathlib import Path
 from keelline.assess.gates import GateContext, run_gates
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
-from keelline.config.owned import Value, rewrite
+from keelline.config.owned import OwnedKeyError, Value, rewrite
 from keelline.config.schema import CONFIG_CHECK, Config
 from keelline.docs.api import lint
 from keelline.errors import Failure, Refusal
@@ -46,6 +46,11 @@ NAMED_ENFORCES = (
     "a gate named already enforces; name only gates that do not, or none for every gate left"
 )
 ALL_ENFORCE = "every configured gate already enforces; there is nothing left to promote"
+UNEDITABLE = (
+    "[keelline] state or enforced is written in a shape Keelline does not rewrite in place, so no "
+    "gate ran and nothing was written; write each on one line as it stands now, `state = {state}` "
+    "and `enforced = {enforced}`, and run the command again"
+)
 
 
 @dataclass(frozen=True)
@@ -79,19 +84,29 @@ def begin(root: Path, config: Config, plan: Path) -> Transition:
     return Transition(state, "adopting")
 
 
-def _refuse_an_uneditable_document(root: Path, state: str) -> None:
+def _refuse_an_uneditable_document(root: Path, config: Config) -> None:
     """Refuse, before any gate runs, a document whose `state` or `enforced` the editor cannot
     rewrite in place.
 
     A trial edit of both keys, discarded. The values differ from any the document can hold, so
     the editor meets both lines rather than skipping one already at its value: `config` is never
-    a gate's name, and the loader refuses it in `enforced`.
+    a gate's name, and the loader refuses it in `enforced`. Those values are made up, so the
+    editor's own refusal, which tells the person to write the value it was setting, is not
+    passed on: following it would enforce what no gate earned, or write a list that does not
+    load. The remedy names the values the document holds now, in the one-line shape the editor
+    rewrites. Both are bounded: a member of the lifecycle and gate names the loader has held to
+    a grammar, each written as a plain basic string.
     """
     text = read_document(root)
     if text is None:
         return  # the configuration was loaded from it a moment ago; the write refuses its absence
+    state = config.keelline.state
     other = "installed" if state != "installed" else "adopting"
-    rewrite(text, {("keelline", "state"): other, ("keelline", "enforced"): (CONFIG_CHECK,)})
+    try:
+        rewrite(text, {("keelline", "state"): other, ("keelline", "enforced"): (CONFIG_CHECK,)})
+    except OwnedKeyError:
+        listed = ", ".join(f'"{name}"' for name in config.keelline.enforced)
+        raise OwnedKeyError(UNEDITABLE.format(state=f'"{state}"', enforced=f"[{listed}]")) from None
 
 
 def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> Transition:
@@ -112,7 +127,7 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
         # Every configured gate enforces and the state never said so: complete it.
         rewrite_owned(root, {("keelline", "state"): "installed", ("keelline", "enforced"): ()})
         return Transition(state, "installed")
-    _refuse_an_uneditable_document(root, state)  # trial rewrite; before any gate runs
+    _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
     results = run_gates(GateContext(root, config, base), wanted)
     failing = {r.name: len(r.findings) for r in results if r.answered and r.failing}
     unanswered = tuple(r.name for r in results if not r.answered)
