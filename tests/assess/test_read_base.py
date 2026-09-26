@@ -278,25 +278,9 @@ def test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answer
         assert read_base(project, default_base(project)) == base
 
 
-def _has_locale(name: str) -> bool:
-    probe = subprocess.run(
-        [sys.executable, "-c", "import locale; print(locale.getpreferredencoding(False))"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env={**os.environ, "LC_ALL": name, "PYTHONUTF8": "0"},
-    )
-    return probe.stdout.strip().replace("-", "").upper() in {"ISO88591", "LATIN1"}
-
-
-LATIN1_LOCALE = next(
-    (name for name in ("en_US.ISO8859-1", "en_US.ISO-8859-1", "C.ISO-8859-1") if _has_locale(name)),
-    None,
-)
-
-
-@pytest.mark.skipif(LATIN1_LOCALE is None, reason="no latin-1 locale is installed here")
-def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(tmp_path: Path) -> None:
+def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
+    tmp_path: Path, latin1_locale: str
+) -> None:
     # The case above without the seam: a child process under a real latin-1 locale, where the
     # machine has one (macOS does; a stock Linux runner does not, which is why the seam case
     # carries the oracle entry).
@@ -318,7 +302,7 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(tmp_path: Path) -> N
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "LC_ALL": str(LATIN1_LOCALE), "PYTHONUTF8": "0"},
+        env={**os.environ, "LC_ALL": latin1_locale, "PYTHONUTF8": "0"},
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.splitlines() == [ascii(NON_ASCII_BASE), ascii(BASE_NOT_UTF8)]
