@@ -321,6 +321,36 @@ def test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_othe
 
 
 @needs_git
+def test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8(
+    tmp_path: Path,
+) -> None:
+    # The case above end to end, through `trail_gate` itself, where the disk can hold the name
+    # (Linux, where CI's oracle runs; APFS refuses it, so there the case is skipped rather than
+    # passed). A fresh roadmap, then a gitignored local-only document and an untracked document
+    # named in latin-1 bytes appear beside it: neither belongs in the listing, so the roadmap is
+    # still fresh. Had the latin-1 name made the ignore question unaskable, the local-only
+    # document would have been listed and the gate would report the roadmap stale, or fail.
+    # Mutation (declared, on `gitenv`): the question read as unaskable again -> this reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/local-only.md\n", encoding="utf-8")
+    git(root, "add", "-A")
+    roadmap = root / "docs" / "roadmap.md"
+    roadmap.write_text(
+        rebuild(SEED, root, config, read_trail(trail_path(root, config))), encoding="utf-8"
+    )
+    assert trail_gate(root, config) == []
+    plans = root / "docs" / "plans"
+    try:
+        with open(os.fsencode(plans) + b"/2026-04-04-caf\xe9.md", "w", encoding="utf-8") as f:
+            f.write("# doc\n")
+    except OSError as exc:  # APFS: `Illegal byte sequence`
+        pytest.skip(f"this filesystem cannot hold a name that is not UTF-8 ({exc.strerror})")
+    (plans / "local-only.md").write_text("# doc\n", encoding="utf-8")
+    assert trail_gate(root, config) == []
+    assert "local-only" not in roadmap.read_text(encoding="utf-8")
+
+
+@needs_git
 @pytest.mark.parametrize("asked", ["check-ignore", "ls-files"])
 @pytest.mark.parametrize("code", [-1, 128])
 def test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything(
