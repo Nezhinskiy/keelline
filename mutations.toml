@@ -9669,3 +9669,24 @@ reddens = [
   "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unshipped-preset]",
 ]
 
+# Every integer the schema holds is a count or a bound, so the loader refuses zero, a negative and
+# a bool (an `int` to Python). `[gates] custom_timeout_seconds` at 0 or below would make every
+# custom gate "could not run" without a word about why.
+[[mutation]]
+name = "an integer setting at or below zero loads"
+file = "src/keelline/config/loader.py"
+before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "            if isinstance(value, bool) or not isinstance(value, int):"
+reddens = [
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[no-time-at-all]",
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[negative-time]",
+]
+
+[[mutation]]
+name = "a bool loads as an integer setting"
+file = "src/keelline/config/loader.py"
+before = "            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:"
+after = "            if not isinstance(value, int) or value <= 0:"
+reddens = [
+  "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[time-as-a-bool]",
+]

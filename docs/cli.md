@@ -2438,7 +2438,7 @@ gate_branch = "main"     # the branch a gate reads its configuration from
 
 [gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
-custom_timeout_seconds = 600  # how long one of your own gates may run
+custom_timeout_seconds = 600  # how long one of your own gates may run: a whole number above 0
 # [gates.custom.tests]         # zero or more gates of your own, each a table like this
 # run = ["pytest", "-q"]       # an argv, never a shell string
 

@@ -623,8 +623,30 @@ def test_a_gate_named_twice_is_refused(tmp_path: Path) -> None:
             "\n[gates]\ncustom_timeout_seconds = 0\n",
             r"^gates\.custom_timeout_seconds must be a positive integer$",
         ),
+        # A bound at or below zero makes every custom gate "could not run", and a bool is an
+        # `int` to Python: each is refused with the same bounded sentence.
+        (
+            "\n[gates]\ncustom_timeout_seconds = -5\n",
+            r"^gates\.custom_timeout_seconds must be a positive integer$",
+        ),
+        (
+            "\n[gates]\ncustom_timeout_seconds = true\n",
+            r"^gates\.custom_timeout_seconds must be a positive integer$",
+        ),
+        (
+            "\n[gates]\ncustom_timeout_seconds = 1.5\n",
+            r"^gates\.custom_timeout_seconds must be a positive integer$",
+        ),
     ],
-    ids=["builtin-twice", "custom-not-a-table", "entry-not-a-table", "no-time-at-all"],
+    ids=[
+        "builtin-twice",
+        "custom-not-a-table",
+        "entry-not-a-table",
+        "no-time-at-all",
+        "negative-time",
+        "time-as-a-bool",
+        "fractional-time",
+    ],
 )
 def test_a_gates_table_in_the_wrong_shape_is_refused(tmp_path: Path, rest: str, match: str) -> None:
     # Each refusal is the only thing between its value and a line that reads it as the right
