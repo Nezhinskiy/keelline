@@ -4,10 +4,13 @@ matched without backtracking.
 A theme's `pattern` is repository-authored and was compiled with `re`, whose backtracking a
 pattern such as `(a+)+$` turns exponential on a name of forty characters: `keelline docs trail`,
 the `trail` gate and `keelline assess` then never finished. The language kept here is a subset of
-the regular expressions such files already hold, with the same meaning under `re.search`:
-literal text, `.` for any one character, `.*` for any run of them, `|` between alternatives,
-`^` and `$` at an alternative's two ends, and `\\` before a punctuation character to take it
-literally.
+the regular expressions such files already hold, with the meaning `re.search` gives them on a
+name of one line: literal text, `.` for any one character, `.*` for any run of them, `|`
+between alternatives, `^` and `$` at an alternative's two ends, and `\\` before a punctuation
+character to take it literally.
+A name holding a newline is compared without `re`'s newline rules — here `.` matches a newline
+and `$` is only the name's very end — and none reaches a theme: the listing refuses a document
+whose name is not a single line before it asks which theme the name is in.
 The shipped `.*` and patterns such as `widget` and `gadget|gizmo` mean what they meant; anything
 else — a group, a class, another quantifier — is refused rather than guessed at.
 
@@ -80,7 +83,8 @@ class ThemePattern:
     alternatives: tuple[_Alternative, ...]
 
     def search(self, name: str) -> bool:
-        """Whether `re.search` would find the pattern in `name`, for a pattern in the language."""
+        """Whether `re.search` would find the pattern in `name`, for a pattern in the language and
+        a name with no newline in it."""
         return any(alternative.matches(name) for alternative in self.alternatives)
 
 

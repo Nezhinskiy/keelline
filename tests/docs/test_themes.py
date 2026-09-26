@@ -49,6 +49,23 @@ def test_every_pattern_in_the_language_matches_as_re_search_does() -> None:
             assert compiled.search(name) == bool(expected.search(name)), (pattern, name)
 
 
+@pytest.mark.parametrize(
+    ("pattern", "name", "here"),
+    [("a$", "a\n", False), ("a.b", "a\nb", True), ("a.*b", "a\nb", True)],
+)
+def test_a_name_with_a_newline_is_compared_without_re_s_newline_rules(
+    pattern: str, name: str, here: bool
+) -> None:
+    # The module claims `re.search`'s meaning on a name of one line, and says what differs on
+    # a name holding a newline: `re`'s `$` also matches before a final newline, and its `.`
+    # never matches one; here `$` is the very end and `.` any character. No such name reaches
+    # a theme (the listing refuses it first, `test_trail`'s marker case), so these pin the
+    # stated difference rather than a behaviour anybody meets: a change to either rule has to
+    # change the sentence with it.
+    assert compile_theme(pattern).search(name) is here
+    assert bool(re.search(pattern, name)) is not here
+
+
 def test_the_patterns_shipped_and_documented_keep_their_meaning() -> None:
     # The template's `.*`, and the two shapes the documentation and the tests have always used.
     assert compile_theme(".*").search("2026-01-01-anything.md")
