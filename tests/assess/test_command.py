@@ -55,7 +55,7 @@ def test_a_symlinked_keelline_toml_is_refused_and_never_followed(
 ) -> None:
     # `keelline gate` refuses a committed symlink at `keelline.toml`, and `assess` read through
     # it: a link to `/dev/zero` ended the run by exhausting memory. Both read the file through
-    # the one reader that refuses a link. Mutation (declared): `assess` reading the file by
+    # the one reader that refuses a link. Mutation (declared): `load` reading the file by
     # following the link -> the run exits 0 and writes the inventory.
     root = smoke_repo(tmp_path)
     elsewhere = tmp_path / "elsewhere.toml"

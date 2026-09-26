@@ -15,7 +15,9 @@ Three things hold everywhere:
   and the two of `docs trail`'s keys that are not lists at all, `written` and `stale`.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
-  not a low-confidence result.
+  not a low-confidence result. Every command that reads `keelline.toml` refuses one that is a
+  symbolic link, with `2`, before reading anything through it: a link to `/dev/zero` would
+  otherwise be read until memory ran out.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
   command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
@@ -725,8 +727,7 @@ severities, remedies — and never a path the repository chose: one table with a
 Exit codes: `0` when no gate would fail, whatever the probes found, so `0` means every gate
 could enforce now; `1` when a gate would fail, enforced or not, or when `keelline.toml` is
 missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal, a
-`keelline.toml` that is a symlink among them: it is never followed, as `keelline gate` never
-follows it.
+`keelline.toml` that is a symlink among them: it is never followed, as no command follows it.
 
 ## `keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
 

@@ -7761,9 +7761,9 @@ reddens = [
 name = "a keelline.toml that is not UTF-8 crashes every command that loads it"
 file = "src/keelline/config/loader.py"
 before = """    except UnicodeDecodeError:
-        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None"""
 after = """    except KeyError:
-        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None"""
 reddens = [
   "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[keelline.toml, as every command loads it]",
   "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[bugs-check-keelline-toml]",
@@ -8144,15 +8144,9 @@ reddens = [
   "tests/assess/test_gate_command.py::test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off",
 ]
 
-# `keelline gate` refuses a symlinked `keelline.toml`, and `assess` and `init` read it through
-# the same reader: followed, a clone's link to `/dev/zero` ends the run by exhausting memory.
-[[mutation]]
-name = "assess follows a symlinked keelline.toml"
-file = "src/keelline/assess/assessment.py"
-before = "    text = read_document(root)"
-after = '    text = (root / CONFIG_FILE).read_text(encoding="utf-8") if (root / CONFIG_FILE).is_file() else None'
-reddens = ["tests/assess/test_command.py::test_a_symlinked_keelline_toml_is_refused_and_never_followed"]
-
+# `keelline gate` refuses a symlinked `keelline.toml`, and `init` reads it through the same
+# reader (`assess` reads it through `load`, whose entry is below): followed, a clone's link to
+# `/dev/zero` ends the run by exhausting memory.
 [[mutation]]
 name = "init follows a symlinked keelline.toml that carries its version"
 file = "src/keelline/project/init.py"
@@ -9627,4 +9621,28 @@ before = "    except UNPARSEABLE as exc:"
 after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[binding]",
+]
+
+# Two readers of `keelline.toml` followed two rules: `read_document` refuses a symlink, and
+# `load` read the file with a plain `read_text`, so `adopt`, `bugs check`, `plan check` and the
+# rest followed a clone's `keelline.toml -> /dev/zero` until memory ran out. `load` reads through
+# `read_document` now; the case's link points at a valid document, so a reader that follows it
+# loads and goes on, and a regression cannot hang the run.
+[[mutation]]
+name = "load follows a symlinked keelline.toml"
+file = "src/keelline/config/loader.py"
+before = """
+    text = read_document(root)
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
+"""
+after = """
+    text = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
+"""
+reddens = [
+  "tests/config/test_symlinked_document.py::test_load_refuses_a_symlinked_keelline_toml",
+  "tests/config/test_symlinked_document.py::test_every_command_family_refuses_a_symlinked_keelline_toml[bugs-check]",
+  "tests/assess/test_command.py::test_a_symlinked_keelline_toml_is_refused_and_never_followed",
 ]

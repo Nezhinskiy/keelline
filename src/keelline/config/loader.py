@@ -433,16 +433,15 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
 
     `None` asks for the sniff explicitly, and is what a future diagnostic would pass to say
     what *would* have been honoured.
+
+    **One reader of the file.** Through `read_document`, which goes through `contained()`: a
+    `keelline.toml` that is a symlink is refused by every command, as `keelline gate` has always
+    refused it. Read with a plain `read_text`, a clone's link to `/dev/zero` kept `adopt`, `bugs
+    check` and `plan check` reading until the machine ran out of memory.
     """
-    path = root / CONFIG_FILE
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise ConfigError(NOT_THERE.format(path=path)) from None
-    except UnicodeDecodeError:
-        raise ConfigError(NOT_UTF8.format(path=path)) from None
-    except OSError as exc:
-        raise ConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None
+    text = read_document(root)
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
     return loads(text, root, machine=machine, interactive=interactive)
 
 
