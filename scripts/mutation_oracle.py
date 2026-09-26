@@ -422,6 +422,14 @@ def _run(targets: tuple[str, ...], cwd: Path, *, cache: Path | None = None) -> O
     HEAD. `-B` and `PYTHONDONTWRITEBYTECODE` stay as defence in depth: with the stamp in place,
     bytecode a run wrote for mutated bytes could never be matched again, so dropping them would
     cost only cache churn. `cache` omitted is a fresh empty directory, as before.
+
+    **`--basetemp` inside this run's own scratch directory**, because several jobs run pytest at
+    once and pytest's default is one directory per user shared by all of them. Each pytest that
+    exits prunes the older numbered directories there, and a neighbour's is protected only by a
+    lock file it creates just after the directory — so a job's `tmp_path` can be removed under a
+    running test, which then fails for a reason that is not the mutation. Seen once before this
+    line existed: on a four-job run, one clean run of 1,138 failed with a test that passes alone
+    every time and does nothing but write under `tmp_path` — the shared state this removes.
     """
     with tempfile.TemporaryDirectory(prefix=f"{SCRATCH_PREFIX}cache-", dir=TEMPDIR) as scratch:
         report = Path(scratch) / "report.xml"
@@ -438,6 +446,7 @@ def _run(targets: tuple[str, ...], cwd: Path, *, cache: Path | None = None) -> O
                     "-p",
                     "no:cacheprovider",
                     "--no-header",
+                    f"--basetemp={Path(scratch) / 'basetemp'}",
                     f"--junit-xml={report}",
                     *targets,
                 ],

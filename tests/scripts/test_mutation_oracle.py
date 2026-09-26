@@ -553,6 +553,34 @@ def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
     assert all(root.resolve() not in tree.resolve().parents for tree in ran_from), ran_from
 
 
+def test_every_run_keeps_its_temporary_files_to_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Several jobs run pytest at once, and pytest's default `--basetemp` is one directory per
+    # user that every one of them prunes on exit; a neighbour's `tmp_path` is protected only by
+    # a lock created just after it. On a four-job run one clean run of 1,138 failed with a test
+    # that passes alone every time and only writes under `tmp_path`. Each run now gets a base
+    # of its own, under this module's scratch, which is what the probe checks.
+    #
+    # Mutation (declared): the `--basetemp` argument dropped -> the test's `tmp_path` lands in
+    # pytest's shared default and the containment assertion reddens.
+    module = oracle(root=tmp_path)
+    probe = tmp_path / "probe.txt"
+    monkeypatch.setenv("ORACLE_PROBE", str(probe))
+    (tmp_path / "test_where.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_where(tmp_path: Path) -> None:\n"
+        "    Path(os.environ['ORACLE_PROBE']).write_text(str(tmp_path), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    assert module._run(("test_where.py::test_where",), tmp_path).passed
+    where = Path(probe.read_text(encoding="utf-8")).resolve()
+    assert Path(module.TEMPDIR).resolve() in where.parents, where
+
+
 def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) -> None:
     # A job's pytest runs in a worker thread, where no signal reaches it. Without `_stop_runs`
     # a terminate waited for every in-flight entry to finish both of its runs before the

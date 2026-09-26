@@ -7351,3 +7351,15 @@ after = "                    pass\n"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout",
 ]
+
+# Jobs run pytest side by side, and pytest's default base directory is shared by all of them and
+# pruned by each on exit; a run of its own base is what keeps a neighbour from removing a test's
+# `tmp_path` mid-run.
+[[mutation]]
+name = "the jobs' pytest runs share pytest's default base directory again"
+file = "scripts/mutation_oracle.py"
+before = "                    f\"--basetemp={Path(scratch) / 'basetemp'}\",\n"
+after = ""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
+]
