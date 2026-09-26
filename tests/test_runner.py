@@ -17,6 +17,7 @@ from keelline.runner import (
     NETWORK_TIMEOUT_SECONDS,
     NOT_FOUND,
     TIMED_OUT,
+    Completed,
     _SubprocessRunner,
     subprocess_runner,
 )
@@ -118,3 +119,17 @@ def test_a_caller_that_asks_for_a_narrower_bound_gets_it(tmp_path: Path) -> None
     # Non-vacuous: the default is still the module's, and a runner asked for nothing in particular
     # is the one every other caller gets.
     assert _SubprocessRunner().timeout is None
+
+
+def test_output_that_is_not_text_is_read_with_replacement_characters_not_raised(
+    tmp_path: Path,
+) -> None:
+    # The tools this seam launches print what they like, and every caller reads their output as
+    # a message or matches it against a grammar — a tag listing, JSON, a verdict's exit code —
+    # and never as a path. Decoded strictly, one byte that was not text ended the command as
+    # `internal error: UnicodeDecodeError`: `test attribute` over a test run whose output
+    # quoted a latin-1 filename, measured. A byte the codec cannot read is U+FFFD instead, which
+    # every stream and every UTF-8 file this lane writes can hold. Mutation (declared): decode
+    # strictly again -> this reddens.
+    done = subprocess_runner().run(["sh", "-c", "printf 'caf\\351'; printf 'x\\351' >&2"], tmp_path)
+    assert done == Completed(0, "caf\ufffd", "x\ufffd")

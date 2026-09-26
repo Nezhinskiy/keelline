@@ -539,6 +539,9 @@ def _wrapper(context: Context) -> Row:
             cwd=context.root,
             capture_output=True,
             text=True,
+            # Read for an ASCII token and never quoted: the wrapper echoes what it was handed, a
+            # project directory in latin-1 bytes included, and strictly that raised and lost it.
+            errors="replace",
             check=False,
             timeout=WRAPPER_TIMEOUT_SECONDS,
             env=env,

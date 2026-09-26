@@ -1500,6 +1500,29 @@ def test_a_ledger_doctor_refuses_to_read_reddens_no_row_anywhere_in_the_report(
     ]
 
 
+def test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The row reads the wrapper's stderr for its refusal token, and the wrapper quotes what it
+    # was handed — a project directory in latin-1 bytes, on Linux. Decoded strictly, that stderr
+    # raised, and the row said only "this check could not run: UnicodeDecodeError" in place of
+    # the token that names the fault. A byte that is not text is U+FFFD; the token is ASCII.
+    # Mutation (declared): decode strictly again -> the token is lost and this reddens.
+    planted = tmp_path / "plugin-root"
+    (planted / "hooks").mkdir(parents=True)
+    wrapper = planted / "hooks" / "run-hook.sh"
+    wrapper.write_text(
+        "#!/bin/sh\nprintf 'keelline: KL_NO_LAUNCHER in /caf\\351; continuing open\\n' >&2\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setattr(checks, "_own_root", lambda: planted)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
+    assert check.status == "red"
+    assert "KL_NO_LAUNCHER" in check.detail
+
+
 def test_the_wrapper_probe_never_inherits_this_process_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

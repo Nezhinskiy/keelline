@@ -24,3 +24,9 @@ A worktree whose path holds a carriage return is listed by its own path: `setup`
 split git's listing wherever Python sees a line break, so `…/wt\rx` was taken for `…/wt`. A
 checkout path that ends in a space keeps it, and a name holding a Unicode line separator is
 counted once.
+
+The output of a program Keelline launches for its exit code or a message — the command `test
+attribute` runs, `gh`, `git clone`, `pre-commit`, `towncrier`, and the hook wrapper `doctor`
+probes — is read with a replacement character for a byte that is not text. One such byte ended
+`test attribute` as an internal error before it reached a verdict, and made `doctor`'s `wrapper`
+row say only that the check could not run instead of naming the wrapper's refusal.

@@ -1298,6 +1298,27 @@ reddens = [
   "tests/test_git_answers.py::test_the_commit_range_is_read_in_utf_8_whatever_git_is_told_to_print",
 ]
 
+# A launched program's output is a message or a grammar's input, never a path, so a byte that
+# is not text reads as U+FFFD. Strict, one such byte in a test run's output ended `test
+# attribute` as an internal error, and in the wrapper's stderr it lost `doctor` the refusal token.
+[[mutation]]
+name = "the runner decodes a launched program's output strictly again"
+file = "src/keelline/runner.py"
+before = '_DECODE_ERRORS = "replace"'
+after = '_DECODE_ERRORS = "strict"'
+reddens = [
+  "tests/test_runner.py::test_output_that_is_not_text_is_read_with_replacement_characters_not_raised",
+]
+
+[[mutation]]
+name = "doctor's wrapper row decodes the wrapper's stderr strictly again"
+file = "src/keelline/doctor/checks.py"
+before = '            errors="replace",'
+after = '            errors="strict",'
+reddens = [
+  "tests/doctor/test_checks.py::test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read",
+]
+
 # git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path
 # they are compared with uses the filesystem's. On macOS the filesystem is UTF-8 whatever the
 # locale, so under a latin-1 locale a non-ASCII name never matched: a gitignored document read

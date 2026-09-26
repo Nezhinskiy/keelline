@@ -73,6 +73,14 @@ _ENV_DROP = (
 # explaining it, which named the one caller it had stopped applying to -- and a false rationale on
 # a hardening is how a later lane concludes the hardening is unnecessary.
 _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
+# How a launched program's output is read: as text in the locale's codec, and a byte that codec
+# cannot read is U+FFFD rather than a `UnicodeDecodeError`. The rule rests on what every caller
+# does with the output — quotes it in a message, matches it against a grammar (`git ls-remote`'s
+# tag lines, `gh`'s JSON), or ignores it for an exit code — and on none of them comparing it
+# with a path or opening one, which is what `gitenv.git_run`'s lossless reading is for. Strict,
+# one byte ended the command as an internal error: `test attribute` over a test run whose output
+# quoted a latin-1 filename, measured. U+FFFD prints, and a UTF-8 file can hold it.
+_DECODE_ERRORS = "replace"
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,8 @@ class _SubprocessRunner:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                # See `_DECODE_ERRORS`: output is a message or a grammar's input, never a path.
+                errors=_DECODE_ERRORS,
                 check=False,
                 timeout=bound,
                 env=env,
