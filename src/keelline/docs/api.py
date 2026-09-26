@@ -30,44 +30,29 @@ The five besides `trail_target` and the three gate functions are the four checks
 `Finding` and `labels` are **not** here: they are `keelline.findings`', and a consumer imports
 them from there.
 
-**Trimmed, in the wave-3 refactor pass: the trail half, ten names.** `TRAIL_MARKER`,
-`STATUS_HEADING`, `END_MARKER`, `TRAIL_FILE`, `Trail`, `read_trail`, `trail_path`,
-`render_listing`, `rebuild` and `undeclared_new_documents` were published in one sentence —
-"`templates` writes the roadmap skeleton and the first `trail.toml`, so it needs the markers and
-the file name and the regeneration path". `templates` does not exist;
-`docs/plans/2026-09-17-wave-3-install-path.md` says the lane that would have shipped one "is out
-of scope", and no document anywhere says which of these names it would reach for. That is the
-ruling `overlay/api.py` made about a template tree published against "the release lane will need
-it", and `guards/api.py` made again over twenty-nine names published against `assess`: a lane
-that does not exist yet grows this list when it arrives, in a commit that says which lane and
-why. Each of the ten is still where it was written and is reachable from `keelline.docs.trail`,
-which is what `docs/commands.py` and this area's own tests already do; what went is the claim
-that another area reads it.
+**The trail half is not here.** The markers, the file name, `Trail`, `read_trail`,
+`trail_path`, `render_listing`, `rebuild` and `undeclared_new_documents` stay in
+`keelline.docs.trail`, which `docs/commands.py` and this area's own tests reach directly: no
+other area reads them, and a lane that needs one grows this list, in a commit that says which
+lane and why.
 
-**What is left is a smaller version of the same question, and it is the owner's.** Of the five
-names above, `lint` has one importer, `keelline.assess.state`, and the other four none; they
-survive this pass on an argument about shape — one call per check rather than the machinery
-behind it — and on `tests/test_surfaces.py`'s floor. Whether this area publishes at all is a
-structural decision, not a refactor's; `ledger/api.py` records the same finding about its own
-list.
+Of the five names above, `lint` has one importer, `keelline.assess.state`, and the other four
+none; they stay on an argument about shape — one call per check rather than the machinery behind
+it — and on `tests/test_surfaces.py`'s floor. Whether this area publishes at all is a structural
+decision and the owner's; `ledger/api.py` records the same finding about its own list.
 
-**`trail_path` returns, in wave 4.** The lane the wave-3 trim named as absent now exists: the
-`project` area ships `trail.toml` beside the roadmap template and must put it where `docs
-trail` reads it. The other nine trimmed names have no consumer yet and stay where they were
-written, reachable from `keelline.docs.trail`.
-
-**And gives way to `trail_target`, in wave 5.** `trail_path` contains its answer against the
-root, so the project area asking where the trail goes under the *preset's* `[paths]`, a place
-this configuration may never use, was refused whenever that place passed through a symlink. What
-the project area needs is the location, and the engine contains every target it plans;
-`trail_target` is that location, with no disk access, and `trail_path` stays in
+**`trail_target`, for the `project` area**, which ships `trail.toml` beside the roadmap template
+and must put it where `docs trail` reads it, under the *preset's* `[paths]`, a place this
+configuration may never use. It is the location with no disk access, and the engine contains
+every target it plans: `trail_path` contains its answer against the root, so asked there it
+would refuse whenever that place passed through a symlink, and it stays in
 `keelline.docs.trail` for this area's own commands.
 
-**And by `declared_state`, for `keelline adopt begin`**, which refuses an adoption plan whose
-trail row declares no state: a first listing would record it as `delivered` without a word, and
-the row's spelling and the trail's reading are this area's.
+**`declared_state`, for `keelline adopt begin`**, which refuses an adoption plan whose trail row
+declares no state: a first listing would record it as `delivered` without a word, and the row's
+spelling and the trail's reading are this area's.
 
-**And grows by three gate functions, for `keelline assess`.** `docs_gate`, `plan_gate` and
+**Three gate functions, for `keelline assess`.** `docs_gate`, `plan_gate` and
 `trail_gate` are each `(root, config, base) -> list[Finding]`, one gate's whole composition.
 `keelline assess` runs them as values, and this area's own commands answer with the same
 functions (`docs check` with no flag, `docs trail --check`) or with the one call a function

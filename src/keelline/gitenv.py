@@ -136,20 +136,19 @@ def git_run(
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
     common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot
-    decode — a latin-1 filename on Linux. Strict decoding raised `UnicodeDecodeError` out of
-    every caller as an internal error, and it did so for stderr too, which nobody reads; reading
-    such output as no answer instead threw a real answer away, and a caller that took "no
-    answer" for "nothing" then passed what it should have refused. Escaped, and in the
+    decode — a latin-1 filename on Linux. Strict decoding would raise `UnicodeDecodeError` out
+    of every caller as an internal error, and reading such output as no answer would throw a
+    real answer away, which a caller that takes "no answer" for "nothing" turns into a pass of
+    what it should refuse. Escaped, and in the
     filesystem's codec (`pipe_encoding`), a byte comes back as the same `str` `os.listdir` and
     `sys.argv` give for it, so an answer is compared with, and opens, the path it names, and a
     name read off the disk goes back to git on `stdin` as its own bytes.
 
     **In bytes, and decoded here rather than by `subprocess`.** Text mode translates line endings
-    on the way in: each `\\r\\n` and each lone `\\r` in git's answer came back as `\\n`, so a name
-    holding a carriage return, printed raw by every `-z` query, came back as a different name —
-    a gitignored plan so named was read as not ignored and went into the committed roadmap.
-    Nothing is translated now, either way, and git's own stderr, which nobody reads, is never
-    decoded at all.
+    on the way in: each `\\r\\n` and each lone `\\r` in git's answer would come back as `\\n`, so
+    a name holding a carriage return, printed raw by every `-z` query, would come back as a
+    different name, and a gitignored plan so named would read as not ignored. Nothing is
+    translated, either way, and git's own stderr, which nobody reads, is never decoded.
 
     The answer is lossless rather than a placeholder, so every caller still decides about the
     path that is really there. What it does not make safe is writing that `str` into a UTF-8

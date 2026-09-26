@@ -21,7 +21,8 @@ does not enforce, and lower a budget; the preset's name, the profile, the harnes
 project's name are free; an upgrade moves the recorded version to exactly the running Keelline and
 the workflow pin only to a released commit. Any other change is refused while the base enforces
 any gate, and lands by a direct push to the base branch. A refused change runs under the base's
-configuration, and a gate either side enforces enforces.
+configuration, and a gate either side enforces enforces. While the base carries no
+`keelline.toml` at all, which is every project's first pull request, the tree's copy decides.
 
 Both copies of `keelline.toml` are read as UTF-8, whatever the locale: a base copy that is not
 UTF-8 text fails the run (exit 1) in the words the tree's own copy fails in, and is never

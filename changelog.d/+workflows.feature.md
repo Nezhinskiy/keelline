@@ -1,23 +1,24 @@
 Your project's CI can now call Keelline's gates as one reusable workflow, pinned at a commit
-sha. A `uses:` line in your own workflow file runs `keelline gate` against your checkout, in one
-job, with no resolver and no build backend. Every gate runs whatever the one before it said, so
-fixing findings does not cost a round trip each.
+sha. A `uses:` line in your own workflow file runs `keelline gate` against your checkout in one
+`gates` job, with no resolver and no build backend, in two steps: the configuration check and
+the built-in gates first, then your own gates from `[gates.custom]`, only once the first step
+passed, so no command your repository wrote runs where the verdict is decided. Both start Python
+as `python3 -P -s`, so neither a module in the checkout nor a `.pth` file in a user site
+directory loads in their process. Within a step every gate runs whatever the one before it said,
+so fixing findings does not cost a round trip each, and a custom gate runs on the runner image
+with nothing of your project installed, so it installs its own toolchain.
 
-What the gates judge you by is read from your base branch, never from the branch under review.
-The workflow resolves the base branch to one commit and reads its `keelline.toml`, and your
-tree's copy may tighten it — enforce more gates, add a gate, lower a budget — but not loosen it:
-a change the rule does not admit is refused while the base enforces any gate. Each gate is then
-advisory or enforcing on its own, as that configuration says: an advisory gate's findings are
-warning annotations and the job stays green, and an enforcing gate's failure fails the job. On a
-pull request a `base:` input that disagrees with the base the platform reports is refused rather
-than preferred. What the tree under review cannot do is turn off the gates it is about to face;
-what your `.github/` still needs is the ordinary protection, because the `uses:` line and its
-`with:` block live in a file a pull request can edit. While the base carries no `keelline.toml`
-at all (which is every project's first pull request), your tree's copy decides. The Keelline
-that runs is the commit your `uses:` line pins, read off the platform's own record of which
-reusable workflow is executing and asserted against `git rev-parse HEAD` before a gate runs, so
-a ref that resolved to something else fails the run instead of quietly checking out a default
-branch.
+The base is resolved once to a commit from `refs/remotes/origin/<base>`, so a tag named like the
+branch cannot stand in for it; on a pull request a `base:` input that disagrees with the base the
+platform reports is refused rather than preferred, and a project root reached through a symbolic
+link is refused. The new `only` input runs a chosen few, for a caller that wants one check row
+per gate from a matrix of its own; the configuration check runs whatever it names. What the tree
+under review cannot do is turn off the gates it is about to face; what your `.github/` still
+needs is the ordinary protection, because the `uses:` line and its `with:` block live in a file
+a pull request can edit. The Keelline that runs is the commit your `uses:` line pins, read off
+the platform's own record of which reusable workflow is executing and asserted against `git
+rev-parse HEAD` before a gate runs, so a ref that resolved to something else fails the run
+instead of quietly checking out a default branch.
 
 Keelline now proves its own install the way you would: a smoke workflow installs this plugin
 from the checkout with the real harness CLI under a temporary configuration directory on

@@ -46,8 +46,8 @@ PATH_VALUE = re.compile(
 )
 # The grammar an unknown *name* in a `keelline.toml` must match before a refusal may print it —
 # a top-level section's, and a key's inside a known table. Both are repository-authored the same
-# way a `[paths]` value is, and both of the loader's refusals echoed them back whole, newlines
-# and all (P10, fix round 1, finding 2; the key half, round 2). A TOML key is arbitrary quoted
+# way a `[paths]` value is, and a refusal that echoed one back would print it whole, newlines
+# and all. A TOML key is arbitrary quoted
 # text, so the two are one grammar and not two: every name Keelline itself answers to — every
 # schema field, every `Budgets.NAMES` entry, every section — is lowercase words joined by
 # underscores, and anything else is counted rather than quoted.

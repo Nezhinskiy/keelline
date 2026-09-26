@@ -2275,12 +2275,10 @@ after 15 minutes; a custom gate that needs longer belongs in a workflow of your 
 interpreter `python-version` names, and nothing of your project's: a custom gate that needs
 your toolchain installs it in its own command, for example `run = ["sh", "-c", "pip install -e
 .[test] && pytest -q"]`, and that installation is billed in the same job. Why it is a step of
-its own: a custom gate executes files the pull request can change — a `conftest.py`, a
-`Makefile`, a script — with the runner's privileges, which on a GitHub-hosted runner include
-passwordless `sudo`. In the process that decides the verdict those files could rewrite it; in a
-later step, only its own results are left to them. What a custom gate guarantees is therefore
-"this command runs and must exit 0": the files it runs are the change under review, as a pull
-request can always edit its own tests. To pin them, put them under CODEOWNERS.
+its own: a custom gate executes files the pull request can change with the runner's privileges,
+which on a GitHub-hosted runner include passwordless `sudo`. In the process that decides the
+verdict those files could rewrite it; in a later step, only its own results are left to them.
+What it guarantees, and how to pin those files, is in the `keelline gate` section.
 
 **One row per gate, if you want one.** Each leg of a matrix in your own caller is its own check
 row and its own billed job:
@@ -2311,24 +2309,14 @@ rewrite what the second executes. A leg per such gate gives each a checkout no o
 touched.
 
 **Where the configuration comes from.** `keelline gate` reads `keelline.toml` from the base
-commit and compares the tree's copy with it key by key: a change that makes enforcement
-stricter is admitted, and any other change is refused while anything enforces (the
-`keelline gate` section has the table, and says how an owner lands a change it refuses). While
-the base carries no `keelline.toml` at all, which is every project's first pull request, the
-tree's copy decides. Each anchor, and what keeps it out of the pull request's reach:
-- the base's **name** is the pull request's base as the platform reports it, held against the
-  caller's `branches:` filter and its literal `base:`;
-- the base's **commit** is `refs/remotes/origin/<base>` in the caller's own checkout, resolved
-  once to a full sha, so no tag named like the branch can stand in for it, and every gate reads
-  the same commit;
-- the base's **copy** of `keelline.toml` is read at `path:` as written, and a root reached
-  through a symbolic link is refused, so a change cannot move the project out from under the
-  path its base copy is read at;
-- the **Keelline that runs** is the one the caller's `uses:` line pins, and an upgrade is
-  admitted only to that commit, which must be a released tag's;
-- the **verdict** is the exit status of the first step, which runs no command your repository
-  wrote and starts Python with `-P -s`, so no module in your checkout, and no `.pth` file in a
-  user site directory, can stand in for Keelline's own.
+commit and judges the tree's copy against it key by key; the `keelline gate` section has the
+table, what each input rests on, and how an owner lands a change it refuses. What this workflow
+adds: the base's **name** is the pull request's base as the platform reports it, held against
+the caller's `branches:` filter and its literal `base:`; its **commit** is
+`refs/remotes/origin/<base>` in the caller's own checkout, resolved once to a full sha that
+every gate reads; its **copy** is read at `path:`; the **Keelline that runs** is the one the
+caller's `uses:` line pins, whose commit the judging step passes as `--workflow-sha`; and the
+**verdict** is the exit status of the first step.
 
 On a pull request, the tree is the merge commit the platform built from the base as it was when
 the event fired, while the base commit is read when the job checks out. A base that tightened
@@ -2364,10 +2352,8 @@ gates still run and still report but cannot stop a pull request that edits its o
   would move that anchor for every caller.
 
 Whoever may bypass branch protection holds the gate: "Do not allow bypassing the above settings"
-decides who that is. A change the gate refuses lands by a direct push to the base branch, which
-is how an owner makes one (the `keelline gate` section says which keys need it). If an agent
-works with your credentials, you can also protect the base branch so that only you can push to
-it directly; Keelline suggests it and does not require it.
+decides who that is, and a change the gate refuses lands by the direct push the `keelline gate`
+section describes.
 
 **Advisory or enforcing, per gate.** A gate is advisory until it enforces: its findings are
 warning annotations and the job stays green. An enforcing gate's findings are errors and fail
@@ -2375,10 +2361,9 @@ the job. What enforces is what the base's `[keelline] enforced` names, with any 
 itself adds there, and every configured gate once `[keelline] state` is `installed`.
 `keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
 before it said, so a project fixing its documents does not pay a round trip per finding. A
-custom gate is a command from `keelline.toml`, and runs in the second step only with the
-command the base gives it: a pull request that adds one, or re-commands one, has it run from the
-first pull request after it lands. The job's token is `contents: read` and neither checkout keeps
-it, and the verdict was decided before any command started.
+custom gate runs in the second step, and only with the command the base gives it ("Which custom
+gates run" under `keelline gate`). The job's token is `contents: read` and neither checkout
+keeps it, and the verdict was decided before any command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
 `@dev` are a moving Keelline running against your repository. `keelline init` writes that pin,

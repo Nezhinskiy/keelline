@@ -24,20 +24,12 @@ and one gate:
 A lane that needs something absent from this list grows it deliberately, in a commit that says
 which lane and why.
 
-**Trimmed, in the first half of the wave-3 refactor pass.** Twenty-nine names went, and every
-one of them was published against `assess`, which did not exist then: the commit rules
-(`offending_lines`, `check_range`, `strip_message`, `Report`, `Violation`, `Offence`,
-`ATTRIBUTION_LABELS`), the hygiene and audit surface (`inspect`, `Hygiene`, `red_exit`,
-`Finding`, `SHAPES`, `import_roots`, `scan_paths`, `suite_files`), the scanner any later guard
-would be built on (`Heredoc`, `tokenize`, `segments`, `operator_pieces`, `command_words`), the
-failure attribution (`attribute`, `Attribution`, `VERDICTS`) and the background-cleanup judge
-(`judge`, `Verdict`, `ALLOW`, `LEAK_REASON`, `SLEEP_REASON`, `RESTORE_HINT`, the last three
-against "hooks-core's smoke assertions", which import none of them). Each is still where it was
-written and is reachable by its own module; what went is the claim that another area reads it.
-`overlay/api.py` made the same ruling about a template tree published against "the release lane
-will need it": that lane grows the list when it arrives, which is what this docstring asks of
-every other lane. When `keelline assess` arrived it needed one name, `commit_gate`, and none of
-the twenty-nine.
+**What is not here.** The commit rules (`offending_lines`, `check_range`, `strip_message` and
+their records), the hygiene and audit surface, the scanner a guard is built on, the failure
+attribution and the background-cleanup judge stay in the modules that define them, each
+reachable there: no other area imports them, and a name published for a consumer that does not
+exist is a claim nothing checks. `assess` needs one name from this area, `commit_gate`, and it is
+above.
 """
 
 from keelline.guards.commit import commit_gate
