@@ -47,8 +47,9 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
 
    ```bash
    git switch main && git pull
-   uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
+   uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
    uv run ruff check . && uv run ruff format --check . && uv run mypy
+   uv run python scripts/mutation_oracle.py
    uv run keelline release check
    claude plugin validate --strict .claude-plugin/plugin.json
    claude plugin validate --strict .claude-plugin/marketplace.json
