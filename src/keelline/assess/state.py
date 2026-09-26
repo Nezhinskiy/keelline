@@ -31,7 +31,7 @@ from pathlib import Path
 from keelline.assess.gates import GateContext, run_gates
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
-from keelline.config.owned import OwnedKeyError, Value, rewrite
+from keelline.config.owned import OwnedKeyError, rewrite
 from keelline.config.schema import CONFIG_CHECK, Config
 from keelline.docs.api import lint
 from keelline.errors import Failure, Refusal
@@ -54,6 +54,21 @@ UNEDITABLE = (
     "gate ran and nothing was written; write each on one line as it stands now, `state = {state}` "
     "and `enforced = {enforced}`, and run the command again"
 )
+UNWRITTEN = (
+    "[keelline] state or enforced is written in a shape Keelline does not rewrite in place, so "
+    "nothing was written; set both by hand, in one edit, to `state = {state}` and "
+    "`enforced = {enforced}`"
+)
+
+
+def _literals(state: str, enforced: Sequence[str]) -> dict[str, str]:
+    """`state` and `enforced` as the one-line values a remedy names.
+
+    Plain basic strings: a member of the lifecycle and gate names the loader has held to a
+    grammar, so no character in them needs escaping.
+    """
+    listed = ", ".join(f'"{name}"' for name in enforced)
+    return {"state": f'"{state}"', "enforced": f"[{listed}]"}
 
 
 @dataclass(frozen=True)
@@ -108,8 +123,22 @@ def _refuse_an_uneditable_document(root: Path, config: Config) -> None:
     try:
         rewrite(text, {("keelline", "state"): other, ("keelline", "enforced"): (CONFIG_CHECK,)})
     except OwnedKeyError:
-        listed = ", ".join(f'"{name}"' for name in config.keelline.enforced)
-        raise OwnedKeyError(UNEDITABLE.format(state=f'"{state}"', enforced=f"[{listed}]")) from None
+        values = _literals(state, config.keelline.enforced)
+        raise OwnedKeyError(UNEDITABLE.format(**values)) from None
+
+
+def _write(root: Path, state: str, enforced: tuple[str, ...]) -> None:
+    """The state machine's two-key write, whose refusal names both keys at once.
+
+    The two keys state one fact, and the editor edits them one at a time, so its own refusal
+    names only the key it failed on: `enforced = []` alone, which is right only beside
+    `installed`, and beside `adopting` enforces nothing. The values named are the ones this
+    write earned, so following the remedy is the transition itself.
+    """
+    try:
+        rewrite_owned(root, {("keelline", "state"): state, ("keelline", "enforced"): enforced})
+    except OwnedKeyError:
+        raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None
 
 
 def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> Transition:
@@ -132,7 +161,7 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
             # gate was earned, and completing the state would install a project that has none.
             raise Refusal(NO_GATE)
         # Every configured gate enforces and the state never said so: complete it.
-        rewrite_owned(root, {("keelline", "state"): "installed", ("keelline", "enforced"): ()})
+        _write(root, "installed", ())
         return Transition(state, "installed")
     _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
@@ -145,6 +174,6 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
     enforced = enforcing | set(promoted)
     installed = enforced >= set(configured)
     after = "installed" if installed else "adopting"
-    listed: Value = () if installed else tuple(n for n in configured if n in enforced)
-    rewrite_owned(root, {("keelline", "state"): after, ("keelline", "enforced"): listed})
+    listed = () if installed else tuple(n for n in configured if n in enforced)
+    _write(root, after, listed)
     return Transition(state, after, promoted, failing, unanswered)

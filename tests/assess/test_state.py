@@ -283,6 +283,36 @@ def test_an_initialised_project_with_no_gate_is_refused_rather_than_installed(
     assert _document(root) == before
 
 
+def test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be(
+    tmp_path: Path,
+) -> None:
+    # An adopting project whose every gate enforces, listed over several lines. The editor
+    # sets `enforced` first and refused it naming `enforced = []` alone; followed beside
+    # `state = "adopting"`, that loads with nothing enforcing, every earned gate demoted. The
+    # remedy names both keys as the completion writes them, and following it installs.
+    # Mutation (declared): the editor's own refusal re-raised -> the message lacks the state.
+    root, base = _project(tmp_path)
+    multiline = "".join(f'  "{name}",\n' for name in BUILTIN_GATES)
+    _set(root, 'state = "initialised"\n', f'state = "adopting"\nenforced = [\n{multiline}]\n')
+    before = _document(root)
+    with pytest.raises(OwnedKeyError) as refused:
+        promote(root, _config(root, tmp_path), [], base=base)
+    message = str(refused.value)
+    assert '`state = "installed"`' in message
+    assert "`enforced = []`" in message
+    assert _document(root) == before
+    (root / CONFIG_FILE).write_text(
+        before.replace(
+            f'state = "adopting"\nenforced = [\n{multiline}]\n',
+            'state = "installed"\nenforced = []\n',
+        ),
+        encoding="utf-8",
+    )
+    loaded = _config(root, tmp_path).keelline
+    assert loaded.state == "installed"
+    assert loaded.enforcing == frozenset(BUILTIN_GATES)
+
+
 def test_a_named_gate_already_enforcing_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
     # In-comment, not declared: this refusal guards no write the all-or-nothing rule does not
     # already hold; dropping it re-runs `docs` and writes the same list plus `bugs`.

@@ -8877,8 +8877,8 @@ reddens = [
 [[mutation]]
 name = "a promotion writes the state and not the list"
 file = "src/keelline/assess/state.py"
-before = '    rewrite_owned(root, {("keelline", "state"): after, ("keelline", "enforced"): listed})'
-after = '    rewrite_owned(root, {("keelline", "state"): after})'
+before = '        rewrite_owned(root, {("keelline", "state"): state, ("keelline", "enforced"): enforced})'
+after = '        rewrite_owned(root, {("keelline", "state"): state})'
 reddens = [
   "tests/assess/test_state.py::test_a_promotion_is_what_the_gate_enforces_next",
 ]
@@ -8900,8 +8900,8 @@ reddens = [
 [[mutation]]
 name = "the uneditable-document refusal names the trial's made-up values as the remedy"
 file = "src/keelline/assess/state.py"
-before = "    except OwnedKeyError:"
-after = "    except ValueError:"
+before = "        raise OwnedKeyError(UNEDITABLE.format(**values)) from None"
+after = "        raise"
 reddens = [
   "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
   "tests/assess/test_state.py::test_an_uneditable_document_s_remedy_names_the_list_as_it_stands",
@@ -8954,4 +8954,15 @@ before = "    if not resolved.is_file() or not resolved.is_relative_to(root):"
 after = "    if False:"
 reddens = [
   "tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent",
+]
+
+# The two keys state one fact and the editor edits them one at a time, so its own refusal names
+# only the key it failed on: `enforced = []` alone, which beside `adopting` enforces nothing.
+[[mutation]]
+name = "the state machine's write refusal names one key of the two it sets"
+file = "src/keelline/assess/state.py"
+before = "        raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None"
+after = "        raise"
+reddens = [
+  "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
 ]
