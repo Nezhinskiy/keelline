@@ -535,6 +535,10 @@ def test_a_base_with_no_copy_at_this_path_lets_the_tree_decide(tmp_path: Path) -
     [
         pytest.param(BASE + "\n[bogus]\nx = 1\n", id="unknown-section"),
         pytest.param(BASE + "\n[[broken\n", id="not-toml"),
+        # The preset loader's own `Failure`, which the base's wrapper let through unnamed.
+        pytest.param(
+            BASE.replace("[project]", 'preset = "nosuch"\n\n[project]'), id="unshipped-preset"
+        ),
     ],
 )
 def test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy(

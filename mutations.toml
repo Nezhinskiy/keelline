@@ -8182,10 +8182,10 @@ reddens = [
 [[mutation]]
 name = "any error loading the base's copy is read as the base having none"
 file = "src/keelline/assess/rule.py"
-before = "    except ConfigError as exc:"
+before = "    except Failure as exc:"
 after = """    except Exception:
         return ConfigVerdict(None, (), tree, tree.keelline.enforcing)
-    except ConfigError as exc:"""
+    except Failure as exc:"""
 reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
 
 [[mutation]]
@@ -9656,3 +9656,16 @@ file = "src/keelline/assess/assessment.py"
 before = "    skipped = tuple(name for name in config.gate_names if builtin and name in custom)"
 after = "    skipped = tuple(name for name in config.gate_names if False and name in custom)"
 reddens = ["tests/assess/test_command.py::test_builtin_runs_no_custom_gate_and_says_which_it_left_out"]
+
+# A base naming a preset this Keelline does not ship fails in the preset loader, with a plain
+# `Failure` the base-arm wrapper let through: the run failed, but the message never said the
+# fault was the base's copy, which only a direct push to the base branch can fix.
+[[mutation]]
+name = "a base naming an unshipped preset fails without saying it is the base's copy"
+file = "src/keelline/assess/rule.py"
+before = "    except Failure as exc:"
+after = "    except tuple(Failure.__subclasses__()) as exc:"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unshipped-preset]",
+]
+

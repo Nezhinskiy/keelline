@@ -53,7 +53,7 @@ from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
-from keelline.config.loader import CONFIG_FILE, NOT_UTF8, ConfigError, loads
+from keelline.config.loader import CONFIG_FILE, NOT_UTF8, loads
 from keelline.config.schema import STATES, Budgets, Config, CustomGate
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
@@ -379,10 +379,11 @@ def judge(
         return ConfigVerdict(None, (), tree, tree.keelline.enforcing)
     try:
         base = loads(base_text, root, machine=machine, interactive=False, label=BASE_COPY)
-    except ConfigError as exc:
+    except Failure as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has
-        # already answered for it.
+        # already answered for it. `Failure` and not `ConfigError` alone: a preset this Keelline
+        # does not ship is the preset loader's plain `Failure`, and still the base's copy.
         raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None
     except Refusal as exc:
         # A symlink the change planted on a path only the base's `[paths]` names: the run fails
