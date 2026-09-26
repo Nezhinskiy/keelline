@@ -706,6 +706,9 @@ BRANCH_NAMES = (
     "a/..",
     ".a",
     "-a",
+    "HEAD",
+    "a/HEAD",
+    "HEADS",
 )
 
 
@@ -715,15 +718,16 @@ def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: 
     # `[ci] gate_branch`, `--base-branch` and a detected `origin/HEAD` are all held to
     # `GATE_BRANCH` before a rendered caller names the branch; a name git itself refuses as a
     # branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a component starting
-    # with `.`) is a caller that can never run, so the grammar refuses it too, and `release/2.0`
-    # stays legal. Mutations (oracle): "the gate branch grammar takes a '..' git refuses" and
-    # "the gate branch grammar takes a '.lock' component git refuses" -> the `a..b` and `.lock`
-    # cases redden.
+    # with `.`, the name `HEAD`) is a caller that can never run, so the grammar refuses it too,
+    # and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate branch grammar
+    # takes a '..' git refuses", "the gate branch grammar takes a '.lock' component git refuses"
+    # and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`, `.lock` and
+    # `HEAD` cases redden.
     accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
     assert bool(GATE_BRANCH.match(name)) == accepted, name
 
 
-@pytest.mark.parametrize("name", ["a..b", "a//b", "a/", "a.lock", "a/.b"])
+@pytest.mark.parametrize("name", ["a..b", "a//b", "a/", "a.lock", "a/.b", "HEAD"])
 def test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow(name: str) -> None:
     # The hand-written `[ci] gate_branch` half of the same rule: the artifact is skipped with the
     # fixed reason, and the value is never echoed.

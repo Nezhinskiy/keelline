@@ -950,11 +950,11 @@ Each answer flag replaces one default and writes one key:
 The parser refuses a value outside its grammar or its choices (`2`), and it refuses a name or
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
 letters, digits, `.`, `_`, `-` and `/` and led by a letter or digit: no `..`, `//`, component
-starting with `.` or ending in `.lock`, and no trailing `/` or `.`. The same grammar holds
-`[ci] gate_branch` and a detected `origin/HEAD`. Answer flags reach only a `keelline.toml` this
-run creates. Over one the repository already has, they are refused (`2`), because that file
-is the answer. Passing a default as its flag loads as the same configuration as not passing
-it.
+starting with `.` or ending in `.lock`, no trailing `/` or `.`, and not `HEAD`. The same
+grammar holds `[ci] gate_branch` and a detected `origin/HEAD`. Answer flags reach only a
+`keelline.toml` this run creates. Over one the repository already has, they are refused
+(`2`), because that file is the answer. Passing a default as its flag loads as the same
+configuration as not passing it.
 
 When nothing answers, `init` detects:
 - the project's name from `origin`'s last path segment, with `.git` stripped and lower-cased,

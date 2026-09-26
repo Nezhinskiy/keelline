@@ -9087,8 +9087,8 @@ reddens = [
 [[mutation]]
 name = "the gate branch grammar takes a '..' git refuses"
 file = "src/keelline/project/templates.py"
-before = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
-after = '''    r"^(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
 reddens = [
   "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
   "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
@@ -9098,9 +9098,20 @@ reddens = [
 [[mutation]]
 name = "the gate branch grammar takes a '.lock' component git refuses"
 file = "src/keelline/project/templates.py"
-before = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
-after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)"'''
 reddens = [
   "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
   "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes the name HEAD git refuses"
+file = "src/keelline/project/templates.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
 ]

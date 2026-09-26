@@ -95,11 +95,13 @@ IGNORE_ARTIFACT = "gitignore"
 # quoting alone would still admit a newline, which closes the string and writes further keys.
 # Inside that character set it refuses what git's own branch-name rules refuse
 # (`git check-ref-format --branch`), so a caller never names a branch no repository can have:
-# `..`, `//`, a component starting with `.`, a component ending in `.lock`, and a trailing `/` or
-# `.`. `@{` and `-` at the start are outside the set already. The lookaheads end on `$`, which
-# ECMA-262 reads as the end too, so `init --questions` can hand the pattern to a JSON Schema client.
+# `..`, `//`, a component starting with `.`, a component ending in `.lock`, a trailing `/` or
+# `.`, and the name `HEAD` itself. `@{` and `-` at the start are outside the set already. The
+# lookaheads end on `$`, which ECMA-262 reads as the end too, so `init --questions` can hand the
+# pattern to a JSON Schema client.
 GATE_BRANCH = re.compile(
-    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"
+    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"
+    r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z"
 )
 # The grammar `[ci] ref` must match before it is written into the rendered workflow's `uses:`
 # line, for the same reason `GATE_BRANCH` exists and with the same provenance: the value is

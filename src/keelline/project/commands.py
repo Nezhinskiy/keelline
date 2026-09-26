@@ -51,8 +51,8 @@ if TYPE_CHECKING:
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
 # `skip_modified`, and given at most a missing `[keelline] version` — so the file goes on saying
-# `reusable` and the flag is spent
-# on this run alone. Saying "sets [ci] mode" flat sent an operator looking for a key nothing wrote.
+# `reusable` and the flag is spent on this run alone. Saying "sets [ci] mode" flat sent an
+# operator looking for a key nothing wrote.
 NO_CI_HELP = (
     'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none" in the document '
     "this run builds, which on a repository that already has a keelline.toml is this run only"
@@ -407,7 +407,8 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     name_rule = f"not one lowercase path segment matching {PROJECT_NAME.pattern}"
     branch_rule = (
         "not a plain branch name: letters, digits, '.', '_', '-' and '/', led by a letter or "
-        "digit, and one git accepts (no '..', '//', '.lock' component, or trailing '/' or '.')"
+        "digit, and one git accepts (no '..' or '//', no component starting with '.' or ending "
+        "in '.lock', no trailing '/' or '.', and not HEAD)"
     )
     answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
     answers.add_argument(
