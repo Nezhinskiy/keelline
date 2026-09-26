@@ -11,6 +11,7 @@ unimplemented work has shipped.
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass
@@ -70,11 +71,12 @@ _UNINTERPOLABLE = (
 # `{row!r}` is repository-authored text in a message, for `ledger.index.FOREIGN_CONTENT`'s
 # reason: this reaches the terminal of the person who ran the command against their own
 # repository, and naming the file is the whole of what makes "rename it" actionable. `!r` keeps
-# a name holding a newline on one line.
+# a name holding a newline or a carriage return on one line, and spells a byte that is not UTF-8
+# as its escape.
 _UNLISTABLE = (
     "{row!r} cannot be written into the {roadmap} listing: a document's name becomes both the "
-    "row and the link verbatim, so it must be a single line and must carry neither `{marker}` "
-    "nor the end-of-trail comment — rename the file"
+    "row and the link verbatim, so it must be a single line of UTF-8 text and must carry neither "
+    "`{marker}` nor the end-of-trail comment — rename the file"
 )
 _PREAMBLE = (
     "\n\nEvery design and plan document, grouped by theme and annotated with its\n"
@@ -105,8 +107,30 @@ def trail_path(root: Path, config: Config) -> Path:
 
 
 def _interpolable(value: str) -> bool:
-    """Whether a repository-authored value may be written into the listing unchanged."""
-    return "\n" not in value and MARKER not in value and END_MARKER not in value
+    """Whether a repository-authored value may be written into the listing unchanged.
+
+    One line as every reader of the roadmap splits it: a carriage return is a line break to
+    `read_text`, which turns it into `\\n`, and to Markdown, so a listing carrying one read back
+    as a different listing and `--check` was stale forever.
+    """
+    return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value
+
+
+def _named_in_utf_8(path: Path) -> bool:
+    """Whether a document's name is UTF-8 on disk, so the UTF-8 roadmap can hold the row and a
+    link that names the file.
+
+    A name the filesystem holds in other bytes — latin-1, on Linux — reaches Python with
+    surrogate escapes, and writing it into the roadmap raised `UnicodeEncodeError`: an internal
+    error from `docs trail`, with `--check` stale for good. The bytes are asked and not the
+    `str`, because under a latin-1 filesystem codec every byte decodes and the escapes that
+    would show it never appear.
+    """
+    try:
+        os.fsencode(path.name).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def read_trail(path: Path) -> Trail:
@@ -263,7 +287,7 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
         # which is the failure its other two guards exist to prevent, and the operator has a
         # remedy either way. The link is checked too — it is the same name, joined to the
         # configured `specs`/`plans` path, and that path is repository-authored as well.
-        if not (_interpolable(row) and _interpolable(link)):
+        if not (_interpolable(row) and _interpolable(link) and _named_in_utf_8(path)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))
         listed.add(row)
         buckets.setdefault(theme_of(path.name, trail), []).append((row, link))

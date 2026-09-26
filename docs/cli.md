@@ -666,7 +666,10 @@ refused rather than read otherwise.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
 syntax, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
-otherwise split the block and push repository prose into the roadmap. Inside a git work tree,
+otherwise split the block and push repository prose into the roadmap. A listed document's name
+is held to the same rule, and to one more: a name that is not a single line, carries either
+marker, or is not UTF-8 on disk fails (`1`) naming the file, escaped, with nothing written —
+rename it. A carriage return ends a line here as a newline does. Inside a git work tree,
 a question git gives no answer to — which documents it ignores or tracks, when it cannot be run,
 runs past its time limit or refuses the checkout — fails (`1`) with nothing written, rather than
 listing every document on disk; outside one, every document is listed. **Writes**

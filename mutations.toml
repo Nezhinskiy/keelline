@@ -1610,12 +1610,37 @@ reddens = [
 [[mutation]]
 name = "a document filename carries the end marker into the generated roadmap"
 file = "src/keelline/docs/trail.py"
-before = '''        if not (_interpolable(row) and _interpolable(link)):
+before = '''        if not (_interpolable(row) and _interpolable(link) and _named_in_utf_8(path)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))'''
 after = "        pass"
 reddens = [
   "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+]
+
+# A carriage return is a line break to every reader of the roadmap but the one that wrote it:
+# `read_text` turns it into `\n`, so a listing carrying one read back as another listing and
+# `docs trail --check` stayed stale after every successful `docs trail`.
+[[mutation]]
+name = "a carriage return in a listed value reaches the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '    return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value'
+after = '    return "\n" not in value and MARKER not in value and END_MARKER not in value'
+reddens = [
+  "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker[carriage-return]",
+]
+
+# The roadmap is UTF-8, and a document name the disk holds in other bytes reaches Python with
+# surrogate escapes: written into the listing it raised `UnicodeEncodeError`, an internal error,
+# and `docs trail --check` stayed stale with a remedy that crashed the same way.
+[[mutation]]
+name = "a document name that is not UTF-8 is written into the generated roadmap"
+file = "src/keelline/docs/trail.py"
+before = '        os.fsencode(path.name).decode("utf-8")'
+after = '        os.fsencode(path.name).decode("utf-8", "surrogateescape")'
+reddens = [
+  "tests/docs/test_trail.py::test_a_document_name_that_is_not_utf_8_is_never_interpolated",
+  "tests/docs/test_trail.py::test_a_tracked_document_named_in_bytes_that_are_not_utf_8_is_refused_by_name_not_crashed_on",
 ]
 
 # A trailing `; echo` hides the exit code the harness notification reports, but only after a
