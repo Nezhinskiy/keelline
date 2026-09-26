@@ -494,6 +494,18 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
 
 
 @needs_workflow
+def test_the_job_s_token_can_read_the_repository_and_nothing_more() -> None:
+    # Every step runs with the job's token in reach of the platform, the project's own gates
+    # included, and those execute files the pull request can change. The checkouts need to read
+    # the repository and nothing else, so that is all the workflow grants; the workflow's keys
+    # above hold that `permissions:` is there, and this holds what it says. The job carries no
+    # `permissions:` of its own, which the job's keys hold. Mutation (declared): `contents:
+    # write`.
+    permissions = _workflow()["permissions"]
+    assert permissions == {"contents": "read"}, permissions
+
+
+@needs_workflow
 def test_every_script_the_job_runs_is_held_line_for_line() -> None:
     """The class the environment case above leaves open: a script line that changes the
     verdict's process — its environment or the code it imports — without being an invocation.

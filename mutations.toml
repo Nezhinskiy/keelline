@@ -8775,3 +8775,23 @@ reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]
+
+# The token's grant, held by value and not only by key: the project's own gates run with it in
+# reach, and the caller's grant is the ceiling for every step of the reusable workflow.
+[[mutation]]
+name = "the reusable workflow's token may write the repository"
+file = ".github/workflows/check.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_token_can_read_the_repository_and_nothing_more",
+]
+
+[[mutation]]
+name = "the caller init writes grants its token write access to the repository"
+file = "src/keelline/templates/project/keelline.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothing_more",
+]

@@ -39,6 +39,7 @@ from keelline.project.templates import (
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
+from tests.workflow_yaml import load
 
 SHA = "a" * 40
 DOCUMENT = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
@@ -313,6 +314,26 @@ def test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_ret
         '    branches: ["trunk"]\n'
     ), trigger
     assert body.endswith('    with:\n      base: "trunk"\n'), body
+
+
+def test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothing_more() -> None:
+    # A called workflow's token can hold no more than its caller grants, so this file's grant is
+    # the ceiling for every step of `check.yml`, the project's own gates included, and those run
+    # files the pull request can change. Read by the strict reader, so the grant's value is held
+    # and not only its key, and the job's keys are held whole: a `permissions:` on the job would
+    # replace the workflow's. Mutation (declared): `contents: write`.
+    body = {
+        t.id: t
+        for t in _prepared(_recording(preset_defaults("widget")), resolution=PINNED).footprint
+    }["ci-workflow"].render()
+    document = load(body)
+    assert isinstance(document, dict), document
+    assert list(document) == ["name", "on", "permissions", "jobs"], list(document)
+    assert document["permissions"] == {"contents": "read"}, document["permissions"]
+    jobs = document["jobs"]
+    assert isinstance(jobs, dict) and list(jobs) == ["check"], jobs
+    job = jobs["check"]
+    assert isinstance(job, dict) and list(job) == ["uses", "with"], job
 
 
 def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
