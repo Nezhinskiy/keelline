@@ -117,7 +117,7 @@ PRE_COMMIT_HOOK = "pre-commit"
 # subject to workspace trust and a link is not", so the symlink is preferred and this is taken
 # only when it cannot be made.
 FALLBACK_KEY = "autoMemoryDirectory"
-# The third refusal `attach` owes before it writes anything, kept beside the other two rather
+# The fifth refusal `attach` owes before it writes anything, kept beside the four above it rather
 # than inside `_record_binding` where it used to live. `_record_binding` runs after the ignore
 # region, the Codex rules, the settings merge and the ledger, so a checkout with no `origin`
 # exited 2 having left four artifacts behind — and `doctor._attached`, which keys on the
@@ -126,16 +126,16 @@ NO_ORIGIN = (
     "this repository has no `origin` remote, so there is nothing for the overlay to record; "
     "add one, or bind the clone that has it"
 )
-# Beside it, and above every write for the same reason. The binding record is UTF-8 TOML, and an
-# `origin` URL git prints in other bytes cannot be written into it: read losslessly, it reached
-# `_record_binding`, the last write, and raised `UnicodeEncodeError` there, after the ignore
-# region, the Codex rules, the settings merge and the ledger. The URL is not quoted: a remote URL
-# is repository-authored.
+# The fourth, asked just before it, and above every write for the same reason. The binding
+# record is UTF-8 TOML, and an `origin` URL git prints in other bytes cannot be written into it:
+# read losslessly, it reached `_record_binding`, the last write, and raised `UnicodeEncodeError`
+# there, after the ignore region, the Codex rules, the settings merge and the ledger. The URL is
+# not quoted: a remote URL is repository-authored.
 ORIGIN_NOT_TEXT = (
     "this repository's `origin` URL is not UTF-8 text, so the overlay cannot record it; set it "
     "again with `git remote set-url origin URL`"
 )
-# The sixth, and the first of the two whose trigger is repository-authored (§7.4:
+# The seventh, and the first of the two whose trigger is repository-authored (§7.4:
 # `memory.groups` reaches no guard of its own). One constant for the check above every write
 # and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
 # refusal are two refusals to keep in step. The entry is never quoted back into it.
@@ -143,7 +143,7 @@ GROUP_ESCAPES = (
     "a memory.groups entry does not stay inside this project's share of the overlay, so it is "
     "refused rather than created"
 )
-# The eighth, and the second of the two whose trigger is repository-authored. Its anchor is
+# The ninth, and the second of the two whose trigger is repository-authored. Its anchor is
 # `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
 # repository cannot move the directory this count is taken under: `unlinked_groups` contains
 # every `<paths.memory>/<group>` against that root and refuses the ones that leave it. The
@@ -855,10 +855,11 @@ def attach(
 
     The order below is the order they are enumerated in: read the binding, which already
     refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
-    without `confirmed`; refuse a mismatch without `trust_remote`; refuse a checkout with no
-    `origin`; read the existing ledger, which refuses one no attach could have written; refuse a
-    `memory.groups` entry that leaves this project's share of the overlay; refuse a harness
-    anchor this machine cannot vouch for; refuse a group that never moved into the overlay;
+    without `confirmed`; refuse a mismatch without `trust_remote`; refuse an `origin` URL that
+    is not UTF-8 text; refuse a checkout with no `origin`; read the existing ledger, which
+    refuses one no attach could have written; refuse a `memory.groups` entry that leaves this
+    project's share of the overlay; refuse a harness anchor this machine cannot vouch for;
+    refuse a group that never moved into the overlay;
     then write, `.gitignore` first, so the ledger is never in a tracked path even for an
     instant.
 
@@ -868,17 +869,17 @@ def attach(
     after it. The reason is the `Config`: `_check_groups` has just loaded it, and the
     never-moved check reads the same `memory.groups` and the same `paths.memory` — so the two
     containments over one repository-authored list stay in one place, and the anchor, which
-    needs neither, follows. Nothing writes between them; every one of the eight is above the
+    needs neither, follows. Nothing writes between them; every one of the nine is above the
     first write, which is the property that matters and the one the tests assert.
 
-    **A ninth refusal is above every write and is not one of the eight**, because it is not a
+    **A tenth refusal is above every write and is not one of the nine**, because it is not a
     check this function makes: `unlinked_groups` contains each `<paths.memory>/<group>` against
     `root` before it counts, and a `PathEscape` out of it propagates as the refusal it already
     is — `paths.memory` may itself be a symlink, and then every group escapes at once. It is
     enumerated nowhere because it has no ordinal of its own; it is named here so that the count
-    above reads as "eight checks" rather than as "eight ways this can refuse".
+    above reads as "nine checks" rather than as "nine ways this can refuse".
 
-    **All eight checks are above every write, and three of them were not.** The no-`origin` one
+    **All nine checks are above every write, and three of them were not.** The no-`origin` one
     lived in `_record_binding`, the ledger's in `_write_ledger`, and the `memory.groups` one in
     `_prepare_store` — which runs after the ignore region, the Codex rule files, the settings
     merge, the ledger *and* the overlay's binding record. Each could exit 2 having written three,
@@ -929,8 +930,9 @@ def attach(
         raise Refusal(ORIGIN_NOT_TEXT)
     if binding.remote is None:
         raise Refusal(NO_ORIGIN)
-    # The sixth refusal, and it belongs here for the reason the five above it do. `ledger()`
-    # refuses a ledger naming files or settings keys `attach` could not have written, and
+    # The seventh refusal, and it belongs here for the reason the six above it do; the sixth,
+    # the ledger's, is read a few lines below and is above every write too. `ledger()` refuses
+    # a ledger naming files or settings keys `attach` could not have written, and
     # `_write_ledger` used to ask for it — from the fourth write of the run. A clone that
     # commits such a ledger could therefore make `attach` write the ignore region, copy
     # `.codex/rules/*` and merge `.claude/settings.local.json` before exiting 2, with the
@@ -941,7 +943,7 @@ def attach(
     # binding record, where a check could not happen above the writes while what it reads was
     # loaded below them.
     _check_groups(binding, config)
-    # The eighth, and the one whose remedy is an act no command performs: `attach` **links**,
+    # The ninth, and the one whose remedy is an act no command performs: `attach` **links**,
     # so a group that is still a real directory under `paths.memory` has its notes in the
     # repository and its share of the overlay empty, and linking over it would leave every
     # session reading the repository's copy with the binding record, the settings merge and
@@ -953,7 +955,7 @@ def attach(
     real = unlinked_groups(root, config)
     if real:
         raise Refusal(REAL_DIRECTORIES.format(count=len(real)))
-    # The seventh, and the one that is not about this repository at all: the anchor for the
+    # The eighth, and the one that is not about this repository at all: the anchor for the
     # harness memory link. `_apply_harness_link` asks it per checkout, which is one frame
     # below every write here — so a home directory that is not there, and the ordinary
     # dotfiles layout that links `~/.claude` elsewhere, were discovered after the ignore

@@ -2778,8 +2778,8 @@ name = "the no-origin refusal moves back below attach's first write"
 file = "src/keelline/attach/write.py"
 before = '''    if binding.remote is None:
         raise Refusal(NO_ORIGIN)
-    # The sixth refusal'''
-after = '''    # The sixth refusal'''
+    # The seventh refusal'''
+after = '''    # The seventh refusal'''
 reddens = [
   "tests/attach/test_write.py::test_a_repository_with_no_origin_remote_has_nothing_to_record",
 ]

@@ -16,13 +16,18 @@ answer — a hardcoded path is what picks the Xcode shim on macOS over the worki
 installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
 session, which is a harness-level exposure this module cannot close and does not pretend to.
 
-`git_run` is the one runner, and every `git` this project asks a question of goes through it —
-the hook path's toplevel, the memory store's three-valued answer and its usability probe, the
-hooks directory, the dirty count and the commit range included, which each used to run a
-`subprocess.run(text=True)` of their own and raise out of the command on one byte that was not
-UTF-8. One decoding boundary, so each site decides only what an answer means to it. The
+`git_run` is the one runner for every question this project asks git about a repository it
+works on — the hook path's toplevel, the memory store's three-valued answer and its usability
+probe, the hooks directory, the dirty count and the commit range included, which each used to
+run a `subprocess.run(text=True)` of their own and raise out of the command on one byte that was
+not UTF-8. One decoding boundary, so each site decides only what an answer means to it. The
 `Runner` seam in `keelline.runner`, which launches the owner's own commands — `git clone` among
-them — for their exit code and a message, is the other.
+them — for their exit code and a message, is the other. One question goes through that seam
+and not through `git_run`, on purpose: `keelline overlay publish`, a maintainer command, asks
+`git status --porcelain` of a scratch clone it has just filled with Keelline's own template,
+beside the `add`, `commit` and `push` it runs the same way, so its tests stub all four at one
+seam. It only counts and reports the changed names, and the seam reads them with a replacement
+character, so a name that is not UTF-8 cannot end it as an internal error.
 """
 
 from __future__ import annotations

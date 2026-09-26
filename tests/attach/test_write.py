@@ -1046,7 +1046,7 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
 
 
 def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path: Path) -> None:
-    """The eighth refusal, and the only one whose remedy is an act nothing here can perform.
+    """The ninth refusal, and the only one whose remedy is an act nothing here can perform.
 
     `attach` **links**; it never moves a note. So a `memory.groups` entry that is still a real
     directory under `paths.memory` is a group whose notes are in the repository and whose share
