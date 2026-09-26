@@ -110,8 +110,9 @@ something downstream reads as permission — add it to `mutations.toml` instead 
 it, and the check becomes reproducible:
 
 ```bash
-uv run python scripts/mutation_oracle.py          # every declared mutation
-uv run python scripts/mutation_oracle.py fsops    # only the matching ones
+uv run python scripts/mutation_oracle.py            # every declared mutation
+uv run python scripts/mutation_oracle.py fsops      # only the matching ones
+uv run python scripts/mutation_oracle.py --jobs 2   # at most two entries at a time
 ```
 
 Each entry names one file, one exact line to change, and the tests that must fail when it does.
@@ -123,6 +124,13 @@ mutation to a throwaway worktree, so it never writes your working tree, and it r
 mutated file — **or any test file that a selected entry's `reddens` names** — has uncommitted
 changes, because that edit is work the run cannot see. Which is why a mutation run comes
 *after* the commit it is about, and why an uncommitted test edit mid-change stops it too.
+
+The oracle proves several entries at once: one worktree per job, each job proving one entry at
+a time in a checkout no other job touches, with as many jobs as the process has CPUs up to four
+unless `--jobs` says otherwise. So a test that a `reddens` names runs beside other tests in
+other processes and must be safe to — no shared path outside `tmp_path`, no wall-clock bound
+that load could break. A test that fails under contention fails on the mutated run for a reason
+that is not the mutation, and that reads as *caught*.
 
 ```toml
 [[mutation]]

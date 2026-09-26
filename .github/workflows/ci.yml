@@ -135,24 +135,22 @@ jobs:
   # never banked as a proof, which is the failure that would matter.
   oracle:
     runs-on: ubuntu-latest
-    # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
-    # measured), so the 562 entries `mutations.toml` now holds cost ~1135 s; checkout, `setup-uv`
-    # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
-    # to ~60 s, which is the figure to re-measure from this job's own runs. Call the shape
-    # ~1195 s.
+    # Derived, not rounded. The oracle proves entries in one scratch checkout per CPU the
+    # runner gives it — four on `ubuntu-latest` — against a bytecode cache warmed once from HEAD,
+    # and was measured at 173 s for 566 entries in this job, 0.31 s an entry. Until that change it
+    # ran one entry at a time with every pytest compiling from source: 2.02 s an entry, 1135 s for
+    # 562, under a 25-minute bound. The rest of the job came to ~8 s on that run; the budget
+    # test keeps its 60 s allowance for setup and 60 s for runner variance anyway.
     #
-    # 25 minutes is 1500 s, so the margin is ~305 s. Sixty of that absorbs runner variance — a
-    # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
-    # leaves ~245 s, or roughly **121 further mutation entries** before this number has to move.
-    # The budget test projects exactly this sum (entries x rate + 60 s + 60 s) and reddens when
-    # it passes 1500 s. It was 19 minutes, sized for 387 entries, then 21 for the wave-5 review
-    # fixes, which left ~9 entries of room; 25 is sized for the second half of that wave, which
-    # adds commands, and so entries, at the rate the first half did. At the rate the rule that
-    # every assertion ships with its mutation generates them, that is the figure to watch; when it
-    # is reached, exactly one job's budget changes and nothing else is hostage to it, which is the
-    # third reason this is a job rather than a step. Not sharded: a matrix would rename the
-    # `oracle` check the branch protection requires, and multiply the setup cost.
-    timeout-minutes: 25
+    # 12 minutes is 720 s: 566 entries project ~293 s with both allowances, so the margin holds
+    # roughly **1,400 further entries** at this rate, and twice the rate — a runner with half the
+    # CPUs — still fits the set as it stands. The budget test projects exactly this sum
+    # (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
+    # measurement rather than at it, because a bound this job hits is a cancelled check, not a
+    # finding; and below the old 25, because a hung pytest should cost twelve minutes, not
+    # twenty-five. Not sharded: a matrix would rename the `oracle` check the branch protection
+    # requires, and multiply the setup cost; the parallelism lives inside the job instead.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
