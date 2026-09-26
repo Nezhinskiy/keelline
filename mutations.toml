@@ -8205,3 +8205,92 @@ after = "          :"
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
 ]
+
+# `-P` keeps the working directory off `sys.path` and nothing else: a `PYTHONPATH` entry inside
+# the caller's checkout puts every module the pull request adds ahead of the standard library in
+# the process that decides the verdict. Measured when the case was written: a planted
+# `tomllib.py` ran and the step still exited 0.
+[[mutation]]
+name = "the judging step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src:project
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[judging]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And in the custom step, where a planted module in Keelline's own process could report an
+# enforcing custom gate as passing whatever its command exited with.
+[[mutation]]
+name = "the custom step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src:project
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The judging step runs from the workspace, which the pull request writes nothing into. From the
+# caller's checkout, `-P` would be the only thing between a module the pull request adds and the
+# verdict, and a relative `PYTHONPATH` would resolve inside the checkout.
+[[mutation]]
+name = "the judging step runs from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        working-directory: project
+        env:
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An `if:` on the job skips it, and a skipped job is a required check the platform reports as
+# passing: every step's own guard would hold while the verdict never ran.
+[[mutation]]
+name = "the gates job gains a condition of its own"
+file = ".github/workflows/check.yml"
+before = """
+    runs-on: ubuntu-latest
+"""
+after = """
+    if: false
+    runs-on: ubuntu-latest
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# A program handed to an interpreter with `-c` runs with its working directory first on
+# `sys.path` unless a flag says otherwise, and a spelling check for `python3 -c` alone missed
+# `python3 -P -c`, `python -I -c` and every other spelling in between.
+[[mutation]]
+name = "a step hands the interpreter a program on the command line again"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: python3 -P -c 'import keelline'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]

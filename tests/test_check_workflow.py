@@ -52,6 +52,16 @@ OVER_BUDGET = "".join("word\n" for _ in range(400))
 _STEP = re.compile(r"^      - (?:name: (?P<name>.+)|uses: (?P<uses>\S+)(?:\s+#.*)?)$")
 _JOB = re.compile(r"^  ([a-z-]+):$", re.MULTILINE)
 _IF = re.compile(r"^        if: (?P<condition>.+)$")
+# A key of a step (past its `- name:` line), of the job, or of the workflow itself; a comment
+# is not one.
+_STEP_KEY = re.compile(r"^        ([a-z-]+):", re.MULTILINE)
+_JOB_KEY = re.compile(r"^    ([a-z-]+):", re.MULTILINE)
+_TOP_KEY = re.compile(r"^([a-z-]+):", re.MULTILINE)
+_ENV_ENTRY = re.compile(r"^          (?P<key>[A-Z_]+): (?P<value>.+)$")
+# Any interpreter started with `-c`, whatever flags come between: a program handed over on the
+# command line runs with its working directory first on `sys.path` unless `-P` or `-I` says
+# otherwise, and this workflow has no step that needs one.
+_PYTHON_C = re.compile(r"\bpython3?\b[^\n]*\s-c\b")
 
 
 def _jobs_text() -> str:
@@ -104,9 +114,42 @@ def _commit(workspace: Path, path: str, text: str) -> None:
     commit(project, "chore: the change under review")
 
 
+def _step_env(step: str) -> dict[str, str]:
+    """The named step's `env:` block, as written: each key and its value's text."""
+    lines = _step_text(step).splitlines()
+    start = lines.index("        env:") + 1
+    env: dict[str, str] = {}
+    for line in lines[start:]:
+        match = _ENV_ENTRY.match(line)
+        if match is None:
+            break
+        env[match.group("key")] = match.group("value")
+    return env
+
+
 def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tuple[int, str, str]:
-    """The named gate step, run as the runner runs it: from the workspace, with exactly the
-    environment its `env:` block and the runner provide."""
+    """The named gate step, run as the runner runs it: from the workspace, with the environment
+    its own `env:` block names and the runner's few variables, and nothing else.
+
+    The `env:` block is read off the shipped file rather than retyped here, so a value it gains
+    — a `PYTHONPATH` that reaches into the checkout, say — is a value these cases run under.
+    Each `${{ }}` in it is replaced by what the runner would put there in this case, and one this
+    reader does not know is a failure rather than a guess. Keelline's own checkout is where the
+    runner puts it, `keelline/` beside `project/`.
+    """
+    runner = {
+        "${{ steps.base.outputs.root }}": "project/.",
+        "${{ steps.base.outputs.base_sha }}": base_sha,
+        "${{ job.workflow_sha }}": "0" * 40,
+        "${{ inputs.only }}": only,
+    }
+    named = {
+        key: runner[value] if value.startswith("${{") else value
+        for key, value in _step_env(step).items()
+    }
+    checkout = workspace / "keelline"
+    if not checkout.exists():
+        checkout.symlink_to(ROOT, target_is_directory=True)
     summary = workspace / "step-summary.md"
     summary.unlink(missing_ok=True)
     done = subprocess.run(
@@ -120,12 +163,8 @@ def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tupl
             # `python3`, and a system one below the floor would fail for a reason CI never meets.
             "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
             "HOME": str(workspace),
-            "PYTHONPATH": str(ROOT / "src"),
-            "ROOT": "project/.",
-            "BASE_SHA": base_sha,
-            "WORKFLOW_SHA": "0" * 40,
-            "ONLY": only,
             "GITHUB_STEP_SUMMARY": str(summary),
+            **named,
         },
     )
     written = summary.read_text(encoding="utf-8") if summary.exists() else ""
@@ -146,6 +185,11 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
     # step gains `if: always()`, which would run the repository's commands after a refusal.
     assert _JOB.findall(_jobs_text()) == ["gates"], _JOB.findall(_jobs_text())
+    # And the job itself carries neither: an `if:` on `gates` skips it, and a skipped job is a
+    # required check the platform reports as passing. So the job's keys are held whole, which
+    # also keeps a job-level `env:` from reaching every step. Mutation (declared): the job gains
+    # an `if:`.
+    assert _JOB_KEY.findall(_jobs_text()) == ["runs-on", "timeout-minutes", "defaults", "steps"]
     steps = _steps()
     names = [name for name, _, _ in steps]
     # The walk's count before anything is read off it: a reader that stopped matching one
@@ -172,7 +216,9 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     # the judging step.
     for step in (JUDGE, CUSTOM):
         assert "python3 -P -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
-    assert "python3 -c" not in _jobs_text()
+    # Any spelling: `python3 -P -c` and `python -I -c` are still a program on the command line.
+    # Mutation (declared): the proof step reads the version with `python3 -P -c`.
+    assert _PYTHON_C.findall(_jobs_text()) == []
 
 
 @needs_workflow
@@ -268,3 +314,61 @@ def test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them(tmp_pa
     code, printed, _ = _judge(workspace, base_sha, "", step=CUSTOM)
     assert code == 0, printed
     assert marker.exists(), printed
+
+
+@needs_workflow
+def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> None:
+    """Everything that reaches a gate step's process, held whole, because `-P` covers only the
+    working directory: a `PYTHONPATH` entry inside the checkout, a `PYTHONSTARTUP`, a
+    `working-directory: project` or an `env:` one level up would each hand the pull request a
+    module in the process that decides the verdict.
+
+    What reaches it: the workflow's and the job's own keys (neither may carry an `env:`), the
+    job's `defaults:` (the shell and nothing else), the step's own keys (`env:` and `run:`, so no
+    `working-directory:` and no `shell:`), the step's `env:` block (exactly these five, with
+    `PYTHONPATH` naming Keelline's checkout alone), and `setup-python`'s inputs (the version and
+    nothing that reads a file from the checkout). The runner's own variables and the `PATH`
+    `setup-python` extends are the platform's; no step before these runs anything the pull
+    request wrote, which the step walk above holds.
+    """
+    text = CHECK_WORKFLOW.read_text(encoding="utf-8")
+    assert _TOP_KEY.findall(text) == ["name", "on", "permissions", "jobs"], _TOP_KEY.findall(text)
+    assert "    defaults:\n      run:\n        shell: bash\n    steps:\n" in _jobs_text()
+    for step in (JUDGE, CUSTOM):
+        assert _STEP_KEY.findall(_step_text(step)) == ["env", "run"], step
+        assert _step_env(step) == {
+            "PYTHONPATH": "keelline/src",
+            "ROOT": "${{ steps.base.outputs.root }}",
+            "BASE_SHA": "${{ steps.base.outputs.base_sha }}",
+            "WORKFLOW_SHA": "${{ job.workflow_sha }}",
+            "ONLY": "${{ inputs.only }}",
+        }, step
+    lines = _jobs_text().splitlines()
+    setup = next(i for i, line in enumerate(lines) if "- uses: actions/setup-python@" in line)
+    assert lines[setup + 1 : setup + 3] == [
+        "        with:",
+        "          python-version: ${{ inputs.python-version }}",
+    ], lines[setup : setup + 4]
+    assert _STEP.match(lines[setup + 3]), lines[setup + 3]
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+@pytest.mark.parametrize("step", [JUDGE, CUSTOM], ids=["judging", "custom"])
+def test_no_module_the_checkout_carries_is_imported_by_a_gate_step(
+    tmp_path: Path, step: str
+) -> None:
+    # The behaviour the text above is about, run under the step's own `env:`: a pull request
+    # that adds a `tomllib.py` at its top, which Keelline's loader would import in place of the
+    # standard library's if the checkout were on `sys.path`. Measured when this case was
+    # written: with `PYTHONPATH: keelline/src:project` the planted module ran, and one that
+    # re-exported the real `tomllib` left the step at exit 0. Mutations (declared): that
+    # `PYTHONPATH` on the judging step, and on the custom step.
+    workspace, base_sha = _clone(tmp_path)
+    marker = tmp_path / "planted"
+    _commit(workspace, "tomllib.py", f"open({str(marker)!r}, 'w').close()\n")
+    code, printed, _ = _judge(workspace, base_sha, "", step=step)
+    # The marker first: a planted module that ran is the finding, whatever it then broke.
+    assert not marker.exists(), printed
+    assert code == 0, printed
