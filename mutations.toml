@@ -3283,8 +3283,8 @@ reddens = [
 [[mutation]]
 name = "the scratch checkout's src no longer precedes the editable install"
 file = "scripts/mutation_oracle.py"
-before = '        pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")'
-after = "        pythonpath = inherited"
+before = '    pythonpath = str(cwd / "src") + (os.pathsep + inherited if inherited else "")'
+after = "    pythonpath = inherited"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path",
 ]
@@ -7285,3 +7285,38 @@ file = "src/keelline/project/init.py"
 before = "from keelline.scaffold import MANIFEST_PATH, Plan, apply"
 after = "from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan"
 reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]
+
+
+# The oracle's runs share a bytecode cache warmed from HEAD, and a `.pyc` is trusted on
+# mtime-in-whole-seconds and size. A mutated write that kept HEAD's mtime and HEAD's length
+# would run HEAD's bytecode and read as surviving; the stamp is what keeps them apart.
+[[mutation]]
+name = "a mutated write keeps HEAD's mtime, so warm bytecode stands in for it"
+file = "scripts/mutation_oracle.py"
+before = "    stamp = _next_stamp()"
+after = "    stamp = 0"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source",
+]
+
+# The stamp is read back, because a filesystem with coarser timestamps would round two stamps
+# into one without a sound.
+[[mutation]]
+name = "a mutated file's stamp is assumed rather than read back"
+file = "scripts/mutation_oracle.py"
+before = "        if subject.stat().st_mtime_ns // _SECOND != head.st_mtime_ns // _SECOND + stamp:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_mutated_file_that_does_not_keep_its_stamp_is_a_finding",
+]
+
+# Jobs prove entries at once, and two of them in one checkout would interleave their mutations
+# over one file. One checkout per job is what the queue hands out.
+[[mutation]]
+name = "every job shares one scratch checkout"
+file = "scripts/mutation_oracle.py"
+before = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(jobs)]"
+after = "            trees = [stack.enter_context(scratch_checkout()) for _ in range(1)]"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own",
+]

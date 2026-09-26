@@ -113,7 +113,9 @@ def test_a_run_where_every_named_test_skipped_proves_nothing(
     module = oracle(root=tmp_path)
     subject = tmp_path / "subject.py"
     subject.write_text("GUARD = True\n", encoding="utf-8")
-    monkeypatch.setattr(module, "_run", lambda _targets, _cwd: module.Outcome(code=0, executed=0))
+    monkeypatch.setattr(
+        module, "_run", lambda _targets, _cwd, **_kw: module.Outcome(code=0, executed=0)
+    )
     finding = module._check(
         a_mutation(module, subject, ("test_x.py::test_skipped_here",)), tmp_path
     )
@@ -423,6 +425,129 @@ def test_the_scratch_copy_wins_over_a_main_checkout_already_on_the_path(
     monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
     monkeypatch.setenv("PYTHONPATH", str(root / "src"))
     assert module.main([]) == 0
+
+
+def _recommit(root: Path, files: dict[str, str]) -> None:
+    for relative, text in files.items():
+        (root / relative).write_text(text, encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "change")
+
+
+@needs_git
+def test_a_warm_bytecode_cache_never_stands_in_for_a_mutated_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The hazard the per-run empty cache used to answer, made certain rather than a matter of
+    # timing. `warm_cache` compiles `guard.py` from HEAD before the entry runs, and the entry's
+    # `after` is exactly as long as its `before`, so the mutated file differs from HEAD's in
+    # content only: a `.pyc` is trusted on mtime-in-whole-seconds and size, and with the
+    # mutated write left on HEAD's mtime the import system runs HEAD's bytecode, the guard
+    # holds, and the entry reads as surviving. `_check`'s stamp is what tells them apart.
+    #
+    # Mutation (declared): the stamp pinned at 0, so the mutated write keeps HEAD's mtime ->
+    # the entry survives, `main` returns 1, and this reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    _recommit(
+        root,
+        {
+            "mutations.toml": "[[mutation]]\n"
+            'name = "the guard is disarmed, byte for byte as long"\n'
+            'file = "src/pkg/guard.py"\n'
+            'before = "GUARD = True"\n'
+            'after = "GUARD = None"\n'
+            'reddens = ["tests/test_guard.py::test_the_guard_holds"]\n',
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
+    assert module.main([]) == 0
+
+
+def test_a_mutated_file_that_does_not_keep_its_stamp_is_a_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stamp is read back rather than assumed. A filesystem whose timestamps are coarser
+    # than a second would round two stamps into one and bring the stale-bytecode hazard back
+    # without a sound, so an mtime that did not take is a finding, not a run. Modelled by an
+    # `os.utime` that does nothing, which is what such a filesystem looks like from here.
+    #
+    # Mutation (declared): the read-back is disabled -> the entry runs against a mutated file
+    # carrying the clock's mtime, is caught, and the finding this asserts never appears.
+    module = oracle(root=tmp_path)
+    subject = tmp_path / "subject.py"
+    subject.write_text("GUARD = True\n", encoding="utf-8")
+    (tmp_path / "test_subject.py").write_text(
+        "import subject\n\n\ndef test_the_guard_holds() -> None:\n    assert subject.GUARD\n",
+        encoding="utf-8",
+    )
+    # HEAD's mtime far in the past, so the clock's own mtime on the mutated write cannot land
+    # on HEAD's plus the stamp by coincidence — a clean run takes about a second, which is
+    # exactly the first stamp.
+    os.utime(subject, (1_000_000_000, 1_000_000_000))
+    monkeypatch.setattr(module.os, "utime", lambda *_args, **_kwargs: None)
+    finding = module._check(
+        a_mutation(module, subject, ("test_subject.py::test_the_guard_holds",)), tmp_path
+    )
+    assert finding is not None
+    assert "did not keep the mtime it was given" in finding, finding
+    assert subject.read_text(encoding="utf-8") == "GUARD = True\n"
+
+
+@needs_git
+def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two jobs sharing one checkout would interleave their mutations over one file and each
+    # would run against the other's — the hazard the scratch checkout removes, moved inside the
+    # oracle. Every pytest run appends the checkout it ran from; each run sleeps, so each job
+    # is still busy with its first entry when the other takes the second, and two jobs must
+    # show up as two checkouts, neither of them the repository.
+    #
+    # Mutation (declared): one checkout made however many jobs there are -> the jobs take
+    # turns with it, one checkout is recorded, and the count reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    entry = (
+        "[[mutation]]\n"
+        'name = "{name}"\n'
+        'file = "src/pkg/guard.py"\n'
+        'before = "GUARD = True"\n'
+        'after = "{after}"\n'
+        'reddens = ["tests/test_guard.py::test_the_guard_holds"]\n'
+    )
+    _recommit(
+        root,
+        {
+            "tests/test_guard.py": "import os\n"
+            "import time\n"
+            "from pathlib import Path\n"
+            "\n"
+            "from pkg.guard import GUARD\n"
+            "\n"
+            "\n"
+            "def test_the_guard_holds() -> None:\n"
+            "    with Path(os.environ['ORACLE_PROBE']).open('a', encoding='utf-8') as probe:\n"
+            "        probe.write(__file__ + '\\n')\n"
+            "    time.sleep(1)\n"
+            "    assert GUARD\n",
+            "mutations.toml": entry.format(name="disarmed", after="GUARD = False")
+            + "\n"
+            + entry.format(name="emptied", after="GUARD = 0"),
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+    probe = tmp_path / "probe.txt"
+    monkeypatch.setenv("ORACLE_PROBE", str(probe))
+    assert module.main(["--jobs", "2"]) == 0
+    ran_from = {Path(line).parents[1] for line in probe.read_text(encoding="utf-8").splitlines()}
+    assert len(ran_from) == 2, ran_from
+    assert all(root.resolve() not in tree.resolve().parents for tree in ran_from), ran_from
 
 
 @needs_git
