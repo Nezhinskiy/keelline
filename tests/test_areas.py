@@ -200,10 +200,10 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
         offences += broken
     # The walk is asserted before anything is asserted about it. Both floors are well under
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
-    # current. Re-measured 2026-09-25, by running this module's own `_area_names` and
-    # `_boundary_offences` over the same two globs in an interpreter: 136 files, 12 areas, 4
-    # scripts and 173 crossings, with a walk narrowed to `commands.py` alone finding 9 — which
-    # is what the crossings floor of 60 has to be below.
+    # current. Re-measured 2026-09-26, by running this module's own `_area_names` and
+    # `_boundary_offences` over the same two globs in an interpreter: 138 files, 12 areas, 4
+    # scripts and 179 crossings, with a walk narrowed to `commands.py` alone finding 11 under
+    # `src/` and 18 with the scripts — which is what the crossings floor of 60 has to be below.
     assert len(areas) == 12, areas
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the

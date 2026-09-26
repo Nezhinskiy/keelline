@@ -14,8 +14,11 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > repository to it and unbind it
 > again; `keelline init`, which writes a repository's footprint from the shipped project
 > templates, `keelline upgrade`, which refreshes it, and `keelline uninstall`, which takes it
-> back; `keelline doctor`, which reports on the result; and `keelline assess`, which inventories
-> what stands between a repository and enforcement. The hooks file that wires all
+> back; `keelline doctor`, which reports on the result; `keelline assess`, which inventories
+> what stands between a repository and enforcement; `keelline gate`, which judges a change
+> against what its base branch enforces; `keelline adopt`, which enforces a repository's gates
+> as each one passes; and the first stack profile, `python`, whose rules every agent is handed
+> and whose checks `keelline assess` runs. The hooks file that wires all
 > of it into a session ships too, so installing the plugin is enough to make the guards fire
 > and the memory bundles arrive. The first skills ship with them, and so do two command groups
 > meant for a machine rather than for you — `hook`, which dispatches one harness event, and
@@ -49,8 +52,8 @@ adds:
 - **A bug ledger as a first-class repository artifact** — one file per bug, a generated
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
-- **An enforcement state machine** in which gates run advisory until the repository has
-  earned them. `keelline assess` says what stands in the way, and `keelline adopt promote`
+- **An enforcement state machine** in which each gate runs advisory until the repository has
+  earned it. `keelline assess` says what stands in the way, and `keelline adopt promote`
   enforces a gate once it passes.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `keelline overlay create` renders one and `keelline attach`

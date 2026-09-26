@@ -1171,7 +1171,9 @@ two free-text properties carry `pattern`, the grammar their flag enforces.
 The schema is modelled on MCP elicitation's flat form schema. A client may send it as a
 `requestedSchema` once it drops `pattern` and the `x-keelline-*` keys, which that subset does not
 carry. Harness ask tools take lists of questions and options rather than a schema, so the `init`
-skill asks one question per property. The flags validate the answers; the schema does not.
+skill turns the properties into questions: the first four as one confirmation of their defaults,
+the rest one at a time, within each harness's limits. The flags validate the answers; the schema
+does not.
 
 It is refused (`2`) before anything beyond the root is read, in three cases:
 - the repository already carries `.keelline/manifest.json`: re-running `init` is

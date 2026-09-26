@@ -4,8 +4,9 @@ Six questions, each keyed by the `keelline.toml` key its answer writes. Each car
 `keelline init --yes` takes when it is not answered, where that value came from, and the flag on
 `init --yes` that answers it. The schema is modelled on MCP elicitation's flat form schema, so a
 client that drops `pattern` and the `x-keelline-*` keys can send it as a requested schema; an
-agent harness's ask tool takes questions and options instead, so the `init` skill asks one
-question per property.
+agent harness's ask tool takes questions and options instead, so the `init` skill turns the
+properties into questions: the first four as one confirmation of their defaults, and the rest
+one at a time, within each harness's limits.
 
 **Nothing here carries a byte a grammar rejected.** Every default comes from `detect`, which
 bounds the three repository-authored strings before it returns them, from Keelline's own
