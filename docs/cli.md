@@ -2098,6 +2098,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
   merge_group:
+    branches: [main]
   push:
     branches: [main]
 
@@ -2108,14 +2109,15 @@ jobs:
       base: main
 ```
 
-The branch is named three times, and each one is load-bearing. A pull request into any other
+The branch is named four times, and each one is load-bearing. A pull request into any other
 branch runs nothing, so it cannot collect a green check against a looser base and then be
 retargeted. `edited` re-runs the check when a pull request is retargeted, and on every title
 edit too, because a job filtered out with `if:` reports as skipped, which a required check
 counts as passing. `base:` is a literal, so a pull request whose base is not this branch is
 refused even where the trigger has been widened by hand. `merge_group` makes the check report
-for a merge queue, and with the literal `base:` every queue is judged against the gate branch:
-a repository with merge queues on several branches judges them all against that one. Each
+for the gate branch's merge queue and no other: a merge group reports no base the workflow reads,
+so with the literal `base:` another branch's queue would be judged against the gate branch's
+configuration, and it gets no run, as a pull request into that branch gets none. Each
 `edited` run is a job, billed by the whole minute like any other. A pull request into another
 branch — one stacked on a feature branch, say — gets no run at all, which blocks nothing as long
 as the check is required on the gate branch only.
@@ -2227,7 +2229,7 @@ gates still run and still report but cannot stop a pull request that edits its o
   changes for a code owner to see;
 - **branches required to be up to date before merging, or a merge queue**: a verdict is judged
   against the base as it was when the run started, and a base that tightened since would not be
-  seen. The caller subscribes to `merge_group` for the queue;
+  seen. The caller subscribes to `merge_group` for the gate branch's queue;
 - and one that is Keelline's, not yours: **a `v*` tag ruleset on the Keelline repository**,
   because an upgrade is admitted only at a released tag's commit, and a tag that could move
   would move that anchor for every caller.

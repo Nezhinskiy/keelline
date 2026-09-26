@@ -296,11 +296,13 @@ def test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_ret
     # A caller that ran for pull requests into any branch let a pull request collect a green
     # check against a looser base and then be retargeted onto the gate branch, and a `base:`
     # that followed `github.base_ref` followed it there. So the trigger names the gate branch,
-    # `edited` re-runs the check on a retarget, `merge_group` reports for a queue, and `base:`
+    # `edited` re-runs the check on a retarget, `merge_group` reports for the gate branch's
+    # queue and no other branch's (whose queue would be judged against this branch's
+    # configuration, since a merge group reports no base the workflow reads), and `base:`
     # is a literal the reusable workflow holds a pull request's own base to. The equality below
     # holds every line of the block, so deleting any one of them reddens it. Mutations
-    # (declared): the `pull_request` branch filter removed; `base:` follows the pull request
-    # again.
+    # (declared): the `pull_request` branch filter removed; the `merge_group` one removed;
+    # `base:` follows the pull request again.
     recorded = _recording(preset_defaults("widget"))
     config = replace(recorded, ci=replace(recorded.ci, gate_branch="trunk"))
     body = {t.id: t for t in _prepared(config, resolution=PINNED).footprint}["ci-workflow"].render()
@@ -311,6 +313,7 @@ def test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_ret
         '    branches: ["trunk"]\n'
         "    types: [opened, synchronize, reopened, edited]\n"
         "  merge_group:\n"
+        '    branches: ["trunk"]\n'
         "  push:\n"
         '    branches: ["trunk"]\n'
     ), trigger

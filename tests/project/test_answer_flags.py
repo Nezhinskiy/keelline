@@ -142,7 +142,7 @@ def test_a_fresh_repository_gates_the_branch_it_chose(tmp_path: Path, how: str) 
     chosen = (config.project.base_branch, config.project.release_branch, config.ci.gate_branch)
     assert chosen == (branch,) * 3
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
-    assert workflow.count(f'branches: ["{branch}"]') == 2
+    assert workflow.count(f'branches: ["{branch}"]') == 3
     assert f'base: "{branch}"' in workflow
     if how == "main":
         # Written only where it differs from the preset's, so a `main` repository's file is the
@@ -171,7 +171,7 @@ def test_an_adopted_document_keeps_its_own_ci_and_its_workflow_agrees_with_it(
     assert (root / CONFIG_FILE).read_text(encoding="utf-8") == hand_written
     assert load(root, machine=tmp_path / "absent.toml").ci.gate_branch == "main"
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
-    assert workflow.count('branches: ["main"]') == 2 and "develop" not in workflow
+    assert workflow.count('branches: ["main"]') == 3 and "develop" not in workflow
 
 
 @needs_git

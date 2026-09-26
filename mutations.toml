@@ -9257,3 +9257,20 @@ file = "src/keelline/profiles/evaluate.py"
 before = "    if code == -1 or (code != 0 and in_work_tree(root)):"
 after = "    if code == -1:"
 reddens = ["tests/profiles/test_evaluate.py::test_tracked_names_a_located_file_in_a_repository_git_refuses_rather_than_passing_it"]
+
+# A merge group reports no base the reusable workflow reads, so with the literal `base:` another
+# branch's queue would be judged against the gate branch's configuration. The caller subscribes
+# to the gate branch's queue alone.
+[[mutation]]
+name = "the caller runs for every branch's merge queue"
+file = "src/keelline/templates/project/keelline.yml"
+before = """
+  merge_group:
+    branches: ["%%GATE_BRANCH%%"]
+"""
+after = """
+  merge_group:
+"""
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
