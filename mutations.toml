@@ -2180,6 +2180,30 @@ reddens = [
   "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
 ]
 
+# `git_run`'s `-1` is git that could not be run or ran past its time limit, not git saying there
+# is no repository, and every caller of `_ask` read it as the second: a git that timed out on
+# `rev-parse` let the project's main checkout be recorded from one of its worktrees. Inside a
+# checkout, which the disk says, the silence refuses; where no `.git` is, it stays harmless.
+[[mutation]]
+name = "setup reads git giving no answer inside a checkout as no repository again"
+file = "src/keelline/setup/run.py"
+before = "    if code == -1 and in_work_tree(start):"
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[every-call]",
+  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
+  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-listing]",
+]
+
+[[mutation]]
+name = "setup refuses an overlay whenever git gives no answer, checkout or not"
+file = "src/keelline/setup/run.py"
+before = "    if code == -1 and in_work_tree(start):"
+after = "    if code == -1:"
+reddens = [
+  "tests/setup/test_setup.py::test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay",
+]
+
 # `git worktree list` names the main checkout of a `--separate-git-dir` repository, and of a
 # submodule, by its git directory, which does not record where the checkout is. From a linked
 # worktree that checkout was on no list, so its `ov/` passed; git asked from the candidate's side

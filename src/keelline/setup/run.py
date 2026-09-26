@@ -113,7 +113,7 @@ from keelline import REPOSITORY_URL, __version__, fsops
 from keelline.config.paths import PathEscape, contained
 from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 from keelline.overlay.api import (
     create,
     init_instance,
@@ -539,11 +539,30 @@ def _nearest_directory(path: Path) -> Path:
     return path
 
 
+_SILENT_IN_A_CHECKOUT = (
+    "`git` gave no answer asked from {start}, which is inside a checkout — {no_answer} — so no "
+    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
+    "the machine's trust anchor, and a question git did not answer is not taken as a yes"
+)
+
+
 def _ask(start: Path, *args: str) -> list[str] | None:
     """git's answer to `args` asked from `start`, one line per entry, or `None` when it gave
     none. `gitenv.git_run` decodes losslessly, so a path in bytes that are not UTF-8 is part of
-    the answer and compares equal to itself."""
+    the answer and compares equal to itself.
+
+    **A git that said nothing is not a git that said "no repository" where a checkout could
+    be.** `git_run`'s `-1` — git could not be run or ran past its time limit — read as `None`
+    here, and every caller reads `None` as a directory git does not count as a checkout: a git
+    that timed out on `rev-parse` let the main checkout of the project be recorded from one of
+    its worktrees. Whether `start` could be inside a checkout is read off the disk
+    (`gitenv.in_work_tree`), because the question cannot go to the git that just failed to
+    answer it. Where it could, the silence refuses; where no `.git` is at or above `start`,
+    there is no checkout for git to have named, and it is `None` as before.
+    """
     code, out = git_run(start, *args)
+    if code == -1 and in_work_tree(start):
+        raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=NO_ANSWER))
     lines = out.splitlines()
     return lines if code == 0 and lines else None
 
@@ -559,12 +578,14 @@ def _repository(project_root: Path) -> _Repository | None:
     a clone cannot commit into.
 
     **`None` means git gave no answer, with the key or without it**: `--root` is in no
-    repository, `git` is not installed or timed out, `safe.directory` refuses a repository
-    another user owns, or its `.git` is unreadable. `git_run` drops stderr, so these are not told
-    apart, and only the path arms stand. None of them is something a repository can commit.
-    Every other way of not answering refuses: an answer that says `--root` is not inside a work
-    tree (a root inside a bare-shaped directory has no checkout of its own to compare against),
-    an answer git gives only without the key, and a listing that fails or is empty.
+    repository, `safe.directory` refuses a repository another user owns, or its `.git` is
+    unreadable — or git could not be run or timed out where no `.git` is at or above `--root`.
+    `git_run` drops stderr, so these are not told apart, and only the path arm stands. None of
+    them is something a repository can commit. Every other way of not answering refuses: git
+    that could not be run or timed out inside a checkout (`_ask`), an answer that says `--root`
+    is not inside a work tree (a root inside a bare-shaped directory has no checkout of its own
+    to compare against), an answer git gives only without the key, and a listing that fails or
+    is empty.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
@@ -608,7 +629,8 @@ def _candidate_repository(candidate: Path) -> Path | None:
     which does not record where the checkout is — so from a linked worktree the main checkout
     was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
     The candidate's bytes can try to make this answer wrong, and whatever they make it say they
-    cannot remove a refusal the listing makes.
+    cannot remove a refusal the listing makes. Nor can a git that says nothing: on the walk, as
+    everywhere `_ask` is used, that is a refusal inside a checkout and not a step past it.
 
     **Only an answer from inside a work tree is the candidate's.** On a git that ignores
     `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or

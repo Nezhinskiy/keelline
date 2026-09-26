@@ -1166,6 +1166,88 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
         _record(tmp_path, overlay, project)
 
 
+# Which `git` calls give no answer — `gitenv.git_run`'s `(-1, "")`, for a git that could not be
+# run or ran past its time limit — keyed by what was asked and from where.
+SILENT: dict[str, Callable[[Path, Path, tuple[str, ...]], bool]] = {
+    "every-call": lambda main, root, args: True,
+    "the-listing": lambda main, root, args: "worktree" in args,
+    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
+    # directory, so this arm alone can refuse it.
+    "the-candidate-side": lambda main, root, args: main in (root, *root.parents),
+}
+
+
+@pytest.mark.parametrize("silent", sorted(SILENT))
+def test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, silent: str
+) -> None:
+    # `git_run` answers `(-1, "")` when git could not be run or ran past its time limit, and the
+    # guard read that as it reads git's own "no repository": `_repository` answered `None` and
+    # only the path arm stood, and the candidate-side walk went on past it and found nothing. A
+    # git that timed out on `rev-parse` let the main checkout of the project be recorded as the
+    # trust anchor from one of its worktrees. Inside a checkout, which the disk says without
+    # asking git, that silence is now a refusal.
+    #
+    # The layout is the separate-git-dir one, whose main checkout `s` only the candidate-side
+    # walk can refuse, so each of the three places git is asked is the one that decides.
+    #
+    # Mutation ("setup reads git giving no answer inside a checkout as no repository again"):
+    # the refusal in `_ask` becomes `if False:` → `every-call` and `the-candidate-side` record
+    # `s/ov`, and `the-listing` is refused for an empty listing, a message that names the wrong
+    # cause; all three redden.
+    main, sep = tmp_path / "s", tmp_path / "sep.git"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    (main / "README.md").write_text("x", encoding="utf-8")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    linked = tmp_path / "s.wt" / "w"
+    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
+    candidate = main / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    real = gitenv.git_run
+    resolved_main = main.resolve()
+
+    def silent_git(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if SILENT[silent](resolved_main, root.resolve(), args):
+            return -1, ""
+        return real(root, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.setup.run.git_run", silent_git)
+    with pytest.raises(Refusal, match="gave no answer") as refused:
+        _record(tmp_path, candidate, linked)
+    assert gitenv.NO_ANSWER in str(refused.value)
+
+
+def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side of the test above: where no `.git` is at or above the directory git was
+    # asked from, there is no checkout for it to have named, so a git that cannot run at all
+    # costs nothing and the path arm stands, as it did before.
+    #
+    # Mutation ("setup refuses an overlay whenever git gives no answer, checkout or not"): the
+    # `in_work_tree` condition is dropped → this overlay is refused and this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _seed_overlay(overlay)
+    monkeypatch.setattr("keelline.setup.run.git_run", lambda root, *args, **kwargs: (-1, ""))
+    machine = tmp_path / "config.toml"
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=machine,
+        runner=FakeRunner(),
+        yes=True,
+        overlay=str(overlay),
+        project_root=project,
+    )
+    assert report.overlay == overlay
+    assert overlay_root(machine) == overlay
+
+
 @pytest.mark.parametrize("git_version", GITS)
 def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
