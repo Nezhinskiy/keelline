@@ -69,7 +69,8 @@ def _name(root: Path) -> tuple[str, str]:
         origin = None
     if origin:
         segment = origin.rstrip("/").replace(":", "/").rsplit("/", 1)[-1]
-        return segment.removesuffix(".git").lower(), ORIGIN_REMOTE
+        # Lower-cased first, so `Widget.GIT` loses its suffix as `Widget.git` does.
+        return segment.lower().removesuffix(".git"), ORIGIN_REMOTE
     return root.name.lower(), DIRECTORY_NAME
 
 

@@ -9,6 +9,9 @@ it asked to see judged, the way running its test suite runs the tests it carries
 run that stops part-way leaves the last finished inventory in place rather than half of a new
 one.
 
+The file is read through the reader `keelline gate` uses, which refuses a `keelline.toml` that
+is a symlink: a clone's link to `/dev/zero` would otherwise end the run by exhausting memory.
+
 **One write, at a constant place.** The inventory goes to `ASSESSMENT`, Keelline's own spelling
 of the path `keelline uninstall` takes back, and no configured value can move it: the loader
 refuses a `[paths]` value inside Keelline's directory. What a clone can do is put something
@@ -36,7 +39,7 @@ from keelline.assess.gates import Gate, GateContext, GateResult, configured, run
 from keelline.assess.model import Item, item
 from keelline.assess.probes import ProbeContext, run_probes
 from keelline.assess.rule import local_base
-from keelline.config.loader import load
+from keelline.config.loader import CONFIG_FILE, NOT_THERE, ConfigError, loads, read_document
 from keelline.errors import Refusal
 from keelline.findings import Severity
 from keelline.fsops import UnsafePath, write_within
@@ -85,7 +88,10 @@ def assess(root: Path, *, machine: Path | None, base: str | None) -> Assessment:
     """Every configured gate against `base`, then every probe, over the tree at `root`."""
     from keelline.presets import load_preset
 
-    config = load(root, machine=machine)
+    text = read_document(root)
+    if text is None:
+        raise ConfigError(NOT_THERE.format(path=root / CONFIG_FILE))
+    config = loads(text, root, machine=machine)
     base = base or local_base(config)
     results = run_gates(GateContext(root, config, base), config.gate_names)
     gates = configured(config)

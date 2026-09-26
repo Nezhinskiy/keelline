@@ -40,6 +40,8 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 - **A `keelline.toml` the user wrote answers the questions.** Skip steps 2–4 and run steps 5
   and 6 with no answer flag: the dry run, the relay, the explicit final yes, then the write. The
   file is kept; a missing `[keelline] version` is the one thing added, and a `note:` line says so.
+  A file that configures custom gates gets a `note:` naming them: their commands run from the
+  first step of the adoption, which asks first.
 - **A `failed:` line from `init` over a `keelline.toml` the user wrote means the next command
   could not load that file.** Nothing was written. Relay the sentence, fix the file with the
   user, and run again.

@@ -25,7 +25,7 @@ import pytest
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
 from keelline.config.schema import Config
-from keelline.project.commands import STAMPED, run_init
+from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
 from keelline.project.init import HEAD_DEFAULTED
 from keelline.project.templates import _ci
 from keelline.release.api import Resolution
@@ -314,15 +314,17 @@ def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) 
 def test_questions_print_each_default_with_its_source_and_write_nothing(tmp_path: Path) -> None:
     # The card is what a person reads before choosing any answer, so each line carries the
     # value `init --yes` would take and where it came from; the questions plan nothing.
-    # Mutation (by hand): the card drops the source -> the `project.name` line reddens.
+    # The help and the docs promise the flag that changes each one, so the line names it too.
+    # Mutation (by hand): the card drops the source, or the flag -> the `project.name` line
+    # reddens.
     root = repository(tmp_path)
     before = snapshot(root)
     code, printed = _run(root, tmp_path, "--questions")
     assert code == 0, printed
     assert printed.startswith("detected:\n")
-    assert "  project.name: widget (origin remote)\n" in printed
-    assert "  memory.mode: local-only (the preset's default)\n" in printed
-    assert "  artifacts.local: none (the preset's default)\n" in printed
+    assert "  project.name: widget (origin remote; --name)\n" in printed
+    assert "  memory.mode: local-only (the preset's default; --memory-mode)\n" in printed
+    assert "  artifacts.local: none (the preset's default; --local)\n" in printed
     code, printed = _run(root, tmp_path, "--questions", "--json")
     assert code == 0, printed
     assert json.loads(printed)["questions"]["type"] == "object"
@@ -493,6 +495,50 @@ def test_a_refused_adoption_says_its_version_would_be_written(tmp_path: Path) ->
     assert STAMPED.format(verb="wrote") not in printed
     assert (root / "keelline.toml").read_text(encoding="utf-8") == hand_written
     assert not (root / ".keelline" / "manifest.json").exists()
+
+
+def _gates(*names: str) -> str:
+    return "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in names)
+
+
+@needs_git
+def test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them(
+    tmp_path: Path,
+) -> None:
+    # A clone's `keelline.toml` configures commands, and `keelline assess`, the next step of
+    # the adoption, runs them: the dry run the person approves has to say so, naming each gate
+    # (the loader holds names to a grammar) and never a command. Mutation (declared): the note
+    # left out -> the dry run says nothing about the commands.
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text(DOCUMENT + _gates("tests", "lint"), encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["custom_gates"] == ["lint", "tests"]
+    for argv in (("--yes", "--dry-run"), ("--yes",)):
+        code, printed = _invoke(root, tmp_path, *argv)
+        assert code == 0, printed
+        assert CUSTOM_GATES.format(count=2, names="lint, tests") in printed.splitlines()
+        assert '"true"' not in printed
+
+
+@needs_git
+def test_past_a_few_custom_gates_the_note_counts_the_rest(tmp_path: Path) -> None:
+    # Bounded: a file with many gates prints a few names and a count, never a list as long as
+    # the repository makes it. Mutation (by hand): every name printed -> the equality reddens.
+    root = repository(tmp_path)
+    names = [f"g{n}" for n in range(7)]
+    (root / "keelline.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    shown = "g0, g1, g2, g3, g4, and 2 more"
+    assert CUSTOM_GATES.format(count=7, names=shown) in printed.splitlines()
+
+
+@needs_git
+def test_a_document_init_writes_names_no_custom_gate(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert code == 0, printed
+    assert json.loads(printed)["custom_gates"] == []
 
 
 @needs_git

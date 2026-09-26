@@ -82,6 +82,15 @@ STAMPED = (
     "note: keelline.toml carried no [keelline] version, the one key Keelline owns that the "
     "loader requires; this run {verb} it and leaves every other line as it was"
 )
+# Names and a count, never a command: each name is a custom gate's, which the loader holds to
+# `PROJECT_NAME`, and past `CUSTOM_GATES_SHOWN` the rest are counted. Said before anything runs
+# them, so the dry run a person approves carries it, and the `init` skill asks before `assess`.
+CUSTOM_GATES = (
+    "note: keelline.toml configures {count} custom gate(s), {names}; `keelline assess`, "
+    "`keelline gate` and `keelline adopt promote` run each one's command from [gates.custom], "
+    "so read those commands before running any of the three"
+)
+CUSTOM_GATES_SHOWN = 5
 QUESTIONS_HELP = (
     "print the defaults init would take, where each came from and the flag that changes it; "
     "under --json, as a JSON Schema. Writes nothing"
@@ -196,6 +205,11 @@ def run_init(args: argparse.Namespace) -> Result:
         lines.append(UNKNOWN_HARNESSES.format(count=report.unknown_harnesses))
     if report.head_note:
         lines.append(f"note: {report.head_note}")
+    if report.custom_gates:
+        shown = list(report.custom_gates[:CUSTOM_GATES_SHOWN])
+        if len(report.custom_gates) > CUSTOM_GATES_SHOWN:
+            shown.append(f"and {len(report.custom_gates) - CUSTOM_GATES_SHOWN} more")
+        lines.append(CUSTOM_GATES.format(count=len(report.custom_gates), names=", ".join(shown)))
     if report.stamped:
         # Nothing is written by a dry run or a refused one, the stamp included.
         verb = "would write" if report.dry_run or report.refused else "wrote"
@@ -214,6 +228,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "unknown_harnesses": report.unknown_harnesses,
         "head_note": report.head_note,
         "stamped": report.stamped,
+        "custom_gates": list(report.custom_gates),
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

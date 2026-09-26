@@ -635,6 +635,27 @@ def test_a_symlinked_document_with_no_version_is_refused_by_the_dry_run_too(
 
 
 @needs_git
+def test_a_symlinked_document_is_refused_even_when_it_carries_its_version(
+    tmp_path: Path,
+) -> None:
+    # A document with its version needs no stamp, and `init` read it by following the link: a
+    # clone's `keelline.toml -> /dev/zero` ended the run by exhausting memory. It is read
+    # through `read_document` now, as `keelline gate` reads it, once. Mutation (declared):
+    # `_existing` reading the file by following the link -> the dry run reports a plan.
+    root = _repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere.toml"
+    elsewhere.write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n', encoding="utf-8"
+    )
+    (root / CONFIG_FILE).symlink_to(elsewhere)
+    before = snapshot(root)
+    for dry_run in (True, False):
+        with pytest.raises(Refusal, match="symlink"):
+            _init(root, tmp_path, dry_run=dry_run)
+        assert_snapshot_unchanged(root, before)
+
+
+@needs_git
 def test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_detection(
     tmp_path: Path,
 ) -> None:

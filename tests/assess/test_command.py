@@ -49,6 +49,24 @@ def test_assess_exits_one_when_a_gate_would_fail(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_symlinked_keelline_toml_is_refused_and_never_followed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `keelline gate` refuses a committed symlink at `keelline.toml`, and `assess` read through
+    # it: a link to `/dev/zero` ended the run by exhausting memory. Both read the file through
+    # the one reader that refuses a link. Mutation (declared): `assess` reading the file by
+    # following the link -> the run exits 0 and writes the inventory.
+    root = smoke_repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere.toml"
+    elsewhere.write_bytes((root / CONFIG_FILE).read_bytes())
+    (root / CONFIG_FILE).unlink()
+    (root / CONFIG_FILE).symlink_to(elsewhere)
+    assert _assess(root, tmp_path, "--base", BASE) == 2
+    assert CONFIG_FILE in capsys.readouterr().err
+    assert not (root / ASSESSMENT).exists()
+
+
+@needs_git
 def test_a_symlinked_keelline_directory_is_a_refusal_and_nothing_is_written_through_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

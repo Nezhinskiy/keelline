@@ -125,7 +125,7 @@ def test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed(tmp_path: P
     assert "default" not in name and name["x-keelline-source"] == "not derivable"
     shown = card(schema)
     assert "not a name" not in repr(schema).lower() and "not a name" not in shown.lower()
-    assert "  project.name: none; asked (not derivable)\n" in shown
+    assert "  project.name: none; asked (not derivable; --name)\n" in shown
 
 
 @needs_git

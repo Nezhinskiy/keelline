@@ -45,8 +45,8 @@ OVERLAY_NEXT = "In a private overlay, which the setup skill creates or records n
 # How the card shows a question with no default: one whose value could not be derived.
 UNANSWERED = "none; asked"
 TAIL = (
-    "each is answered by a flag on `keelline init --yes`; `keelline init --questions --json` "
-    "carries them as a JSON Schema"
+    "each is answered by the flag its line names, on `keelline init --yes`; "
+    "`keelline init --questions --json` carries them as a JSON Schema"
 )
 
 
@@ -158,9 +158,11 @@ def _shown(question: dict[str, Any]) -> str:
 
 
 def card(schema: dict[str, Any]) -> str:
-    """The questions as `init --questions` prints them: each default and where it came from."""
+    """The questions as `init --questions` prints them: each default, where it came from, and
+    the flag on `init --yes` that answers it."""
     lines = ["detected:"]
     for key, question in schema["properties"].items():
-        lines.append(f"  {key}: {_shown(question)} ({question['x-keelline-source']})")
+        source, flag = question["x-keelline-source"], question["x-keelline-flag"]
+        lines.append(f"  {key}: {_shown(question)} ({source}; {flag})")
     lines.append(TAIL)
     return "\n".join(lines)

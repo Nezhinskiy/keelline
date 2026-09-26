@@ -2,7 +2,11 @@
 
 After the footprint is written:
 
-1. Run `keelline assess` and relay the summary: its table of gates, and its table of items
+1. If `init` printed a `note: keelline.toml configures … custom gate(s)` line, the file the user
+   kept names commands of its own, and `keelline assess` runs them. Name those gates to the
+   user, say that the next command runs their commands on this machine, and ask for an explicit
+   yes. **Silence, a timeout or an empty answer is a no.** On a no, stop here: the footprint is
+   written and nothing ran. Then run `keelline assess` and relay the summary: its table of gates, and its table of items
    when there are any. The whole list is in `.keelline/assessment.json`. Use it for the next
    step, and never paste it wholesale.
 2. Brainstorm the adoption with the user, through a brainstorming skill if the harness has

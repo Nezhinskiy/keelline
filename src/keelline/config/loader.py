@@ -108,6 +108,7 @@ class ConfigError(Failure):
 NOT_UTF8 = "{path} is not UTF-8 text; Keelline reads it only as UTF-8"
 # The error's class name and not its message, which repeats the path and adds nothing to act on.
 UNREADABLE = "{path} cannot be read ({error})"
+NOT_THERE = "{path} does not exist; run `keelline init` first"
 
 
 class MachineConfigError(ConfigError):
@@ -426,7 +427,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+        raise ConfigError(NOT_THERE.format(path=path)) from None
     except UnicodeDecodeError:
         raise ConfigError(NOT_UTF8.format(path=path)) from None
     except OSError as exc:

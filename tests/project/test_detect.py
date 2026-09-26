@@ -19,6 +19,10 @@ def test_the_name_comes_from_origin_lower_cased_and_stripped(tmp_path: Path) -> 
     assert detect(repository(tmp_path, origin=MIXED_CASE)).name == "widget"
     gadget = repository(tmp_path / "b", origin="https://example.com/Owner/Gadget")
     assert detect(gadget).name == "gadget"
+    # Lower-cased before `.git` is stripped, so an upper-case suffix goes too. Mutation (by
+    # hand): strip, then lower-case -> `widget.git`.
+    upper = repository(tmp_path / "d", origin="https://github.com/Owner/Widget.GIT")
+    assert detect(upper).name == "widget"
     # No origin: the directory name, and every other value the default it falls back to, each
     # saying so.
     assert detect(repository(tmp_path / "c", origin=None, directory="Local")) == Detected(

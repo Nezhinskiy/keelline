@@ -8,8 +8,9 @@ release that wrote it. Every file it writes is a scaffold artifact recorded in
 tell what you have touched from what you have not — a file that was already there is left alone
 and recorded nowhere, which is how the `keelline.toml` of an adopted repository stays yours,
 gaining at most a missing `[keelline] version`. A `keelline.toml` you wrote by hand is read as
-the answers rather than replaced, `--dry-run` shows every file before one is written, and a
-refusal anywhere writes nothing. `--no-ci` writes no workflow and asks no remote for a pin,
+the answers rather than replaced — a `note:` names the custom gates it configures, whose
+commands `keelline assess` runs, and a symlinked one is refused rather than followed —
+`--dry-run` shows every file before one is written, and a refusal anywhere writes nothing. `--no-ci` writes no workflow and asks no remote for a pin,
 recording `[ci] mode = "none"` in the document when this run is the one that writes it. Until
 the first release there is no commit to pin and the workflow is skipped with a sentence saying
 so — or saying that the repository could not be asked.

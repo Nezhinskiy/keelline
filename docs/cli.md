@@ -720,7 +720,9 @@ severities, remedies — and never a path the repository chose: one table with a
 
 Exit codes: `0` when no gate would fail, whatever the probes found, so `0` means every gate
 could enforce now; `1` when a gate would fail, enforced or not, or when `keelline.toml` is
-missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal.
+missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal, a
+`keelline.toml` that is a symlink among them: it is never followed, as `keelline gate` never
+follows it.
 
 ## `keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
 
@@ -962,7 +964,7 @@ grammar holds `[ci] gate_branch` and a detected `origin/HEAD`. Answer flags reac
 configuration as not passing it.
 
 When nothing answers, `init` detects:
-- the project's name from `origin`'s last path segment, with `.git` stripped and lower-cased,
+- the project's name from `origin`'s last path segment, lower-cased and with `.git` stripped,
   else from the checkout's directory name;
 - the base branch from `refs/remotes/origin/HEAD` with `origin/` stripped, when that is a
   plain branch name, else `main` — and, when it is not `main`, the same branch as
@@ -999,7 +1001,11 @@ keys that are Keelline's to rewrite: `[keelline] version`, `state` and `enforced
 `[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
 (`1`) naming the file. A repository that already carries `.keelline/manifest.json` is refused
 (`2`): re-running `init` is `keelline upgrade`. `keelline uninstall` later keeps a
-`keelline.toml` you wrote, the version line included.
+`keelline.toml` you wrote, the version line included. When that file configures
+`[gates.custom]`, a `note:` names those gates, five at most and then a count, and says that
+`keelline assess`, `keelline gate` and `keelline adopt promote` run their commands: in a clone,
+those are commands the clone wrote, and the dry run you read before `--yes` says so. The
+commands themselves never print.
 
 **Two passes, both planned before either is applied.** The three write-once files are one pass
 and the rest of the footprint is the other, because two artifacts cannot target one file in one
@@ -1057,8 +1063,8 @@ run*, and those two are one value by construction — which is the invariant `ke
 so the gate that runs is not the one recorded"). On a repository this run creates the document
 for, the ref is the commit of the Keelline release running, asked of the public repository's own
 `v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
-`keelline.toml`, that document's `[ci] ref` is not rewritten — the one line `init` may add there
-is a missing `[keelline] version` — so the workflow pins the ref **it** records, and `doctor`
+`keelline.toml`, that document's `[ci] ref` is not rewritten — all `init` may add there is a
+missing `[keelline] version`, with its `[keelline]` header when the file has none — so the workflow pins the ref **it** records, and `doctor`
 judges whether that is a released commit, which is its job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
@@ -1110,8 +1116,8 @@ configuration file that does not load), or a `keelline.toml` you wrote that, wit
 loader would refuse on the next command's load. `2` on a refusal above the plans: no `--yes`, an
 answer flag over an existing `keelline.toml`, an answer outside its grammar or its choices (from the
 parser), a repository already initialised, a detected name outside the grammar that no `--name`
-answers, a `[keelline]` table the key editor cannot add a version to, a `keelline.toml` with no
-version that is a symlink, a `[paths]` value outside the plain-path grammar, naming git's control
+answers, a `[keelline]` table the key editor cannot add a version to, a `keelline.toml` that is a
+symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's control
 directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink — all
 three refused by the loader before a plan exists — two artifacts, of one pass or of either, that
 resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap = "CLAUDE.md"`),
@@ -1131,6 +1137,8 @@ is neither a dry run nor refused — `unknown_harnesses`, how many names in `[ke
 harness answers to, and `head_note`, the `note:` line that says `main` replaced an
 `origin/HEAD` outside the plain-branch grammar (empty otherwise; the branch it named is never
 printed). An answered `--base-branch` replaced nothing, so it leaves `head_note` empty.
+`custom_gates` lists the custom gates a `keelline.toml` you wrote configures, by name, and is empty
+when this run writes the file.
 
 ---
 
@@ -1140,18 +1148,18 @@ Prints the values `keelline init --yes` would take for the six things a person m
 each came from, and the flag on `init --yes` that replaces it. It writes nothing. The `init` skill
 asks its questions from it, and a person reads it to see the defaults before choosing any.
 
-The summary is one line per question, `<key>: <default> (<where it came from>)`, then one line
-saying how each is answered:
+The summary is one line per question, `<key>: <default> (<where it came from>; <flag>)`, then
+one line saying how each is answered:
 
 ```text
 detected:
-  project.name: widget (origin remote)
-  project.base_branch: main (origin/HEAD)
-  keelline.agents: claude, codex (default)
-  keelline.profile: python (profile markers)
-  memory.mode: local-only (the preset's default)
-  artifacts.local: none (the preset's default)
-each is answered by a flag on `keelline init --yes`; `keelline init --questions --json` carries them as a JSON Schema
+  project.name: widget (origin remote; --name)
+  project.base_branch: main (origin/HEAD; --base-branch)
+  keelline.agents: claude, codex (default; --agent)
+  keelline.profile: python (profile markers; --profile)
+  memory.mode: local-only (the preset's default; --memory-mode)
+  artifacts.local: none (the preset's default; --local)
+each is answered by the flag its line names, on `keelline init --yes`; `keelline init --questions --json` carries them as a JSON Schema
 ```
 
 Where a value came from is one of a fixed set of phrases. The name comes from the

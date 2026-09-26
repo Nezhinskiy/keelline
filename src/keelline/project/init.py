@@ -17,18 +17,18 @@ a convenience.
 **Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact: created when
 absent, never looked inside again. So on a repository that already carries one the engine
 reports `skip_modified` — "create-once, and the file is already there" — and the file comes
-back byte for byte but for one line. What the hand-written document does is decide the whole
+back byte for byte but for one key. What the hand-written document does is decide the whole
 run: it is parsed, merged under Keelline's own two keys and the preset's defaults, and
 validated by `loads` before a byte is written, and the `Config` that comes out is what every
 target below is built from.
 
-**The one line is a missing `[keelline] version`**, the only tool-owned key the loader
-requires. It is added through `config.owned.rewrite`, which keeps every other line, and the
-file is checked with `loads` as it will then be on disk — before any network call and any
-write, dry run included — because the merged document forces `state`, drops `enforced` and
-detects a name the file may lack, and so loads where the next command's `load` would not. The
-other tool-owned keys are written only into a file Keelline itself creates, which is the only
-file whose header claims them.
+**The one key is a missing `[keelline] version`**, the only tool-owned key the loader
+requires, with its `[keelline]` header when the file has none. It is added through
+`config.owned.rewrite`, which keeps every other line, and the file is checked with `loads` as it
+will then be on disk — before any network call and any write, dry run included — because the
+merged document forces `state`, drops `enforced` and detects a name the file may lack, and so
+loads where the next command's `load` would not. The other tool-owned keys are written only into
+a file Keelline itself creates, which is the only file whose header claims them.
 
 **Every value in the document this writes is Keelline's own, the repository's own answer read
 back, or an answer a person gave as a flag.** The tool-owned keys are `config.owned.OWNED`;
@@ -58,7 +58,7 @@ from keelline.config.owned import rewrite
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.footprint import prepare
-from keelline.project.rewrite import NO_DOCUMENT, rewrite_owned
+from keelline.project.rewrite import rewrite_owned
 from keelline.project.templates import CI_ARTIFACT
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
@@ -148,6 +148,9 @@ class InitReport:
     # Whether this run's plan adds `[keelline] version` to a `keelline.toml` a person wrote. It
     # is written only by a run that is neither a dry run nor refused.
     stamped: bool = False
+    # The custom gates the adopted `keelline.toml` configures, by name: `assess`, `gate` and
+    # `adopt promote` run their commands. Names only, each held to the loader's grammar.
+    custom_gates: tuple[str, ...] = ()
 
     @property
     def refused(self) -> bool:
@@ -156,9 +159,12 @@ class InitReport:
         return bool(self.once.refusals or self.footprint.refusals)
 
 
-def _existing(root: Path) -> dict[str, object] | None:
-    """The `keelline.toml` already in the repository, parsed, or `None`.
+def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
+    """The `keelline.toml` already in the repository, as its text and parsed, or `None`.
 
+    Read through `read_document`, the reader `keelline gate` uses, so a symlinked file is a
+    refusal and is never followed: a clone's link to `/dev/zero` would end the run by exhausting
+    memory. Its refusals for a file that is not UTF-8 text or cannot be read are the loader's.
     A file that will not parse is a `Failure` naming the file and the position `tomllib`
     stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
     source for several of its faults — a duplicate table or inline-table key is reported with
@@ -167,15 +173,11 @@ def _existing(root: Path) -> dict[str, object] | None:
     P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
     instructed to relay and stop on.
     """
-    path = root / CONFIG_FILE
-    if not path.is_file():
+    text = read_document(root)
+    if text is None:
         return None
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        raise Failure(f"{CONFIG_FILE} is not UTF-8 text; Keelline reads it only as UTF-8") from None
-    except OSError as exc:
-        raise Failure(f"{CONFIG_FILE} cannot be read ({type(exc).__name__})") from None
+        return text, tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
@@ -258,22 +260,20 @@ def _rendered(tables: dict[str, dict[str, object]]) -> str:
     return HEADER + dumps(tables)
 
 
-def _as_on_disk(root: Path, existing: dict[str, object] | None) -> tuple[str | None, bool]:
+def _as_on_disk(read: tuple[str, dict[str, object]] | None) -> tuple[str | None, bool]:
     """The adopted `keelline.toml` as every later command will load it, and whether this run
     writes its missing `[keelline] version`; `(None, False)` when this run creates the file.
 
-    One with a version is read the way `load` reads it, following a link. One without meets
-    `read_document`, which refuses a symlinked file, and the key editor, which refuses a
-    `[keelline]` it cannot extend: the refusals the write would meet, met while planning.
+    `read` is `_existing`'s answer, the text `read_document` gave, so this is the file the write
+    will meet; one without a version then meets the key editor, which refuses a `[keelline]` it
+    cannot extend: the refusals the write would meet, met while planning.
     """
-    if existing is None:
+    if read is None:
         return None, False
+    text, existing = read
     head = existing.get("keelline")
     if isinstance(head, dict) and "version" in head:
-        return (root / CONFIG_FILE).read_text(encoding="utf-8"), False
-    text = read_document(root)
-    if text is None:
-        raise Refusal(NO_DOCUMENT)
+        return text, False
     return rewrite(text, {VERSION: keelline.__version__}), True
 
 
@@ -319,11 +319,12 @@ def init(
     if not yes:
         raise Refusal(NEEDS_YES)
     precheck(root, answering=given != NO_ANSWERS)
-    existing = _existing(root)
+    read = _existing(root)
+    existing = read[1] if read is not None else None
     tables, head_refused = _tables(root, existing, ci=ci, given=given)
     document = _rendered(tables)
     config = loads(document, root, machine=machine)
-    on_disk, stamped = _as_on_disk(root, existing)
+    on_disk, stamped = _as_on_disk(read)
     if on_disk is not None:
         # What the next command loads is the file, not the merged document: that one forces
         # `state`, drops `enforced` and detects a name the file may lack.
@@ -368,6 +369,7 @@ def init(
         passes.unknown_harnesses,
         HEAD_DEFAULTED if head_refused else "",
         stamped,
+        tuple(sorted(config.gates.custom)) if existing is not None else (),
     )
     if dry_run or report.refused:
         return report

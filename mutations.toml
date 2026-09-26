@@ -7959,6 +7959,33 @@ reddens = [
   "tests/assess/test_gate_command.py::test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off",
 ]
 
+# `keelline gate` refuses a symlinked `keelline.toml`, and `assess` and `init` read it through
+# the same reader: followed, a clone's link to `/dev/zero` ends the run by exhausting memory.
+[[mutation]]
+name = "assess follows a symlinked keelline.toml"
+file = "src/keelline/assess/assessment.py"
+before = "    text = read_document(root)"
+after = '    text = (root / CONFIG_FILE).read_text(encoding="utf-8") if (root / CONFIG_FILE).is_file() else None'
+reddens = ["tests/assess/test_command.py::test_a_symlinked_keelline_toml_is_refused_and_never_followed"]
+
+[[mutation]]
+name = "init follows a symlinked keelline.toml that carries its version"
+file = "src/keelline/project/init.py"
+before = "    text = read_document(root)"
+after = '    text = (root / CONFIG_FILE).read_text(encoding="utf-8") if (root / CONFIG_FILE).is_file() else None'
+reddens = ["tests/project/test_init.py::test_a_symlinked_document_is_refused_even_when_it_carries_its_version"]
+
+# A clone's `keelline.toml` configures commands, and the adoption's next step runs them: the
+# dry run the person approves says so, naming the gates, so the `init` skill can ask first.
+[[mutation]]
+name = "init adopts a file's custom gates without a word"
+file = "src/keelline/project/commands.py"
+before = "    if report.custom_gates:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_command.py::test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them",
+]
+
 # The base's copy governs the change, so one that does not load fails the run: read as "no copy",
 # it would be the bootstrap, and the change would judge itself. The second entry is the wider
 # mistake, a handler that answers any error that way: a change can make the base's load refuse,
