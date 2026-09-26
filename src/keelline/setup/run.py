@@ -514,7 +514,8 @@ _COMMON_AND_BARE = (
 _UNLISTED = (
     "`git` could not list the checkouts of the repository {root} is in, so no overlay root can be "
     "shown to lie outside all of them. The overlay root is the machine's trust anchor, and a "
-    "question git did not answer is not taken as a yes; check that `git` runs here"
+    "question git did not answer is not taken as a yes; check that `git` runs here and is 2.31 "
+    "or later, the first to answer `rev-parse --path-format`"
 )
 
 
@@ -523,7 +524,7 @@ class _Repository:
     """The repository `--root` is in: its common directory, and every checkout git lists."""
 
     common: Path
-    checkouts: list[Path]
+    checkouts: tuple[Path, ...]
 
 
 def _nearest_directory(path: Path) -> Path:
@@ -568,29 +569,30 @@ def _repository(project_root: Path) -> _Repository | None:
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
     answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_BARE, refusal=unlisted)
-    retried = answer is None
-    if retried:
+    retried = False
+    if answer is None:
         # git 2.38 and later refuse an implicit bare repository outright. Asked again without
         # the key only to tell that apart from "no repository at all".
+        retried = True
         answer = _ask(start, *_COMMON_AND_BARE, refusal=unlisted)
         if answer is None:
             return None
-    if answer is None or len(answer) != 2:
+    if len(answer) != 2:
         raise Refusal(unlisted)
     if answer[1] == "true":
         raise Refusal(
-            f"git reads {project_root} as inside a bare repository — a directory holding "
-            f"`HEAD`, `objects/` and `refs/`, which any repository can commit — so it has no "
-            f"checkout of its own for an overlay root to be compared against. Run this command "
-            f"from the checkout itself"
+            f"git reads {project_root} as inside a bare repository — one with no checkout, or a "
+            f"directory holding `HEAD`, `objects/` and `refs/`, which any repository can commit "
+            f"— so it has no checkout of its own for an overlay root to be compared against. "
+            f"Run this command from the checkout itself"
         )
     if retried:
         raise Refusal(unlisted)
     listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", refusal=unlisted)
     # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
-    checkouts = [
+    checkouts = tuple(
         Path(line[len("worktree ") :]) for line in listing or () if line.startswith("worktree ")
-    ]
+    )
     # git always lists at least the main worktree, so an empty listing is not an answer either.
     if not checkouts:
         raise Refusal(unlisted)
@@ -605,9 +607,15 @@ def _candidate_repository(candidate: Path) -> Path | None:
     `--separate-git-dir`, and for a submodule, the main checkout is listed by its git directory,
     which does not record where the checkout is — so from a linked worktree the main checkout
     was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
-    The candidate's bytes can make this answer wrong (a committed `ov/config` saying
-    `core.bare = false`, on a git that ignores `safe.bareRepository`), and then this arm adds
-    nothing; they cannot remove a refusal the listing makes.
+    The candidate's bytes can try to make this answer wrong — a committed `ov/config` saying
+    `core.bare = false`, on a git that ignores `safe.bareRepository`, answers from inside `ov/`
+    as a repository that is not bare — and whatever they make it say, they cannot remove a
+    refusal the listing makes.
+
+    **A common directory on the walk itself is not the candidate's.** A checkout's common
+    directory is its `.git`, or wherever its `.git` file points; it is never the directory git
+    was asked from or one of that directory's ancestors. One that is, is a directory git read
+    by its shape, whatever its committed `config` says, and the walk goes on past it.
 
     Walked up rather than asked once, because git refuses to answer from inside a bare-shaped
     directory — which is exactly where a clone puts the candidate — and a bare repository's
@@ -623,7 +631,9 @@ def _candidate_repository(candidate: Path) -> Path | None:
     while True:
         answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_BARE, refusal=refusal)
         if answer is not None and len(answer) == 2 and answer[1] == "false":
-            return Path(answer[0])
+            common = Path(answer[0])
+            if not any(_same(common, part) for part in (start, *start.parents)):
+                return common
         if start == start.parent:
             return None
         start = start.parent

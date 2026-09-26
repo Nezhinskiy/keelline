@@ -2020,7 +2020,7 @@ file = "src/keelline/setup/run.py"
 before = "        if _overlaps(resolved_candidate, checkout.resolve()):"
 after = "        if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused",
+  "tests/setup/test_setup.py::test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate",
 ]
 
 # Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
@@ -2107,6 +2107,19 @@ name = "the candidate-side walk takes a bare repository's answer as the candidat
 file = "src/keelline/setup/run.py"
 before = '        if answer is not None and len(answer) == 2 and answer[1] == "false":'
 after = "        if answer is not None and len(answer) == 2:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+]
+
+# The same walk, fooled the other way: a committed `ov/config` saying `core.bare = false` makes a
+# git that ignores `safe.bareRepository` answer from inside `ov/` as a repository that is not
+# bare, with `ov/` itself as its common directory. A checkout's common directory is never the
+# directory asked from or one of its ancestors, so such an answer is passed over.
+[[mutation]]
+name = "the candidate-side walk takes a common directory on the walk itself as the candidate's"
+file = "src/keelline/setup/run.py"
+before = "            if not any(_same(common, part) for part in (start, *start.parents)):"
+after = "            if True:"
 reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
 ]
