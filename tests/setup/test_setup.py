@@ -650,6 +650,40 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     assert runner.calls == [], "no plugin was installed for a run that refuses its own arguments"
 
 
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        pytest.param(os.fsdecode(b"/overlays/caf\xe9"), id="path"),
+        pytest.param("create:octo/keelline-private", id="create"),
+    ],
+)
+def test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_write(
+    tmp_path: Path, overlay: str
+) -> None:
+    # The machine file is UTF-8 TOML, and the overlay root is written into it last: on Linux an
+    # overlay under a directory named in latin-1 bytes ended `setup --overlay` as `internal
+    # error: UnicodeEncodeError`, after the machine file's other tables and the settings file
+    # were already written (reproduced in a Linux container). Refused with the tree checks,
+    # above every write, and before `gh repo create` for a created one, whose root lies under
+    # `home`. Built from the path alone, because APFS refuses such a name. Mutation (declared):
+    # drop the check -> the other refusals answer, or the write crashes, and this reddens.
+    home = Path(os.fsdecode(os.fsencode(tmp_path) + b"/home-caf\xe9"))
+    machine = tmp_path / "config.toml"
+    runner = FakeRunner()
+    with pytest.raises(Refusal, match="not UTF-8"):
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay=overlay,
+            project_root=tmp_path / "project",
+        )
+    assert _wrote_anything(home, machine) == []
+    assert runner.calls == []
+
+
 def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> None:
     # The non-vacuity guard under the test above: the assertions there are about a *refused*
     # run, and they would pass just as well if `setup` wrote nothing under any circumstances.

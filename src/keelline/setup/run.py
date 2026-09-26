@@ -112,7 +112,7 @@ from typing import Any
 from keelline import REPOSITORY_URL, __version__, fsops
 from keelline.config.paths import PathEscape, contained
 from keelline.errors import Failure, Refusal
-from keelline.fsops import UnsafePath
+from keelline.fsops import UnsafePath, utf_8_name
 from keelline.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from keelline.overlay.api import (
     create,
@@ -763,6 +763,19 @@ class _Overlay:
     create: tuple[str, str] | None
 
 
+def _recordable(root: Path) -> None:
+    """Refuse an overlay root the machine file cannot hold: it is UTF-8 TOML, and a path the
+    disk holds in other bytes — a directory named in latin-1, on Linux — reaches Python with
+    surrogate escapes and raised `UnicodeEncodeError` at the last write, after the machine
+    file's other tables and the settings file were written. Asked with the tree checks, above
+    every write."""
+    if not utf_8_name(str(root)):
+        raise Refusal(
+            f"{root} is not UTF-8 text, so the machine configuration, a UTF-8 file, cannot record "
+            f"it as the overlay root; keep the overlay under a path that is"
+        )
+
+
 def _requested_overlay(
     overlay: str | None, *, home: Path, project_root: Path, yes: bool
 ) -> _Overlay | None:
@@ -802,8 +815,10 @@ def _requested_overlay(
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
         _outside_the_project(destination, project_root=project_root)
+        _recordable(destination)
         return _Overlay(root=destination, create=(account, name))
     candidate = Path(overlay).expanduser().resolve()
+    _recordable(candidate)
     require_overlay(candidate, because=_RECORDING)
     _outside_the_project(candidate, project_root=project_root)
     return _Overlay(root=candidate, create=None)

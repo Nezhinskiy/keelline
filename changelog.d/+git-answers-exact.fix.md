@@ -36,3 +36,7 @@ internal error: it is set aside like a note that will not parse, and reported, b
 names every note by its file's name. The same name no longer breaks the store's trust digest,
 which made every session-start bundle and `memory trust` fail on one such committed file; a name
 that is valid UTF-8 hashes as it always did, so no recorded approval changes.
+
+`keelline setup --overlay` refuses, before it writes anything, an overlay root whose path is not
+UTF-8 text, which the machine configuration cannot record; it used to write the machine file and
+the settings file first and then end as an internal error.
