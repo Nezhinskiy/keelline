@@ -20,6 +20,7 @@ from keelline.config.schema import (
     BUILTIN_GATES,
     CI_MODES,
     MEMORY_MODES,
+    NAME_RULE,
     PROJECT_NAME,
     STATES,
     Config,
@@ -291,6 +292,20 @@ def test_load_is_read_then_loads(tmp_path: Path) -> None:
     assert "loads(" in inspect.getsource(load)
 
 
+def test_every_name_refusal_words_the_rule_and_never_prints_the_pattern(tmp_path: Path) -> None:
+    # A project name, a custom gate's name and a detected name are one grammar, and each refusal
+    # printed `PROJECT_NAME.pattern`, whose `\Z` a JSON Schema client or a person reads as a
+    # literal `Z`. Mutation (oracle): "a custom gate's name refusal prints the pattern" -> this
+    # reddens.
+    from keelline.project.detect import NOT_A_NAME
+
+    text = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n[gates.custom.Bad]\n'
+    with pytest.raises(ConfigError) as caught:
+        loads(text + 'run = ["true"]\n', tmp_path, machine=tmp_path / "absent.toml")
+    for message in (str(caught.value), NOT_A_NAME):
+        assert NAME_RULE in message and "\\Z" not in message, message
+
+
 def test_a_project_name_is_refused_without_being_quoted(tmp_path: Path) -> None:
     # DC6, both paths: `detect` (Task 10) and this loader refuse the same grammar, and neither
     # quotes the value. Mutation (comment): put `{project.name!r}` back -> the `not in` reddens.
@@ -298,6 +313,8 @@ def test_a_project_name_is_refused_without_being_quoted(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as caught:
         loads(text, tmp_path, machine=tmp_path / "absent.toml")
     assert "ignore-prior-rules" not in str(caught.value)
+    # The rule in words, as `--name` and `detect` word it: the pattern ends in Python's `\Z`.
+    assert NAME_RULE in str(caught.value) and "\\Z" not in str(caught.value)
     with_newline: str = "widget\n"
     assert with_newline != "widget" and PROJECT_NAME.match(with_newline) is None
 

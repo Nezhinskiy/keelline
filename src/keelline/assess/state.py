@@ -55,7 +55,8 @@ NO_TRAIL_STATE = (
 )
 NOT_A_GATE = "every name must be a configured gate, and config is the configuration check"
 NAMED_ENFORCES = (
-    "a gate named already enforces; name only gates that do not, or none for every gate left"
+    "one of the gates named already enforces; name only gates that do not yet, or none for "
+    "every gate left"
 )
 ALL_ENFORCE = "every configured gate already enforces; there is nothing left to promote"
 NO_GATE = "this project configures no gate, so there is nothing to promote"

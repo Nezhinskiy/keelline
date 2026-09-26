@@ -16,6 +16,12 @@ from typing import ClassVar
 # custom gate. Each is one lowercase path segment whose leading class keeps it out of an option's
 # position in an argv. Every other module derives from this spelling rather than keeping its own.
 PROJECT_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# `PROJECT_NAME` in words, for every refusal a person reads: the pattern itself ends in Python's
+# `\Z`, which means nothing to a reader and something else to every other regex dialect.
+NAME_RULE = (
+    "one lowercase path segment: lowercase letters, digits, '.', '_' and '-', led by a letter "
+    "or digit"
+)
 # The grammar a `[paths]` value must match before it may be printed anywhere; `contained()`
 # decides whether it may be written, and a shape rule cannot bound a charset.
 #

@@ -696,7 +696,8 @@ toward no total, and the inventory lists them under `skipped`.
 carried the ledger when the tree has none, default `refs/remotes/origin/<project.base_branch>` —
 the fully qualified name, so a tag cannot stand in for it. Where that ref does not exist (no
 `origin`, or not fetched), `plan` reports `base-unresolvable` and `commit` could not run, as does
-`bugs` in a tree with no ledger, and each counts as failing.
+`bugs` in a tree with no ledger, and each counts as failing; a `note:` after the summary says the
+base is missing and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
 A gate that could not judge the tree — an unreadable plan, a range git cannot read, a custom
 gate that could not start or ran past `custom_timeout_seconds` — is failing: a gate that could
@@ -836,7 +837,7 @@ that, and it is an option, not a requirement.
   resolves the base once to a commit and passes that. Run locally, the default is
   `refs/remotes/origin/<project.base_branch>`, read from this tree's own configuration, which is
   why a local run is advice and never the authority. A clone without an `origin` remote names its
-  base with `--base`, such as `--base refs/heads/main`.
+  base with `--base`, such as `--base refs/heads/<project.base_branch>`.
 - *The base's copy.* It is read at the project root's own path in the repository. A root reached
   through a symbolic link below the repository's top, or spelled otherwise than git spells it, is
   refused: either would look for the copy where the base has none, and a missing copy is the
@@ -967,8 +968,9 @@ the pull request that carries the promotion. A base that cannot be read, or has 
 that ran and did not pass to its finding count, `unanswered`, the gates that could not run, and
 `not_on_base`, the custom gates not run because the base does not have their command.
 When a gate stays advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or the gate's own command), and, when `plan` or `commit` is among them
-and the base is not in the checkout, a `note:` saying so and naming `--base`, since a
+(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs` is
+among them and the base is not in the checkout, a `note:` saying so and naming `--base` with the
+project's base branch, since a
 `base-unresolvable` finding is about the checkout and not the plan.
 
 **There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses

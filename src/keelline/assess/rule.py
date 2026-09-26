@@ -62,8 +62,8 @@ from keelline.overlay.api import later
 BASE_UNREADABLE = (
     "the base is not in this checkout, or git could not read its keelline.toml, so the "
     "configuration that governs this change cannot be read; check out with full history "
-    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/main in a clone with "
-    "no origin"
+    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/<[project] base_branch> "
+    "in a clone with no origin"
 )
 BASE_SHAPE = (
     "--base takes a full 40-character commit id or a full ref name starting with refs/: a "
@@ -79,7 +79,10 @@ BASE_COPY = f"the base's {CONFIG_FILE}"
 # A refusal the base's own load raised against this tree's disk, such as a symlink the change
 # planted on a path only the base's `[paths]` names: still a refusal, and said to be the base's.
 # The reason is the loader's own, bounded where it was raised.
-BASE_REFUSED = "the base's keelline.toml, which governs this change, is refused here: {reason}"
+BASE_REFUSED = (
+    "the base's keelline.toml governs this change, and loading it against this tree met a "
+    "refusal: {reason}"
+)
 BASE_DOES_NOT_LOAD = (
     "the base's keelline.toml governs this change and does not load, so the change cannot be "
     "judged; fix it on the base branch by a direct push ({reason})"

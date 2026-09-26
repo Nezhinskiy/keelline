@@ -462,7 +462,8 @@ PROBES: tuple[Probe, ...] = (
         "commit-types",
         None,
         Severity.ADVICE,
-        "write subjects as `<type>(<area>): <intent>`, with a type from [commit_messages] types",
+        "write subjects as `<type>: <intent>`, or `<type>(<area>): <intent>`, with a type from "
+        "[commit_messages] types",
         _commit_types,
     ),
 )

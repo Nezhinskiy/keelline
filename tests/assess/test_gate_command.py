@@ -673,7 +673,8 @@ def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Pat
     code, _, err = _gate(project, tmp_path, "--base", "refs/remotes/origin/absent")
     assert code == 1
     assert "fetch-depth: 0" in err
-    assert "refs/heads/main" in err  # the local remedy, for a clone with no origin
+    # The local remedy, for a clone with no origin: the configured base branch, not `main`.
+    assert "refs/heads/<[project] base_branch>" in err
 
 
 def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(

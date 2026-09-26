@@ -50,14 +50,15 @@ def _cli(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
-def _project(tmp_path: Path) -> tuple[Path, str]:
-    """A repository `init --yes --no-ci` wrote, committed, then an adoption plan committed with
-    the trail that lists it; the root, and the first commit's full id.
+def _project(tmp_path: Path, *, branch: str = "main") -> tuple[Path, str]:
+    """A repository on `branch` that `init --yes --no-ci` wrote, committed, then an adoption plan
+    committed with the trail that lists it; the root, and the first commit's full id.
 
     The plan is staged before `docs trail` runs, because the trail lists tracked files only:
     regenerated first, it would be stale once the plan is committed.
     """
     root = repository(tmp_path)
+    git(root, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
     code, _, err = _cli(root, tmp_path, "init", "--yes", "--no-ci")
     assert code == 0, err
     git(root, "add", "-A")
@@ -583,19 +584,24 @@ def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
     assert (code, out.splitlines()) == (0, ["docs: enforcing, 0 finding(s)"]), err
 
 
+@pytest.mark.parametrize("branch", ["main", "develop"])
 def test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass(
-    tmp_path: Path,
+    tmp_path: Path, branch: str
 ) -> None:
     # The fixture has an origin and no remote-tracking ref, so the default base is not there:
     # `plan` reports `base-unresolvable` and `commit` could not run, which read as a defect in
     # the plan. The note says why and names `--base`, and the last line where the findings are.
-    # Mutation (by hand): the note dropped -> the `--base` assertion reddens.
-    root, _ = _project(tmp_path)
+    # Mutation (by hand): the note dropped -> the `--base` assertion reddens. The `--base` it
+    # suggests is the project's own base branch: a fixed `refs/heads/main` sent a `develop`
+    # project to a branch it does not have. Mutation (oracle): "the missing-base note suggests
+    # main whatever the base branch" -> `develop` reddens.
+    root, _ = _project(tmp_path, branch=branch)
     code, out, err = _cli(root, tmp_path, "adopt", "promote")
     assert code == 1, err
     lines = out.splitlines()
     assert "still advisory: plan (1 finding(s)), commit (could not run)" in lines[0]
-    assert lines[1:] == [BASE_NOT_THERE, FINDINGS_ELSEWHERE]
+    assert lines[1:] == [BASE_NOT_THERE.format(branch=branch), FINDINGS_ELSEWHERE]
+    assert lines[1].endswith(f"such as refs/heads/{branch}")
 
 
 def test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists(tmp_path: Path) -> None:

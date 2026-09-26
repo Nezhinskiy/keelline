@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from keelline.config.schema import BRANCH_NAME, PROJECT_NAME
+from keelline.config.schema import BRANCH_NAME, NAME_RULE, PROJECT_NAME
 from keelline.errors import Refusal
 from keelline.gitenv import git_run
 from keelline.memory.api import GitUnavailable, origin_remote
@@ -33,8 +33,8 @@ DEFAULT_BRANCH = "main"
 ORIGIN_PREFIX = "refs/remotes/origin/"
 HEADS_PREFIX = "refs/heads/"
 NOT_A_NAME = (
-    "the project name this repository suggests is not one lowercase path segment matching "
-    f"{PROJECT_NAME.pattern}, so `init` cannot choose one; answer it with `keelline init --yes "
+    f"the project name this repository suggests is not {NAME_RULE}, so `init` cannot choose "
+    "one; answer it with `keelline init --yes "
     "--name NAME`, or write `[project] name` into keelline.toml by hand and run `keelline init "
     "--yes` again, which keeps what you wrote"
 )

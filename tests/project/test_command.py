@@ -24,7 +24,7 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
-from keelline.config.schema import Config
+from keelline.config.schema import NAME_RULE, Config
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
 from keelline.project.init import HEAD_CURRENT, HEAD_DEFAULTED
 from keelline.project.templates import _ci
@@ -476,7 +476,13 @@ def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
     root = repository(tmp_path)
     with pytest.raises(SystemExit):
         _invoke(root, tmp_path, *argv)
-    assert "Not A Name" not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Not A Name" not in err
+    # The rule in words, never the pattern: Python's `\Z` reads as nothing to a person.
+    # Mutation (oracle): "the --name refusal prints the pattern" -> `name` reddens.
+    assert "\\Z" not in err
+    if "--name" in argv:
+        assert NAME_RULE in err
     assert not (root / ".keelline").exists() and not (root / "keelline.toml").exists()
 
 

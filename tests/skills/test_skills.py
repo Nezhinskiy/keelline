@@ -244,3 +244,8 @@ def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None
     # before it, the only way to honour a no was to stop. Mutation (by hand): the no's command
     # back to plain `keelline assess` -> this reddens.
     assert "`keelline assess --builtin` on a no" in adoption[first_run:]
+    # Without the note there is nothing to ask, and the assessment still runs: that run was the
+    # tail of the if-sentence, where an agent reading "if" could skip it. It is its own branch,
+    # and the relay follows both. Mutation (by hand): the `Otherwise` branch deleted -> reddens.
+    otherwise = adoption.index("- Otherwise, run `keelline assess`.")
+    assert first_run < otherwise < adoption.index("Either way, relay the summary")

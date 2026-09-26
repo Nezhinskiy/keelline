@@ -414,7 +414,13 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     the rule and never the value; every other answer is a `choices`, whose error quotes only
     the operator's own argument.
     """
-    from keelline.config.schema import BRANCH_NAME, BRANCH_RULE, MEMORY_MODES, PROJECT_NAME
+    from keelline.config.schema import (
+        BRANCH_NAME,
+        BRANCH_RULE,
+        MEMORY_MODES,
+        NAME_RULE,
+        PROJECT_NAME,
+    )
     from keelline.harnesses import HARNESSES
     from keelline.profiles import shipped
     from keelline.project.templates import LOCAL_ELIGIBLE
@@ -422,7 +428,7 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     answers = parser.add_argument_group(
         "answers", "each replaces one default; `keelline init --questions` lists them"
     )
-    name_rule = f"not one lowercase path segment matching {PROJECT_NAME.pattern}"
+    name_rule = f"not {NAME_RULE}"
     branch_rule = f"not a plain branch name: {BRANCH_RULE}"
     answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
     answers.add_argument(

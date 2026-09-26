@@ -8,3 +8,6 @@ and `--json` prints the same document; the summary prints counts.
 `keelline assess --builtin` runs the built-in gates and the probes and none of the commands
 `[gates.custom]` names, so a clone whose commands you have not agreed to run can still be
 assessed; the `init` skill uses it when you decline to run them.
+When the base it compares against is not in the checkout — no `origin`, or not fetched — the
+summary ends with a note saying that is why `plan`, `commit` and `bugs` fail, and suggests
+`--base refs/heads/<base_branch>` with the project's own base branch.

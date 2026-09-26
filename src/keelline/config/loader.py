@@ -22,6 +22,7 @@ from keelline.config.schema import (
     CI_MODES,
     CONFIG_CHECK,
     MEMORY_MODES,
+    NAME_RULE,
     PROJECT_NAME,
     SECTION_NAME,
     STATES,
@@ -84,7 +85,7 @@ GATES_BUILTIN_UNKNOWN = (
 GATES_BUILTIN_TWICE = "[gates] builtin names a gate twice"
 GATES_CUSTOM_NAME = (
     "[gates] custom names {count} gate(s) Keelline cannot run under that name: a custom gate's "
-    "name matches {pattern} and is neither a built-in gate's name nor `config`"
+    "name is {rule}, and neither a built-in gate's name nor `config`"
 )
 GATES_CUSTOM_TABLE = "[gates.custom.{name}] must be a table"
 GATES_CUSTOM_EMPTY = "gates.custom.{name}.run must name a command"
@@ -333,8 +334,7 @@ def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
     reserved = (*BUILTIN_GATES, CONFIG_CHECK)
     unusable = [name for name in tables if not PROJECT_NAME.match(name) or name in reserved]
     if unusable:
-        pattern = PROJECT_NAME.pattern
-        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), pattern=pattern))
+        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))
     custom: dict[str, CustomGate] = {}
     for name, table in sorted(tables.items()):
         if not isinstance(table, dict):
@@ -512,9 +512,7 @@ def loads(
     _enum("keelline", "state", keelline.state, STATES)
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
-        raise ConfigError(
-            f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
-        )
+        raise ConfigError(f"project.name must be {NAME_RULE}")
     for key in ("base_branch", "release_branch"):
         # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
         # the text the grammar refused. The grammar is the one the rendered workflow holds

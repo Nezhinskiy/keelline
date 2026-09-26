@@ -9897,3 +9897,43 @@ after = "    if isinstance(found, Looked):"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[the-caller-unowned]",
 ]
+
+# A base the checkout lacks is why `plan`, `commit` and `bugs` fail, and the note says so, in
+# `assess` as in `adopt promote`, suggesting the project's own base branch.
+[[mutation]]
+name = "the missing-base note suggests main whatever the base branch"
+file = "src/keelline/assess/commands.py"
+before = "            lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))"
+after = '            lines.append(BASE_NOT_THERE.format(branch="main"))'
+reddens = [
+  "tests/assess/test_state.py::test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass[develop]",
+]
+
+[[mutation]]
+name = "assess never explains a base the checkout lacks"
+file = "src/keelline/assess/commands.py"
+before = '        summary += "\n\n" + BASE_NOT_THERE.format(branch=assessment.base_branch)'
+after = "        pass"
+reddens = [
+  "tests/assess/test_command.py::test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail",
+]
+
+# A name refusal words the grammar: the pattern ends in Python's `\Z`, which a reader, and every
+# other regex dialect, reads as something else.
+[[mutation]]
+name = "the --name refusal prints the pattern"
+file = "src/keelline/project/commands.py"
+before = '    name_rule = f"not {NAME_RULE}"'
+after = '    name_rule = f"not matching {PROJECT_NAME.pattern}"'
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing[name]",
+]
+
+[[mutation]]
+name = "a custom gate's name refusal prints the pattern"
+file = "src/keelline/config/loader.py"
+before = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=NAME_RULE))"
+after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable), rule=PROJECT_NAME.pattern))"
+reddens = [
+  "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
+]

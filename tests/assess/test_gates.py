@@ -279,9 +279,7 @@ def test_a_custom_gate_past_its_time_limit_did_not_answer(tmp_path: Path) -> Non
     [probe] = results(tmp_path, config)
     assert not probe.answered
     assert probe.failing
-    assert (
-        probe.reason == "the command [gates.custom.probe] run names could not start, or ran past 1s"
-    )
+    assert probe.reason == "the command in [gates.custom.probe] run could not start, or ran past 1s"
 
 
 def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(tmp_path: Path) -> None:
