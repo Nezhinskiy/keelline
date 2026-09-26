@@ -117,12 +117,17 @@ The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not 
 `name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
 drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
-mutation to a throwaway worktree — one per job, and by default as many jobs as the machine gives
-the process CPUs, each proving one entry at a time in a checkout no other job touches — so it
-never writes your working tree, and it refuses when a mutated file — **or any test file that a
-selected entry's `reddens` names** — has uncommitted changes, because that edit is work the run
-cannot see. Which is why a mutation run comes
+mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
+mutated file — **or any test file that a selected entry's `reddens` names** — has uncommitted
+changes, because that edit is work the run cannot see. Which is why a mutation run comes
 *after* the commit it is about, and why an uncommitted test edit mid-change stops it too.
+
+The oracle proves several entries at once: one worktree per job, each job proving one entry at
+a time in a checkout no other job touches, with as many jobs as the process has CPUs up to four
+unless `--jobs` says otherwise. So a test that a `reddens` names runs beside other tests in
+other processes and must be safe to — no shared path outside `tmp_path`, no wall-clock bound
+that load could break. A test that fails under contention fails on the mutated run for a reason
+that is not the mutation, and that reads as *caught*.
 
 ```toml
 [[mutation]]

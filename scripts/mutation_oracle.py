@@ -23,8 +23,9 @@ Usage:
     uv run python scripts/mutation_oracle.py --jobs 2   # at most two entries at a time
 
 Every mutation is applied to a throwaway worktree of `HEAD`; the working tree is never written.
-One such worktree per job, each proving one entry at a time, as many jobs as this process may
-use CPUs unless `--jobs` says otherwise.
+One such worktree per job, each proving one entry at a time: as many jobs as this process may
+use CPUs, at most four, unless `--jobs` says otherwise. So a test a `reddens` names runs beside
+other tests in other processes, and has to be safe to.
 
 Exit codes match the rest of the project: 0 all held, 1 findings, and 2 for a usage error.
 """
@@ -34,6 +35,7 @@ from __future__ import annotations
 import argparse
 import ast
 import contextlib
+import itertools
 import os
 import queue
 import shutil
@@ -380,38 +382,46 @@ def warm_cache(tree: Path) -> Path:
     mtime, so it is valid exactly when the file holds HEAD's bytes, which is the only time it
     matches.
 
-    A collection that fails leaves a partial cache and is not a refusal: whatever it did write
-    is still HEAD's bytecode, and whatever it did not is compiled from source on each run as it
-    always was. A HEAD that cannot be collected is reported by the clean runs that follow.
+    A collection that fails or times out leaves a partial cache and is not a refusal: whatever
+    it did write is still HEAD's bytecode, and whatever it did not is compiled from source on
+    each run as it always was. A HEAD that cannot be collected is reported by the clean runs
+    that follow.
     """
     cache = tree.parent / "bytecode"
-    subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
-        cwd=tree,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_environment(tree, cache, writes_bytecode=True),
-    )
+    # Bounded as `collected_ids` bounds the same collection: a HEAD whose collection hangs
+    # costs five minutes and a cold cache, not the job's whole budget.
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
+            cwd=tree,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+            env=_environment(tree, cache, writes_bytecode=True),
+        )
     return cache
 
 
 def _run(targets: tuple[str, ...], cwd: Path, *, cache: Path | None = None) -> Outcome:
     """Run only the named tests, against a bytecode cache that cannot be stale.
 
-    `PYTHONPYCACHEPREFIX` is never the developer's cache, and nothing a run compiles is kept —
-    this is not belt-and-braces, it is load-bearing, and CI found that out. A `.pyc` header
-    records the source's mtime **truncated to whole seconds**, so two writes to one file inside
-    the same second that leave it the same size are indistinguishable to the import system. Two
-    of the mutations below happen to change `memory/notes.py` by exactly the same 20 bytes each;
-    on a fast runner the second one was written within a second of the first one's restore,
-    Python reused the bytecode compiled under the *first* mutation, and the second was reported
-    as surviving when it does not.
+    **Why this used to run against an empty cache every time, and what answers that now.** A
+    `.pyc` header records the source's mtime **truncated to whole seconds**, so two writes to one
+    file inside the same second that leave it the same size are indistinguishable to the import
+    system. Two of the mutations below happen to change `memory/notes.py` by exactly the same 20
+    bytes each; on a fast runner the second one was written within a second of the first one's
+    restore, Python reused the bytecode compiled under the *first* mutation, and the second was
+    reported as surviving when it does not — which CI found. A fresh empty
+    `PYTHONPYCACHEPREFIX` per run was the answer, at the price of compiling everything on
+    every run.
 
-    An oracle whose own failures look exactly like findings is worse than no oracle, so no run
-    writes bytecode (`PYTHONDONTWRITEBYTECODE`), and the only cache a run reads is either a fresh
-    empty directory — `cache` omitted — or one `warm_cache` filled from HEAD before any mutation,
-    which `_check`'s mtime stamps keep from ever matching a mutated file.
+    **The load-bearing rule is now `_check`'s mtime stamp**, which gives every mutated write an
+    mtime no other content of that file has had, so no bytecode — whoever wrote it — can match
+    bytes it was not compiled from. That is what lets `cache` be the one `warm_cache` filled from
+    HEAD. `-B` and `PYTHONDONTWRITEBYTECODE` stay as defence in depth: with the stamp in place,
+    bytecode a run wrote for mutated bytes could never be matched again, so dropping them would
+    cost only cache churn. `cache` omitted is a fresh empty directory, as before.
     """
     with tempfile.TemporaryDirectory(prefix=f"{SCRATCH_PREFIX}cache-", dir=TEMPDIR) as scratch:
         report = Path(scratch) / "report.xml"
@@ -615,7 +625,7 @@ def static_findings(mutations: list[Mutation]) -> list[str]:
 
 
 _SECOND = 1_000_000_000
-_stamps = iter(range(1, sys.maxsize))
+_stamps = itertools.count(1)
 _stamping = threading.Lock()
 
 
@@ -751,17 +761,28 @@ def _uncommitted(files: set[Path]) -> str | None:
     return None
 
 
+# The default ceiling on jobs, which `--jobs` lifts. Four is what CI's runner has, so the set is
+# proved locally at the concurrency it is proved at there; on the maintainer's ten-core Mac eight
+# jobs came to 321 s against 304 s for four, so the extra checkouts bought nothing. And every job
+# is one more pytest beside the others, which is the assumption a `reddens` test that misbehaves
+# under load would break — in the direction that reads as `caught`.
+DEFAULT_JOBS = 4
+
+
 def _available_cpus() -> int:
     """The CPUs this process may run on, which is what bounds useful parallelism."""
     if hasattr(os, "process_cpu_count"):  # 3.13
         return os.process_cpu_count() or 1
     if hasattr(os, "sched_getaffinity"):  # Linux before 3.13
-        return len(os.sched_getaffinity(0)) or 1
+        return len(os.sched_getaffinity(0))
     return os.cpu_count() or 1
 
 
 def _positive(text: str) -> int:
-    value = int(text)
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"a whole number of jobs, not {text!r}") from None
     if value < 1:
         raise argparse.ArgumentTypeError(f"must be at least 1, not {value}")
     return value
@@ -781,7 +802,7 @@ def main(argv: list[str]) -> int:
         type=_positive,
         default=None,
         help="entries proved at once, each in a scratch checkout of its own "
-        "(default: the CPUs available)",
+        f"(default: the CPUs available, at most {DEFAULT_JOBS})",
     )
     options = parser.parse_args(argv)
     pattern = options.pattern
@@ -810,7 +831,7 @@ def main(argv: list[str]) -> int:
     # destructive half: `sweep_stale_scratch` removes every scratch checkout but this run's, and
     # "but this run's" is only safe while there is one run. A second oracle refuses here rather
     # than deleting the first one's tree.
-    jobs = min(options.jobs or _available_cpus(), len(mutations))
+    jobs = min(options.jobs or min(_available_cpus(), DEFAULT_JOBS), len(mutations))
     try:
         with single_run():
             return _prove(mutations, jobs)
@@ -819,7 +840,7 @@ def main(argv: list[str]) -> int:
         return 1
 
 
-def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
+def _prove(mutations: list[Mutation], jobs: int) -> int:
     """Sweep, then apply every mutation across `jobs` scratch checkouts. Called holding the lock.
 
     **One checkout per job, and a checkout is only ever in one job's hands.** Two entries
@@ -829,6 +850,12 @@ def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
     in it, restores it and puts it back. There are exactly as many threads as checkouts, which
     is what keeps a job from ever waiting on the queue for long; the threads only wait on
     pytest, so the interpreter lock is not what bounds them.
+
+    **Which makes one assumption the sequential oracle did not: every test a `reddens` names is
+    safe to run beside another in a separate process.** The suite isolates `HOME` per test and
+    works under `tmp_path`, so nothing found so far shares state; a test that did — or that
+    carries a wall-clock bound contention could break — would fail on the mutated run for a
+    reason that is not the mutation, and that reads as `caught`.
 
     Per-entry lines are printed as entries finish, which is not declaration order once there is
     more than one job; the findings summary is sorted back into declaration order so two runs
@@ -872,8 +899,10 @@ def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
                             findings[index] = f"{mutations[index].name}: {finding}"
                 except BaseException:
                     # A terminate, an interrupt or an entry that raised: stop handing out
-                    # entries, end the pytest runs in flight, let their entries restore their
-                    # files, and only then let the checkouts be removed from under them.
+                    # entries and end the pytest runs in flight, then wait for the jobs to let
+                    # go — so no pytest is left running orphaned, and none is still writing into
+                    # a checkout while `rmtree` walks it, which would leave a half-removed tree
+                    # for the next run's sweep.
                     _stop_runs()
                     pool.shutdown(wait=True, cancel_futures=True)
                     raise

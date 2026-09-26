@@ -7340,3 +7340,14 @@ after = "            if False:"
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
 ]
+
+# The same stop, reached the way it really is: a terminate in the middle of a run. The test
+# above calls `_stop_runs` itself, so without this `_prove`'s arm could stop calling it.
+[[mutation]]
+name = "a terminate mid-run waits out the pytest runs in flight again"
+file = "scripts/mutation_oracle.py"
+before = "                    _stop_runs()\n"
+after = "                    pass\n"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout",
+]

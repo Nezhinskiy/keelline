@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -579,6 +580,58 @@ def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) ->
     assert not waiting.is_alive(), "a stop left a pytest run going"
     with pytest.raises(module.Stopped):
         module._run(("test_slow.py::test_quick",), tmp_path)
+
+
+@needs_git
+def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(tmp_path: Path) -> None:
+    # The stop wiring end to end, which the test above does not reach: that one calls
+    # `_stop_runs` itself, so `_prove`'s own arm could stop calling it and nothing would notice.
+    # A real `SIGTERM`, sent once a job's pytest is running, becomes `SystemExit` in the main
+    # thread; the arm must end that pytest — it sleeps for two minutes — and the checkouts must
+    # be gone when `main` returns. A terminate that waited for the entry instead is the one a
+    # process manager's grace period ends in a `SIGKILL`, leaking every checkout.
+    #
+    # Mutation (declared): the arm stops calling `_stop_runs` -> the jobs wait out the sleeping
+    # pytest and the time bound reddens.
+    root = tmp_path / "repo"
+    root.mkdir()
+    _repo_with_guard(root)
+    _recommit(
+        root,
+        {
+            "tests/test_guard.py": "import time\n"
+            "\n"
+            "from pkg.guard import GUARD\n"
+            "\n"
+            "\n"
+            "def test_the_guard_holds() -> None:\n"
+            "    time.sleep(120)\n"
+            "    assert GUARD\n",
+        },
+    )
+    module = oracle(root=root)
+    module.__dict__["DECLARATION"] = root / "mutations.toml"
+
+    def terminate_once_pytest_runs() -> None:
+        deadline = time.monotonic() + 60
+        while not module._live and time.monotonic() < deadline:
+            time.sleep(0.05)
+        # Only while a run is live, which is only inside `scratch_checkout`, where the handler
+        # that turns the signal into `SystemExit` is installed; outside it this would end the
+        # test process.
+        if module._live:
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=terminate_once_pytest_runs, daemon=True).start()
+    started = time.monotonic()
+    with pytest.raises(SystemExit):
+        module.main([])
+    assert time.monotonic() - started < 60, "the terminate waited for the entry to finish"
+    assert not module._live
+    left = [
+        path for path in Path(module.TEMPDIR).glob(f"{module.SCRATCH_PREFIX}*") if path.is_dir()
+    ]
+    assert left == [], left
 
 
 @needs_git
