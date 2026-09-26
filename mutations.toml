@@ -8618,14 +8618,15 @@ reddens = [
 # `only:` is the caller's, and the caller is pull-request content. A pull request that loosens
 # `enforced` and sets `only: docs` in its own caller would run the `docs` gate under the base's
 # configuration, pass it, and never meet the configuration check that refuses the loosening. So
-# the judging step asks for `config` whatever else `only:` names; the tighten-only rule does not
-# rest on one more input the pull request can edit.
+# `gate --builtin` runs `config` whatever else `--only` names, in the command and not in the
+# workflow's shell, so no other caller of the judging step loses it.
 [[mutation]]
 name = "the judging step skips the configuration check when only: names a gate"
-file = ".github/workflows/check.yml"
-before = '          if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi'
-after = "          :"
+file = "src/keelline/assess/commands.py"
+before = "        only = tuple(dict.fromkeys((CONFIG_CHECK, *only)))"
+after = "        pass"
 reddens = [
+  "tests/assess/test_gate_command.py::test_builtin_judges_the_configuration_whatever_only_names",
   "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
 ]
 

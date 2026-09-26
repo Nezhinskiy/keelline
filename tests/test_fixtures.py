@@ -447,8 +447,10 @@ EXPECTED_CHARACTERS = {
     # when the base step stopped reading the state and the five gate steps and the shell verdict
     # became two `keelline gate` steps: the logic they held moved into the command. 4776 -> 4773
     # when a comment stopped calling the custom step a judging step. 4773 -> 4779 when both gate
-    # steps started Python with `-s` as well as `-P`.
-    "check.yml": 4779,
+    # steps started Python with `-s` as well as `-P`. 4779 -> 4609 when the rule that the judging
+    # step checks the configuration whatever `only:` names moved from its shell into
+    # `keelline gate --builtin`.
+    "check.yml": 4609,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
     # 899 -> 1056: `-n auto` on the `pytest` line (+8) and the old-interpreter step becoming a
     # `run:` (+149).
@@ -639,9 +641,10 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # It was 10,397 when `check.yml` became one job running `keelline gate`, and the 12,127
     # before that counted the shell verdict and the state reader that moved into the command. The
     # floor is the sum of the per-file figures above, so the two restate each other rather than
-    # one carrying slack the other does not.
+    # one carrying slack the other does not. 10,390 when the judging step's configuration rule
+    # moved into the command, which is that sum again (ci.yml had grown to 1,056 meanwhile).
     assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 10_403, sum(len(block) for block in read)
+    assert sum(len(block) for block in read) >= 10_390, sum(len(block) for block in read)
 
 
 def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:

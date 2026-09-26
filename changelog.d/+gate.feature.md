@@ -2,7 +2,8 @@
 `keelline.toml` at an exact commit and at the project's own path, admits only changes that
 tighten, runs the configuration check and every configured gate (built-in or the project's own)
 advisory or enforcing as the verdict says, and prints the verdict the reusable workflow acts on.
-`--builtin` runs no command from `keelline.toml`, and `--custom` runs only those.
+`--builtin` runs no command from `keelline.toml` and always judges the configuration, whatever
+`--only` names, and `--custom` runs only those.
 
 A custom gate runs only with the command the base's `keelline.toml` gives it: one a pull request
 adds or re-commands is reported as not run until it lands on the base, and fails nothing

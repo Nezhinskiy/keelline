@@ -168,7 +168,6 @@ SCRIPTS: dict[str, list[str]] = {
         "only=()",
         'for name in $ONLY; do only+=("--only=$name"); done',
         "set +f",
-        'if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi',
         KEELLINE_INVOCATIONS[1],
         '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
     ],
@@ -422,8 +421,8 @@ def test_the_judging_step_judges_the_configuration_whatever_only_names(tmp_path:
     # `only:` is the caller's, and the caller is pull-request content: a pull request that
     # loosens `enforced` and sets `only: docs` in its own caller would otherwise run the `docs`
     # gate under the base's configuration, pass it, and never meet the configuration check. So
-    # the judging step asks for `config` whatever else `only:` names. Mutation (declared): the
-    # step stops adding it.
+    # the judging step's `--builtin` runs `config` whatever else `only:` names. Mutation
+    # (declared): `gate --builtin` stops adding it.
     workspace, base_sha = _clone(tmp_path)
     _commit(workspace, CONFIG_FILE, LOOSENED)
     code, printed, summary = _judge(workspace, base_sha, "docs")

@@ -168,13 +168,29 @@ def test_custom_on_a_project_with_no_custom_gate_exits_zero(tmp_path: Path) -> N
 
 def test_builtin_skips_a_custom_gate_named_by_only(tmp_path: Path) -> None:
     # A matrix caller's `only:` may name a custom gate in the judging step: it is the next
-    # step's to run, so it is skipped here, and nothing left to run is not a failure. Mutation
-    # (advice): `raise Refusal(NOTHING_TO_RUN)` in place of the `Result` -> exit 2.
-    project = clone(tmp_path, BASE)
-    _change(project, BASE + MARKER)
+    # step's to run, so it is skipped here and not refused, and the configuration is judged.
+    project = clone(tmp_path, BASE + MARKER)
     code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "tests")
-    assert (code, out.strip()) == (0, NOTHING_TO_RUN)
+    assert (code, _heads(out)) == (0, ["config"])
     assert not (project / "marker").exists()
+
+
+def test_builtin_judges_the_configuration_whatever_only_names(tmp_path: Path) -> None:
+    # The rule that makes the judging step a judge lives in the command, not in the workflow's
+    # shell: a caller's own matrix, a person reproducing CI, or a later edit to the YAML each
+    # ran `--builtin --only docs` and passed a change that loosens what the base enforces.
+    # Mutation (declared): the configuration check left to `--only` -> exit 0.
+    project = clone(tmp_path, BASE)
+    _change(project, LOOSENED)
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "docs")
+    assert code == 1
+    assert out.splitlines()[:2] == [
+        "config: 1 change(s), 1 refused: keelline.enforced",
+        "docs: enforcing, 0 finding(s)",
+    ]
+    # Run bare, `--only` still means only: that run is a person's own question.
+    code, out, _ = _gate(project, tmp_path, "--only", "docs")
+    assert (code, _heads(out)) == (0, ["docs"])
 
 
 def test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails(
@@ -535,12 +551,12 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     git(project, "reset", "-q", "--hard", "origin/main")
     code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
     # With the ledger in place the citation resolves; the stale index is the one finding.
-    assert (code, out.splitlines()[0]) == (1, "bugs: enforcing, 1 finding(s)")
+    assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)")
     git(project, "rm", "-rq", "docs/bugs")
     commit(project, "chore: drop the ledger")
     code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
     assert code == 1
-    assert out.splitlines()[0] == "bugs: enforcing, 1 finding(s)"
+    assert out.splitlines()[1] == "bugs: enforcing, 1 finding(s)"
 
 
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(

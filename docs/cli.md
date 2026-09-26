@@ -748,7 +748,9 @@ commands, as [Configuration](#configuration) says.
 **`--builtin` and `--custom`.** `--builtin` runs the configuration check and the built-in gates
 and executes no command from `keelline.toml`; `--custom` runs the project's own gates alone and
 judges nothing. Each narrows the bare run, or `--only`'s names, to its kind, and skips a name of
-the other kind rather than refuse it. The reusable workflow runs them as two steps, the second
+the other kind rather than refuse it. `--builtin` runs the configuration check whatever `--only`
+names: it is the run that judges, and a caller that names one gate — a matrix leg, a person
+reproducing CI — still judges the change's `keelline.toml`, so a loosening fails every such run. The reusable workflow runs them as two steps, the second
 only when the first passed. A custom gate's command is fixed by the base, but the files it
 executes — a `conftest.py`, a `Makefile`, a script — are the change under review, so for a custom
 gate the guarantee is "this command runs and must exit 0", and nothing about what it runs. An

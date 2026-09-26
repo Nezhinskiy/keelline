@@ -43,7 +43,8 @@ WORKFLOW_SHA_HELP = (
 ANNOTATE_HELP = "also print each finding as a GitHub workflow command, capped per level"
 SUMMARY_HELP = "append the summary as markdown to this file, as a job summary"
 BUILTIN_HELP = (
-    "the configuration check and the built-in gates only: no command from [gates.custom] runs"
+    "the configuration check, whatever --only names, and the built-in gates only: no command "
+    "from [gates.custom] runs"
 )
 CUSTOM_HELP = "the gates from [gates.custom] only, with no configuration check"
 NO_TREE_CONFIG = (
@@ -160,6 +161,10 @@ def run_gate(args: argparse.Namespace) -> Result:
     custom = verdict.config.gates.custom
     if args.part == "builtin":
         only = tuple(name for name in only if name not in custom)
+        # The judging step judges the configuration whatever `--only` names: `--only` comes from
+        # the caller workflow, which the pull request can edit, and a leg that names one gate
+        # would otherwise run it under the base's configuration and never meet the refusal.
+        only = tuple(dict.fromkeys((CONFIG_CHECK, *only)))
     elif args.part == "custom":
         only = tuple(name for name in only if name in custom)
     # A custom gate executes only with the base's own command, and the base's enforced gates

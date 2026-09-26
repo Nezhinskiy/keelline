@@ -183,10 +183,8 @@ jobs:
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          # The configuration check runs whatever `only:` names. `only:` is the caller's, and
-          # the caller is pull-request content, so a leg that names one gate still judges the
-          # change's `keelline.toml` against the base's; an empty `only:` runs it already.
-          if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi
+          # `--builtin` runs the configuration check whatever `only:` names, so a leg that
+          # names one gate still judges the change's `keelline.toml` against the base's.
           python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
       - name: The project's own gates
