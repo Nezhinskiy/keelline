@@ -107,8 +107,9 @@ something downstream reads as permission — add it to `mutations.toml` instead 
 it, and the check becomes reproducible:
 
 ```bash
-uv run python scripts/mutation_oracle.py          # every declared mutation
-uv run python scripts/mutation_oracle.py fsops    # only the matching ones
+uv run python scripts/mutation_oracle.py            # every declared mutation
+uv run python scripts/mutation_oracle.py fsops      # only the matching ones
+uv run python scripts/mutation_oracle.py --jobs 2   # at most two entries at a time
 ```
 
 Each entry names one file, one exact line to change, and the tests that must fail when it does.
@@ -116,9 +117,11 @@ The keys are `name`, `file`, `before`, `after` and `reddens` — `reddens`, not 
 `name` is required: the oracle raises `KeyError: 'name'` on an entry without one. `before` is an
 exact substring of the file and `after` is what replaces it, so an entry whose `before` has
 drifted is a finding rather than a skip. The oracle proves `HEAD`: it applies every
-mutation to a throwaway worktree, so it never writes your working tree, and it refuses when a
-mutated file — **or any test file that a selected entry's `reddens` names** — has uncommitted
-changes, because that edit is work the run cannot see. Which is why a mutation run comes
+mutation to a throwaway worktree — one per job, and by default as many jobs as the machine gives
+the process CPUs, each proving one entry at a time in a checkout no other job touches — so it
+never writes your working tree, and it refuses when a mutated file — **or any test file that a
+selected entry's `reddens` names** — has uncommitted changes, because that edit is work the run
+cannot see. Which is why a mutation run comes
 *after* the commit it is about, and why an uncommitted test edit mid-change stops it too.
 
 ```toml
