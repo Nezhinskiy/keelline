@@ -99,7 +99,9 @@ UNWRITABLE_KEY = (
 # Fixed text: the branch `origin/HEAD` named is the remote's, outside the grammar, and not printed.
 HEAD_DEFAULTED = (
     "origin/HEAD does not name a plain branch, so [project] base_branch and release_branch are "
-    "main; if pull requests merge into another branch, set both in keelline.toml"
+    "main, and so is the branch the workflow gates; if pull requests merge into another branch, "
+    "answer it with `keelline init --yes --base-branch BRANCH` while nothing is written, or set "
+    "[project] base_branch, release_branch and [ci] gate_branch in keelline.toml"
 )
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
@@ -185,15 +187,15 @@ def _tables(
     or the ones `given` carries; and whether detection put the default base branch in place of
     a remote head outside the grammar, with no `--base-branch` answering it.
 
-    **Detection runs only when no `[project]` table answers for the repository, and it is
-    lenient when `--name` answers the name, the one value it refuses**, and not merely when
-    some key of the head is absent. `detect` is the one call here that can refuse — a directory
-    name or a remote's last segment outside `PROJECT_NAME` — and the remedy for that refusal is
-    to answer it with `--name`, or to write `[project] name` into `keelline.toml` by hand and
-    run `init` again. A branch that consulted `detect` for anything the preset can default would
-    make that second remedy dead: the repository whose name cannot be guessed would go on being
-    refused after doing exactly what it was told. Everything else the head does not carry —
-    `preset`, `profile`, `agents` — has a preset default, and the loader supplies it.
+    **Detection runs only when no `[project]` table answers for the repository**, and not merely
+    when some key of the head is absent; **it is lenient when `--name` answers the name, the one
+    value it refuses.** `detect` is the one call here that can refuse — a directory name or a
+    remote's last segment outside `PROJECT_NAME` — and the remedy for that refusal is to answer it
+    with `--name`, or to write `[project] name` into `keelline.toml` by hand and run `init` again. A
+    branch that consulted `detect` for anything the preset can default would make that second remedy
+    dead: the repository whose name cannot be guessed would go on being refused after doing exactly
+    what it was told. Everything else the head does not carry — `preset`, `profile`, `agents` — has
+    a preset default, and the loader supplies it.
 
     `precheck` guarantees that `given` is `NO_ANSWERS` whenever `existing` carries tables, so
     the answers never overwrite a table a person wrote.
@@ -302,10 +304,10 @@ def init(
     grammar that no `--name` answers, an adopted table holding a key that cannot be written
     back bare (`_rendered`), a `Config` the loader refuses, an adopted `keelline.toml` whose
     missing version the key editor cannot add or that the loader refuses as it will be on disk
-    (`_as_on_disk`), an artifact at a file another is
-    built to write, in either pass (`templates.Owners`), a profile artifact `[artifacts] local`
-    would keep out of git (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block
-    listed there (`footprint.refuse_local_root_only`), a planned write git ignores
+    (`_as_on_disk`), an artifact at a file another is built to write, in either pass
+    (`templates.Owners`), a profile artifact `[artifacts] local` would keep out of git
+    (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block listed there
+    (`footprint.refuse_local_root_only`), a planned write git ignores
     (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
     than raised so the report can name the artifact.
     """

@@ -50,7 +50,8 @@ if TYPE_CHECKING:
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
 # and on the adoption path that document is a `Kind.ONCE` artifact already on disk — reported
-# `skip_modified`, never rewritten — so the file goes on saying `reusable` and the flag is spent
+# `skip_modified`, and given at most a missing `[keelline] version` — so the file goes on saying
+# `reusable` and the flag is spent
 # on this run alone. Saying "sets [ci] mode" flat sent an operator looking for a key nothing wrote.
 NO_CI_HELP = (
     'write no CI workflow and ask no remote for a pin; sets [ci] mode = "none" in the document '

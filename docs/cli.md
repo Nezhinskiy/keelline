@@ -1047,8 +1047,9 @@ run*, and those two are one value by construction — which is the invariant `ke
 so the gate that runs is not the one recorded"). On a repository this run creates the document
 for, the ref is the commit of the Keelline release running, asked of the public repository's own
 `v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
-`keelline.toml`, that document is not rewritten — so the workflow pins the ref **it** records,
-and `doctor` judges whether that is a released commit, which is its job.
+`keelline.toml`, that document's `[ci] ref` is not rewritten — the one line `init` may add there
+is a missing `[keelline] version` — so the workflow pins the ref **it** records, and `doctor`
+judges whether that is a released commit, which is its job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
 sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later
