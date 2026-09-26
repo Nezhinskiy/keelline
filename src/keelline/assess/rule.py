@@ -156,8 +156,8 @@ def read_base(root: Path, base: str) -> str | None:
         return None
     text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}")
     # The bytes git printed, read as UTF-8 the way the loader reads the tree's copy: the text
-    # `git_run` decoded with the locale's codec is neither refused nor read the same under a
-    # latin-1 locale, where every byte decodes.
+    # `git_run` decoded with the filesystem's codec is neither refused nor read the same where
+    # that codec is latin-1 (Linux under a latin-1 locale), because every byte decodes.
     try:
         return answer_bytes(text).decode("utf-8")
     except UnicodeDecodeError:

@@ -23,9 +23,9 @@ here (Premise 17).
 
 from __future__ import annotations
 
-import locale
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 # Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
@@ -69,14 +69,20 @@ def scrubbed_env() -> dict[str, str]:
 
 
 def pipe_encoding() -> str:
-    """The codec `git_run` decodes git's output and encodes its `stdin` with: the locale's,
-    which is UTF-8 in Python's UTF-8 mode and whatever `LC_ALL`/`LANG` name otherwise.
+    """The codec `git_run` decodes git's output and encodes its `stdin` with: the filesystem's,
+    the one `os.fsdecode`, `Path.iterdir` and `sys.argv` use for the same names.
 
-    Named once so `answer_bytes` undoes exactly what `git_run` did: under a latin-1 locale every
-    byte decodes, so an answer carries no surrogate escape to show it was not UTF-8, and only
-    re-encoding it with the same codec recovers the bytes git printed.
+    Not the locale's. The two agree on Linux, where the filesystem codec follows the locale, and
+    differ on macOS, where it is UTF-8 whatever `LC_ALL` says: under a latin-1 locale there, git's
+    `café.md` came back as mojibake and a name sent on `stdin` reached git as bytes that were not
+    its own, so every comparison between git's answer and a path missed — a gitignored document
+    read as not ignored. The error handler is `surrogateescape`, the filesystem's own on POSIX.
+
+    Named once so `answer_bytes` undoes exactly what `git_run` did: where the codec is latin-1
+    every byte decodes, so an answer carries no surrogate escape to show it was not UTF-8, and
+    only re-encoding it with the same codec recovers the bytes git printed.
     """
-    return locale.getpreferredencoding(False)
+    return sys.getfilesystemencoding()
 
 
 def answer_bytes(answer: str) -> bytes:
@@ -100,22 +106,23 @@ def git_run(
     "nothing matched", and that is an answer.
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
-    common directory, a name in `ls-files` or a ref can hold one the locale cannot decode — a
-    latin-1 filename on Linux. Strict decoding raised `UnicodeDecodeError` out of every caller
-    as an internal error, and it did so for stderr too, which nobody reads; reading such output
-    as no answer instead threw a real answer away, and a caller that took "no answer" for
-    "nothing" then passed what it should have refused. Escaped, a byte comes back as the same
-    `str` `os.listdir` and `sys.argv` give for it, so an answer is compared with, and opens, the
-    path it names, and a name read off the disk goes back to git on `stdin` as its own bytes.
-    The answer is lossless rather than a placeholder, so every caller still decides about the
-    path that is really there. What it does not make safe is writing that `str` into a UTF-8
+    common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot
+    decode — a latin-1 filename on Linux. Strict decoding raised `UnicodeDecodeError` out of
+    every caller as an internal error, and it did so for stderr too, which nobody reads; reading
+    such output as no answer instead threw a real answer away, and a caller that took "no
+    answer" for "nothing" then passed what it should have refused. Escaped, and in the
+    filesystem's codec (`pipe_encoding`), a byte comes back as the same `str` `os.listdir` and
+    `sys.argv` give for it, so an answer is compared with, and opens, the path it names, and a
+    name read off the disk goes back to git on `stdin` as its own bytes. The answer is lossless
+    rather than a placeholder, so every caller still decides about the path that is really
+    there. What it does not make safe is writing that `str` into a UTF-8
     file or parsing it as UTF-8 text: a caller whose answer ends up in one checks it itself, as
     `assess.rule.read_base` does for the base's `keelline.toml`.
 
     No answer is three things, and `NO_ANSWER` names all three: git could not be launched, it
-    ran past `timeout`, or `stdin` held a character the locale has no bytes for: a name from a
-    note or a file written in UTF-8, asked under a locale that is not. A name read off the disk
-    does not, wherever the filesystem's encoding is the locale's.
+    ran past `timeout`, or `stdin` held a character the filesystem's codec has no bytes for: a
+    name from a note or a file written in UTF-8, asked on Linux under a locale that is not. A
+    name read off the disk never does, because it was decoded with that same codec.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - see the docstring

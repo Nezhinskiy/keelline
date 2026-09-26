@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -348,6 +350,42 @@ def test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_no
     (plans / "local-only.md").write_text("# doc\n", encoding="utf-8")
     assert trail_gate(root, config) == []
     assert "local-only" not in roadmap.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_real_non_utf_8_locale_does_not_unignore_a_document_with_a_non_ascii_name(
+    tmp_path: Path, latin1_locale: str
+) -> None:
+    # Found in review: under `LC_ALL=en_US.ISO8859-1` on macOS, where the filesystem is UTF-8
+    # whatever the locale, `_ignored` sent `café-local.md` to git in latin-1, the gitignored
+    # document read as not ignored, and it went into the committed roadmap beside the ASCII
+    # local-only document the filter did catch. A child process under a real latin-1 locale,
+    # skipped where none is installed; `tests/test_git_run.py` holds the same seam everywhere.
+    root, _ = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    plans = root / "docs" / "plans"
+    names = ["caf\u00e9-local.md", "local-only.md"]
+    (root / ".gitignore").write_text(
+        "".join(f"docs/plans/{name}\n" for name in names), encoding="utf-8"
+    )
+    for name in names:
+        (plans / name).write_text("# doc\n", encoding="utf-8")
+    script = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from keelline.docs.trail import _ignored\n"
+        "root = Path(sys.argv[1])\n"
+        "asked = [root / 'docs' / 'plans' / name for name in sys.argv[2:]]\n"
+        "print(ascii(sorted(path.name for path in _ignored(root, asked))))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(root), *names],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": latin1_locale, "PYTHONUTF8": "0"},
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == ascii(sorted(names))
 
 
 @needs_git

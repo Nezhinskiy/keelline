@@ -260,12 +260,13 @@ NOT_UTF8_BASE = b'[keelline]\nversion = "\xff"\n'
 def test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, base: str | bytes
 ) -> None:
-    # `git_run` decodes with the locale's encoding. Under a latin-1 locale every byte decodes, so
-    # a copy that is not UTF-8 came back with no surrogate for the refusal to find and was
-    # parsed, `0xff` read as `y` with a diaeresis; and a valid UTF-8 copy came back as mojibake,
-    # a different document from the one the tree's loader reads as UTF-8. The bytes git printed
+    # `git_run` decodes with the filesystem's codec, which on Linux follows the locale. Where it
+    # is latin-1 every byte decodes, so a copy that is not UTF-8 came back with no surrogate for
+    # the refusal to find and was parsed, `0xff` read as `y` with a diaeresis; and a valid UTF-8
+    # copy came back as mojibake, a different document from the one the tree's loader reads as
+    # UTF-8. The bytes git printed
     # are recovered and decoded as UTF-8, so both answers are the same under every locale. The
-    # locale is simulated at the runner's one seam, `pipe_encoding`, so this holds on a machine
+    # codec is simulated at the runner's one seam, `pipe_encoding`, so this holds on a machine
     # with no latin-1 locale installed. Mutation (declared): check the decoded text for
     # surrogates again instead of decoding the bytes -> both cases redden.
     monkeypatch.setattr(gitenv, "pipe_encoding", lambda: "latin-1")
@@ -282,8 +283,9 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
     tmp_path: Path, latin1_locale: str
 ) -> None:
     # The case above without the seam: a child process under a real latin-1 locale, where the
-    # machine has one (macOS does; a stock Linux runner does not, which is why the seam case
-    # carries the oracle entry).
+    # machine has one. On Linux the pipe's codec is then latin-1; on macOS it stays UTF-8, and
+    # the case holds that the locale changes neither answer. A stock Linux runner has no such
+    # locale, which is why the seam case carries the oracle entry.
     project = clone(tmp_path / "ok", NON_ASCII_BASE)
     broken = clone(tmp_path / "broken", NOT_UTF8_BASE)
     script = (

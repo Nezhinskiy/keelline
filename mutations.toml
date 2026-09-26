@@ -1074,6 +1074,20 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
 ]
 
+# git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path
+# they are compared with uses the filesystem's. On macOS the filesystem is UTF-8 whatever the
+# locale, so under a latin-1 locale a non-ASCII name never matched: a gitignored document read
+# as not ignored and went into the committed roadmap.
+[[mutation]]
+name = "the git runner decodes with the locale's codec rather than the filesystem's"
+file = "src/keelline/gitenv.py"
+before = "    return sys.getfilesystemencoding()"
+after = '    return __import__("locale").getpreferredencoding(False)'
+reddens = [
+  "tests/test_git_run.py::test_git_s_answer_and_the_filesystem_spell_a_name_alike_whatever_the_locale",
+  "tests/test_git_run.py::test_a_name_asked_on_stdin_matches_the_rule_that_names_it_whatever_the_locale",
+]
+
 # A `stdin` with no bytes under the locale means git could not be asked: `(-1, "")`, never a
 # `UnicodeEncodeError` out of the caller.
 [[mutation]]
