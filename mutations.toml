@@ -8619,8 +8619,8 @@ reddens = [
   "tests/test_workflow_yaml.py::test_every_workflow_reads_whole_and_agrees_with_the_run_scan",
 ]
 
-# The re-review's probe: a comment at the step's own indentation inside the judging step's
-# `env:`, then `BASH_ENV`, which the step's non-interactive bash sources before its script.
+# A comment at the step's own indentation inside the judging step's `env:`, then `BASH_ENV`,
+# which the step's non-interactive bash sources before its script. A comment never ends a block.
 [[mutation]]
 name = "a key after a comment at the step's indentation in the judging step's env goes unread"
 file = ".github/workflows/check.yml"
@@ -8714,4 +8714,64 @@ before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base 
 after = '          PYTHONUSERBASE=project/.local python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A script line that changes the verdict's process without being an invocation. `-P` keeps the
+# working directory off `sys.path` and leaves the user site directory on, so an exported
+# `PYTHONUSERBASE` inside the caller's checkout runs a committed `.pth` at the interpreter's
+# start-up; a sourced file runs whatever it says. Every script is held line for line.
+[[mutation]]
+name = "the judging step exports a user base inside the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+          set -f
+"""
+after = """
+          set -f
+          export PYTHONUSERBASE=project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+[[mutation]]
+name = "the custom step sources a file from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+          set +o noglob
+"""
+after = """
+          set +o noglob
+          [ -f project/.ci-env ] && . project/.ci-env || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The same class in an earlier step: the gate steps' `PYTHONPATH` is `keelline/src`, and the
+# interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into Keelline's
+# own checkout is code in the verdict's process.
+[[mutation]]
+name = "the base step copies a file into Keelline's own checkout"
+file = ".github/workflows/check.yml"
+before = """
+          git check-ref-format --branch "$base" >/dev/null
+"""
+after = """
+          git check-ref-format --branch "$base" >/dev/null
+          cp .ci/sitecustomize.py ../keelline/src/ 2>/dev/null || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# An invocation matched as a prefix admitted a line that runs something else after it.
+[[mutation]]
+name = "the judging step's command line runs a second command before the gate"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]

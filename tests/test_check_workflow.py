@@ -53,13 +53,19 @@ LOOSENED = BASE.replace('["docs"]', "[]")
 # Well past the preset's `AGENTS.md` budget, so the `docs` gate has a finding.
 OVER_BUDGET = "".join("word\n" for _ in range(400))
 
-# Every interpreter the job starts, anchored at the start of its command line. Only two
-# invocations are Keelline's, and a whitelist rather than a list of bad spellings: `-c` with
-# flags before it, `-Pc`, a program on standard input, a script path, an assignment in front of
-# the command (`PYTHONUSERBASE=… python3 …`) or a wrapper (`env`, `exec`) are each a way the
-# checkout reaches the interpreter, and a pattern for each is a pattern for the ones thought of.
+# Every line that names an interpreter, whole, in the order the job runs them. Only three are
+# Keelline's, and a whitelist rather than a list of bad spellings: `-c` with flags before it,
+# `-Pc`, a program on standard input, a script path, an assignment in front of the command
+# (`PYTHONUSERBASE=… python3 …`), a wrapper (`env`, `exec`) or a second command packed onto the
+# line after a `;` are each a way the checkout reaches the interpreter, and a pattern for each
+# is a pattern for the ones thought of. Whole lines and not a prefix, because a prefix is
+# satisfied by a line that goes on to run something else.
 _PYTHON = re.compile(r"\bpython[\d.]*\b")
-KEELLINE_INVOCATIONS = ("python3 -m keelline --version", "python3 -P -m keelline gate ")
+KEELLINE_INVOCATIONS = (
+    "python3 -m keelline --version",
+    'python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \\',
+    'python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \\',
+)
 GATE_ENV: dict[str, Node] = {
     "PYTHONPATH": "keelline/src",
     "ROOT": "${{ steps.base.outputs.root }}",
@@ -110,6 +116,72 @@ STEPS: list[dict[str, Node]] = [
     {"name": JUDGE, "env": GATE_ENV, "run": SCRIPT},
     {"name": CUSTOM, "env": GATE_ENV, "run": SCRIPT},
 ]
+# And each script's text, line for line, comments and blank lines aside: `STEPS` holds what a
+# step is given, and this holds what it does with it. A line that is not an invocation can still
+# change the verdict's process — `export PYTHONUSERBASE=…` or `. project/.ci-env` in a gate step,
+# or a copy into `keelline/src/` from an earlier one, where the verdict's `PYTHONPATH` imports a
+# `sitecustomize.py` at start-up — and every such line is a line this list does not carry.
+CHECKOUT_STEP = "The checkout is the commit this workflow file is at"
+SCRIPTS: dict[str, list[str]] = {
+    CHECKOUT_STEP: [
+        'actual="$(git -C keelline rev-parse HEAD)"',
+        '[ "$actual" = "$EXPECTED" ] || { echo "::error::checked out $actual, not the workflow\'s'
+        ' own $EXPECTED"; exit 1; }',
+    ],
+    PROOF: ["python3 -m keelline --version"],
+    BASE_STEP: [
+        'case "$INPUT_PATH" in',
+        '  ""|.|./) p="" ;;',
+        '  *) p="${INPUT_PATH#./}"; p="${p%/}" ;;',
+        "esac",
+        'case "$p" in',
+        "  *[!A-Za-z0-9._/-]*)",
+        "    echo \"::error::path: must be a plain relative path — letters, digits, '.', '_', '-'"
+        " and '/'\"",
+        "    exit 1",
+        "    ;;",
+        "  ..|../*|*/..|*/../*)",
+        '    echo "::error::path: must not leave the checkout"',
+        "    exit 1",
+        "    ;;",
+        "esac",
+        'if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then',
+        "  echo \"::error::base: names another branch, but this pull request's base is"
+        " '$PR_BASE'; the gates' configuration is read from the base the platform reports\"",
+        "  exit 1",
+        "fi",
+        'base="$INPUT_BASE"',
+        '[ -n "$base" ] || base="$PR_BASE"',
+        '[ -n "$base" ] || base="$DEFAULT_BRANCH"',
+        '[ -n "$base" ] || { echo "::error::no base ref: pass \'base:\'"; exit 1; }',
+        'git check-ref-format --branch "$base" >/dev/null',
+        'base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||',
+        '  { echo "::error::origin/$base is not in this checkout — check out with fetch-depth: 0,'
+        ' or name a base that exists"; exit 1; }',
+        "{",
+        '  echo "base_sha=$base_sha"',
+        '  echo "root=project/${p:-.}"',
+        '} >> "$GITHUB_OUTPUT"',
+    ],
+    JUDGE: [
+        "set -f",
+        "only=()",
+        'for name in $ONLY; do only+=("--only=$name"); done',
+        "set +f",
+        'if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi',
+        KEELLINE_INVOCATIONS[1],
+        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"',
+    ],
+    CUSTOM: [
+        "set -o noglob",
+        "custom=()",
+        'for name in $ONLY; do custom+=("--only=$name"); done',
+        "set +o noglob",
+        KEELLINE_INVOCATIONS[2],
+        '  --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY"'
+        ' "${custom[@]}"',
+    ],
+}
 
 
 def _workflow() -> dict[str, Node]:
@@ -158,6 +230,20 @@ def _shape(step: dict[str, Node]) -> dict[str, Node]:
 
 def _scripts() -> list[str]:
     return [step["run"] for step in _steps() if isinstance(step.get("run"), str)]  # type: ignore[misc]
+
+
+def _commands(script: str) -> list[str]:
+    """The script's lines, less its blank lines and comment lines — except one that follows a
+    line continued with `\\`, because there bash ends the command the line above says goes on,
+    and the lines after it run as a command of their own."""
+    kept: list[str] = []
+    previous = ""
+    for line in script.splitlines():
+        bare = line.strip()
+        if (bare and not bare.startswith("#")) or previous.endswith("\\"):
+            kept.append(line)
+        previous = line
+    return kept
 
 
 def _clone(tmp_path: Path, base: str = BASE) -> tuple[Path, str]:
@@ -272,21 +358,19 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     for step in (JUDGE, CUSTOM):
         assert "python3 -P -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
     # And no interpreter the job starts runs anything but Keelline, in any spelling: every
-    # command line that names one, comments aside, starts with one of Keelline's two
-    # invocations. Mutations (declared): the proof step runs `python3 -P -c`, `python3 -Pc`, or a
-    # program on standard input; the judging step's command gains an assignment in front of it.
+    # line that names one, comments aside, is one of Keelline's three invocation lines, whole
+    # and in order. Mutations (declared): the proof step runs `python3 -P -c`, `python3 -Pc`, or
+    # a program on standard input; the judging step's command gains an assignment in front of
+    # it. Whole, because `… gate --help >/dev/null; PYTHONUSERBASE=… python3 -P -m keelline gate
+    # --builtin …` began with an invocation and passed a prefix match. Mutation (declared): the
+    # judging step's command line runs a second command before the gate.
     invocations = [
         line.strip()
         for script in _scripts()
         for line in script.splitlines()
         if not line.strip().startswith("#") and _PYTHON.search(line)
     ]
-    assert len(invocations) == 3, invocations
-    assert [
-        line
-        for line in invocations
-        if line != KEELLINE_INVOCATIONS[0] and not line.startswith(KEELLINE_INVOCATIONS[1])
-    ] == [], invocations
+    assert invocations == list(KEELLINE_INVOCATIONS), invocations
 
 
 @needs_workflow
@@ -397,8 +481,9 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
     `defaults:` (the shell and nothing else), and each step whole but for its script's text —
     `env:`, `with:`, `working-directory:` and every other key — read by the strict reader, so a
     comment or a blank line inside a block hides nothing, and a key written twice is refused.
-    No script writes `$GITHUB_ENV` or `$GITHUB_PATH` at all. The runner's own variables and the
-    `PATH` `setup-python` extends are the platform's.
+    No script writes `$GITHUB_ENV` or `$GITHUB_PATH` at all, and the next case holds every
+    script's text. The runner's own variables and the `PATH` `setup-python` extends are the
+    platform's.
     """
     workflow = _workflow()
     assert list(workflow) == ["name", "on", "permissions", "jobs"], list(workflow)
@@ -406,6 +491,25 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
     assert [_shape(step) for step in _steps()] == STEPS, [_shape(step) for step in _steps()]
     # Mutation (declared): the base step appends to `$GITHUB_ENV`.
     assert [s for s in _scripts() if "GITHUB_ENV" in s or "GITHUB_PATH" in s] == []
+
+
+@needs_workflow
+def test_every_script_the_job_runs_is_held_line_for_line() -> None:
+    """The class the environment case above leaves open: a script line that changes the
+    verdict's process — its environment or the code it imports — without being an invocation.
+
+    `-P` keeps the working directory off `sys.path` and nothing more. Measured with a
+    `setup-python`-shaped interpreter (not a virtual environment): a `.pth` under
+    `project/.local` ran at start-up once the step exported `PYTHONUSERBASE=project/.local`, and a
+    `sitecustomize.py` copied into `keelline/src/` ran at start-up under the step's own
+    `PYTHONPATH`. `export`, `.`/`source`, `cd`, `eval`, `umask` and a write into either checkout
+    are each one line, and a list of forbidden spellings is a list of the ones thought of; so
+    every script is held whole, comments aside, and a line the list does not carry reddens here.
+    Mutations (declared): the judging step exports `PYTHONUSERBASE`; the custom step sources a
+    file from the caller's checkout; the base step copies a file into Keelline's checkout.
+    """
+    found = {_name(step): _commands(str(step["run"])) for step in _steps() if "run" in step}
+    assert found == SCRIPTS, found
 
 
 @needs_git
