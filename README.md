@@ -71,8 +71,8 @@ against this project's own spike record and each plugin's own published install 
 2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
 you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
 marketplace name (nothing is vendored on a guess). The adoption skill will delegate to
-superpowers where it is present. Designed; the adoption skill belongs to the package that ships
-the state machine.
+superpowers where it is present. The adoption skill that walks a plan with the agent ships in a
+later package.
 
 ## Install
 

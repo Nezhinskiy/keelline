@@ -2144,12 +2144,12 @@ it directly; Keelline suggests it and does not require it.
 **Advisory or enforcing, per gate.** A gate is advisory until it enforces: its findings are
 warning annotations and the job stays green. An enforcing gate's findings are errors and fail
 the job. What enforces is what the base's `[keelline] enforced` names, with any gate the change
-itself adds there, and every configured gate once `[keelline] state` is `installed`. Within a
-step, every gate runs whatever the one before it said, so a project fixing its documents does
-not pay a round trip per finding. A custom gate is a command from `keelline.toml`, and a pull
-request that adds one runs it in the second step, as it would run a test it added: the job's
-token is `contents: read` and neither checkout keeps it, and the verdict was decided before the
-command started.
+itself adds there, and every configured gate once `[keelline] state` is `installed`.
+`keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
+before it said, so a project fixing its documents does not pay a round trip per finding. A
+custom gate is a command from `keelline.toml`, and a pull request that adds one runs it in the
+second step, as it would run a test it added: the job's token is `contents: read` and neither
+checkout keeps it, and the verdict was decided before the command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
 `@dev` are a moving Keelline running against your repository. `keelline init` writes that pin,

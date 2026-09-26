@@ -162,21 +162,23 @@ not take. A gate should run advisory until the repository has been brought to th
 where it would pass, and only then enforce — and the decision to enforce should be read from
 the base branch, never from the change under review.
 
-**What Keelline does today.** Not this, yet. The state machine (`initialised`, `adopting`,
-`installed`; `adopt --promote`) is designed and its state key is read by every command.
-`keelline assess` reports what stands between a repository and enforcement, gate by gate; the
-promotion command belongs to a later work package. The gates that exist (`docs check`,
-`bugs check`, `plan check`, `commit check`) run as gates.
+**What Keelline does today.** The state machine ships per gate. `keelline assess` inventories
+what stands between a repository and enforcement. `keelline adopt begin` starts an adoption
+with a plan, and `keelline adopt promote` enforces every gate that passes now and names the
+rest, or enforces the gates it is given only if all of them pass. The gate a pull request faces
+reads the base branch's configuration and admits only a change that tightens it, under the
+repository settings `docs/cli.md` names. What it does not do yet is hold the line inside a gate
+— fail new findings while grandfathering old ones — which current linters do [S33] and which is
+recorded as the next step.
 
 **Why.** The alternative in the field is a constitution declared before the first commit
 [S11] or a process layer that tells the agent how to work without asking whether the
 repository does [S10]. Neither has a way to introduce a rule into a codebase that violates
 it two hundred times, which is where every existing project starts.
 
-**Backing:** thin. This is a design argument from experience with one repository's
-adoption of its own rules; nothing external states it, and the package that would measure
-it has not shipped. The label changes when the first repository adopts through `init` and
-the advisory period's findings are counted.
+**Backing:** thin. This is a design argument from experience with one repository's adoption of
+its own rules. Nothing external states it, and no repository has yet adopted through `init` and
+had its advisory period's findings counted. The label changes when one has.
 
 ## 8. A personal overlay is a versioned plugin, not a dotfiles sync
 
