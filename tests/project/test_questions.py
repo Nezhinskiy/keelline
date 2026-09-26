@@ -9,8 +9,10 @@ from typing import Any
 
 import pytest
 
+from keelline.config.loader import load
 from keelline.config.schema import MEMORY_MODES
 from keelline.errors import Refusal
+from keelline.project.init import init
 from keelline.project.questions import (
     BRANCH_PATTERN,
     FLAGS,
@@ -21,7 +23,7 @@ from keelline.project.questions import (
     questions,
 )
 from keelline.scaffold import MANIFEST_PATH
-from tests.gitfixture import needs_git
+from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import DOCUMENT, repository
 
 
@@ -34,6 +36,28 @@ def _defaults(schema: dict[str, Any]) -> dict[str, tuple[object, str]]:
         key: (question.get("default"), question["x-keelline-source"])
         for key, question in schema["properties"].items()
     }
+
+
+@needs_git
+@pytest.mark.parametrize("key", PROPERTIES)
+def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) -> None:
+    # The card promises that each default is what `init --yes` would take, and the skill asks
+    # the person to confirm the card, not the file. The two are computed in two places, so each
+    # is held to the other over a repository where no default is the preset's: a `develop`
+    # branch, a harness directory and a profile's markers. Mutation (by hand): the card's base
+    # branch taken from the preset -> the `project.base_branch` case reddens.
+    root = repository(tmp_path, origin=None)
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+    (root / ".codex").mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
+    default = _schema(tmp_path, root)["properties"][key]["default"]
+    written = init(
+        root, machine=tmp_path / "absent.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False
+    )
+    assert not written.refused
+    table, name = key.split(".")
+    value = getattr(getattr(load(root, machine=tmp_path / "absent.toml"), table), name)
+    assert (list(value) if isinstance(value, tuple) else value) == default
 
 
 @needs_git

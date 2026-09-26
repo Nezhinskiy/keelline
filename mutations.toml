@@ -9937,3 +9937,37 @@ after = "        raise ConfigError(GATES_CUSTOM_NAME.format(count=len(unusable),
 reddens = [
   "tests/config/test_loader.py::test_every_name_refusal_words_the_rule_and_never_prints_the_pattern",
 ]
+
+# A gate that could not judge the tree has no finding, so its one annotation is the reason; and a
+# probe's own listing that goes unanswered after the questions before it were answered is could
+# not look, never an empty listing.
+[[mutation]]
+name = "a gate that could not run is not annotated"
+file = "src/keelline/assess/report.py"
+before = '            emit(level, "", None, f"{result.name}: {result.reason}")'
+after = "            pass"
+reddens = [
+  "tests/assess/test_report.py::test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason",
+]
+
+[[mutation]]
+name = "a todo-markers grep that did not answer reads as no marker"
+file = "src/keelline/assess/probes.py"
+before = '        return Looked(unread=("git grep",))'
+after = "        return Looked()"
+reddens = [
+  "tests/assess/test_probes.py::test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look[todo-markers]",
+]
+
+[[mutation]]
+name = "a commit-types log that did not answer reads as no stray subject"
+file = "src/keelline/assess/probes.py"
+before = '''
+        return Looked(unread=("git log",))
+    fields = out.split("\0")'''
+after = '''
+        return Looked()
+    fields = out.split("\0")'''
+reddens = [
+  "tests/assess/test_probes.py::test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look[commit-types]",
+]

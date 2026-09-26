@@ -33,6 +33,7 @@ from keelline.assess.probes import (
 )
 from keelline.config.loader import load, preset_defaults
 from keelline.findings import Severity
+from keelline.gitenv import git_run
 from keelline.presets import load_preset
 from keelline.project.api import CI_WORKFLOW
 from tests.assess.smoke import smoke_repo
@@ -268,6 +269,31 @@ def test_a_git_query_that_does_not_answer_is_not_nothing_found(
         "memory-history": ("git log",),
         "commit-types": ("git rev-parse",),
     }
+
+
+@pytest.mark.parametrize(
+    ("probe", "query", "where"),
+    [("todo-markers", "grep", "git grep"), ("commit-types", "log", "git log")],
+    ids=["todo-markers", "commit-types"],
+)
+def test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe: str, query: str, where: str
+) -> None:
+    # The two arms the case above never reaches: `todo-markers` asks nothing when there is no
+    # code root, and `commit-types` stops at `rev-parse` when every query fails. Here only the
+    # probe's own listing goes unanswered, after the questions before it were answered, so an
+    # empty listing would read as no marker and no stray subject. Mutations (oracle): "a
+    # todo-markers grep that did not answer reads as no marker" -> `todo-markers` reddens; "a
+    # commit-types log that did not answer reads as no stray subject" -> `commit-types` reddens.
+    root = _repo(tmp_path)
+    _write(root, "src/a.py", f"# {TO_DO}: one\n")
+    _commit(root, "wip")
+
+    def unanswered(root_: Path, *args: str, timeout: float) -> tuple[int, str]:
+        return (-1, "") if args[0] == query else git_run(root_, *args, timeout=timeout)
+
+    monkeypatch.setattr(probes, "git_run", unanswered)
+    assert _shapes(_items(root, tmp_path, probe)) == [(COULD_NOT_LOOK, (where,))]
 
 
 def test_a_path_git_prints_raw_hides_no_committed_env_file(tmp_path: Path) -> None:

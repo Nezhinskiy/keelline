@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from keelline.assess.gates import GateResult
+from keelline.assess.gates import COULD_NOT_RUN, GateResult
 from keelline.assess.report import (
     BOOTSTRAP,
     NOT_ON_BASE,
@@ -64,6 +64,22 @@ def test_an_advisory_gate_warns_and_an_enforcing_one_errors() -> None:
         ["docs"],
     )
     assert [_level(line) for line in workflow_commands(run)] == ["warning", "error"]
+
+
+def test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason() -> None:
+    # A gate that could not judge the tree has no finding, so a pull request would see no
+    # annotation for it at all where the run still fails on it. Its reason is Keelline's own
+    # fixed text, never an exception's. Mutation (oracle): "a gate that could not run is not
+    # annotated" -> both lines are missing.
+    reason = COULD_NOT_RUN.format(command="plan check --base <base>")
+    run = _run(
+        [
+            GateResult("plan", (), answered=False, reason=reason),
+            GateResult("docs", (), answered=False, reason=reason),
+        ],
+        ["plan"],
+    )
+    assert workflow_commands(run) == [f"::error::plan: {reason}", f"::warning::docs: {reason}"]
 
 
 def test_past_the_cap_one_notice_counts_the_rest() -> None:

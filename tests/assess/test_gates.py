@@ -282,15 +282,32 @@ def test_a_custom_gate_past_its_time_limit_did_not_answer(tmp_path: Path) -> Non
     assert probe.reason == "the command in [gates.custom.probe] run could not start, or ran past 1s"
 
 
-def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(tmp_path: Path) -> None:
+def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A timeout case with one sleeping process cannot show this: it is the descendant — a test
     # runner a shell wrapper started — that must not run on after the gate has reported.
-    # A 2 s bound, so the child has started before the gate gives up on even a loaded machine;
-    # `started` asserts that it did.
+    # Driven as the interrupt case below is: the bound expires once the child has written
+    # `started`, never on the clock, which raced a real 2 s limit against two interpreter
+    # start-ups and could give up before there was a descendant to end.
     command, started, late = delayed_writer(tmp_path)
-    config = with_custom(fixture_config(tmp_path), command, seconds=2)
+    config = with_custom(fixture_config(tmp_path), command, seconds=600)
+    real = subprocess.Popen.wait
+    calls: list[float | None] = []
+
+    def expired(self: subprocess.Popen[bytes], timeout: float | None = None) -> int:
+        calls.append(timeout)
+        if len(calls) == 1:
+            deadline = time.monotonic() + STARTED_WAIT_SECONDS
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+        return real(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", expired)
     [probe] = results(tmp_path, config)
     assert not probe.answered
+    assert calls[0] == 600  # the configured bound is the one the gate waited under
     assert started.exists()
     time.sleep(LATE_WAIT_SECONDS)
     assert not late.exists()
