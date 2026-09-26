@@ -135,8 +135,8 @@ ORIGIN_NOT_TEXT = (
     "this repository's `origin` URL is not UTF-8 text, so the overlay cannot record it; set it "
     "again with `git remote set-url origin URL`"
 )
-# The seventh, and the first of the two whose trigger is repository-authored (§7.4:
-# `memory.groups` reaches no guard of its own). One constant for the check above every write
+# The seventh, and the first of the two whose trigger is repository-authored
+# (`memory.groups` reaches no guard of its own). One constant for the check above every write
 # and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
 # refusal are two refusals to keep in step. The entry is never quoted back into it.
 GROUP_ESCAPES = (
