@@ -24,8 +24,9 @@ from keelline.config.owned import OwnedKeyError
 from keelline.config.schema import BUILTIN_GATES, Config
 from keelline.errors import Failure, Refusal
 from keelline.project.templates import CONFIG_ARTIFACT
+from keelline.project.upgrade import upgrade
 from keelline.scaffold import Manifest, ManifestError, digest
-from tests.gitfixture import git, needs_git
+from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import repository
 
 pytestmark = needs_git
@@ -123,6 +124,9 @@ def test_begin_refuses_a_plan_that_is_not_an_adoption_plan(tmp_path: Path) -> No
 def test_begin_refuses_a_plan_outside_the_root_or_absent(tmp_path: Path) -> None:
     # Both are refused before `plan check` reads anything, and in the same words: a message that
     # named the path would print what the caller typed back to it, and the rule is one sentence.
+    # Mutation (declared): the file-and-containment check made `if False:` -> the absent plan
+    # reaches `plan check`, which fails rather than refuses, and the one outside the root raises
+    # `ValueError` from `relative_to`.
     root, _ = _project(tmp_path)
     outside = tmp_path / PLANS / "2026-09-24-keelline-adoption.md"
     outside.parent.mkdir(parents=True)
@@ -158,6 +162,8 @@ def test_begin_never_moves_an_installed_project_back(tmp_path: Path) -> None:
 def test_a_named_gate_that_passes_is_enforced_without_begin_first(tmp_path: Path) -> None:
     # Promotion is its own step: nothing requires `begin` first, and the first promotion moves
     # an initialised project to adopting, since the loader refuses a list under `initialised`.
+    # Mutation: `after` kept at the current state when not installing -> `enforced` is written
+    # under `initialised`, and reloading the document refuses it.
     root, base = _project(tmp_path)
     transition = promote(root, _config(root, tmp_path), ["docs"], base=base)
     assert (transition.before, transition.after, transition.promoted) == (
@@ -217,6 +223,10 @@ def test_promoting_every_configured_gate_installs_the_project(tmp_path: Path) ->
 def test_nothing_left_to_promote_on_an_installed_project_is_refused_rather_than_rewritten(
     tmp_path: Path,
 ) -> None:
+    # In-comment, not declared: the bare call's refusal guards no write, since without it an
+    # installed project is "completed" to the bytes it already holds. Mutation: `raise
+    # Refusal(ALL_ENFORCE)` made `return Transition(state, state)` -> the second bare call
+    # returns, and the `pytest.raises` reddens.
     root, base = _project(tmp_path)
     promote(root, _config(root, tmp_path), ["docs"], base=base)
     with pytest.raises(Refusal, match="already enforces"):
@@ -360,6 +370,8 @@ def test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs(tmp_pa
 
 def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:
     # A custom gate is promoted as a built-in is: its command runs, and its name joins the list.
+    # Mutation: `run_gates` handed only the built-in names of `wanted` -> nothing runs, nothing
+    # is promoted, and the marker is absent.
     root, base = _project(tmp_path)
     _with_marker_gate(root)
     transition = promote(root, _config(root, tmp_path), [MARKER], base=base)
@@ -438,6 +450,48 @@ def test_adopt_begin_prints_no_path_and_exits_2_on_a_plan_that_is_not_one(tmp_pa
     assert code == 2
     assert "adoption plan" in err
     assert str(stray) not in out + err
+
+
+def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Path) -> None:
+    # A custom gate whose command cannot start stays advisory, is named as one that could not
+    # run, and nothing is written. Mutation: the unanswered names left out of `advisory` in
+    # `run_adopt_promote` -> the summary loses the name and the command exits 0.
+    root, base = _project(tmp_path)
+    with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
+        stream.write('\n[gates.custom.absent]\nrun = ["keelline-test-no-such-command"]\n')
+    before = _document(root)
+    code, out, err = _cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
+    assert code == 1, err
+    assert out.strip() == (
+        "promoted: nothing; still advisory: absent (could not run); state initialised"
+    )
+    assert _document(root) == before
+
+
+def test_upgrade_after_a_promotion_plans_nothing_new(tmp_path: Path) -> None:
+    # The two verbs move `state` and `enforced` and nothing `upgrade` owns, so `upgrade` moves
+    # no key afterwards and plans what it planned before the adoption (the roadmap `docs trail`
+    # rewrote is hand-edited to it) and nothing more. Mutation: the promotion's write also
+    # setting `[keelline] version` to an older release -> `upgrade` plans to move it back.
+    # Skipping the record's re-stamp does not redden this case, because `upgrade` never plans
+    # `keelline.toml` itself; `test_uninstall_after_a_promotion_takes_keelline_toml_back` holds
+    # the re-stamp.
+    root, base = _project(tmp_path)
+
+    def planned() -> list[tuple[str, str, str]]:
+        report = upgrade(
+            root, machine=tmp_path / "m.toml", runner=LsRemote(), dry_run=True, force=()
+        )
+        assert report.moved == ()
+        assert not report.refused
+        return [(a.artifact_id, str(a.verb), a.target) for a in report.footprint.actions]
+
+    before = planned()
+    begin(root, _config(root, tmp_path), root / ADOPTION)
+    promote(root, _config(root, tmp_path), ["docs"], base=base)
+    promote(root, _config(root, tmp_path), [], base=base)
+    assert _config(root, tmp_path).keelline.state == "installed"
+    assert planned() == before
 
 
 def test_uninstall_after_a_promotion_takes_keelline_toml_back(tmp_path: Path) -> None:

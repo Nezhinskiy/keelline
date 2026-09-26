@@ -8946,3 +8946,12 @@ after = "        if False:"
 reddens = [
   "tests/assess/test_state.py::test_an_initialised_project_with_no_gate_is_refused_rather_than_installed",
 ]
+
+[[mutation]]
+name = "adopt begin reads a plan outside the root or absent"
+file = "src/keelline/assess/state.py"
+before = "    if not resolved.is_file() or not resolved.is_relative_to(root):"
+after = "    if False:"
+reddens = [
+  "tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent",
+]
