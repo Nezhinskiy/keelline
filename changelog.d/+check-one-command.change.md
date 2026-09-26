@@ -1,7 +1,8 @@
 The reusable workflow runs `keelline gate` in its one `gates` job, in two steps: the
 configuration check and the built-in gates first, then the project's own gates from
 `[gates.custom]`, only once the first step passed, so no command the repository wrote runs
-where the verdict is decided. Each gate is advisory or enforcing as the base's `keelline.toml`
+where the verdict is decided. Both start Python as `python3 -P -s`, so neither a module in the
+checkout nor a `.pth` file in a user site directory loads in their process. Each gate is advisory or enforcing as the base's `keelline.toml`
 says. The base is resolved once to a commit from `refs/remotes/origin/<base>`, so a tag named
 like the branch cannot stand in for it, and a project root reached through a symbolic link is
 refused. A custom gate runs on the runner image with nothing of the project installed, so it

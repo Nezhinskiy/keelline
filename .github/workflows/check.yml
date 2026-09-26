@@ -1,8 +1,8 @@
 # The reusable workflow a project calls. One job, `gates`: it checks out the caller, checks out
 # Keelline at THIS FILE's own commit (no resolver and no build backend; the network is the two
 # checkouts and whatever `setup-python` below fetches when the runner has no matching
-# interpreter cached), resolves the base branch to one commit, and runs `python3 -P -m keelline
-# gate` against it twice. The first run reads the base's `keelline.toml`, admits only a change
+# interpreter cached), resolves the base branch to one commit, and runs `python3 -P -s -m
+# keelline gate` against it twice. The first run reads the base's `keelline.toml`, admits only a change
 # that tightens it, and runs the configuration check and the built-in gates, each advisory or
 # enforcing as the configuration it admitted says; it executes nothing the repository wrote.
 # The second runs the project's own gates from `[gates.custom]`, only once the first passed:
@@ -163,7 +163,8 @@ jobs:
             echo "root=project/${p:-.}"
           } >> "$GITHUB_OUTPUT"
       - name: The configuration and the built-in gates
-        # The step that judges. `--builtin` executes no command from `keelline.toml`, so nothing
+        # The step that judges. `--builtin` executes no command from `keelline.toml`, and `-P -s`
+        # put neither the working directory nor the user site directory on `sys.path`, so nothing
         # the pull request wrote runs in the process that holds the verdict. It may not fail
         # quietly: `keelline gate` already exits 0 for an advisory gate's findings, so
         # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
@@ -184,7 +185,7 @@ jobs:
           # the caller is pull-request content, so a leg that names one gate still judges the
           # change's `keelline.toml` against the base's; an empty `only:` runs it already.
           if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi
-          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"
       - name: The project's own gates
         # The commands `[gates.custom]` names, and only after the step above passed: under the
@@ -206,5 +207,5 @@ jobs:
           custom=()
           for name in $ONLY; do custom+=("--only=$name"); done
           set +o noglob
-          python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${custom[@]}"

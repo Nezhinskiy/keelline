@@ -797,8 +797,9 @@ that, and it is an option, not a requirement.
 - *Release tags.* A moved `[ci] ref` is admitted only at a commit one of Keelline's own `v*` tags
   names, asked of the public repository.
 - *The verdict itself* is worth what the process that computed it is worth. It must execute
-  nothing the repository wrote: run it with `--builtin`, and start it as `python3 -P -m keelline`,
-  so that no module in the checkout can be imported in place of Keelline's own.
+  nothing the repository wrote: run it with `--builtin`, and start it as
+  `python3 -P -s -m keelline`, so that no module in the checkout, and no `.pth` file under a user
+  site directory the environment points into it, can be imported in place of Keelline's own.
 
 Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused unless you pass
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.
@@ -2044,8 +2045,8 @@ tree's copy decides. Each anchor, and what keeps it out of the pull request's re
 - the **Keelline that runs** is the one the caller's `uses:` line pins, and an upgrade is
   admitted only to that commit, which must be a released tag's;
 - the **verdict** is the exit status of the first step, which runs no command your repository
-  wrote and starts Python with `-P`, so no module in your checkout can stand in for Keelline's
-  own.
+  wrote and starts Python with `-P -s`, so no module in your checkout, and no `.pth` file in a
+  user site directory, can stand in for Keelline's own.
 
 On a pull request, the tree is the merge commit the platform built from the base as it was when
 the event fired, while the base commit is read when the job checks out. A base that tightened

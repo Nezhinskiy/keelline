@@ -8209,8 +8209,8 @@ reddens = [
 [[mutation]]
 name = "the judging step runs the repository's own gate commands"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -m keelline gate --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
 ]
@@ -8221,8 +8221,8 @@ reddens = [
 [[mutation]]
 name = "the judging step judges the tree against itself"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
 ]
@@ -8269,8 +8269,8 @@ reddens = [
 [[mutation]]
 name = "the judging step imports from its working directory"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
@@ -8459,8 +8459,8 @@ reddens = [
 [[mutation]]
 name = "the custom step imports from its working directory"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
@@ -8488,8 +8488,8 @@ reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
-# And after a blank line. `-P` does not turn off the user site directory, so a `.pth` file under
-# `PYTHONUSERBASE` inside the checkout runs in Keelline's own process.
+# And after a blank line. A key the reader never reads is a key no equality holds, whatever the
+# interpreter's flags turn off: `PYTHONUSERBASE` here, and anything else bash or Python reads.
 [[mutation]]
 name = "a key after a blank line in the custom step's env goes unread"
 file = ".github/workflows/check.yml"
@@ -8640,7 +8640,7 @@ reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
-# And at seven spaces in the custom step, with `PYTHONUSERBASE`, which `-P` leaves on.
+# And at seven spaces in the custom step, with `PYTHONUSERBASE`.
 [[mutation]]
 name = "a key after a comment at seven spaces in the custom step's env goes unread"
 file = ".github/workflows/check.yml"
@@ -8706,20 +8706,19 @@ reddens = [
 ]
 
 # The whitelist read only what followed `python`: an assignment in front of the command, such as
-# `PYTHONUSERBASE=…`, passed it, and `-P` leaves the user site directory on.
+# `PYTHONUSERBASE=…`, passed it, and an assignment of another name reaches the interpreter too.
 [[mutation]]
 name = "the judging step's command gains an assignment in front of it"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          PYTHONUSERBASE=project/.local python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
 
-# A script line that changes the verdict's process without being an invocation. `-P` keeps the
-# working directory off `sys.path` and leaves the user site directory on, so an exported
-# `PYTHONUSERBASE` inside the caller's checkout runs a committed `.pth` at the interpreter's
-# start-up; a sourced file runs whatever it says. Every script is held line for line.
+# A script line that changes the verdict's process without being an invocation: an exported
+# variable reaches the interpreter, and a sourced file runs whatever it says. Every script is held
+# line for line.
 [[mutation]]
 name = "the judging step exports a user base inside the caller's checkout"
 file = ".github/workflows/check.yml"
@@ -8769,8 +8768,8 @@ reddens = [
 [[mutation]]
 name = "the judging step's command line runs a second command before the gate"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -m keelline gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
@@ -8794,4 +8793,25 @@ before = "  contents: read"
 after = "  contents: write"
 reddens = [
   "tests/project/test_templates.py::test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothing_more",
+]
+
+# `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
+# start-up; `-s` is what keeps one the pull request commits out of the gate steps' processes if
+# anything ever points the user base into the checkout.
+[[mutation]]
+name = "the judging step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[judging]",
+]
+
+[[mutation]]
+name = "the custom step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
 ]

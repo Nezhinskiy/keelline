@@ -8,9 +8,9 @@ real `keelline gate`. Only the two checkouts and `setup-python` are the platform
 run here; the base step's own cases are in `tests/test_fixtures.py`.
 
 **What the judging step must hold.** It is the step whose exit status is the verdict, so it runs
-no command the repository wrote (`--builtin`) and imports nothing from the working directory
-(`python3 -P`), it judges the configuration whatever `only:` names, and it may not fail quietly.
-The project's own gates run in the next step, and only after it passed.
+no command the repository wrote (`--builtin`) and imports nothing from the working directory or a
+user site directory (`python3 -P -s`), it judges the configuration whatever `only:` names, and it
+may not fail quietly. The project's own gates run in the next step, and only after it passed.
 """
 
 from __future__ import annotations
@@ -63,8 +63,8 @@ OVER_BUDGET = "".join("word\n" for _ in range(400))
 _PYTHON = re.compile(r"\bpython[\d.]*\b")
 KEELLINE_INVOCATIONS = (
     "python3 -m keelline --version",
-    'python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \\',
-    'python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \\',
+    'python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \\',
+    'python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \\',
 )
 GATE_ENV: dict[str, Node] = {
     "PYTHONPATH": "keelline/src",
@@ -269,9 +269,19 @@ def _step_env(step: str) -> dict[str, str]:
     return {key: value for key, value in env.items() if isinstance(value, str)}
 
 
-def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tuple[int, str, str]:
+def _judge(
+    workspace: Path,
+    base_sha: str,
+    only: str,
+    step: str = JUDGE,
+    *,
+    interpreter: Path | None = None,
+    extra: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     """The named gate step, run as the runner runs it: from the workspace, with the environment
-    its own `env:` block names and the runner's few variables, and nothing else.
+    its own `env:` block names and the runner's few variables, and nothing else — unless a case
+    passes `extra`, a variable the step's `env:` could name, or `interpreter`, the directory
+    whose `python3` stands in for `setup-python`'s.
 
     The `env:` block is read off the shipped file rather than retyped here, so a value it gains
     — a `PYTHONPATH` that reaches into the checkout, say — is a value these cases run under.
@@ -303,10 +313,11 @@ def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tupl
         env={
             # The interpreter running this suite stands in for `setup-python`'s: the step names
             # `python3`, and a system one below the floor would fail for a reason CI never meets.
-            "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
+            "PATH": f"{interpreter or Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
             "HOME": str(workspace),
             "GITHUB_STEP_SUMMARY": str(summary),
             **named,
+            **(extra or {}),
         },
     )
     written = summary.read_text(encoding="utf-8") if summary.exists() else ""
@@ -353,17 +364,18 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     # wrote. The steps run from the workspace today, which the pull request writes nothing
     # into; `-P` keeps that true if a later edit gives a gate step `working-directory: project`,
     # as the base step it replaced had. And no step reads anything with `python3 -c` any more:
-    # the base step that did is gone. Mutation (declared): `python3 -m` for `python3 -P -m` in
-    # the judging step.
+    # the base step that did is gone. `-s` is the user site's half, and its behaviour is the
+    # `.pth` case below. Mutations (declared): `python3 -s -m` for `python3 -P -s -m` in the
+    # judging step, and in the custom step.
     for step in (JUDGE, CUSTOM):
-        assert "python3 -P -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
+        assert "python3 -P -s -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
     # And no interpreter the job starts runs anything but Keelline, in any spelling: every
     # line that names one, comments aside, is one of Keelline's three invocation lines, whole
     # and in order. Mutations (declared): the proof step runs `python3 -P -c`, `python3 -Pc`, or
     # a program on standard input; the judging step's command gains an assignment in front of
     # it. Whole, because `… gate --help >/dev/null; PYTHONUSERBASE=… python3 -P -m keelline gate
-    # --builtin …` began with an invocation and passed a prefix match. Mutation (declared): the
-    # judging step's command line runs a second command before the gate.
+    # --builtin …`, written before `-s`, began with an invocation and passed a prefix match.
+    # Mutation (declared): the judging step's command line runs a second command before the gate.
     invocations = [
         line.strip()
         for script in _scripts()
@@ -470,12 +482,12 @@ def test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them(tmp_pa
 
 @needs_workflow
 def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> None:
-    """Everything that reaches a step's process, held whole for every step, because `-P` covers
-    only the working directory: a `PYTHONPATH` entry inside the checkout, a `PYTHONUSERBASE`, a
-    `working-directory: project`, or a `BASH_ENV` the step's non-interactive bash sources would
-    each hand the pull request code in the process that decides the verdict — or, in an
-    earlier step, code that writes `$GITHUB_ENV` or `$GITHUB_PATH` and so chooses the next
-    steps' environment and interpreter.
+    """Everything that reaches a step's process, held whole for every step, because `-P -s`
+    cover only the working directory and the user site directory: a `PYTHONPATH` entry inside the
+    checkout, a `PYTHONSTARTUP`, a `working-directory: project`, or a `BASH_ENV` the step's
+    non-interactive bash sources would each hand the pull request code in the process that
+    decides the verdict — or, in an earlier step, code that writes `$GITHUB_ENV` or
+    `$GITHUB_PATH` and so chooses the next steps' environment and interpreter.
 
     What reaches it: the workflow's keys (no `env:`), the job's (no `env:`, no `if:`), the job's
     `defaults:` (the shell and nothing else), and each step whole but for its script's text —
@@ -511,12 +523,14 @@ def test_every_script_the_job_runs_is_held_line_for_line() -> None:
     verdict's process — its environment or the code it imports — without being an invocation.
 
     `-P` keeps the working directory off `sys.path` and nothing more. Measured with a
-    `setup-python`-shaped interpreter (not a virtual environment): a `.pth` under
-    `project/.local` ran at start-up once the step exported `PYTHONUSERBASE=project/.local`, and a
-    `sitecustomize.py` copied into `keelline/src/` ran at start-up under the step's own
-    `PYTHONPATH`. `export`, `.`/`source`, `cd`, `eval`, `umask` and a write into either checkout
-    are each one line, and a list of forbidden spellings is a list of the ones thought of; so
-    every script is held whole, comments aside, and a line the list does not carry reddens here.
+    `setup-python`-shaped interpreter (not a virtual environment), before the gate steps passed
+    `-s`: a `.pth` under `project/.local` ran at start-up once the step exported
+    `PYTHONUSERBASE=project/.local`, and a `sitecustomize.py` copied into `keelline/src/` ran at
+    start-up under the step's own `PYTHONPATH`. `-s` answers the first, and nothing but this
+    hold answers the second. `export`, `.`/`source`, `cd`, `eval`, `umask` and a write into either
+    checkout are each one line, and a list of forbidden spellings is a list of the ones thought
+    of; so every script is held whole, comments aside, and a line the list does not carry reddens
+    here.
     Mutations (declared): the judging step exports `PYTHONUSERBASE`; the custom step sources a
     file from the caller's checkout; the base step copies a file into Keelline's checkout.
     """
@@ -542,6 +556,65 @@ def test_no_module_the_checkout_carries_is_imported_by_a_gate_step(
     _commit(workspace, "tomllib.py", f"open({str(marker)!r}, 'w').close()\n")
     code, printed, _ = _judge(workspace, base_sha, "", step=step)
     # The marker first: a planted module that ran is the finding, whatever it then broke.
+    assert not marker.exists(), printed
+    assert code == 0, printed
+
+
+def _outside_any_virtual_environment(tmp_path: Path) -> Path:
+    """A directory whose `python3` is this suite's interpreter outside its virtual environment.
+
+    A virtual environment turns the user site directory off by itself, so the suite's own
+    interpreter would pass a case about the user site whatever flags the step passed. The
+    interpreter `setup-python` installs is not in one, and neither is this.
+    """
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    # Not typed in the standard library's stubs; the case below asserts it is what it says.
+    (directory / "python3").symlink_to(Path(getattr(sys, "_base_executable", sys.executable)))
+    return directory
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+@pytest.mark.parametrize("step", [JUDGE, CUSTOM], ids=["judging", "custom"])
+def test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step(
+    tmp_path: Path, step: str
+) -> None:
+    # `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
+    # start-up, before anything Keelline imports. The step's `env:` is held whole and names no
+    # `PYTHONUSERBASE`; `-s` is what keeps a `.pth` the pull request commits out of the verdict's
+    # process if it ever does. Measured before `-s`: with `PYTHONUSERBASE=project/.local`, a
+    # committed `.pth` ran under `python3 -P`. Mutations (declared): `-s` dropped from the
+    # judging step, and from the custom step.
+    workspace, base_sha = _clone(tmp_path)
+    marker = tmp_path / "planted"
+    interpreter = _outside_any_virtual_environment(tmp_path)
+    python3 = str(interpreter / "python3")
+    user_base = {"PYTHONUSERBASE": "project/.local"}
+    env = {"PATH": f"{interpreter}:/usr/bin:/bin:/usr/local/bin", "HOME": str(workspace)}
+    site = subprocess.run(
+        [python3, "-c", "import site; print(site.getusersitepackages())"],
+        cwd=workspace,
+        env={**env, **user_base},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    planted = workspace / site / "planted.pth"
+    planted.parent.mkdir(parents=True)
+    planted.write_text(f"import os; open({str(marker)!r}, 'w').close()\n", encoding="utf-8")
+    commit(workspace / "project", "chore: a user base inside the checkout")
+    # The case can fail: this interpreter, started without `-s`, runs the file.
+    subprocess.run(
+        [python3, "-P", "-c", "pass"], cwd=workspace, env={**env, **user_base}, check=True
+    )
+    assert marker.exists(), "no user site directory is read here, so nothing below could fail"
+    marker.unlink()
+    code, printed, _ = _judge(
+        workspace, base_sha, "", step=step, interpreter=interpreter, extra=user_base
+    )
+    # The marker first: a `.pth` that ran is the finding, whatever the step then said.
     assert not marker.exists(), printed
     assert code == 0, printed
 
