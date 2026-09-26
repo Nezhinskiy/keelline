@@ -74,6 +74,10 @@ BASE_NOT_UTF8 = NOT_UTF8.format(path=f"the base's {CONFIG_FILE}")
 # What the loader calls the base's copy, so its reason names the right file: the loader's own
 # words would name `<root>/keelline.toml`, which is the change's copy.
 BASE_COPY = f"the base's {CONFIG_FILE}"
+# A refusal the base's own load raised against this tree's disk, such as a symlink the change
+# planted on a path only the base's `[paths]` names: still a refusal, and said to be the base's.
+# The reason is the loader's own, bounded where it was raised.
+BASE_REFUSED = "the base's keelline.toml, which governs this change, is refused here: {reason}"
 BASE_DOES_NOT_LOAD = (
     "the base's keelline.toml governs this change and does not load, so the change cannot be "
     "judged; fix it on the base branch by a direct push ({reason})"
@@ -348,9 +352,13 @@ def judge(
     except ConfigError as exc:
         # Never the bootstrap: read as "no copy", the change would decide its own configuration.
         # The machine file is not the base's: both sides read it, and the tree's load above has
-        # already answered for it. A `Refusal`, such as a symlink the change planted on a path
-        # only the base's `[paths]` names, passes through and fails the run as well.
+        # already answered for it.
         raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None
+    except Refusal as exc:
+        # A symlink the change planted on a path only the base's `[paths]` names: the run fails
+        # as a refusal, and the message says whose configuration met it, since the tree's own
+        # `[paths]` may not name that path at all.
+        raise Refusal(BASE_REFUSED.format(reason=exc)) from None
     sides = _Sides(base, tree, running, workflow_sha, released)
     before, after = _values(base), _values(tree)
     changes = tuple(

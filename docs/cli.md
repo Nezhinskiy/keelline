@@ -860,8 +860,9 @@ it, or given with a `..` component; an `--only` name this run's
 configuration does not have; a `keelline.toml` that is itself a symbolic link; or a `[paths]` value
 on either side that leaves the root, passes through a symbolic link, or names `.git` or `.keelline`.
 Both copies are loaded against this tree's disk, so a change that turns a directory the base names
-into a symbolic link refuses the base's own load, and a base written for an older Keelline that this
-one no longer loads fails every pull request until the owner fixes it on the base branch.
+into a symbolic link refuses the base's own load, in a message that says it is the base's, and a
+base written for an older Keelline that this one no longer loads fails every pull request until the
+owner fixes it on the base branch.
 
 ## `keelline adopt begin PLAN [--root PATH] [--machine PATH]`
 

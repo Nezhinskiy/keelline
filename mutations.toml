@@ -5514,8 +5514,8 @@ reddens = [
 
 # `[ci] ref` is repository-authored — on the adoption path it is whatever `keelline.toml`
 # already carried, and the loader bounds it to "a string" and nothing more — and it lands in the
-# `uses:` line of a YAML file GitHub executes. `GATE_BRANCH`'s rule, read onto the second value
-# this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
+# `uses:` line of a YAML file GitHub executes. The branch grammar's rule (`BRANCH_NAME`), read onto
+# the second value this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
 # nothing a repository writes can move, and a value outside it costs the artifact, not the run.
 [[mutation]]
 name = "a [ci] ref outside the grammar is rendered into the workflow's uses line"
@@ -5548,11 +5548,11 @@ reddens = [
 ]
 
 # The highest-value new guard in the `project` area, and it had a test and no entry.
-# `[ci] gate_branch` is repository-authored and is interpolated into three places of a YAML file
-# GitHub executes — the two `branches:` lists and the literal `base:` — so it is quoted there
+# `[ci] gate_branch` is repository-authored and is interpolated into four places of a YAML file
+# GitHub executes — the three `branches:` lists and the literal `base:` — so it is quoted there
 # *and* held to a shape here, because quoting alone still admits a newline, which closes the
-# string and lets further keys be written into the workflow. The anchor is `GATE_BRANCH`, a
-# compiled constant in the installed package (now `BRANCH_NAME`); the party bounded is the repository, which cannot
+# string and lets further keys be written into the workflow. The anchor is `BRANCH_NAME`, a
+# compiled constant in the installed package; the party bounded is the repository, which cannot
 # move it. A value outside the grammar costs the artifact rather than the run, and the sentence
 # names the key and the grammar and never the value.
 [[mutation]]
@@ -9274,3 +9274,13 @@ after = """
 reddens = [
   "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
 ]
+
+# A refusal from the base's own load (a symlink the change planted on a path only the base's
+# `[paths]` names) still fails the run, and says it is the base's configuration that met it.
+[[mutation]]
+name = "the base's load refusal does not say it is the base's"
+file = "src/keelline/assess/rule.py"
+before = "        raise Refusal(BASE_REFUSED.format(reason=exc)) from None"
+after = "        raise"
+reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
+

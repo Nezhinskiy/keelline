@@ -188,9 +188,9 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
     with empty stdout — so this function answered `[]` rather than None and the gate reported
     OK having linted nothing. That is the state the `base-unresolvable` finding exists to make
-    impossible, reached by an option-shaped typo instead of by a shallow checkout. The
-    `origin/<base_branch>` composition is safe for its prefix alone, which is a property of
-    that one caller and not of this argument.
+    impossible, reached by an option-shaped typo instead of by a shallow checkout. The default,
+    `config.layout.local_base`, is safe for its `refs/remotes/origin/` prefix alone, which is a
+    property of that one caller and not of this argument.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")

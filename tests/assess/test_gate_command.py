@@ -423,6 +423,9 @@ def test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass(tmp_path: Pa
     assert code == 2
     assert out == ""
     assert "symlink" in err
+    # Whose configuration met the link: the tree's `[paths]` does not name it. Mutation
+    # (declared): the base's refusal passed through unwrapped -> the base is not named.
+    assert "the base's keelline.toml" in err
 
 
 def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path: Path) -> None:
