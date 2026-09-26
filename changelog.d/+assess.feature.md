@@ -4,3 +4,6 @@ comments, tracked `.env` files, committed notes, foreign hooks and workflows, a
 CODEOWNERS file that leaves the workflows unowned, commit subjects outside the vocabulary,
 and the configured profile's checks. The whole list goes to *.keelline/assessment.json*,
 and `--json` prints the same document; the summary prints counts.
+`keelline assess --builtin` runs the built-in gates and the probes and none of the commands
+`[gates.custom]` names, so a clone whose commands you have not agreed to run can still be
+assessed; the `init` skill uses it when you decline to run them.

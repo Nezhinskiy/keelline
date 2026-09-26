@@ -53,7 +53,7 @@ Three things hold everywhere:
 - [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
 - [`keelline plan check [--base REF] [PATH …]`](#keelline-plan-check---base-ref-path-)
-- [`keelline assess [--base REF] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---root-path---machine-path)
+- [`keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---builtin---root-path---machine-path)
 - [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`keelline adopt begin PLAN [--root PATH] [--machine PATH]`](#keelline-adopt-begin-plan---root-path---machine-path)
 - [`keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---root-path---machine-path)
@@ -667,7 +667,7 @@ before git sees it. Uncommitted plans
 are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
 lints it. **Writes** nothing.
 
-## `keelline assess [--base REF] [--root PATH] [--machine PATH]`
+## `keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 What stands between this repository, as it is, and enforcement. It reads the tree's own
 `keelline.toml` — not the base branch's: the question is about this tree, so this command is
@@ -676,6 +676,10 @@ built-ins `[gates] builtin` keeps, in their fixed order, then each `[gates.custo
 custom gate's output goes to standard error as it ran and nowhere else, so running `assess` in a
 clone runs the commands that clone configured, as running its test suite would. Then it runs the
 probes below, which read files and the git index and never run a tool or reach the network.
+
+`--builtin` runs the built-in gates and the probes and no custom gate: for a clone whose
+commands you have not agreed to run. The summary names the custom gates it left out, which count
+toward no total, and the inventory lists them under `skipped`.
 
 `REF` is the revision `plan` and `commit` compare against, default
 `refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
@@ -708,7 +712,8 @@ advisory command until its candidates are triaged.
 **Writes** `.keelline/assessment.json`, which the `keelline:ignore` region keeps out of git,
 overwritten on every run that gets that far and never read back: format `1`, with `format`,
 `keelline` (the version that wrote it), `base`, `state`, `enforcing` (the gates
-`[keelline] enforced` makes enforcing, every configured gate under `installed`), `gates` (per
+`[keelline] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
+custom gates `--builtin` left out, else empty), `gates` (per
 gate: `name`, `enforcing`, `answered`, `reason`, `count`, `failing`) and `items` (per item:
 `probe`, the gate or probe that found it; `rule`; `principle`, a number in
 [the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;

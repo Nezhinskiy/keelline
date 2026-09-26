@@ -9646,3 +9646,13 @@ reddens = [
   "tests/config/test_symlinked_document.py::test_every_command_family_refuses_a_symlinked_keelline_toml[bugs-check]",
   "tests/assess/test_command.py::test_a_symlinked_keelline_toml_is_refused_and_never_followed",
 ]
+
+# `keelline assess` in a clone runs the commands the clone configured; `--builtin` is how a person
+# who declined them still gets an assessment, and the `init` skill uses it on a no. Ignored, the
+# flag runs every custom gate anyway.
+[[mutation]]
+name = "assess --builtin runs the custom gates anyway"
+file = "src/keelline/assess/assessment.py"
+before = "    skipped = tuple(name for name in config.gate_names if builtin and name in custom)"
+after = "    skipped = tuple(name for name in config.gate_names if False and name in custom)"
+reddens = ["tests/assess/test_command.py::test_builtin_runs_no_custom_gate_and_says_which_it_left_out"]

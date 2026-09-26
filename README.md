@@ -307,6 +307,7 @@ keelline setup --git-hooks --uninstall                 # remove it; restore the 
 
 # Assessing a repository
 keelline assess                                       # every gate and probe; the whole inventory in .keelline/assessment.json
+keelline assess --builtin                             # the same, running none of the repository's own gate commands
 keelline gate                                         # judge keelline.toml against the base, then run every configured gate
 keelline gate --only docs --only config               # a few of them; config is the configuration check
 keelline adopt begin docs/plans/2026-09-23-keelline-adoption.md   # check the adoption plan; the project is adopting

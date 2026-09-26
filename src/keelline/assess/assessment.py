@@ -55,6 +55,10 @@ UNWRITABLE = (
 NOT_A_FILE = (
     f"refusing to write {ASSESSMENT}: something that is not a file is there; remove it and re-run"
 )
+SKIPPED = (
+    "not run, as --builtin asked: the custom gate(s) {names}, whose commands this repository "
+    "configured; they count toward no total above"
+)
 NOT_IGNORED = (
     f"note: git does not ignore {ASSESSMENT} here, and it lists this repository's paths; the "
     "keelline:ignore region `keelline init` writes into .gitignore keeps it out of git"
@@ -68,6 +72,7 @@ class Assessment:
     enforcing: tuple[str, ...]
     gates: tuple[GateResult, ...]
     items: tuple[Item, ...]
+    skipped: tuple[str, ...] = ()  # custom gates `--builtin` did not run
 
     @property
     def would_fail(self) -> tuple[str, ...]:
@@ -84,19 +89,25 @@ def _gate_items(gate: Gate, result: GateResult) -> Iterator[Item]:
         yield item(gate.name, rule, gate.principle, Severity.WARNING, gate.remedy, labels)
 
 
-def assess(root: Path, *, machine: Path | None, base: str | None) -> Assessment:
-    """Every configured gate against `base`, then every probe, over the tree at `root`."""
+def assess(
+    root: Path, *, machine: Path | None, base: str | None, builtin: bool = False
+) -> Assessment:
+    """Every configured gate against `base`, then every probe, over the tree at `root`; with
+    `builtin`, no custom gate: no command the repository configured runs."""
     from keelline.presets import load_preset
 
     config = load(root, machine=machine)
     base = base or local_base(config)
-    results = run_gates(GateContext(root, config, base), config.gate_names)
+    custom = config.gates.custom
+    skipped = tuple(name for name in config.gate_names if builtin and name in custom)
+    names = [name for name in config.gate_names if name not in skipped]
+    results = run_gates(GateContext(root, config, base), names)
     gates = configured(config)
     window = int(load_preset(config.keelline.preset)["assess"]["commit_window"])
     items = [i for r in results for i in _gate_items(gates[r.name], r)]
     items += run_probes(ProbeContext(root, config, window))
     enforcing = tuple(n for n in config.gate_names if n in config.keelline.enforcing)
-    return Assessment(base, config.keelline.state, enforcing, results, tuple(items))
+    return Assessment(base, config.keelline.state, enforcing, results, tuple(items), skipped)
 
 
 def document(assessment: Assessment) -> dict[str, Any]:
@@ -107,6 +118,7 @@ def document(assessment: Assessment) -> dict[str, Any]:
         "base": assessment.base,
         "state": assessment.state,
         "enforcing": list(assessment.enforcing),
+        "skipped": list(assessment.skipped),
         "gates": [
             {
                 "name": g.name,
@@ -172,6 +184,9 @@ def render(assessment: Assessment) -> str:
             f"| {g.name} | {'yes' if g.name in assessment.enforcing else 'no'} | {count} | "
             f"{'yes' if g.failing else 'no'} |"
         )
+    if assessment.skipped:
+        # Gate names, which the loader holds to a grammar.
+        lines += ["", SKIPPED.format(names=", ".join(assessment.skipped))]
     if assessment.items:
         lines += ["", "| from | rule | severity | count | remedy |", "|---|---|---|---|---|"]
         lines += [

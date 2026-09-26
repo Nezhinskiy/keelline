@@ -240,3 +240,7 @@ def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None
     lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
     first_run = adoption.index("run `keelline assess`")
     assert adoption.index(lead) < adoption.index("explicit yes") < first_run
+    # A no still produces an assessment, through the flag that runs none of those commands:
+    # before it, the only way to honour a no was to stop. Mutation (by hand): the no's command
+    # back to plain `keelline assess` -> this reddens.
+    assert "`keelline assess --builtin` on a no" in adoption[first_run:]

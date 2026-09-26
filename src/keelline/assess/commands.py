@@ -30,6 +30,10 @@ BASE_HELP = (
     "the revision the plan and commit gates compare against, any git resolves: the inventory is "
     "advice and governs nothing; default refs/remotes/origin/<project.base_branch>"
 )
+ASSESS_BUILTIN_HELP = (
+    "the built-in gates and the probes only: no command from [gates.custom] runs, for a "
+    "repository whose commands you have not agreed to run"
+)
 GATE_HELP = "judge this change against the base's keelline.toml, then run the gates as it says"
 BASE_REF_HELP = (
     "the base to compare against: a 40-character commit id or a refs/ name; "
@@ -84,7 +88,8 @@ def run_assess(args: argparse.Namespace) -> Result:
     from keelline.assess.assessment import NOT_IGNORED, assess, document, ignored, render, write
 
     root = Path(args.root).resolve()
-    assessment = assess(root, machine=Path(args.machine) if args.machine else None, base=args.base)
+    machine = Path(args.machine) if args.machine else None
+    assessment = assess(root, machine=machine, base=args.base, builtin=args.builtin)
     write(root, assessment)
     summary = render(assessment)
     if ignored(root) is False:
@@ -282,6 +287,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
 def register(groups: SubParsers) -> None:
     parser = common_flags(groups.add_parser("assess", help=ASSESS_HELP))
     parser.add_argument("--base", default=None, help=BASE_HELP)
+    parser.add_argument("--builtin", action="store_true", help=ASSESS_BUILTIN_HELP)
     parser.set_defaults(func=run_assess)
 
     gate = common_flags(groups.add_parser("gate", help=GATE_HELP))

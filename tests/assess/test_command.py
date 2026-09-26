@@ -4,10 +4,12 @@ makes, at a constant place a clone can shape only by committing something there.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
+from keelline.assess.assessment import SKIPPED
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from keelline.config.paths import KEELLINE_DIRECTORY
@@ -155,6 +157,31 @@ def test_a_custom_gate_runs_beside_the_built_ins(
     gates = json.loads(capsys.readouterr().out)["gates"]
     assert gates[-1]["name"] == "tests"
     assert gates[-1]["enforcing"] is True
+
+
+@needs_git
+def test_builtin_runs_no_custom_gate_and_says_which_it_left_out(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `keelline assess` in a clone runs the commands the clone configured; a person who has not
+    # agreed to that still gets an assessment. The gate that writes the marker must not run, and
+    # the summary names what was left out rather than counting it as passing. Mutation
+    # (declared): `builtin` ignored -> the marker appears.
+    root = smoke_repo(tmp_path)
+    marker = tmp_path / "marker"
+    argv = json.dumps([sys.executable, "-c", f"open({str(marker)!r}, 'w')"])
+    with (root / CONFIG_FILE).open("a", encoding="utf-8") as document:
+        document.write(f"\n[gates.custom.tests]\nrun = {argv}\n")
+    git(root, "commit", "-qam", "chore: a gate of our own")
+    assert _assess(root, tmp_path, "--base", "HEAD~1", "--builtin") == 0
+    assert not marker.exists()
+    out = capsys.readouterr().out
+    assert SKIPPED.format(names="tests") in out
+    written = json.loads((root / ASSESSMENT).read_text(encoding="utf-8"))
+    assert written["skipped"] == ["tests"]
+    assert "tests" not in [gate["name"] for gate in written["gates"]]
+    assert _assess(root, tmp_path, "--base", "HEAD~1") == 0
+    assert marker.exists()
 
 
 @needs_git
