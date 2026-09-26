@@ -4344,32 +4344,6 @@ reddens = [
   "tests/test_fixtures.py::test_a_path_input_cannot_write_the_steps_own_outputs",
 ]
 
-# The same reader, and the shape it could not see for the opposite reason: a step whose first
-# key is `run` carries the list dash on the same line, which is the ordinary spelling for a step
-# with no `name`. Drop the strip and every such step is invisible — a whole workflow written that
-# way reports no shell at all, and the per-file floor excuses it for having none.
-[[mutation]]
-name = "the workflow scan goes blind to a step with no name"
-file = "tests/test_fixtures.py"
-before = '        if stripped.startswith("- "):'
-after = "        if False:"
-reddens = [
-  "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-]
-
-# And the error in the other direction, which is the one that cries wolf: a block scalar's extent
-# is measured from the KEY's column. Measure it from the line's start instead and a dashed step's
-# block swallows the step's own sibling keys — `env:` among them, which is exactly where a
-# `${{ }}` is supposed to live, so the scan reports a finding on the remedy it exists to enforce.
-[[mutation]]
-name = "a dashed step's block scalar swallows its own env block"
-file = "tests/test_fixtures.py"
-before = '        indent = line.index("run:")'
-after = "        indent = len(line) - len(line.lstrip())"
-reddens = [
-  "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-]
-
 # The whole-tree gate's other silence, one step along from reading nothing: `_text` answering the
 # empty string for every file keeps the file count full and the undecodable count at zero, every
 # parametrised case scans `""` and passes, and the run looks identical to a clean tree. The
@@ -4381,62 +4355,6 @@ before = '        return path.read_text(encoding="utf-8")'
 after = '        return ""'
 reddens = [
   "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
-]
-
-# The rule that replaced four rounds of shape enumeration: a `run:` key owns every following
-# line indented past the key's column. Drop the continuation and every multi-line body — a block
-# scalar, an indented plain scalar, a plain scalar that continues onto the next line, a quoted
-# one that wraps — is truncated to what stood on the key's own line, which for a block scalar is
-# the fold marker alone. Truncated bodies still count toward the floor, so the scan reports
-# clean over scripts it never read.
-[[mutation]]
-name = "a run key stops owning the lines indented past it"
-file = "tests/test_fixtures.py"
-before = "            body.append(following)"
-after = "            pass"
-reddens = [
-  "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-  # And the scan's own size floor, which exists for exactly this: the bodies are still
-  # collected from `check.yml`, so the COUNT floor passes while every one of them has been
-  # truncated to what stood on the key's line.
-  "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
-]
-
-# And the same rule at the other end: the value that stands on the key's own line. Drop it and
-# every one-liner is collected as the empty string while its continuation survives, so
-# `run: echo one ${{ … }}` on a single line escapes the scan entirely.
-[[mutation]]
-name = "a run key drops the value on its own line"
-file = "tests/test_fixtures.py"
-before = '        body = [rest] if (rest := stripped[len("run:") :].strip()) else []'
-after = '        body = [] if (rest := stripped[len("run:") :].strip()) else []'
-reddens = [
-  "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-]
-
-# The one shape the indentation rule cannot reach — a step spelled as a flow mapping, which has
-# no following line to own — is refused rather than parsed. Stop reporting it and a workflow
-# whose steps are written in braces reports whatever few `run:` keys stand outside them, with
-# nothing saying the rest were never looked at.
-[[mutation]]
-name = "a step spelled as a flow mapping is silently not seen"
-file = "tests/test_fixtures.py"
-before = '        if kind == "line" and "{" in _EXPRESSION.sub("", line)'
-after = '        if kind == "line" and "{" in _EXPRESSION.sub("", line) and False'
-reddens = [
-  "tests/test_fixtures.py::test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed",
-]
-
-# And its other direction, which is the one that gets a guard deleted: `${{ }}` is plain text
-# carrying braces, and a brace check that did not strip it first would report every line of
-# every workflow in this tree as a flow mapping.
-[[mutation]]
-name = "an expression is read as flow syntax"
-file = "tests/test_fixtures.py"
-before = '        if kind == "line" and "{" in _EXPRESSION.sub("", line)'
-after = '        if kind == "line" and "{" in line'
-reddens = [
-  "tests/test_fixtures.py::test_an_expression_is_not_mistaken_for_flow_syntax",
 ]
 
 # Wave F, Task 16. The tag is the seventh version source, and the one a release is actually
@@ -9223,7 +9141,6 @@ before = "                elif line.indent < body_indent:"
 after = "                elif False:"
 reddens = [
   "tests/test_workflow_yaml.py::test_a_literal_block_ends_at_a_line_indented_less_even_a_comment",
-  "tests/test_workflow_yaml.py::test_every_workflow_reads_whole_and_agrees_with_the_run_scan",
 ]
 
 # A comment at the step's own indentation inside the judging step's `env:`, then `BASH_ENV`,
@@ -10581,4 +10498,27 @@ after = '''    if False:
         return'''
 reddens = [
   "tests/assess/test_gates.py::test_without_waitid_a_custom_gate_still_answers_and_ends_its_group",
+]
+
+# The expression check is only as good as what it reads: the strict reader's step scripts, in
+# every spelling it takes. Reading none would report every workflow clean.
+[[mutation]]
+name = "the expression check reads no script"
+file = "tests/test_fixtures.py"
+before = '    return [script for script in scripts(text) if "${{" in script]'
+after = "    return []"
+reddens = [
+  "tests/test_fixtures.py::test_an_expression_is_found_in_every_spelling_of_a_script",
+]
+
+# A step spelled as a flow mapping puts its script inside braces on one line; the reader refuses
+# the brace rather than read the step as the string it spells.
+[[mutation]]
+name = "the workflow reader reads a flow mapping as a plain scalar"
+file = "tests/workflow_yaml.py"
+before = '_REFUSED_START = tuple("{&*!%@`>?")'
+after = '_REFUSED_START = tuple("&*!%@`>?")'
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_read",
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[flow-mapping]",
 ]

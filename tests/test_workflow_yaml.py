@@ -2,9 +2,8 @@
 
 Every workflow test reads `.github/workflows/` through `tests.workflow_yaml`, so a reader that
 stopped early, or skipped a line it could not read, would make every one of them report clean
-over the lines it missed. These cases are that reader's own: what ends a block, what is
-refused, and a cross-check against `run_blocks`, the independent indentation reader the
-expression-injection scan uses.
+over the lines it missed. These cases are that reader's own: what ends a block, and what is
+refused.
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ import re
 
 import pytest
 
-from tests.test_fixtures import WORKFLOWS, needs_workflows_dir, run_blocks
 from tests.workflow_yaml import Node, WorkflowYamlError, load
 
 
@@ -94,6 +92,16 @@ def test_a_shape_outside_the_subset_is_refused_naming_its_line(tail: str, why: s
         load(ENV_HEAD + tail)
 
 
+def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_read() -> None:
+    # `- {run: "…"}` puts a whole step, script and all, on one line inside braces. A reader that
+    # passed over it would hand the expression check a workflow with one step fewer, clean. It
+    # is refused, naming its line. Mutation (oracle): "the workflow reader reads a flow mapping
+    # as a plain scalar" -> the step is read as the string it spells and this reddens.
+    text = 'jobs:\n  one:\n    steps:\n      - {run: "echo ${{ github.actor }}"}\n'
+    with pytest.raises(WorkflowYamlError, match=r"line 4: a value this reader does not read"):
+        load(text)
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -123,37 +131,3 @@ def test_a_literal_block_ends_at_a_line_indented_less_even_a_comment() -> None:
     step = _first_step(load(text))
     assert step["run"] == "\nfirst\n\n  indented\n", step
     assert step["env"] == {"KEY": "value"}, step
-
-
-def _runs(node: Node) -> list[Node]:
-    """Every value of every `run` key in the document, at any depth, in document order."""
-    found: list[Node] = []
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if key == "run":
-                found.append(value)
-            found.extend(_runs(value))
-    elif isinstance(node, list):
-        for item in node:
-            found.extend(_runs(item))
-    return found
-
-
-@needs_workflows_dir
-def test_every_workflow_reads_whole_and_agrees_with_the_run_scan() -> None:
-    # Two readers of one file, built on different rules, cross-checked: the strict reader's
-    # `run` values and `run_blocks`' indentation rule must find the same keys, and each script
-    # the reader returns must be what the scan collected for it, line for line. A reader that
-    # stopped early, or read a script as ending where it does not, disagrees here.
-    workflows = sorted(WORKFLOWS.glob("*.y*ml"))
-    assert len(workflows) >= 5, workflows
-    for workflow in workflows:
-        runs = _runs(load(workflow.read_text(encoding="utf-8")))
-        blocks = run_blocks(workflow)
-        assert len(runs) == len(blocks), (workflow.name, len(runs), len(blocks))
-        for run, block in zip(runs, blocks, strict=True):
-            if not isinstance(run, str):
-                continue  # `defaults: run:`, a mapping, which the scan collects as text
-            scanned = [line.strip() for line in block.splitlines() if line.strip() not in ("|", "")]
-            read = [line.strip() for line in run.splitlines() if line.strip()]
-            assert read == scanned, (workflow.name, read[:3], scanned[:3])

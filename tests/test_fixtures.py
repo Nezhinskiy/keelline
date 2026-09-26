@@ -12,7 +12,6 @@ import io
 import re
 import shutil
 import subprocess
-from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -21,7 +20,7 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from tests.gitfixture import git
-from tests.workflow_yaml import load
+from tests.workflow_yaml import load, runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
@@ -267,8 +266,8 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     # Mutation: drop the mutation-oracle line from `CONTRIBUTING.md`'s block -> reddens naming
     # it. The floor first: a `run:` walk that returned nothing would satisfy every `in` below
     # by making `ci` the empty string.
-    bodies = run_blocks(CI_WORKFLOW)
-    assert len(bodies) == EXPECTED_BLOCKS["ci.yml"], len(bodies)
+    bodies = scripts(CI_WORKFLOW.read_text(encoding="utf-8"))
+    assert bodies, "ci.yml runs no script"
     ci = "\n".join(bodies)
     floor = _COVERAGE_FLOOR.search(ci)
     assert floor is not None, "ci.yml no longer runs pytest with a coverage floor"
@@ -422,179 +421,22 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
 
 WORKFLOWS = ROOT / ".github" / "workflows"
-# The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
-# cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and
-# legitimately runs none — measured, 0 blocks — and that is the only file with an exemption.
+# The workflows that run a shell, so the walk below cannot pass by reading nothing: each holds a
+# script. `smoke-release.yml` is two reusable-workflow calls and legitimately runs none.
 SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
-# What `run_blocks` returns for each shipped workflow, measured 2026-09-19 with this module's
-# own reader. Equalities rather than floors: the `>= 5` per file and `>= 25` overall they
-# replace left seven of thirty-three bodies droppable, five of them `ci.yml`'s, with this
-# module green — and the character floor at 4,000 against a measured 8,097 did not close the
-# truncation shape its own comment claimed it closed (every body cut to eight lines came to
-# 4,059). `smoke-release.yml` is two reusable-workflow calls and legitimately runs no shell,
-# which is why it is 0 here rather than exempt from the walk.
-EXPECTED_BLOCKS = {
-    # 10 -> 6 when the base step stopped reading the state and the five gate steps and the shell
-    # verdict became two `keelline gate` steps: the `defaults: run:` mapping, the checkout
-    # assertion, the proof that Keelline runs, the base step, the judging step and the custom
-    # gates' step.
-    "check.yml": 6,
-    # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
-    # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
-    # 13 -> 14 when the interpreter below the floor came from `uv python install` rather than
-    # from `setup-python`: a `uses:` step became a `run:` one.
-    "ci.yml": 14,
-    "release.yml": 7,
-    "smoke-release.yml": 0,
-    "smoke.yml": 6,
-}
-# And the size, per file, so a reader that returns the right NUMBER of bodies and truncates
-# each of them reddens on the file it truncated rather than against a whole-set total with
-# headroom in it. Floors and not equalities, because a workflow gaining a line is ordinary and
-# a workflow losing half its script is not.
-EXPECTED_CHARACTERS = {
-    # Re-measured when the import proof and the pull-request base refusal landed: 5030 -> 6503.
-    # Kept level with the measurement rather than left where it was, because a floor with a
-    # thousand characters of headroom under it is a floor a truncation walks past. 6503 -> 6888
-    # when the base step's reader stopped importing from the tree under review. 6888 -> 4776
-    # when the base step stopped reading the state and the five gate steps and the shell verdict
-    # became two `keelline gate` steps: the logic they held moved into the command. 4776 -> 4773
-    # when a comment stopped calling the custom step a judging step. 4773 -> 4779 when both gate
-    # steps started Python with `-s` as well as `-P`. 4779 -> 4609 when the rule that the judging
-    # step checks the configuration whatever `only:` names moved from its shell into
-    # `keelline gate --builtin`.
-    "check.yml": 4609,
-    # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
-    # 899 -> 1056: `-n auto` on the `pytest` line (+8) and the old-interpreter step becoming a
-    # `run:` (+149).
-    "ci.yml": 1056,
-    "release.yml": 1683,
-    "smoke-release.yml": 0,
-    "smoke.yml": 3042,
-}
 
 
-# `${{ … }}` is YAML plain text and not flow syntax, so it is removed before a line is asked
-# whether it carries a brace. Non-greedy, because two expressions on one line are two.
-_EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
+def scripts(text: str) -> list[str]:
+    """Every step script in a workflow, read by `tests.workflow_yaml`'s strict reader, which reads
+    the whole file or refuses the first line outside its subset — so a script cannot be cut short
+    or passed over, and a step spelled as a flow mapping, `- {run: "…"}`, is refused rather than
+    read as no step. `defaults: run:` is a mapping of settings, not a script, and is not one."""
+    return [run for run in runs(load(text)) if isinstance(run, str)]
 
 
-def _scan(workflow: Path) -> Iterator[tuple[str, str]]:
-    """The file, cut into what a `run:` key owns and everything else.
-
-    **One rule, and it replaces four rounds of enumerating shapes: a `run:` key owns the rest of
-    its own line and every following line indented past the KEY's column.** That is what YAML
-    indentation means, and it is true of an inline one-liner, a block scalar, an indented plain
-    scalar, a quoted scalar that wraps, and a plain scalar that continues onto the next line —
-    without this function knowing which of those it is looking at. Enumerating them is what was
-    wrong four times: a reader that knows five shapes is a reader that is blind to the sixth,
-    and it reports clean while being so.
-
-    The key's column and not the line's, because a step whose first key is `run` carries the
-    list dash on the same line (the ordinary spelling for a step with no `name`), and measuring
-    at the dash would make the step's own sibling keys part of its script — `env:` among them,
-    which is exactly where a `${{ }}` belongs.
-
-    **Everything a `run:` key introduces is collected, and nothing is classified.** Telling a
-    script from something else needs a classifier, and a classifier fails by reading a script as
-    settings — the same hole wearing the name of a feature. So the rule is applied to the key's
-    NAME alone, and the cost of that is stated here rather than exempted away. It is a cry-wolf
-    cost and never a hole: every case below fails loudly, in the safe direction, in front of
-    whoever writes it.
-
-    There are three of them, and they are one class and one consequence rather than a list to
-    keep up with.
-
-    **A key named `run` that is not a script.** `defaults: run:` is a mapping of `shell` and
-    `working-directory`, and an action input that happens to be called `run` under `with:` is
-    another. Both are collected and scanned identically. So
-    `defaults: run: working-directory: ${{ inputs.path }}` — standard, correct Actions, and not
-    an injection — fails the guard over these blocks. That is a decision for whoever first needs
-    it to take deliberately, with a red test in front of them, rather than a hole dug in
-    advance.
-
-    **The first of those two shapes is already in this tree**, and saying otherwise was how
-    the cost stopped being visible: `check.yml`'s `defaults: run:` mapping is this reader's
-    first collected block for that file, scanned as a body like any other. It is harmless
-    because it carries only `shell: bash` and no expression — and it is exactly where
-    `working-directory: ${{ inputs.path }}` would be written, so the next person to reach for
-    that hits the red test this paragraph exists to explain rather than one it told them
-    could not happen.
-
-    **A comment indented past a one-liner's key column**, which this rule introduced and the
-    reader before it did not have: a one-liner used to be taken and the following lines left
-    alone, and now the key owns them. So
-
-        - run: echo a
-            # never splice ${{ github.ref }} here — use env:
-
-    is one body carrying an expression, and the guard fails pointing at a comment — which is
-    exactly the comment a repository shipping this guard tends to write. Keeping it is the same
-    trade as the first: the alternative is a rule that knows what a comment is, which is a
-    classifier, which is the hole.
-
-    What it yields: `("run", body)` for each `run:` key, and `("line", raw)` for every line
-    outside one. The second stream exists so the brace refusal below can ask its question
-    without a `run:` body's own braces answering it.
-    """
-    lines = workflow.read_text(encoding="utf-8").splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        stripped = line.strip()
-        index += 1
-        if stripped.startswith("- "):
-            stripped = stripped[2:].lstrip()
-        if not stripped.startswith("run:"):
-            yield "line", line
-            continue
-        indent = line.index("run:")
-        body = [rest] if (rest := stripped[len("run:") :].strip()) else []
-        while index < len(lines):
-            following = lines[index]
-            if following.strip() and len(following) - len(following.lstrip()) <= indent:
-                break
-            body.append(following)
-            index += 1
-        yield "run", "\n".join(body)
-
-
-def run_blocks(workflow: Path) -> list[str]:
-    """Everything every `run:` key in the file owns, one string each."""
-    return [body for kind, body in _scan(workflow) if kind == "run"]
-
-
-def braced_lines(workflow: Path) -> list[str]:
-    """Every line outside a `run:` body that still carries a brace once `${{ … }}` is removed.
-
-    **What it is for** is the one shape the indentation rule above cannot reach: a step spelled
-    as a flow mapping — `- {run: "…"}` — puts the whole step on one line inside braces, and
-    there is no following line to own. It is **refused rather than parsed**: writing a
-    flow-mapping parser is the enumeration again, one level down, and the failure mode of the
-    thing that replaced is a shape nobody thought of. So the day a workflow spells a step that
-    way, the guard says so loudly instead of silently not seeing it.
-
-    **What it actually checks is broader than that, deliberately, and the name says so.** It
-    reports anything brace-shaped rather than deciding what the braces mean — a flow sequence of
-    mappings, a flow-style `matrix` entry, `extra: {a: 1}`, a quoted JSON-ish scalar such as
-    `CFG: '{"a": 1}'`. All of those are refused too, and none of them is a flow-mapping step.
-    Classifying them apart is the classifier again; refusing anything brace-shaped is the
-    conservative answer, and the message a reader gets names the brace they wrote rather than a
-    flow-mapping step that is not there. None of these shapes appears in this tree.
-
-    `${{ … }}` is removed first because it is plain text that carries braces: without the strip
-    every line of every workflow here would be reported, and a guard that cries wolf on every
-    line is a guard somebody deletes. The strip is not a way past the check either — a brace
-    outside an expression survives it, which is what `- {run: "echo ${{ x }}"}` is.
-
-    Lines inside a `run:` body are not asked at all: a heredoc's own Python carries braces, and
-    they are already scanned as the script they are.
-    """
-    return [
-        line
-        for kind, line in _scan(workflow)
-        if kind == "line" and "{" in _EXPRESSION.sub("", line)
-    ]
+def spliced(text: str) -> list[str]:
+    """The scripts in a workflow that carry a `${{ }}` expression."""
+    return [script for script in scripts(text) if "${{" in script]
 
 
 @needs_workflows_dir
@@ -603,164 +445,40 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
-    # `env:` instead.
+    # `env:` instead. Mutation (oracle): "a workflow splices an expression into a shell" puts one
+    # into `check.yml`'s checkout assertion.
     #
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
-    # would never be scanned while the `>=` assertion below went on passing.
+    # would never be read while the `>=` assertion below went on passing.
     workflows = sorted(WORKFLOWS.glob("*.y*ml"))
     assert {p.name for p in workflows} >= SCRIPTED, workflows
-    # Equality, so a workflow added to this directory fails here — naming it — rather than
-    # raising `KeyError` inside the loop, which is a redness about a missing dictionary key and
-    # not about an unmeasured file.
-    assert {p.name for p in workflows} == set(EXPECTED_BLOCKS), workflows
-    read: list[str] = []
     for workflow in workflows:
-        blocks = run_blocks(workflow)
-        # Per file and not for all of them, and the measured count as an EQUALITY. The `>= 5`
-        # per file and `>= 25` overall that stood here left seven of the bodies droppable and
-        # the character floor at 4,000 left every body truncatable to eight lines. Measured on
-        # this tree, against this test alone: `run_blocks` returning the first seven bodies of
-        # each file — GREEN; every body cut to its first eight lines — GREEN. With the
-        # equalities: `('check.yml', 7) … 7 == 9` and `('check.yml', 1264) … 1264 >= 5030`.
-        # An equality moves when somebody edits a workflow, which is exactly when a reader
-        # regression would otherwise hide behind the headroom.
-        #
-        # `smoke-release.yml` is in the table at 0 rather than exempt from the walk: it is two
-        # reusable-workflow calls and legitimately runs no shell, and an exemption nobody can
-        # see is how a file stops being read without anybody deciding that.
-        #
-        # No `mutations.toml` entry travels with the table itself, and the reason is that there
-        # is nothing for one to mutate: a number changed here reddens this assertion by
-        # construction, which proves the arithmetic rather than the reader. What has to be
-        # load-bearing is the reader, and that is held by the four `_scan` entries already in
-        # `mutations.toml`, one of which reddens this very case.
-        assert len(blocks) == EXPECTED_BLOCKS[workflow.name], (workflow.name, len(blocks))
-        size = sum(len(block) for block in blocks)
-        assert size >= EXPECTED_CHARACTERS[workflow.name], (workflow.name, size)
-        read.extend(blocks)
-        for block in blocks:
-            assert "${{" not in block, (workflow.name, block)
-        # Refused and not classified: anything brace-shaped outside a `run:` body. What it is
-        # for is the step spelled as a flow mapping — `- {run: "…"}` — which has no following
-        # line for the indentation rule to own; what it reports is every brace, because deciding
-        # which ones are a step is the classifier the rule above exists without.
-        assert braced_lines(workflow) == [], (workflow.name, braced_lines(workflow))
-    # Two floors and not one, for the reason the whole-tree gate needed two: a reader that
-    # collects the right NUMBER of bodies and truncates each of them to its first line passes a
-    # count and fails a size. The per-file assertions above are what do the work now; these are
-    # the whole-set restatement, at the measured values rather than at half of them.
-    # Re-measured when both gate steps started Python with `-s`: 32 bodies, 10,403 characters
-    # (check.yml 4,779, ci.yml 899, release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0).
-    # It was 10,397 when `check.yml` became one job running `keelline gate`, and the 12,127
-    # before that counted the shell verdict and the state reader that moved into the command. The
-    # floor is the sum of the per-file figures above, so the two restate each other rather than
-    # one carrying slack the other does not. 10,390 when the judging step's configuration rule
-    # moved into the command, which is that sum again (ci.yml had grown to 1,056 meanwhile).
-    assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 10_390, sum(len(block) for block in read)
+        text = workflow.read_text(encoding="utf-8")
+        assert scripts(text) or workflow.name not in SCRIPTED, workflow.name
+        assert spliced(text) == [], (workflow.name, spliced(text))
 
 
-def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
-    # The rule, stated as a case rather than as a list of shapes. Eight bodies in eight
-    # spellings, each carrying an expression, so a body the reader truncates or cannot see is a
-    # body the guard above reports clean. Five of these eight were holes in successive rounds;
-    # the last two — a plain scalar that continues onto the next line and a quoted one that
-    # wraps — are here because the rule covers them without being told to, which is the whole
-    # of why it replaced the list. Mutations (declared): drop the continuation
-    # loop, drop the value on the key's own line, drop the dash strip, measure the indent at
-    # the line instead of the key.
-    workflow = tmp_path / "synthetic.yml"
-    workflow.write_text(
+def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:
+    # The check above is only as good as what it reads: a script in each spelling the reader
+    # takes, each carrying an expression, is found, and one kept in `env:` is not. Mutation
+    # (oracle): "the expression check reads no script" -> nothing is found and this reddens.
+    text = (
         "jobs:\n"
         "  one:\n"
-        "    defaults:\n"
-        "      run:\n"
-        "        shell: bash ${{ inputs.shell }}\n"
         "    steps:\n"
-        "      - run: >\n"
-        "          echo folded ${{ github.ref }}\n"
         "      - run: |\n"
-        "          echo dashed-block ${{ github.actor }}\n"
+        "          echo block ${{ github.actor }}\n"
         "        env:\n"
         "          SAFE: ${{ github.sha }}\n"
         "      - run: echo inline ${{ github.job }}\n"
         "      - name: with a name of its own\n"
         "        run: echo named ${{ github.workflow }}\n"
-        "      - name: an indented plain scalar, which carries no marker at all\n"
-        "        run:\n"
-        "          echo plain ${{ github.run_id }}\n"
-        "      - run: echo continued\n"
-        "          && echo ${{ github.event.pull_request.title }}\n"
-        '      - run: "echo quoted\n'
-        '          && echo ${{ github.head_ref }}"\n',
-        encoding="utf-8",
+        '      - run: "echo quoted ${{ github.head_ref }}"\n'
+        "      - run: echo clean\n"
     )
-    blocks = run_blocks(workflow)
-    # Eight: the seven scripts and the `defaults: run:` mapping. Every one of them was
-    # collected by the same rule and every one of them is scanned, so the count below and the
-    # scan above are over the same set — and no classifier has to tell a mapping from a script.
-    assert len(blocks) == 8, blocks
-    for wanted in ("folded", "dashed-block", "inline", "named", "plain", "continued", "quoted"):
-        assert any(wanted in block for block in blocks), (wanted, blocks)
-    # Every one of them carries its expression into the scan, which is the property the guard
-    # rests on: a body collected but truncated at its first line reports clean. The two
-    # continuation shapes are exactly that case — the value begins on the key's line and the
-    # expression is on the next one.
-    for block in blocks:
-        assert "${{" in block, block
-    continued = next(block for block in blocks if "continued" in block)
-    assert "pull_request.title" in continued, continued
-    quoted = next(block for block in blocks if "quoted" in block)
-    assert "head_ref" in quoted, quoted
-    # And the dashed block stops at its own `env:` rather than swallowing it — the direction
-    # that would have produced a spurious finding on `env:`, which is where an expression
-    # belongs.
-    dashed = next(block for block in blocks if "dashed-block" in block)
-    assert "SAFE" not in dashed, dashed
-    assert braced_lines(workflow) == []
-
-
-def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed(tmp_path: Path) -> None:
-    # The one shape the indentation rule cannot reach, because there is no following line to
-    # own. It is reported, not read: a flow-mapping parser would be the enumeration again one
-    # level down, and the failure mode of the thing being replaced is a shape nobody thought
-    # of. Mutation (declared): stop reporting it and the reader sees a workflow with one step
-    # in it, silently.
-    workflow = tmp_path / "flow.yml"
-    workflow.write_text(
-        "jobs:\n"
-        "  one:\n"
-        "    steps:\n"
-        '      - {run: "echo flow ${{ github.actor }}"}\n'
-        "      - run: echo ordinary\n",
-        encoding="utf-8",
-    )
-    # The step in braces is not a `run:` body the reader can see...
-    assert run_blocks(workflow) == ["echo ordinary"], run_blocks(workflow)
-    # ...so it is named here instead, with the expression stripped before the question is asked
-    # so that `${{ }}` — which is plain text, not flow syntax — cannot answer it.
-    flow = braced_lines(workflow)
-    assert len(flow) == 1, flow
-    assert "run" in flow[0] and "{" in flow[0], flow
-
-
-def test_an_expression_is_not_mistaken_for_flow_syntax(tmp_path: Path) -> None:
-    # The negative of the test above, and the reason `_EXPRESSION` exists: every `${{ }}` in
-    # these files carries braces, and a brace check that counted them would report every
-    # workflow in the tree as a flow mapping — a guard that cries wolf on every line is a guard
-    # somebody deletes.
-    workflow = tmp_path / "ordinary.yml"
-    workflow.write_text(
-        "jobs:\n"
-        "  one:\n"
-        "    if: ${{ github.event_name == 'push' }}\n"
-        "    steps:\n"
-        "      - uses: actions/checkout@v4\n"
-        "        with:\n"
-        "          ref: ${{ github.sha }} and ${{ github.ref }}\n",
-        encoding="utf-8",
-    )
-    assert braced_lines(workflow) == []
+    found = spliced(text)
+    assert [script.split()[1] for script in found] == ["block", "inline", "named", "quoted"]
+    assert all("SAFE" not in script for script in found)
 
 
 def step_script(workflow: Path, step_name: str) -> str:

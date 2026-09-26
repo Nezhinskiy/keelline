@@ -239,3 +239,18 @@ class _Reader:
 def load(text: str) -> Node:
     """The document, or `WorkflowYamlError` naming the first line outside the subset."""
     return _Reader(text).document()
+
+
+def runs(node: Node) -> list[Node]:
+    """Every value of every `run` key in the document, at any depth, in document order: a step's
+    script is a string, and `defaults: run:` is a mapping."""
+    found: list[Node] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "run":
+                found.append(value)
+            found.extend(runs(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(runs(item))
+    return found
