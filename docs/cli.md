@@ -458,17 +458,24 @@ same note once per context after a red pytest run. **Writes** nothing.
 
 Tests that never exercise what they name, in two shapes: an assertion whose value is produced
 by invoking a test double, and a test whose name states an entry point it imports but never
-mentions again, in its own body or in the local helpers it reaches. A name is a double in a
-test when the test binds it to one, or when it is bound to one at module scope, including under
-a top-level `if`, `try` or `with`; a double another test binds is that test's own. Scans every
-`test_*.py` under `[ledger] code_roots`, treating the packages and modules found directly under
-those roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
+mentions again, in its own body or in the local helpers it reaches. Scans every `test_*.py`
+under `[ledger] code_roots`, treating the packages and modules found directly under those
+roots as the code under test. Candidates are for triage: the command exits `0` and lists them in
 `--json`, **with findings and no way to fail on them** — that is deliberate, not an oversight,
 and nothing here gates. Run over a repository's own suite the scanner names name-collision
 candidates that are not defects, so an exit `1` would be red from the first run, and the
 configuration has no per-command switch to turn it off with. Gating belongs to a lane that has
 triaged them to zero, and that lane has not shipped. Refuses (`2`) if its own self-test no
 longer discriminates. **Writes** nothing.
+
+A double, for the first shape, is a `Mock`-family object, a `patch(...)`, or an instance of a
+class whose name starts `Fake`, `Stub`, `Dummy`, `Spy`, `Recording` or `Scripted`, reaching the
+test in one of three ways: bound in the test, by assignment or `with ... as`; bound at module
+scope, inside a top-level compound statement too; or as a parameter named `mock_*`, `stub_*`,
+`fake_*`, `dummy_*`, `*_mock`, `*_stub` or `*_fake`, which is how a fixture delivers one. A name
+assigned from a double's attribute is one as well. A binding replaces what the name held: from
+the point a test binds it to anything else it is not a double, and a double another test binds
+is that test's own.
 
 The `--json` object carries `summary` (the line the command would have printed), `files` (how
 many test files were scanned), `import_roots` (the

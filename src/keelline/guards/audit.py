@@ -160,7 +160,7 @@ def _is_double_constructor(func: ast.expr, fake_classes: frozenset[str]) -> bool
 
 
 def _module_scope_statements(tree: ast.Module) -> list[ast.stmt]:
-    """Every statement that runs at module scope, under top-level `if`/`try`/`with` included.
+    """Every statement that runs at module scope, inside top-level compound statements too.
 
     A function or class body is never entered: a name bound there is local to it, so it must
     not make the other tests of the file look like they assert on a double.
@@ -263,27 +263,41 @@ class _DoubleAssertVisitor(ast.NodeVisitor):
         self.tainted: set[str] = set()
         self.hits: list[tuple[int, str]] = []
 
+    def _rebind(self, names: list[str], *, double: bool = False, tainted: bool = False) -> None:
+        """A binding replaces whatever the name held, a module-level double included.
+
+        Without the discard, a test that shadows a module-level double with its real subject,
+        or rebinds one of its own doubles to it, had every assertion on that subject flagged.
+        """
+        self.doubles.difference_update(names)
+        self.tainted.difference_update(names)
+        if double:
+            self.doubles.update(names)
+        elif tainted:
+            self.tainted.update(names)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         value = node.value.value if isinstance(node.value, ast.Await) else node.value
         targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        # Classified before the rebinding, so `client = client.session` keeps `client` a double.
         if isinstance(value, ast.Call):
-            if _is_double_constructor(value.func, self.facts.fake_classes):
-                self.doubles.update(targets)
-            elif self._invokes_double(value):
-                self.tainted.update(targets)
-        elif isinstance(value, ast.Attribute | ast.Name) and _root_name(value) in self.doubles:
-            self.doubles.update(targets)
+            double = _is_double_constructor(value.func, self.facts.fake_classes)
+            self._rebind(targets, double=double, tainted=not double and self._invokes_double(value))
+        else:
+            aliases_a_double = (
+                isinstance(value, ast.Attribute | ast.Name) and _root_name(value) in self.doubles
+            )
+            self._rebind(targets, double=aliases_a_double)
         self.generic_visit(node)
 
     def visit_With(self, node: ast.With) -> None:
         for item in node.items:
             ctx = item.context_expr
-            if (
-                isinstance(ctx, ast.Call)
-                and isinstance(item.optional_vars, ast.Name)
-                and _is_double_constructor(ctx.func, self.facts.fake_classes)
-            ):
-                self.doubles.add(item.optional_vars.id)
+            if isinstance(item.optional_vars, ast.Name):
+                double = isinstance(ctx, ast.Call) and _is_double_constructor(
+                    ctx.func, self.facts.fake_classes
+                )
+                self._rebind([item.optional_vars.id], double=double)
         self.generic_visit(node)
 
     visit_AsyncWith = visit_With  # type: ignore[assignment]
@@ -519,8 +533,8 @@ def test_real_sender_receipt_carries_the_message_id() -> None:
     assert receipt.message_id == "1"
 '''
 
-# The corpora above import from `widget.boot` and `widget.fixtures`, so the self-test grades
-# the scanner with exactly this root set. It is the module's own fixture, not a repository's
+# The corpora above import only from modules under `widget`, so the self-test grades the
+# scanner with exactly this root set. It is the module's own fixture, not a repository's
 # configuration, which is why it is a constant here and not a parameter.
 _SELF_TEST_ROOTS = frozenset({"widget"})
 
@@ -539,8 +553,6 @@ def run_self_test() -> list[str]:
         bad.write_text(_KNOWN_BAD, encoding="utf-8")
         good.write_text(_KNOWN_GOOD, encoding="utf-8")
 
-        for shape in sorted(set(SHAPES) - {shape for _, shape in _KNOWN_BAD_EXPECTED}):
-            problems.append(f"no known-bad sample is expected to produce {shape!r}")
         flagged = {(f.test, f.shape) for f in scan_file(bad, SHAPES, _SELF_TEST_ROOTS)}
         for test, shape in sorted(_KNOWN_BAD_EXPECTED - flagged):
             problems.append(f"known-bad sample was NOT flagged: {test} for {shape!r}")

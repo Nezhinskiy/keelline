@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from keelline.guards import audit
 from keelline.guards.audit import (
+    _KNOWN_BAD_EXPECTED,
     SHAPES,
+    Finding,
     import_roots,
     run_self_test,
     scan_file,
@@ -109,16 +110,18 @@ def test_timer() -> None:
 """
 
 
-def _scan(tmp_path: Path, source: str) -> list[str]:
+def _findings(tmp_path: Path, source: str) -> list[Finding]:
     target = tmp_path / "test_sample.py"
     target.write_text(source, encoding="utf-8")
-    return [f"{f.shape}:{f.detail}" for f in scan_file(target, SHAPES, ROOTS)]
+    return scan_file(target, SHAPES, ROOTS)
+
+
+def _scan(tmp_path: Path, source: str) -> list[str]:
+    return [f"{f.shape}:{f.detail}" for f in _findings(tmp_path, source)]
 
 
 def _tests_flagged_as_asserting_on_a_double(tmp_path: Path, source: str) -> set[str]:
-    target = tmp_path / "test_sample.py"
-    target.write_text(source, encoding="utf-8")
-    return {f.test for f in scan_file(target, ("assert-on-double",), ROOTS)}
+    return {f.test for f in _findings(tmp_path, source) if f.shape == "assert-on-double"}
 
 
 def test_flags_a_test_that_names_an_entry_point_it_never_invokes(tmp_path: Path) -> None:
@@ -214,18 +217,92 @@ def test_self_test_proves_the_scanner_still_discriminates() -> None:
     assert run_self_test() == []
 
 
-def test_the_self_test_refuses_a_shape_its_known_bad_sample_is_not_expected_to_produce(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The per-test expectations only prove the shapes they name. A shape added to `SHAPES`
-    # without a known-bad test would be graded by nothing, and the self-test would pass.
-    # Mutation (declared): that problem never appended.
-    kept = frozenset(
-        entry for entry in audit._KNOWN_BAD_EXPECTED if entry[1] != "names-but-never-invokes"
-    )
-    monkeypatch.setattr(audit, "_KNOWN_BAD_EXPECTED", kept)
-    problem = "no known-bad sample is expected to produce 'names-but-never-invokes'"
-    assert problem in run_self_test()
+def test_every_shape_has_a_known_bad_test_the_self_test_expects_it_from() -> None:
+    # The per-test expectations only prove the shapes they name: a shape added to `SHAPES`
+    # without a known-bad test would be graded by nothing, and the self-test would still pass.
+    # Mutation (declared): one shape's only expectation deleted from `_KNOWN_BAD_EXPECTED`.
+    assert {shape for _, shape in _KNOWN_BAD_EXPECTED} == set(SHAPES)
+
+
+_REAL_SUBJECT_REBINDS_A_DOUBLES_NAME = {
+    # Python makes `sender` local to the whole test, so the module-level double is not in it.
+    "a module-level double shadowed by the test": """
+from widget.send import RealSender, RecordingSender
+
+sender = RecordingSender()
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    sender = RealSender()
+    receipt = sender.send("x")
+    assert receipt.message_id == "1"
+""",
+    "a double rebound to the real subject": """
+from widget.send import RealSender, RecordingSender
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    sender = RecordingSender()
+    sender = RealSender()
+    assert sender.send("x") == "1"
+""",
+    "a value from a double rebound to one from the subject": """
+from widget.send import RealSender, RecordingSender
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    recorder = RecordingSender()
+    receipt = recorder.send("x")
+    receipt = RealSender().send("x")
+    assert receipt.message_id == "1"
+""",
+    "a module-level double rebound by `with ... as`": """
+from widget.send import RealSender, RecordingSender
+
+sender = RecordingSender()
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    with RealSender() as sender:
+        assert sender.send("x") == "1"
+""",
+}
+
+
+@pytest.mark.parametrize(
+    "source",
+    list(_REAL_SUBJECT_REBINDS_A_DOUBLES_NAME.values()),
+    ids=list(_REAL_SUBJECT_REBINDS_A_DOUBLES_NAME),
+)
+def test_a_binding_replaces_what_the_name_held(tmp_path: Path, source: str) -> None:
+    """Once a test binds a name to its real subject, the name is no longer a double.
+
+    The visitor only ever added to its sets of doubles and of values derived from one, so
+    each of these asserted on the real subject and was still reported as asserting on a
+    double: the leak across sibling tests, one scope further in.
+    """
+    # Mutations (declared): the rebinding keeps a name in the set of doubles; it keeps a name
+    # in the set of derived values; `with ... as` only ever adds a double. Each reddens the
+    # cases it is about and no other.
+    assert _tests_flagged_as_asserting_on_a_double(tmp_path, source) == set()
+
+
+def test_a_double_rebound_to_its_own_attribute_is_still_a_double(tmp_path: Path) -> None:
+    # The value is classified before the name is rebound. Discarding first would read
+    # `client = client.session` as a binding to something that is not a double, and lose it.
+    # Mutation (declared): the targets discarded before the value is classified.
+    source = """
+from unittest.mock import MagicMock
+
+
+def test_session_returns_configured_value() -> None:
+    client = MagicMock()
+    client = client.session
+    assert client.fetch() == {"ok": True}
+"""
+    assert _tests_flagged_as_asserting_on_a_double(tmp_path, source) == {
+        "test_session_returns_configured_value"
+    }
 
 
 def test_import_roots_are_the_packages_and_modules_directly_under_each_root(tmp_path: Path) -> None:
