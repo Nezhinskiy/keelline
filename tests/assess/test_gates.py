@@ -294,22 +294,21 @@ def test_a_custom_gate_past_its_time_limit_leaves_nothing_running(
     # start-ups and could give up before there was a descendant to end.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    real = subprocess.Popen.wait
-    calls: list[float | None] = []
+    # The bound expires in the wait for the command's exit, `gates._exited`: patching
+    # `Popen.wait` would instead fail the reap after the command's own exit, 30 s later.
+    calls: list[int] = []
 
-    def expired(self: subprocess.Popen[bytes], timeout: float | None = None) -> int:
-        calls.append(timeout)
-        if len(calls) == 1:
-            deadline = time.monotonic() + STARTED_WAIT_SECONDS
-            while not started.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            raise subprocess.TimeoutExpired(self.args, timeout or 0)
-        return real(self, timeout=timeout)
+    def expired(process: subprocess.Popen[bytes], seconds: int) -> None:
+        calls.append(seconds)
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise subprocess.TimeoutExpired(process.args, seconds)
 
-    monkeypatch.setattr(subprocess.Popen, "wait", expired)
+    monkeypatch.setattr(gates, "_exited", expired)
     [probe] = results(tmp_path, config)
     assert not probe.answered
-    assert calls[0] == 600  # the configured bound is the one the gate waited under
+    assert calls == [600]  # the configured bound is the one the gate waited under
     assert started.exists()
     time.sleep(LATE_WAIT_SECONDS)
     assert not late.exists()
