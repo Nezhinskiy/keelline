@@ -74,6 +74,14 @@ def test_a_key_written_twice_in_one_mapping_is_refused() -> None:
         pytest.param("          SECOND: a: b\n", "reads as a mapping", id="plain-reads-as-mapping"),
         pytest.param("\tSECOND: two\n", "a tab", id="tab"),
         pytest.param("          -KEY: two\n", "not a plain key", id="not-a-key"),
+        pytest.param(
+            "          SECOND:\n          - two\n",
+            "a sequence at its key's own indentation",
+            id="sequence-at-key-indentation",
+        ),
+        pytest.param(
+            "          SECOND: |\n        run: echo\n", "an empty block scalar", id="empty-literal"
+        ),
     ],
 )
 def test_a_shape_outside_the_subset_is_refused_naming_its_line(tail: str, why: str) -> None:
@@ -84,6 +92,23 @@ def test_a_shape_outside_the_subset_is_refused_naming_its_line(tail: str, why: s
     # the plain-continuation and orphan-indentation refusals are removed.
     with pytest.raises(WorkflowYamlError, match=rf"line \d+: .*{re.escape(why)}"):
         load(ENV_HEAD + tail)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("  jobs:\n    one:\n", id="indented"),
+        pytest.param("# a note\n\n  jobs:\n    one:\n", id="indented-after-a-comment"),
+    ],
+)
+def test_a_document_that_does_not_start_at_column_0_is_refused(text: str) -> None:
+    # Every key the tests look for is at column 0, and a document that starts further in would
+    # have to be read by indentation this reader was never asked about. A comment and a blank
+    # line ahead of it are not content, so they move nothing.
+    with pytest.raises(
+        WorkflowYamlError, match=r"line \d+: the document does not start at column 0"
+    ):
+        load(text)
 
 
 def test_a_literal_block_ends_at_a_line_indented_less_even_a_comment() -> None:

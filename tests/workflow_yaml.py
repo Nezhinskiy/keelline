@@ -13,9 +13,10 @@ sequences of such scalars (`[main]`), literal block scalars (`|`, `|-`), and com
 comment line at any indentation, and one after a value past a space. Anything else is refused
 with the line it is on: a flow mapping, an anchor, an alias, a tag, a folded scalar, a key that
 is quoted or repeated in its mapping, a plain scalar that continues on the next line, a tab in
-the indentation, a line indented where nothing can own it. A refusal is a red test in front of
-whoever wrote the shape, which is the safe direction; a reader that skipped the shape would
-report clean over it.
+the indentation, a line indented where nothing can own it, a sequence at its key's own
+indentation, an empty block scalar, a document that does not start at column 0. A refusal is a
+red test in front of whoever wrote the shape, which is the safe direction; a reader that skipped
+the shape would report clean over it.
 
 **How YAML ends a block, and this reader with it.** A block ends at the first line of content
 that is not indented past its key: a comment never ends one, whatever its indentation, and a
