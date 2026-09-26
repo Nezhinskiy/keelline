@@ -2166,15 +2166,6 @@ reddens = [
   "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
 ]
 
-[[mutation]]
-name = "setup stops refusing an overlay when git answers in undecodable bytes"
-file = "src/keelline/setup/run.py"
-before = "    except UnicodeDecodeError as exc:"
-after = "    except LookupError as exc:"
-reddens = [
-  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
-]
-
 # git refusing to answer with `safe.bareRepository=explicit` and answering without it is either
 # a bare-shaped directory, which the answer says, or git not answering the first time; neither
 # is a listing of the project's checkouts.

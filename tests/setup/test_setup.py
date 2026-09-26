@@ -1118,16 +1118,11 @@ def test_a_sibling_checkout_spelled_in_another_case_is_still_refused(tmp_path: P
         _record(tmp_path, candidate, project)
 
 
-# Stands for "git printed bytes the locale cannot decode": `git_run` raises rather than answer.
-UNDECODABLE = (-2, "undecodable")
-
 FAILURES: dict[str, Callable[[tuple[str, ...]], tuple[int, str] | None]] = {
     # What the listing call answers.
     "listing-exit": lambda args: (128, "") if "worktree" in args else None,
     "listing-empty": lambda args: (0, "") if "worktree" in args else None,
-    "listing-undecodable": lambda args: UNDECODABLE if "worktree" in args else None,
     # What the project-side `rev-parse` answers.
-    "common-undecodable": lambda args: UNDECODABLE if "rev-parse" in args else None,
     "answers-only-without-the-key": (
         lambda args: (128, "") if "rev-parse" in args and "-c" in args else None
     ),
@@ -1141,17 +1136,14 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
     # Once git has said the project is a repository, "no answer" about its checkouts is not
     # "none of them holds the candidate". It used to be: a `git` that gave no answer for the
     # candidate returned `None`, `None` differed from the project's common directory, and the
-    # candidate was recorded. And `gitenv.git_run` decodes with `text=True`, so a path git
-    # prints in bytes that are not the locale's encoding raised `UnicodeDecodeError` out of
-    # `setup` as an internal error.
+    # candidate was recorded. (A path git prints in bytes that are not UTF-8 is not among these:
+    # `gitenv.git_run` decodes it losslessly, so it is an answer, and the test of a non-UTF-8
+    # common directory above holds that.)
     #
     # Mutation ("setup stops refusing an overlay when git cannot list the project's
     # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
     # legitimate-looking overlay below is recorded and `listing-exit` and `listing-empty`
     # redden.
-    # Mutation ("setup stops refusing an overlay when git answers in undecodable bytes"): the
-    # `except UnicodeDecodeError` arm becomes `except LookupError` → the error escapes instead
-    # of a `Refusal` and the two `-undecodable` cases redden.
     # Mutation ("setup takes an answer git gave only without the key"): the refusal after the
     # retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
     project = tmp_path / "project"
@@ -1167,8 +1159,6 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
         answer = FAILURES[failure](args)
         if answer is None:
             return real(root, *args, **kwargs)
-        if answer == UNDECODABLE:
-            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
         return answer
 
     monkeypatch.setattr("keelline.setup.run.git_run", failing)

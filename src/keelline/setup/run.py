@@ -539,14 +539,11 @@ def _nearest_directory(path: Path) -> Path:
     return path
 
 
-def _ask(start: Path, *args: str, refusal: str) -> list[str] | None:
+def _ask(start: Path, *args: str) -> list[str] | None:
     """git's answer to `args` asked from `start`, one line per entry, or `None` when it gave
-    none. `gitenv.git_run` decodes with `text=True`, so bytes outside the locale's encoding
-    raise; that is not an answer either, and `refusal` is what it becomes."""
-    try:
-        code, out = git_run(start, *args)
-    except UnicodeDecodeError as exc:
-        raise Refusal(refusal) from exc
+    none. `gitenv.git_run` decodes losslessly, so a path in bytes that are not UTF-8 is part of
+    the answer and compares equal to itself."""
+    code, out = git_run(start, *args)
     lines = out.splitlines()
     return lines if code == 0 and lines else None
 
@@ -567,18 +564,17 @@ def _repository(project_root: Path) -> _Repository | None:
     apart, and only the path arms stand. None of them is something a repository can commit.
     Every other way of not answering refuses: an answer that says `--root` is not inside a work
     tree (a root inside a bare-shaped directory has no checkout of its own to compare against),
-    an answer git gives only without the key, and a listing that fails, is empty or cannot be
-    decoded.
+    an answer git gives only without the key, and a listing that fails or is empty.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
-    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=unlisted)
+    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT)
     retried = False
     if answer is None:
         # git 2.38 and later refuse an implicit bare repository outright. Asked again without
         # the key only to tell that apart from "no repository at all".
         retried = True
-        answer = _ask(start, *_COMMON_AND_CHECKOUT, refusal=unlisted)
+        answer = _ask(start, *_COMMON_AND_CHECKOUT)
         if answer is None:
             return None
     if len(answer) != 2:
@@ -592,7 +588,7 @@ def _repository(project_root: Path) -> _Repository | None:
         )
     if retried:
         raise Refusal(unlisted)
-    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", refusal=unlisted)
+    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain")
     # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
     checkouts = tuple(
         Path(line[len("worktree ") :]) for line in listing or () if line.startswith("worktree ")
@@ -626,13 +622,8 @@ def _candidate_repository(candidate: Path) -> Path | None:
     `create:` destination does not yet.
     """
     start = _nearest_directory(candidate)
-    refusal = (
-        f"`git` answered about {candidate} in bytes it cannot decode, so it cannot be shown to "
-        f"lie outside every checkout of the project; the overlay root is the machine's trust "
-        f"anchor, and a question git did not answer is not taken as a yes"
-    )
     while True:
-        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=refusal)
+        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT)
         if answer is not None and len(answer) == 2 and answer[1] == "true":
             return Path(answer[0])
         if start == start.parent:
