@@ -14,8 +14,9 @@ committed record current.
 a release it is not responsible for.
 
 `Pin`, `Resolution`, `released`, `resolve_pin` and `is_released` are published for `init`, which
-writes the pin, and `doctor`'s `ci-ref` row, which judges it — both ask this area because
-"which commit is release X" is the release lane's own question. `released` is published so the
+writes the pin, `doctor`'s `ci-ref` row, which judges it, and `keelline gate`, which admits a
+moved `[ci] ref` only at a released commit (`is_released`) — all ask this area because "which
+commit is release X" is the release lane's own question. `released` is published so the
 row can ask the remote once for the sha and the alias both.
 """
 

@@ -1,7 +1,8 @@
 # The reusable workflow a project calls. One job, `gates`: it checks out the caller, checks out
 # Keelline at THIS FILE's own commit (no resolver and no build backend; the network is the two
-# checkouts and whatever `setup-python` below fetches when the runner has no matching
-# interpreter cached), resolves the base branch to one commit, and runs
+# checkouts, whatever `setup-python` below fetches when the runner has no matching interpreter
+# cached, and, on a pull request that moves `[ci] ref`, one listing of Keelline's release tags),
+# resolves the base branch to one commit, and runs
 # `python3 -P -s -m keelline gate` against it twice. The first run reads the base's
 # `keelline.toml`, admits only a change that tightens it, and runs the configuration check and
 # the built-in gates, each advisory or enforcing as the configuration it admitted says; it

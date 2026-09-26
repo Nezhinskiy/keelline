@@ -361,6 +361,19 @@ def test_a_real_non_utf_8_locale_does_not_unignore_a_document_with_a_non_ascii_n
     # document read as not ignored, and it went into the committed roadmap beside the ASCII
     # local-only document the filter did catch. A child process under a real latin-1 locale,
     # skipped where none is installed; `tests/test_git_run.py` holds the same seam everywhere.
+    # The case is about a UTF-8 filesystem under a latin-1 locale, which is macOS: on Linux the
+    # locale sets the filesystem codec too, the `.gitignore` below (written as UTF-8) names other
+    # bytes than the child's names, and the case would test something else, so it is skipped.
+    env = {**os.environ, "LC_ALL": latin1_locale, "PYTHONUTF8": "0"}
+    codec = subprocess.run(
+        [sys.executable, "-c", "import sys; print(sys.getfilesystemencoding())"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    ).stdout.strip()
+    if codec.lower().replace("-", "") != "utf8":
+        pytest.skip(f"this host's filesystem codec under {latin1_locale} is not UTF-8")
     root, _ = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
     plans = root / "docs" / "plans"
     names = ["caf\u00e9-local.md", "local-only.md"]
@@ -382,7 +395,7 @@ def test_a_real_non_utf_8_locale_does_not_unignore_a_document_with_a_non_ascii_n
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "LC_ALL": latin1_locale, "PYTHONUTF8": "0"},
+        env=env,
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == ascii(sorted(names))

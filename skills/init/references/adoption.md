@@ -6,9 +6,9 @@ After the footprint is written:
    kept names commands of its own, and `keelline assess` runs them. Name those gates to the
    user, say that the next command runs their commands on this machine, and ask for an explicit
    yes. **Silence, a timeout or an empty answer is a no.** On a no, stop here: the footprint is
-   written and nothing ran. Then run `keelline assess` and relay the summary: its table of gates, and its table of items
-   when there are any. The whole list is in `.keelline/assessment.json`. Use it for the next
-   step, and never paste it wholesale.
+   written and nothing ran. Then run `keelline assess` and relay the summary: its table of
+   gates, and its table of items when there are any. The whole list is in
+   `.keelline/assessment.json`. Use it for the next step, and never paste it wholesale.
 2. Brainstorm the adoption with the user, through a brainstorming skill if the harness has
    one, otherwise one question at a time:
    - which gates the project runs: the built-in ones it keeps, and any command of its own
@@ -18,8 +18,8 @@ After the footprint is written:
    - what the project deliberately does differently.
 3. Put the design in the `[paths] specs` directory as `<date>-keelline-adoption-design.md` and
    the plan directly in `[paths] plans`, not a subdirectory, as `<date>-keelline-adoption.md`.
-   The word `keelline`, between hyphens in the file name, is how the adoption commands
-   recognise the plan. A second adoption, such as a subproject's, adds a slug:
+   The word `keelline`, as one of the hyphen-separated words of the file name, is how the
+   adoption commands recognise the plan. A second adoption, such as a subproject's, adds a slug:
    `<date>-keelline-adoption-<slug>.md`. Give the plan the `**Scope:**` line
    `keelline plan check` requires, and a `**Premise:**` line if it claims to fix a ledger
    entry. Run `keelline plan check <plan>` until it passes.

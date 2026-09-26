@@ -538,9 +538,10 @@ asked for), `merge_base` (the commit actually extracted) and `verdict`. Record t
 where the failure is discussed: a verdict without its inputs cannot be re-run.
 
 Exits `0` with a verdict, `1` when the merge-base cannot be resolved (`is
-refs/remotes/origin/main fetched?`), when `git archive` fails, or when an archive is missing tracked files because the
-archived tree's own `.gitattributes` excluded them, and `2` when `--base` is shaped like an
-option, which is refused above the first subprocess rather than handed to `git` as one.
+refs/remotes/origin/main fetched?`), when `git archive` fails, or when an archive is missing tracked
+files because the archived tree's own `.gitattributes` excluded them, and `2` when `--base` is
+shaped like an option, which is refused above the first subprocess rather than handed to `git` as
+one.
 
 ## `keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`
 
@@ -774,7 +775,8 @@ thing are no change at all. Each changed key gets one verdict:
 A preset switch is judged by what it moves: its own name is `neutral`, a budget it lowers
 `tightened`, and anything else it moves falls to "any other key". "Not earlier" is read the way
 `keelline upgrade` reads it — by the leading `X.Y.Z`, and a release after its own pre-release — and
-a pair Keelline does not order is refused. The run uses this tree's configuration unless a key was
+a pair Keelline does not order is judged as any other key: refused while the base enforces a gate,
+noted while it enforces none. The run uses this tree's configuration unless a key was
 refused, and then the base's; it enforces the gates either side enforces. So a pull request that
 promotes a gate is held to that gate in its own run.
 
@@ -821,8 +823,8 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
 per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
 in place of the count. A run that fails with a gate failing ends with one `details:` line saying
-where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate names print; values from `keelline.toml` and a
-finding's detail never do.
+where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate
+names print; values from `keelline.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
 one `error` per refused key, and one per finding or gate that could not run — `error` for an
@@ -869,12 +871,12 @@ name — `2026-09-23-keelline-adoption.md`, or `2026-09-23-keelline-adoption-api
 several — spelled as the file is on disk, and it must pass `keelline plan check`. While the
 project runs the `trail` gate, the plan's row in the `trail.toml` beside the roadmap must declare
 a state under `[states]`, such as `in progress`: a first listing records a row with none as
-`delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past that keeps its state: a
-project may carry any number of adoption plans, nothing records which, and a plan is found by its
-name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it, which does not need
-`begin` first. **Writes** `keelline.toml`'s `[keelline] state` through the same editor as
-`keelline upgrade`, and the manifest's record of it when that record still describes the file.
-`--json` carries, on exit 0, `before` and `after`, the state on each side.
+`delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past
+that keeps its state: a project may carry any number of adoption plans, nothing records which, and a
+plan is found by its name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it,
+which does not need `begin` first. **Writes** `keelline.toml`'s `[keelline] state` through the same
+editor as `keelline upgrade`, and the manifest's record of it when that record still describes the
+file. `--json` carries, on exit 0, `before` and `after`, the state on each side.
 
 | Exit | Meaning |
 |---|---|
@@ -1076,8 +1078,9 @@ so the gate that runs is not the one recorded"). On a repository this run create
 for, the ref is the commit of the Keelline release running, asked of the public repository's own
 `v*` tags and written into `[ci] ref` beside the workflow. On a repository that already had a
 `keelline.toml`, that document's `[ci] ref` is not rewritten — all `init` may add there is a
-missing `[keelline] version`, with its `[keelline]` header when the file has none — so the workflow pins the ref **it** records, and `doctor`
-judges whether that is a released commit, which is its job.
+missing `[keelline] version`, with its `[keelline]` header when the file has none — so the workflow
+pins the ref **it** records, and `doctor` judges whether that is a released commit, which is its
+job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
 sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate ships with a later
@@ -1129,16 +1132,16 @@ loader would refuse on the next command's load. `2` on a refusal above the plans
 answer flag over an existing `keelline.toml`, an answer outside its grammar or its choices (from the
 parser), a repository already initialised, a detected name outside the grammar that no `--name`
 answers, a `[keelline]` table the key editor cannot add a version to, a `keelline.toml` that is a
-symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's control
-directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink — all
-three refused by the loader before a plan exists — two artifacts, of one pass or of either, that
-resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap = "CLAUDE.md"`),
-which is named with the two artifacts and their `[paths]` keys to separate, since only the
-`AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list naming a
-profile artifact, which every pointer at it reads at its committed path, one naming `config` or
-`gitignore`, which only work at the repository root, and a write git would hide, at an existing file
-a `[paths]` value chose, which the refusal names, or one git cannot answer for inside a repository
-because it timed out or is not installed (see `upgrade`'s boundary).
+symlink, which is never followed, a `[paths]` value outside the plain-path grammar, naming git's
+control directory or Keelline's own `.keelline/`, or reaching through a component that is a symlink
+— all three refused by the loader before a plan exists — two artifacts, of one pass or of either,
+that resolve to one file (`roadmap` and `roadmap_history` set to one path, or `roadmap =
+"CLAUDE.md"`), which is named with the two artifacts and their `[paths]` keys to separate, since
+only the `AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list
+naming a profile artifact, which every pointer at it reads at its committed path, one naming
+`config` or `gitignore`, which only work at the repository root, and a write git would hide, at an
+existing file a `[paths]` value chose, which the refusal names, or one git cannot answer for inside
+a repository because it timed out or is not installed (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -2145,7 +2148,8 @@ runs the built-in gates, and executes nothing your repository wrote. The second,
 own gates", runs the commands `[gates.custom]` names, and only if the first passed. Each gate is
 advisory or enforcing, with every finding as an annotation, and each step that runs a check
 appends its results to the job summary. No resolver and no build backend; the network is the two
-checkouts and whatever `setup-python` fetches when the runner has no matching interpreter cached.
+checkouts, whatever `setup-python` fetches when the runner has no matching interpreter cached,
+and, on a pull request that moves `[ci] ref`, one listing of Keelline's public release tags.
 It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
 one per gate. Its check, in the caller `init` writes, is `check / gates`. The job is cancelled
 after 15 minutes; a custom gate that needs longer belongs in a workflow of your own.
@@ -2445,7 +2449,8 @@ once, the empty one included (the adoption has begun, and each gate is promoted 
 passes), and `installed` with every gate or none. The state is kept beside the list because
 `initialised` and `adopting` differ even when nothing enforces; any other combination does
 not load. A gate enforces when the base branch's list names it, when the change under review
-adds it there, or once the base's state is `installed`; every other gate is advisory.
+adds it there, or once either side's state is `installed`, so a change that moves the state to
+`installed` is held to every gate in its own run; every other gate is advisory.
 [The reusable workflow](#the-reusable-workflow) says what each means for a run.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`

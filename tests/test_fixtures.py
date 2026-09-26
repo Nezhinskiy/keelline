@@ -15,6 +15,7 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -76,10 +77,11 @@ def test_every_gate_the_workflow_runs_passes_on_the_smoke_fixture(
     # reddens (measured by hand, not declared: the fixture is data and the oracle mutates
     # source).
     #
-    # `--base HEAD~1` and not the default: `plan check` defaults to `origin/<base_branch>`, and
-    # this copy is a fresh repository with no remote, where an unresolvable base is a finding
-    # (`docs/cli.md`: "A base that does not resolve is a finding (1), never an OK"). CI passes
-    # `origin/<base>` and has one; the fixture's own two commits are the equivalent here.
+    # `--base HEAD~1` and not the default: `plan check` defaults to
+    # `refs/remotes/origin/<base_branch>`, and this copy is a fresh repository with no remote,
+    # where an unresolvable base is a finding (`docs/cli.md`: "A base that does not resolve is a
+    # finding (1), never an OK"). CI's `keelline gate` passes the base as the commit it
+    # resolved; the fixture's own two commits are the equivalent here.
     root = _copy_as_repository(tmp_path)
     code, printed = _invoke(root, tmp_path, argv)
     assert code == 0, printed
@@ -311,10 +313,10 @@ ORACLE_VARIANCE_SECONDS = 60
 def _ci_jobs() -> dict[str, list[str]]:
     """Every job in `ci.yml`, as the raw lines underneath it.
 
-    Indentation arithmetic and not a YAML parser, for the reason `_release_jobs` gives further
-    down and `_scan` gives at length: this repository ships no runtime dependency and
-    `tests/test_import_boundary.py` is why none arrives through a test either. A job is a key at
-    indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to it.
+    Indentation arithmetic over the raw lines, where `tests.workflow_yaml` reads mappings: the
+    question below is which job's body names a command anywhere, a comment included. A job is a
+    key at indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to
+    it.
     """
     jobs: dict[str, list[str]] = {}
     current: str | None = None
@@ -975,33 +977,23 @@ needs_release_workflow = pytest.mark.skipif(
 )
 
 
-def _release_jobs() -> dict[str, dict[str, str]]:
-    """Every job in `release.yml`, with the two keys this module asks about.
+def _release_jobs() -> dict[str, dict[str, Any]]:
+    """Every job in `release.yml`, as `tests.workflow_yaml`'s strict reader reads it.
 
-    Indentation arithmetic rather than a YAML parser: the package carries no runtime
-    dependency and `tests/test_import_boundary.py` is why none arrives through a test either,
-    and `environment:` and `needs:` are each written on one line in this file. A job that stops
-    writing them that way is a finding for whoever writes it, so the callers below assert the
-    walk found something rather than trusting it to have.
+    It reads the whole file or fails, so `needs:` is the list it says and a membership test on it
+    is exact: a line reader that kept `needs:` as the text `[build, environment-gate-legacy]`
+    passed a substring test for `environment-gate`. The callers below still assert the walk found
+    something rather than trusting it to have.
     """
-    jobs: dict[str, dict[str, str]] = {}
-    current: str | None = None
-    inside = False
-    for line in RELEASE_WORKFLOW.read_text(encoding="utf-8").splitlines():
-        if line.rstrip() == "jobs:":
-            inside = True
-            continue
-        if not inside or not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip())
-        if indent == 2 and line.rstrip().endswith(":"):
-            current = line.strip().rstrip(":")
-            jobs[current] = {}
-        elif indent == 4 and current is not None and ":" in line:
-            key, _, value = line.strip().partition(":")
-            if key in ("environment", "needs"):
-                jobs[current][key] = value.split("#")[0].strip()
-    return jobs
+    document = load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
+    return {name: dict(job) for name, job in document["jobs"].items() if isinstance(job, dict)}
+
+
+def _needs(job: dict[str, Any]) -> list[str]:
+    """A job's `needs:`, one name or a list of them, as the list the platform reads."""
+    needs = job.get("needs", [])
+    return [needs] if isinstance(needs, str) else list(needs)
 
 
 def _gate_environment() -> str:
@@ -1031,7 +1023,7 @@ def test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate() 
     assert len(gated) >= 2, gated
     assert set(gated.values()) == {_gate_environment()}, (gated, _gate_environment())
     for name in gated:
-        assert GATE_JOB in jobs[name].get("needs", ""), (name, jobs[name])
+        assert GATE_JOB in _needs(jobs[name]), (name, jobs[name])
     # And the gate itself is not behind the environment it is asking about: it has to run in
     # the one case the environment asks nobody, which is the case it exists for.
     assert "environment" not in jobs[GATE_JOB], jobs[GATE_JOB]

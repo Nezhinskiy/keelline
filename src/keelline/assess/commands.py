@@ -24,9 +24,11 @@ if TYPE_CHECKING:
 ASSESS_HELP = (
     "every configured gate and the inventory: what stands between this repository and enforcement"
 )
+# Any revision git resolves, unlike `gate` and `adopt promote`: `assess` is advice over a tree the
+# person chose, and nothing it answers governs a run or writes enforcement.
 BASE_HELP = (
-    "the revision the plan and commit gates compare against; "
-    "default refs/remotes/origin/<project.base_branch>"
+    "the revision the plan and commit gates compare against, any git resolves: the inventory is "
+    "advice and governs nothing; default refs/remotes/origin/<project.base_branch>"
 )
 GATE_HELP = "judge this change against the base's keelline.toml, then run the gates as it says"
 BASE_REF_HELP = (
@@ -86,8 +88,10 @@ def run_assess(args: argparse.Namespace) -> Result:
 
 
 def base_ref(value: str) -> str:
-    """`--base` for a command that reads the base's `keelline.toml`: refused at the parser
-    unless it is a full commit id or a full `refs/` name, before anything runs."""
+    """`--base` for `keelline gate`, whose verdict reads the base's `keelline.toml`, and `adopt
+    promote`, which writes enforcement off the comparison: refused at the parser unless it is a
+    full commit id or a full `refs/` name, before anything runs, since git resolves a shorter
+    name through the tags first and a tag of that spelling would decide either."""
     from keelline.assess.rule import BASE_REF, BASE_SHAPE
 
     if not BASE_REF.match(value):

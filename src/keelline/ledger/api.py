@@ -6,9 +6,10 @@ submodule it wants, so a re-export list in `__init__.py` would pull this whole a
 it the configuration layer — into every `discover()` call. `tests/ledger/test_surface.py`
 asserts the `__init__` imports nothing at all.
 
-**Outside this area, `keelline.assess.gates` imports `bugs_gate` and nothing else on this
-list**, measured over `src/`, `scripts/` and `tests/`; nothing imported the nineteen names this
-list used to hold either. So every other name below is here on an argument rather than on a
+**Outside this area, `keelline.assess.gates` imports `bugs_gate`, and `keelline.project.templates`
+(with its tests) imports `render_index` to write a new project's first index, and nothing else on
+this list**, measured over `src/`, `scripts/` and `tests/`; nothing imported the nineteen names
+this list used to hold either. So every other name below is here on an argument rather than on a
 caller, and the argument is written beside it.
 
 What is left is the two artifacts this area leaves on a project's disk, which outlive any lane
@@ -44,10 +45,10 @@ on a surface whose verb is not is a value nobody can be handed. Each is still wh
 written and is reachable from `keelline.ledger.write`, which is what `ledger/commands.py` and
 this area's own tests already do.
 
-**What is left is a smaller version of the same question, and it is the owner's.** The six names
-of the two artifacts have no importer either. Whether this area publishes at all is a structural
-decision and not a refactor's — the previous pass measured that and said so, and this one acts
-as far as the rule reaches and leaves the floor standing rather than emptying a list a test
+**What is left is a smaller version of the same question, and it is the owner's.** Of the six names
+of the two artifacts, only `render_index` has an importer. Whether this area publishes at all is a
+structural decision and not a refactor's — the previous pass measured that and said so, and this one
+acts as far as the rule reaches and leaves the floor standing rather than emptying a list a test
 forbids to be empty.
 
 The identifier grammar and the finding shape are **not** here: they are leaves

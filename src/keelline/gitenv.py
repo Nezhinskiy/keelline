@@ -99,11 +99,11 @@ def git_run(
     """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when git gave no answer.
 
     The one place this project runs `git` outside the memory store's own resolver: every
-    argument list is built from constants by the caller, every pathspec follows `--`, and no
-    configuration value reaches this list without `contained()` having refused the
-    `-`-shaped ones. Resolved through PATH for the reason above: the machine owner's git
-    must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers 1 for
-    "nothing matched", and that is an answer.
+    argument list is built from constants by the caller, every pathspec follows `--` or
+    `--end-of-options`, and no configuration value reaches this list without `contained()`
+    having refused the `-`-shaped ones. Resolved through PATH for the reason above: the machine
+    owner's git must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers
+    1 for "nothing matched", and that is an answer.
 
     **Decoded with `surrogateescape`, both ways.** git speaks bytes, and a worktree path, a
     common directory, a name in `ls-files` or a ref can hold one the filesystem's codec cannot

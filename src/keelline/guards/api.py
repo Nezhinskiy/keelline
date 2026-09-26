@@ -16,8 +16,8 @@ and one gate:
   than assume `.git/hooks` (`hooks_dir`, `HOOK_MARKER`) — an overlay with `core.hooksPath` set,
   or one that is a worktree or a submodule, keeps them somewhere else, and both lanes had the
   same wrong spelling hardcoded.
-- `ledger.scan` and `memory.refs` both ask which roots a configuration's paths may reach
-  (`contained_roots`), and two spellings of that would be two answers.
+- `ledger.scan`, `memory.refs` and `assess`'s probes all ask which roots a configuration's paths
+  may reach (`contained_roots`), and two spellings of that would be two answers.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
 
