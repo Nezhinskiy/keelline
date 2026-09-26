@@ -159,6 +159,28 @@ def _is_double_constructor(func: ast.expr, fake_classes: frozenset[str]) -> bool
     return False
 
 
+def _module_scope_statements(tree: ast.Module) -> list[ast.stmt]:
+    """Every statement that runs at module scope, under top-level `if`/`try`/`with` included.
+
+    A function or class body is never entered: a name bound there is local to it, so it must
+    not make the other tests of the file look like they assert on a double.
+    """
+    found: list[ast.stmt] = []
+    pending: list[ast.AST] = list(tree.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        if isinstance(node, ast.stmt):
+            found.append(node)
+        pending.extend(
+            child
+            for child in ast.iter_child_nodes(node)
+            if isinstance(child, ast.stmt | ast.excepthandler | ast.match_case)
+        )
+    return found
+
+
 class _ModuleFacts:
     """Per-file context: what is imported from the code roots, and what is a double."""
 
@@ -179,8 +201,11 @@ class _ModuleFacts:
                         fake_classes.add(name)
         self.fake_classes = frozenset(fake_classes)
 
+        # Module scope only. A double bound inside one test is that test's own local, which
+        # `_DoubleAssertVisitor` tracks there; walking the whole tree made every other test in
+        # the file that reuses the name look like it asserts on a double.
         self.module_doubles: set[str] = set()
-        for node in ast.walk(tree):
+        for node in _module_scope_statements(tree):
             if (
                 isinstance(node, ast.Assign)
                 and isinstance(node.value, ast.Call)
@@ -425,7 +450,10 @@ _KNOWN_BAD = '''
 from unittest.mock import MagicMock
 
 from widget.boot import boot_demo
+from widget.clock import FakeClock
 from widget.fixtures import build_fixtures
+
+CLOCK = FakeClock()
 
 
 def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
@@ -439,13 +467,29 @@ def test_stub_returns_configured_value() -> None:
     client = MagicMock()
     client.fetch.return_value = {"ok": True}
     assert client.fetch() == {"ok": True}
+
+
+def test_module_level_clock_reads_its_configured_time() -> None:
+    """Asserts on a double bound at module scope, which every test in the file can see."""
+    assert CLOCK.now() == 5
 '''
+
+# Every (test, shape) the known-bad sample must produce. Checked per test rather than per
+# shape: one test producing a shape would otherwise hide the loss of every other way to it.
+_KNOWN_BAD_EXPECTED = frozenset(
+    {
+        ("test_boot_demo_builds_fixtures_in_resolved_locale", "names-but-never-invokes"),
+        ("test_stub_returns_configured_value", "assert-on-double"),
+        ("test_module_level_clock_reads_its_configured_time", "assert-on-double"),
+    }
+)
 
 _KNOWN_GOOD = '''
 from unittest.mock import MagicMock
 
 from widget.boot import boot_demo
 from widget.fixtures import build_fixtures
+from widget.send import RealSender, RecordingSender
 
 
 def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
@@ -460,6 +504,19 @@ def test_client_receipt_carries_the_transport_response() -> None:
     client = MagicMock()
     client.fetch.return_value = {"ok": True}
     assert boot_demo(client=client) == "booted"
+
+
+def test_recording_sender_keeps_what_it_was_given() -> None:
+    sender = RecordingSender()
+    boot_demo(sender=sender)
+    assert sender.sent == ["booted"]
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    """Reuses a name a sibling test bound to a double; here it is the real subject."""
+    sender = RealSender(transport=MagicMock())
+    receipt = sender.send("booted")
+    assert receipt.message_id == "1"
 '''
 
 # The corpora above import from `widget.boot` and `widget.fixtures`, so the self-test grades
@@ -482,10 +539,11 @@ def run_self_test() -> list[str]:
         bad.write_text(_KNOWN_BAD, encoding="utf-8")
         good.write_text(_KNOWN_GOOD, encoding="utf-8")
 
-        bad_shapes = {f.shape for f in scan_file(bad, SHAPES, _SELF_TEST_ROOTS)}
-        for shape in SHAPES:
-            if shape not in bad_shapes:
-                problems.append(f"known-bad sample was NOT flagged for {shape!r}")
+        for shape in sorted(set(SHAPES) - {shape for _, shape in _KNOWN_BAD_EXPECTED}):
+            problems.append(f"no known-bad sample is expected to produce {shape!r}")
+        flagged = {(f.test, f.shape) for f in scan_file(bad, SHAPES, _SELF_TEST_ROOTS)}
+        for test, shape in sorted(_KNOWN_BAD_EXPECTED - flagged):
+            problems.append(f"known-bad sample was NOT flagged: {test} for {shape!r}")
 
         for finding in scan_file(good, SHAPES, _SELF_TEST_ROOTS):
             problems.append(f"known-good sample was flagged: {finding.render()}")

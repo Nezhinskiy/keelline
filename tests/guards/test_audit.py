@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline.guards import audit
 from keelline.guards.audit import (
     SHAPES,
     import_roots,
@@ -50,10 +51,74 @@ def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
 """
 
 
+# One test binds `sender` to a double; its sibling binds the same name to the real subject.
+# Only the first asserts on a double.
+_SIBLING_REUSES_A_DOUBLES_NAME = """
+from unittest.mock import MagicMock
+
+from widget.send import RealSender, RecordingSender
+
+
+def test_recording_sender_keeps_what_it_was_given() -> None:
+    sender = RecordingSender()
+    assert sender.send("x") == "recorded"
+
+
+def test_real_sender_receipt_carries_the_message_id() -> None:
+    sender = RealSender(transport=MagicMock())
+    receipt = sender.send("x")
+    assert receipt.message_id == "1"
+"""
+
+_MODULE_LEVEL_DOUBLE = """
+from widget.clock import FakeClock
+
+CLOCK = FakeClock()
+
+
+def test_first() -> None:
+    assert CLOCK.now() == 5
+
+
+def test_second() -> None:
+    assert CLOCK.now() == 5
+"""
+
+# Still module scope: a global bound under a top-level compound statement is visible to every
+# test, exactly like one bound at the top level.
+_MODULE_LEVEL_DOUBLE_UNDER_COMPOUND_STATEMENTS = """
+import sys
+
+from widget.clock import FakeClock
+
+try:
+    CLOCK = FakeClock()
+except ImportError:
+    CLOCK = None
+
+if sys.platform:
+    TIMER = FakeClock()
+
+
+def test_clock() -> None:
+    assert CLOCK.now() == 5
+
+
+def test_timer() -> None:
+    assert TIMER.now() == 5
+"""
+
+
 def _scan(tmp_path: Path, source: str) -> list[str]:
     target = tmp_path / "test_sample.py"
     target.write_text(source, encoding="utf-8")
     return [f"{f.shape}:{f.detail}" for f in scan_file(target, SHAPES, ROOTS)]
+
+
+def _tests_flagged_as_asserting_on_a_double(tmp_path: Path, source: str) -> set[str]:
+    target = tmp_path / "test_sample.py"
+    target.write_text(source, encoding="utf-8")
+    return {f.test for f in scan_file(target, ("assert-on-double",), ROOTS)}
 
 
 def test_flags_a_test_that_names_an_entry_point_it_never_invokes(tmp_path: Path) -> None:
@@ -108,11 +173,59 @@ def test_an_import_from_outside_the_roots_is_not_an_entry_point(tmp_path: Path) 
     assert not any(f.startswith("names-but-never-invokes") for f in _scan(tmp_path, source))
 
 
+def test_a_double_bound_in_one_test_does_not_leak_into_its_siblings(tmp_path: Path) -> None:
+    """A name bound to a double inside one test is that test's local, and nothing more.
+
+    Module-level doubles used to be collected by walking the whole file, so the first test's
+    `sender = RecordingSender()` made `sender` a double in every test of the file, and the
+    second test's assertion on its real subject's receipt read as one on a double's return. On
+    the suite this scanner was extracted from, that was 18 of 28 `assert-on-double` candidates.
+    """
+    # Mutation (declared): the module-scope walk widened back to `ast.walk(tree)`. It also
+    # reddens the self-test, whose known-good corpus carries this shape.
+    flagged = _tests_flagged_as_asserting_on_a_double(tmp_path, _SIBLING_REUSES_A_DOUBLES_NAME)
+    assert flagged == {"test_recording_sender_keeps_what_it_was_given"}
+
+
+def test_a_module_level_double_is_a_double_in_every_test(tmp_path: Path) -> None:
+    # Mutation (declared): module-level collection removed. It also reddens the self-test,
+    # whose known-bad corpus asserts on a module-level double.
+    flagged = _tests_flagged_as_asserting_on_a_double(tmp_path, _MODULE_LEVEL_DOUBLE)
+    assert flagged == {"test_first", "test_second"}
+
+
+def test_a_double_bound_under_a_top_level_compound_statement_is_module_level(
+    tmp_path: Path,
+) -> None:
+    # Narrowing the collection to the top-level statements alone would have been the obvious
+    # fix for the leak, and it silently drops these. Mutation (declared): the walk reduced to
+    # `tree.body`; it reddens this test alone.
+    flagged = _tests_flagged_as_asserting_on_a_double(
+        tmp_path, _MODULE_LEVEL_DOUBLE_UNDER_COMPOUND_STATEMENTS
+    )
+    assert flagged == {"test_clock", "test_timer"}
+
+
 def test_self_test_proves_the_scanner_still_discriminates() -> None:
-    # The expectation is read from the subject: the module grades its own corpora, so no edit
-    # to those corpora can redden this. It pins that the command's own refusal path is quiet
-    # on a healthy scanner; the two tests above hold the same shapes to a test-owned answer.
+    # The expectation is read from the subject: the module grades its own corpora against its
+    # own `_KNOWN_BAD_EXPECTED`, so an edit to both together cannot redden this. It pins that
+    # the command's own refusal path is quiet on a healthy scanner; the tests above hold the
+    # same shapes to a test-owned answer.
     assert run_self_test() == []
+
+
+def test_the_self_test_refuses_a_shape_its_known_bad_sample_is_not_expected_to_produce(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The per-test expectations only prove the shapes they name. A shape added to `SHAPES`
+    # without a known-bad test would be graded by nothing, and the self-test would pass.
+    # Mutation (declared): that problem never appended.
+    kept = frozenset(
+        entry for entry in audit._KNOWN_BAD_EXPECTED if entry[1] != "names-but-never-invokes"
+    )
+    monkeypatch.setattr(audit, "_KNOWN_BAD_EXPECTED", kept)
+    problem = "no known-bad sample is expected to produce 'names-but-never-invokes'"
+    assert problem in run_self_test()
 
 
 def test_import_roots_are_the_packages_and_modules_directly_under_each_root(tmp_path: Path) -> None:
