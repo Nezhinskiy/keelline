@@ -9105,10 +9105,12 @@ reddens = [
   "tests/test_workflow_yaml.py::test_a_key_written_twice_in_one_mapping_is_refused",
 ]
 
-# A plain scalar that continues on the next line is a value this reader would read as its first
-# line alone, so it is refused.
+# A plain scalar that continues on the next line is refused by name. Without this refusal it is
+# still refused, as a line nothing owns, because the mapping's own walk meets the continuation
+# first; so the mutation proves the refusal names the shape, not that the reader would read the
+# value as its first line.
 [[mutation]]
-name = "the workflow reader reads a continued plain scalar as its first line"
+name = "the workflow reader names a continued plain scalar only as a line nothing owns"
 file = "tests/workflow_yaml.py"
 before = """
                 mapping[key] = _scalar(value, line)
@@ -10475,7 +10477,9 @@ reddens = [
 ]
 
 # A step spelled as a flow mapping puts its script inside braces on one line; the reader refuses
-# the brace rather than read the step as the string it spells.
+# the brace rather than read the step as the string it spells. The cases are spelled as JSON,
+# `{"run":"…"}`, which nothing but the brace refuses: `{run: "…"}` is refused a second time as a
+# plain scalar that reads as a mapping, and would redden only on the refusal's wording.
 [[mutation]]
 name = "the workflow reader reads a flow mapping as a plain scalar"
 file = "tests/workflow_yaml.py"

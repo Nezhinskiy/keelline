@@ -429,8 +429,9 @@ SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
 def scripts(text: str) -> list[str]:
     """Every step script in a workflow, read by `tests.workflow_yaml`'s strict reader, which reads
     the whole file or refuses the first line outside its subset — so a script cannot be cut short
-    or passed over, and a step spelled as a flow mapping, `- {run: "…"}`, is refused rather than
-    read as no step. `defaults: run:` is a mapping of settings, not a script, and is not one."""
+    or passed over, and a step spelled as a flow mapping, `- {"run":"…"}`, is refused rather
+    than read as no step. `defaults: run:` is a mapping of settings, not a script, and is not
+    one."""
     return [run for run in runs(load(text)) if isinstance(run, str)]
 
 
