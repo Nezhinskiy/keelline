@@ -129,7 +129,7 @@ describes, and the published package makes the bare name work.
 <!-- release-install:end -->
 
 In CI, a project calls the reusable workflow at a commit SHA;
-[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the three lines.
+[docs/cli.md](docs/cli.md#the-reusable-workflow) shows the caller `keelline init` writes.
 
 **Requirements: Python 3.11 or newer, and a POSIX system.** Linux and macOS are supported and
 tested; Windows is not. The containment this project is built on uses `openat` with
