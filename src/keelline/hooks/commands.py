@@ -16,6 +16,28 @@ from keelline.hooks.registry import discover
 from keelline.hooks.sink import sink_for
 from keelline.presets import load_preset
 
+# Fixed text, never the link's target: what a link in the project's root points at is the
+# repository's choice. Asked of the name itself (`is_symlink`) and before any `is_file`, which
+# follows the link, so the answer does not depend on the target: a link to a regular file reached
+# the loader's refusal as an internal error, and one to `/dev/zero` was taken for no file at all.
+LINKED = (
+    "keelline: keelline.toml is a symbolic link, and no Keelline command reads keelline.toml "
+    "through one; replace the link with the file itself"
+)
+
+
+def _linked(event_name: str) -> int:
+    """A symlinked `keelline.toml`: refused where an internal error refuses, open elsewhere.
+
+    The same verdict per event as a `keelline.toml` that does not load, in words that name the
+    rule rather than an exception; no handler runs on any event.
+    """
+    if refuses_on_internal_error(event_name):
+        sys.stderr.write(f"{LINKED}; refused\n")
+        return 2
+    sys.stderr.write(f"{LINKED}; continuing open\n")
+    return 0
+
 
 def _output_cap(config: Config | None) -> int:
     """The platform cap is a shipped constant; a repository without a config still gets it."""
@@ -35,7 +57,10 @@ def run_hook(args: argparse.Namespace) -> int:
         event = parse_event(payload, env=os.environ)
         config = None
         root = event.project_root
-        if root is not None and (root / CONFIG_FILE).is_file():
+        document = None if root is None else root / CONFIG_FILE
+        if document is not None and document.is_symlink():
+            return _linked(event_name)
+        if root is not None and document is not None and document.is_file():
             # `interactive=False`, said rather than sniffed. A hook's stdin is a pipe, so
             # the terminal check happens to answer the same thing — but the gate on
             # `KEELLINE_CONFIG` and `XDG_CONFIG_HOME` is the one that decides which

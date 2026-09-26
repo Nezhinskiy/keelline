@@ -280,6 +280,26 @@ def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_res
     assert {c.status for c in checks if c.name != "not-initialised"} == {"skip"}
 
 
+@pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
+def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at(
+    tmp_path: Path, target: str
+) -> None:
+    # The presence check asked `is_file()`, which follows the link: a link to a regular file
+    # reached `load` and its refusal, one to `/dev/zero` was reported as no keelline.toml at all,
+    # with `keelline init --yes` as the remedy. Mutation (declared): the bare `is_file()` again
+    # -> the `/dev/zero` case reads as not initialised.
+    root = tmp_path / "project"
+    root.mkdir()
+    if target == "regular-file":
+        (tmp_path / "real.toml").write_text('[keelline]\nversion = "0.1.0"\n', encoding="utf-8")
+        (root / "keelline.toml").symlink_to(tmp_path / "real.toml")
+    else:
+        (root / "keelline.toml").symlink_to(target)
+    row = _by_name(_checks(tmp_path, root), "not-initialised")
+    assert row.status == "red"
+    assert row.detail.startswith("keelline.toml is here and does not load (PathEscape)")
+
+
 def test_every_check_survives_having_nothing_to_look_at(tmp_path: Path) -> None:
     # An initialised project with no overlay, no machine file, no gh, no Codex and no network.
     # A check that raises takes the whole report with it, and a report that cannot run is worth

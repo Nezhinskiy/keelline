@@ -1717,7 +1717,11 @@ def run_checks(
     # before a check function runs, so they read the first key out of it rather than repeating
     # the word: a row that disagreed with its key would be a typo nothing could see.
     first, *rest = [name for name, _ in CHECKS]
-    if not (root / CONFIG_FILE).is_file():
+    # Asked of the name before `is_file`, which follows a link: a symlinked `keelline.toml` goes
+    # on to `load`, which refuses it, and is reported as one that does not load whatever it
+    # points at, rather than as no file at all when it points at `/dev/zero`.
+    document = root / CONFIG_FILE
+    if not (document.is_symlink() or document.is_file()):
         return [
             Check(
                 first,

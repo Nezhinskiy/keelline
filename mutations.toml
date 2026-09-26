@@ -7709,7 +7709,7 @@ reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anc
 [[mutation]]
 name = "the questions are asked over a keelline.toml that already answers them"
 file = "src/keelline/project/init.py"
-before = "    if answering and (root / CONFIG_FILE).is_file():"
+before = "    if answering and contained(root, CONFIG_FILE).is_file():"
 after = "    if False:"
 reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
 
@@ -9848,3 +9848,34 @@ after = "    if code == _GIT_REFUSED and in_work_tree(start):"
 reddens = [
   "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
 ]
+
+# `keelline hook` asked `is_file()` of keelline.toml, which follows a link: one to a regular file
+# reached the loader's refusal as an internal error, one to `/dev/zero` read as no file and ran
+# every handler without the project's configuration. The name itself is asked first now.
+[[mutation]]
+name = "the hook takes a symlinked keelline.toml by what it points at"
+file = "src/keelline/hooks/commands.py"
+before = "        if document is not None and document.is_symlink():"
+after = "        if False:"
+reddens = [
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-regular-file]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[PreToolUse-2-refused-/dev/zero]",
+  "tests/hooks/test_hook_command.py::test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at[SessionStart-0-continuing open-/dev/zero]",
+]
+
+[[mutation]]
+name = "init's answer-sheet check takes a symlinked keelline.toml by what it points at"
+file = "src/keelline/project/init.py"
+before = "    if answering and contained(root, CONFIG_FILE).is_file():"
+after = "    if answering and (root / CONFIG_FILE).is_file():"
+reddens = [
+  "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_keelline_toml_whatever_it_points_at[init-questions-regular-file]",
+  "tests/config/test_symlinked_document.py::test_init_refuses_a_symlinked_keelline_toml_whatever_it_points_at[init-questions-/dev/zero]",
+]
+
+[[mutation]]
+name = "doctor reads a keelline.toml linked to /dev/zero as no keelline.toml"
+file = "src/keelline/doctor/checks.py"
+before = "    if not (document.is_symlink() or document.is_file()):"
+after = "    if not document.is_file():"
+reddens = ["tests/doctor/test_checks.py::test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_at[/dev/zero]"]

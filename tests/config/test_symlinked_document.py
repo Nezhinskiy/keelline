@@ -70,3 +70,31 @@ def test_every_command_family_refuses_a_symlinked_keelline_toml(
     assert code == 2, err.getvalue()
     assert f"{CONFIG_FILE!r} passes through a symlink" in err.getvalue()
     assert out.getvalue() == ""
+
+
+@pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["init", "--questions"], id="init-questions"),
+        pytest.param(["init", "--yes", "--dry-run", "--name", "widget"], id="init-answering"),
+    ],
+)
+def test_init_refuses_a_symlinked_keelline_toml_whatever_it_points_at(
+    tmp_path: Path, argv: list[str], target: str
+) -> None:
+    # `init`'s answer-sheet check asked `is_file()`, which follows the link: a link to a regular
+    # file was refused as an answer sheet, and `--questions` over a link to `/dev/zero` read it
+    # as no file and asked its questions, exit 0. Mutation (declared): the bare `is_file()`
+    # again -> the regular file is refused in the answer sheet's words, `/dev/zero` exits 0.
+    root = _linked(tmp_path)
+    if target != "regular-file":
+        (root / CONFIG_FILE).unlink()
+        (root / CONFIG_FILE).symlink_to(target)
+    parser = build_parser(discover_registrars())
+    flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+        code = run([*argv, *flags], parser=parser)
+    assert code == 2, err.getvalue()
+    assert f"{CONFIG_FILE!r} passes through a symlink" in err.getvalue()
+    assert out.getvalue() == ""

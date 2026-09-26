@@ -56,6 +56,7 @@ from keelline.config.loader import (
     toml_position,
 )
 from keelline.config.owned import rewrite
+from keelline.config.paths import contained
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.footprint import prepare
@@ -288,7 +289,10 @@ def precheck(root: Path, *, answering: bool) -> None:
     """
     if (root / MANIFEST_PATH).is_file():
         raise Refusal(ALREADY)
-    if answering and (root / CONFIG_FILE).is_file():
+    # `contained` and not a bare `is_file`, which follows a link: a symlinked `keelline.toml` is
+    # refused as every command refuses it, whatever it points at, and not taken for an answer
+    # sheet (a link to a file) or for no file at all (a link to `/dev/zero`).
+    if answering and contained(root, CONFIG_FILE).is_file():
         raise Refusal(ANSWER_SHEET)
 
 

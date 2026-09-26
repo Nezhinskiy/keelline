@@ -16,8 +16,11 @@ Three things hold everywhere:
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `keelline.toml` refuses one that is a
-  symbolic link, with `2`, before reading anything through it: a link to `/dev/zero` would
-  otherwise be read until memory ran out.
+  symbolic link, whatever it points at, before reading anything through it: a link to
+  `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in two
+  commands whose exits mean something else: `keelline hook` refuses only on `PreToolUse` and
+  continues on every other event (see [its section](#keelline-hook-event)), and `keelline doctor`
+  reports it as a `keelline.toml` that does not load, a red row, exit `1`.
 - **Every `memory` command takes the same three options**, described once here rather than five
   times below. `--root` and `--machine` are not memory's alone: every `bugs`, `docs` and `plan`
   command, and `assess`, `gate` and `adopt`, takes them with the same meaning, and `docs check`
@@ -253,7 +256,14 @@ event, and writes the harness's expected output.
 Not something to run by hand. Its exit-code policy differs from every other command: an internal
 error refuses (`2`) only on `PreToolUse`, and degrades open (`0`) everywhere else — on
 `UserPromptSubmit` an exit `2` erases what you typed, so a bug in Keelline must not cost you
-your prompt.
+your prompt. A `keelline.toml` that does not load takes the same path.
+
+A `keelline.toml` that is a symbolic link is never read, whatever it points at, and no handler
+runs. On `PreToolUse` the call is refused (`2`), and on every other event, `SessionStart`
+included, the hook continues (`0`) with nothing on standard output; either way standard error
+says `keelline: keelline.toml is a symbolic link, and no Keelline command reads keelline.toml
+through one; replace the link with the file itself`, followed by `; refused` or `; continuing
+open`.
 
 ## Hooks
 
@@ -2102,7 +2112,8 @@ run it.
 
 One more case is not a skip but produces fifteen of them: with no `keelline.toml` in `--root`,
 or one that does not load, `not-initialised` goes **red** and every other check skips against it.
-The red row is the one to act on.
+The red row is the one to act on. A `keelline.toml` that is a symbolic link is one that does not
+load, whatever it points at.
 
 **What is printed, and what is not. There is no exception.** Counts, statuses, file paths this
 project chose and Keelline's own vocabulary print freely; a repository-authored string does not.
