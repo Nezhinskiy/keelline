@@ -2025,14 +2025,14 @@ reddens = [
 
 # Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
 # `--root` sits inside one: `ov/` is then the repository, its only checkout is itself, and the
-# sibling worktree's `ov/` passes. `--is-bare-repository` in the same answer is what refuses it
-# on every git. `safe.bareRepository=explicit` has no entry of its own: every refusal here is
+# sibling worktree's `ov/` passes. `--is-inside-work-tree` in the same answer is what refuses
+# it on every git, whatever a committed `ov/config` says. `safe.bareRepository=explicit` has no entry of its own: every refusal here is
 # proven with it removed (the tests' `ignores-safe-bare` cases), and what it adds — git never
 # reading a committed `config` inside a bare-shaped directory — is nothing a test can observe.
 [[mutation]]
-name = "setup stops refusing a root git reads as a bare repository"
+name = "setup stops refusing a root git does not read as inside a checkout"
 file = "src/keelline/setup/run.py"
-before = '    if answer[1] == "true":'
+before = '    if answer[1] != "true":'
 after = "    if False:"
 reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
 
@@ -2100,26 +2100,15 @@ reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
 ]
 
-# On a git that ignores `safe.bareRepository`, `ov/` answers for itself as a bare repository;
-# that is not the candidate's repository, and the walk has to go on past it.
+# On a git that ignores `safe.bareRepository`, `ov/` answers for itself, and its committed
+# `config` or `commondir` can make that answer "not bare" with a common directory anywhere. Only an
+# answer that says the directory is inside a work tree comes through a checkout's `.git`, which a
+# repository cannot commit, so the walk goes on past every other one.
 [[mutation]]
-name = "the candidate-side walk takes a bare repository's answer as the candidate's"
+name = "the candidate-side walk takes an answer from outside a work tree as the candidate's"
 file = "src/keelline/setup/run.py"
-before = '        if answer is not None and len(answer) == 2 and answer[1] == "false":'
+before = '        if answer is not None and len(answer) == 2 and answer[1] == "true":'
 after = "        if answer is not None and len(answer) == 2:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
-]
-
-# The same walk, fooled the other way: a committed `ov/config` saying `core.bare = false` makes a
-# git that ignores `safe.bareRepository` answer from inside `ov/` as a repository that is not
-# bare, with `ov/` itself as its common directory. A checkout's common directory is never the
-# directory asked from or one of its ancestors, so such an answer is passed over.
-[[mutation]]
-name = "the candidate-side walk takes a common directory on the walk itself as the candidate's"
-file = "src/keelline/setup/run.py"
-before = "            if not any(_same(common, part) for part in (start, *start.parents)):"
-after = "            if True:"
 reddens = [
   "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
 ]

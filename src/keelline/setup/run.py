@@ -500,15 +500,17 @@ def _check_settings_parent(settings: Path) -> None:
 # three paths any repository can commit — see `_repository` for what that did to this check.
 # With `explicit`, git refuses to answer from inside one and so never reads the committed
 # `config` there. git 2.38 is the first to know the key and an older one ignores it silently,
-# so no refusal below rests on it alone: `--is-bare-repository`, in the same answer, is what
-# tells a bare-shaped directory apart on every git this module runs (`--path-format` already
-# needs 2.31).
+# so no refusal below rests on it alone. `--is-inside-work-tree`, in the same answer, is what
+# does: git answers `true` only for a directory it reached through a checkout's `.git`, and
+# `false` for one it read as a git directory by its shape, whatever that directory's committed
+# `config` or `commondir` says (`core.bare`, `core.worktree` and a `commondir` pointing elsewhere
+# were each tried). `--path-format` already needs 2.31.
 _EXPLICIT_BARE: tuple[str, ...] = ("-c", "safe.bareRepository=explicit")
-_COMMON_AND_BARE = (
+_COMMON_AND_CHECKOUT = (
     "rev-parse",
     "--path-format=absolute",
     "--git-common-dir",
-    "--is-bare-repository",
+    "--is-inside-work-tree",
 )
 
 _UNLISTED = (
@@ -561,30 +563,30 @@ def _repository(project_root: Path) -> _Repository | None:
     repository, `git` is not installed or timed out, `safe.directory` refuses a repository
     another user owns, or its `.git` is unreadable. `git_run` drops stderr, so these are not told
     apart, and only the path arms stand. None of them is something a repository can commit.
-    Every other way of not answering refuses: an answer that says the repository is bare (a
-    root inside a bare-shaped directory has no checkout of its own to compare against), an
-    answer git gives only without the key, and a listing that fails, is empty or cannot be
+    Every other way of not answering refuses: an answer that says `--root` is not inside a work
+    tree (a root inside a bare-shaped directory has no checkout of its own to compare against),
+    an answer git gives only without the key, and a listing that fails, is empty or cannot be
     decoded.
     """
     start = _nearest_directory(project_root)
     unlisted = _UNLISTED.format(root=project_root)
-    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_BARE, refusal=unlisted)
+    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=unlisted)
     retried = False
     if answer is None:
         # git 2.38 and later refuse an implicit bare repository outright. Asked again without
         # the key only to tell that apart from "no repository at all".
         retried = True
-        answer = _ask(start, *_COMMON_AND_BARE, refusal=unlisted)
+        answer = _ask(start, *_COMMON_AND_CHECKOUT, refusal=unlisted)
         if answer is None:
             return None
     if len(answer) != 2:
         raise Refusal(unlisted)
-    if answer[1] == "true":
+    if answer[1] != "true":
         raise Refusal(
-            f"git reads {project_root} as inside a bare repository — one with no checkout, or a "
-            f"directory holding `HEAD`, `objects/` and `refs/`, which any repository can commit "
-            f"— so it has no checkout of its own for an overlay root to be compared against. "
-            f"Run this command from the checkout itself"
+            f"git does not read {project_root} as inside a checkout: it is inside a bare "
+            f"repository, a git directory, or a directory holding `HEAD`, `objects/` and "
+            f"`refs/`, which any repository can commit — so it has no checkout of its own for an "
+            f"overlay root to be compared against. Run this command from the checkout itself"
         )
     if retried:
         raise Refusal(unlisted)
@@ -600,26 +602,25 @@ def _repository(project_root: Path) -> _Repository | None:
 
 
 def _candidate_repository(candidate: Path) -> Path | None:
-    """The common directory of the nearest repository at or above `candidate` that git answers
-    for and that is not bare, or `None`.
+    """The common directory of the nearest checkout at or above `candidate` that git answers
+    for, or `None`.
 
     **This arm can only add a refusal.** `git worktree list` does not name every checkout: with
     `--separate-git-dir`, and for a submodule, the main checkout is listed by its git directory,
     which does not record where the checkout is — so from a linked worktree the main checkout
     was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
-    The candidate's bytes can try to make this answer wrong — a committed `ov/config` saying
-    `core.bare = false`, on a git that ignores `safe.bareRepository`, answers from inside `ov/`
-    as a repository that is not bare — and whatever they make it say, they cannot remove a
-    refusal the listing makes.
+    The candidate's bytes can try to make this answer wrong, and whatever they make it say they
+    cannot remove a refusal the listing makes.
 
-    **A common directory on the walk itself is not the candidate's.** A checkout's common
-    directory is its `.git`, or wherever its `.git` file points; it is never the directory git
-    was asked from or one of that directory's ancestors. One that is, is a directory git read
-    by its shape, whatever its committed `config` says, and the walk goes on past it.
+    **Only an answer from inside a work tree is the candidate's.** On a git that ignores
+    `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or
+    `commondir` can make that answer say "not bare" with a common directory anywhere. It cannot
+    make git say `ov/` is inside a work tree: that answer comes only through a checkout's `.git`,
+    which a repository cannot commit. So the walk goes on past every other answer.
 
     Walked up rather than asked once, because git refuses to answer from inside a bare-shaped
-    directory — which is exactly where a clone puts the candidate — and a bare repository's
-    answer is not the candidate's. Asked from the nearest directory that exists, because a
+    directory — which is exactly where a clone puts the candidate — and a git directory's answer
+    is not the candidate's. Asked from the nearest directory that exists, because a
     `create:` destination does not yet.
     """
     start = _nearest_directory(candidate)
@@ -629,11 +630,9 @@ def _candidate_repository(candidate: Path) -> Path | None:
         f"anchor, and a question git did not answer is not taken as a yes"
     )
     while True:
-        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_BARE, refusal=refusal)
-        if answer is not None and len(answer) == 2 and answer[1] == "false":
-            common = Path(answer[0])
-            if not any(_same(common, part) for part in (start, *start.parents)):
-                return common
+        answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, refusal=refusal)
+        if answer is not None and len(answer) == 2 and answer[1] == "true":
+            return Path(answer[0])
         if start == start.parent:
             return None
         start = start.parent

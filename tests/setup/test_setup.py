@@ -835,12 +835,15 @@ def _commit_a_bare_shaped_directory(checkout: Path) -> Path:
     return shaped
 
 
-def _clone_with_a_bare_shaped_directory(tmp_path: Path) -> tuple[Path, Path]:
-    """A project repository that commits a bare-shaped `ov/`, plus two sibling worktrees of it;
-    `(main checkout, the worktrees' shared parent)`."""
+def _clone_with_a_bare_shaped_directory(tmp_path: Path, ov_config: str = "") -> tuple[Path, Path]:
+    """A project repository that commits a bare-shaped `ov/` (and `ov_config` as its `config`,
+    when given), plus two sibling worktrees of it; `(main checkout, the worktrees' parent)`."""
     project = tmp_path / "proj"
     project.mkdir()
     _git(project, "init", "-q", "-b", "main")
+    if ov_config:
+        (project / "ov").mkdir()
+        (project / "ov" / "config").write_text(ov_config, encoding="utf-8")
     _commit_a_bare_shaped_directory(project)
     worktrees = tmp_path / "proj.wt"
     _git(project, "worktree", "add", "-q", str(worktrees / "wave-1"), "-b", "wave-1")
@@ -903,10 +906,10 @@ def test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused(
 ) -> None:
     # A committed `ov/config` saying `core.bare = false` makes a git that ignores
     # `safe.bareRepository` answer from inside `ov/` with `ov/` as a repository that is *not*
-    # bare. The listing refuses the sibling regardless, and the candidate-side walk does not
-    # take a common directory lying on the walk itself as the candidate's, so both arms refuse
-    # it; the test below proves the listing alone, and the separate-git-dir test's
-    # `claims-a-checkout` case proves the walk alone.
+    # bare. The listing refuses the sibling regardless, and the candidate-side walk takes only
+    # an answer from inside a work tree, which `ov/` never gives, so both arms refuse it; the
+    # test below proves the listing alone, and the separate-git-dir test's `claims-a-checkout`
+    # case proves the walk alone.
     _as(git_version, monkeypatch)
     project = tmp_path / "proj"
     project.mkdir()
@@ -920,21 +923,24 @@ def test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused(
         _record(tmp_path, linked / "ov", project)
 
 
+@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout"])
 @pytest.mark.parametrize("git_version", GITS)
 def test_a_root_inside_a_bare_shaped_directory_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
 ) -> None:
     # The same shape from the project's side: run from `proj/ov`, git's own discovery stops at
     # `ov/` and names *it* as the repository, whose only "checkout" is itself — so the sibling
     # `proj.wt/wave-1/ov` lies outside every listed checkout and every path arm. git's answer
-    # says the repository is bare, and on every git version that is what refuses: a project
-    # root with no checkout of its own to compare against is not one.
+    # says `ov/` is not inside a work tree — even when a committed `ov/config` says
+    # `core.bare = false` (`claims-a-checkout`) — and on every git version that is what refuses:
+    # a project root with no checkout of its own to compare against is not one.
     #
-    # Mutation ("setup stops refusing a root git reads as a bare repository"): the
-    # `--is-bare-repository` refusal becomes `if False:` → the current-git case falls to the
-    # retry's refusal, which does not say "bare repository", and the other case is recorded.
+    # Mutation ("setup stops refusing a root git does not read as inside a checkout"): the
+    # `--is-inside-work-tree` refusal becomes `if False:` → the current-git cases fall to the
+    # retry's refusal, which does not say "bare repository", and the other cases are recorded.
     _as(git_version, monkeypatch)
-    project, _ = _clone_with_a_bare_shaped_directory(tmp_path)
+    config = "[core]\n\tbare = false\n" if ov_config == "claims-a-checkout" else ""
+    project, _ = _clone_with_a_bare_shaped_directory(tmp_path, config)
     with pytest.raises(Refusal, match="bare repository"):
         _record(tmp_path, tmp_path / "proj.wt" / "wave-1" / "ov", project / "ov")
     assert not (tmp_path / "config.toml").exists(), "refused above the first write"
@@ -963,7 +969,7 @@ def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_th
         _record(tmp_path, worktrees / "wave-1" / "ov", project)
 
 
-@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout"])
+@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout", "points-elsewhere"])
 @pytest.mark.parametrize("git_version", GITS)
 def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
@@ -981,24 +987,32 @@ def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
     # Mutation ("the candidate-side walk stops at the first directory git will not answer
     # for"): the step to the parent becomes `return None` → git refuses `ov/` as a bare
     # repository, the walk never reaches `s`, and the current-git case reddens.
-    # Mutation ("the candidate-side walk takes a bare repository's answer as the candidate's"):
-    # the `answer[1] == "false"` condition is dropped → on a git that ignores the key, `ov/`
-    # answers for itself as a bare repository, the walk stops there, and the
-    # `ignores-safe-bare-none` case reddens.
     #
-    # `claims-a-checkout` commits `ov/config` saying `core.bare = false`, so on a git that
-    # ignores the key `ov/` answers as a repository that is not bare, with itself as its common
-    # directory. A checkout's common directory is its `.git`, or wherever its `.git` points —
-    # never the directory asked from or one of its ancestors — so the walk goes on past it.
-    # Mutation ("the candidate-side walk takes a common directory on the walk itself as the
-    # candidate's"): that check becomes `if True:` → the walk stops at `ov/` and the
-    # `ignores-safe-bare-claims-a-checkout` case reddens.
+    # On a git that ignores the key, `ov/` answers for itself, and what it commits can shape
+    # that answer: `claims-a-checkout` commits `ov/config` saying `core.bare = false`, and
+    # `points-elsewhere` commits `ov/commondir` naming a second bare-shaped `ov2/` whose config
+    # says the same, so the answer is "not bare" with a common directory off the walk. Neither
+    # can make git say `ov/` is inside a work tree, and the walk goes on past it.
+    # Mutation ("the candidate-side walk takes an answer from outside a work tree as the
+    # candidate's"): the `answer[1] == "true"` condition is dropped → the walk stops at `ov/`
+    # and every `ignores-safe-bare` case reddens.
     _as(git_version, monkeypatch)
     main, sep = tmp_path / "s", tmp_path / "sep.git"
     _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    not_bare = "[core]\n\tbare = false\n"
     if ov_config == "claims-a-checkout":
         (main / "ov").mkdir()
-        (main / "ov" / "config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
+        (main / "ov" / "config").write_text(not_bare, encoding="utf-8")
+    if ov_config == "points-elsewhere":
+        other = main / "ov2"
+        (other / "objects").mkdir(parents=True)
+        (other / "refs").mkdir()
+        (other / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (other / "objects" / ".keep").write_text("", encoding="utf-8")
+        (other / "refs" / ".keep").write_text("", encoding="utf-8")
+        (other / "config").write_text(not_bare, encoding="utf-8")
+        (main / "ov").mkdir()
+        (main / "ov" / "commondir").write_text("../ov2\n", encoding="utf-8")
     _commit_a_bare_shaped_directory(main)
     linked = tmp_path / "s.wt" / "w"
     _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
