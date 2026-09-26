@@ -33,8 +33,9 @@ from keelline.project.templates import GATE_BRANCH
 DEFAULT_BRANCH = "main"
 NOT_A_NAME = (
     "the project name this repository suggests is not one lowercase path segment matching "
-    f"{PROJECT_NAME.pattern}, so `init` cannot choose one; write `[project] name` into "
-    "keelline.toml by hand and run `keelline init --yes` again — it keeps what you wrote"
+    f"{PROJECT_NAME.pattern}, so `init` cannot choose one; answer it with `keelline init --yes "
+    "--name NAME`, or write `[project] name` into keelline.toml by hand and run `keelline init "
+    "--yes` again, which keeps what you wrote"
 )
 # Where a value came from: the only words `Detected.sources` holds.
 DEFAULT = "default"

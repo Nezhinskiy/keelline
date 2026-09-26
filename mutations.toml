@@ -5315,8 +5315,8 @@ reddens = [
 # DC6, and the second half of one rule: a remote URL's last path segment and a checkout's
 # directory name are both repository-authored, so the value that fails the grammar is the one
 # thing the refusal must not carry. The anchor is `PROJECT_NAME`, the loader's own grammar in
-# the package, and the remedy — write `[project] name` yourself — is what a project whose
-# directory this tool cannot name still has. The loader refuses the same grammar the same way.
+# the package, and the remedy — answer it with `--name`, or write `[project] name` yourself — is
+# what a project whose directory this tool cannot name still has. The loader refuses the same grammar the same way.
 [[mutation]]
 name = "a detected name outside the grammar is quoted back in the refusal"
 file = "src/keelline/project/detect.py"
@@ -7527,7 +7527,7 @@ reddens = [
 [[mutation]]
 name = "the questions take a flag that plans or writes"
 file = "src/keelline/project/commands.py"
-before = "        if args.dry_run or not args.ci:"
+before = "        if args.dry_run or not args.ci or _given(args) != NO_ANSWERS:"
 after = "        if False:"
 reddens = ["tests/project/test_command.py::test_questions_take_no_flag_that_writes_or_plans"]
 
@@ -8966,3 +8966,104 @@ after = "        raise"
 reddens = [
   "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
 ]
+
+# The answers on `init --yes`: each held to its grammar or its choices by the parser, each
+# reaching only a document this run creates, and a name `--name` answers never refused by the
+# detection it replaces.
+[[mutation]]
+name = "an answered name is still detected strictly"
+file = "src/keelline/project/init.py"
+before = "        found = detect(root, lenient=given.name is not None)"
+after = "        found = detect(root)"
+reddens = [
+  "tests/project/test_command.py::test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes",
+]
+
+[[mutation]]
+name = "an answer overrides a keelline.toml the user wrote"
+file = "src/keelline/project/init.py"
+before = "    precheck(root, answering=given != NO_ANSWERS)"
+after = "    precheck(root, answering=False)"
+reddens = ["tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused"]
+
+[[mutation]]
+name = "an answer outside its grammar is taken as typed"
+file = "src/keelline/project/commands.py"
+before = "        if not pattern.match(value):"
+after = "        if False:"
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+[[mutation]]
+name = "--local takes a file no gate can do without"
+file = "src/keelline/project/commands.py"
+before = "        choices=LOCAL_ELIGIBLE,"
+after = ""
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+# The same line as "an id offered as local names no whole file of the footprint", with another
+# `after`: here the id is a whole file, and one a gate reads at its committed path.
+[[mutation]]
+name = "a file a gate reads at its committed path is offered as local"
+file = "src/keelline/project/templates.py"
+before = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")'
+after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history", "bug-index")'
+reddens = [
+  "tests/project/test_answer_flags.py::test_every_file_offered_as_local_leaves_every_gate_green",
+  "tests/project/test_questions.py::test_no_file_a_gate_reads_at_its_committed_path_is_offered_as_local",
+]
+
+# A `keelline.toml` this run creates gates the branch it names, so the caller it renders runs for
+# the repository's own pull requests.
+[[mutation]]
+name = "a fresh repository's caller gates the preset's branch, not its own"
+file = "src/keelline/project/init.py"
+before = '            tables.setdefault("ci", {})["gate_branch"] = branch'
+after = "            pass"
+reddens = ["tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose"]
+
+# An adopted `keelline.toml` is checked as every later command will load it: the text on disk,
+# with a missing `[keelline] version` added by the key editor while planning, before any network
+# call and any write, dry run included. The stamp is written only by a run that writes, and the
+# report says "wrote" only then.
+[[mutation]]
+name = "an adopted document the next command cannot load is adopted anyway"
+file = "src/keelline/project/init.py"
+before = "        loads(on_disk, root, machine=machine)"
+after = "        pass"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_is_written",
+]
+
+[[mutation]]
+name = "the adopted version is checked without being added"
+file = "src/keelline/project/init.py"
+before = "    return rewrite(text, {VERSION: keelline.__version__}), True"
+after = "    return text, True"
+reddens = ["tests/project/test_init.py::test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too"]
+
+[[mutation]]
+name = "an adopted document without a version is left unloadable"
+file = "src/keelline/project/init.py"
+before = "        rewrite_owned(root, {VERSION: keelline.__version__})"
+after = "        pass"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line",
+]
+
+[[mutation]]
+name = "an adopted document's added version goes unmentioned"
+file = "src/keelline/project/commands.py"
+before = "    if report.stamped:"
+after = "    if False:"
+reddens = ["tests/project/test_command.py::test_an_adopted_document_without_a_version_is_named_in_a_note"]
+
+[[mutation]]
+name = "a refused adoption reports its version stamp as written"
+file = "src/keelline/project/commands.py"
+before = '        verb = "would write" if report.dry_run or report.refused else "wrote"'
+after = '        verb = "would write" if report.dry_run else "wrote"'
+reddens = ["tests/project/test_command.py::test_a_refused_adoption_says_its_version_would_be_written"]

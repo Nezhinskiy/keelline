@@ -4,9 +4,11 @@ asked of every hostile input at once.
 A write or removal must never land on a file whose bytes the committer does not control and git
 does not show. The inputs that could aim one are repository-authored: the committed
 `keelline.toml` (`[paths]`, `[artifacts] local`), the committed manifest, and the local ledger a
-clone can force-add. Each hostile case below is one such input, run at every command that meets
-it — `init` reads `[paths]` from a fresh clone; `upgrade` and `uninstall` act on recorded
-targets, so they meet a `[paths]` value only together with a record placing the artifact there.
+clone can force-add; and, at `init`, the answers a person passes as flags, which `precheck`
+keeps off any committed document. Each hostile case below is one such input, run at every
+command that meets it — `init` reads `[paths]` from a fresh clone; `upgrade` and `uninstall` act
+on recorded targets, so they meet a `[paths]` value only together with a record placing the
+artifact there.
 
 - **I1, nothing hidden is clobbered.** After every command, finished or refused, each file the
   case planted where git does not show it — an ignored file, a file under `.git/`, Keelline's
@@ -63,7 +65,8 @@ from keelline.attach.write import LEDGER as ATTACH_LEDGER
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import KEELLINE_DIRECTORY
 from keelline.errors import Refusal
-from keelline.project.init import InitReport, init
+from keelline.project.init import NO_ANSWERS, Given, InitReport, init
+from keelline.project.templates import LOCAL_ELIGIBLE
 from keelline.project.uninstall import NOTHING, UninstallReport, uninstall
 from keelline.project.upgrade import UpgradeReport, upgrade
 from keelline.scaffold import digest
@@ -132,6 +135,10 @@ class Case:
     links: Mapping[str, str] = field(default_factory=dict)
     track: tuple[str, ...] = ()
     forge: Callable[[Path], None] | None = None
+    # The answers `init` is given as flags; `NO_ANSWERS` is `--yes` alone.
+    given: Given = NO_ANSWERS
+    # Whether the clone commits the case's `keelline.toml`; a fresh clone has none.
+    written: bool = True
 
     def document(self, *, with_paths: bool) -> str:
         text = DOCUMENT
@@ -251,6 +258,16 @@ HOSTILE = (
         plant={".git/keelline.toml": DOCUMENT},
         forge=_config_through_a_symlink,
     ),
+    # Answers over a document the clone committed would rewrite what the committer chose; they
+    # are refused before anything is read beyond the root.
+    Case(
+        "answers-over-a-committed-document",
+        ("init",),
+        paths={"agents_md": ".env"},
+        ignore=(".env",),
+        plant={".env": FOREIGN},
+        given=Given(local=("roadmap-history",)),
+    ),
 )
 
 LEGITIMATE = (
@@ -300,6 +317,21 @@ LEGITIMATE = (
         ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
         exclude=(CONFIG_FILE,),
     ),
+    # Every answer given, on a clone with no `keelline.toml`: the document `init` writes from
+    # them, the files kept out of git included, is one `upgrade` and `uninstall` finish on.
+    Case(
+        "answers-on-a-fresh-clone",
+        ("init", "upgrade", "uninstall"),
+        written=False,
+        given=Given(
+            name="widget",
+            base_branch="main",
+            agents=("claude", "codex"),
+            profile="",
+            memory_mode="local-only",
+            local=LOCAL_ELIGIBLE,
+        ),
+    ),
 )
 
 
@@ -315,10 +347,19 @@ def _run(
     tmp_path: Path,
     *,
     dry_run: bool = False,
+    given: Given = NO_ANSWERS,
 ) -> Report:
     machine = tmp_path / "absent.toml"
     if command == "init":
-        return init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=dry_run, ci=False)
+        return init(
+            root,
+            machine=machine,
+            runner=LsRemote(),
+            yes=True,
+            dry_run=dry_run,
+            ci=False,
+            given=given,
+        )
     if command == "upgrade":
         return upgrade(root, machine=machine, runner=LsRemote(), dry_run=dry_run, force=())
     return uninstall(root, machine=machine, dry_run=dry_run, force=())
@@ -352,7 +393,9 @@ def _adopt(command: Literal["adopt-begin", "adopt-promote"], root: Path, tmp_pat
     assert transition.promoted == ("docs",), transition
 
 
-def _outcome(command: Command, root: Path, tmp_path: Path) -> list[str] | None:
+def _outcome(
+    command: Command, root: Path, tmp_path: Path, given: Given = NO_ANSWERS
+) -> list[str] | None:
     """`None` when the command finished; its refusals, raised or returned, otherwise."""
     try:
         if command == "assess":
@@ -361,7 +404,7 @@ def _outcome(command: Command, root: Path, tmp_path: Path) -> list[str] | None:
         if command == "adopt-begin" or command == "adopt-promote":
             _adopt(command, root, tmp_path)
             return None
-        report = _run(command, root, tmp_path)
+        report = _run(command, root, tmp_path, given=given)
     except Refusal as refused:
         return [str(refused)]
     return _refusals(report) if report.refused else None
@@ -480,7 +523,7 @@ def test_no_hostile_input_reaches_a_file_git_hides(
             case.forge(root)
     hidden = _hidden(root, case, command)
     git_before = _git_files(root)
-    refused = _outcome(command, root, tmp_path)
+    refused = _outcome(command, root, tmp_path, case.given)
     finished = command if refused is None else None
     _assert_invariant(root, tmp_path, hidden, git_before, finished=finished)
 
@@ -493,11 +536,12 @@ def test_the_legitimate_user_runs_every_command_to_the_end(
     """I2, with I1 and I3 after each step: every command the case lists finishes."""
     root = tmp_path / "widget"
     shutil.copytree(template, root, symlinks=True)
-    (root / CONFIG_FILE).write_text(case.document(with_paths=True))
+    if case.written:
+        (root / CONFIG_FILE).write_text(case.document(with_paths=True))
     _surround(root, case)
     for command in case.commands:
         hidden = _hidden(root, case, command)
         git_before = _git_files(root)
-        refused = _outcome(command, root, tmp_path)
+        refused = _outcome(command, root, tmp_path, case.given)
         assert refused is None, f"I2: {command} refused a legitimate configuration: {refused}"
         _assert_invariant(root, tmp_path, hidden, git_before, finished=command)

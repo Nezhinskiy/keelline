@@ -176,11 +176,13 @@ PATH_KEYS = {
     "profile-rules": "paths.keelline",
 }
 # The whole files a project may keep out of git, under `.keelline/local/artifacts/`, with every
-# gate still passing; `init --questions` offers exactly these. Every other artifact is read at its
-# committed path by a gate (`bug-index`, `ledger-audits`, `roadmap`, `trail`), has no purpose
-# outside git (the two `.gitkeep` files), works only at the root (`config`, `gitignore`), or is
-# read where it is committed (`CLAUDE.md`, the `AGENTS.md` skeleton and its region, the workflow,
-# the profile's rules and each harness's pointer to them).
+# gate still passing (`tests/project/test_answer_flags.py` runs every gate with each one kept).
+# `init --questions` offers exactly these and `init --yes --local` takes only these. Every other
+# artifact is read at its committed path by a gate (`bug-index`, `ledger-audits`, `roadmap`,
+# `trail`), has no purpose outside git (the two `.gitkeep` files), works only at the root
+# (`config`, `gitignore`), or is read where it is committed (`CLAUDE.md`, the `AGENTS.md`
+# skeleton and its region, the workflow, the profile's rules and each harness's pointer to
+# them); `docs/cli.md`'s `--local` paragraph says the same to a person.
 LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")
 # The one pair of artifacts built to share a file, and the one exception `Owners` makes.
 SHARED_FILE = frozenset({"agents-skeleton", "agents-md"})

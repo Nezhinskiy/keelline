@@ -33,6 +33,8 @@ above the plans, such as a missing `--yes` or a repository that is already initi
 from __future__ import annotations
 
 import argparse
+import re
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -43,6 +45,7 @@ from keelline.result import Result
 from keelline.scaffold import Plan, Verb, printable, render_report, unlinks
 
 if TYPE_CHECKING:
+    from keelline.project.init import Given
     from keelline.release.api import Pin
 
 # What the flag does and what it does not: it sets `[ci] mode` in the document this run builds,
@@ -70,19 +73,54 @@ UNKNOWN_HARNESSES = (
     "harnesses were given the AGENTS.md region only"
 )
 YES_HELP = (
-    "accept the detected defaults and write the footprint; without it nothing is written, and "
-    "the command refuses unless --questions asks it to print those defaults"
+    "take the defaults `init --questions` shows, with any answer flag below replacing one, and "
+    "write the footprint; without it nothing is written"
+)
+# Fixed text: the verb is one of two this module chooses, and nothing the file says prints.
+STAMPED = (
+    "note: keelline.toml carried no [keelline] version, the one key Keelline owns that the "
+    "loader requires; this run {verb} it and leaves every other line as it was"
 )
 QUESTIONS_HELP = (
     "print the defaults init would take, where each came from and the flag that changes it; "
     "under --json, as a JSON Schema. Writes nothing"
 )
-# `--yes` is excluded by the parser. `--dry-run` and `--no-ci` are flags `--yes` takes, so one
-# mutually exclusive group cannot exclude them as well, and this refusal is that half of the rule.
+# `--yes` is excluded by the parser. `--dry-run`, `--no-ci` and the answer flags are flags `--yes`
+# takes, so one mutually exclusive group cannot exclude them as well, and this refusal is that
+# half of the rule.
 QUESTIONS_ALONE = (
     "--questions writes nothing and takes no flag but --root, --machine and --json; the "
     "answers go on `keelline init --yes`"
 )
+
+
+def _grammar(pattern: re.Pattern[str], rule: str) -> Callable[[str], str]:
+    """An argparse `type` that refuses with the rule and never with the value."""
+
+    def check(value: str) -> str:
+        if not pattern.match(value):
+            raise argparse.ArgumentTypeError(rule)
+        return value
+
+    return check
+
+
+def _given(args: argparse.Namespace) -> Given:
+    """The answer flags as `init` takes them: `None` for a flag not given, and a list flag's
+    values in the order first given, each once."""
+    from keelline.project.init import Given
+
+    def listed(values: list[str] | None) -> tuple[str, ...] | None:
+        return None if values is None else tuple(dict.fromkeys(values))
+
+    return Given(
+        name=args.name,
+        base_branch=args.base_branch,
+        agents=listed(args.agent),
+        profile=args.profile,
+        memory_mode=args.memory_mode,
+        local=listed(args.local),
+    )
 
 
 def _pin(pin: Pin | None) -> dict[str, str] | None:
@@ -101,12 +139,12 @@ def run_questions(args: argparse.Namespace) -> Result:
 
 
 def run_init(args: argparse.Namespace) -> Result:
-    from keelline.project.init import init
+    from keelline.project.init import NO_ANSWERS, init
     from keelline.project.templates import CI_ARTIFACT
     from keelline.runner import subprocess_runner
 
     if args.questions:
-        if args.dry_run or not args.ci:
+        if args.dry_run or not args.ci or _given(args) != NO_ANSWERS:
             raise Refusal(QUESTIONS_ALONE)
         return run_questions(args)
     root = Path(args.root).resolve()
@@ -118,6 +156,7 @@ def run_init(args: argparse.Namespace) -> Result:
         yes=args.yes,
         dry_run=args.dry_run,
         ci=args.ci,
+        given=_given(args),
     )
     once, footprint = render_report(report.once), render_report(report.footprint)
     pin = report.resolution.pin
@@ -156,6 +195,10 @@ def run_init(args: argparse.Namespace) -> Result:
         lines.append(UNKNOWN_HARNESSES.format(count=report.unknown_harnesses))
     if report.head_note:
         lines.append(f"note: {report.head_note}")
+    if report.stamped:
+        # Nothing is written by a dry run or a refused one, the stamp included.
+        verb = "would write" if report.dry_run or report.refused else "wrote"
+        lines.append(STAMPED.format(verb=verb))
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -169,6 +212,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "ref": report.ref,
         "unknown_harnesses": report.unknown_harnesses,
         "head_note": report.head_note,
+        "stamped": report.stamped,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -343,6 +387,51 @@ def _judging(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
+def _answers(parser: argparse.ArgumentParser) -> None:
+    """The answer flags on `init --yes`, one per question `init --questions` prints.
+
+    Each flag's `default` stays `None`, which is what lets `Given` tell a question not asked from
+    an answer. A name and a branch are held to their grammar by `_grammar`, whose refusal names
+    the rule and never the value; every other answer is a `choices`, whose error quotes only
+    the operator's own argument.
+    """
+    from keelline.config.schema import MEMORY_MODES, PROJECT_NAME
+    from keelline.harnesses import HARNESSES
+    from keelline.profiles import shipped
+    from keelline.project.templates import GATE_BRANCH, LOCAL_ELIGIBLE
+
+    answers = parser.add_argument_group(
+        "answers", "each replaces one default; `keelline init --questions` lists them"
+    )
+    name_rule = f"not one lowercase path segment matching {PROJECT_NAME.pattern}"
+    branch_rule = f"not a plain branch name matching {GATE_BRANCH.pattern}"
+    answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
+    answers.add_argument(
+        "--base-branch",
+        type=_grammar(GATE_BRANCH, branch_rule),
+        help="[project] base_branch and release_branch",
+    )
+    answers.add_argument(
+        "--agent",
+        action="append",
+        choices=[h.name for h in HARNESSES],
+        help="[keelline] agents; once per harness",
+    )
+    answers.add_argument(
+        "--profile",
+        choices=("", *shipped()),
+        metavar="NAME",
+        help="[keelline] profile; an empty value for none",
+    )
+    answers.add_argument("--memory-mode", choices=MEMORY_MODES, help="[memory] mode")
+    answers.add_argument(
+        "--local",
+        action="append",
+        choices=LOCAL_ELIGIBLE,
+        help="[artifacts] local: keep this file out of git; once per file",
+    )
+
+
 def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `keelline.project.init`.
@@ -352,6 +441,7 @@ def register(groups: SubParsers) -> None:
     asking.add_argument("--questions", action="store_true", help=QUESTIONS_HELP)
     parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
+    _answers(parser)
     parser.set_defaults(func=run_init, ci=True)
     upgrade = common_flags(groups.add_parser("upgrade", help="refresh this repository's footprint"))
     _judging(upgrade).set_defaults(func=run_upgrade)

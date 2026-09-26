@@ -25,9 +25,10 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start a
 > project by hand, which `init` reads as your answers — a run that writes the file itself writes
 > `[keelline] version`, `state` and `agents`, and `profile` when the repository carries a
-> shipped profile's markers, beside `[project] name`, `base_branch` and `release_branch`, a
-> `[ci]` table only when it has a released commit to pin or `--no-ci` asks for none, and no
-> `[memory]` table at all.
+> shipped profile's markers or `--profile` names one, beside `[project] name`, `base_branch`
+> and `release_branch`, a `[ci]` table only when it has a released commit to pin, `--no-ci`
+> asks for none, or the base branch is not `main`, a `[memory]` table only when
+> `--memory-mode` answers it, and an `[artifacts]` table only when `--local` does.
 > [docs/cli.md](docs/cli.md) is the reference; the command list below is held to the parser
 > by a test, so it is complete for what ships.
 
@@ -154,8 +155,10 @@ groups = ["developer"]   # the preset names four; the store below has one
 
 `keelline init --yes` writes that file for you — the name from `origin`, the base branch, the
 agent surfaces this repository carries — along with the documentation skeleton the other
-commands expect and, once there is a Keelline release to pin, a CI workflow. Read it before it
-runs; a `keelline.toml` you wrote yourself is read as your answers rather than replaced:
+commands expect and, once there is a Keelline release to pin, a CI workflow.
+`keelline init --questions` shows each value it would take and where it came from, and a flag
+on `--yes` replaces any of them. Read it before it runs; a `keelline.toml` you wrote yourself
+is read as your answers rather than replaced:
 
 ```bash
 keelline init --yes --dry-run   # both plans, every file named, nothing written
@@ -190,7 +193,7 @@ Keelline writes files. Being specific about which is the point of this section.
 
 | Path | What it is | Written by |
 |---|---|---|
-| `keelline.toml` | Your project's configuration, committed | `keelline init`, once; you after |
+| `keelline.toml` | Your project's configuration, committed | `keelline init`, once — into a file you wrote, only a missing `[keelline] version`; you after |
 | `docs/memory/` (configurable) | The note store, in `in-repo` and `overlay` mode | `keelline memory index` |
 | `.keelline/local/memory/` | The note store in `local-only` mode, the default — git-ignored | `keelline memory index` |
 | `<store>/MEMORY.md` | The rendered routing index. **Generated — do not hand-edit** | `keelline memory index` |
@@ -238,6 +241,7 @@ parser, and every registered command has a line — a test holds both.
 # Initialising a project
 keelline init --questions                             # each default, where it came from, the flag that changes it
 keelline init --yes --dry-run                         # both reports, nothing written
+keelline init --yes --dry-run --name widget           # the plan with one default replaced
 keelline init --yes                                   # write the footprint and record every file
 keelline upgrade --dry-run                            # what a newer Keelline would refresh
 keelline upgrade                                      # refresh untouched files; move version and pin
