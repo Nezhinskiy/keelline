@@ -7,8 +7,9 @@ project `adopting`; `promote` runs gates strictly on the tree as it is and adds 
 to `enforced`. A custom gate is promoted only once the base has its command, since `keelline
 gate` runs it only then: until it lands there it is not run, and waits. Promoting the last
 configured gate writes `installed` and empties the list, which under `installed` means every
-configured gate, so a gate added later enforces from its first run. The state never moves
-back: there is no demotion, and loosening is an owner's edit of `keelline.toml`, which
+configured gate, so a gate added later enforces from its first run — for a custom gate, the
+first run after it lands on the base, since `keelline gate` runs none before. The state never
+moves back: there is no demotion, and loosening is an owner's edit of `keelline.toml`, which
 `keelline gate` refuses to a pull request while anything enforces.
 
 **One write, at one place.** Both verbs change `keelline.toml`'s `state` and `enforced` through

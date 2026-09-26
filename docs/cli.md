@@ -773,11 +773,12 @@ and executes no command from `keelline.toml`; `--custom` runs the project's own 
 judges nothing. Each narrows the bare run, or `--only`'s names, to its kind, and skips a name of
 the other kind rather than refuse it. `--builtin` runs the configuration check whatever `--only`
 names: it is the run that judges, and a caller that names one gate — a matrix leg, a person
-reproducing CI — still judges the change's `keelline.toml`, so a loosening fails every such run. The reusable workflow runs them as two steps, the second
-only when the first passed. A custom gate's command is fixed by the base, but the files it
-executes — a `conftest.py`, a `Makefile`, a script — are the change under review, so for a custom
-gate the guarantee is "this command runs and must exit 0", and nothing about what it runs. An
-owner who wants those files pinned puts them under CODEOWNERS. Run bare on your own checkout,
+reproducing CI — still judges the change's `keelline.toml`, so a loosening fails every such
+run. The reusable workflow runs them as two steps, the second only when the first passed. A
+custom gate's command is fixed by the base, but the files it executes — a `conftest.py`, a
+`Makefile`, a script — are the change under review, so for a custom gate the guarantee is "this
+command runs and must exit 0", and nothing about what it runs. An owner who wants those files
+pinned puts them under CODEOWNERS. Run bare on your own checkout,
 everything runs in one process. Narrowed to nothing — `--custom` on a project with no gate of its
 own — the run prints `nothing to run`, appends no summary and exits `0`.
 
@@ -901,20 +902,21 @@ annotation, and the run can still exit `0`; the gate's own command, which the re
 shows the refusal itself.
 
 Exits `0` when no enforcing gate failed or could not run and, when the configuration check ran,
-nothing was refused; a custom gate not run until the base has its command changes neither. `1` when an enforcing gate failed or could not run; when the configuration
-check refused a key; when the base is not in the checkout or git could not read its copy (the
-message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the
-one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not
-UTF-8 text or does not load, the message naming which (a base's copy is fixed on the base branch,
-and is never read as the base having none). `2` on a refusal: a `--base` outside its grammar
-(before anything runs); a root reached through a symbolic link, spelled otherwise than git spells
-it, or given with a `..` component; an `--only` name this run's
-configuration does not have; a `keelline.toml` that is itself a symbolic link; or a `[paths]` value
-on either side that leaves the root, passes through a symbolic link, or names `.git` or `.keelline`.
-Both copies are loaded against this tree's disk, so a change that turns a directory the base names
-into a symbolic link refuses the base's own load, in a message that says it is the base's, and a
-base written for an older Keelline that this one no longer loads fails every pull request until the
-owner fixes it on the base branch.
+nothing was refused; a custom gate not run until the base has its command changes neither. `1`
+when an enforcing gate failed or could not run; when the configuration check refused a key; when
+the base is not in the checkout or git could not read its copy (the message names
+`fetch-depth: 0`); when the root is not inside a git repository, or git refuses the one it is
+in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not UTF-8
+text or does not load, the message naming which (a base's copy is fixed on the base branch, and
+is never read as the base having none). `2` on a refusal: a `--base` outside its grammar (before
+anything runs); a root reached through a symbolic link, spelled otherwise than git spells it, or
+given with a `..` component; an `--only` name this run's configuration does not have; a
+`keelline.toml` that is itself a symbolic link; or a `[paths]` value on either side that leaves
+the root, passes through a symbolic link, or names `.git` or `.keelline`. Both copies are loaded
+against this tree's disk, so a change that turns a directory the base names into a symbolic link
+refuses the base's own load, in a message that says it is the base's, and a base written for an
+older Keelline that this one no longer loads fails every pull request until the owner fixes it
+on the base branch.
 
 ## `keelline adopt begin PLAN [--root PATH] [--machine PATH]`
 
@@ -945,15 +947,16 @@ enforces each one that passes, names the rest with their finding counts, and exi
 failed. With names, they pass together or nothing is written, and a named gate that already
 enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
-gate, so a gate the project adds later enforces from its first run. An `adopting` project whose
-every configured gate already enforces — one that removed the last gate it had not promoted — is
-moved to `installed` with no gate run; a project that configures no gate is refused, since it
-has none to have earned. The state never moves back. A name, a gate already enforcing, nothing
-left to promote, a `keelline.toml` the editor cannot rewrite in place and a manifest it cannot
-read are each refused before the first gate runs; a refusal from the editor names `state` and
-`enforced` together, one line each: as they stand when the check before the gates finds it, and
-as the command would write them when the write itself refuses, so following it either leaves the
-project as it was or makes the transition whole.
+gate, so a gate the project adds later enforces from its first run — for a custom gate, the
+first run after it lands on the base branch, since `keelline gate` runs none before. An
+`adopting` project whose every configured gate already enforces — one that removed the last gate
+it had not promoted — is moved to `installed` with no gate run; a project that configures no
+gate is refused, since it has none to have earned. The state never moves back. A name, a gate
+already enforcing, nothing left to promote, a `keelline.toml` the editor cannot rewrite in place
+and a manifest it cannot read are each refused before the first gate runs; a refusal from the
+editor names `state` and `enforced` together, one line each: as they stand when the check before
+the gates finds it, and as the command would write them when the write itself refuses, so
+following it either leaves the project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
 commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable
