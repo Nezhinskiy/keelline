@@ -376,14 +376,20 @@ def test_a_parse_failure_with_no_position_says_so_rather_than_quoting_the_messag
     # report as absent rather than fall back to the message, which is the one fallback that would
     # reopen the leak silently — so the function is asked directly, with an exception carrying no
     # suffix at all.
+    #
+    # That exception is built by `__new__` alone. Python 3.14's constructor takes only
+    # `msg`, `doc` and `pos` and always appends the position itself, while it deprecates a bare
+    # message (an error under this suite's `filterwarnings`); 3.13's takes no keywords at all.
+    # Skipping `__init__` gives the exact type with the exact text on both.
     import tomllib
 
     from keelline.config.loader import NO_POSITION, toml_position
 
-    assert toml_position(tomllib.TOMLDecodeError("Cannot declare ('leaked',) twice")) == NO_POSITION
-    assert (
-        toml_position(tomllib.TOMLDecodeError("x (at end of document)")) == "(at end of document)"
-    )
+    def carrying(text: str) -> tomllib.TOMLDecodeError:
+        return tomllib.TOMLDecodeError.__new__(tomllib.TOMLDecodeError, text)
+
+    assert toml_position(carrying("Cannot declare ('leaked',) twice")) == NO_POSITION
+    assert toml_position(carrying("x (at end of document)")) == "(at end of document)"
 
 
 def test_unknown_keys_name_the_typo_and_count_the_rest_never_quoting_them(tmp_path: Path) -> None:
