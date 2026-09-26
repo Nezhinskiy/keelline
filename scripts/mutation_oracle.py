@@ -26,7 +26,7 @@ Every mutation is applied to a throwaway worktree of `HEAD`; the working tree is
 One such worktree per job, each proving one entry at a time, as many jobs as this process may
 use CPUs unless `--jobs` says otherwise.
 
-Exit codes match the rest of the project: 0 all held, 1 findings.
+Exit codes match the rest of the project: 0 all held, 1 findings, and 2 for a usage error.
 """
 
 from __future__ import annotations
@@ -415,25 +415,64 @@ def _run(targets: tuple[str, ...], cwd: Path, *, cache: Path | None = None) -> O
     """
     with tempfile.TemporaryDirectory(prefix=f"{SCRATCH_PREFIX}cache-", dir=TEMPDIR) as scratch:
         report = Path(scratch) / "report.xml"
-        done = subprocess.run(  # noqa: S603
-            [
-                sys.executable,
-                "-B",
-                "-m",
-                "pytest",
-                "-q",
-                "-p",
-                "no:cacheprovider",
-                "--no-header",
-                f"--junit-xml={report}",
-                *targets,
-            ],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            env=_environment(cwd, cache or Path(scratch), writes_bytecode=False),
-        )
-        return Outcome(done.returncode, _executed(report))
+        with _living:
+            if _stopping.is_set():
+                raise Stopped("the run is being stopped; no further pytest is started")
+            child = subprocess.Popen(  # noqa: S603
+                [
+                    sys.executable,
+                    "-B",
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-p",
+                    "no:cacheprovider",
+                    "--no-header",
+                    f"--junit-xml={report}",
+                    *targets,
+                ],
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=_environment(cwd, cache or Path(scratch), writes_bytecode=False),
+            )
+            _live.add(child)
+        try:
+            child.communicate()
+        except BaseException:
+            # What `subprocess.run` did on the way out, kept: an interrupted wait kills the
+            # child rather than leaving it running against a checkout about to be removed.
+            child.kill()
+            child.wait()
+            raise
+        finally:
+            with _living:
+                _live.discard(child)
+        return Outcome(child.returncode, _executed(report))
+
+
+class Stopped(RuntimeError):
+    """`_run` was asked to start pytest after `_stop_runs`; the entry it was for is abandoned."""
+
+
+_live: set[subprocess.Popen[str]] = set()
+_living = threading.Lock()
+_stopping = threading.Event()
+
+
+def _stop_runs() -> None:
+    """Terminate every pytest a job is waiting on, and refuse to start another.
+
+    A job's pytest runs in a worker thread, where no signal reaches it, so without this a
+    terminate would wait for every in-flight entry to run to its end — two whole pytest runs a
+    job — before the checkouts could go. Under the same lock `_run` starts children with, so no
+    child is started after the refusal is set and missed by the terminate.
+    """
+    with _living:
+        _stopping.set()
+        for child in _live:
+            child.terminate()
 
 
 def anchor_finding(text: str, before: str) -> str | None:
@@ -803,6 +842,7 @@ def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
         print(f"swept a leaked scratch checkout: {leaked}", file=sys.stderr)
 
     findings: dict[int, str] = {}
+    _stopping.clear()
     try:
         with contextlib.ExitStack() as stack:
             trees = [stack.enter_context(scratch_checkout()) for _ in range(jobs)]
@@ -818,10 +858,11 @@ def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
                     finally:
                         free.put((tree, cache))
 
-                pending: dict[Future[str | None], int] = {
-                    pool.submit(prove, mutation): index for index, mutation in enumerate(mutations)
-                }
                 try:
+                    pending: dict[Future[str | None], int] = {
+                        pool.submit(prove, mutation): index
+                        for index, mutation in enumerate(mutations)
+                    }
                     for done in as_completed(pending):
                         index = pending[done]
                         finding = done.result()
@@ -831,8 +872,9 @@ def _prove(mutations: list[Mutation], jobs: int = 1) -> int:
                             findings[index] = f"{mutations[index].name}: {finding}"
                 except BaseException:
                     # A terminate, an interrupt or an entry that raised: stop handing out
-                    # entries, let the ones already running restore their files, and only then
-                    # let the checkouts be removed from under them.
+                    # entries, end the pytest runs in flight, let their entries restore their
+                    # files, and only then let the checkouts be removed from under them.
+                    _stop_runs()
                     pool.shutdown(wait=True, cancel_futures=True)
                     raise
     except WorktreeUnavailable as exc:

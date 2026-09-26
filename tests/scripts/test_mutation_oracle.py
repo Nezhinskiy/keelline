@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -548,6 +550,35 @@ def test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own(
     ran_from = {Path(line).parents[1] for line in probe.read_text(encoding="utf-8").splitlines()}
     assert len(ran_from) == 2, ran_from
     assert all(root.resolve() not in tree.resolve().parents for tree in ran_from), ran_from
+
+
+def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) -> None:
+    # A job's pytest runs in a worker thread, where no signal reaches it. Without `_stop_runs`
+    # a terminate waited for every in-flight entry to finish both of its runs before the
+    # checkouts could be removed — long enough for a process manager's grace period to end in
+    # a `SIGKILL` that leaks them all. The sequential oracle never had this: `subprocess.run`
+    # killed its child as the `SystemExit` passed through it.
+    #
+    # Mutations (declared): the terminate dropped -> the thread is still waiting on a pytest
+    # that sleeps a minute, and the first assertion reddens; the refusal dropped -> the second
+    # `_run` starts pytest, and `pytest.raises` reddens.
+    module = oracle(root=tmp_path)
+    (tmp_path / "test_slow.py").write_text(
+        "import time\n\n\ndef test_slow() -> None:\n    time.sleep(60)\n\n\n"
+        "def test_quick() -> None:\n    pass\n",
+        encoding="utf-8",
+    )
+    waiting = threading.Thread(target=module._run, args=(("test_slow.py::test_slow",), tmp_path))
+    waiting.start()
+    deadline = time.monotonic() + 30
+    while not module._live and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert module._live, "the slow run never started"
+    module._stop_runs()
+    waiting.join(timeout=20)
+    assert not waiting.is_alive(), "a stop left a pytest run going"
+    with pytest.raises(module.Stopped):
+        module._run(("test_slow.py::test_quick",), tmp_path)
 
 
 @needs_git

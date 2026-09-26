@@ -7320,3 +7320,23 @@ after = "            trees = [stack.enter_context(scratch_checkout()) for _ in r
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_every_job_proves_its_entries_in_a_scratch_checkout_of_its_own",
 ]
+
+# A job's pytest runs in a worker thread, where no signal reaches it; a stop terminates the
+# runs in flight and refuses to start another, so a terminate is not a wait for every entry.
+[[mutation]]
+name = "a stop leaves the pytest runs in flight going"
+file = "scripts/mutation_oracle.py"
+before = "            child.terminate()"
+after = "            pass"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
+
+[[mutation]]
+name = "a stopped run still starts pytest"
+file = "scripts/mutation_oracle.py"
+before = "            if _stopping.is_set():"
+after = "            if False:"
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_stop_ends_the_pytest_in_flight_and_starts_no_other",
+]
