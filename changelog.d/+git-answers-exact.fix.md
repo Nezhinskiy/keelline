@@ -10,16 +10,16 @@ document's name, a theme `label` or a `[states]` value is refused like a newline
 back with it turned into a line break, so the listing was reported stale after every run.
 
 Every question Keelline asks git about a repository it works on now reads the answer the same
-lossless way. Four of them still decoded it strictly and turned one byte that was not UTF-8 into an internal error: the checkout
-path the hooks find their project root by (on Linux, a checkout under a latin-1 directory made
-every hook fail, and a hook that refuses on an internal error refused every tool call), the
-`origin` URL (`init --questions` and `init --yes` crashed on one), the hooks directory
-`core.hooksPath` names, and the dirty-file count `test hygiene` reports. The commit range
-`commit check --range` reads never crashed, but it refused as unjudgeable a range whose messages
-git printed in another encoding; it now asks git for UTF-8 by name, so a machine whose git is
-configured to print another encoding no longer has plain non-ASCII messages refused. `attach`
-refuses an `origin` URL that is not UTF-8 text before it writes anything, since the overlay's
-record cannot hold it.
+lossless way. Four of them still decoded it strictly and turned one byte that was not UTF-8 into
+an internal error: the checkout path the hooks find their project root by (on Linux, a checkout
+under a latin-1 directory made every hook fail, and a hook that refuses on an internal error
+refused every tool call), the `origin` URL (`init --questions` and `init --yes` crashed on one),
+the hooks directory `core.hooksPath` names, and the dirty-file count `test hygiene` reports. The
+commit range `commit check --range` reads never crashed, but it refused as unjudgeable a range
+whose messages git printed in another encoding; it now asks git for UTF-8 by name, so a machine
+whose git is configured to print another encoding no longer has plain non-ASCII messages
+refused. `attach` refuses an `origin` URL that is not UTF-8 text before it writes anything,
+since the overlay's record cannot hold it.
 
 A worktree whose path holds a carriage return is listed by its own path: `setup` and `attach`
 split git's listing wherever Python sees a line break, so `…/wt\rx` was taken for `…/wt`. A

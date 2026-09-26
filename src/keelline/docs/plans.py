@@ -197,8 +197,9 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a
     caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
     with empty stdout — so this function answered `[]` rather than None and the gate reported
-    OK having linted nothing. That is the state the `base-unresolvable` finding exists to make
-    impossible, reached by an option-shaped typo instead of by a shallow checkout. The default,
+    OK having linted nothing. That is the state `BaseUnresolvable` exists to make impossible —
+    raised, it is a `plan` gate that could not run and `plan check`'s `base-unresolvable`
+    finding — reached by an option-shaped typo instead of by a shallow checkout. The default,
     `config.layout.local_base`, is safe for its `refs/remotes/origin/` prefix alone, which is a
     property of that one caller and not of this argument.
     """

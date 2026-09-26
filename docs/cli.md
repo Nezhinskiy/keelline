@@ -759,15 +759,14 @@ overwritten on every run that gets that far and never read back: format `1`, wit
 `keelline` (the version that wrote it), `base`, `state`, `enforcing` (the gates
 `[keelline] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
 custom gates `--builtin` left out, else empty), `gates` (a gate's row each, above) and `items`
-(per item:
-`probe`, the gate or probe that found it; `rule`; `principle`, a number in
+(per item: `probe`, the gate or probe that found it; `rule`; `principle`, a number in
 [the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;
 `remedy`; `where`, at most 200 labels; and `count`, how many there were, never capped). A gate's
 findings become one item per rule, at `warning`. `--json` prints the same object with `summary`
 beside it. When git does not ignore the file where it is written, the summary ends with a note
-saying so. A `.keelline` that is a symlink or not a directory, or a directory at the
-inventory's place, is a refusal and nothing is written. Anything else at that place, a symlink
-included, is replaced by the file, and what a symlink pointed at is left as it was.
+saying so. A `.keelline` that is a symlink or not a directory, or a directory at the inventory's
+place, is a refusal and nothing is written. Anything else at that place, a symlink included, is
+replaced by the file, and what a symlink pointed at is left as it was.
 
 The summary prints counts and Keelline's own words — gate names, probe and rule ids,
 severities, remedies — and never a path the repository chose: one table with a row per gate
@@ -912,11 +911,10 @@ ten per level per step and drops the others without a word.
 **`--summary FILE`** appends a markdown table — each gate's mode, count and outcome, and each
 changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
 `config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
-`gates` (a gate's row each, as
-[`keelline assess`](#keelline-assess---base-ref---builtin---root-path---machine-path) defines
-it, `enforcing` as this run enforces it) and `not_on_base`, the custom gates not run until the
-base has their command. It lists no finding: `keelline assess --json` is where findings are
-serialised.
+`not_on_base`, the custom gates not run until the base has their command, and `gates`, a gate's
+row each as [`keelline assess`](#keelline-assess---base-ref---builtin---root-path---machine-path)
+defines it, `enforcing` as this run enforces it. It lists no finding: `keelline assess --json` is
+where findings are serialised.
 
 **Reads** `keelline.toml`, the base's copy through git, every file a gate reads, and — only when
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags. **Writes** nothing

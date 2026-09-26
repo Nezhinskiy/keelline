@@ -299,8 +299,8 @@ def test_a_symlinked_configuration_is_one_that_does_not_load_whatever_it_points_
     row = _by_name(_checks(tmp_path, root), "not-initialised")
     assert row.status == "red"
     # Said in words, never as the class the loader raised: "(PathEscape)" named Keelline's own
-    # exception and not the rule. Mutation (oracle): "doctor names a symlinked keelline.toml by
-    # the loader's exception class" -> the generic line comes back and this reddens.
+    # exception and not the rule. Mutation (oracle): "doctor gives a symlinked keelline.toml the
+    # row for a file that does not load" -> the generic line comes back and this reddens.
     assert row.detail.startswith("keelline.toml is a symbolic link, which no command follows")
     assert "PathEscape" not in row.detail + row.remedy
     assert "real file" in row.remedy

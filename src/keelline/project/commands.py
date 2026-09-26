@@ -397,9 +397,9 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     """The answer flags on `init --yes`, one per question `init --questions` prints.
 
     Each flag's `default` stays `None`, which is what lets `Given` tell a question not asked from
-    an answer. A name and a branch are held to their grammar by `_grammar`, whose refusal names
-    the rule and never the value; every other answer is a `choices`, whose error quotes only
-    the operator's own argument.
+    an answer. A name and a branch are held to their grammar by `keelline.command.grammar`, whose
+    refusal names the rule and never the value; every other answer is a `choices`, whose error
+    quotes only the operator's own argument.
     """
     from keelline.config.schema import (
         BRANCH_NAME,

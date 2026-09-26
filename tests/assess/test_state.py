@@ -595,8 +595,8 @@ def test_every_command_that_runs_gates_gives_a_gate_the_same_json_row(tmp_path: 
     # `reason`, `count` and `failing`; `gate` dropped `reason` and `failing`; `adopt promote`
     # gave no row, only lists of names. Now each is `report.gate_row`, so the rows agree key for
     # key and value for value, and `adopt promote` marks enforcing the gates it promoted.
-    # Mutations (oracle): "adopt promote --json marks no gate it promoted enforcing" and "gate
-    # --json rows drop a gate's reason and failing".
+    # Mutations (oracle): "adopt promote --json marks no gate it promoted enforcing" and "every
+    # command's gate --json row drops failing".
     root, base = _project(tmp_path)
     (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
     code, out, err = cli(root, tmp_path, "assess", "--base", base, "--json")

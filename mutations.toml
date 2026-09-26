@@ -1604,7 +1604,7 @@ reddens = [
 # `--` closes the pathspec but sits behind the slot the base interpolates into, so a `--base` of
 # `--output=<path>` reached `git diff` as git's own option: a file written at a caller-chosen
 # absolute path, outside `contained()` and `fsops`, and exit 0 with empty stdout — so the lint
-# reported OK having linted nothing, which is what `base-unresolvable` exists to prevent.
+# reported OK having linted nothing, which is what raising `BaseUnresolvable` exists to prevent.
 [[mutation]]
 name = "an option-shaped base reaches a git argv slot ahead of `--`"
 file = "src/keelline/docs/plans.py"
@@ -10368,7 +10368,7 @@ reddens = [
 # One gate result, one `--json` row, whichever command ran the gate: `gate` used to drop
 # `reason` and `failing`, and `adopt promote` gave no row at all.
 [[mutation]]
-name = "gate --json rows drop a gate's reason and failing"
+name = "every command's gate --json row drops failing"
 file = "src/keelline/assess/report.py"
 before = """        "failing": result.failing,
     }"""
@@ -10426,10 +10426,11 @@ reddens = [
   "tests/release/test_versions.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-not-json]",
 ]
 
-# A symlinked `keelline.toml` is refused by every command; `doctor` said so as the loader's class
-# name, "(PathEscape)", which is not a reason a person can act on.
+# A symlinked `keelline.toml` is refused by every command, and `doctor` says it is a link. Without
+# the arm it gets the row for a file that does not load, whose remedy is `docs check` and a fix
+# to the file, never replacing the link with the real file.
 [[mutation]]
-name = "doctor names a symlinked keelline.toml by the loader's exception class"
+name = "doctor gives a symlinked keelline.toml the row for a file that does not load"
 file = "src/keelline/doctor/checks.py"
 before = "        if document.is_symlink():"
 after = "        if False:"

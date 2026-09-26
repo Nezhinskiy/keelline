@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs.plans import (
@@ -26,6 +25,7 @@ from keelline.docs.plans import (
 )
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, git_run
+from tests.cli import cli
 from tests.gitfixture import git, plant_path
 
 CONFIG = """
@@ -242,9 +242,7 @@ def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
 
 
 @needs_git
-def test_a_base_that_will_not_resolve_is_raised_never_an_ok(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_base_that_will_not_resolve_is_raised_never_an_ok(tmp_path: Path) -> None:
     # This gate ran green for its whole life on a shallow checkout that had no base ref. The
     # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
     # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
@@ -258,9 +256,9 @@ def test_a_base_that_will_not_resolve_is_raised_never_an_ok(
         lint(root, config, plans=[])
     with pytest.raises(BaseUnresolvable):
         plan_gate(root, config, "refs/remotes/origin/main")
-    common = ["--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
-    assert run(["plan", "check", *common], parser=build_parser(discover_registrars())) == 1
-    printed = json.loads(capsys.readouterr().out)
+    code, out, _ = cli(root, tmp_path, "plan", "check", "--json")
+    assert code == 1
+    printed = json.loads(out)
     assert [f["rule"] for f in printed["findings"]] == ["base-unresolvable"]
     assert printed["linted"] == []
 
@@ -330,9 +328,9 @@ def test_an_option_shaped_base_never_reaches_a_git_argv_slot(tmp_path: Path) -> 
     # argv slot ahead of `--`, so `git diff` read it as its own option, wrote the diff to that
     # absolute path — outside `contained()` and outside `fsops` — and exited 0 with empty
     # stdout. `touched_plans` then answered `[]` instead of None, so a committed plan was never
-    # linted and the command printed OK: the exact state `base-unresolvable` exists to prevent,
-    # reached by a typo. Mutation: drop the `base.startswith("-")` refusal in `touched_plans` —
-    # this reddens, on the written file first.
+    # linted and the command printed OK: the exact state raising `BaseUnresolvable` exists to
+    # prevent, reached by a typo. Mutation: drop the `base.startswith("-")` refusal in
+    # `touched_plans` — this reddens, on the written file first.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     plan(root, "a committed plan with no Scope line, which the gate must not skip\n")
