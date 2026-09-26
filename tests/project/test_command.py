@@ -390,10 +390,17 @@ def test_a_pushed_repository_on_a_feature_branch_gates_main_and_says_how_to_reco
     # default. Mutations (oracle): "an origin with no origin/HEAD takes the branch checked out"
     # -> the base branch assertion reddens; "the unrecorded remote head is never noted" -> the
     # note assertion reddens.
+    #
+    # The remote is created on `main`, as a forge creates it. Left to git's own default, its
+    # `HEAD` named a branch that was never pushed wherever that default is `master` — upstream
+    # git's built-in, which the fixture's sealed configuration leaves in force — so it advertised
+    # no `HEAD` and `set-head --auto` below could not determine one; Apple's git names `main`
+    # from a configuration file of its own that the seal does not reach, which is why that
+    # mismatch never showed on a Mac.
     root = repository(tmp_path)
     git(root, "commit", "-q", "--allow-empty", "-m", "one")
     bare = tmp_path / "origin.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(root, "remote", "set-url", "origin", str(bare))
     git(root, "push", "-q", "-u", "origin", "main")
     git(root, "checkout", "-q", "-b", "chore/adopt-keelline")
@@ -434,7 +441,7 @@ def test_a_repository_whose_only_remote_is_upstream_gates_main_and_says_how_to_a
     if shape == "pushed":
         root = repository(tmp_path, origin=None)
         git(root, "commit", "-q", "--allow-empty", "-m", "one")
-        git(tmp_path, "init", "-q", "--bare", str(bare))
+        git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
         git(root, "remote", "add", "upstream", str(bare))
         git(root, "push", "-q", "-u", "upstream", "main")
     else:

@@ -137,7 +137,7 @@ def _adopting(tmp_path: Path, shape: str) -> Path:
     if shape in ("pushed", "pushed-to-upstream"):
         remote = "origin" if shape == "pushed" else "upstream"
         bare = tmp_path / f"{remote}.git"
-        git(tmp_path, "init", "-q", "--bare", str(bare))
+        git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
         git(root, "remote", "add", remote, str(bare))
         git(root, "push", "-q", "-u", remote, "main")
     git(root, "checkout", "-q", "-b", FEATURE)
