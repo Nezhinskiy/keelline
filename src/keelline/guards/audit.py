@@ -503,7 +503,7 @@ from unittest.mock import MagicMock
 
 from widget.boot import boot_demo
 from widget.fixtures import build_fixtures
-from widget.send import RealSender, RecordingSender
+from widget.send import RecordingSender
 
 
 def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
@@ -526,9 +526,8 @@ def test_recording_sender_keeps_what_it_was_given() -> None:
     assert sender.sent == ["booted"]
 
 
-def test_real_sender_receipt_carries_the_message_id() -> None:
-    """Reuses a name a sibling test bound to a double; here it is the real subject."""
-    sender = RealSender(transport=MagicMock())
+def test_the_senders_receipt_carries_the_message_id(sender) -> None:
+    """`sender` is a fixture here; the double a sibling test bound under that name is not it."""
     receipt = sender.send("booted")
     assert receipt.message_id == "1"
 '''

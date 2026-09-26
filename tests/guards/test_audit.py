@@ -52,12 +52,12 @@ def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
 """
 
 
-# One test binds `sender` to a double; its sibling binds the same name to the real subject.
-# Only the first asserts on a double.
+# One test binds `sender` to a double; its sibling receives a fixture of the same name. Only
+# the first asserts on a double. The sibling takes `sender` as a parameter because that is the
+# one way it can see the name without binding it, and a binding replaces what a name held
+# whether or not the leak is there.
 _SIBLING_REUSES_A_DOUBLES_NAME = """
-from unittest.mock import MagicMock
-
-from widget.send import RealSender, RecordingSender
+from widget.send import RecordingSender
 
 
 def test_recording_sender_keeps_what_it_was_given() -> None:
@@ -65,8 +65,7 @@ def test_recording_sender_keeps_what_it_was_given() -> None:
     assert sender.send("x") == "recorded"
 
 
-def test_real_sender_receipt_carries_the_message_id() -> None:
-    sender = RealSender(transport=MagicMock())
+def test_the_senders_receipt_carries_the_message_id(sender) -> None:
     receipt = sender.send("x")
     assert receipt.message_id == "1"
 """
@@ -180,12 +179,15 @@ def test_a_double_bound_in_one_test_does_not_leak_into_its_siblings(tmp_path: Pa
     """A name bound to a double inside one test is that test's local, and nothing more.
 
     Module-level doubles used to be collected by walking the whole file, so the first test's
-    `sender = RecordingSender()` made `sender` a double in every test of the file, and the
-    second test's assertion on its real subject's receipt read as one on a double's return. On
-    the suite this scanner was extracted from, that was 18 of 28 `assert-on-double` candidates.
+    `sender = RecordingSender()` made `sender` a double in every test of the file. On the suite
+    this scanner was extracted from, that was 18 of 28 `assert-on-double` candidates, each a
+    sibling that bound `sender` to its real subject. A binding now replaces what the name held,
+    which clears those on its own, so the sibling here takes `sender` as a fixture: without
+    this fix it is still reported, and with it it is not.
     """
     # Mutation (declared): the module-scope walk widened back to `ast.walk(tree)`. It also
-    # reddens the self-test, whose known-good corpus carries this shape.
+    # reddens the self-test, whose known-good corpus carries this shape, and the CLI test. With
+    # a sibling that bound `sender` itself, measured: the mutation survived.
     flagged = _tests_flagged_as_asserting_on_a_double(tmp_path, _SIBLING_REUSES_A_DOUBLES_NAME)
     assert flagged == {"test_recording_sender_keeps_what_it_was_given"}
 

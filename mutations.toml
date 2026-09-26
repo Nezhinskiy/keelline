@@ -623,8 +623,9 @@ reddens = [
 ]
 
 # Module-level doubles collected by walking the whole file: a double bound inside one test made
-# the name a double in every sibling, so a sibling's assertion on its real subject read as one
-# on a double's return. Measured here: it also reddens the self-test, whose known-good corpus
+# the name a double in every sibling. The sibling in the named test takes the name as a fixture,
+# because a sibling that binds it replaces what it held either way, and against that shape this
+# mutation survived. Measured here: it also reddens the self-test, whose known-good corpus
 # carries the shape, and the CLI test, because the command refuses on a self-test problem.
 [[mutation]]
 name = "a double bound in one test is a double in every test of the file"
