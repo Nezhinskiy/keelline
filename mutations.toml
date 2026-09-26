@@ -9905,10 +9905,28 @@ reddens = [
 [[mutation]]
 name = "the scope probe never asks past Keelline's workflow"
 file = "src/keelline/assess/probes.py"
-before = "    return Looked(tuple(label for label, path in probed if not _governed(text, path)))"
+before = "    return Looked(tuple(label for label, owned in probed if not owned))"
 after = "    return Looked()"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported",
+]
+
+[[mutation]]
+name = "the scope probe asks about one extension"
+file = "src/keelline/assess/probes.py"
+before = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))'
+after = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml",))'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[one-extension]",
+]
+
+[[mutation]]
+name = "the scope probe asks at a name under Keelline's prefix"
+file = "src/keelline/assess/probes.py"
+before = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))'
+after = '_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/keelline-any-other.{ext}" for ext in ("yml", "yaml"))'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[keelline-s-prefix]",
 ]
 
 [[mutation]]

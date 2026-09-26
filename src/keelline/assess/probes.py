@@ -67,8 +67,10 @@ _ENV_KEEP = (".example", ".sample", ".template")
 _CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")  # GitHub's order
 _WORKFLOWS = ".github/workflows"
 _UNOWNED = f"{_WORKFLOWS}/"
-# A workflow no project names so: a line owns it only by owning the workflows directory, or more.
-_ANY_WORKFLOW = f"{_WORKFLOWS}/keelline-probe-any-other-workflow.yml"
+# A workflow a pull request could add, at a name no project gives one and with no prefix of
+# Keelline's, under both extensions GitHub runs: a line owns every one only by owning the
+# workflows directory, or more. `keelline*` or `*.yml` owned a single `keelline-….yml` probe.
+_ANY_WORKFLOWS = tuple(f"{_WORKFLOWS}/any-other-workflow.{ext}" for ext in ("yml", "yaml"))
 # What reading a file the repository wrote can raise: a path through a symlink, a file that
 # cannot be opened, bytes that are not UTF-8 (a `ValueError`), a settings shape the engine
 # refuses, and JSON nested past the parser's depth, which `json` answers with `RecursionError`.
@@ -362,7 +364,8 @@ def _codeowners(context: ProbeContext) -> Looked:
 
 def _codeowners_scope(context: ProbeContext) -> Looked:
     """Where Keelline's workflow is owned, what else under `.github/` is not: a workflow a pull
-    request adds, probed at a name no project gives one, and the code-owners file itself.
+    request adds, probed at a name no project gives one under both `.yml` and `.yaml`, and the
+    code-owners file itself.
 
     A line owning only `keelline.yml` makes `codeowners` clean while a pull request can still add
     a workflow with a job named like the required check, which GitHub accepts; only a rule as
@@ -377,8 +380,9 @@ def _codeowners_scope(context: ProbeContext) -> Looked:
     if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):
         return Looked()
     relative, text = found
-    probed = ((_UNOWNED, _ANY_WORKFLOW), (relative, relative))
-    return Looked(tuple(label for label, path in probed if not _governed(text, path)))
+    workflows = all(_governed(text, path) for path in _ANY_WORKFLOWS)
+    probed = ((_UNOWNED, workflows), (relative, _governed(text, relative)))
+    return Looked(tuple(label for label, owned in probed if not owned))
 
 
 def _commit_types(context: ProbeContext) -> Looked:

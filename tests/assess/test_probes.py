@@ -659,6 +659,22 @@ def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Pa
         ("CODEOWNERS", "* @owner\n", ()),
         (".github/CODEOWNERS", "*.md @owner\n", ()),
         (".github/CODEOWNERS", f"/.github/ @owner\n/{CI_WORKFLOW}\n", ()),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/keelline* @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/*.yml @owner\n/.github/CODEOWNERS @owner\n",
+            (OWNED_WORKFLOWS,),
+        ),
+        (
+            ".github/CODEOWNERS",
+            "/.github/workflows/*.yml @owner\n/.github/workflows/*.yaml @owner\n"
+            "/.github/CODEOWNERS @owner\n",
+            (),
+        ),
     ],
     ids=[
         "the-caller-alone",
@@ -670,6 +686,9 @@ def test_codeowners_is_not_judged_when_keelline_renders_no_workflow(tmp_path: Pa
         "a-root-file-under-everything",
         "the-caller-unowned",
         "the-caller-left-without-an-owner",
+        "keelline-s-prefix",
+        "one-extension",
+        "both-extensions",
     ],
 )
 def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported(
@@ -679,8 +698,13 @@ def test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_report
     # `keelline.yml` left a pull request free to add a workflow with a job named like the
     # required check, and `codeowners` reported nothing. The scope probe asks about a workflow
     # no project names and about the code-owners file itself, and stays silent where
-    # `codeowners` already reports, so one gap is one warning. Mutation (oracle): "the scope
-    # probe never asks past Keelline's workflow" -> `the-caller-alone` is clean and reddens.
+    # `codeowners` already reports, so one gap is one warning. The workflow probed carries no
+    # prefix of Keelline's and is asked under both extensions GitHub runs: a single
+    # `keelline-….yml` read as owned under `keelline*` and under `*.yml`, while a pull request
+    # could add `ci.yaml` or `other.yml`. Mutations (oracle): "the scope probe never asks past
+    # Keelline's workflow" -> `the-caller-alone` is clean and reddens; "the scope probe asks
+    # about one extension" -> `one-extension` is clean and reddens; "the scope probe asks at a
+    # name under Keelline's prefix" -> `keelline-s-prefix` is clean and reddens.
     root = _repo(tmp_path)
     _write(root, relative, codeowners)
     items = _items(root, tmp_path, "codeowners-scope")
