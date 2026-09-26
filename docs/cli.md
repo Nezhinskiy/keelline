@@ -627,7 +627,7 @@ the store. Silent where no store resolves. **Writes** nothing.
 Rewrite the listing between `## Design and plan trail` and `<!-- end design and plan trail -->`
 in the roadmap: every `*.md` under `[paths] specs` and `[paths] plans` that git tracks and does
 not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap) whose
-`pattern` matches its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
+`pattern` is found in its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
 `delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
 the listing unable to lie by silence: a state naming a document that no longer exists fails
 (`1`) before anything is written, and a document that enters the listing without a declared
@@ -637,8 +637,15 @@ of them, so the first design and plan need their states declared before the firs
 second guard fires on the writing path only: a row enters the listing through
 `docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
 against, so a defaulted `delivered` that was committed over that report is invisible to CI.
-A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern that does not
-compile, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+A theme's `pattern` is a small part of regular-expression syntax, meaning what it means to a
+regular expression: literal text, `.` for any one character, `.*` for any run of them, `|`
+between alternatives, `^` and `$` at an alternative's start and end, and `\` before a
+punctuation character to take it literally — `.*`, `widget` and `gadget|gizmo` are all
+patterns. It is matched without backtracking, so no pattern can make a run take longer than
+the name's length times its own. Any other syntax — a group, a class, `+`, `?` or `{n}` — is
+refused rather than read otherwise.
+A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
+syntax, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
 otherwise split the block and push repository prose into the roadmap. Inside a git work tree,
 a question git gives no answer to — which documents it ignores or tracks, when it cannot be run,

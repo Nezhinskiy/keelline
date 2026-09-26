@@ -9690,3 +9690,37 @@ after = "            if not isinstance(value, int) or value <= 0:"
 reddens = [
   "tests/config/test_loader.py::test_a_gates_table_in_the_wrong_shape_is_refused[time-as-a-bool]",
 ]
+
+# A `trail.toml` theme pattern is repository-authored, and `re` backtracks exponentially on some:
+# `(a+)+$` never finished on a forty-character name. The theme language is a subset of `re`'s
+# syntax matched in one pass, pinned against `re.search` over an enumerated set, and anything
+# else is refused.
+[[mutation]]
+name = "a theme pattern is compiled with re again, whose backtracking a repository can choose"
+file = "src/keelline/docs/trail.py"
+before = '            themes.append((entry["label"], compile_theme(entry["pattern"])))'
+after = '            themes.append((entry["label"], re.compile(entry["pattern"])))'
+reddens = ["tests/docs/test_themes.py::test_a_pattern_re_would_backtrack_on_for_hours_answers_at_once"]
+
+[[mutation]]
+name = "a theme piece is looked for from the start of the name, not after the piece before it"
+file = "src/keelline/docs/themes.py"
+before = "            at = _find(name, piece, position)"
+after = "            at = _find(name, piece, 0)"
+reddens = ["tests/docs/test_themes.py::test_every_pattern_in_the_language_matches_as_re_search_does"]
+
+[[mutation]]
+name = "regular-expression syntax outside the theme language is read as literal text"
+file = "src/keelline/docs/themes.py"
+before = "        elif char in _REFUSED:"
+after = "        elif False:"
+reddens = ["tests/docs/test_themes.py::test_syntax_outside_the_language_is_refused_by_the_rule_alone"]
+
+# `[^\]]+` and `[^)]+` let every opening bracket of `[a](` repeated scan to the end of the text:
+# quadratic, over a document the change under review commits.
+[[mutation]]
+name = "the markdown link reader backtracks quadratically again"
+file = "src/keelline/docs/hygiene.py"
+before = '_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\[\]]+\]\(([^()]+)\)")'
+after = '_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")'
+reddens = ["tests/docs/test_hygiene.py::test_a_text_of_unclosed_links_is_read_in_linear_time"]

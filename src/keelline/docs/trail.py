@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any
 from keelline.config.loader import UNPARSEABLE, toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
+from keelline.docs.themes import RULE as THEME_RULE
+from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
 from keelline.findings import Finding
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
@@ -84,7 +86,7 @@ _PREAMBLE = (
 
 @dataclass(frozen=True)
 class Trail:
-    themes: tuple[tuple[str, re.Pattern[str]], ...]
+    themes: tuple[tuple[str, ThemePattern], ...]
     states: dict[str, str]
 
 
@@ -109,7 +111,9 @@ def _interpolable(value: str) -> bool:
 
 def read_trail(path: Path) -> Trail:
     """`[[theme]]` tables in order (`label`, `pattern`) and a `[states]` table; absent is empty.
-    Every value is repository-authored: a pattern is compiled under `re.error` → `Failure`."""
+    Every value is repository-authored: a pattern outside `docs.themes`' language is a `Failure`,
+    and none is ever handed to `re`, whose backtracking a repository's pattern can make
+    exponential."""
     if not path.is_file():
         return Trail((), {})
     try:
@@ -121,7 +125,7 @@ def read_trail(path: Path) -> Trail:
         # `keelline init` ships, so after this branch every repository `init` touches has one
         # that this function parses, which is what makes the leak newly reachable here.
         raise Failure(f"{path} is not valid TOML {toml_position(exc)}") from None
-    themes: list[tuple[str, re.Pattern[str]]] = []
+    themes: list[tuple[str, ThemePattern]] = []
     # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is
     # repository-authored, and `theme = 1` would otherwise be iterated straight into a
     # `TypeError` the frame reports as an internal error (2). A project's malformed file must
@@ -141,11 +145,11 @@ def read_trail(path: Path) -> Trail:
                 _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
             )
         try:
-            themes.append((entry["label"], re.compile(entry["pattern"])))
-        except re.error as exc:
-            raise Failure(
-                f"{path}: theme {entry['label']!r} has an invalid pattern: {exc}"
-            ) from None
+            themes.append((entry["label"], compile_theme(entry["pattern"])))
+        except ValueError:
+            # The rule and not the pattern: the pattern is the repository's own text, and the
+            # rule is what fixes it.
+            raise Failure(f"{path}: theme {entry['label']!r}: {THEME_RULE}") from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()
