@@ -599,9 +599,58 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     assert (code, out.splitlines()[1]) == (1, "bugs: enforcing, 1 finding(s)")
     git(project, "rm", "-rq", "docs/bugs")
     commit(project, "chore: drop the ledger")
-    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs", "--json")
     assert code == 1
-    assert out.splitlines()[1] == "bugs: enforcing, 1 finding(s)"
+    # The ledger the base carries, and the citation, which names the identifier as well.
+    [bugs] = json.loads(out)["gates"]
+    assert (bugs["name"], bugs["count"]) == ("bugs", 3)
+
+
+def _ledgered(tmp_path: Path, mention: str) -> Path:
+    """A clone whose base enforces `bugs`, carries entry BR-001 and its index, and holds
+    `mention` in `src/a.py`."""
+    enforced = BASE.replace('["docs"]', '["bugs"]')
+    project = clone(tmp_path, enforced, also={"src/a.py": mention})
+    upstream = tmp_path / "upstream"
+    bugs = upstream / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    (bugs / "BR-001.md").write_text(
+        "---\nid: BR-001\ntitle: t\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n"
+        "source:\nfixed_in:\nrelated:\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    parser = build_parser(discover_registrars())
+    common = ["--root", str(upstream), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        assert run(["bugs", "index", *common], parser=parser) == 0
+    commit(upstream, "chore: a ledger")
+    git(project, "fetch", "-q")
+    git(project, "reset", "-q", "--hard", "origin/main")
+    return project
+
+
+@pytest.mark.parametrize(
+    "mention",
+    ["# workaround for BR-001\n", "# nothing about a bug\n"],
+    ids=["mentioned", "unmentioned"],
+)
+def test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate(
+    tmp_path: Path, mention: str
+) -> None:
+    # The review's shape: a bare `BR-001` in code and the whole ledger deleted — directory and
+    # index — answered "nothing to check" and passed. So did deleting the mentions with it. The
+    # base's ledger is one finding, and a mention left behind is another. Mutations (oracle):
+    # "the uninitialised arm ignores the base's ledger" reddens both cases; "with no ledger a
+    # bare mention is not a finding" reddens `mentioned`.
+    project = _ledgered(tmp_path, mention)
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
+    assert (code, out.splitlines()[1]) == (0, "bugs: enforcing, 0 finding(s)"), out
+    git(project, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    commit(project, "chore: drop the ledger")
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs", "--json")
+    assert code == 1
+    [bugs] = json.loads(out)["gates"]
+    assert (bugs["answered"], bugs["count"]) == (True, 2 if "BR-001" in mention else 1)
 
 
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(

@@ -120,6 +120,20 @@ def test_the_bugs_gate_finds_a_broken_entry(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run(tmp_path: Path) -> None:
+    # With no ledger in the tree the gate asks the base whether it had one, and a base this
+    # clone does not have is no answer: could not run, which fails an enforced gate, and never
+    # "the base had none", which would pass the change that deleted the ledger.
+    root, config = smoke(tmp_path)
+    git(root, "rm", "-rq", config.paths.bugs, config.paths.bug_index)
+    [bugs] = results(root, config, "bugs", base="refs/remotes/origin/absent")
+    assert (bugs.answered, bugs.findings) == (False, ())
+    [bugs] = results(root, config, "bugs")
+    # The fixture's own code mentions its entry, which now dangles beside the removed ledger.
+    assert [finding.rule for finding in bugs.findings] == ["ledger-removed", "dangling-mention"]
+
+
+@needs_git
 def test_the_plan_gate_finds_a_plan_the_change_touches(tmp_path: Path) -> None:
     root, config = smoke(tmp_path)
     (root / config.paths.plans / "2026-09-20-new.md").write_text("# New\n", encoding="utf-8")

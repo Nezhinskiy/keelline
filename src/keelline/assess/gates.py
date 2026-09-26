@@ -94,7 +94,13 @@ BUILTIN: tuple[Gate, ...] = (
         "docs check",
         docs_gate,
     ),
-    Gate("bugs", 1, "run `keelline bugs check` and fix each finding", "bugs check", bugs_gate),
+    Gate(
+        "bugs",
+        1,
+        f"run `keelline bugs check --base {BASE}` and fix each finding",
+        f"bugs check --base {BASE}",
+        bugs_gate,
+    ),
     Gate(
         "plan",
         2,

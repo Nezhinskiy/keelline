@@ -191,7 +191,8 @@ def promote(
 ) -> Transition:
     """Enforce the named gates if every one of them passes now, or, with none named, each
     configured gate not yet enforcing that passes; `base` is what `plan` and `commit` judge a
-    range against, and what a custom gate's command must already be on (`machine` loads the
+    range against, what `bugs` reads a ledger the tree lacks from, and what a custom gate's
+    command must already be on (`machine` loads the
     base's copy, as the tree's was loaded)."""
     configured = config.gate_names
     if any(name not in configured for name in names):

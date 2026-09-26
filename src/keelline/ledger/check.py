@@ -6,7 +6,9 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
+from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.identifiers import identifiers
 from keelline.ledger.entries import (
     Entry,
@@ -47,6 +49,16 @@ _EVIDENCE_BOUNDARY = re.compile(
 )
 _CONFLICT_MARKER = re.compile(r"^(<{7} |={7}$|>{7} )", re.MULTILINE)
 _BODY_STATE_BULLET = re.compile(r"^- \*\*(Status|Severity):\*\*", re.MULTILINE)
+LEDGER_REMOVED = (
+    "the base carries the ledger ({bugs} or {index}) and this tree has neither; deleting the "
+    "ledger does not switch the bugs gate off: restore it from the base"
+)
+_BASE_UNREAD = (
+    "git could not list {bugs} and {index} at `{base}` under {root} ({cause}), so whether this "
+    "change deleted the ledger is unknown and the bugs gate proved nothing. In CI the cause is a "
+    "checkout too shallow to hold the base ref (`fetch-depth: 0`); locally it is a `--base` that "
+    "names a ref this clone does not have"
+)
 
 
 def uninitialised(root: Path, config: Config) -> bool:
@@ -55,6 +67,66 @@ def uninitialised(root: Path, config: Config) -> bool:
     were deleted under a generated index that still links every one of them. Only citations
     are checked here, so the gate can be registered before the first entry."""
     return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))
+
+
+def _base_has_ledger(root: Path, config: Config, base: str) -> bool:
+    """Whether the commit `base` names carries the ledger directory or the index: one `git
+    ls-tree` of the two configured paths.
+
+    A base shaped like an option is refused, as `plan check` refuses it, and a base git cannot
+    list is a `Failure` — "could not run" to a gate — and never "the base has no ledger", which
+    would pass exactly the change this question exists to catch.
+    """
+    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")
+    bugs, index = config.paths.bugs, config.paths.bug_index
+    code, out = git_run(root, "ls-tree", "-z", "--name-only", base, "--", bugs, index)
+    if code != 0:
+        cause = NO_ANSWER if code < 0 else f"git exited {code}"
+        raise Failure(
+            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
+        )
+    return bool(out)
+
+
+def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Finding]:
+    """Every identifier the scanned files mention that `known` does not hold, one finding per
+    identifier at its first mention."""
+    found: list[Finding] = []
+    for identifier, locations in sorted(code_mentions(root, config).items()):
+        if identifier not in known:
+            path_, line = locations[0]
+            found.append(
+                Finding(
+                    "dangling-mention",
+                    path_.as_posix(),
+                    line,
+                    f"mentions {identifier}, which has no entry file "
+                    f"(referenced {len(locations)} time(s))",
+                )
+            )
+    return found
+
+
+def _unledgered(root: Path, config: Config, base: str) -> list[Finding]:
+    """The findings for a tree with no ledger: the ledger the base carries, when it carries one,
+    and every mention and citation of an entry, since with no ledger each one dangles.
+
+    "No ledger" is read off the tree, which a pull request writes, so the tree's word for it
+    cannot be what switches the gate off: the base is asked whether it had one, and a mention
+    of an identifier is as much a reference as a citation of its file. A project that registers
+    the gate before its first entry has no ledger on its base and mentions none, and stays
+    green. With no `base` — `bugs check` run without `--base` — only the tree is judged.
+    """
+    found: list[Finding] = []
+    if base and _base_has_ledger(root, config, base):
+        bugs, index = config.paths.bugs, config.paths.bug_index
+        found.append(
+            Finding("ledger-removed", bugs, None, LEDGER_REMOVED.format(bugs=bugs, index=index))
+        )
+    empty: set[str] = set()
+    found.extend(_dangling_mentions(root, config, empty))
+    return found + _dangling_citations(root, config, empty)
 
 
 def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Finding]:
@@ -76,20 +148,19 @@ def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Fin
     return found
 
 
-def problems(root: Path, config: Config) -> list[Finding]:
+def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
     """Every ledger violation under `root`, most structural first.
 
     Before the ledger directory exists *and* before this tool has written an index there is
     nothing it owns, which is what lets the check be registered in CI one change before the
-    first entry is filed: only a citation of an entry file is reported then, since with no
-    ledger every one of them dangles. "No ledger" is read off the tree, which a pull request
-    writes, so deleting the ledger cannot switch the gate off while anything still cites it; a
-    project with no entry yet cites none. A generated index with no ledger directory behind it
-    is the other thing that shape describes, and it is the ledger having been deleted.
+    first entry is filed: only a reference to an entry is reported then, since with no ledger
+    every one of them dangles, and, against a `base`, a ledger the base carries
+    (`_unledgered`). A generated index with no ledger directory behind it is the other thing
+    that shape describes, and it is the ledger having been deleted.
     """
     found: list[Finding] = []
     if uninitialised(root, config):
-        return _dangling_citations(root, config, set())
+        return _unledgered(root, config, base)
     ids = identifiers(config)
     bugs = bugs_dir(root, config)
     index_name = config.paths.bug_index
@@ -193,18 +264,7 @@ def problems(root: Path, config: Config) -> list[Finding]:
     elif current != render_index(sorted(entries, key=lambda e: e.number), config):
         found.append(Finding("stale-index", index_name, None, "is stale; run: keelline bugs index"))
 
-    for identifier, locations in sorted(code_mentions(root, config).items()):
-        if identifier not in known:
-            path_, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-mention",
-                    path_.as_posix(),
-                    line,
-                    f"mentions {identifier}, which has no entry file "
-                    f"(referenced {len(locations)} time(s))",
-                )
-            )
+    found.extend(_dangling_mentions(root, config, known))
     # Wider than the scan above, and reported separately because a citation says something a
     # bare mention does not: it names a path, so a reader who follows it gets a 404 rather than
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
@@ -214,9 +274,9 @@ def problems(root: Path, config: Config) -> list[Finding]:
 
 def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
     """The `bugs` gate's whole composition: every ledger violation, and before there is a
-    ledger every citation of an entry file.
+    ledger every reference to an entry and a ledger the base carries.
 
-    `bugs check` answers with this function. `base` is unread: every
-    gate takes the same three arguments, so `keelline.assess.gates` holds each one as a value.
+    `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
+    tree alone; every gate run passes the base it judges against.
     """
-    return problems(root, config)
+    return problems(root, config, base)

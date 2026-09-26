@@ -48,7 +48,7 @@ Three things hold everywhere:
 - [`keelline test attribute --command CMD [--base REF]`](#keelline-test-attribute---command-cmd---base-ref)
 - [`keelline bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#keelline-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`keelline bugs index [--check]`](#keelline-bugs-index---check)
-- [`keelline bugs check`](#keelline-bugs-check)
+- [`keelline bugs check [--base REF]`](#keelline-bugs-check---base-ref)
 - [`keelline bugs renumber OLD NEW`](#keelline-bugs-renumber-old-new)
 - [`keelline docs check [--budgets] [--links] [--memory-graph] [--store PATH]`](#keelline-docs-check---budgets---links---memory-graph---store-path)
 - [`keelline docs trail [--check]`](#keelline-docs-trail---check)
@@ -571,7 +571,7 @@ paragraph is recognised structurally rather than by an exact string, so an index
 older generated format is still read as generated rather than refused as hand-written content.
 **Writes** `<paths.bug_index>`.
 
-## `keelline bugs check`
+## `keelline bugs check [--base REF]`
 
 Every rule the ledger holds, in one pass: each entry parses under the flat frontmatter subset
 and its `id:` matches its filename; no entry restates `**Status:**`/`**Severity:**` in its
@@ -584,10 +584,14 @@ files and `[ledger] code_roots` has an entry (a `void` entry counts); every cita
 file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
 line; `--json` carries every finding with its `detail`, which may quote the repository and is
 why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
-generated index — the one rule is the citation rule, and every citation of an entry file dangles:
-with none it prints `nothing to check` and exits `0`, so the check can be required before the first
-entry, and a change that deletes the ledger still answers for what cites it. A generated index with
-no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
+generated index — every mention of an identifier and every citation of an entry file dangles, and
+with `--base <ref>` a ledger that commit carries (its `[paths] bugs` or `bug_index`) is one
+`ledger-removed` finding: with none of them it prints `nothing to check` and exits `0`, so the
+check can be required before the first entry, and a change that deletes the ledger answers for the
+ledger and for everything that refers to it. `--base` is what the `bugs` gate passes, the base it
+judges against; a base git cannot list fails (`1`) rather than read as a base with no ledger, and
+under a gate that is the gate not running. Without `--base` the tree alone is judged. A generated
+index with no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
 is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A
 file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither
 scanned nor swept. **Writes** nothing.
@@ -688,10 +692,11 @@ probes below, which read files and the git index and never run a tool or reach t
 commands you have not agreed to run. The summary names the custom gates it left out, which count
 toward no total, and the inventory lists them under `skipped`.
 
-`REF` is the revision `plan` and `commit` compare against, default
-`refs/remotes/origin/<project.base_branch>` — the fully qualified name, so a tag cannot stand in
-for it. Where that ref does not exist (no `origin`, or not fetched), `plan` reports
-`base-unresolvable` and `commit` could not run, and both count as failing.
+`REF` is the revision `plan` and `commit` compare against, and the one `bugs` asks whether it
+carried the ledger when the tree has none, default `refs/remotes/origin/<project.base_branch>` —
+the fully qualified name, so a tag cannot stand in for it. Where that ref does not exist (no
+`origin`, or not fetched), `plan` reports `base-unresolvable` and `commit` could not run, as does
+`bugs` in a tree with no ledger, and each counts as failing.
 
 A gate that could not judge the tree — an unreadable plan, a range git cannot read, a custom
 gate that could not start or ran past `custom_timeout_seconds` — is failing: a gate that could
@@ -944,10 +949,11 @@ read are each refused before the first gate runs; a refusal from the editor name
 as the command would write them when the write itself refuses, so following it either leaves the
 project as it was or makes the transition whole.
 
-`--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
-commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable
-workflow judges against `[ci] gate_branch`; where the two differ, pass `--base` to judge as CI
-will. Run on the base branch itself, that range is empty and those two gates pass having judged
+`--base` is what `plan` and `commit` judge a range against, and what `bugs` asks about a ledger
+the tree lacks, as for `keelline gate`: a 40-hex commit or a `refs/…` name,
+`refs/remotes/origin/<project.base_branch>` by default. The reusable workflow judges against `[ci]
+gate_branch`, which is that branch unless the file sets it; where the two differ, pass `--base` to
+judge as CI will. Run on the base branch itself, that range is empty and those two gates pass having judged
 nothing; the pull request that carries a promotion faces every gate it promotes in its own run.
 A custom gate runs its command here, as it does under `keelline gate`, and only when that
 command is the one the base's `keelline.toml` gives it: a gate the base does not have, or has

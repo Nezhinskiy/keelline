@@ -7544,7 +7544,7 @@ reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_
 [[mutation]]
 name = "the bugs gate finds nothing"
 file = "src/keelline/ledger/check.py"
-before = "    return problems(root, config)"
+before = "    return problems(root, config, base)"
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
 
@@ -8136,7 +8136,7 @@ reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_t
 [[mutation]]
 name = "a tree with no ledger reports no citation of an entry file"
 file = "src/keelline/ledger/check.py"
-before = "        return _dangling_citations(root, config, set())"
+before = "        return _unledgered(root, config, base)"
 after = "        return found"
 reddens = [
   "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
@@ -9823,4 +9823,56 @@ before = "        return HEAD_CURRENT"
 after = '        return ""'
 reddens = [
   "tests/project/test_command.py::test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted",
+]
+
+# "No ledger" is read off the tree, which a pull request writes: the `bugs` gate asks its base
+# whether it carried the ledger, and with no ledger in the tree every mention of an identifier
+# dangles as much as a citation of its file. A base git cannot list is could not run.
+[[mutation]]
+name = "the uninitialised arm ignores the base's ledger"
+file = "src/keelline/ledger/check.py"
+before = "    if base and _base_has_ledger(root, config, base):"
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding",
+  "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate",
+]
+
+[[mutation]]
+name = "a base git cannot list reads as a base with no ledger"
+file = "src/keelline/ledger/check.py"
+before = "    if code != 0:"
+after = "    if code < 0:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+  "tests/assess/test_gates.py::test_a_base_the_bugs_gate_cannot_list_is_a_gate_that_could_not_run",
+]
+
+[[mutation]]
+name = "the bugs gate's base reaches git shaped like an option"
+file = "src/keelline/ledger/check.py"
+before = '    if base.startswith("-"):'
+after = "    if False:"
+reddens = [
+  "tests/ledger/test_check.py::test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger",
+]
+
+[[mutation]]
+name = "with no ledger a bare mention is not a finding"
+file = "src/keelline/ledger/check.py"
+before = "    found.extend(_dangling_mentions(root, config, empty))"
+after = "    pass"
+reddens = [
+  "tests/ledger/test_check.py::test_with_no_ledger_a_bare_mention_dangles_too",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_and_its_index_fails_an_enforced_bugs_gate[mentioned]",
+]
+
+[[mutation]]
+name = "bugs check drops its --base"
+file = "src/keelline/ledger/commands.py"
+before = '    found = bugs_gate(root, config, args.base or "")'
+after = "    found = bugs_gate(root, config)"
+reddens = [
+  "tests/ledger/test_commands.py::test_check_with_a_base_answers_for_a_ledger_the_base_carries",
 ]

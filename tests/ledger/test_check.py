@@ -5,13 +5,18 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+
+import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.errors import Failure, Refusal
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
 from keelline.ledger.entries import load_entries
 from keelline.ledger.index import render_index
+from tests.gitfixture import git, needs_git
 
 CONFIG = """
 [keelline]
@@ -75,19 +80,92 @@ def test_with_no_ledger_every_citation_of_an_entry_file_dangles(tmp_path: Path) 
     (root / "docs" / "roadmap.md").write_text("see [x](bugs/BR-404.md)\n", encoding="utf-8")
     assert uninitialised(root, config)
     found = problems(root, config)
+    # The code's citation names the identifier too, so it is a mention as well, as it is once a
+    # ledger exists; the roadmap is outside the trees swept for mentions.
     assert [(p.rule, p.path, p.line) for p in found] == [
+        ("dangling-mention", "src/a.py", 1),
         ("dangling-citation", "src/a.py", 1),
         ("dangling-citation", "docs/roadmap.md", 1),
     ]
 
 
-def test_with_no_ledger_a_bare_mention_is_not_a_finding(tmp_path: Path) -> None:
-    # A citation names a file that is not there; a bare identifier in code before the first
-    # entry is a coincidence of spelling as often as a claim, and stays unreported until a
-    # ledger exists to hold it to.
+def test_with_no_ledger_a_bare_mention_dangles_too(tmp_path: Path) -> None:
+    # A bare identifier is the ordinary way code refers to a bug, so with the ledger deleted a
+    # `# workaround for BR-001` is as dangling as a citation of its file: reported only for
+    # citations, deleting the ledger and its index switched an enforced gate off for every
+    # mention. Mutation (oracle): "with no ledger a bare mention is not a finding" -> nothing is
+    # reported.
     root, config = project(tmp_path)
-    (root / "src" / "a.py").write_text("# BR-001\n", encoding="utf-8")
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    assert [(p.rule, p.path, p.line) for p in problems(root, config)] == [
+        ("dangling-mention", "src/a.py", 1)
+    ]
+
+
+def _based(tmp_path: Path, on_base: str) -> tuple[Path, Config, str]:
+    """A project whose one commit carries `on_base` of the ledger (`both`, `directory`, `index`
+    or `none`), with the tree then emptied of it; the commit's id is the base."""
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    if on_base in ("both", "directory"):
+        ledger(root, config, {"BR-001": entry(1)})
+    if on_base == "directory":
+        (root / "docs" / "bug-reports.md").unlink()
+    if on_base == "index":
+        (root / "docs" / "bug-reports.md").write_text(render_index([], config), encoding="utf-8")
+    (root / "README.md").write_text("widget\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    shutil.rmtree(root / "docs" / "bugs", ignore_errors=True)
+    (root / "docs" / "bug-reports.md").unlink(missing_ok=True)
+    return root, config, base
+
+
+@needs_git
+@pytest.mark.parametrize("on_base", ["both", "directory", "index"])
+def test_a_tree_that_deleted_the_base_s_ledger_is_one_ledger_removed_finding(
+    tmp_path: Path, on_base: str
+) -> None:
+    # "No ledger" is read off the tree, which the change wrote, so the base is asked whether it
+    # had one: deleting the ledger, the index and every mention together passed, with nothing
+    # left in the tree to dangle. Mutation (oracle): "the uninitialised arm ignores the base's
+    # ledger" -> nothing is reported.
+    root, config, base = _based(tmp_path, on_base)
+    assert uninitialised(root, config)
+    assert [(p.rule, p.path) for p in problems(root, config, base)] == [
+        ("ledger-removed", "docs/bugs")
+    ]
+    # Without a base the tree alone is judged, as `bugs check` without `--base` judges it.
     assert problems(root, config) == []
+    # And a mention still dangles beside it: both are the change's to answer for.
+    (root / "src" / "a.py").write_text("# workaround for BR-001\n", encoding="utf-8")
+    assert [p.rule for p in problems(root, config, base)] == ["ledger-removed", "dangling-mention"]
+
+
+@needs_git
+def test_a_base_with_no_ledger_leaves_a_project_before_its_first_entry_green(
+    tmp_path: Path,
+) -> None:
+    # The gate can be enforced before the first entry: no ledger on the base and no reference
+    # in the tree is nothing to report.
+    root, config, base = _based(tmp_path, "none")
+    assert problems(root, config, base) == []
+
+
+@needs_git
+def test_a_base_git_cannot_list_never_reads_as_a_base_with_no_ledger(tmp_path: Path) -> None:
+    # A base this clone does not have is a question with no answer, and "the base had no
+    # ledger" would pass exactly the change the question exists to catch: a `Failure`, which a
+    # gate run reports as could not run. Mutation (oracle): "a base git cannot list reads as a
+    # base with no ledger" -> `problems` returns `[]`.
+    root, config, _base = _based(tmp_path, "both")
+    with pytest.raises(Failure) as caught:
+        problems(root, config, "refs/remotes/origin/main")
+    assert "proved nothing" in str(caught.value)
+    # Shaped like an option, it is refused before git sees it, as `plan check` refuses it.
+    with pytest.raises(Refusal):
+        problems(root, config, "--output=x")
 
 
 def test_a_generated_index_with_no_entries_directory_is_a_deleted_ledger(tmp_path: Path) -> None:
