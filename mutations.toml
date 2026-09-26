@@ -8379,17 +8379,6 @@ reddens = [
   "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
 ]
 
-# The search for a step's script walked past the step into the next one, so a step whose script
-# is not a `run: |` block handed back its neighbour's, and a case about one step ran another.
-[[mutation]]
-name = "a step's script is searched for past the step"
-file = "tests/test_fixtures.py"
-before = '    run = next(i for i in range(start, end) if lines[i].strip() == "run: |")'
-after = '    run = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")'
-reddens = [
-  "tests/test_fixtures.py::test_a_step_s_script_is_never_read_from_the_step_after_it",
-]
-
 # `-c` with its flags joined, `-Pc`, is the same program on the command line, and it slipped a
 # pattern written for `-c` alone.
 [[mutation]]
@@ -8407,6 +8396,175 @@ name = "a step runs a program from standard input"
 file = ".github/workflows/check.yml"
 before = "        run: python3 -m keelline --version"
 after = "        run: echo 'import keelline' | python3 -"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The strict reader every workflow test reads through. YAML never ends a block at a comment, and
+# the `env:` reader it replaced did: a key written after a comment at seven or eight spaces was
+# in no assertion. Count a comment as content and a comment line ends a block, or is refused as
+# a line nothing owns.
+[[mutation]]
+name = "the workflow reader counts a comment line as content"
+file = "tests/workflow_yaml.py"
+before = '        return bool(self.text) and not self.text.startswith("#")'
+after = "        return bool(self.text)"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_comment_or_a_blank_line_never_ends_a_block",
+]
+
+# A reader that keeps one of two values for one key lets the other pass unseen: a `PYTHONPATH`
+# into the checkout first and the good one last read as the good one.
+[[mutation]]
+name = "the workflow reader keeps the last of a key written twice"
+file = "tests/workflow_yaml.py"
+before = "            if key in mapping:"
+after = "            if False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_key_written_twice_in_one_mapping_is_refused",
+]
+
+# A plain scalar that continues on the next line is a value this reader would read as its first
+# line alone, so it is refused.
+[[mutation]]
+name = "the workflow reader reads a continued plain scalar as its first line"
+file = "tests/workflow_yaml.py"
+before = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if following is not None and following.indent > indent:
+"""
+after = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if False:
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[plain-continued]",
+]
+
+# A line indented between a block's key and its children belongs to nothing; read on, it would be
+# a key of whichever mapping the reader happened to be in.
+[[mutation]]
+name = "the workflow reader passes over a line nothing owns"
+file = "tests/workflow_yaml.py"
+before = """
+                if line.indent > indent:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+after = """
+                if False:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[orphan-indentation]",
+]
+
+# A literal block ends at the first non-blank line indented less than its first line. Read past
+# it, and a step's script swallows the step's own `env:`, and the next step's.
+[[mutation]]
+name = "the workflow reader runs a literal block past its end"
+file = "tests/workflow_yaml.py"
+before = "                elif line.indent < body_indent:"
+after = "                elif False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_literal_block_ends_at_a_line_indented_less_even_a_comment",
+  "tests/test_workflow_yaml.py::test_every_workflow_reads_whole_and_agrees_with_the_run_scan",
+]
+
+# The re-review's probe: a comment at the step's own indentation inside the judging step's
+# `env:`, then `BASH_ENV`, which the step's non-interactive bash sources before its script.
+[[mutation]]
+name = "a key after a comment at the step's indentation in the judging step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+        # a note
+          BASH_ENV: project/.ci-env
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And at seven spaces in the custom step, with `PYTHONUSERBASE`, which `-P` leaves on.
+[[mutation]]
+name = "a key after a comment at seven spaces in the custom step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+       # a note
+          PYTHONUSERBASE: project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An earlier step's environment reaches the judging step through `$GITHUB_ENV` and `$GITHUB_PATH`
+# the moment that step runs anything the pull request wrote: `BASH_ENV` on the proof step
+# sources a file from the checkout before `python3 -m keelline --version`.
+[[mutation]]
+name = "the proof step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        env:
+          PYTHONPATH: keelline/src
+        run: python3 -m keelline --version
+"""
+after = """
+        env:
+          PYTHONPATH: keelline/src
+          BASH_ENV: project/.ci-env
+        run: python3 -m keelline --version
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And the base step, which runs from the caller's checkout, so a relative `BASH_ENV` names a file
+# the pull request wrote.
+[[mutation]]
+name = "the base step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = "          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+after = """          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BASH_ENV: .ci-env"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A script that writes `$GITHUB_ENV` or `$GITHUB_PATH` chooses every later step's environment or
+# interpreter, outside any step's `env:` block, where no equality over the blocks can see it.
+[[mutation]]
+name = "the base step sets the environment of every later step"
+file = ".github/workflows/check.yml"
+before = """          } >> "$GITHUB_OUTPUT\""""
+after = """          } >> "$GITHUB_OUTPUT"
+          echo "PYTHONPATH=project" >> "$GITHUB_ENV\""""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The whitelist read only what followed `python`: an assignment in front of the command, such as
+# `PYTHONUSERBASE=…`, passed it, and `-P` leaves the user site directory on.
+[[mutation]]
+name = "the judging step's command gains an assignment in front of it"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]

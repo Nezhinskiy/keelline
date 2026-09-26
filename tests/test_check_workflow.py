@@ -1,11 +1,11 @@
 """`check.yml`'s one job, held to its shape and its two gate steps run as the scripts they are.
 
-The repository carries no YAML parser, so the job is read as lines: its steps by the `- name:`
-and `- uses:` lines at the steps' indentation, and each gate step's `run: |` body extracted from
-the shipped file by `step_script` and run with `bash` in a workspace laid out as the runner lays
-it out — the caller's checkout at `project/`, against a real clone, with the real `keelline gate`.
-Only the two checkouts and `setup-python` are the platform's and are not run here; the base
-step's own cases are in `tests/test_fixtures.py`.
+The repository carries no YAML parser, so the file is read by `tests.workflow_yaml`, one strict
+reader that returns the whole document or fails naming the line it cannot read, and each gate
+step's script is taken from it by `step_script` and run with `bash` in a workspace laid out as
+the runner lays it out — the caller's checkout at `project/`, against a real clone, with the
+real `keelline gate`. Only the two checkouts and `setup-python` are the platform's and are not
+run here; the base step's own cases are in `tests/test_fixtures.py`.
 
 **What the judging step must hold.** It is the step whose exit status is the verdict, so it runs
 no command the repository wrote (`--builtin`) and imports nothing from the working directory
@@ -32,9 +32,9 @@ from tests.test_fixtures import (
     ROOT,
     needs_bash,
     needs_workflow,
-    run_blocks,
     step_script,
 )
+from tests.workflow_yaml import Node, load
 
 JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
@@ -53,97 +53,111 @@ LOOSENED = BASE.replace('["docs"]', "[]")
 # Well past the preset's `AGENTS.md` budget, so the `docs` gate has a finding.
 OVER_BUDGET = "".join("word\n" for _ in range(400))
 
-# A step starts at a `- name:` or a `- uses:` line at the steps' indentation. A `uses:` step may
-# carry a trailing `# vN`, which a reader anchored at `\S+$` refused, and so never counted
-# `setup-python`: the walk's count is only a claim about the job if every spelling is read.
-_STEP = re.compile(r"^      - (?:name: (?P<name>.+)|uses: (?P<uses>\S+)(?:\s+#.*)?)$")
-# A plain mapping key at the start of a line; `_keys` says what a line that is not one means.
-_KEY_LINE = re.compile(r"^ *(?P<key>[a-z-]+):(?: |$)")
-_ENV_ENTRY = re.compile(r"^          (?P<key>[A-Z_]+): (?P<value>.+)$")
-# Every interpreter the job starts, and what follows it on the line. Only two invocations are
-# Keelline's, and a whitelist rather than a list of bad spellings: `-c` with flags before it,
-# `-Pc`, a program on standard input (`python3 -`, a heredoc, a pipe) and a script path are each
-# a program the working directory can reach, and a pattern for each is a pattern for the ones
-# thought of.
-_PYTHON = re.compile(r"\bpython[\d.]*\b(?P<rest>[^\n]*)")
-KEELLINE_INVOCATIONS = (" -m keelline --version", " -P -m keelline gate ")
-# Each step's keys past its dash line, in order: what may reach each step is its keys, so a key
-# added to any step — `if:`, `continue-on-error:`, `shell:`, `working-directory:` — reddens.
-STEP_KEYS = [
-    ("The caller's repository", ["uses", "with"]),
-    ("Keelline, at this workflow's own commit", ["uses", "with"]),
-    ("The checkout is the commit this workflow file is at", ["env", "run"]),
-    ("actions/setup-python", ["with"]),
-    (PROOF, ["env", "run"]),
-    (BASE_STEP, ["id", "working-directory", "env", "run"]),
-    (JUDGE, ["env", "run"]),
-    (CUSTOM, ["env", "run"]),
+# Every interpreter the job starts, anchored at the start of its command line. Only two
+# invocations are Keelline's, and a whitelist rather than a list of bad spellings: `-c` with
+# flags before it, `-Pc`, a program on standard input, a script path, an assignment in front of
+# the command (`PYTHONUSERBASE=… python3 …`) or a wrapper (`env`, `exec`) are each a way the
+# checkout reaches the interpreter, and a pattern for each is a pattern for the ones thought of.
+_PYTHON = re.compile(r"\bpython[\d.]*\b")
+KEELLINE_INVOCATIONS = ("python3 -m keelline --version", "python3 -P -m keelline gate ")
+GATE_ENV: dict[str, Node] = {
+    "PYTHONPATH": "keelline/src",
+    "ROOT": "${{ steps.base.outputs.root }}",
+    "BASE_SHA": "${{ steps.base.outputs.base_sha }}",
+    "WORKFLOW_SHA": "${{ job.workflow_sha }}",
+    "ONLY": "${{ inputs.only }}",
+}
+SCRIPT = "<script>"
+# The job, every step whole but its script, in order; an action is named without its ref, so a
+# pin moving is not a change here. Everything that reaches a step's process other than the
+# platform's own variables is in this list: its `env:`, its working directory, its action's
+# inputs, and whether it may fail or be skipped (a key the list does not carry).
+STEPS: list[dict[str, Node]] = [
+    {
+        "name": "The caller's repository",
+        "uses": "actions/checkout",
+        "with": {"path": "project", "fetch-depth": "0", "persist-credentials": "false"},
+    },
+    {
+        "name": "Keelline, at this workflow's own commit",
+        "uses": "actions/checkout",
+        "with": {
+            "repository": "${{ job.workflow_repository }}",
+            "ref": "${{ job.workflow_sha }}",
+            "path": "keelline",
+            "persist-credentials": "false",
+        },
+    },
+    {
+        "name": "The checkout is the commit this workflow file is at",
+        "env": {"EXPECTED": "${{ job.workflow_sha }}"},
+        "run": SCRIPT,
+    },
+    {"uses": "actions/setup-python", "with": {"python-version": "${{ inputs.python-version }}"}},
+    {"name": PROOF, "env": {"PYTHONPATH": "keelline/src"}, "run": SCRIPT},
+    {
+        "name": BASE_STEP,
+        "id": "base",
+        "working-directory": "project",
+        "env": {
+            "INPUT_BASE": "${{ inputs.base }}",
+            "INPUT_PATH": "${{ inputs.path }}",
+            "PR_BASE": "${{ github.base_ref }}",
+            "DEFAULT_BRANCH": "${{ github.event.repository.default_branch }}",
+        },
+        "run": SCRIPT,
+    },
+    {"name": JUDGE, "env": GATE_ENV, "run": SCRIPT},
+    {"name": CUSTOM, "env": GATE_ENV, "run": SCRIPT},
 ]
 
 
-def _jobs_text() -> str:
-    """The file from its `jobs:` key on, read at call time: the sdist carries no `.github/`."""
-    text = CHECK_WORKFLOW.read_text(encoding="utf-8")
-    return text[text.index("\njobs:\n") :]
+def _workflow() -> dict[str, Node]:
+    """`check.yml`, read at call time (the sdist carries no `.github/`) by the strict reader."""
+    document = load(CHECK_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), document
+    return document
 
 
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip(" "))
+def _job() -> dict[str, Node]:
+    jobs = _workflow()["jobs"]
+    assert isinstance(jobs, dict) and list(jobs) == ["gates"], jobs
+    job = jobs["gates"]
+    assert isinstance(job, dict), job
+    return job
 
 
-def _meaningful(line: str) -> bool:
-    """Neither blank nor a comment: a line YAML reads as content."""
-    stripped = line.strip()
-    return bool(stripped) and not stripped.startswith("#")
+def _steps() -> list[dict[str, Node]]:
+    steps = _job()["steps"]
+    assert isinstance(steps, list) and all(isinstance(step, dict) for step in steps), steps
+    return [step for step in steps if isinstance(step, dict)]
 
 
-def _keys(text: str, indent: int) -> list[str]:
-    """Every key at exactly `indent` spaces in `text`, in order.
-
-    A line at that indentation that is content and not a plain key — a quoted key, a flow
-    mapping, a list item — fails here instead of being skipped: a line reader that passes over
-    what it cannot read reports clean over exactly that line.
-    """
-    keys: list[str] = []
-    for line in text.splitlines():
-        if not _meaningful(line) or _indent(line) != indent:
-            continue
-        match = _KEY_LINE.match(line)
-        assert match is not None, f"not a plain key at {indent} spaces: {line!r}"
-        keys.append(match.group("key"))
-    return keys
+def _name(step: dict[str, Node]) -> str:
+    name = step.get("name") or step.get("uses")
+    assert isinstance(name, str), step
+    return name.split("@")[0]
 
 
-def _steps() -> list[tuple[str, str]]:
-    """`(name, text)` for each step of the job, in order; a `uses:` step with no name is named
-    by its action, without the ref.
-
-    Every line from `steps:` to the end of the file belongs to a step, and a content line that
-    is neither a step's dash line nor indented past it fails here: a step spelled `- run:` or
-    `- id:` would otherwise be read as lines of the step above it, and the walk would count
-    eight steps over nine.
-    """
-    text = _jobs_text()
-    marker = "\n    steps:\n"
-    steps: list[tuple[str, list[str]]] = []
-    for line in text[text.index(marker) + len(marker) :].splitlines():
-        match = _STEP.match(line)
-        if match is not None:
-            name = match.group("name") or match.group("uses").split("@")[0]
-            steps.append((name, [line]))
-            continue
-        if not _meaningful(line):
-            if steps:
-                steps[-1][1].append(line)
-            continue
-        assert steps and _indent(line) >= 8, f"a line no step owns: {line!r}"
-        steps[-1][1].append(line)
-    return [(name, "\n".join(lines) + "\n") for name, lines in steps]
+def _step(name: str) -> dict[str, Node]:
+    return next(step for step in _steps() if _name(step) == name)
 
 
-def _step_text(name: str) -> str:
-    """Every line of the named step, from its dash line to the next step's."""
-    return dict(_steps())[name]
+def _shape(step: dict[str, Node]) -> dict[str, Node]:
+    """The step without its script's text and its action's ref."""
+    shaped: dict[str, Node] = {}
+    for key, value in step.items():
+        if key == "run":
+            shaped[key] = SCRIPT
+        elif key == "uses" and isinstance(value, str):
+            shaped[key] = value.split("@")[0]
+        else:
+            shaped[key] = value
+    return shaped
+
+
+def _scripts() -> list[str]:
+    return [step["run"] for step in _steps() if isinstance(step.get("run"), str)]  # type: ignore[misc]
 
 
 def _clone(tmp_path: Path, base: str = BASE) -> tuple[Path, str]:
@@ -162,27 +176,11 @@ def _commit(workspace: Path, path: str, text: str) -> None:
 
 
 def _step_env(step: str) -> dict[str, str]:
-    """The named step's `env:` block, as written: each key and its value's text.
-
-    The block is every line indented past the `env:` key, up to the next line that is not, as
-    YAML reads it; and every one of those lines must be an entry. A reader that stopped at the
-    first line it could not parse — a comment, a blank line, a key with a digit in it — left
-    every key after that line out of the equality that holds the block, and out of the
-    environment the cases run the step under.
-    """
-    lines = _step_text(step).splitlines()
-    start = lines.index("        env:") + 1
-    owned: list[str] = []
-    for line in lines[start:]:
-        if line.strip() and _indent(line) <= 8:
-            break
-        owned.append(line)
-    assert [line for line in owned if not _ENV_ENTRY.match(line)] == [], owned
-    return {
-        match.group("key"): match.group("value")
-        for match in (_ENV_ENTRY.match(line) for line in owned)
-        if match is not None
-    }
+    """The named step's `env:` block, as the strict reader reads it: every key, a comment or a
+    blank line anywhere in it notwithstanding, and a key written twice refused."""
+    env = _step(step).get("env")
+    assert isinstance(env, dict) and all(isinstance(v, str) for v in env.values()), env
+    return {key: value for key, value in env.items() if isinstance(value, str)}
 
 
 def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tuple[int, str, str]:
@@ -242,20 +240,19 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # `keelline gate` already exits 0 for an advisory gate's findings, so no step here needs
     # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
     # step gains `if: always()`, which would run the repository's commands after a refusal.
-    assert _keys(_jobs_text(), 2) == ["gates"], _keys(_jobs_text(), 2)
+    job = _job()
     # And the job itself carries neither: an `if:` on `gates` skips it, and a skipped job is a
     # required check the platform reports as passing. So the job's keys are held whole, which
     # also keeps a job-level `env:` from reaching every step. Mutation (declared): the job gains
     # an `if:`.
-    assert _keys(_jobs_text(), 4) == ["runs-on", "timeout-minutes", "defaults", "steps"]
+    assert list(job) == ["runs-on", "timeout-minutes", "defaults", "steps"], list(job)
     steps = _steps()
-    names = [name for name, _ in steps]
-    # Every step's keys, whole, in order: a step that may fail or may be skipped carries a key
-    # the list does not, and a step spelled `- run:` with no name is a line no step owns, which
-    # the walk refuses rather than fold into the step above it. Mutation (declared): such a step
-    # before the proof step.
-    found = [(name, _keys(text, 8)) for name, text in steps]
-    assert found == STEP_KEYS, found
+    names = [_name(step) for step in steps]
+    # Every step's keys, whole and in order: a step that may fail or may be skipped carries a
+    # key the list does not, and a step with no name is a ninth step. Mutation (declared): such
+    # a step before the proof step.
+    found = [(_name(step), list(step)) for step in steps]
+    assert found == [(_name(step), list(step)) for step in STEPS], found
     # A Keelline that cannot run fails under its own name before anything reads as a finding,
     # the base is resolved before either gate step reads it, and the repository's own commands
     # run last.
@@ -275,20 +272,20 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     for step in (JUDGE, CUSTOM):
         assert "python3 -P -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
     # And no interpreter the job starts runs anything but Keelline, in any spelling: every
-    # invocation in every script, comments aside, is one of Keelline's two. Mutations (declared):
-    # the proof step runs `python3 -P -c`, `python3 -Pc`, or a program on standard input.
+    # command line that names one, comments aside, starts with one of Keelline's two
+    # invocations. Mutations (declared): the proof step runs `python3 -P -c`, `python3 -Pc`, or a
+    # program on standard input; the judging step's command gains an assignment in front of it.
     invocations = [
-        match.group("rest")
-        for block in run_blocks(CHECK_WORKFLOW)
-        for line in block.splitlines()
-        if _meaningful(line)
-        for match in _PYTHON.finditer(line)
+        line.strip()
+        for script in _scripts()
+        for line in script.splitlines()
+        if not line.strip().startswith("#") and _PYTHON.search(line)
     ]
     assert len(invocations) == 3, invocations
     assert [
-        rest
-        for rest in invocations
-        if rest != KEELLINE_INVOCATIONS[0] and not rest.startswith(KEELLINE_INVOCATIONS[1])
+        line
+        for line in invocations
+        if line != KEELLINE_INVOCATIONS[0] and not line.startswith(KEELLINE_INVOCATIONS[1])
     ] == [], invocations
 
 
@@ -300,7 +297,7 @@ def test_the_judging_step_passes_the_platform_s_workflow_sha_through_env() -> No
     # which needs a released tag, so the wiring is held here. Mutation (declared): drop
     # `--workflow-sha "$WORKFLOW_SHA"`.
     assert '--workflow-sha "$WORKFLOW_SHA"' in step_script(CHECK_WORKFLOW, JUDGE)
-    assert "          WORKFLOW_SHA: ${{ job.workflow_sha }}\n" in _step_text(JUDGE)
+    assert _step_env(JUDGE)["WORKFLOW_SHA"] == "${{ job.workflow_sha }}"
 
 
 @needs_git
@@ -389,34 +386,26 @@ def test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them(tmp_pa
 
 @needs_workflow
 def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> None:
-    """Everything that reaches a gate step's process, held whole, because `-P` covers only the
-    working directory: a `PYTHONPATH` entry inside the checkout, a `PYTHONSTARTUP`, a
-    `working-directory: project` or an `env:` one level up would each hand the pull request a
-    module in the process that decides the verdict.
+    """Everything that reaches a step's process, held whole for every step, because `-P` covers
+    only the working directory: a `PYTHONPATH` entry inside the checkout, a `PYTHONUSERBASE`, a
+    `working-directory: project`, or a `BASH_ENV` the step's non-interactive bash sources would
+    each hand the pull request code in the process that decides the verdict — or, in an
+    earlier step, code that writes `$GITHUB_ENV` or `$GITHUB_PATH` and so chooses the next
+    steps' environment and interpreter.
 
-    What reaches it: the workflow's and the job's own keys (neither may carry an `env:`), the
-    job's `defaults:` (the shell and nothing else), the step's own keys (`env:` and `run:`, so no
-    `working-directory:` and no `shell:`), the step's `env:` block (exactly these five, with
-    `PYTHONPATH` naming Keelline's checkout alone), and `setup-python`'s inputs (the version and
-    nothing that reads a file from the checkout). The runner's own variables and the `PATH`
-    `setup-python` extends are the platform's; no step before these runs anything the pull
-    request wrote, which the step walk above holds.
+    What reaches it: the workflow's keys (no `env:`), the job's (no `env:`, no `if:`), the job's
+    `defaults:` (the shell and nothing else), and each step whole but for its script's text —
+    `env:`, `with:`, `working-directory:` and every other key — read by the strict reader, so a
+    comment or a blank line inside a block hides nothing, and a key written twice is refused.
+    No script writes `$GITHUB_ENV` or `$GITHUB_PATH` at all. The runner's own variables and the
+    `PATH` `setup-python` extends are the platform's.
     """
-    text = CHECK_WORKFLOW.read_text(encoding="utf-8")
-    assert _keys(text, 0) == ["name", "on", "permissions", "jobs"], _keys(text, 0)
-    assert "    defaults:\n      run:\n        shell: bash\n    steps:\n" in _jobs_text()
-    for step in (JUDGE, CUSTOM):
-        assert _keys(_step_text(step), 8) == ["env", "run"], step
-        assert _step_env(step) == {
-            "PYTHONPATH": "keelline/src",
-            "ROOT": "${{ steps.base.outputs.root }}",
-            "BASE_SHA": "${{ steps.base.outputs.base_sha }}",
-            "WORKFLOW_SHA": "${{ job.workflow_sha }}",
-            "ONLY": "${{ inputs.only }}",
-        }, step
-    setup = _step_text("actions/setup-python")
-    assert _keys(setup, 10) == ["python-version"], setup
-    assert "          python-version: ${{ inputs.python-version }}\n" in setup, setup
+    workflow = _workflow()
+    assert list(workflow) == ["name", "on", "permissions", "jobs"], list(workflow)
+    assert _job()["defaults"] == {"run": {"shell": "bash"}}, _job()["defaults"]
+    assert [_shape(step) for step in _steps()] == STEPS, [_shape(step) for step in _steps()]
+    # Mutation (declared): the base step appends to `$GITHUB_ENV`.
+    assert [s for s in _scripts() if "GITHUB_ENV" in s or "GITHUB_PATH" in s] == []
 
 
 @needs_git
