@@ -8887,7 +8887,7 @@ reddens = [
 [[mutation]]
 name = "adopt begin accepts a plan not named as an adoption plan"
 file = "src/keelline/assess/state.py"
-before = "    if not is_adoption_plan(config, resolved.relative_to(root).as_posix()):"
+before = "    if not is_adoption_plan(config, relative):"
 after = "    if False:"
 reddens = [
   "tests/assess/test_state.py::test_begin_refuses_a_plan_that_is_not_an_adoption_plan",
@@ -8983,8 +8983,8 @@ reddens = [
 [[mutation]]
 name = "adopt promote exits 0 with a gate failing"
 file = "src/keelline/assess/commands.py"
-before = '    return Result("; ".join(parts), data, exit_code=1 if advisory else 0)'
-after = '    return Result("; ".join(parts), data)'
+before = '    return Result("\n".join(lines), data, exit_code=1 if advisory else 0)'
+after = '    return Result("\n".join(lines), data)'
 reddens = [
   "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
 ]
@@ -9012,9 +9012,9 @@ reddens = [
 ]
 
 [[mutation]]
-name = "adopt begin reads a plan outside the root or absent"
+name = "adopt begin reads a plan outside the root"
 file = "src/keelline/assess/state.py"
-before = "    if not resolved.is_file() or not resolved.is_relative_to(root):"
+before = "    if not resolved.is_relative_to(root):"
 after = "    if False:"
 reddens = [
   "tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent",
@@ -9212,3 +9212,38 @@ file = "src/keelline/docs/plans.py"
 before = "    base = base or local_base(config)"
 after = '    base = base or f"origin/{config.project.base_branch}"'
 reddens = ["tests/docs/test_plans.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base"]
+
+[[mutation]]
+name = "adopt begin reads a plan that is not there"
+file = "src/keelline/assess/state.py"
+before = "    if not resolved.is_file():"
+after = "    if False:"
+reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent"]
+
+# A first trail listing records a row with no declared state as `delivered`, without a word, and
+# the first document of a fresh project is its adoption plan.
+[[mutation]]
+name = "adopt begin accepts a plan whose trail row declares no state"
+file = "src/keelline/assess/state.py"
+before = '    if "trail" in config.gate_names and declared_state(root, config, relative) is None:'
+after = "    if False:"
+reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_row_declares_no_state"]
+
+# A custom gate can leave `keelline.toml` unparseable before the promotion writes; relabelled as a
+# shape the editor does not rewrite, the remedy sends the person to edit two keys of a file that
+# does not load.
+[[mutation]]
+name = "a promotion relabels a document that does not parse as a shape refusal"
+file = "src/keelline/assess/state.py"
+before = "    except UnparsedDocument:"
+after = "    except ():"
+reddens = ["tests/assess/test_state.py::test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml"]
+
+# `--root ..` was refused in the symlink sentence with nothing linked. Still refused, since `..`
+# after a linked component is not what the spelling names, and now for what it is.
+[[mutation]]
+name = "a root spelled with '..' is refused as a symlink"
+file = "src/keelline/assess/rule.py"
+before = '    if ".." in lexical.parts:'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]

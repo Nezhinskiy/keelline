@@ -33,6 +33,12 @@ HELD = "{count} more {level} annotation(s) not shown; the job summary counts the
 # and the job summary alike.
 BOOTSTRAP = "the base has no keelline.toml at this path, so this tree's decides"
 UNCHANGED = "keelline.toml unchanged from the base"
+# The last line of a run a gate failed: the lines are counts, and this says where what they count
+# is. Fixed text, so nothing a repository wrote reaches it.
+FINDINGS_ELSEWHERE = (
+    "details: `keelline assess --json` lists every finding, and each gate's own command shows "
+    "its own"
+)
 
 
 @dataclass(frozen=True)

@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import pytest
 
-from keelline.assess.state import begin, promote
+from keelline.assess.commands import BASE_NOT_THERE
+from keelline.assess.report import FINDINGS_ELSEWHERE
+from keelline.assess.state import NO_SUCH_PLAN, begin, promote
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load, preset_defaults
 from keelline.config.owned import OwnedKeyError
@@ -60,12 +63,26 @@ def _project(tmp_path: Path) -> tuple[Path, str]:
     git(root, "add", "-A")
     git(root, "commit", "-qm", "chore: adopt keelline")
     (root / ADOPTION).write_text(PLAN, encoding="utf-8")
+    _declare(root, "in progress")
     git(root, "add", "-A")
     code, _, err = _cli(root, tmp_path, "docs", "trail")
     assert code == 0, err
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the keelline adoption plan")
     return root, git(root, "rev-parse", "HEAD~1").strip()
+
+
+TRAIL = Path(preset_defaults("widget").paths.roadmap).parent / "trail.toml"
+ROW = f"{Path(PLANS).name}/{Path(ADOPTION).name}"
+
+
+def _declare(root: Path, state: str | None) -> None:
+    """Give the adoption plan's trail row `state` under `[states]`, or none."""
+    text = (root / TRAIL).read_text(encoding="utf-8")
+    text = "".join(line for line in text.splitlines(keepends=True) if not line.startswith('"'))
+    if state is not None:
+        text += f'"{ROW}" = "{state}"\n'
+    (root / TRAIL).write_text(text, encoding="utf-8")
 
 
 def _config(root: Path, tmp_path: Path) -> Config:
@@ -122,19 +139,37 @@ def test_begin_refuses_a_plan_that_is_not_an_adoption_plan(tmp_path: Path) -> No
 
 
 def test_begin_refuses_a_plan_outside_the_root_or_absent(tmp_path: Path) -> None:
-    # Both are refused before `plan check` reads anything, and in the same words: a message that
-    # named the path would print what the caller typed back to it, and the rule is one sentence.
-    # Mutation (declared): the file-and-containment check made `if False:` -> the absent plan
-    # reaches `plan check`, which fails rather than refuses, and the one outside the root raises
-    # `ValueError` from `relative_to`.
+    # Both are refused before `plan check` reads anything, and neither message names the path: it
+    # would print what the caller typed back to it. An absent plan whose name keeps the rule is
+    # told it is not there, not that its name is wrong, so a typo in the date reads as one.
+    # Mutations (declared): the containment check made `if False:` -> the plan outside the root
+    # raises `ValueError` from `relative_to`; the file check made `if False:` -> the absent plan
+    # reaches `plan check`, which fails rather than refuses.
     root, _ = _project(tmp_path)
     outside = tmp_path / PLANS / "2026-09-24-keelline-adoption.md"
     outside.parent.mkdir(parents=True)
     outside.write_text(PLAN, encoding="utf-8")
-    for plan in (outside, root / PLANS / "2026-09-25-keelline-adoption.md"):
-        with pytest.raises(Refusal, match="adoption plan"):
-            begin(root, _config(root, tmp_path), plan)
+    with pytest.raises(Refusal, match="adoption plan must be"):
+        begin(root, _config(root, tmp_path), outside)
+    with pytest.raises(Refusal, match=re.escape(NO_SUCH_PLAN)):
+        begin(root, _config(root, tmp_path), root / PLANS / "2026-09-25-keelline-adoption.md")
     assert _config(root, tmp_path).keelline.state == "initialised"
+
+
+def test_begin_refuses_a_plan_whose_trail_row_declares_no_state(tmp_path: Path) -> None:
+    # A first trail listing records a document with no declared state as `delivered`, and says
+    # nothing: the adoption plan would sit in the roadmap as shipped work before a line of it
+    # ran. `begin` holds the plan to a declared state while the project runs the `trail` gate.
+    # Mutation (declared): the check made `if False:` -> the project is marked adopting.
+    root, _ = _project(tmp_path)
+    _declare(root, None)
+    before = _document(root)
+    with pytest.raises(Failure, match="declares no state"):
+        begin(root, _config(root, tmp_path), root / ADOPTION)
+    assert _document(root) == before
+    _declare(root, "delivered")
+    transition = begin(root, _config(root, tmp_path), root / ADOPTION)
+    assert transition.after == "adopting"
 
 
 def test_begin_fails_an_adoption_plan_that_fails_plan_check(tmp_path: Path) -> None:
@@ -387,6 +422,23 @@ def test_an_uneditable_document_s_remedy_names_the_list_as_it_stands(tmp_path: P
     assert "config" not in message
 
 
+def test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml(tmp_path: Path) -> None:
+    # A custom gate is a command, and one that appends `[[broken` to `keelline.toml` while it
+    # runs leaves a document that does not parse by the time the promotion writes. The editor
+    # says so with the parser's position; relabelled as "a shape Keelline does not rewrite", the
+    # remedy sent the person to edit two keys in a file that does not load. Mutation (declared):
+    # the parse refusal relabelled again -> the shape sentence comes back.
+    root, base = _project(tmp_path)
+    corrupt = f"open({CONFIG_FILE!r}, 'a').write('[[broken')"
+    with (root / CONFIG_FILE).open("a", encoding="utf-8") as stream:
+        stream.write(_custom("corrupt", corrupt))
+    with pytest.raises(OwnedKeyError) as refused:
+        promote(root, _config(root, tmp_path), ["corrupt"], base=base)
+    message = str(refused.value)
+    assert "is not valid TOML" in message
+    assert "shape" not in message
+
+
 def test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs(tmp_path: Path) -> None:
     # The write re-stamps the manifest's record of `keelline.toml`, so a manifest that does not
     # parse refuses the write; found only there, it was found after every gate, a custom
@@ -447,6 +499,21 @@ def test_a_promotion_is_what_the_gate_enforces_next(tmp_path: Path) -> None:
     assert (code, out.splitlines()) == (0, ["docs: enforcing, 0 finding(s)"]), err
 
 
+def test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not_pass(
+    tmp_path: Path,
+) -> None:
+    # The fixture has an origin and no remote-tracking ref, so the default base is not there:
+    # `plan` reports `base-unresolvable` and `commit` could not run, which read as a defect in
+    # the plan. The note says why and names `--base`, and the last line where the findings are.
+    # Mutation (by hand): the note dropped -> the `--base` assertion reddens.
+    root, _ = _project(tmp_path)
+    code, out, err = _cli(root, tmp_path, "adopt", "promote")
+    assert code == 1, err
+    lines = out.splitlines()
+    assert "still advisory: plan (1 finding(s)), commit (could not run)" in lines[0]
+    assert lines[1:] == [BASE_NOT_THERE, FINDINGS_ELSEWHERE]
+
+
 def test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists(tmp_path: Path) -> None:
     # Mutation (declared): `exit_code=1 if advisory else 0` dropped -> exits 0 with `docs` still
     # advisory.
@@ -497,9 +564,10 @@ def test_a_gate_that_could_not_run_is_named_and_the_command_exits_1(tmp_path: Pa
     before = _document(root)
     code, out, err = _cli(root, tmp_path, "adopt", "promote", "absent", "--base", base)
     assert code == 1, err
-    assert out.strip() == (
-        "promoted: nothing; still advisory: absent (could not run); state initialised"
-    )
+    assert out.splitlines() == [
+        "promoted: nothing; still advisory: absent (could not run); state initialised",
+        FINDINGS_ELSEWHERE,
+    ]
     assert _document(root) == before
 
 

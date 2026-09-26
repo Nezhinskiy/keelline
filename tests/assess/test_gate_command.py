@@ -17,7 +17,7 @@ import pytest
 
 import keelline
 from keelline.assess import rule
-from keelline.assess.report import BOOTSTRAP
+from keelline.assess.report import BOOTSTRAP, FINDINGS_ELSEWHERE
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
@@ -191,7 +191,7 @@ def test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails(
     code, out, err = _gate(project, tmp_path)
     assert code == 1, err
     assert out.splitlines()[0].endswith("refused: paths.bugs")
-    assert _heads(out) == ["config", *BUILTINS]
+    assert _heads(out) == ["config", *BUILTINS, "details"]
     assert not (project / "marker").exists()
 
 
@@ -209,7 +209,7 @@ def test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces(
     code, out, _ = _gate(project, tmp_path, "--builtin")
     assert code == 1
     assert out.splitlines()[0] == "config: 1 change(s), 1 refused: gates.custom.tests.run"
-    assert _heads(out) == ["config", *BUILTINS]
+    assert _heads(out) == ["config", *BUILTINS, "details"]
     code, out, _ = _gate(project, tmp_path, "--custom")
     assert (code, out.strip()) == (0, "tests: enforcing, 0 finding(s)")
     assert not (project / "marker").exists()
@@ -258,7 +258,7 @@ def test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it(
     assert out.splitlines()[0] == (
         "config: 2 change(s), 2 refused: gates.custom.tests.run, keelline.enforced"
     )
-    assert _heads(out) == ["config", *BUILTINS]
+    assert _heads(out) == ["config", *BUILTINS, "details"]
     assert not (project / "marker").exists()
     code, out, _ = _gate(project, tmp_path, "--custom")
     assert (code, out.strip()) == (0, "tests: enforcing, 0 finding(s)")
@@ -309,7 +309,32 @@ def test_the_enforced_gate_fails_on_its_findings(tmp_path: Path) -> None:
     _change(project, BASE, agents=OVER_BUDGET)
     code, out, _ = _gate(project, tmp_path, "--only", "docs")
     assert code == 1
-    assert out.strip() == "docs: enforcing, 2 finding(s)"
+    assert out.splitlines()[0] == "docs: enforcing, 2 finding(s)"
+
+
+def test_a_failing_run_ends_by_saying_where_the_findings_are(tmp_path: Path) -> None:
+    # The printed lines are counts, and a first-time user had no pointer to the findings behind
+    # them. One fixed line, and only on a run with a failing gate. Mutation (by hand): the line
+    # dropped -> the last line is the gate's.
+    project = clone(tmp_path, BASE)
+    _change(project, BASE, agents=OVER_BUDGET)
+    code, out, _ = _gate(project, tmp_path, "--only", "docs")
+    assert code == 1
+    assert out.splitlines() == ["docs: enforcing, 2 finding(s)", FINDINGS_ELSEWHERE]
+    _change(project, BASE, agents=AGENTS)
+    code, out, _ = _gate(project, tmp_path, "--only", "docs")
+    assert (code, out.splitlines()) == (0, ["docs: enforcing, 0 finding(s)"])
+
+
+def test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is(tmp_path: Path) -> None:
+    # `--root ..` from a subdirectory was refused with the symlink sentence, and nothing was
+    # linked: `..` after a linked component is not the directory the spelling suggests, so the
+    # refusal stays and says why. Mutation (by hand): the check removed -> the symlink sentence.
+    project = clone(tmp_path, BASE)
+    (project / "sub").mkdir()
+    code, out, err = _gate(project / "sub" / "..", tmp_path, "--only", "config")
+    assert (code, out) == (2, "")
+    assert "`..`" in err and "symlink" not in err
 
 
 def test_a_name_given_twice_runs_once(tmp_path: Path) -> None:
@@ -419,12 +444,12 @@ def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path:
     git(project, "reset", "-q", "--hard", "origin/main")
     code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
     # With the ledger in place the citation resolves; the stale index is the one finding.
-    assert (code, out.strip()) == (1, "bugs: enforcing, 1 finding(s)")
+    assert (code, out.splitlines()[0]) == (1, "bugs: enforcing, 1 finding(s)")
     git(project, "rm", "-rq", "docs/bugs")
     commit(project, "chore: drop the ledger")
     code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
     assert code == 1
-    assert out.strip() == "bugs: enforcing, 1 finding(s)"
+    assert out.splitlines()[0] == "bugs: enforcing, 1 finding(s)"
 
 
 def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
@@ -447,6 +472,7 @@ def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Pat
     code, _, err = _gate(project, tmp_path, "--base", "refs/remotes/origin/absent")
     assert code == 1
     assert "fetch-depth: 0" in err
+    assert "refs/heads/main" in err  # the local remedy, for a clone with no origin
 
 
 def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(

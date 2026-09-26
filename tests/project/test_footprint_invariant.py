@@ -53,7 +53,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import pytest
@@ -64,6 +64,7 @@ from keelline.attach.write import LEDGER as ATTACH_LEDGER
 from keelline.config.layout import local_base
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import KEELLINE_DIRECTORY
+from keelline.docs.api import trail_target
 from keelline.errors import Refusal
 from keelline.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
 from keelline.project.templates import LOCAL_ELIGIBLE
@@ -84,6 +85,10 @@ CLAUDE_COPY = f"{LOCAL_ARTIFACTS}/CLAUDE.md"
 CLAUDE_COPY_FOLDED = f"{LOCAL_ARTIFACTS}/claude.md"
 # The adoption plan the `adopt` rows hand to `begin`: setup, written when absent, not the command.
 ADOPTION_PLAN = "2026-09-25-keelline-adoption.md"
+# What the setup edits by hand as a person adopting would: the adoption plan's state goes into
+# `trail.toml`, which its own header says is maintained by hand, and `adopt begin` refuses a plan
+# whose row declares none. `upgrade` keeps that edit and says so, which is not work left.
+HAND_EDITED = {("trail", "skip_modified")}
 PLAN_TEXT = "# Adoption\n\n**Scope:** adoption.\n\n**Premise:** none.\n"
 
 
@@ -383,13 +388,18 @@ def _refusals(report: Report) -> list[str]:
 
 
 def _adopt(command: Literal["adopt-begin", "adopt-promote"], root: Path, tmp_path: Path) -> None:
-    """`begin` over the adoption plan, written first when absent, or `promote` of `docs`."""
+    """`begin` over the adoption plan, written first when absent with its trail row's state, or
+    `promote` of `docs`."""
     config = load(root, machine=tmp_path / "absent.toml")
     if command == "adopt-begin":
         plan = root / config.paths.plans / ADOPTION_PLAN
         if not plan.exists():
             plan.parent.mkdir(parents=True, exist_ok=True)
             plan.write_text(PLAN_TEXT, encoding="utf-8")
+            trail = root / trail_target(config)
+            row = f"{PurePosixPath(config.paths.plans).name}/{ADOPTION_PLAN}"
+            with trail.open("a", encoding="utf-8") as stream:
+                stream.write(f'"{row}" = "in progress"\n')
         begin(root, config, plan)
         return
     transition = promote(root, config, ["docs"], base=local_base(config))
@@ -492,7 +502,11 @@ def _assert_invariant(
             )
         except Refusal as refused:
             pytest.fail(f"I3: a dry-run upgrade after a finished {finished} refused: {refused}")
-        planned = [(a.artifact_id, str(a.verb), a.target) for a in report.footprint.actions]
+        planned = [
+            (a.artifact_id, str(a.verb), a.target)
+            for a in report.footprint.actions
+            if (a.artifact_id, str(a.verb)) not in HAND_EDITED
+        ]
         assert planned == [], f"I3: a finished {finished} left work for the next upgrade: {planned}"
         assert _refusals(report) == [], f"I3: after a finished {finished}: {_refusals(report)}"
 

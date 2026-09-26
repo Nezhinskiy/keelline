@@ -28,6 +28,7 @@ from keelline.config.schema import Config
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
 from keelline.project.init import HEAD_DEFAULTED
 from keelline.project.templates import _ci
+from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
 from keelline.runner import Completed
 from keelline.scaffold import Manifest
@@ -518,6 +519,25 @@ def test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_
         assert code == 0, printed
         assert CUSTOM_GATES.format(count=2, names="lint, tests") in printed.splitlines()
         assert '"true"' not in printed
+
+
+@needs_git
+def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> None:
+    # An adopted file is recorded nowhere, so no report line named it, and it stays with the
+    # version `init` added. The note says so. Mutation (by hand): the note dropped -> no line.
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes")
+    assert code == 0, printed
+    parser = build_parser(discover_registrars())
+    argv = ["uninstall", "--root", str(root), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()) as out:
+        assert run([*argv, "--dry-run"], parser=parser) == 0
+    assert f"note: {KEPT_CONFIG}" in out.getvalue().splitlines()
+    with redirect_stdout(io.StringIO()) as out:
+        assert run([*argv, "--json"], parser=parser) == 0
+    assert json.loads(out.getvalue())["kept_config"] is True
+    assert (root / "keelline.toml").is_file()
 
 
 @needs_git

@@ -27,7 +27,8 @@ After the footprint is written:
    `trail.toml` beside the roadmap, under `[states]`, give both documents a state — the key is
    the listing's row, the last segment of `[paths] specs` or `plans`, a slash and the file name
    (`specs/<file>`, not `docs/specs/<file>`), the value one line such as `in progress`:
-   unset, a new document is listed `delivered`. Stage both documents (the listing reads only
+   unset, a new document is listed `delivered`, and the adoption command refuses the plan.
+   Stage both documents (the listing reads only
    tracked files), run `keelline docs trail`, then `keelline docs trail --check`.
 5. Show the user the plan's path, and say that the next command rewrites Keelline's own keys
    in `keelline.toml`. Ask for an explicit yes. **Silence, a timeout or an empty answer is a

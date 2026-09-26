@@ -60,7 +60,8 @@ from keelline.overlay.api import later
 BASE_UNREADABLE = (
     "the base is not in this checkout, or git could not read its keelline.toml, so the "
     "configuration that governs this change cannot be read; check out with full history "
-    "(fetch-depth: 0), or pass a --base that exists"
+    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/main in a clone with "
+    "no origin"
 )
 BASE_SHAPE = (
     "--base takes a full 40-character commit id or a full ref name starting with refs/: a "
@@ -85,6 +86,11 @@ ROOT_UNANSWERED = (
     f"read: {NO_ANSWER}, or git refused the repository (a checkout of dubious ownership, a "
     "worktree whose git directory is gone)"
 )
+ROOT_DOT_DOT = (
+    "the project root is given with a `..` component, and `..` after a component that is a link "
+    "is not the directory the spelling names, so the base's keelline.toml could be looked for "
+    "in the wrong place; pass the root by its real path, with no `..`"
+)
 ROOT_THROUGH_SYMLINK = (
     "the project root is reached through a symlink, or git spells its path differently from the "
     "caller, so the base's keelline.toml would be looked for in the wrong place; pass the root by "
@@ -105,6 +111,8 @@ def repository_prefix(root: Path) -> str:
     """The project root's path inside its repository, `""` at the top or `"a/b/"` below it: git's
     spelling, which is refused unless it is also the caller's."""
     lexical = root.absolute()
+    if ".." in lexical.parts:
+        raise Refusal(ROOT_DOT_DOT)
     code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
     if code != 0:
         # Read off the disk, as git finds a repository: git refuses a checkout of dubious

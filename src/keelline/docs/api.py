@@ -8,7 +8,8 @@ whole area — and with it the configuration layer — into every `discover()` c
 
 **Outside this area, `project` imports `trail_target` (the paragraphs on `trail_path` and
 `trail_target` say why), `keelline.assess.gates` imports the three gate functions (the last
-paragraph) and `keelline.assess.state` imports `lint`, to check an adoption plan; nothing imports
+paragraph) and `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
+plan; nothing imports
 any other name on this list**, measured over `src/`, `scripts/` and `tests/`: this area's own
 tests reach `keelline.docs.plans`, `keelline.docs.hygiene`, `keelline.docs.graph` and
 `keelline.docs.trail` directly, and every other lane runs the commands. So every other name below
@@ -62,6 +63,10 @@ the project area needs is the location, and the engine contains every target it 
 `trail_target` is that location, with no disk access, and `trail_path` stays in
 `keelline.docs.trail` for this area's own commands.
 
+**And by `declared_state`, for `keelline adopt begin`**, which refuses an adoption plan whose
+trail row declares no state: a first listing would record it as `delivered` without a word, and
+the row's spelling and the trail's reading are this area's.
+
 **And grows by three gate functions, for `keelline assess`.** `docs_gate`, `plan_gate` and
 `trail_gate` are each `(root, config, base) -> list[Finding]`, one gate's whole composition.
 `keelline assess` runs them as values, and this area's own commands answer with the same
@@ -72,13 +77,14 @@ wraps (`plan check` calls `lint`), so a command and its gate cannot drift apart.
 from keelline.docs.graph import check_memory_graph
 from keelline.docs.hygiene import check_budgets, check_links, docs_gate
 from keelline.docs.plans import Lint, lint, plan_gate
-from keelline.docs.trail import trail_gate, trail_target
+from keelline.docs.trail import declared_state, trail_gate, trail_target
 
 __all__ = [
     "Lint",
     "check_budgets",
     "check_links",
     "check_memory_graph",
+    "declared_state",
     "docs_gate",
     "lint",
     "plan_gate",

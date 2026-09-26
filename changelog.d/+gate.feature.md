@@ -16,3 +16,6 @@ Both copies of `keelline.toml` are read as UTF-8, whatever the locale: a base co
 UTF-8 text fails the run (exit 1) in the words the tree's own copy fails in, and is never
 parsed. A base copy that does not load fails the run too, and the message names the base's copy,
 which only a direct push to the base branch can fix; it is never read as the base having none.
+
+A run that fails with a gate failing ends by saying where the findings are, and a project root
+given with a `..` component is refused in words that say so.

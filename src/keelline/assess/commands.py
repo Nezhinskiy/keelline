@@ -62,6 +62,11 @@ BEGUN = (
     "`keelline adopt promote` enforces it"
 )
 KEPT = "the plan passes plan check; the state stays {after}"
+BASE_NOT_THERE = (
+    "note: the base plan and commit compare against is not in this checkout (no origin, or not "
+    "fetched), so plan reports base-unresolvable and commit could not run; fetch it, or pass "
+    "--base with a refs/ name or a commit id that exists, such as refs/heads/main"
+)
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
     "the configuration check, and every other name is a gate from [gates]"
@@ -94,7 +99,13 @@ def run_gate(args: argparse.Namespace) -> Result:
     from keelline import __version__
     from keelline.assess import rule
     from keelline.assess.gates import GateContext, run_gates
-    from keelline.assess.report import GateRun, config_line, summary, workflow_commands
+    from keelline.assess.report import (
+        FINDINGS_ELSEWHERE,
+        GateRun,
+        config_line,
+        summary,
+        workflow_commands,
+    )
     from keelline.config.layout import local_base
     from keelline.config.loader import ConfigError, loads, read_document
     from keelline.config.schema import CONFIG_CHECK
@@ -179,6 +190,10 @@ def run_gate(args: argparse.Namespace) -> Result:
         # repository chooses it.
         with Path(args.summary).open("a", encoding="utf-8") as stream:
             stream.write(summary(gate_run))
+    if gate_run.exit_code and any(result.failing for result in results):
+        # Only on a run that fails: an advisory gate's findings are the ordinary state of an
+        # adoption, and its line already counts them.
+        lines.append(FINDINGS_ELSEWHERE)
     if args.annotate:
         lines += workflow_commands(gate_run)
     return Result("\n".join(lines), data, exit_code=gate_run.exit_code)
@@ -207,11 +222,14 @@ def run_adopt_begin(args: argparse.Namespace) -> Result:
 
 
 def run_adopt_promote(args: argparse.Namespace) -> Result:
+    from keelline.assess.report import FINDINGS_ELSEWHERE
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
+    from keelline.gitenv import git_run
 
     root, config = root_and_config(args)
-    transition = promote(root, config, args.gates, base=args.base or local_base(config))
+    base = args.base or local_base(config)
+    transition = promote(root, config, args.gates, base=base)
     # Gate names only: the loader holds each to a grammar, and a count is Keelline's own.
     advisory = [f"{name} ({count} finding(s))" for name, count in transition.failing.items()]
     advisory += [f"{name} (could not run)" for name in transition.unanswered]
@@ -219,8 +237,16 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     if advisory:
         parts.append(f"still advisory: {', '.join(advisory)}")
     parts.append(f"state {transition.after}")
+    lines = ["; ".join(parts)]
+    if advisory:
+        judged = {*transition.failing, *transition.unanswered} & {"plan", "commit"}
+        # The base is the parser's grammar or the loader's, and is not printed either way.
+        found = git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options", base)[0]
+        if judged and found != 0:
+            lines.append(BASE_NOT_THERE)
+        lines.append(FINDINGS_ELSEWHERE)
     data = _transition(transition)
-    return Result("; ".join(parts), data, exit_code=1 if advisory else 0)
+    return Result("\n".join(lines), data, exit_code=1 if advisory else 0)
 
 
 def register(groups: SubParsers) -> None:

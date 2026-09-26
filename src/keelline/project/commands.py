@@ -346,7 +346,7 @@ UNINSTALL_HEADINGS = {
 
 
 def run_uninstall(args: argparse.Namespace) -> Result:
-    from keelline.project.uninstall import KEPT_LOCALLY, uninstall
+    from keelline.project.uninstall import KEPT_CONFIG, KEPT_LOCALLY, uninstall
 
     force = _force_paths(args.force)
     report = uninstall(
@@ -382,6 +382,8 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         lines.append(f"note: {report.note}")
     if report.kept_locally:
         lines.append(f"note: {KEPT_LOCALLY.format(count=report.kept_locally)}")
+    if report.kept_config:
+        lines.append(f"note: {KEPT_CONFIG}")
     if unmatched := _unmatched(force, report.footprint, report.once):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
     data = {
@@ -392,6 +394,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         "orphans": report.orphans,
         "note": report.note,
         "kept_locally": report.kept_locally,
+        "kept_config": report.kept_config,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

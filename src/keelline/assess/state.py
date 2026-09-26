@@ -31,9 +31,9 @@ from pathlib import Path
 from keelline.assess.gates import GateContext, run_gates
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
-from keelline.config.owned import OwnedKeyError, rewrite
+from keelline.config.owned import OwnedKeyError, UnparsedDocument, rewrite
 from keelline.config.schema import CONFIG_CHECK, Config
-from keelline.docs.api import lint
+from keelline.docs.api import declared_state, lint
 from keelline.errors import Failure, Refusal
 from keelline.project.api import rewrite_owned
 from keelline.scaffold import Manifest
@@ -42,7 +42,14 @@ NOT_AN_ADOPTION_PLAN = (
     "the adoption plan must be a markdown file directly under [paths] plans, with keelline as "
     "a word of its name"
 )
+# Fixed text: the path is the caller's own input, and the name already keeps the rule.
+NO_SUCH_PLAN = "there is no adoption plan at the path given; check its spelling, the date included"
 PLAN_FAILS = "the adoption plan has {count} finding(s) under `keelline plan check`; fix them first"
+NO_TRAIL_STATE = (
+    "the adoption plan declares no state in the roadmap's trail, so the listing records it as "
+    "delivered; give its row a state under [states] in the trail.toml beside the roadmap, such "
+    "as `in progress`, then run `keelline docs trail`"
+)
 NOT_A_GATE = "every name must be a configured gate, and config is the configuration check"
 NAMED_ENFORCES = (
     "a gate named already enforces; name only gates that do not, or none for every gate left"
@@ -84,17 +91,25 @@ def begin(root: Path, config: Config, plan: Path) -> Transition:
     """Check `plan` as an adoption plan and mark an `initialised` project `adopting`.
 
     Past `initialised` the state is kept and nothing is written: a project may carry any number
-    of adoption plans, and nothing records which one began it.
+    of adoption plans, and nothing records which one began it. While the project runs the
+    `trail` gate the plan's trail row must declare a state, since the listing would otherwise
+    record the plan as delivered.
     """
     root = root.resolve()
     resolved = plan.resolve()
-    if not resolved.is_file() or not resolved.is_relative_to(root):
+    if not resolved.is_relative_to(root):
         raise Refusal(NOT_AN_ADOPTION_PLAN)
-    if not is_adoption_plan(config, resolved.relative_to(root).as_posix()):
+    relative = resolved.relative_to(root).as_posix()
+    if not is_adoption_plan(config, relative):
         raise Refusal(NOT_AN_ADOPTION_PLAN)
+    if not resolved.is_file():
+        raise Refusal(NO_SUCH_PLAN)
     findings = lint(root, config, plans=[resolved]).findings
     if findings:
         raise Failure(PLAN_FAILS.format(count=len(findings)))
+    # A first trail listing records a row with no state as `delivered`, and says nothing.
+    if "trail" in config.gate_names and declared_state(root, config, relative) is None:
+        raise Failure(NO_TRAIL_STATE)
     state = config.keelline.state
     if state != "initialised":
         return Transition(state, state)
@@ -133,10 +148,15 @@ def _write(root: Path, state: str, enforced: tuple[str, ...]) -> None:
     The two keys state one fact, and the editor edits them one at a time, so its own refusal
     names only the key it failed on: `enforced = []` alone, which is right only beside
     `installed`, and beside `adopting` enforces nothing. The values named are the ones this
-    write earned, so following the remedy is the transition itself.
+    write earned, so following the remedy is the transition itself. A document that does not
+    parse at all is refused in the editor's own words, with the parser's position.
     """
     try:
         rewrite_owned(root, {("keelline", "state"): state, ("keelline", "enforced"): enforced})
+    except UnparsedDocument:
+        # Not a shape: the file does not parse, a custom gate having written into it, say, and
+        # the parser's position is the remedy.
+        raise
     except OwnedKeyError:
         raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None
 

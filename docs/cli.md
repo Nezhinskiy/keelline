@@ -731,7 +731,8 @@ follows it.
 
 The gate a pull request faces, runnable on your own checkout. One run:
 
-1. refuses a project root reached through a symbolic link, or spelled otherwise than git spells it;
+1. refuses a project root reached through a symbolic link, spelled otherwise than git spells it,
+   or given with a `..` component, which after a linked component is not the directory it names;
 2. reads the base's `keelline.toml` at one exact commit, at the project's own path in the repository;
 3. judges this tree's `keelline.toml` against it, key by key (below);
 4. runs the configuration check and the configured gates under the configuration that judgement
@@ -819,7 +820,8 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
 were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
 per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
-in place of the count. Key names and gate names print; values from `keelline.toml` and a
+in place of the count. A run that fails with a gate failing ends with one `details:` line saying
+where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate names print; values from `keelline.toml` and a
 finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
@@ -850,8 +852,9 @@ check refused a key; when the base is not in the checkout or git could not read 
 message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the
 one it is in; when this tree has no `keelline.toml`; or when either side's `keelline.toml` is not
 UTF-8 text or does not load, the message naming which (a base's copy is fixed on the base branch,
-and is never read as the base having none). `2` on a refusal: a `--base` outside its grammar (before anything runs); a root reached
-through a symbolic link or spelled otherwise than git spells it; an `--only` name this run's
+and is never read as the base having none). `2` on a refusal: a `--base` outside its grammar
+(before anything runs); a root reached through a symbolic link, spelled otherwise than git spells
+it, or given with a `..` component; an `--only` name this run's
 configuration does not have; a `keelline.toml` that is itself a symbolic link; or a `[paths]` value
 on either side that leaves the root, passes through a symbolic link, or names `.git` or `.keelline`.
 Both copies are loaded against this tree's disk, so a change that turns a directory the base names
@@ -863,8 +866,10 @@ one no longer loads fails every pull request until the owner fixes it on the bas
 Starts a project's adoption with a plan. `PLAN`, read from the current directory when it is
 relative, must be a markdown file directly under `[paths] plans` with `keelline` as a word of its
 name — `2026-09-23-keelline-adoption.md`, or `2026-09-23-keelline-adoption-api.md` for one of
-several — spelled as the file is on disk, and it must pass `keelline plan check`. An
-`initialised` project is marked `adopting`. A project already past that keeps its state: a
+several — spelled as the file is on disk, and it must pass `keelline plan check`. While the
+project runs the `trail` gate, the plan's row in the `trail.toml` beside the roadmap must declare
+a state under `[states]`, such as `in progress`: a first listing records a row with none as
+`delivered`, and says nothing. An `initialised` project is marked `adopting`. A project already past that keeps its state: a
 project may carry any number of adoption plans, nothing records which, and a plan is found by its
 name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it, which does not need
 `begin` first. **Writes** `keelline.toml`'s `[keelline] state` through the same editor as
@@ -874,8 +879,8 @@ name. `begin` enforces nothing; a gate enforces when `adopt promote` moves it, w
 | Exit | Meaning |
 |---|---|
 | 0 | the plan passes `plan check`; the project is `adopting`, or already was past `initialised` |
-| 1 | the plan has findings under `plan check`, and nothing was written |
-| 2 | `PLAN` is not an adoption plan, or `keelline.toml` is refused |
+| 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `keelline.toml` is missing or does not load |
+| 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `keelline.toml` is refused |
 
 ## `keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`
 
@@ -904,6 +909,10 @@ A configured custom gate runs its command here, as it does under `keelline gate`
 
 `--json` carries, on exit 0 or 1, `before`, `after`, `promoted`, `failing`, which maps each gate
 that ran and did not pass to its finding count, and `unanswered`, the gates that could not run.
+When a gate stays advisory, the summary ends with a line saying where its findings are
+(`keelline assess --json`, or the gate's own command), and, when `plan` or `commit` is among them
+and the base is not in the checkout, a `note:` saying so and naming `--base`, since a
+`base-unresolvable` finding is about the checkout and not the plan.
 
 **There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses
 it to any pull request while anything enforces. It lands only through a push that bypasses
@@ -914,8 +923,8 @@ list, or `keelline.toml` no longer loads.
 | Exit | Meaning |
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
-| 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced |
-| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, or `keelline.toml` refused |
+| 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `keelline.toml` refused |
 
 ## `keelline memory refs`
 
@@ -1428,7 +1437,9 @@ then goes on to the end. When nothing records it — a run stopped between remov
 the manifest, or a `keelline.toml` the project wrote itself before `init`, which `init` never
 records — every recorded file stays, a `note:` line gives their count, and only the ledger goes, so
 `init` and this command no longer refuse the repository. No other directory is pruned then, because
-nothing says where the configuration put its artifacts.
+nothing says where the configuration put its artifacts. A `keelline.toml` you wrote before `init`,
+which is there and recorded nowhere, is left as it is, with the keys Keelline wrote into it; a
+`note:` line says so, and `--json` carries `kept_config: true`.
 
 **The boundary.** Which artifacts exist, where each could be and every region's name are this
 build's. The `[paths]` value a target is built from and the digest a record carries are committed,

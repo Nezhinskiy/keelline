@@ -105,7 +105,7 @@ CI_REF = re.compile(r"\A[0-9a-f]{40}\Z")
 _SENTINEL = re.compile(r"%%[A-Z_]+%%")
 NO_TAG = (
     "no released Keelline tag matches the version running, so there is no commit to pin; "
-    "`keelline upgrade` pins it once a release matches"
+    "a later `keelline upgrade` pins it once a release matches"
 )
 # One sentence that is true after either kind of run: before a manifest exists `init` can still
 # pin, and after one exists `upgrade` can.
