@@ -1,10 +1,11 @@
 # The reusable workflow a project calls. One job, `gates`: it checks out the caller, checks out
 # Keelline at THIS FILE's own commit (no resolver and no build backend; the network is the two
 # checkouts and whatever `setup-python` below fetches when the runner has no matching
-# interpreter cached), resolves the base branch to one commit, and runs `python3 -P -s -m
-# keelline gate` against it twice. The first run reads the base's `keelline.toml`, admits only a change
-# that tightens it, and runs the configuration check and the built-in gates, each advisory or
-# enforcing as the configuration it admitted says; it executes nothing the repository wrote.
+# interpreter cached), resolves the base branch to one commit, and runs
+# `python3 -P -s -m keelline gate` against it twice. The first run reads the base's
+# `keelline.toml`, admits only a change that tightens it, and runs the configuration check and
+# the built-in gates, each advisory or enforcing as the configuration it admitted says; it
+# executes nothing the repository wrote.
 # The second runs the project's own gates from `[gates.custom]`, only once the first passed:
 # those commands execute files the pull request can change, with the runner's privileges, and
 # must never share a process with the verdict. One job and not one per gate because a job is

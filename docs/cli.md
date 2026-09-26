@@ -800,8 +800,9 @@ that, and it is an option, not a requirement.
   names, asked of the public repository.
 - *The verdict itself* is worth what the process that computed it is worth. It must execute
   nothing the repository wrote: run it with `--builtin`, and start it as
-  `python3 -P -s -m keelline`, so that no module in the checkout, and no `.pth` file under a user
-  site directory the environment points into it, can be imported in place of Keelline's own.
+  `python3 -P -s -m keelline`, so that no module in the checkout is imported in place of
+  Keelline's own, and no `.pth` file in a user site directory is processed at start-up, even one
+  the environment has pointed into the checkout.
 
 Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused unless you pass
 `--workflow-sha` with the commit the new `uses:` line names; with it, the run answers what CI will.

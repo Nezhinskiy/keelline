@@ -484,9 +484,9 @@ def test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them(tmp_pa
 def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> None:
     """Everything that reaches a step's process, held whole for every step, because `-P -s`
     cover only the working directory and the user site directory: a `PYTHONPATH` entry inside the
-    checkout, a `PYTHONSTARTUP`, a `working-directory: project`, or a `BASH_ENV` the step's
-    non-interactive bash sources would each hand the pull request code in the process that
-    decides the verdict — or, in an earlier step, code that writes `$GITHUB_ENV` or
+    checkout, a `PYTHONHOME` pointing into it, a `working-directory: project`, or a `BASH_ENV`
+    the step's non-interactive bash sources would each hand the pull request code in the process
+    that decides the verdict — or, in an earlier step, code that writes `$GITHUB_ENV` or
     `$GITHUB_PATH` and so chooses the next steps' environment and interpreter.
 
     What reaches it: the workflow's keys (no `env:`), the job's (no `env:`, no `if:`), the job's
