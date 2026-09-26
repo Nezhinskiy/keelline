@@ -58,14 +58,14 @@ def test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called(
     # bootstrap. The default names the ref in full, so no tag can stand in for it.
     project = clone(tmp_path, BASE)
     shadow(project, "origin/main")
-    assert read_base(project, default_base(project)) == BASE
+    assert read_base(project, default_base(project), branch="main") == BASE
 
 
 def test_a_short_name_is_refused_because_a_tag_can_take_its_place(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     shadow(project, "origin/main")
     with pytest.raises(Refusal, match="refs/"):
-        read_base(project, "origin/main")
+        read_base(project, "origin/main", branch="main")
 
 
 def test_a_full_ref_name_must_exist_as_itself(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_a_full_ref_name_must_exist_as_itself(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     shadow(project, "refs/remotes/origin/gone")
     with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
-        read_base(project, "refs/remotes/origin/gone")
+        read_base(project, "refs/remotes/origin/gone", branch="main")
 
 
 def test_a_commit_id_is_read_as_given(tmp_path: Path) -> None:
@@ -82,7 +82,7 @@ def test_a_commit_id_is_read_as_given(tmp_path: Path) -> None:
     # the 40-hex alternative from the shape refuses more, so it is not declared as a mutation.
     project = clone(tmp_path, BASE)
     sha = git(project, "rev-parse", REMOTE_MAIN).strip()
-    assert read_base(project, sha) == BASE
+    assert read_base(project, sha, branch="main") == BASE
 
 
 def test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap(
@@ -93,7 +93,7 @@ def test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap(
     project = clone(tmp_path, BASE)
     empty = git(project, "hash-object", "-t", "tree", "-w", os.devnull).strip()
     with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
-        read_base(project, empty)
+        read_base(project, empty, branch="main")
 
 
 def test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path(
@@ -101,8 +101,8 @@ def test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path(
 ) -> None:
     project = clone(tmp_path, BASE, under="sub")
     assert repository_prefix(project / "sub") == "sub/"
-    assert read_base(project / "sub", REMOTE_MAIN) == BASE
-    assert read_base(project, REMOTE_MAIN) is None
+    assert read_base(project / "sub", REMOTE_MAIN, branch="main") == BASE
+    assert read_base(project, REMOTE_MAIN, branch="main") is None
 
 
 def test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy(
@@ -113,7 +113,7 @@ def test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_cop
     # project kept under `:/x` would be the bootstrap and govern its own change.
     project = clone(tmp_path, BASE, under=":/x")
     assert repository_prefix(project / ":" / "x") == ":/x/"
-    assert read_base(project / ":" / "x", REMOTE_MAIN) == BASE
+    assert read_base(project / ":" / "x", REMOTE_MAIN, branch="main") == BASE
 
 
 def test_a_file_named_like_the_separator_is_not_listed_as_the_base_s_copy(tmp_path: Path) -> None:
@@ -121,8 +121,8 @@ def test_a_file_named_like_the_separator_is_not_listed_as_the_base_s_copy(tmp_pa
     # top-level file named `--`, so a project with no copy on its base failed as unreadable. A
     # separator put back refuses more (a false failure), so it is not declared as a mutation.
     project = clone(tmp_path, BASE, under="sub", also={"--": "not a separator\n"})
-    assert read_base(project, REMOTE_MAIN) is None
-    assert read_base(project / "sub", REMOTE_MAIN) == BASE
+    assert read_base(project, REMOTE_MAIN, branch="main") is None
+    assert read_base(project / "sub", REMOTE_MAIN, branch="main") == BASE
 
 
 def test_a_project_under_a_directory_named_like_an_option_reads_its_own_copy(
@@ -132,7 +132,7 @@ def test_a_project_under_a_directory_named_like_an_option_reads_its_own_copy(
     # `ls-tree` refuse the argument as an option, a false failure that refuses more, so it is
     # not declared as a mutation.
     project = clone(tmp_path, BASE, under="-x")
-    assert read_base(project / "-x", REMOTE_MAIN) == BASE
+    assert read_base(project / "-x", REMOTE_MAIN, branch="main") == BASE
 
 
 def test_a_project_root_moved_behind_a_symlink_is_refused(tmp_path: Path) -> None:
@@ -144,7 +144,7 @@ def test_a_project_root_moved_behind_a_symlink_is_refused(tmp_path: Path) -> Non
     os.symlink("newdir", project / "sub")
     commit(project, "chore: move the project")
     with pytest.raises(Refusal, match="symlink"):
-        read_base(project / "sub", REMOTE_MAIN)
+        read_base(project / "sub", REMOTE_MAIN, branch="main")
 
 
 def test_a_component_linked_back_to_the_repository_s_top_is_refused(tmp_path: Path) -> None:
@@ -157,7 +157,7 @@ def test_a_component_linked_back_to_the_repository_s_top_is_refused(tmp_path: Pa
     os.symlink(".", project / "app")
     commit(project, "chore: link the old place back to the top")
     with pytest.raises(Refusal, match="symlink"):
-        read_base(project / "app" / "sub", REMOTE_MAIN)
+        read_base(project / "app" / "sub", REMOTE_MAIN, branch="main")
 
 
 def test_a_link_above_the_repository_is_the_machine_s_and_is_admitted(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_a_link_above_the_repository_is_the_machine_s_and_is_admitted(tmp_path: 
     os.symlink(real, tmp_path / "link")
     through = tmp_path / "link" / project.name
     assert repository_prefix(through) == ""
-    assert read_base(through, REMOTE_MAIN) == BASE
+    assert read_base(through, REMOTE_MAIN, branch="main") == BASE
 
 
 def test_a_root_that_is_itself_a_link_into_the_repository_is_refused(tmp_path: Path) -> None:
@@ -182,7 +182,7 @@ def test_a_root_that_is_itself_a_link_into_the_repository_is_refused(tmp_path: P
     project = clone(tmp_path, BASE, under="sub")
     os.symlink(project / "sub", tmp_path / "link")
     with pytest.raises(Refusal, match="symlink"):
-        read_base(tmp_path / "link", REMOTE_MAIN)
+        read_base(tmp_path / "link", REMOTE_MAIN, branch="main")
 
 
 def test_a_prefix_git_spells_otherwise_than_the_caller_is_refused(
@@ -202,7 +202,7 @@ def test_a_prefix_git_spells_otherwise_than_the_caller_is_refused(
 
     monkeypatch.setattr(rule, "git_run", upper_prefix)
     with pytest.raises(Refusal, match="symlink"):
-        read_base(project / "sub", REMOTE_MAIN)
+        read_base(project / "sub", REMOTE_MAIN, branch="main")
 
 
 @pytest.mark.parametrize(
@@ -218,7 +218,7 @@ def test_a_root_spelled_otherwise_than_git_spells_it_is_refused(
     # otherwise at the top itself, no ancestor of the root resolves to git's top at all. Both
     # skip on Linux; the two cases above hold the same refusals there.
     with pytest.raises(Refusal, match="symlink"):
-        read_base(tmp_path / spelling, REMOTE_MAIN)
+        read_base(tmp_path / spelling, REMOTE_MAIN, branch="main")
 
 
 def test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap(
@@ -230,7 +230,7 @@ def test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap(
     assert loose.is_file(), "the case needs the base's tree as a loose object"
     loose.unlink()
     with pytest.raises(Failure, match=re.escape("fetch-depth: 0")):
-        read_base(project, REMOTE_MAIN)
+        read_base(project, REMOTE_MAIN, branch="main")
 
 
 def test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap(
@@ -246,7 +246,7 @@ def test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap(
     project = clone(tmp_path, b'[keelline]\nversion = "\xff"\n')
     (project / "keelline.toml").write_text(BASE, encoding="utf-8")
     with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)) as caught:
-        read_base(project, default_base(project))
+        read_base(project, default_base(project), branch="main")
     assert "fetch-depth" not in str(caught.value)
 
 
@@ -274,9 +274,9 @@ def test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answer
     (project / "keelline.toml").write_text(BASE, encoding="utf-8")
     if isinstance(base, bytes):
         with pytest.raises(Failure, match=re.escape(BASE_NOT_UTF8)):
-            read_base(project, default_base(project))
+            read_base(project, default_base(project), branch="main")
     else:
-        assert read_base(project, default_base(project)) == base
+        assert read_base(project, default_base(project), branch="main") == base
 
 
 def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
@@ -295,7 +295,7 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
         "from keelline.errors import Failure\n"
         "for root in sys.argv[1:]:\n"
         "    try:\n"
-        "        print(ascii(read_base(Path(root), 'refs/remotes/origin/main')))\n"
+        "        print(ascii(read_base(Path(root), 'refs/remotes/origin/main', branch='main')))\n"
         "    except Failure as exc:\n"
         "        print(ascii(str(exc)))\n"
     )
@@ -314,7 +314,7 @@ def test_a_root_outside_any_repository_is_a_failure(tmp_path: Path) -> None:
     nowhere = tmp_path / "nowhere"
     nowhere.mkdir()
     with pytest.raises(Failure, match=re.escape(NOT_A_REPOSITORY)):
-        read_base(nowhere, REMOTE_MAIN)
+        read_base(nowhere, REMOTE_MAIN, branch="main")
 
 
 def test_a_repository_git_will_not_answer_for_is_not_called_no_repository(
@@ -328,4 +328,4 @@ def test_a_repository_git_will_not_answer_for_is_not_called_no_repository(
     broken.mkdir()
     (broken / ".git").write_text(f"gitdir: {tmp_path / 'gone'}\n", encoding="utf-8")
     with pytest.raises(Failure, match=re.escape(ROOT_UNANSWERED)):
-        read_base(broken, REMOTE_MAIN)
+        read_base(broken, REMOTE_MAIN, branch="main")

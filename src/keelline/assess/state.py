@@ -191,7 +191,7 @@ def _not_on_base(
     if not asked:
         return ()
     try:
-        landed = read_base_gates(root, base, machine=machine)
+        landed = read_base_gates(root, base, branch=config.project.base_branch, machine=machine)
     except KeellineError:
         landed = {}
     return tuple(name for name in asked if landed.get(name) != custom[name])

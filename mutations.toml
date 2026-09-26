@@ -8201,7 +8201,7 @@ reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_i
 [[mutation]]
 name = "git failing to read the base is read as the base having no keelline.toml"
 file = "src/keelline/assess/rule.py"
-before = "        raise Failure(BASE_UNREADABLE)"
+before = "        raise Failure(BASE_UNREADABLE.format(branch=branch))"
 after = '        return ""'
 reddens = [
   "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
@@ -8431,8 +8431,8 @@ reddens = [
 [[mutation]]
 name = "a base id that names a tree is read as if it named a commit"
 file = "src/keelline/assess/rule.py"
-before = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"'
-after = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", base'
+before = '        f"{base}^{{commit}}",'
+after = '        base,'
 reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]
 
 [[mutation]]

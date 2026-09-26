@@ -663,13 +663,23 @@ def test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base(
     assert "--base" not in err and "forged" not in err
 
 
-def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "given", [("--base", "refs/remotes/origin/absent"), ()], ids=["named", "default"]
+)
+def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(
+    tmp_path: Path, given: tuple[str, ...]
+) -> None:
+    # The local remedy, for a clone with no origin, is the base branch this tree configures,
+    # spelled out as `assess` and `adopt promote` spell it: the refusal once printed a
+    # placeholder for it. The loader holds the name to the branch grammar, so it prints as is.
+    # `develop`, so neither `main` nor a placeholder passes. Mutation (advisory): `run_gate`
+    # passing `branch="main"` to `read_base` -> both cases redden.
     project = clone(tmp_path, BASE)
-    code, _, err = cli(project, tmp_path, "gate", "--base", "refs/remotes/origin/absent")
+    _change(project, BASE + 'base_branch = "develop"\n')
+    code, _, err = cli(project, tmp_path, "gate", *given)
     assert code == 1
     assert "fetch-depth: 0" in err
-    # The local remedy, for a clone with no origin: the configured base branch, not `main`.
-    assert "refs/heads/<[project] base_branch>" in err
+    assert "such as refs/heads/develop in a clone with no origin" in err, err
 
 
 def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(
@@ -682,13 +692,14 @@ def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(
     project = clone(tmp_path, BASE)
     _change(project, LOOSENED)
 
-    def broken(root: Path, base: str) -> str | None:
+    # Whatever keywords `run_gate` passes, so the error is this one and not a `TypeError`.
+    def broken(root: Path, base: str, **_: object) -> str | None:
         raise OSError("disk")
 
     monkeypatch.setattr(rule, "read_base", broken)
     code, _, err = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 2
-    assert "internal error" in err
+    assert "internal error: OSError: disk" in err, err
 
 
 def test_a_short_base_name_is_refused_at_the_parser(

@@ -144,15 +144,17 @@ def run_gate(args: argparse.Namespace) -> Result:
     tree_text = read_document(root)
     if tree_text is None:
         raise ConfigError(NO_TREE_CONFIG)
-    # The tree's configuration is read here for its default base alone and kept nowhere: every
-    # later decision is the verdict's, and a name for the tree's copy in scope is one a later
-    # line could pick in its place.
-    default = local_base(loads(tree_text, root, machine=machine, interactive=False))
+    # The tree's configuration is read here for its default base and the branch a base the
+    # checkout lacks is named by, and kept nowhere: every later decision is the verdict's, and a
+    # name for the tree's copy in scope is one a later line could pick in its place.
+    tree = loads(tree_text, root, machine=machine, interactive=False)
+    default, branch = local_base(tree), tree.project.base_branch
+    del tree
     base = args.base or default
     runner = subprocess_runner()
     verdict = rule.judge(
         root,
-        rule.read_base(root, base, prefix=prefix),
+        rule.read_base(root, base, branch=branch, prefix=prefix),
         tree_text,
         machine=machine,
         running=__version__,

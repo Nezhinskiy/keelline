@@ -870,7 +870,8 @@ that, and it is an option, not a requirement.
   resolves the base once to a commit and passes that. Run locally, the default is
   `refs/remotes/origin/<project.base_branch>`, read from this tree's own configuration, which is
   why a local run is advice and never the authority. A clone without an `origin` remote names its
-  base with `--base`, such as `--base refs/heads/<project.base_branch>`.
+  base with `--base`, such as `--base refs/heads/<project.base_branch>`: a run whose base is not
+  in the checkout fails with that suggestion, spelled with the branch the file configures.
 - *The base's copy.* It is read at the project root's own path in the repository. A root reached
   through a symbolic link below the repository's top, or spelled otherwise than git spells it, is
   refused: either would look for the copy where the base has none, and a missing copy is the

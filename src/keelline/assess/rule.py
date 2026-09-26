@@ -59,11 +59,12 @@ from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, answer_bytes, git_run, in_work_tree
 from keelline.overlay.api import later
 
+# Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
 BASE_UNREADABLE = (
     "the base is not in this checkout, or git could not read its keelline.toml, so the "
     "configuration that governs this change cannot be read; check out with full history "
-    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/<[project] base_branch> "
-    "in a clone with no origin"
+    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/{branch} in a clone "
+    "with no origin"
 )
 BASE_SHAPE = (
     "--base takes a full 40-character commit id or a full ref name starting with refs/: a "
@@ -108,11 +109,12 @@ ROOT_THROUGH_SYMLINK = (
 BASE_REF = re.compile(r"\A(?:[0-9a-f]{40}|refs/[A-Za-z0-9._/-]+)\Z")
 
 
-def _read(root: Path, *args: str) -> str:
-    """git's answer, or the run fails: "git did not answer" is never read as "no copy"."""
+def _read(root: Path, *args: str, branch: str) -> str:
+    """git's answer, or the run fails: "git did not answer" is never read as "no copy". The
+    failure's remedy names `branch`, the configured base branch."""
     code, out = git_run(root, *args)
     if code != 0:
-        raise Failure(BASE_UNREADABLE)
+        raise Failure(BASE_UNREADABLE.format(branch=branch))
     return out
 
 
@@ -142,10 +144,11 @@ def repository_prefix(root: Path) -> str:
     return spelled
 
 
-def read_base(root: Path, base: str, *, prefix: str | None = None) -> str | None:
+def read_base(root: Path, base: str, *, branch: str, prefix: str | None = None) -> str | None:
     """The base's `keelline.toml` at the project's own path, or `None` when git listed nothing
     there: the bootstrap, and the only answer that means it. Any other git failure fails the run,
-    and so does a copy that is not UTF-8 text, which is never parsed. `prefix` is
+    and so does a copy that is not UTF-8 text, which is never parsed. `branch` is `[project]
+    base_branch`, which a base the checkout lacks names as the local remedy. `prefix` is
     `repository_prefix(root)`, asked here unless the caller already has it.
     """
     if not BASE_REF.match(base):
@@ -154,9 +157,15 @@ def read_base(root: Path, base: str, *, prefix: str | None = None) -> str | None
         prefix = repository_prefix(root)
     if base.startswith("refs/"):
         # Exactly this ref: when it is missing, git would take `refs/tags/<base>` instead.
-        _read(root, "show-ref", "--verify", "--quiet", "--end-of-options", base)
+        _read(root, "show-ref", "--verify", "--quiet", "--end-of-options", base, branch=branch)
     commit = _read(
-        root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"
+        root,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{base}^{{commit}}",
+        branch=branch,
     ).strip()
     path = f"{prefix}{CONFIG_FILE}"
     # Literal: git reads a pathspec starting `:/` as "from the top", so under a directory named
@@ -172,10 +181,11 @@ def read_base(root: Path, base: str, *, prefix: str | None = None) -> str | None
         "--end-of-options",
         commit,
         path,
+        branch=branch,
     )
     if not listed:
         return None
-    text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}")
+    text = _read(root, "cat-file", "blob", "--end-of-options", f"{commit}:{path}", branch=branch)
     # The bytes git printed, read as UTF-8 the way the loader reads the tree's copy: the text
     # `git_run` decoded with the filesystem's codec is neither refused nor read the same where
     # that codec is latin-1 (Linux under a latin-1 locale), because every byte decodes.
@@ -351,10 +361,12 @@ def _values(config: Config) -> dict[str, object]:
     return values
 
 
-def read_base_gates(root: Path, base: str, *, machine: Path | None) -> Mapping[str, CustomGate]:
+def read_base_gates(
+    root: Path, base: str, *, branch: str, machine: Path | None
+) -> Mapping[str, CustomGate]:
     """The base's custom gates by name, loaded as `judge` loads the base's copy; none when the
     base has no `keelline.toml` at the project's path. Raises as `read_base` and the loader do."""
-    text = read_base(root, base)
+    text = read_base(root, base, branch=branch)
     if text is None:
         return {}
     config = loads(text, root, machine=machine, interactive=False, label=BASE_COPY)
