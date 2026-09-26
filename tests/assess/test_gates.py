@@ -3,6 +3,7 @@ its area's command finds, and a project's own gate as its argv — bounded, and 
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline.assess import gates
 from keelline.assess.gates import (
     BASE,
     BUILTIN,
@@ -293,19 +295,16 @@ def test_an_interrupted_custom_gate_leaves_nothing_running(
     # end; the wait for it is bounded, and a child that never starts fails the assertion below.
     command, started, late = delayed_writer(tmp_path)
     config = with_custom(fixture_config(tmp_path), command, seconds=600)
-    real = subprocess.Popen.wait
-    calls: list[float | None] = []
+    # The interrupt lands in the wait for the command's exit, which is `gates._exited` on every
+    # platform: `os.waitid` where there is one, `Popen.wait` where there is not.
 
-    def interrupted(self: subprocess.Popen[bytes], timeout: float | None = None) -> int:
-        calls.append(timeout)
-        if len(calls) == 1:
-            deadline = time.monotonic() + STARTED_WAIT_SECONDS
-            while not started.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            raise KeyboardInterrupt
-        return real(self, timeout=timeout)
+    def interrupted(process: subprocess.Popen[bytes], seconds: int) -> None:
+        deadline = time.monotonic() + STARTED_WAIT_SECONDS
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        raise KeyboardInterrupt
 
-    monkeypatch.setattr(subprocess.Popen, "wait", interrupted)
+    monkeypatch.setattr(gates, "_exited", interrupted)
     with pytest.raises(KeyboardInterrupt):
         results(tmp_path, config)
     assert started.exists()
@@ -319,6 +318,49 @@ def test_a_custom_gate_that_exits_leaves_nothing_running(tmp_path: Path) -> None
     # The command exits only once the child has written `started`, so there is a descendant to
     # end. Mutation (declared): the group kill after the command's own exit dropped -> `late`
     # is written.
+    command, started, late = delayed_writer(tmp_path)
+    command[2] = EXITING_WRITER
+    config = with_custom(fixture_config(tmp_path), command, seconds=STARTED_WAIT_SECONDS)
+    [probe] = results(tmp_path, config)
+    assert probe.answered
+    assert not probe.failing
+    assert started.exists()
+    time.sleep(LATE_WAIT_SECONDS)
+    assert not late.exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "waitid"), reason="no os.waitid (macOS before 3.13)")
+@pytest.mark.parametrize(("source", "found"), [("pass", []), ("raise SystemExit(3)", ["exited 3"])])
+def test_the_group_is_ended_while_the_command_s_pid_is_still_held(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, found: list[str]
+) -> None:
+    # The group's id is the command's pid, and a reaped pid is free for the system to hand to an
+    # unrelated process that then leads a group of its own: the group kill after the command's
+    # exit must come while the exited command is still unreaped, holding the id. Mutation
+    # (declared): the exit waited for with `process.wait`, which reaps -> the command's
+    # `returncode` is already set when the group is killed. The exit status still reads the same.
+    killed_with: list[int | None] = []
+    kill = gates._kill_group
+
+    def spy(process: subprocess.Popen[bytes]) -> None:
+        killed_with.append(process.returncode)
+        kill(process)
+
+    monkeypatch.setattr(gates, "_kill_group", spy)
+    [probe] = results(
+        tmp_path, with_custom(fixture_config(tmp_path), [sys.executable, "-c", source])
+    )
+    assert killed_with == [None]
+    assert [finding.detail for finding in probe.findings] == found
+
+
+def test_without_waitid_a_custom_gate_still_answers_and_ends_its_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # macOS before 3.13 has no `os.waitid`: the command is reaped by `wait` as before, and the
+    # group is still ended after it. Mutation (by hand): the fallback dropped, so `os.waitid` is
+    # called regardless -> AttributeError escapes `run_gates` and this reddens.
+    monkeypatch.delattr(os, "waitid", raising=False)
     command, started, late = delayed_writer(tmp_path)
     command[2] = EXITING_WRITER
     config = with_custom(fixture_config(tmp_path), command, seconds=STARTED_WAIT_SECONDS)

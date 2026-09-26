@@ -780,11 +780,12 @@ under the bootstrap, where the base has no `keelline.toml`, no custom gate runs.
 that the custom gates share one checkout: a gate the change wrote, run before the base's
 enforced ones, could rewrite the script they are about to execute. For the same reason the
 built-in gates run first, then the custom gates the base enforces, then every other custom gate.
-Each custom gate runs in a session of its own, and its whole process group is ended when its
-command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
-background runs on into the next gate. Enforced gates that themselves run files the change can
-edit — two test runners, say — still share that one checkout, and one could rewrite what the
-other runs; one leg per gate isolates them (see "One row per gate" under
+Each custom gate runs in a session of its own, and the command's process group is ended when
+the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
+background in that group runs on into the next gate. A process that starts a session of its
+own (`setsid`) has left the group and is not ended. Enforced gates that themselves run files
+the change can edit — two test runners, say — still share that one checkout, and one could
+rewrite what the other runs; one leg per gate isolates them (see "One row per gate" under
 [the reusable workflow](#the-reusable-workflow)).
 
 **What a pull request may change in `keelline.toml`.** Both copies go through the loader and are

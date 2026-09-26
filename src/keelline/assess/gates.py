@@ -12,9 +12,11 @@ the configured bound, never from an exception's text or the base, because both c
 repository authored. A custom gate's output goes to this process's standard error as it ran and
 is read by nothing here, so none of it reaches a result.
 
-**A custom gate's tree ends with it.** Its command runs in a session of its own, and the whole
-process group is ended however the command finishes — exit, timeout or interrupt — so nothing it
-left in the background writes into the tree while a later gate runs or after the result is out.
+**A custom gate's process group ends with it.** Its command runs in a session of its own, and
+that session's process group is ended however the command finishes — exit, timeout or
+interrupt — so nothing it left in the background in that group writes into the tree while a later
+gate runs or after the result is out. A descendant that starts a session of its own (`setsid`)
+has left the group, and is not reached.
 
 **Order.** The built-ins run first, in configured order: they execute nothing the repository
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
@@ -29,6 +31,7 @@ import contextlib
 import os
 import signal
 import subprocess
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,9 +132,39 @@ class _NotAnswered(Exception):
 
 
 def _kill_group(process: subprocess.Popen[bytes]) -> None:
-    """SIGKILL the command's whole process group; a group already empty is nothing to end."""
-    with contextlib.suppress(ProcessLookupError):
+    """SIGKILL the command's whole process group; a group with nothing left to end is no fault.
+
+    Empty, the group answers `ProcessLookupError`; left with only the exited, unreaped command,
+    macOS answers `PermissionError` rather than nothing, as it does for any group of zombies.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(process.pid, signal.SIGKILL)
+
+
+def _exited(process: subprocess.Popen[bytes], seconds: int) -> None:
+    """Return once the command has exited, leaving it unreaped where the platform allows it.
+
+    The group's id is the command's pid, and a reaped pid is free for the system to hand to an
+    unrelated process that then leads a group of its own, which a later `killpg` would end. An
+    exited command that is not yet reaped keeps its pid taken, so `os.waitid` with `WNOWAIT`
+    watches for the exit without reaping, the group is ended, and only then is the command
+    reaped. Where `os.waitid` is missing (macOS before Python 3.13) the command is reaped here,
+    as `Popen.wait` does, and the group is ended just after.
+
+    Raises `subprocess.TimeoutExpired` past `seconds`, as `Popen.wait` does.
+    """
+    if not hasattr(os, "waitid"):
+        process.wait(timeout=seconds)
+        return
+    deadline = time.monotonic() + seconds
+    delay = 0.0005
+    flags = os.WEXITED | os.WNOHANG | os.WNOWAIT
+    while os.waitid(os.P_PID, process.pid, flags) is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, seconds)
+        delay = min(delay * 2, remaining, 0.05)
+        time.sleep(delay)
 
 
 def _end(process: subprocess.Popen[bytes]) -> None:
@@ -148,10 +181,10 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             # S603: the project's own `[gates.custom.<name>] run`, list form, never a shell.
             # Both streams go to this process's standard error untouched, so a person and a CI
             # log see them as they ran and `--json` on standard output stays one object. A
-            # session of its own puts everything the command starts in one process group, which
-            # is ended whole however the command finishes: `subprocess.run(timeout=...)` kills
-            # the command alone, and a test runner it started keeps writing after the gate has
-            # reported.
+            # session of its own puts what the command starts in one process group, unless a
+            # descendant starts a session of its own, and that group is ended however the command
+            # finishes: `subprocess.run(timeout=...)` kills the command alone, and a test runner
+            # it started keeps writing after the gate has reported.
             process = subprocess.Popen(  # noqa: S603
                 list(argv),
                 cwd=root,
@@ -163,7 +196,7 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
         except OSError:
             raise not_answered from None
         try:
-            code = process.wait(timeout=seconds)
+            _exited(process, seconds)
         except subprocess.TimeoutExpired:
             _end(process)
             raise not_answered from None
@@ -172,10 +205,12 @@ def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], l
             # so an interrupted run ends the command's tree itself before it leaves.
             _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did
             raise
-        # The command is reaped, and what it started may still run: a watcher or a server left
-        # in the background, still writing into the tree while a later gate runs. The group's id
-        # stays taken while any member lives, so this reaches the command's own descendants.
+        # The command has exited, and what it started may still run: a watcher or a server left
+        # in the background, still writing into the tree while a later gate runs. The exited
+        # command is not reaped yet, so the group's id is still its own and reaches only its
+        # descendants; then it is reaped, which reads the status it exited with.
         _kill_group(process)  # after an exit of its own too
+        code = process.wait()
         if code == 0:
             return []
         return [Finding("exit-status", "", None, f"exited {code}")]

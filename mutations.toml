@@ -7617,6 +7617,19 @@ before = "        _kill_group(process)  # after an exit of its own too"
 after = "        pass"
 reddens = ["tests/assess/test_gates.py::test_a_custom_gate_that_exits_leaves_nothing_running"]
 
+# The group's id is the command's pid. Reaped before the group kill, that pid is free for the
+# system to hand to an unrelated process leading a group of its own, which the kill would end;
+# the exit is watched with `os.waitid(..., WNOWAIT)` so the command is reaped only after it.
+[[mutation]]
+name = "a custom gate's command is reaped before its group is ended"
+file = "src/keelline/assess/gates.py"
+before = "            _exited(process, seconds)"
+after = "            process.wait(timeout=seconds)"
+reddens = [
+  "tests/assess/test_gates.py::test_the_group_is_ended_while_the_command_s_pid_is_still_held[pass-found0]",
+  "tests/assess/test_gates.py::test_the_group_is_ended_while_the_command_s_pid_is_still_held[raise SystemExit(3)-found1]",
+]
+
 # The custom gates share one checkout, so one that runs earlier can rewrite what a later one
 # executes. The base's enforced gates go first; in configured (name) order an advisory gate that
 # sorts first and runs the change's files, a test runner and its `conftest.py`, rewrites the
