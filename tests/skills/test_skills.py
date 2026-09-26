@@ -41,6 +41,7 @@ TOOL_NAMES = (
     "LSP",
     "NotebookEdit",
     "TodoWrite",
+    "request_user_input",
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against C5 before the command exists, keyed to the

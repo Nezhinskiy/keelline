@@ -9115,3 +9115,13 @@ reddens = [
   "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
   "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
 ]
+
+# The skills README maps every harness tool name a skill body may not use, for both harnesses;
+# Codex's ask tool is one of them, and a README that stops naming it leaves the lint's list with
+# a name the mapping no longer explains.
+[[mutation]]
+name = "the skills README drops Codex's name for its ask tool"
+file = "skills/README.md"
+before = "`request_user_input` in the modes that offer it"
+after = "the ask tool in the modes that offer it"
+reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_for_both_harnesses"]

@@ -1,65 +1,55 @@
 ---
 name: init
-description: Write a repository's Keelline footprint from what it can detect, or from a keelline.toml you wrote. Use when a project has no .keelline/manifest.json yet, or the user asks to initialise Keelline in it.
+description: Take a repository onto Keelline — show what it detected, ask the questions a person may answer, write the footprint, assess the repository, and start its adoption. Use when a project has no .keelline/manifest.json yet, or the user asks to initialise Keelline in it.
 ---
 
 # Initialising a project
 
-`keelline init --yes` writes a repository's footprint once: `keelline.toml` when there is
-none, a `CLAUDE.md` pointer, an `AGENTS.md` skeleton where there is none and a managed section
-where there is one, an ignore block, the documentation skeleton the other commands expect,
-and — once a Keelline release exists to pin — a CI workflow calling the reusable gate.
-
-`keelline init --questions` prints the questions `init` would ask, each with the default
-`--yes` takes and where that came from, and writes nothing. `--yes` means "take the detected
-defaults", so the dry run is how the user sees the plan before anything is written.
+Ask through the harness's ask-the-user tool when it has one, and one plain question per turn
+when it does not; [references/asking.md](references/asking.md) fits each step to the
+harness's limits. Never run this skill in a forked context: a subagent cannot ask.
 
 ## Walk
 
-1. Show the plan first. Run `keelline init --yes --dry-run` and relay what it prints,
-   unchanged. It prints, in this order:
-   - an opening line saying whether anything would be written;
-   - two reports under `write-once:` and `footprint:` — the two passes are planned separately,
-     and each report names every file with its verdict and ends with its own counts;
-   - a `CI:` line, which is either the release the workflow would be pinned to or one sentence
-     saying why no workflow was planned;
-   - a `note:` line, when there is one.
-2. Ask whether to proceed. Nothing has been written at this point.
-3. On a yes, run `keelline init --yes`. Add `--no-ci` instead if the user does not want a CI
-   workflow and does not want the public repository asked for a pin.
-4. Relay the same four parts again, from **this** run — the real one. Its opening line is the
-   one that says what happened, and the two reports under it say it per file. A file listed as
-   skipped was already there and the run left it alone, with the reason beside it: in the
-   `write-once:` report that reason is "create-once, and the file is already there", which is
-   what an adopted `keelline.toml` gets.
-5. Tell the user how to undo it: `keelline uninstall` removes what this run wrote and leaves
-   any file they edit afterwards; run it with `--dry-run` first.
-6. Ask the user to commit `keelline.toml`, `.keelline/manifest.json` and the footprint
-   together. The manifest is what a later refresh reads to tell your edits from the tool's,
-   and a footprint committed without it is a footprint nothing can maintain.
-7. Offer `keelline doctor` as the next step.
+1. Run `keelline init --questions --json`. It refuses a repository that already has
+   `.keelline/manifest.json` (offer `keelline upgrade`) or a `keelline.toml` (see the first
+   rule). Otherwise `questions.properties` holds six questions, each with its `default` (what
+   `keelline init --yes` alone would write), its `x-keelline-source` and its `x-keelline-flag`.
+2. Show the first four defaults (name, base branch, agents, profile), each with its source, as
+   **one** confirm question. A name with no default is "not derivable": ask for it. On a "no",
+   ask which values are wrong, then ask only those.
+3. Ask `memory.mode`. If the user picks the overlay and its option says the setup skill
+   creates one next, ask one follow-up: set one up now, or keep notes on this machine until
+   then, which is the answer `local-only`.
+4. Ask whether to keep any of the files in `artifacts.local` out of git, with no as the
+   default. Only on a yes, ask which. Most projects keep none.
+5. Build the command: `--yes --dry-run`, then each answer that differs from its default as its
+   `x-keelline-flag`, once per item for a list, such as
+   `keelline init --yes --dry-run --name widget --local roadmap-history`. Run it and relay both
+   reports, the `CI:` line and every `note:` line. Ask for a final yes. **Silence, a timeout or
+   an empty answer is a no.**
+6. On a yes, run the same command without `--dry-run`, and relay the real run the same way.
+   Add `--no-ci` to both if the user wants no CI workflow and no remote asked for a pin.
+7. If the answer was the overlay: when the machine records none, hand over to the `setup`
+   skill to create or record one; then hand over to the `attach` skill to bind this
+   repository. Each asks its own confirmations. Come back here afterwards.
+8. Start the adoption: [references/adoption.md](references/adoption.md).
 
 ## Rules
 
-- **A `keelline.toml` the user wrote is the answer sheet, not an obstacle.** It is read for
-  every key it carries — the project's name, its paths, its memory mode — and it is never
-  replaced, so the paths it declares are where the footprint lands. If the user wants a value
-  chosen rather than detected, have them put it in that file and run the command again.
-- **A repository that already carries `.keelline/manifest.json` is refused**, and that is
-  correct: refreshing a footprint is `keelline upgrade`. Relay the refusal and offer that
-  command; do not delete the manifest to get past it.
-- **Nothing is written when anything is refused.** An exit of 1 opens with a line saying so
-  and carries a `REFUSED` section inside whichever report the refusal landed in, naming each
-  artifact and why. No file was touched and no manifest exists. Relay every refused line, fix
-  the cause with the user, and run the command again.
-- **A `CI:` line that says the workflow was skipped is the whole answer about CI.** The
-  workflow is named only when one was planned; a skipped one says why in the same line, and
-  there is nothing else to look for. A repository that already had a `keelline.toml` gets a
-  workflow pinned to the `[ci] ref` that file records, and none at all when it records none —
-  the ref a workflow pins and the one `keelline.toml` carries are always the same, and
-  `keelline doctor` reports red if they ever differ.
-- **Never hand-edit `[keelline] version`, `[keelline] state` or `.keelline/manifest.json`.**
-  Those are the tool's own, and a manifest a person has altered makes every later run judge
-  the wrong files.
-- **A skipped CI workflow is not a failure.** Before the first Keelline release there is no
-  commit to pin one to; the sentence in the report says so, and the workflow arrives later.
+- **A `keelline.toml` the user wrote answers the questions.** Skip steps 2–4 and run steps 5
+  and 6 with no answer flag: the dry run, the relay, the explicit final yes, then the write. The
+  file is kept; a missing `[keelline] version` is the one thing added, and a `note:` line says so.
+- **A `failed:` line from `init` over a `keelline.toml` the user wrote means the next command
+  could not load that file.** Nothing was written. Relay the sentence, fix the file with the
+  user, and run again.
+- **A repository with `.keelline/manifest.json` is refused.** Refreshing is `keelline upgrade`.
+  Never delete the manifest to get past it.
+- **Nothing is written when anything is refused.** Relay every `REFUSED` line, fix the cause
+  with the user, and run again.
+- **A `CI:` line saying the workflow was skipped is the whole answer about CI.** Before the
+  first Keelline release there is no commit to pin, and the sentence says so.
+- **Never hand-edit `[keelline] version`, `state`, `enforced`, `[ci] ref` or
+  `.keelline/manifest.json`.** They are the tool's: the adoption commands move `state` and
+  `enforced`, and `keelline upgrade` moves the version and the ref.
+- **The undo is `keelline uninstall`.** Run `keelline uninstall --dry-run` first.
