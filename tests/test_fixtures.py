@@ -422,7 +422,9 @@ EXPECTED_BLOCKS = {
     "check.yml": 10,
     # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
     # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
-    "ci.yml": 13,
+    # 13 -> 14 when the interpreter below the floor came from `uv python install` rather than
+    # from `setup-python`: a `uses:` step became a `run:` one.
+    "ci.yml": 14,
     "release.yml": 7,
     "smoke-release.yml": 0,
     "smoke.yml": 6,
@@ -439,7 +441,8 @@ EXPECTED_CHARACTERS = {
     "check.yml": 6888,
     # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
     # 899 -> 907 when the suite began running across workers: `-n auto` on the `pytest` line.
-    "ci.yml": 907,
+    # 907 -> 1035 for the same `uses:` step becoming a `run:` one.
+    "ci.yml": 1035,
     "release.yml": 1683,
     "smoke-release.yml": 0,
     "smoke.yml": 3042,
