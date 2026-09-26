@@ -64,6 +64,32 @@ def test_check_is_inert_before_a_ledger_exists(tmp_path: Path) -> None:
     assert problems(root, config) == []
 
 
+def test_with_no_ledger_every_citation_of_an_entry_file_dangles(tmp_path: Path) -> None:
+    # "No ledger yet" is read off the tree, and a pull request writes the tree: deleting the
+    # ledger and its index must not switch an enforced gate off while code still cites entry
+    # files. A project that registers the gate before its first entry cites none, and the case
+    # above holds that it stays green. Mutation (declared): the uninitialised arm answers `[]`
+    # again -> nothing is reported.
+    root, config = project(tmp_path)
+    (root / "src" / "a.py").write_text("# see docs/bugs/BR-001.md\n", encoding="utf-8")
+    (root / "docs" / "roadmap.md").write_text("see [x](bugs/BR-404.md)\n", encoding="utf-8")
+    assert uninitialised(root, config)
+    found = problems(root, config)
+    assert [(p.rule, p.path, p.line) for p in found] == [
+        ("dangling-citation", "src/a.py", 1),
+        ("dangling-citation", "docs/roadmap.md", 1),
+    ]
+
+
+def test_with_no_ledger_a_bare_mention_is_not_a_finding(tmp_path: Path) -> None:
+    # A citation names a file that is not there; a bare identifier in code before the first
+    # entry is a coincidence of spelling as often as a claim, and stays unreported until a
+    # ledger exists to hold it to.
+    root, config = project(tmp_path)
+    (root / "src" / "a.py").write_text("# BR-001\n", encoding="utf-8")
+    assert problems(root, config) == []
+
+
 def test_a_generated_index_with_no_entries_directory_is_a_deleted_ledger(tmp_path: Path) -> None:
     # Mutation: drop the `is_generated_index` conjunct from `uninitialised` — this reddens.
     root, config = project(tmp_path)

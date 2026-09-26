@@ -400,6 +400,33 @@ def test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass(tmp_path: Pa
     assert "symlink" in err
 
 
+def test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off(tmp_path: Path) -> None:
+    # The base enforces `bugs` and has a ledger; the change deletes the ledger and cites an
+    # entry file. "No ledger yet" was read off the tree the change wrote, and the gate reported
+    # nothing. Mutation: the ledger's own entry (the uninitialised arm answering `[]`).
+    enforced = BASE.replace('["docs"]', '["bugs"]')
+    project = clone(tmp_path, enforced, also={"src.py": "# see docs/bugs/BR-001.md\n"})
+    upstream = tmp_path / "upstream"
+    bugs = upstream / "docs" / "bugs"
+    bugs.mkdir(parents=True)
+    (bugs / "BR-001.md").write_text(
+        "---\nid: BR-001\ntitle: t\nstatus: open\nseverity: low\narea: a\nfound: 2026-01-01\n"
+        "source:\nfixed_in:\nrelated:\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    commit(upstream, "chore: a ledger")
+    git(project, "fetch", "-q")
+    git(project, "reset", "-q", "--hard", "origin/main")
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
+    # With the ledger in place the citation resolves; the stale index is the one finding.
+    assert (code, out.strip()) == (1, "bugs: enforcing, 1 finding(s)")
+    git(project, "rm", "-rq", "docs/bugs")
+    commit(project, "chore: drop the ledger")
+    code, out, _ = _gate(project, tmp_path, "--builtin", "--only", "bugs")
+    assert code == 1
+    assert out.strip() == "bugs: enforcing, 1 finding(s)"
+
+
 def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(tmp_path: Path) -> None:
     project = clone(tmp_path, BASE)
     code, _, err = _gate(project, tmp_path, "--base", "refs/remotes/origin/absent")

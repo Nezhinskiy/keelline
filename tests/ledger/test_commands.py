@@ -79,6 +79,20 @@ def test_check_is_inert_on_a_project_with_no_ledger(
     assert "nothing to check" in capsys.readouterr().out
 
 
+def test_check_reports_a_citation_when_there_is_no_ledger(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate reports it, so the command its remedy names must report it too, and not
+    # answer "nothing to check".
+    root, common = project(tmp_path)
+    (root / "docs" / "bugs").rmdir()
+    (root / "src" / "a.py").write_text("# see docs/bugs/BR-404.md\n", encoding="utf-8")
+    assert invoke(["bugs", "check", *common]) == 1
+    assert capsys.readouterr().out.startswith(
+        "FAIL: 1 ledger problem(s): src/a.py:1 [dangling-citation]"
+    )
+
+
 def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -196,7 +210,7 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
 def test_check_answers_with_the_bugs_gate_s_own_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `bugs check` and the `bugs` gate are one function after the inert arm. Mutation
+    # `bugs check` and the `bugs` gate are one function. Mutation
     # (advisory): the import in `run_bugs_check` becomes `from keelline.ledger.check import
     # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
     _root, common = project(tmp_path)

@@ -47,9 +47,10 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     from keelline.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
-    if uninitialised(root, config):
-        return Result(_INERT, {"checked": False, "findings": []})
     found = bugs_gate(root, config)
+    # Before a ledger exists only a citation of an entry file is a finding, and there is none.
+    if not found and uninitialised(root, config):
+        return Result(_INERT, {"checked": False, "findings": []})
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
         return Result(_OK, data)

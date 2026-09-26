@@ -7945,6 +7945,20 @@ before = '    if linked or spelled != prefix.rstrip("\n"):'
 after = "    if linked:"
 reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
 
+# "No ledger yet" is read off the tree, which a pull request writes: with the arm answering
+# nothing, a change that deletes the ledger and its index switches an enforced `bugs` gate off
+# while code still cites entry files.
+[[mutation]]
+name = "a tree with no ledger reports no citation of an entry file"
+file = "src/keelline/ledger/check.py"
+before = "        return _dangling_citations(root, config, set())"
+after = "        return found"
+reddens = [
+  "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
+  "tests/ledger/test_commands.py::test_check_reports_a_citation_when_there_is_no_ledger",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off",
+]
+
 # The base's copy governs the change, so one that does not load fails the run: read as "no copy",
 # it would be the bootstrap, and the change would judge itself. The second entry is the wider
 # mistake, a handler that answers any error that way: a change can make the base's load refuse,

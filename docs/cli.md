@@ -580,11 +580,13 @@ files and `[ledger] code_roots` has an entry (a `void` entry counts); every cita
 file that exists. Exits `1` with the count and up to eight `path:line [rule]` labels on the
 line; `--json` carries every finding with its `detail`, which may quote the repository and is
 why it is not on the line. Before a ledger exists — no `[paths] bugs` directory *and* no
-generated index — prints `nothing to check` and exits `0`; a generated index with no directory
-behind it is a deleted ledger and exits `1`. Git enumerates the files where the root is the top
-of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A file whose
-first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither scanned nor
-swept. **Writes** nothing.
+generated index — the one rule is the citation rule, and every citation of an entry file dangles:
+with none it prints `nothing to check` and exits `0`, so the check can be required before the first
+entry, and a change that deletes the ledger still answers for what cites it. A generated index with
+no directory behind it is a deleted ledger and exits `1`. Git enumerates the files where the root
+is the top of a checkout (tracked plus untracked-not-ignored), and a walk stands in elsewhere. A
+file whose first 2 KiB carry `keelline:ledger:fixtures` holds sample identifiers and is neither
+scanned nor swept. **Writes** nothing.
 
 ## `keelline bugs renumber OLD NEW`
 
