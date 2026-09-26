@@ -9,6 +9,7 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.docs.trail import END_MARKER, MARKER
+from keelline.findings import Finding
 
 CONFIG = """
 [keelline]
@@ -210,3 +211,27 @@ def test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2(
     plan = root / "docs" / "plans" / "2026-01-01-x.md"
     plan.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
     assert invoke(["plan", "check", str(plan), *common]) == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "module", "gate"),
+    [
+        (["docs", "check"], "keelline.docs.hygiene", "docs_gate"),
+        (["docs", "trail", "--check"], "keelline.docs.trail", "trail_gate"),
+    ],
+    ids=["docs check", "docs trail --check"],
+)
+def test_the_command_answers_with_its_gate_s_own_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: list[str], module: str, gate: str
+) -> None:
+    # The gate `keelline assess` runs and the command a person runs are one function, so the
+    # two cannot drift apart. Mutations (advisory): `problems = docs_gate(root, config)` becomes
+    # `problems = check_budgets(root, config) + check_links(root, config)` in `run_docs_check`
+    # (first case); `trail_gate(root, config)` replaced by an inline comparison in
+    # `run_docs_trail` (second case) — each makes the patch unseen and reddens.
+    _root, common = project(tmp_path)
+    assert invoke(["docs", "trail", *common]) == 0
+    assert invoke([*command, *common]) == 0
+    planted = [Finding("planted", "", None, "")]
+    monkeypatch.setattr(f"{module}.{gate}", lambda *args, **kwargs: planted)
+    assert invoke([*command, *common]) == 1

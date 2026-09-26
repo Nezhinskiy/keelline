@@ -132,6 +132,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from keelline.errors import Refusal
+from keelline.findings import Finding
 from keelline.gitenv import scrubbed_env
 
 if TYPE_CHECKING:
@@ -429,7 +430,7 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
             timeout=LOG_TIMEOUT_SECONDS,
             env=scrubbed_env(),
         )
-    # None of the three refusals below carries a byte this module did not compute. `git log`'s
+    # None of the four refusals below carries a byte this module did not compute. `git log`'s
     # stderr is repository-authored and unbounded — `warning: ignoring broken ref …`, `error:
     # object file … is empty`, `fatal: bad object <name>` all quote refs and object names — and
     # `TimeoutExpired`/`OSError` stringify the whole argv, `root` included. The range is the
@@ -440,6 +441,12 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
         ) from None
     except OSError:
         raise Refusal(f"git could not be run to read {rev_range!r}") from None
+    # A commit's own `encoding` header naming one git cannot convert from leaves its message
+    # raw, and a pull request can push such a commit: undecodable, it cannot be judged.
+    except UnicodeDecodeError:
+        raise Refusal(
+            f"git printed a message in {rev_range!r} that is not UTF-8 text, so it cannot be judged"
+        ) from None
     if completed.returncode != 0:
         raise Refusal(f"git could not read {rev_range!r}; run it yourself to see why")
     # Positional, not searched: the fields alternate sha, message, sha, message, and `-z` puts a
@@ -470,3 +477,19 @@ def check_range(root: Path, rev_range: str, config: Config) -> Report:
         if offences:
             violations.append(Violation(sha, tuple(offences)))
     return Report(len(commits), tuple(violations))
+
+
+def commit_gate(root: Path, config: Config, base: str) -> list[Finding]:
+    """The `commit` gate's whole composition: each attribution line in `base..HEAD` as a finding.
+
+    A finding's location is the commit's sha, the line in its message and a label from
+    `ATTRIBUTION_LABELS` — all computed here, none of it repository text. `commit check --range`
+    calls `check_range` itself rather than this function, because it reports more than
+    findings: how many messages it read.
+    """
+    report = check_range(root, f"{base}..HEAD", config)
+    return [
+        Finding("attribution", violation.sha, offence.line, offence.label)
+        for violation in report.violations
+        for offence in violation.offences
+    ]

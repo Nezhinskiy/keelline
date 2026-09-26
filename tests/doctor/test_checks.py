@@ -1256,7 +1256,7 @@ def test_a_committed_attach_ledger_cannot_force_a_red_row(tmp_path: Path) -> Non
     assert LEDGER in check.detail
     assert "could not run" not in check.detail
     # The reason the status matters rather than only the sentence: `red` is what gates the exit
-    # code, and wave 5's `assess` is planned to gate on it too.
+    # code.
     assert not any(row.status == "red" for row in checks), [
         (row.name, row.detail) for row in checks if row.status == "red"
     ]
@@ -1328,6 +1328,19 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     assert warned.status == "warn"
     assert "PermissionError" in warned.detail
     assert checks._guarded("files", is_broken, context).status == "red"
+
+
+def test_a_settings_file_that_is_not_utf8_is_one_the_walk_is_blind_to(tmp_path: Path) -> None:
+    # A `UnicodeDecodeError` is a `ValueError`, which `_guarded` renders red as a defect in this
+    # module; the file is the machine's or the repository's, and the walk says it could not read
+    # it, as it does for an `OSError`. Mutation (by hand): the decode error left out of the
+    # `except` -> this reddens on `UnicodeDecodeError`.
+    root = _initialised(tmp_path)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.local.json").write_bytes(b"\xff\xfe{}")
+    context = checks.Context(root, None, None, _stub(), {}, load(root, machine=_machine(tmp_path)))
+    row = checks._hook_entries(context)
+    assert "could not be read as hook entries" in row.detail
 
 
 def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
@@ -1919,9 +1932,9 @@ def test_a_local_only_project_is_warned_and_never_reddened_by_an_unrelated_floor
     # DC2's own sentence, which is why this requirement has a row of its own rather than being
     # folded into `versions`: "a `local-only` project on a machine that records an overlay must
     # not go red for a requirement it has no relationship with". The finding is the same finding
-    # and says the same thing; only the level moves, because red gates the exit code and wave 5's
-    # `assess` is planned to gate on it. Asserted as the level AND the whole text, so this case
-    # cannot pass for the red case's reason or vice versa.
+    # and says the same thing; only the level moves, because red gates the exit code. Asserted
+    # as the level AND the whole text, so this case cannot pass for the red case's reason or
+    # vice versa.
     #
     # Mutation (declared): `unmet = RED if ... else WARN` -> `unmet = RED`.
     machine = _recorded_overlay(tmp_path, ">=99.0.0")

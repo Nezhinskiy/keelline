@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,13 +18,16 @@ from keelline.config.schema import Config
 from keelline.docs.trail import (
     END_MARKER,
     MARKER,
+    _ignored,
     read_trail,
     rebuild,
     render_listing,
+    trail_gate,
     trail_path,
     undeclared_new_documents,
 )
 from keelline.errors import Failure
+from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import git
 
 CONFIG = """
@@ -296,6 +303,131 @@ def test_an_ignored_document_whose_name_is_not_ascii_is_not_listed(tmp_path: Pat
     assert "caf\u00e9" not in listing(root, config)
 
 
+@needs_git
+def test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others(
+    tmp_path: Path,
+) -> None:
+    # The listing asks `check-ignore --stdin` about every document it globbed off the disk in
+    # one call, and a Linux name that is not UTF-8 reaches Python with surrogate escapes. Encoded
+    # strictly, that one name made the whole question unaskable, `_ignored` answered "nothing is
+    # ignored", and a local-only document the owner had put in `.gitignore` was listed in the
+    # committed roadmap — the case `--no-index` exists for. Asked of the filter directly,
+    # because APFS refuses to create the name and `--no-index` matches patterns without reading
+    # the file. Mutation (declared, on `gitenv`): the question read as unaskable again -> the
+    # filter answers nothing and this reddens.
+    root, _ = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/local-only.md\n", encoding="utf-8")
+    plans = root / "docs" / "plans"
+    asked = [plans / "local-only.md", plans / os.fsdecode(b"2026-04-04-caf\xe9.md")]
+    assert _ignored(root, asked) == {plans / "local-only.md"}
+
+
+@needs_git
+def test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8(
+    tmp_path: Path,
+) -> None:
+    # The case above end to end, through `trail_gate` itself, where the disk can hold the name
+    # (Linux, where CI's oracle runs; APFS refuses it, so there the case is skipped rather than
+    # passed). A fresh roadmap, then a gitignored local-only document and an untracked document
+    # named in latin-1 bytes appear beside it: neither belongs in the listing, so the roadmap is
+    # still fresh. Had the latin-1 name made the ignore question unaskable, the local-only
+    # document would have been listed and the gate would report the roadmap stale, or fail.
+    # Mutation (declared, on `gitenv`): the question read as unaskable again -> this reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    (root / ".gitignore").write_text("docs/plans/local-only.md\n", encoding="utf-8")
+    git(root, "add", "-A")
+    roadmap = root / "docs" / "roadmap.md"
+    roadmap.write_text(
+        rebuild(SEED, root, config, read_trail(trail_path(root, config))), encoding="utf-8"
+    )
+    assert trail_gate(root, config) == []
+    plans = root / "docs" / "plans"
+    try:
+        with open(os.fsencode(plans) + b"/2026-04-04-caf\xe9.md", "w", encoding="utf-8") as f:
+            f.write("# doc\n")
+    except OSError as exc:  # APFS: `Illegal byte sequence`
+        pytest.skip(f"this filesystem cannot hold a name that is not UTF-8 ({exc.strerror})")
+    (plans / "local-only.md").write_text("# doc\n", encoding="utf-8")
+    assert trail_gate(root, config) == []
+    assert "local-only" not in roadmap.read_text(encoding="utf-8")
+
+
+@needs_git
+def test_a_real_non_utf_8_locale_does_not_unignore_a_document_with_a_non_ascii_name(
+    tmp_path: Path, latin1_locale: str
+) -> None:
+    # Found in review: under `LC_ALL=en_US.ISO8859-1` on macOS, where the filesystem is UTF-8
+    # whatever the locale, `_ignored` sent `café-local.md` to git in latin-1, the gitignored
+    # document read as not ignored, and it went into the committed roadmap beside the ASCII
+    # local-only document the filter did catch. A child process under a real latin-1 locale,
+    # skipped where none is installed; `tests/test_git_run.py` holds the same seam everywhere.
+    # The case is about a UTF-8 filesystem under a latin-1 locale, which is macOS: on Linux the
+    # locale sets the filesystem codec too, the `.gitignore` below (written as UTF-8) names other
+    # bytes than the child's names, and the case would test something else, so it is skipped.
+    env = {**os.environ, "LC_ALL": latin1_locale, "PYTHONUTF8": "0"}
+    codec = subprocess.run(
+        [sys.executable, "-c", "import sys; print(sys.getfilesystemencoding())"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    ).stdout.strip()
+    if codec.lower().replace("-", "") != "utf8":
+        pytest.skip(f"this host's filesystem codec under {latin1_locale} is not UTF-8")
+    root, _ = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    plans = root / "docs" / "plans"
+    names = ["caf\u00e9-local.md", "local-only.md"]
+    (root / ".gitignore").write_text(
+        "".join(f"docs/plans/{name}\n" for name in names), encoding="utf-8"
+    )
+    for name in names:
+        (plans / name).write_text("# doc\n", encoding="utf-8")
+    script = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from keelline.docs.trail import _ignored\n"
+        "root = Path(sys.argv[1])\n"
+        "asked = [root / 'docs' / 'plans' / name for name in sys.argv[2:]]\n"
+        "print(ascii(sorted(path.name for path in _ignored(root, asked))))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(root), *names],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == ascii(sorted(names))
+
+
+@needs_git
+@pytest.mark.parametrize("asked", ["check-ignore", "ls-files"])
+@pytest.mark.parametrize("code", [-1, 128])
+def test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, asked: str, code: int
+) -> None:
+    # Inside a work tree, a `check-ignore` or `ls-files` that could not be run, ran past its
+    # time limit, or exited on a checkout git refuses (dubious ownership, 128) was read as
+    # "nothing ignored" or "nothing untracked", and the listing named every document on disk:
+    # a local-only one the owner had put in `.gitignore` went into the committed roadmap, the
+    # case `--no-index` exists for. It fails now, naming the question. Outside a repository
+    # there is nothing to ask and the listing still works (the case below). Mutation (declared,
+    # one per filter): read the failure as an empty set again -> that filter's cases redden.
+    from keelline.docs import trail as module
+
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (code, "") if args[0] == asked else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    cause = NO_ANSWER if code == -1 else f"`git {asked}` exited {code}"
+    with pytest.raises(Failure, match=re.escape(cause)):
+        listing(root, config)
+
+
 def test_a_tree_git_cannot_answer_for_still_lists_its_documents(tmp_path: Path) -> None:
     root, config = corpus(
         tmp_path,
@@ -338,3 +470,28 @@ def test_a_trail_file_that_will_not_parse_never_quotes_its_own_keys(tmp_path: Pa
     message = str(caught.value)
     assert "is not valid TOML" in message and "ignore-prior-rules" not in message
     assert re.search(r"\(at line \d+, column \d+\)\Z", message), message
+
+
+@needs_git
+def test_the_trail_gate_passes_a_current_listing_and_names_a_stale_one(tmp_path: Path) -> None:
+    # Mutation (advisory): the stale arm returning `[]` — the second assertion reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",))
+    roadmap = root / config.paths.roadmap
+    trail = read_trail(trail_path(root, config))
+    roadmap.write_text(rebuild(SEED, root, config, trail), encoding="utf-8")
+    assert trail_gate(root, config) == []
+    (root / config.paths.plans / "2026-01-02-gadget-plan.md").write_text(
+        "# doc\n", encoding="utf-8"
+    )
+    git(root, "add", "-A")
+    assert [finding.rule for finding in trail_gate(root, config)] == ["trail-stale"]
+
+
+def test_the_trail_gate_names_a_missing_roadmap(tmp_path: Path) -> None:
+    # `docs trail --check` prints its own sentence for this answer, told apart by the rule.
+    # Mutation (advisory): `ROADMAP_MISSING` replaced by `TRAIL_STALE` in the first return —
+    # this reddens.
+    root, config = corpus(tmp_path)
+    (root / config.paths.roadmap).unlink()
+    found = [(finding.rule, finding.path) for finding in trail_gate(root, config)]
+    assert found == [("roadmap-missing", config.paths.roadmap)]

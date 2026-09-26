@@ -24,7 +24,8 @@ Encodes the two shapes rejected by the rule "a test must exercise the code under
   reader a moment per candidate, while narrowing the predicate to call targets changes
   what a ported scanner reports with none of its source corpus available to re-grade it
   against. Restricting it to call targets, and reaching into the fixtures a test
-  requests, are the open options for the lane that turns this into a gate (`assess`),
+  requests, are the open options for the lane that turns this into a gate --
+  `keelline assess` leaves it out of its inventory until its candidates are triaged --
   where a tightened predicate can be graded before anything is blocked on it.
 
 This is an **audit tool, not yet a gate**. `test audit-entrypoints` exits 0 whether or not

@@ -3,9 +3,10 @@
 A harness is served first by the `AGENTS.md` region, which `project.templates` renders and
 every harness that reads the standard sees. Where a harness reads something better natively,
 its `render_profile` renders a profile into that form. `settings` names the committed files in
-which it reads hook entries, for `assess` to inventory once it ships; `marker_dir` is the
-directory whose presence says a repository uses it. A harness is a value, not a class: adding
-one is one more value in `HARNESSES`, and nothing that reads the registry changes.
+which it reads hook entries, for `keelline assess`'s foreign-hooks probe to inventory;
+`marker_dir` is the directory whose presence says a repository uses it. A harness is a value,
+not a class: adding one is one more value in `HARNESSES`, and nothing that reads the registry
+changes.
 
 Code that needs a harness fact asks this registry. Three modules older than it still spell
 their own settings files: `doctor`, `setup` and `attach`. `doctor` walks one no field here

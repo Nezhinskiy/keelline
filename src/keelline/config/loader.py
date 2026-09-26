@@ -16,6 +16,8 @@ from keelline import __version__
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import contained, validate_paths
 from keelline.config.schema import (
+    BRANCH_NAME,
+    BRANCH_RULE,
     BUILTIN_GATES,
     CI_MODES,
     CONFIG_CHECK,
@@ -101,6 +103,14 @@ T = TypeVar("T")
 
 class ConfigError(Failure):
     """A keelline.toml that cannot be trusted as written."""
+
+
+# Fixed text and a path Keelline chose or the owner typed. Not the decoder's message: it is only
+# a byte and an offset, but the one sentence says what to do about every such file.
+NOT_UTF8 = "{path} is not UTF-8 text; Keelline reads it only as UTF-8"
+# The error's class name and not its message, which repeats the path and adds nothing to act on.
+UNREADABLE = "{path} cannot be read ({error})"
+NOT_THERE = "{path} does not exist; run `keelline init` first"
 
 
 class MachineConfigError(ConfigError):
@@ -367,6 +377,12 @@ def _personal(machine: Path, preset: dict[str, Any]) -> Personal:
         return _build(Personal, "personal", values)
     try:
         raw = tomllib.loads(machine.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None
+    except OSError as exc:
+        raise MachineConfigError(
+            UNREADABLE.format(path=machine, error=type(exc).__name__)
+        ) from None
     except tomllib.TOMLDecodeError as exc:
         raise MachineConfigError(f"{machine} is not valid TOML {toml_position(exc)}") from None
     try:
@@ -383,7 +399,7 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
 
     `interactive` is threaded to `machine_config_path`, and exists because the seam was missing:
     `machine.py`'s docstring says "a caller that knows it is a hook, the MCP server or a
-    `--gate` run says `interactive=False` rather than relying on the terminal check", and the
+    `keelline gate` run says `interactive=False` rather than relying on the terminal check", and the
     one shipped non-interactive caller — `hooks.commands.run_hook` — had no way to say it.
     `load` called `machine_config_path()` with no argument, so the path the docstring singles
     out fell back to the `isatty` sniff. It evaluated `False` in practice, because a hook's
@@ -413,7 +429,11 @@ def load(root: Path, *, machine: Path | None = None, interactive: bool | None = 
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        raise ConfigError(f"{path} does not exist; run `keelline init` first") from None
+        raise ConfigError(NOT_THERE.format(path=path)) from None
+    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None
+    except OSError as exc:
+        raise ConfigError(UNREADABLE.format(path=path, error=type(exc).__name__)) from None
     return loads(text, root, machine=machine, interactive=interactive)
 
 
@@ -430,17 +450,29 @@ def read_document(root: Path) -> str | None:
             return stream.read()
     except FileNotFoundError:
         return None
+    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=CONFIG_FILE)) from None
+    except OSError as exc:
+        raise ConfigError(UNREADABLE.format(path=CONFIG_FILE, error=type(exc).__name__)) from None
 
 
 def loads(
-    text: str, root: Path, *, machine: Path | None = None, interactive: bool | None = False
+    text: str,
+    root: Path,
+    *,
+    machine: Path | None = None,
+    interactive: bool | None = False,
+    label: str | None = None,
 ) -> Config:
     """Build a `Config` from `text` as `keelline.toml`'s contents, without reading a file.
 
     `load` is "read the file, then `loads`"; `init --yes` needs a `Config` for a document it
     has not written to disk yet, so the parse-and-validate half is this function on its own.
+    `label` is what a refusal calls the document when it is not the file at `root`: the base's
+    copy `keelline gate` reads out of git is validated against the tree's disk, and a refusal
+    naming `<root>/keelline.toml` would send its owner to a file with nothing wrong in it.
     """
-    path = root / CONFIG_FILE
+    path = label or root / CONFIG_FILE
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
@@ -462,6 +494,12 @@ def loads(
         raise ConfigError(
             f"project.name must be one lowercase path segment matching {PROJECT_NAME.pattern}"
         )
+    for key in ("base_branch", "release_branch"):
+        # Named, never quoted: the value becomes a git ref and reaches output lines, and it is
+        # the text the grammar refused. The grammar is the one the rendered workflow holds
+        # `[ci] gate_branch` to; git could not have such a branch anyway.
+        if not BRANCH_NAME.match(getattr(project, key)):
+            raise ConfigError(f"project.{key} is not a plain branch name: {BRANCH_RULE}")
     paths = _build(Paths, "paths", _merged(raw, defaults, "paths"))
     memory = _deduplicated(_build(Memory, "memory", _merged(raw, defaults, "memory")))
     _enum("memory", "mode", memory.mode, MEMORY_MODES)

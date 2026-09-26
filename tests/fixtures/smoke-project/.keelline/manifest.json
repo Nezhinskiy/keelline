@@ -18,7 +18,7 @@
       "target": "AGENTS.md",
       "template": "project/agents-region.md",
       "version": "0.1.0",
-      "sha256": "ba3dec6ac36124930c0103ec467b3b0d58b00af6b39a87633ed2dc5f314a0bc2"
+      "sha256": "41ea4edda317162bbad917ddd945c8a383721c7f842c5071416d7dbd052bbec0"
     },
     "claude-md": {
       "id": "claude-md",

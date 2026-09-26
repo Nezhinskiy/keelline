@@ -66,7 +66,10 @@ def _read(root: Path, name: str) -> str | None:
     path = root / name
     if not path.is_file():
         return None
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise MalformedSource(f"{name} is not UTF-8 text") from None
     try:
         return _parse(name, text)
     except tomllib.TOMLDecodeError as exc:
@@ -101,6 +104,8 @@ def _pyproject(root: Path) -> dict[str, Any]:
         return {}
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise MalformedSource(f"{PYPROJECT} is not UTF-8 text") from None
     except tomllib.TOMLDecodeError as exc:
         raise MalformedSource(f"{PYPROJECT} is not valid TOML: {exc}") from None
 
@@ -182,7 +187,11 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
     marketplace = root / MARKETPLACE
     if marketplace.is_file():
-        entries = json.loads(marketplace.read_text(encoding="utf-8")).get("plugins", [])
+        try:
+            text = marketplace.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise MalformedSource(f"{MARKETPLACE} is not UTF-8 text") from None
+        entries = json.loads(text).get("plugins", [])
         for entry in entries:
             if "version" in entry:
                 problems.append(

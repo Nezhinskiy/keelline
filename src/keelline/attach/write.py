@@ -97,7 +97,8 @@ LEDGER = ".keelline/local/attach.json"
 LEDGER_FORMAT = 1
 GITIGNORE = ".gitignore"
 IGNORE_REGION = "ignore"
-# §7.1 lists both: the ledger's directory, and the assessment file `assess` will write.
+# Both paths the ignore region keeps out of git: the ledger's directory, and the inventory
+# `keelline assess` writes.
 IGNORED = (".keelline/local/", ".keelline/assessment.json")
 IGNORE_NOTE = "# Keelline's local state: yours, never a collaborator's."
 # The region body, spelled once. `init` (wave 4, the `project` area) records this same region
@@ -295,6 +296,8 @@ def ledger(root: Path) -> AttachLedger:
         ) from exc
     except OSError as exc:
         raise Failure(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{path} is not UTF-8 text") from None
     except json.JSONDecodeError as exc:
         raise Failure(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
@@ -337,6 +340,12 @@ def _write_ignore_region(root: Path) -> None:
     path = root / GITIGNORE
     try:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
+    except UnicodeDecodeError:
+        raise Refusal(
+            f"{GITIGNORE} is not UTF-8 text, so `.keelline/local/` cannot be made untracked — and "
+            f"writing the attach ledger into a tracked path would publish your personal allow "
+            f"rules to every collaborator"
+        ) from None
     except OSError as exc:
         raise Refusal(
             f"{GITIGNORE} cannot be read ({exc}), so `.keelline/local/` cannot be made "
@@ -404,7 +413,12 @@ def _codex_rules(root: Path, binding: Binding) -> tuple[str, ...]:
     """
     written: list[str] = []
     for target, source in codex_rules(binding):
-        fsops.write_within(root, target, source.read_text(encoding="utf-8"))
+        try:
+            text = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # The overlay is the owner's, so its path may print.
+            raise Failure(f"{source} is not UTF-8 text, so it was not copied") from None
+        fsops.write_within(root, target, text)
         written.append(target)
     return tuple(written)
 
@@ -442,7 +456,7 @@ def _first_attach(record: Path) -> str | None:
         return None
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
     value = raw.get("first_attach")
     return value if isinstance(value, str) and value else None
@@ -1036,6 +1050,8 @@ def _ignore_region_remainder(root: Path) -> str | None:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise Failure(f"{GITIGNORE} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{GITIGNORE} is not UTF-8 text") from None
     remaining = drop(text, IGNORE_REGION, Style.HASH)
     return None if remaining == text else remaining
 

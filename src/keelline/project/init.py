@@ -14,19 +14,28 @@ only when this run is the one that creates it, and `templates._ci` renders the w
 `doctor`'s `ci-ref` row reports red when they do, which is why this is the invariant rather than
 a convenience.
 
-**Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact, and DC3 says
-what that kind is: created when absent, never looked inside again. So on a repository that
-already carries one the engine reports `skip_modified` — "create-once, and the file is already
-there" — and the file comes back byte for byte. What the hand-written document does is decide
-the whole run: it is parsed, merged under Keelline's own two keys and the preset's defaults,
-and validated by `loads` before a byte is written, and the `Config` that comes out is what
-every target below is built from. The tool-owned keys are written only into a file
-Keelline itself creates, which is the only file whose header claims them.
+**Adopted means read, not replaced.** `keelline.toml` is a `Kind.ONCE` artifact: created when
+absent, never looked inside again. So on a repository that already carries one the engine
+reports `skip_modified` — "create-once, and the file is already there" — and the file comes
+back byte for byte but for one key. What the hand-written document does is decide the whole
+run: it is parsed, merged under Keelline's own two keys and the preset's defaults, and
+validated by `loads` before a byte is written, and the `Config` that comes out is what every
+target below is built from.
 
-**Every value in the document this writes is either Keelline's own or the repository's own
-answer read back.** The tool-owned keys are `config.owned.OWNED`; everything else
-is copied from a `keelline.toml` a person wrote, or — where there is none — detected under
-`PROJECT_NAME`'s grammar, which is the one thing `detect` refuses outside of. `loads` then
+**The one key is a missing `[keelline] version`**, the only tool-owned key the loader
+requires, with its `[keelline]` header when the file has none. It is added through
+`config.owned.rewrite`, which keeps every other line, and the file is checked with `loads` as it
+will then be on disk — before any network call and any write, dry run included — because the
+merged document forces `state`, drops `enforced` and detects a name the file may lack, and so
+loads where the next command's `load` would not. The other tool-owned keys are written only into
+a file Keelline itself creates, which is the only file whose header claims them.
+
+**Every value in the document this writes is Keelline's own, the repository's own answer read
+back, or an answer a person gave as a flag.** The tool-owned keys are `config.owned.OWNED`;
+everything else is copied from a `keelline.toml` a person wrote, or — where there is none —
+taken from the answers `Given` carries, each held by the parser to its grammar or its choices,
+or detected under `PROJECT_NAME`'s grammar, which is the one thing `detect` refuses outside of.
+Answers never reach a document a person wrote: `precheck` refuses them over one. `loads` then
 validates the whole document before a byte is written, so a bad path or a bad name costs the
 run rather than the repository.
 """
@@ -38,10 +47,18 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import keelline
-from keelline.config.loader import CONFIG_FILE, loads, toml_position
+from keelline.config.loader import (
+    CONFIG_FILE,
+    loads,
+    preset_defaults,
+    read_document,
+    toml_position,
+)
+from keelline.config.owned import rewrite
 from keelline.errors import Failure, Refusal
 from keelline.project.detect import detect
 from keelline.project.footprint import prepare
+from keelline.project.rewrite import rewrite_owned
 from keelline.project.templates import CI_ARTIFACT
 from keelline.release.api import Resolution, resolve_pin
 from keelline.runner import Runner
@@ -49,6 +66,7 @@ from keelline.scaffold import MANIFEST_PATH, Plan, apply
 from keelline.tomlout import dumps
 
 STATE_NEW = "initialised"
+VERSION = ("keelline", "version")
 USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "gates", "commit_messages")
 HEAD_KEYS = ("preset", "profile", "agents")
 HEADER = (
@@ -60,13 +78,17 @@ HEADER = (
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
 # them first" reads as two alternatives, one of which does not work.
 NEEDS_YES = (
-    "`keelline init` asks its questions through the onboarding lane, which ships later; today "
-    "it takes the detected defaults — pass --yes to accept them, or --yes --dry-run to read "
-    "them first"
+    "`keelline init` writes only with --yes, which takes the defaults `keelline init "
+    "--questions` shows; an answer flag such as --name changes one of them, and --dry-run "
+    "beside --yes reads the plan first"
 )
 ALREADY = (
     f"{MANIFEST_PATH} exists, so this repository is initialised; re-running `init` is "
     "`keelline upgrade`"
+)
+ANSWER_SHEET = (
+    "this repository already has a keelline.toml, which answers the questions `init` would ask; "
+    "edit it, then run `keelline init --yes --dry-run` with no answer flag to read the plan"
 )
 # The table is Keelline's own vocabulary (`keelline`, `project` or one of `USER_OWNED`), and it
 # is the only thing this names: the key that failed is exactly the text no grammar has bounded.
@@ -74,11 +96,37 @@ UNWRITABLE_KEY = (
     "keelline.toml's [{table}] table holds a key Keelline cannot write back as a bare TOML key, "
     "so nothing was written; rename it to letters, digits, `_` and `-`"
 )
+# Fixed text: the branch `origin/HEAD` named is the remote's, outside the grammar, and not printed.
+HEAD_DEFAULTED = (
+    "origin/HEAD does not name a plain branch, so [project] base_branch and release_branch are "
+    "main, and so is the branch the workflow gates; if pull requests merge into another branch, "
+    "answer it with `keelline init --yes --base-branch BRANCH` while nothing is written, or set "
+    "[project] base_branch, release_branch and [ci] gate_branch in keelline.toml"
+)
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
     "a region_update into it; a dry run plans it as a create of a region-only file. The bytes "
     "inside the markers are the same either way"
 )
+
+
+@dataclass(frozen=True)
+class Given:
+    """The answers a person gave as flags on `init --yes`; `None` is a question not answered.
+
+    Each replaces one default in the document this run creates, and none reaches one a person
+    wrote (`precheck`). The parser has held each to its grammar or its choices.
+    """
+
+    name: str | None = None
+    base_branch: str | None = None
+    agents: tuple[str, ...] | None = None
+    profile: str | None = None  # "" is an answer: no profile
+    memory_mode: str | None = None
+    local: tuple[str, ...] | None = None
+
+
+NO_ANSWERS = Given()
 
 
 @dataclass(frozen=True)
@@ -95,6 +143,14 @@ class InitReport:
     ref: str = ""
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
+    # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar.
+    head_note: str = ""
+    # Whether this run's plan adds `[keelline] version` to a `keelline.toml` a person wrote. It
+    # is written only by a run that is neither a dry run nor refused.
+    stamped: bool = False
+    # The custom gates the adopted `keelline.toml` configures, by name: `assess`, `gate` and
+    # `adopt promote` run their commands. Names only, each held to the loader's grammar.
+    custom_gates: tuple[str, ...] = ()
 
     @property
     def refused(self) -> bool:
@@ -103,9 +159,12 @@ class InitReport:
         return bool(self.once.refusals or self.footprint.refusals)
 
 
-def _existing(root: Path) -> dict[str, object] | None:
-    """The `keelline.toml` already in the repository, parsed, or `None`.
+def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
+    """The `keelline.toml` already in the repository, as its text and parsed, or `None`.
 
+    Read through `read_document`, the reader `keelline gate` uses, so a symlinked file is a
+    refusal and is never followed: a clone's link to `/dev/zero` would end the run by exhausting
+    memory. Its refusals for a file that is not UTF-8 text or cannot be read are the loader's.
     A file that will not parse is a `Failure` naming the file and the position `tomllib`
     stopped at, and nothing else the parser had to say. `tomllib`'s own message embeds the
     source for several of its faults — a duplicate table or inline-table key is reported with
@@ -114,28 +173,35 @@ def _existing(root: Path) -> dict[str, object] | None:
     P4 makes an adopted repository's own document, and this refusal is one the `init` skill is
     instructed to relay and stop on.
     """
-    path = root / CONFIG_FILE
-    if not path.is_file():
+    text = read_document(root)
+    if text is None:
         return None
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
+        return text, tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise Failure(f"{CONFIG_FILE} is not valid TOML {toml_position(exc)}") from None
 
 
 def _tables(
-    root: Path, existing: dict[str, object] | None, *, ci: bool
-) -> dict[str, dict[str, object]]:
-    """The document's tables, in order: Keelline's two keys, then the repository's answers (P4).
+    root: Path, existing: dict[str, object] | None, *, ci: bool, given: Given
+) -> tuple[dict[str, dict[str, object]], bool]:
+    """The document's tables, in order: Keelline's two keys, then the repository's own answers
+    or the ones `given` carries; and whether detection put the default base branch in place of
+    a remote head outside the grammar, with no `--base-branch` answering it.
 
-    **Detection runs only when no `[project]` table answers for the repository**, and not
-    merely when some key of the head is absent. `detect` is the one call here that can refuse
-    — a directory name or a remote's last segment outside `PROJECT_NAME` — and DC6's remedy for
-    that refusal is to write `[project] name` into `keelline.toml` by hand and run `init`
-    again. A branch that consulted `detect` for anything the preset can default would make that
-    remedy dead: the repository whose name cannot be guessed would go on being refused after
-    doing exactly what it was told. Everything else the head does not carry — `preset`,
-    `profile`, `agents` — has a preset default, and the loader supplies it.
+    **Detection runs only when no `[project]` table answers for the repository**, and not merely
+    when some key of the head is absent; **it is lenient when `--name` answers the name, the one
+    value it refuses, or when an adopted file leaves it out**, which the loader then refuses
+    with its own sentence. `detect` is the one call here that can refuse — a directory name or a
+    remote's last segment outside `PROJECT_NAME` — and the remedy for that refusal is to answer it
+    with `--name`, or to write `[project] name` into `keelline.toml` by hand and run `init` again. A
+    branch that consulted `detect` for anything the preset can default would make that second remedy
+    dead: the repository whose name cannot be guessed would go on being refused after doing exactly
+    what it was told. Everything else the head does not carry — `preset`, `profile`, `agents` — has
+    a preset default, and the loader supplies it.
+
+    `precheck` guarantees that `given` is `NO_ANSWERS` whenever `existing` carries tables, so
+    the answers never overwrite a table a person wrote.
     """
     head: dict[str, object] = {"version": keelline.__version__, "state": STATE_NEW}
     tables: dict[str, dict[str, object]] = {"keelline": head}
@@ -147,19 +213,33 @@ def _tables(
             table = existing.get(name)
             if isinstance(table, dict):
                 tables[name] = dict(table)
+    head_refused = False
     if "project" not in tables:
-        found = detect(root)
-        head.setdefault("agents", list(found.agents))
-        if found.profile:
-            head.setdefault("profile", found.profile)
-        tables["project"] = {
-            "name": found.name,
-            "base_branch": found.base_branch,
-            "release_branch": found.base_branch,
-        }
+        # Lenient where something else answers the name: `--name`, or an adopted file, whose
+        # missing `[project] name` is the loader's to refuse, since `--name` cannot reach it.
+        found = detect(root, lenient=given.name is not None or existing is not None)
+        head_refused = found.head_refused and given.base_branch is None
+        head.setdefault("agents", list(given.agents or found.agents))
+        profile = found.profile if given.profile is None else given.profile
+        if profile:
+            head.setdefault("profile", profile)
+        name = given.name or found.name
+        branch = given.base_branch or found.base_branch
+        tables["project"] = {"base_branch": branch, "release_branch": branch}
+        if name:
+            tables["project"] = {"name": name, **tables["project"]}
+        # The rendered caller gates this branch. Written only where it differs from the preset's,
+        # so a `main` repository's file is unchanged. An adopted file reaches this block only
+        # when it has no `[project]`, and the on-disk check in `init` refuses that one.
+        if branch != preset_defaults(name).ci.gate_branch:
+            tables.setdefault("ci", {})["gate_branch"] = branch
+    if given.memory_mode is not None:
+        tables["memory"] = {"mode": given.memory_mode}
+    if given.local:
+        tables["artifacts"] = {"local": list(given.local)}
     if not ci:
         tables.setdefault("ci", {})["mode"] = "none"
-    return tables
+    return tables, head_refused
 
 
 def _rendered(tables: dict[str, dict[str, object]]) -> str:
@@ -180,29 +260,75 @@ def _rendered(tables: dict[str, dict[str, object]]) -> str:
     return HEADER + dumps(tables)
 
 
+def _as_on_disk(read: tuple[str, dict[str, object]] | None) -> tuple[str | None, bool]:
+    """The adopted `keelline.toml` as every later command will load it, and whether this run
+    writes its missing `[keelline] version`; `(None, False)` when this run creates the file.
+
+    `read` is `_existing`'s answer, the text `read_document` gave, so this is the file the write
+    will meet; one without a version then meets the key editor, which refuses a `[keelline]` it
+    cannot extend: the refusals the write would meet, met while planning.
+    """
+    if read is None:
+        return None, False
+    text, existing = read
+    head = existing.get("keelline")
+    if isinstance(head, dict) and "version" in head:
+        return text, False
+    return rewrite(text, {VERSION: keelline.__version__}), True
+
+
+def precheck(root: Path, *, answering: bool) -> None:
+    """The refusals `init` and `init --questions` share, before anything beyond the root is read.
+
+    A manifest means `init` has already run, so re-running it is `keelline upgrade`. While
+    `answering` — the questions always are, and `init` is whenever an answer flag is given — a
+    `keelline.toml` already answers every question, so asking them over it would collect
+    answers that nothing writes.
+    """
+    if (root / MANIFEST_PATH).is_file():
+        raise Refusal(ALREADY)
+    if answering and (root / CONFIG_FILE).is_file():
+        raise Refusal(ANSWER_SHEET)
+
+
 def init(
-    root: Path, *, machine: Path | None, runner: Runner, yes: bool, dry_run: bool, ci: bool
+    root: Path,
+    *,
+    machine: Path | None,
+    runner: Runner,
+    yes: bool,
+    dry_run: bool,
+    ci: bool,
+    given: Given = NO_ANSWERS,
 ) -> InitReport:
     """Plan both passes, then apply both — or neither.
 
     The refusals come in one order and all of them above every write: no `--yes`, a manifest
-    that says this repository is already initialised, a `keelline.toml` that is not TOML, a
-    detected name outside the grammar, an adopted table holding a key that cannot be written
-    back bare (`_rendered`), a `Config` the loader refuses, an artifact at a file another is
-    built to write, in either pass (`templates.Owners`), a profile artifact `[artifacts] local`
-    would keep out of git (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block
-    listed there (`footprint.refuse_local_root_only`), a planned write git ignores
+    that says this repository is already initialised, an answer given over a `keelline.toml`
+    the repository already has, a `keelline.toml` that is not TOML, a detected name outside the
+    grammar that no `--name` answers, an adopted table holding a key that cannot be written
+    back bare (`_rendered`), a `Config` the loader refuses, an adopted `keelline.toml` whose
+    missing version the key editor cannot add or that the loader refuses as it will be on disk
+    (`_as_on_disk`), an artifact at a file another is built to write, in either pass
+    (`templates.Owners`), a profile artifact `[artifacts] local` would keep out of git
+    (`footprint.refuse_local_profile`), `keelline.toml` or the ignore block listed there
+    (`footprint.refuse_local_root_only`), a planned write git ignores
     (`ignored.refuse_ignored`), and finally a refusal in either plan, which is returned rather
     than raised so the report can name the artifact.
     """
     if not yes:
         raise Refusal(NEEDS_YES)
-    if (root / MANIFEST_PATH).is_file():
-        raise Refusal(ALREADY)
-    existing = _existing(root)
-    tables = _tables(root, existing, ci=ci)
+    precheck(root, answering=given != NO_ANSWERS)
+    read = _existing(root)
+    existing = read[1] if read is not None else None
+    tables, head_refused = _tables(root, existing, ci=ci, given=given)
     document = _rendered(tables)
     config = loads(document, root, machine=machine)
+    on_disk, stamped = _as_on_disk(read)
+    if on_disk is not None:
+        # What the next command loads is the file, not the merged document: that one forces
+        # `state`, drops `enforced` and detects a name the file may lack.
+        loads(on_disk, root, machine=machine)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take
     # the whole of its timeout for an answer nothing prints.
@@ -241,9 +367,15 @@ def init(
         note,
         ref,
         passes.unknown_harnesses,
+        HEAD_DEFAULTED if head_refused else "",
+        stamped,
+        tuple(sorted(config.gates.custom)) if existing is not None else (),
     )
     if dry_run or report.refused:
         return report
+    if stamped:
+        # No manifest yet, so there is no record to re-stamp: only the one line is written.
+        rewrite_owned(root, {VERSION: keelline.__version__})
     apply(root, once)
     # Re-planned against the tree the write-once files are now in: on a repository with no
     # `AGENTS.md`, the region the dry run planned as a create of a region-only file is a

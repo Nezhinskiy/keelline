@@ -41,6 +41,7 @@ TOOL_NAMES = (
     "LSP",
     "NotebookEdit",
     "TodoWrite",
+    "request_user_input",
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
 # Commands the wrapper skills describe against C5 before the command exists, keyed to the
@@ -225,3 +226,17 @@ def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
     fields, body = split(AGENTS / "code-navigator.md")
     assert fields["name"] == "code-navigator" and "tools" in fields
     assert "if one is installed" in body  # the capability, not the product (Premise 14)
+
+
+def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None:
+    # `init` adopts a clone's `keelline.toml`, and the adoption's first command, `keelline
+    # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
+    # skill names that note by its words and asks before the first `keelline assess`. Mutation
+    # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
+    from keelline.project.commands import CUSTOM_GATES
+
+    text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
+    adoption = " ".join(text.split())
+    lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
+    first_run = adoption.index("run `keelline assess`")
+    assert adoption.index(lead) < adoption.index("explicit yes") < first_run

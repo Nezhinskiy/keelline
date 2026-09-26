@@ -19,6 +19,9 @@ no shipped system file carries an excludes rule.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,3 +35,29 @@ def _a_home_of_its_own(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     return home
+
+
+def _is_latin_1(name: str) -> bool:
+    probe = subprocess.run(
+        [sys.executable, "-c", "import locale; print(locale.getpreferredencoding(False))"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": name, "PYTHONUTF8": "0"},
+    )
+    return probe.stdout.strip().replace("-", "").upper() in {"ISO88591", "LATIN1"}
+
+
+@pytest.fixture(scope="session")
+def latin1_locale() -> str:
+    """A latin-1 locale name a child process can run under, or the test is skipped.
+
+    Asked once per session and only by a test that wants it: finding one starts a child
+    interpreter per candidate, which is no cost to put on every collection. macOS ships one; a
+    stock Linux runner does not, so each such test is the real-locale half of a case whose
+    oracle entry names a simulated one.
+    """
+    for name in ("en_US.ISO8859-1", "en_US.ISO-8859-1", "C.ISO-8859-1"):
+        if _is_latin_1(name):
+            return name
+    pytest.skip("no latin-1 locale is installed here")

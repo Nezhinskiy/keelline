@@ -46,9 +46,9 @@ footprint's ignore block keeps out of git on purpose.
 from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
 `check-ignore` that answers neither "some matched" nor "none matched" is a refusal too, because a
 guard that cannot answer must not read as a pass: a `git` that timed out, or that is not there
-to run. Which of the two this is, is read off the disk (`_in_work_tree`) and never asked of the
-same `git`, which fails the same way under the same load: a `rev-parse` that timed out beside
-the `check-ignore` read as "no repository" and let the write through.
+to run. Which of the two this is, is read off the disk (`gitenv.in_work_tree`) and never asked
+of the same `git`, which fails the same way under the same load: a `rev-parse` that timed out
+beside the `check-ignore` read as "no repository" and let the write through.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ from pathlib import Path
 from keelline.config.loader import preset_defaults
 from keelline.config.schema import Config
 from keelline.errors import Refusal
-from keelline.gitenv import git_run
+from keelline.gitenv import git_run, in_work_tree
 from keelline.project.templates import project_templates
 from keelline.release.api import Resolution
 from keelline.scaffold import LOCAL_ARTIFACTS, Action, Plan, Verb, printable
@@ -108,13 +108,6 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
     return prepared.could_write
 
 
-def _in_work_tree(root: Path) -> bool:
-    """Whether `root` or a directory above it holds a `.git` entry, which is how git itself finds
-    the repository: a directory in a clone, a file in a worktree or a submodule. A walk of the
-    disk that cannot time out, so a guard inside a repository fails closed."""
-    return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
-
-
 def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
     a `[paths]` value chose; `removing` picks `uninstall`'s remedy."""
@@ -154,5 +147,5 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
             text = IGNORED_REMOVING if removing else IGNORED
             raise Refusal(text.format(count=len(ignored), names=names))
         return
-    if _in_work_tree(root):
+    if in_work_tree(root):
         raise Refusal(UNANSWERED)

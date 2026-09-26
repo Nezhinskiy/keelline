@@ -1,7 +1,10 @@
 """Run git inside a project root and read failure as "nothing found".
 
 Three lines over `keelline.gitenv.git_run`, which owns the subprocess, the scrubbed
-environment and the bound; every caller here treats an empty answer as an empty set.
+environment and the bound. Only a question whose empty answer is safe belongs here: the scan's
+top-level probe, where no answer means "walk the disk instead". The listing and the allocator's
+history call `git_run` themselves, because for them no answer read as an empty set scanned no
+file, or counted no other ref.
 """
 
 from __future__ import annotations

@@ -52,23 +52,44 @@ _BODY_STATE_BULLET = re.compile(r"^- \*\*(Status|Severity):\*\*", re.MULTILINE)
 def uninitialised(root: Path, config: Config) -> bool:
     """No ledger yet: no ledger directory *and* no index this tool generated. The second half
     is the point — the directory missing on its own also describes a ledger whose entry files
-    were deleted under a generated index that still links every one of them. `bugs check` is
-    inert here (exit 0), which is what lets the gate be registered before the first entry."""
+    were deleted under a generated index that still links every one of them. Only citations
+    are checked here, so the gate can be registered before the first entry."""
     return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))
+
+
+def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Finding]:
+    """Every entry file a document or source cites that `known` does not hold, one finding per
+    identifier at its first citation."""
+    found: list[Finding] = []
+    for identifier, locations in sorted(entry_citations(root, config).items()):
+        if identifier not in known:
+            path_, line = locations[0]
+            found.append(
+                Finding(
+                    "dangling-citation",
+                    path_.as_posix(),
+                    line,
+                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist "
+                    f"(referenced {len(locations)} time(s))",
+                )
+            )
+    return found
 
 
 def problems(root: Path, config: Config) -> list[Finding]:
     """Every ledger violation under `root`, most structural first.
 
-    Returns an empty list before the ledger directory exists *and* before this tool has
-    written an index — there is nothing it owns, which is what lets the check be registered in
-    CI one change before the first entry is filed. A generated index with no ledger directory
-    behind it is the other thing that shape describes, and it is the ledger having been
-    deleted.
+    Before the ledger directory exists *and* before this tool has written an index there is
+    nothing it owns, which is what lets the check be registered in CI one change before the
+    first entry is filed: only a citation of an entry file is reported then, since with no
+    ledger every one of them dangles. "No ledger" is read off the tree, which a pull request
+    writes, so deleting the ledger cannot switch the gate off while anything still cites it; a
+    project with no entry yet cites none. A generated index with no ledger directory behind it
+    is the other thing that shape describes, and it is the ledger having been deleted.
     """
     found: list[Finding] = []
     if uninitialised(root, config):
-        return found
+        return _dangling_citations(root, config, set())
     ids = identifiers(config)
     bugs = bugs_dir(root, config)
     index_name = config.paths.bug_index
@@ -188,16 +209,14 @@ def problems(root: Path, config: Config) -> list[Finding]:
     # bare mention does not: it names a path, so a reader who follows it gets a 404 rather than
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
     # one behind, and it lands in a docs-only commit.
-    for identifier, locations in sorted(entry_citations(root, config).items()):
-        if identifier not in known:
-            path_, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-citation",
-                    path_.as_posix(),
-                    line,
-                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist "
-                    f"(referenced {len(locations)} time(s))",
-                )
-            )
-    return found
+    return found + _dangling_citations(root, config, known)
+
+
+def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `bugs` gate's whole composition: every ledger violation, and before there is a
+    ledger every citation of an entry file.
+
+    `bugs check` answers with this function. `base` is unread: every
+    gate takes the same three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    return problems(root, config)

@@ -1,11 +1,14 @@
-"""One invariant for `init`, `upgrade` and `uninstall`, asked of every hostile input at once.
+"""One invariant for `init`, `upgrade`, `uninstall`, `assess`, `adopt begin` and `adopt promote`,
+asked of every hostile input at once.
 
 A write or removal must never land on a file whose bytes the committer does not control and git
 does not show. The inputs that could aim one are repository-authored: the committed
 `keelline.toml` (`[paths]`, `[artifacts] local`), the committed manifest, and the local ledger a
-clone can force-add. Each hostile case below is one such input, run at every command that meets
-it — `init` reads `[paths]` from a fresh clone; `upgrade` and `uninstall` act on recorded
-targets, so they meet a `[paths]` value only together with a record placing the artifact there.
+clone can force-add; and, at `init`, the answers a person passes as flags, which `precheck`
+keeps off any committed document. Each hostile case below is one such input, run at every
+command that meets it — `init` reads `[paths]` from a fresh clone; `upgrade` and `uninstall` act
+on recorded targets, so they meet a `[paths]` value only together with a record placing the
+artifact there.
 
 - **I1, nothing hidden is clobbered.** After every command, finished or refused, each file the
   case planted where git does not show it — an ignored file, a file under `.git/`, Keelline's
@@ -14,16 +17,31 @@ targets, so they meet a `[paths]` value only together with a record placing the 
 - **I2, the legitimate user is not refused.** The legitimate cases run their commands to the
   end: no `Refusal` raised, and no refusal returned in the report's plans, which is the other
   way a command refuses.
-- **I3, the end state is consistent.** After a finished `init` or `upgrade`, a dry-run
-  `upgrade` of the same tree plans nothing and refuses nothing: every artifact the
+- **I3, the end state is consistent.** After a finished `init`, `assess` or `upgrade`, a
+  dry-run `upgrade` of the same tree plans nothing and refuses nothing: every artifact the
   configuration builds is at its own place with its own bytes. After a finished `uninstall`, a
-  second one says there is nothing to uninstall.
+  second one says there is nothing to uninstall, and Keelline's own directory is gone.
 
 Mutations (declared): each guard of the class put back one at a time — the ignore guard, the
 shared `.git` predicate and its case folding, the `.keelline` reservation, the ledger's and the
 collision rule's ownership checks — and guards made to refuse more than they should, which the
 legitimate cases catch. An entry names every row it reddens; a row no single line can redden
 says so where it is declared.
+
+**Why `assess` joins the legitimate rows only.** The hostile inputs above are the ones that can
+aim a write — `[paths]`, `[artifacts] local`, a manifest record, the local ledger — and
+`assess`'s one write is a constant path under Keelline's reserved directory, which none of them
+reaches: the loader refuses a `[paths]` value naming it. What can reach that path is its shape
+in a clone, a committed symlink or directory there, which `tests/assess/test_command.py` holds.
+Its I2 and I3 lines have no mutation of their own: `assess` has no guard whose removal makes it
+raise a refusal or plan work for `upgrade`.
+
+**`adopt begin` and `adopt promote` write one place, `keelline.toml`,** through the editor
+`upgrade` uses, with the manifest's record of it re-stamped beside it. No repository value aims
+that write, and neither verb asks the ignore guard, which exempts the fixed names so that a
+person may keep `keelline.toml` out of git: the legitimate rows run both verbs to the end, once
+with the file in the clone's excludes. What can aim it is the file's own shape, a committed
+`keelline.toml` that is a symlink to a hidden file, which the one hostile row holds.
 
 What this module does not cover: guards that decide nothing about a hidden file's bytes, such
 as the attach refusal and the refusals over files `uninstall` would leave under
@@ -35,15 +53,21 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import pytest
 
+from keelline.assess.assessment import assess, write
+from keelline.assess.state import begin, promote
 from keelline.attach.write import LEDGER as ATTACH_LEDGER
-from keelline.config.loader import CONFIG_FILE
+from keelline.config.layout import local_base
+from keelline.config.loader import CONFIG_FILE, load
+from keelline.config.paths import KEELLINE_DIRECTORY
+from keelline.docs.api import trail_target
 from keelline.errors import Refusal
-from keelline.project.init import InitReport, init
+from keelline.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
+from keelline.project.templates import LOCAL_ELIGIBLE
 from keelline.project.uninstall import NOTHING, UninstallReport, uninstall
 from keelline.project.upgrade import UpgradeReport, upgrade
 from keelline.scaffold import digest
@@ -51,7 +75,7 @@ from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from tests.gitfixture import LsRemote, git, needs_git
 from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
 
-Command = Literal["init", "upgrade", "uninstall"]
+Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-begin", "adopt-promote"]
 Report = InitReport | UpgradeReport | UninstallReport
 
 # Bytes no Keelline build renders: a person's file, or a tool's.
@@ -59,6 +83,13 @@ FOREIGN = "bytes a person or another tool wrote\n"
 HOOK = "#!/bin/sh\n# the clone's own pre-commit hook\n"
 CLAUDE_COPY = f"{LOCAL_ARTIFACTS}/CLAUDE.md"
 CLAUDE_COPY_FOLDED = f"{LOCAL_ARTIFACTS}/claude.md"
+# The adoption plan the `adopt` rows hand to `begin`: setup, written when absent, not the command.
+ADOPTION_PLAN = "2026-09-25-keelline-adoption.md"
+# What the setup edits by hand as a person adopting would: the adoption plan's state goes into
+# `trail.toml`, which its own header says is maintained by hand, and `adopt begin` refuses a plan
+# whose row declares none. `upgrade` keeps that edit and says so, which is not work left.
+HAND_EDITED = {("trail", "skip_modified")}
+PLAN_TEXT = "# Adoption\n\n**Scope:** adoption.\n\n**Premise:** none.\n"
 
 
 def _forge_roadmap_at(target: str, text: str) -> Callable[[Path], None]:
@@ -68,6 +99,12 @@ def _forge_roadmap_at(target: str, text: str) -> Callable[[Path], None]:
         forge_record(root, "roadmap", target=target, sha256=digest(text))
 
     return forge
+
+
+def _config_through_a_symlink(root: Path) -> None:
+    """`keelline.toml` replaced by a committed symlink to a file under `.git/`."""
+    (root / CONFIG_FILE).unlink()
+    (root / CONFIG_FILE).symlink_to(".git/keelline.toml")
 
 
 def _forge_ledger_entry(target: str) -> Callable[[Path], None]:
@@ -103,6 +140,13 @@ class Case:
     links: Mapping[str, str] = field(default_factory=dict)
     track: tuple[str, ...] = ()
     forge: Callable[[Path], None] | None = None
+    # The answers `init` is given as flags; `NO_ANSWERS` is `--yes` alone.
+    given: Given = NO_ANSWERS
+    # Whether the clone commits the case's `keelline.toml`; a fresh clone has none.
+    written: bool = True
+    # The one refusal a hostile case must meet, where another guard would also refuse it and so
+    # hide the one the row is about.
+    refusal: str | None = None
 
     def document(self, *, with_paths: bool) -> str:
         text = DOCUMENT
@@ -213,12 +257,32 @@ HOSTILE = (
         paths={"roadmap": "claude.md"},
         plant={"claude.md": FOREIGN},
     ),
+    # The loader follows the link; `read_document` refuses it through `contained()`, and the
+    # write walk would replace the link rather than write through it. Two layers, so no single
+    # line reddens this row: it pins that the two never go at once.
+    Case(
+        "config-a-symlink-to-a-hidden-file",
+        ("adopt-begin", "adopt-promote"),
+        plant={".git/keelline.toml": DOCUMENT},
+        forge=_config_through_a_symlink,
+    ),
+    # Answers over a document the clone committed would rewrite what the committer chose; they
+    # are refused before anything is read beyond the root.
+    Case(
+        "answers-over-a-committed-document",
+        ("init",),
+        paths={"agents_md": ".env"},
+        ignore=(".env",),
+        plant={".env": FOREIGN},
+        given=Given(local=("roadmap-history",)),
+        refusal=ANSWER_SHEET,
+    ),
 )
 
 LEGITIMATE = (
     Case(
         "fixed-names-in-the-clone-s-excludes",
-        ("init", "upgrade", "uninstall"),
+        ("init", "assess", "upgrade", "uninstall"),
         exclude=("CLAUDE.md", "AGENTS.md"),
     ),
     # Not `uninstall`: it refuses to remove a file at an ignored place a `[paths]` value chose,
@@ -231,7 +295,7 @@ LEGITIMATE = (
     ),
     Case(
         "artifacts-kept-out-of-git",
-        ("init", "upgrade", "uninstall"),
+        ("init", "assess", "upgrade", "uninstall"),
         local=("claude-md", "roadmap"),
     ),
     # Its own guard is that planning reads no disk for a place this configuration never uses;
@@ -251,6 +315,32 @@ LEGITIMATE = (
         plant={"notes/AGENTS.md": "# Our notes\n"},
         track=("notes/AGENTS.md",),
     ),
+    Case(
+        "an-adopted-project",
+        ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
+    ),
+    # The user the ignore guard exempts on purpose: `adopt` writes `keelline.toml` without asking
+    # it, so a person who keeps the file out of git is not refused.
+    Case(
+        "an-adopted-project-with-its-config-in-the-clone-s-excludes",
+        ("init", "adopt-begin", "adopt-promote", "upgrade", "uninstall"),
+        exclude=(CONFIG_FILE,),
+    ),
+    # Every answer given, on a clone with no `keelline.toml`: the document `init` writes from
+    # them, the files kept out of git included, is one `upgrade` and `uninstall` finish on.
+    Case(
+        "answers-on-a-fresh-clone",
+        ("init", "upgrade", "uninstall"),
+        written=False,
+        given=Given(
+            name="widget",
+            base_branch="main",
+            agents=("claude", "codex"),
+            profile="",
+            memory_mode="local-only",
+            local=LOCAL_ELIGIBLE,
+        ),
+    ),
 )
 
 
@@ -260,10 +350,25 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return repository(tmp_path_factory.mktemp("template"))
 
 
-def _run(command: Command, root: Path, tmp_path: Path, *, dry_run: bool = False) -> Report:
+def _run(
+    command: Literal["init", "upgrade", "uninstall"],
+    root: Path,
+    tmp_path: Path,
+    *,
+    dry_run: bool = False,
+    given: Given = NO_ANSWERS,
+) -> Report:
     machine = tmp_path / "absent.toml"
     if command == "init":
-        return init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=dry_run, ci=False)
+        return init(
+            root,
+            machine=machine,
+            runner=LsRemote(),
+            yes=True,
+            dry_run=dry_run,
+            ci=False,
+            given=given,
+        )
     if command == "upgrade":
         return upgrade(root, machine=machine, runner=LsRemote(), dry_run=dry_run, force=())
     return uninstall(root, machine=machine, dry_run=dry_run, force=())
@@ -282,10 +387,38 @@ def _refusals(report: Report) -> list[str]:
     return [f"{r.artifact_id} {r.target}: {r.reason}" for p in plans for r in p.refusals]
 
 
-def _outcome(command: Command, root: Path, tmp_path: Path) -> list[str] | None:
+def _adopt(command: Literal["adopt-begin", "adopt-promote"], root: Path, tmp_path: Path) -> None:
+    """`begin` over the adoption plan, written first when absent with its trail row's state, or
+    `promote` of `docs`."""
+    config = load(root, machine=tmp_path / "absent.toml")
+    if command == "adopt-begin":
+        plan = root / config.paths.plans / ADOPTION_PLAN
+        if not plan.exists():
+            plan.parent.mkdir(parents=True, exist_ok=True)
+            plan.write_text(PLAN_TEXT, encoding="utf-8")
+            trail = root / trail_target(config)
+            row = f"{PurePosixPath(config.paths.plans).name}/{ADOPTION_PLAN}"
+            with trail.open("a", encoding="utf-8") as stream:
+                stream.write(f'"{row}" = "in progress"\n')
+        begin(root, config, plan)
+        return
+    transition = promote(root, config, ["docs"], base=local_base(config))
+    # The row's non-vacuity: a promotion that wrote nothing never reached the write path.
+    assert transition.promoted == ("docs",), transition
+
+
+def _outcome(
+    command: Command, root: Path, tmp_path: Path, given: Given = NO_ANSWERS
+) -> list[str] | None:
     """`None` when the command finished; its refusals, raised or returned, otherwise."""
     try:
-        report = _run(command, root, tmp_path)
+        if command == "assess":
+            write(root, assess(root, machine=tmp_path / "absent.toml", base=None))
+            return None
+        if command == "adopt-begin" or command == "adopt-promote":
+            _adopt(command, root, tmp_path)
+            return None
+        report = _run(command, root, tmp_path, given=given)
     except Refusal as refused:
         return [str(refused)]
     return _refusals(report) if report.refused else None
@@ -361,6 +494,7 @@ def _assert_invariant(
         with pytest.raises(Refusal) as again:
             _run("uninstall", root, tmp_path, dry_run=True)
         assert str(again.value) == NOTHING, f"I3: a finished uninstall left: {again.value}"
+        assert not (root / KEELLINE_DIRECTORY).exists(), "I3: a finished uninstall left .keelline"
     elif finished is not None:
         try:
             report = upgrade(
@@ -368,7 +502,11 @@ def _assert_invariant(
             )
         except Refusal as refused:
             pytest.fail(f"I3: a dry-run upgrade after a finished {finished} refused: {refused}")
-        planned = [(a.artifact_id, str(a.verb), a.target) for a in report.footprint.actions]
+        planned = [
+            (a.artifact_id, str(a.verb), a.target)
+            for a in report.footprint.actions
+            if (a.artifact_id, str(a.verb)) not in HAND_EDITED
+        ]
         assert planned == [], f"I3: a finished {finished} left work for the next upgrade: {planned}"
         assert _refusals(report) == [], f"I3: after a finished {finished}: {_refusals(report)}"
 
@@ -403,7 +541,10 @@ def test_no_hostile_input_reaches_a_file_git_hides(
             case.forge(root)
     hidden = _hidden(root, case, command)
     git_before = _git_files(root)
-    refused = _outcome(command, root, tmp_path)
+    refused = _outcome(command, root, tmp_path, case.given)
+    if case.refusal is not None:
+        # Without it the answers row passes on the ignore guard's refusal of `.env` alone.
+        assert refused == [case.refusal], refused
     finished = command if refused is None else None
     _assert_invariant(root, tmp_path, hidden, git_before, finished=finished)
 
@@ -416,11 +557,12 @@ def test_the_legitimate_user_runs_every_command_to_the_end(
     """I2, with I1 and I3 after each step: every command the case lists finishes."""
     root = tmp_path / "widget"
     shutil.copytree(template, root, symlinks=True)
-    (root / CONFIG_FILE).write_text(case.document(with_paths=True))
+    if case.written:
+        (root / CONFIG_FILE).write_text(case.document(with_paths=True))
     _surround(root, case)
     for command in case.commands:
         hidden = _hidden(root, case, command)
         git_before = _git_files(root)
-        refused = _outcome(command, root, tmp_path)
+        refused = _outcome(command, root, tmp_path, case.given)
         assert refused is None, f"I2: {command} refused a legitimate configuration: {refused}"
         _assert_invariant(root, tmp_path, hidden, git_before, finished=command)

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline import fsops
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 from keelline.identifiers import DIGITS, identifiers
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
 from keelline.ledger.entries import (
@@ -24,7 +24,7 @@ from keelline.ledger.entries import (
     related_field,
     scalar,
 )
-from keelline.ledger.git import git_output
+from keelline.ledger.git import QUERY_TIMEOUT_SECONDS
 from keelline.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
 from keelline.ledger.scan import citation_roots, scannable
 
@@ -99,10 +99,14 @@ def _fetch(root: Path) -> str | None:
     code, _ = git_run(root, "fetch", "--quiet", "origin", timeout=FETCH_TIMEOUT_SECONDS)
     if code == 0:
         return None
-    return (
-        f"git fetch origin {'could not run or timed out' if code < 0 else 'failed'}; "
-        "identifiers may collide with branches this checkout has not fetched"
+    # `-1` is every cause `NO_ANSWER` names, not one of them: the warning says which question
+    # went unanswered and does not guess why.
+    cause = (
+        f"{NO_ANSWER}, so git fetch origin gave no answer"
+        if code < 0
+        else "git fetch origin failed"
     )
+    return f"{cause}; identifiers may collide with branches this checkout has not fetched"
 
 
 def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Allocation:
@@ -130,17 +134,56 @@ def next_identifier(root: Path, config: Config, *, fetch: bool = True) -> Alloca
     # Built from `paths.bugs` like every other path here: spelled literally, a rename would
     # make the allocator silently under-count and hand out a number some ref already holds.
     tracked = f"{config.paths.bugs}/"
-    added = git_output(
-        root, "log", "--all", "--diff-filter=A", "--format=", "--name-only", "--", tracked
+    # Quoting forced on, so under an owner's `core.quotePath=false` a name in this history that
+    # is not UTF-8 still comes back as ASCII, whatever decodes it; `git_run` reads the raw bytes
+    # losslessly too, so this is the second of two holds and not the only one. An entry's own
+    # name is ASCII, so quoting changes none of the names this counts.
+    code, added = git_run(
+        root,
+        "-c",
+        "core.quotePath=true",
+        "log",
+        "--all",
+        "--diff-filter=A",
+        "--format=",
+        "--name-only",
+        "--",
+        tracked,
+        timeout=QUERY_TIMEOUT_SECONDS,
     )
+    if code != 0:
+        warning = _joined(warning, _uncounted(root, code))
     numbers.update(
         int(m)
         for m in re.findall(
             rf"{re.escape(tracked)}{re.escape(ids.prefix)}-({DIGITS})\.md",
-            added,
+            added if code == 0 else "",
         )
     )
     return Allocation(ids.format(max(numbers, default=0) + 1), warning)
+
+
+def _uncounted(root: Path, code: int) -> str | None:
+    """What an unread history costs the allocator, or `None` where there is no history to miss.
+
+    A failed log was an empty one, so every entry another ref holds went uncounted with no
+    word. Where no `.git` entry exists there is no history at all, which is not a miss: `bugs
+    new` in a directory git does not know stays one line. That is read off the disk
+    (`gitenv.in_work_tree`), because git refuses a question about a checkout it will not read —
+    dubious ownership, a worktree whose gitdir is gone — the same way it refused the log, and
+    asking it again read that repository as none. Every other failure is a miss, and says so.
+    """
+    if not in_work_tree(root):
+        return None
+    cause = NO_ANSWER if code == -1 else f"git log exited {code}"
+    return (
+        f"{cause}, so entries on other refs were not counted; identifiers may collide with "
+        "numbers the history holds"
+    )
+
+
+def _joined(first: str | None, second: str | None) -> str | None:
+    return "; ".join(part for part in (first, second) if part) or None
 
 
 def _write_index(root: Path, config: Config) -> None:

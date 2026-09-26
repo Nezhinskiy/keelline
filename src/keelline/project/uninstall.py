@@ -158,6 +158,12 @@ DELETED_CONFIG = (
     "for good, so nothing was removed. Restore keelline.toml (from git, for instance), then run "
     "uninstall again"
 )
+# Fixed text: a `keelline.toml` a person wrote before `init` is recorded nowhere, so no report
+# line names it, and it stays with the version `init` added and whatever the adoption wrote.
+KEPT_CONFIG = (
+    "keelline.toml was yours before `keelline init`, so it is left as it is, with the keys "
+    "Keelline wrote into it; delete it by hand if you want it gone"
+)
 ASSESSMENT = f"{KEELLINE_DIRECTORY}/assessment.json"
 LEDGER_DIRS = (LOCAL_ROOT, KEELLINE_DIRECTORY)
 
@@ -170,6 +176,8 @@ class UninstallReport:
     dry_run: bool
     note: str
     kept_locally: int
+    # `keelline.toml` is one a person wrote, which no record names and nothing here removes.
+    kept_config: bool = False
 
     @property
     def refused(self) -> bool:
@@ -368,7 +376,8 @@ def uninstall(
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
     kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS})
-    report = UninstallReport(footprint, once, orphans, dry_run, note, kept)
+    kept_config = CONFIG_ARTIFACT not in manifest.records
+    report = UninstallReport(footprint, once, orphans, dry_run, note, kept, kept_config)
     if dry_run or report.refused:
         return report
     if kept:
@@ -395,7 +404,8 @@ def uninstall(
     last = passes.replan(config_retired, force=once_force)
     _apply(root, last)
     _remove_ledger(root)
-    return UninstallReport(_joined(body, ignore), _joined(judged, last), orphans, dry_run, note, 0)
+    joined = _joined(body, ignore), _joined(judged, last)
+    return UninstallReport(*joined, orphans, dry_run, note, 0, kept_config)
 
 
 def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDigests) -> bool:

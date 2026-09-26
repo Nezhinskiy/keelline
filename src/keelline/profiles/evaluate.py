@@ -6,6 +6,10 @@
 | `absent` | some locator resolves | each `at` that resolved |
 | `tracked` | a located file is neither tracked nor ignored | each `at` that found one |
 
+A `tracked` check whose question git gave no answer to (`gitenv.NO_ANSWER`) is an outcome too,
+with that `at` under `unanswered` rather than `located`: a check that could not look has not
+passed.
+
 A locator resolves when:
 - its `at` names at least one regular file at or under the root, reached through no symlink
   (`contained`);
@@ -37,7 +41,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from keelline.config.paths import PathEscape, contained
-from keelline.gitenv import git_run
+from keelline.gitenv import git_run, in_work_tree
 from keelline.profiles.model import Check, CheckKind, Locator, Profile
 
 _GLOB = frozenset("*?[")
@@ -49,6 +53,8 @@ _Document = TypeVar("_Document")
 class Outcome:
     check: Check
     located: tuple[str, ...]
+    # The `at` strings git gave no answer for, so the check could not look there; `tracked` only.
+    unanswered: tuple[str, ...] = ()
 
 
 def _files(root: Path, at: str) -> list[str]:
@@ -186,7 +192,7 @@ def _resolves(parsed: _Parsed, locator: Locator) -> bool:
     return False
 
 
-def _untracked(root: Path, relative: str) -> bool:
+def _untracked(root: Path, relative: str) -> bool | None:
     """Untracked and not ignored: `--others` lists what the index lacks, and `--exclude-standard`
     drops what `.gitignore`, `info/exclude` and `core.excludesFile` ignore. A lockfile a library
     ignores on purpose is a decision, not a file somebody forgot to commit.
@@ -195,8 +201,16 @@ def _untracked(root: Path, relative: str) -> bool:
     directory that is no repository answers "not untracked" and has nothing to report; no
     second probe asks it first. `code == 0` says so explicitly rather than trusting the empty
     output alone.
+
+    `None` is `git_run`'s `-1`: git could not run or ran past its bound. That is no answer, and
+    reading it as "not untracked" passed a check that never looked. So is a refusal inside a
+    work tree (a worktree whose git directory is gone, a checkout of dubious ownership), which
+    git answers exactly as it answers outside one: whether this is a repository is read off the
+    disk, as every other probe reads it.
     """
     code, out = git_run(root, "ls-files", "--others", "--exclude-standard", "--", relative)
+    if code == -1 or (code != 0 and in_work_tree(root)):
+        return None
     return code == 0 and bool(out.strip())
 
 
@@ -218,9 +232,16 @@ def evaluate(profile: Profile, root: Path) -> list[Outcome]:
         elif check.kind is CheckKind.ABSENT:
             hits = [loc for loc in locators if _resolves(parsed, loc)]
         else:
-            hits = [
-                loc for loc in locators if any(_untracked(root, f) for f in _files(root, loc.at))
-            ]
+            hits, unanswered = [], []
+            for loc in locators:
+                answers = [_untracked(root, f) for f in _files(root, loc.at)]
+                if True in answers:
+                    hits.append(loc)
+                elif None in answers:
+                    unanswered.append(loc)
+            if hits or unanswered:
+                outcomes.append(Outcome(check, _names(hits), _names(unanswered)))
+            continue
         if hits:
             outcomes.append(Outcome(check, _names(hits)))
     return outcomes

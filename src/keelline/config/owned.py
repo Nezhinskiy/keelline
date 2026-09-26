@@ -57,6 +57,11 @@ class OwnedKeyError(Refusal):
     """A tool-owned key that could not be rewritten without touching anything else."""
 
 
+class UnparsedDocument(OwnedKeyError):
+    """The document does not parse at all, so no key's shape is the problem: a caller that
+    words its own remedy for a key it could not rewrite passes this one on unchanged."""
+
+
 def _literal(value: Value) -> str:
     if isinstance(value, str):
         return quoted(value)
@@ -128,7 +133,7 @@ def rewrite(text: str, changes: Mapping[tuple[str, str], Value]) -> str:
     try:
         expected: dict[str, Any] = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise OwnedKeyError(
+        raise UnparsedDocument(
             UNPARSED.format(file=CONFIG_FILE, position=toml_position(exc))
         ) from None
     newline = "\r\n" if "\r\n" in text else "\n"

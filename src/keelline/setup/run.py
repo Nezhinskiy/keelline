@@ -264,6 +264,8 @@ def _read_document(path: Path) -> tuple[dict[str, Any], str]:
         return {}, ""
     except OSError as exc:
         raise Failure(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{path} is not UTF-8 text") from None
     if not text.strip():
         return {}, text
     try:
@@ -520,10 +522,13 @@ def _outside_the_project(candidate: Path, *, project_root: Path) -> None:
     `--root` a worktree by default.
 
     **What it does not cover, stated rather than implied.** When `git` cannot answer for the
-    project root — `--root` is not a repository, or `git` is not installed — the `git` arm is
-    silent and only the paths stand. And what the whole check bounds is a repository *shipping* a
-    tree: committed contents reach that repository's own checkouts and nowhere else, so refusing
-    all of them removes the case a clone can stage. It is not a claim that no other directory on
+    project root — `--root` is not a repository, or `git` could not be run or ran past its time
+    limit — the `git` arm is silent and only the paths stand. A common directory whose path is
+    not UTF-8 is an answer like any other: `git_run` decodes it losslessly, so two checkouts of
+    one repository still compare equal. And what
+    the whole check bounds is a repository *shipping* a tree: committed contents reach that
+    repository's own checkouts and nowhere else, so refusing all of them removes the case a
+    clone can stage. It is not a claim that no other directory on
     the machine can hold the same bytes — a separate `git clone` of the same remote has its own
     common directory and passes — only that the owner, and not the clone, put it there.
     """

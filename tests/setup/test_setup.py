@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -775,6 +777,58 @@ def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: P
     worktree = tmp_path / "clone.worktrees" / "wave-1"
     _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
     assert clone.resolve() not in worktree.resolve().parents, "beside the checkout, not under it"
+    with pytest.raises(Refusal, match="same repository"):
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay=str(clone),
+            project_root=worktree,
+        )
+
+
+def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The case above with a common directory whose path is not UTF-8, an ordinary latin-1
+    # directory name on Linux. Decoded strictly, git's answer was a traceback; read as no answer,
+    # `_repository_of` answered `None`, the `git` arm went silent, and the sibling checkout of
+    # the project was recorded as the machine's trust anchor. Decoded losslessly, both answers
+    # are the same bytes and compare equal, so the checkout is refused.
+    #
+    # APFS refuses to create such a directory, so a stand-in `git` on `PATH` runs the real one
+    # and appends one latin-1 byte to what `--git-common-dir` prints, for both checkouts alike,
+    # exactly as a common directory really named so would read. Every other `git` call passes
+    # through untouched.
+    #
+    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the sibling
+    # checkout is recorded and this reddens.
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _git(clone, "init", "-q", "-b", "main")
+    _seed_overlay(clone)
+    (clone / "README.md").write_text("x", encoding="utf-8")
+    _git(clone, "add", "-A")
+    _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+    worktree = tmp_path / "clone.worktrees" / "wave-1"
+    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f'  *--git-common-dir*) out=$("{real_git}" "$@") || exit $?\n'
+        '    printf "%s\\351\\n" "$out" ;;\n'
+        f'  *) exec "{real_git}" "$@" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
     with pytest.raises(Refusal, match="same repository"):
         setup(
             "recommended",

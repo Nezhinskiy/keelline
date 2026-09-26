@@ -9,14 +9,18 @@ makes run 2 and run 3 "synced" — so the tool is the same for every stack.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.errors import Failure
-from keelline.gitenv import GIT_TIMEOUT_SECONDS, git_run
+from keelline.gitenv import GIT_TIMEOUT_SECONDS, NO_ANSWER, git_run
 from keelline.guards.attribute import VERDICTS, attribute
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed
 from tests import gitfixture
@@ -291,87 +295,130 @@ def test_the_tree_listing_is_not_bounded_by_the_argument_free_cap(
 
 
 @needs_git
-def test_a_listing_this_process_cannot_decode_skips_the_comparison(
+def test_a_listing_git_gave_no_answer_for_skips_the_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix round 2, item 2. `-z` made this reachable: `ls-tree` used to octal-escape a
-    # non-ASCII name, so the answer was always ASCII, and now the bytes come through raw
-    # against `git_run`'s `text=True` and strict decoding. A tracked name this process cannot
-    # decode raised `UnicodeDecodeError` out of a library function, which is the class the
-    # constraints forbid. The comparison is skipped instead, the way it already is for a
-    # listing git could not produce, and a verdict still comes back.
+    # `git_run`'s `(-1, "")` for the listing is a `git` that ran past its bound — it has just
+    # produced the archive, so it runs. A listing git gave no answer for is no listing at all:
+    # the export-rule comparison is skipped, and a verdict still comes back. Only the `ls-tree`
+    # call is diverted, so the archive and the merge-base are still the real thing.
     #
-    # The seam and not a real filename, with the reason measured rather than assumed: a
-    # latin-1 name can be committed anywhere (`update-index --cacheinfo` takes the raw bytes),
-    # but on APFS `tar` cannot create it — `caf\351.txt: Can't create: Illegal byte sequence`,
-    # exit 1 — so a real fixture would fail in `_extract`'s tar arm on this platform and
-    # exercise the decode path on Linux only. Patching `git_run` on the module object tests
-    # the same branch on every platform; only the `ls-tree` call is diverted, so the archive
-    # and the merge-base are still the real thing.
-    #
-    # Mutation (declared): narrow the `except` to another exception type -> the
-    # `UnicodeDecodeError` escapes `attribute` and this reddens.
+    # Mutation (declared): a listing git gave no answer for raises the missing-files `Failure`
+    # instead of skipping (`code == 0 and missing` becomes `code != 0 or missing`) — this
+    # reddens.
     root = _repo(tmp_path)
     real = git_run
 
-    def undecodable(
+    def unanswered(
         where: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
     ) -> tuple[int, str]:
         if args[0] == "ls-tree":
-            raise UnicodeDecodeError("utf-8", b"caf\xe9.txt", 3, 4, "invalid continuation byte")
+            return -1, ""
         return real(where, *args, timeout=timeout, stdin=stdin)
 
-    monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
+    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
     result = attribute(root, command="true", base="main", runner=_Coded({}))
     assert result.verdict == VERDICTS[4]
 
 
 @needs_git
-@pytest.mark.parametrize(
-    ("diverted", "names"),
-    [
-        (
-            "merge-base",
-            "merge-base HEAD main` printed output this process cannot decode",
-        ),
-        ("archive", "printed output this process cannot decode; nothing was extracted"),
-    ],
-    ids=["merge-base", "archive"],
-)
-def test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diverted: str, names: str
+def test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code(
+    tmp_path: Path,
 ) -> None:
-    # The containment above was argued at the call site — "its other callers ask for a sha or a
-    # config value and never for raw bytes" — while two of this module's own `git_run` calls
-    # were unguarded. `git_run` runs with `text=True` and decodes STDERR strictly as well as
-    # stdout, so this was never only about a tracked filename: git's own error text carrying
-    # one non-UTF-8 byte escaped as a bare `UnicodeDecodeError` out of a library function,
-    # which is the traceback the constraints forbid.
+    # The real thing, on every platform: git's error for a base it cannot resolve quotes the
+    # base, raw, on stderr. Decoded strictly that stderr was a traceback; read as no answer it
+    # became `-1`, and git's own exit status — the answer, "this ref is not here" — was lost for
+    # a sentence about git not running. Decoded losslessly, the exit code reaches the message.
+    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the no-answer
+    # sentence comes back and this reddens.
+    root = _repo(tmp_path)
+    with pytest.raises(Failure, match="exited 128") as caught:
+        attribute(root, command="true", base=os.fsdecode(b"caf\xe9"), runner=_Coded({}))
+    assert "could not be run" not in str(caught.value)
+
+
+@needs_git
+@pytest.mark.parametrize("diverted", ["merge-base", "archive", "ls-tree"])
+def test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diverted: str
+) -> None:
+    # `git_run` used to decode stderr strictly as well as stdout, so git's own error text
+    # carrying one non-UTF-8 byte raised out of `attribute`, or turned an answered call into
+    # no answer. What is left to prove is that a diagnostic nobody reads changes nothing.
     #
-    # A `Failure` and not the listing's skip, because neither call has a weaker answer: there
-    # is no verdict without a merge-base, and nothing was extracted without an archive.
+    # Diverted at the `subprocess` seam and not at `git_run`, so the decode under test is the
+    # runner's own: the real `git` still answers, with one latin-1 byte on stderr ahead of it.
+    # Only `git` argv is diverted, so `tar` runs as it is.
     #
-    # **What is asserted is the clause only this arm can produce, and not the command name.**
-    # Both commands already have a generic failure sentence carrying their own name, so
-    # `match="merge-base"` was satisfied by the fall-through as well: measured, with the
-    # merge-base arm's `raise` replaced by `code, merge_base = -1, ""`, this module was 16
-    # green while the user was being told *"git could not be run, so `merge-base HEAD main`
-    # never executed"* — the exact misdiagnosis the case below at
-    # `test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code` forbids. Two tests
-    # contradicting each other's intent, both green.
+    # Mutations (declared, on `gitenv`): the decode made strict again -> the byte raises out of
+    # `attribute` and every case reddens; the answer read as no answer again -> the merge-base
+    # and archive cases redden (the listing's skip still reaches a verdict).
+    root = _repo(tmp_path)
+    real = subprocess.run
+
+    def noisy(argv: list[str], **kwargs: Any) -> Any:
+        if argv[:1] == ["git"] and argv[3:4] == [diverted]:
+            argv = ["sh", "-c", 'printf "caf\\351\\n" >&2; exec "$@"', "sh", *argv]
+        return real(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", noisy)
+    result = attribute(root, command="true", base="main", runner=_Coded({}))
+    assert result.verdict == VERDICTS[4]
+
+
+@needs_git
+def test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `ls-tree -z` prints a tracked name raw. Read as no answer, one planted latin-1 name made
+    # the listing `-1`, the comparison was skipped, and an archive an `export-ignore` rule had
+    # shrunk was judged as if it were the whole tree — the outcome the comparison exists to
+    # prevent, reached by a filename. Decoded losslessly, the listing names every file and the
+    # shrunk archive is refused.
     #
-    # Mutations (declared, one per arm): each `except UnicodeDecodeError` is narrowed to
-    # another type -> the error escapes `attribute` and that arm's case reddens.
+    # `tar` is a stand-in on `PATH` that extracts what it can and exits 0, as GNU tar does on
+    # Linux, where CI's oracle runs: APFS refuses to create the latin-1 name (`Can't create:
+    # Illegal byte sequence`, exit 1), which would fail `_extract` before the comparison. So the
+    # count is 1 where the disk holds the name and 2 where it does not; either is a refusal.
+    #
+    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the listing is
+    # skipped, a verdict comes back and `pytest.raises` reddens.
+    root = _repo(tmp_path)
+    (root / "secret.txt").write_text("kept out of the archive\n", encoding="utf-8")
+    (root / ".gitattributes").write_text("secret.txt export-ignore\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    gitfixture.plant_path(root, b"caf\xe9.txt")
+    _git(root, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "exported")
+    real_tar = shutil.which("tar")
+    assert real_tar is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "tar").write_text(f'#!/bin/sh\n"{real_tar}" "$@"\nexit 0\n', encoding="utf-8")
+    (bin_dir / "tar").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    with pytest.raises(Failure, match=r"missing [12] tracked file"):
+        attribute(root, command="true", base="main", runner=_Coded({}))
+
+
+@needs_git
+def test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git_run`'s `(-1, "")` for the archive is a `git` that could not be run or ran past its
+    # bound. A `Failure` and not the listing's skip, because nothing was extracted — and not
+    # "exited -1", which names no cause. Mutation (declared): the archive's `code == -1` arm
+    # never taken — the exit-code sentence comes back and this reddens.
     root = _repo(tmp_path)
     real = git_run
 
-    def undecodable(
+    def unanswered(
         where: Path, *args: str, timeout: float = GIT_TIMEOUT_SECONDS, stdin: str | None = None
     ) -> tuple[int, str]:
-        if args[0] == diverted:
-            raise UnicodeDecodeError("utf-8", b"caf\xe9", 3, 4, "invalid continuation byte")
+        if args[0] == "archive":
+            return -1, ""
         return real(where, *args, timeout=timeout, stdin=stdin)
 
-    monkeypatch.setattr("keelline.guards.attribute.git_run", undecodable)
-    with pytest.raises(Failure, match=names):
+    monkeypatch.setattr("keelline.guards.attribute.git_run", unanswered)
+    with pytest.raises(Failure, match=re.escape(f"{NO_ANSWER}, so `git archive")) as caught:
         attribute(root, command="true", base="main", runner=_Coded({}))
+    assert "exited" not in str(caught.value)

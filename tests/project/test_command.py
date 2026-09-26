@@ -1,12 +1,13 @@
 """`keelline init` through the real parser: the flags, the exit codes and the `--json` keys.
 
-Nothing here reaches the network, and it is kept out two ways. Every case but one goes through
-`_invoke`, which appends `--no-ci`: with `[ci] mode` set to `none` the run never asks the release
-area to resolve a pin, so the `subprocess_runner()` `commands.py` builds is never handed a `git
-ls-remote` against the public repository. The one case that must resolve a pin — the hostile
-`gate_branch` arm, which exists precisely because `_ci` reaches that check *after* the pin —
-stubs `subprocess_runner` at the seam `commands.py` builds it from and answers one released tag
-from a string.
+Nothing here reaches the network, and it is kept out three ways. Every case that writes or plans
+a footprint but one goes through `_invoke`, which appends `--no-ci`: with `[ci] mode` set to
+`none` the run never asks the release area to resolve a pin, so the `subprocess_runner()`
+`commands.py` builds is never handed a `git ls-remote` against the public repository. The one
+case that must resolve a pin — the hostile `gate_branch` arm, which exists precisely because
+`_ci` reaches that check *after* the pin — stubs `subprocess_runner` at the seam `commands.py`
+builds it from and answers one released tag from a string. The `--questions` cases go through
+`_run`, because `--questions` resolves no pin and refuses `--no-ci` beside it.
 """
 
 from __future__ import annotations
@@ -17,17 +18,22 @@ import json
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
-from keelline.config.loader import loads
+from keelline.config.loader import load, loads
 from keelline.config.schema import Config
-from keelline.project.commands import run_init
+from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
+from keelline.project.init import HEAD_DEFAULTED
 from keelline.project.templates import _ci
+from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
 from keelline.runner import Completed
+from keelline.scaffold import Manifest
 from tests.gitfixture import git, needs_git
+from tests.project.repos import DOCUMENT, repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 
@@ -52,15 +58,9 @@ JSON_KEYS = {
     "asked",
     "note",
     "unknown_harnesses",
+    "head_note",
+    "stamped",
 }
-
-
-def _repo(tmp_path: Path) -> Path:
-    root = tmp_path / "widget"
-    root.mkdir()
-    git(root, "init", "-q", "-b", "main")
-    git(root, "remote", "add", "origin", "git@github.com:owner/widget.git")
-    return root
 
 
 def _run(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
@@ -77,20 +77,22 @@ def _invoke(root: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
 
 
 @needs_git
-def test_without_yes_the_command_refuses_and_names_the_lane_that_ships_the_questions(
+def test_without_yes_the_command_refuses_and_names_the_command_that_prints_the_questions(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = _repo(tmp_path)
+    # The refusal names the command that prints the questions, so a relayer has the next step.
+    # Mutation (by hand): the refusal names `keelline init` alone -> the first `in` reddens.
+    root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path)
     assert code == 2 and printed == ""
     stderr = capsys.readouterr().err
-    assert "onboarding lane" in stderr and "--yes" in stderr
+    assert "`keelline init --questions`" in stderr and "--yes" in stderr
     assert not (root / ".keelline").exists()
 
 
 @needs_git
 def test_a_dry_run_prints_both_reports_and_says_it_wrote_nothing(tmp_path: Path) -> None:
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert code == 0, printed
     data = json.loads(printed)
@@ -110,7 +112,7 @@ def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) 
     # Fix round 1, finding 2: the summary was four count lines, so a person without `--json` was
     # told how many files there were and never which. The skill relays "both reports … each one
     # names every file with its verdict", which it could not do from counts.
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
     assert printed.startswith("initialised:")
@@ -126,7 +128,7 @@ def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) 
 def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
     tmp_path: Path,
 ) -> None:
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     (root / "AGENTS.md").write_text("# Mine\n\n<!-- keelline:harness:end -->\n", encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes", "--json")
     assert code == 1, printed
@@ -149,7 +151,7 @@ def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) 
     # write-once pass alone, and the run must stop there with its report. Mutation (oracle):
     # "init's refusal reads only the footprint plan" -> the run goes on to `apply`, whose own
     # backstop refuses the plan: exit 2 with the engine's message, and no report.
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     (tmp_path / "elsewhere.md").write_text("theirs\n", encoding="utf-8")
     (root / "CLAUDE.md").symlink_to(tmp_path / "elsewhere.md")
     before = snapshot(root)
@@ -171,7 +173,7 @@ def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pi
     # so no network call is made and the answer is one released tag.
     from keelline import runner as runner_module
 
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     # A recorded ref as well: the branch check is reached only once there is a ref to render,
     # and it is deliberately not the sha the stub listing resolves, so the assertions below can
     # tell the two sources apart.
@@ -204,7 +206,7 @@ def test_an_adopted_ref_is_reported_as_the_repositorys_own_and_not_as_a_release(
     # is exactly what `doctor`'s `ci-ref` row would then report as red.
     from keelline import runner as runner_module
 
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     recorded = "e" * 40
     (root / "keelline.toml").write_text(
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
@@ -295,7 +297,7 @@ def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) 
     # unserved and none of them. Mutation: print the loaded `agents` names beside the count on
     # the note line -> the `cursor` and ESC assertion reddens. (Printing them instead of the
     # count reddens the note assertion first, which proves nothing about the names.)
-    root = _repo(tmp_path)
+    root = repository(tmp_path)
     (root / "keelline.toml").write_text(
         '[keelline]\nversion = "0.1.0"\nagents = ["claude", "cursor\\u001b[31m"]\n\n'
         '[project]\nname = "widget"\n',
@@ -307,3 +309,275 @@ def test_a_harness_no_adapter_serves_is_counted_and_never_named(tmp_path: Path) 
     assert "cursor" not in printed and "\x1b" not in printed
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["unknown_harnesses"] == 1
+
+
+@needs_git
+def test_questions_print_each_default_with_its_source_and_write_nothing(tmp_path: Path) -> None:
+    # The card is what a person reads before choosing any answer, so each line carries the
+    # value `init --yes` would take and where it came from; the questions plan nothing.
+    # The help and the docs promise the flag that changes each one, so the line names it too.
+    # Mutation (by hand): the card drops the source, or the flag -> the `project.name` line
+    # reddens.
+    root = repository(tmp_path)
+    before = snapshot(root)
+    code, printed = _run(root, tmp_path, "--questions")
+    assert code == 0, printed
+    assert printed.startswith("detected:\n")
+    assert "  project.name: widget (origin remote; --name)\n" in printed
+    assert "  memory.mode: local-only (the preset's default; --memory-mode)\n" in printed
+    assert "  artifacts.local: none (the preset's default; --local)\n" in printed
+    code, printed = _run(root, tmp_path, "--questions", "--json")
+    assert code == 0, printed
+    assert json.loads(printed)["questions"]["type"] == "object"
+    assert_snapshot_unchanged(root, before)
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_questions_take_no_flag_that_writes_or_plans(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--yes` is excluded by the parser; `--dry-run` and `--no-ci` are flags `--yes` takes, so
+    # one mutually exclusive group cannot exclude them too, and the command refuses them.
+    # Mutation (oracle): that refusal disabled -> `--questions --dry-run` prints the questions
+    # and exits 0.
+    root = repository(tmp_path)
+    code, printed = _run(root, tmp_path, "--questions", "--dry-run")
+    assert code == 2 and printed == ""
+    assert "--questions writes nothing" in capsys.readouterr().err
+    code, printed = _run(root, tmp_path, "--questions", "--no-ci")
+    assert code == 2 and printed == ""
+    # An answer flag is `--yes`'s too: the questions would print defaults it had replaced.
+    code, printed = _run(root, tmp_path, "--questions", "--name", "widget")
+    assert code == 2 and printed == ""
+    with pytest.raises(SystemExit):
+        _run(root, tmp_path, "--questions", "--yes")
+    assert not (root / ".keelline").exists()
+
+
+@needs_git
+def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: Path) -> None:
+    # `init --yes` writes `main` where `origin/HEAD` named a branch outside the grammar, so the
+    # report says the default replaced it, in Keelline's words, without the remote's. Mutation
+    # (by hand): the note dropped from the report -> the note assertion reddens.
+    root = repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and "origin/HEAD" not in printed, printed
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/`id`")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert f"note: {HEAD_DEFAULTED}" in printed and "`id`" not in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_DEFAULTED
+    # An answered base branch replaced nothing, so there is nothing to note. Mutation (by hand):
+    # the note keyed on detection alone -> this reddens.
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
+    assert code == 0 and "origin/HEAD" not in printed, printed
+
+
+def _answers(schema: dict[str, Any]) -> list[str]:
+    """`init --yes` argv answering every question as the `init` skill does: each property's own
+    flag with its default, one flag per list item, and `widget` where there is no default."""
+    argv: list[str] = []
+    for key, question in schema["properties"].items():
+        value = question.get("default", "widget" if key == "project.name" else None)
+        assert value is not None, key
+        for item in value if isinstance(value, list) else [value]:
+            argv += [question["x-keelline-flag"], item]
+    return argv
+
+
+def _written(root: Path, tmp_path: Path) -> tuple[Config, dict[str, tuple[str, str]]]:
+    """What a finished `init` leaves: the configuration the next command loads, and every
+    manifest record but `config`'s as `(target, sha256)`."""
+    config = load(root, machine=tmp_path / "absent.toml")
+    records = Manifest.read(root).records
+    return config, {k: (r.target, r.sha256) for k, r in records.items() if k != "config"}
+
+
+@needs_git
+@pytest.mark.parametrize("derivable", [True, False], ids=["derivable", "not-derivable"])
+def test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes(
+    tmp_path: Path, derivable: bool
+) -> None:
+    # The round trip through the real parser: the questions' own flags, each given its default,
+    # write what `--yes` alone writes. The `not-derivable` repository's origin names no project,
+    # so `--name` answers it, and its twin is one whose name derives to `widget`. Mutation
+    # (oracle): "an answered name is still detected strictly" -> the `not-derivable` case is
+    # refused naming the grammar, exit 2.
+    origin = "git@github.com:owner/widget.git" if derivable else "git@github.com:owner/Not A.git"
+    root = repository(tmp_path / "answered", origin=origin)
+    code, printed = _run(root, tmp_path, "--questions", "--json")
+    assert code == 0, printed
+    schema = json.loads(printed)["questions"]
+    assert ("default" in schema["properties"]["project.name"]) is derivable
+    code, printed = _invoke(root, tmp_path, "--yes", *_answers(schema))
+    assert code == 0, printed
+    twin = repository(tmp_path / "twin")
+    code, printed = _invoke(twin, tmp_path, "--yes")
+    assert code == 0, printed
+    assert _written(root, tmp_path) == _written(twin, tmp_path)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--yes", "--name", "Not A Name"),
+        ("--yes", "--base-branch", "a b"),
+        ("--yes", "--base-branch", "a..b"),
+        ("--yes", "--base-branch", "HEAD"),
+        ("--yes", "--local", "bug-index"),
+        ("--yes", "--memory-mode", "cloud"),
+        ("--yes", "--profile", "rust"),
+        ("--yes", "--agent", "cursor"),
+        ("--questions", "--yes"),
+    ],
+    ids=[
+        "name",
+        "branch",
+        "branch-git-refuses",
+        "branch-head",
+        "not-eligible",
+        "mode",
+        "profile",
+        "agent",
+        "questions-and-yes",
+    ],
+)
+def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv: tuple[str, ...]
+) -> None:
+    # A name or a branch is refused naming the rule and never the value, which is text a
+    # person may have pasted from anywhere; a choice is refused by `choices`, whose error quotes
+    # only the operator's own argument. `--profile` takes only the names this build ships.
+    # Mutations (oracle): "an answer outside its grammar is taken as typed" -> `name` and
+    # `branch` redden; "--local takes a file no gate can do without" -> `not-eligible` reddens.
+    # (By hand: `--profile` without `choices` -> `profile` reddens with no `SystemExit`: the name
+    # reaches `init`, and only the profile loader refuses it, after the parser.)
+    root = repository(tmp_path)
+    with pytest.raises(SystemExit):
+        _invoke(root, tmp_path, *argv)
+    assert "Not A Name" not in capsys.readouterr().err
+    assert not (root / ".keelline").exists() and not (root / "keelline.toml").exists()
+
+
+@needs_git
+def test_an_answer_over_a_document_the_user_wrote_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Answers reach only a document this run creates; a `keelline.toml` already there is the
+    # answer, so a flag over it would be silently dropped. Mutation (oracle): "an answer
+    # overrides a keelline.toml the user wrote" -> the first run adopts the file and exits 0.
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
+    before = snapshot(root)
+    code, printed = _invoke(root, tmp_path, "--yes", "--name", "other")
+    assert code == 2 and printed == ""
+    assert "already has a keelline.toml" in capsys.readouterr().err
+    code, printed = _invoke(root, tmp_path, "--name", "other")
+    assert code == 2 and printed == ""
+    assert "--yes" in capsys.readouterr().err
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_refused_adoption_says_its_version_would_be_written(tmp_path: Path) -> None:
+    # A refused run writes nothing, the stamp included, so its note must not say "wrote".
+    # A directory at `CLAUDE.md` is refused by the write-once pass. Mutation (oracle): "a
+    # refused adoption reports its version stamp as written".
+    root = repository(tmp_path)
+    hand_written = '[project]\nname = "widget"\n'
+    (root / "keelline.toml").write_text(hand_written, encoding="utf-8")
+    (root / "CLAUDE.md").mkdir()
+    code, printed = _invoke(root, tmp_path, "--yes")
+    assert code == 1, printed
+    assert STAMPED.format(verb="would write") in printed
+    assert STAMPED.format(verb="wrote") not in printed
+    assert (root / "keelline.toml").read_text(encoding="utf-8") == hand_written
+    assert not (root / ".keelline" / "manifest.json").exists()
+
+
+def _gates(*names: str) -> str:
+    return "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in names)
+
+
+@needs_git
+def test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them(
+    tmp_path: Path,
+) -> None:
+    # A clone's `keelline.toml` configures commands, and `keelline assess`, the next step of
+    # the adoption, runs them: the dry run the person approves has to say so, naming each gate
+    # (the loader holds names to a grammar) and never a command. Mutation (declared): the note
+    # left out -> the dry run says nothing about the commands.
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text(DOCUMENT + _gates("tests", "lint"), encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["custom_gates"] == ["lint", "tests"]
+    for argv in (("--yes", "--dry-run"), ("--yes",)):
+        code, printed = _invoke(root, tmp_path, *argv)
+        assert code == 0, printed
+        assert CUSTOM_GATES.format(count=2, names="lint, tests") in printed.splitlines()
+        assert '"true"' not in printed
+
+
+@needs_git
+def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> None:
+    # An adopted file is recorded nowhere, so no report line named it, and it stays with the
+    # version `init` added. The note says so. Mutation (by hand): the note dropped -> no line.
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes")
+    assert code == 0, printed
+    parser = build_parser(discover_registrars())
+    argv = ["uninstall", "--root", str(root), "--machine", str(tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()) as out:
+        assert run([*argv, "--dry-run"], parser=parser) == 0
+    assert f"note: {KEPT_CONFIG}" in out.getvalue().splitlines()
+    with redirect_stdout(io.StringIO()) as out:
+        assert run([*argv, "--json"], parser=parser) == 0
+    assert json.loads(out.getvalue())["kept_config"] is True
+    assert (root / "keelline.toml").is_file()
+
+
+@needs_git
+def test_past_a_few_custom_gates_the_note_counts_the_rest(tmp_path: Path) -> None:
+    # Bounded: a file with many gates prints a few names and a count, never a list as long as
+    # the repository makes it. Mutation (by hand): every name printed -> the equality reddens.
+    root = repository(tmp_path)
+    names = [f"g{n}" for n in range(7)]
+    (root / "keelline.toml").write_text(DOCUMENT + _gates(*names), encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    shown = "g0, g1, g2, g3, g4, and 2 more"
+    assert CUSTOM_GATES.format(count=7, names=shown) in printed.splitlines()
+
+
+@needs_git
+def test_a_document_init_writes_names_no_custom_gate(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert code == 0, printed
+    assert json.loads(printed)["custom_gates"] == []
+
+
+@needs_git
+def test_an_adopted_document_without_a_version_is_named_in_a_note(tmp_path: Path) -> None:
+    # The one line `init` writes into a file a person wrote is said, in the text and in
+    # `--json`. Mutation (oracle): "an adopted document's added version goes unmentioned".
+    root = repository(tmp_path)
+    (root / "keelline.toml").write_text('[project]\nname = "widget"\n', encoding="utf-8")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0, printed
+    assert STAMPED.format(verb="would write") in printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["stamped"] is True
+
+
+@needs_git
+def test_a_branch_with_a_slash_and_a_dot_is_a_base_branch_the_parser_takes(tmp_path: Path) -> None:
+    # The branch grammar follows git's own rules, which a release branch meets: tightening it
+    # must not refuse `release/2.0`. Mutation (by hand): refuse every `.` or `/` -> this reddens.
+    root = repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "release/2.0")
+    assert code == 0, printed

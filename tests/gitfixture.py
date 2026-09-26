@@ -141,3 +141,17 @@ def git(root: Path, *args: str, home: Path | None = None, **extra: str) -> str:
     done = run_git(root, *args, home=home, **extra)
     done.check_returncode()
     return done.stdout
+
+
+def plant_path(root: Path, raw: bytes, content: str = "planted\n") -> None:
+    """Stage a blob at the path `raw`, as bytes, whether or not this disk could hold that name.
+
+    `update-index --cacheinfo` takes the name as it is given, so a path that is not UTF-8 —
+    which APFS refuses to create — reaches the index on every platform, and every `git` that
+    prints the index or a commit of it prints those bytes. The blob's source is written inside
+    `.git`, so the working tree gains nothing.
+    """
+    source = root / ".git" / "planted-blob"
+    source.write_text(content, encoding="utf-8")
+    blob = git(root, "hash-object", "-w", str(source)).strip()
+    git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},{os.fsdecode(raw)}")

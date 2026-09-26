@@ -1,0 +1,316 @@
+"""A file a person or a repository owns that is not UTF-8 is its area's answer, never a crash.
+
+Keelline reads every such file as UTF-8, and `read_text` raises `UnicodeDecodeError` for one
+that is not: a `ValueError`, so an `except OSError` beside it caught nothing and the command
+ended in `internal error: UnicodeDecodeError` (exit 2) instead of the failure the same file
+gets when it cannot be read or parsed. Each case below plants the bytes `\\xff\\xfe` at one
+reader's file and asks for what that reader already answers a broken file with: a `Failure`
+(or, for the `.gitignore` `attach` must write, a `Refusal`), or, where a reader treats an
+unreadable file as absent, the same absent answer.
+
+Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
+case reddens on the decode error itself. The two readers `mutations.toml` declares are the ones
+a command's first read meets, `keelline.toml` and the machine file.
+"""
+
+from __future__ import annotations
+
+import io
+import os
+from collections.abc import Callable
+from contextlib import redirect_stdout
+from pathlib import Path
+
+import pytest
+
+from keelline.attach import binding, permissions, write
+from keelline.attach.binding import Binding
+from keelline.cli import build_parser, discover_registrars, run
+from keelline.config.loader import CONFIG_FILE, ConfigError, MachineConfigError, load, read_document
+from keelline.errors import Failure, Refusal
+from keelline.memory import bundles, index, store, trust
+from keelline.overlay import create, identity
+from keelline.overlay.api import COMMON_CODEX
+from keelline.overlay.layout import PLUGIN_MANIFEST
+from keelline.project.init import _existing
+from keelline.release import versions
+from keelline.setup.machine import read_machine
+from keelline.setup.run import _read_document
+from tests.gitfixture import git, needs_git
+from tests.project.repos import DOCUMENT, repository
+
+UNDECODABLE = b"\xff\xfe[overlay]\n"
+
+
+def _plant(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(UNDECODABLE)
+    return path
+
+
+def _config(root: Path) -> Path:
+    return _plant(root / CONFIG_FILE)
+
+
+# (id, what to plant under `tmp_path`, the call, the exception the reader answers with)
+RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]]] = [
+    (
+        "keelline.toml, as every command loads it",
+        lambda t: (_config(t), lambda: load(t, machine=t / "absent.toml"))[1],
+        ConfigError,
+    ),
+    (
+        "keelline.toml, as the editors read it",
+        lambda t: (_config(t), lambda: read_document(t))[1],
+        ConfigError,
+    ),
+    ("keelline.toml, as init adopts it", lambda t: (_config(t), lambda: _existing(t))[1], Failure),
+    (
+        "the machine file, under the loader",
+        lambda t: (
+            (t / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8"),
+            lambda: load(t, machine=_plant(t / "machine.toml")),
+        )[1],
+        MachineConfigError,
+    ),
+    (
+        "the machine file, for its overlay root",
+        lambda t: lambda: store.overlay_root(_plant(t / "machine.toml")),
+        Failure,
+    ),
+    (
+        "the machine file, under setup",
+        lambda t: lambda: read_machine(_plant(t / "m.toml")),
+        MachineConfigError,
+    ),
+    (
+        "the trust record",
+        lambda t: (_plant(t / "trust.json"), lambda: trust._recorded(t / "machine.toml"))[1],
+        trust.UnreadableTrustRecord,
+    ),
+    (
+        "the overlay's project record",
+        lambda t: (
+            _plant(binding._record(t, "widget")),
+            lambda: binding._recorded(t, "widget"),
+        )[1],
+        Failure,
+    ),
+    (
+        "a harness settings file attach merges into",
+        lambda t: lambda: permissions._read(_plant(t / "settings.local.json")),
+        Failure,
+    ),
+    (
+        "the attach ledger",
+        lambda t: (_plant(t / write.LEDGER), lambda: write.ledger(t))[1],
+        Failure,
+    ),
+    (
+        "the .gitignore attach writes its region into",
+        lambda t: (_plant(t / write.GITIGNORE), lambda: write._write_ignore_region(t))[1],
+        Refusal,
+    ),
+    (
+        "the .gitignore detach takes its region out of",
+        lambda t: (_plant(t / write.GITIGNORE), lambda: write._ignore_region_remainder(t))[1],
+        Failure,
+    ),
+    (
+        "an overlay rule attach copies for Codex",
+        lambda t: (
+            _plant(t / "overlay" / COMMON_CODEX / "rules.md"),
+            lambda: write._codex_rules(
+                t / "project", Binding("widget", t / "overlay", t / "store", None, None, "")
+            ),
+        )[1],
+        Failure,
+    ),
+    (
+        "an overlay manifest init renames",
+        lambda t: (_plant(t / "plugin.json"), lambda: create._rename(t, "plugin.json", "-you"))[1],
+        Failure,
+    ),
+    (
+        "a harness settings file setup merges into",
+        lambda t: lambda: _read_document(_plant(t / "settings.json")),
+        Failure,
+    ),
+    (
+        "pyproject.toml, for the release check",
+        lambda t: (_plant(t / versions.PYPROJECT), lambda: versions._pyproject(t))[1],
+        versions.MalformedSource,
+    ),
+    (
+        "a version source, for the release check",
+        lambda t: (
+            _plant(t / versions.PYPROJECT),
+            lambda: versions._read(t, versions.PYPROJECT),
+        )[1],
+        versions.MalformedSource,
+    ),
+    (
+        "the marketplace manifest, for the release check",
+        lambda t: (
+            (t / versions.PYPROJECT).write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8"),
+            _plant(t / versions.MARKETPLACE),
+            lambda: versions.check(t),
+        )[2],
+        versions.MalformedSource,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("planted", "expected"), [(p, e) for _, p, e in RAISING], ids=[i for i, _, _ in RAISING]
+)
+def test_an_undecodable_file_is_its_readers_own_failure(
+    tmp_path: Path, planted: Callable[[Path], Callable[[], object]], expected: type[Exception]
+) -> None:
+    call = planted(tmp_path)
+    with pytest.raises(expected, match="not UTF-8 text"):
+        call()
+
+
+# (id, what to plant, the call, what the reader answers for a file it cannot read)
+ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
+    (
+        "the memory index a bundle injects",
+        lambda t: lambda: bundles._index(_plant(t / "MEMORY.md")),
+        [],
+    ),
+    (
+        "the memory index a second writer appended to",
+        lambda t: lambda: index._appended(_plant(t / "MEMORY.md")),
+        {},
+    ),
+    (
+        "the overlay's project record, asked whether it is bound",
+        lambda t: (
+            _plant(t / store.PROJECTS / "widget" / store.PROJECT_RECORD),
+            lambda: store._bound(t, "widget", t),
+        )[1],
+        False,
+    ),
+    (
+        "the attach record's first-attach date",
+        lambda t: lambda: write._first_attach(_plant(t / "project.toml")),
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("planted", "answer"), [(p, a) for _, p, a in ABSENT], ids=[i for i, _, _ in ABSENT]
+)
+def test_an_undecodable_file_a_reader_treats_as_absent_is_absent(
+    tmp_path: Path, planted: Callable[[Path], Callable[[], object]], answer: object
+) -> None:
+    assert planted(tmp_path)() == answer
+
+
+def test_an_undecodable_overlay_manifest_is_named_as_unreadable(tmp_path: Path) -> None:
+    _plant(tmp_path / PLUGIN_MANIFEST)
+    fault = identity.overlay_fault(tmp_path)
+    assert fault is not None and "cannot be read as JSON" in fault
+
+
+@needs_git
+def test_an_undecodable_worktree_back_pointer_is_no_registered_worktree(tmp_path: Path) -> None:
+    # `.git/worktrees/<name>/gitdir` is git's own file, read to find the checkout that owns the
+    # store; one that cannot be decoded answers "not a registered worktree", as one that cannot
+    # be read does.
+    main = repository(tmp_path)
+    git(main, "commit", "-q", "--allow-empty", "-m", "first")
+    linked = tmp_path / "linked"
+    git(main, "worktree", "add", "-q", str(linked))
+    private = Path(git(linked, "rev-parse", "--path-format=absolute", "--git-dir").strip())
+    assert store._registered_worktree(linked) is not None
+    (private / "gitdir").write_bytes(b"\xff\xfe\n")
+    assert store._registered_worktree(linked) is None
+
+
+def _cli(root: Path, tmp_path: Path, *argv: str, machine: Path | None = None) -> int:
+    parser = build_parser(discover_registrars())
+    flags = ["--root", str(root), "--machine", str(machine or tmp_path / "absent.toml")]
+    with redirect_stdout(io.StringIO()):
+        return int(run([*argv, *flags], parser=parser))
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("argv", "planted"),
+    [
+        (("init", "--yes", "--dry-run", "--no-ci"), "machine"),
+        (("init", "--yes", "--dry-run", "--no-ci"), CONFIG_FILE),
+        (("bugs", "check"), CONFIG_FILE),
+    ],
+    ids=["init-machine", "init-keelline-toml", "bugs-check-keelline-toml"],
+)
+def test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv: tuple[str, ...], planted: str
+) -> None:
+    # Through the real parser: the exit code and the frame's own word for it are what a person
+    # and a relaying agent read, and `internal error` told them the fault was Keelline's.
+    root = repository(tmp_path)
+    machine = _plant(tmp_path / "machine.toml") if planted == "machine" else None
+    if planted == CONFIG_FILE:
+        _config(root)
+    assert _cli(root, tmp_path, *argv, machine=machine) == 1
+    stderr = capsys.readouterr().err
+    assert "failed:" in stderr and "not UTF-8 text" in stderr and "internal error" not in stderr
+
+
+@needs_git
+def test_the_questions_read_an_undecodable_machine_file_as_recording_no_overlay(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The machine file changes one title of the questions and nothing else, so a broken one
+    # reads as recording no overlay, however it is broken.
+    root = repository(tmp_path)
+    assert _cli(root, tmp_path, "init", "--questions", machine=_plant(tmp_path / "m.toml")) == 0
+    assert "internal error" not in capsys.readouterr().err
+
+
+# The neighbour the same probe found: `keelline.toml` and the machine file are the first thing
+# most commands read, and one that cannot be read at all — a directory at the path, or a
+# permission bit — also ended in `internal error`. Mutation (by hand, per case): the `except
+# OSError` taken out of that reader -> the case reddens on the `OSError` itself.
+def test_a_keelline_toml_that_is_a_directory_cannot_be_read_and_says_so(tmp_path: Path) -> None:
+    (tmp_path / CONFIG_FILE).mkdir()
+    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+        load(tmp_path, machine=tmp_path / "absent.toml")
+    with pytest.raises(ConfigError, match=r"cannot be read \(IsADirectoryError\)"):
+        read_document(tmp_path)
+
+
+@pytest.mark.parametrize("which", ["machine", CONFIG_FILE])
+def test_a_file_without_read_permission_cannot_be_read_and_says_so(
+    tmp_path: Path, which: str
+) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
+    (tmp_path / CONFIG_FILE).write_text(DOCUMENT, encoding="utf-8")
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[personal]\n", encoding="utf-8")
+    locked = machine if which == "machine" else tmp_path / CONFIG_FILE
+    locked.chmod(0)
+    try:
+        if which == "machine":
+            with pytest.raises(MachineConfigError, match=r"cannot be read \(PermissionError\)"):
+                load(tmp_path, machine=machine)
+        else:
+            with pytest.raises(Failure, match=r"cannot be read \(PermissionError\)"):
+                _existing(tmp_path)
+    finally:
+        locked.chmod(0o644)
+
+
+def test_a_machine_file_setup_cannot_parse_is_the_loaders_failure(tmp_path: Path) -> None:
+    # The same reader's other broken shape: `read_machine` parsed with no answer for a file that
+    # is not TOML either, so `keelline setup` crashed on the stray bracket the loader names by
+    # position. Mutation (by hand): the `TOMLDecodeError` arm removed -> this reddens on it.
+    machine = tmp_path / "machine.toml"
+    machine.write_text("[overlay\n", encoding="utf-8")
+    with pytest.raises(MachineConfigError, match=r"is not valid TOML \(at line 1"):
+        read_machine(machine)

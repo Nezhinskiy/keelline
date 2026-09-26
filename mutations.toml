@@ -65,8 +65,8 @@ reddens = [
 [[mutation]]
 name = "a corrupt trust record reads as an empty one again"
 file = "src/keelline/memory/trust.py"
-before = '    except (json.JSONDecodeError, UnicodeDecodeError) as exc:'
-after = '''    except (json.JSONDecodeError, UnicodeDecodeError):
+before = '    except json.JSONDecodeError as exc:'
+after = '''    except json.JSONDecodeError:
         return {}
     except RecursionError as exc:'''
 reddens = [
@@ -1025,6 +1025,78 @@ before = '    return completed.returncode, completed.stdout'
 after = '    return (completed.returncode, completed.stdout) if completed.returncode == 0 else (-1, "")'
 reddens = ["tests/test_git_run.py::test_a_non_zero_exit_is_returned_not_collapsed"]
 
+# git speaks bytes, and `-z` prints a tracked name raw: decoded strictly, one name that is not
+# UTF-8 raised `UnicodeDecodeError` out of `git_run` and every caller, a gate's included, and so
+# did git's own stderr, which nobody reads; a name read off the disk failed the other way, on
+# `stdin`. Decoded with `surrogateescape`, the answer is the path itself.
+[[mutation]]
+name = "the git runner decodes strictly again, so a non-UTF-8 byte is a traceback"
+file = "src/keelline/gitenv.py"
+before = '            errors="surrogateescape",'
+after = '            errors="strict",'
+reddens = [
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/test_git_run.py::test_a_name_sent_on_stdin_reaches_git_as_the_bytes_it_names",
+  "tests/test_git_run.py::test_git_s_own_diagnostics_are_never_decoded_into_a_failure",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[merge-base]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[archive]",
+  "tests/guards/test_attribute.py::test_git_diagnostics_this_process_cannot_decode_still_reach_a_verdict[ls-tree]",
+]
+
+# The other way to read a byte that is not UTF-8, and the one that fails open: as no answer.
+# Four callers read that as "nothing" and passed what they exist to refuse — `setup` recorded a
+# sibling checkout of the project as the trust anchor, `test attribute` skipped the export-rule
+# comparison, the docs trail's ignore filter listed a local-only document in the roadmap, and
+# `assess` reported could-not-look over a committed `.env` — and the plan gate failed every run
+# of a repository holding one such plan name.
+[[mutation]]
+name = "the git runner reads an answer that is not UTF-8 as no answer again"
+file = "src/keelline/gitenv.py"
+before = """            errors="surrogateescape",
+            check=False,
+            timeout=timeout,
+            env=scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"""
+after = """            check=False,
+            timeout=timeout,
+            env=scrubbed_env(),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):"""
+reddens = [
+  "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
+  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
+  "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
+  "tests/docs/test_trail.py::test_a_document_named_in_bytes_that_are_not_utf_8_does_not_unignore_the_others",
+  "tests/docs/test_trail.py::test_the_trail_gate_holds_a_local_only_document_out_beside_a_name_that_is_not_utf_8",
+  "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
+  "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+  "tests/guards/test_attribute.py::test_a_base_git_names_in_bytes_that_are_not_text_keeps_git_s_own_exit_code",
+]
+
+# git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path
+# they are compared with uses the filesystem's. On macOS the filesystem is UTF-8 whatever the
+# locale, so under a latin-1 locale a non-ASCII name never matched: a gitignored document read
+# as not ignored and went into the committed roadmap.
+[[mutation]]
+name = "the git runner decodes with the locale's codec rather than the filesystem's"
+file = "src/keelline/gitenv.py"
+before = "    return sys.getfilesystemencoding()"
+after = '    return __import__("locale").getpreferredencoding(False)'
+reddens = [
+  "tests/test_git_run.py::test_git_s_answer_and_the_filesystem_spell_a_name_alike_whatever_the_locale",
+  "tests/test_git_run.py::test_a_name_asked_on_stdin_matches_the_rule_that_names_it_whatever_the_locale",
+]
+
+# A `stdin` with no bytes under the locale means git could not be asked: `(-1, "")`, never a
+# `UnicodeEncodeError` out of the caller.
+[[mutation]]
+name = "the git runner lets a stdin it cannot encode escape as a traceback"
+file = "src/keelline/gitenv.py"
+before = "    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"
+after = "    except (OSError, subprocess.SubprocessError):"
+reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_minus_one"]
+
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
 # the subset stays valid YAML only because the leading class is YAML's whole indicator set.
 [[mutation]]
@@ -1065,6 +1137,48 @@ file = "src/keelline/ledger/scan.py"
 before = '    return FIXTURE_MARKER.encode("utf-8") in head'
 after = '    return False'
 reddens = ["tests/ledger/test_scan.py::test_a_fixture_holder_is_excluded_from_the_scan"]
+
+# A listing git gave no answer for — git could not be run, or ran past its bound — read as an
+# empty one scanned no file and reported every reference absent. It falls back to the walk.
+[[mutation]]
+name = "the scan reads a listing git gave no answer for as no files"
+file = "src/keelline/ledger/scan.py"
+before = """    if code != 0:
+        return None
+    return [root / name for name in listed.split("\\0") if name]"""
+after = """    return [root / name for name in listed.split("\\0") if name]"""
+reddens = [
+  "tests/ledger/test_scan.py::test_a_listing_git_gave_no_answer_for_falls_back_to_the_walk_and_not_to_nothing",
+]
+
+# The allocator read a history git gave no answer for as an empty one, and `bugs new` handed
+# out a number another branch holds, silently. A history still unread — git could not be run, or
+# ran past its bound — is named in the warning.
+[[mutation]]
+name = "the allocator hands out a number with the history unread and no word"
+file = "src/keelline/ledger/write.py"
+before = """    if code != 0:
+        warning = _joined(warning, _uncounted(root, code))"""
+after = """    if False:
+        warning = _joined(warning, _uncounted(root, code))"""
+reddens = [
+  "tests/ledger/test_write.py::test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty[-1]",
+  "tests/ledger/test_write.py::test_a_history_git_gave_no_answer_for_is_named_and_not_read_as_empty[128]",
+]
+
+# "No repository" is read off the disk: git refuses `rev-parse --is-inside-work-tree` on a
+# checkout it judges of dubious ownership exactly as it refused the log, and the allocator took
+# that for "no repository" and dropped the history with no word.
+[[mutation]]
+name = "the allocator reads a repository git refuses as no repository"
+file = "src/keelline/ledger/write.py"
+before = """    if not in_work_tree(root):
+        return None"""
+after = """    if git_run(root, "rev-parse", "--is-inside-work-tree")[0] != 0:
+        return None"""
+reddens = [
+  "tests/ledger/test_write.py::test_a_repository_git_refuses_to_read_is_not_mistaken_for_no_repository",
+]
 
 # A repository condition the operator can fix must reach them as findings (exit 1), never as an
 # internal error (exit 2): `cli.run` maps a `Failure` to 1 and everything else to 2.
@@ -2413,8 +2527,8 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_committed_attach_ledger_cannot_force_a_red_row",
 ]
 
-# `red` is what gates the exit code, and wave 5's `assess` is planned to gate on it. A directory
-# this process cannot list is a fact about the machine, not about the installation.
+# `red` is what gates the exit code. A directory this process cannot list is a fact about the
+# machine, not about the installation.
 [[mutation]]
 name = "doctor renders an unreadable harness data root as a red row"
 file = "src/keelline/doctor/checks.py"
@@ -3280,6 +3394,36 @@ reddens = [
   "tests/scripts/test_mutation_oracle.py::test_the_working_tree_is_never_written_and_pytest_runs_in_the_scratch_checkout",
 ]
 
+# The oracle's own pytest run captured stdout with a strict decode that nothing needed: a
+# failing test whose diff carried a latin-1 byte killed the run on a mutation it had caught.
+[[mutation]]
+name = "the oracle decodes pytest's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,"""
+after = """                # reads — a strict decode then killed the run on a mutation it had caught.
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_red_test_that_prints_an_undecodable_byte_is_still_reported_caught",
+]
+
+# The same strict decode in the other pytest the oracle launches: the collection that warms the
+# bytecode cache forgives only a timeout, so a byte no codec reads there ended the run.
+[[mutation]]
+name = "the oracle decodes its warming collection's output strictly again"
+file = "scripts/mutation_oracle.py"
+before = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,"""
+after = """            # cache, and a byte no codec reads in the collection's output killed the oracle.
+            capture_output=True,
+            text=True,"""
+reddens = [
+  "tests/scripts/test_mutation_oracle.py::test_a_collection_that_prints_an_undecodable_byte_still_warms_the_cache",
+]
+
 [[mutation]]
 name = "the scratch checkout's src no longer precedes the editable install"
 file = "scripts/mutation_oracle.py"
@@ -3658,20 +3802,6 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_spaced_path_a_quoted_one_and_a_dangling_symlink_are_not_missing_files",
 ]
 
-# Fix round 2, item 2. `-z` made an undecodable tracked path reachable: `git_run` decodes
-# strictly and catches only `OSError`/`SubprocessError`, so the `UnicodeDecodeError` left a
-# library function as a traceback. A listing that cannot be read is no listing at all.
-[[mutation]]
-name = "attribute lets an undecodable tracked path escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        code, listing = -1, \"\""""
-after = """    except ZeroDivisionError:
-        code, listing = -1, \"\""""
-reddens = [
-  "tests/guards/test_attribute.py::test_a_listing_this_process_cannot_decode_skips_the_comparison",
-]
-
 # Fix round 1, item 2. Every external program is optional at runtime and a missing binary is a
 # reported finding, never a traceback: `gitenv.git_run` answers `(-1, "")` and `runner` answers
 # `Completed(NOT_FOUND, ...)`. This was the one launch in the module with nothing around it.
@@ -3684,15 +3814,41 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_tar_that_cannot_be_launched_is_a_finding_and_not_a_traceback",
 ]
 
-# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "could not be launched", not an exit
-# status; rendered as one it sends a reader to fetch a ref that is not the problem.
+# Fix round 1, item 6. `-1` is `git_run`'s sentinel for "no answer" — not launched, or past its
+# bound — and not an exit status; rendered as one it sends a reader to fetch a ref that is not
+# the problem. Two arms now read it, so each entry carries its own
+# `raise` line to name one of them.
 [[mutation]]
 name = "attribute reports an unlaunchable git as an exit code"
 file = "src/keelline/guards/attribute.py"
-before = "    if code == -1:"
-after = "    if False:"
+before = """    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
+after = """    if False:
+        raise Failure(f"{NO_ANSWER}, so `merge-base HEAD {base}` gave nothing to compare against")"""
 reddens = [
   "tests/guards/test_attribute.py::test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code",
+]
+
+[[mutation]]
+name = "attribute reports an archive git gave no answer for as an exit code"
+file = "src/keelline/guards/attribute.py"
+before = """    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+after = """    if False:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")"""
+reddens = [
+  "tests/guards/test_attribute.py::test_an_archive_git_gave_no_answer_for_is_a_failure_and_not_an_exit_code",
+]
+
+# A listing git gave no answer for — it ran past its bound — is no listing, and the comparison is
+# skipped rather than blaming an export rule for a healthy tree.
+[[mutation]]
+name = "attribute reads a listing git gave no answer for as every file missing"
+file = "src/keelline/guards/attribute.py"
+before = "    if code == 0 and missing:"
+after = "    if code != 0 or missing:"
+reddens = [
+  "tests/guards/test_attribute.py::test_a_listing_git_gave_no_answer_for_skips_the_comparison",
 ]
 
 # A `${{ }}` inside a workflow's `run:` is interpolated by the platform before the shell sees
@@ -3739,9 +3895,9 @@ reddens = [
 ]
 
 # `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
-# `path:` carrying a newline writes further `key=value` lines — and the keys the very next steps
-# read are `base`, `state` and `enforce`. `enforce` is the whole of DC7's teeth. Disable the
-# character check and a caller's `path:` decides whether an installed project's gates enforce.
+# `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
+# is `base_sha`, the commit whose configuration governs the gates. Disable the character check
+# and a caller's `path:` forges that commit, and with it what a pull request is judged against.
 [[mutation]]
 name = "the reusable workflow lets `path:` write its own outputs"
 file = ".github/workflows/check.yml"
@@ -3790,68 +3946,6 @@ reddens = [
   "tests/test_neutral.py::test_the_gate_reads_the_whole_tree",
 ]
 
-# `check.yml`'s verdict is three lines of shell that decide whether a failed gate fails the job,
-# which is the whole of D8's advisory rule. Pin the last line true and an installed project's
-# red gate reports green — the gate running is not the gate enforcing.
-[[mutation]]
-name = "the verdict stops failing the job for a failed gate"
-file = ".github/workflows/check.yml"
-before = '          [ "$ENFORCE" != true ] || [ "$failed" -eq 0 ]'
-after = "          true"
-reddens = [
-  "tests/test_fixtures.py::test_the_verdict_fails_the_job_only_where_the_base_says_installed",
-]
-
-# "Every gate ran, whatever the first one said" is the step's own claim and the reason the five
-# gate steps are `continue-on-error`. Shorten the loop to the first gate and a project fixing its
-# documents pays a round trip per finding, while every other assertion about the verdict still
-# holds.
-[[mutation]]
-name = "the verdict reports only the first gate"
-file = ".github/workflows/check.yml"
-before = '          for pair in "docs:$O_DOCS" "bugs:$O_BUGS" "plan:$O_PLAN" "commit:$O_COMMIT" "trail:$O_TRAIL"; do'
-after = '          for pair in "docs:$O_DOCS"; do'
-reddens = [
-  "tests/test_fixtures.py::test_every_gate_is_named_in_the_verdict_and_not_only_the_first",
-]
-
-# DC7's equality rule applies "on any branch but the base branch itself". A push to the base
-# branch IS the change, so dropping the exemption refuses every merge into it — the gate failing
-# closed on the one ref that can never satisfy it.
-[[mutation]]
-name = "the base branch is compared against itself"
-file = ".github/workflows/check.yml"
-before = '            if [ "$CURRENT_REF" != "refs/heads/$base" ] && ! git diff --quiet "origin/$base" -- "$file"; then'
-after = '            if ! git diff --quiet "origin/$base" -- "$file"; then'
-reddens = [
-  "tests/test_fixtures.py::test_the_base_branch_itself_is_exempt_from_the_equality_rule",
-]
-
-# And D8's other half: while the base's state is `initialised` or `adopting` the branch may
-# change the configuration, and the run warns rather than refusing. Refuse there and a project
-# adopting the gate cannot land the pull request that adopts it.
-[[mutation]]
-name = "a differing configuration is refused before the base says installed"
-file = ".github/workflows/check.yml"
-before = '              if [ "$state" = installed ]; then'
-after = "              if true; then"
-reddens = [
-  "tests/test_fixtures.py::test_a_differing_configuration_under_a_base_that_is_not_installed_warns",
-]
-
-# The base step runs in the caller's checkout, and `python3 -c` puts that directory first on
-# `sys.path`. Without `-P` a `tomllib.py` the branch adds reads the base's configuration, so the
-# branch decides the state and with it whether any gate enforces — while `keelline.toml` itself
-# stays byte-equal and the equality rule has nothing to refuse.
-[[mutation]]
-name = "the base step's reader imports from the tree under review again"
-file = ".github/workflows/check.yml"
-before = '''            state="$(git show "origin/$base:$file" | python3 -P -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
-after = '''            state="$(git show "origin/$base:$file" | python3 -c 'import sys, tomllib; s = tomllib.loads(sys.stdin.read()).get("keelline", {}).get("state", "initialised"); print(s if s in {"initialised", "adopting", "installed"} else "initialised")')"'''
-reddens = [
-  "tests/test_fixtures.py::test_a_tomllib_the_branch_plants_does_not_read_the_bases_configuration",
-]
-
 # The rule that replaced four rounds of shape enumeration: a `run:` key owns every following
 # line indented past the key's column. Drop the continuation and every multi-line body — a block
 # scalar, an indented plain scalar, a plain scalar that continues onto the next line, a quoted
@@ -3865,7 +3959,7 @@ before = "            body.append(following)"
 after = "            pass"
 reddens = [
   "tests/test_fixtures.py::test_a_run_key_owns_every_line_indented_past_it",
-  # And the scan's own size floor, which exists for exactly this: nine bodies are still
+  # And the scan's own size floor, which exists for exactly this: the bodies are still
   # collected from `check.yml`, so the COUNT floor passes while every one of them has been
   # truncated to what stood on the key's line.
   "tests/test_fixtures.py::test_no_workflow_splices_an_expression_into_a_shell",
@@ -4147,36 +4241,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_record_key_this_build_does_not_ship_is_counted_and_never_quoted",
 ]
 
-# `gitenv.git_run` decodes stderr strictly as well as stdout, so git's own error text carrying
-# one non-UTF-8 byte escapes as a bare `UnicodeDecodeError` out of a library function. The
-# listing's arm answers by skipping the comparison; these two have no weaker answer, so each is
-# a `Failure` naming its command. One entry per arm, because one entry names one line.
-[[mutation]]
-name = "attribute lets an undecodable merge-base diagnostic escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
-after = """    except ZeroDivisionError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there \""""
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
-]
-
-[[mutation]]
-name = "attribute lets an undecodable archive diagnostic escape as a traceback"
-file = "src/keelline/guards/attribute.py"
-before = """    except UnicodeDecodeError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
-after = """    except ZeroDivisionError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted\""""
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[archive]",
-]
-
 # The case is named for the repository and matched on `refused by a ruleset`, which is the
 # STUB's own stderr — quoted back whatever this message says about where the push went. The
 # slug is the half only this line produces.
@@ -4283,12 +4347,13 @@ reddens = [
 # listing — is what a stranger reads before the README, and all four of its strings advertised
 # "an adoption state machine" while `keelline assess` did not exist and the README listed it
 # under **Not yet**. `keelline release check` reads versions, never descriptions, so nothing
-# looked. This puts the claim back into the widest-reach of the four.
+# looked. This put that claim back into the widest-reach of the four until the state machine
+# shipped and left the README's list; it now puts in the memory MCP server, which has not.
 [[mutation]]
-name = "the PyPI description advertises the unshipped adoption state machine again"
+name = "the PyPI description advertises the unshipped memory MCP server"
 file = "pyproject.toml"
 before = 'description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."'
-after = 'description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and an adoption state machine, packaged as one plugin for Claude Code and Codex."'
+after = 'description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and a memory MCP server, packaged as one plugin for Claude Code and Codex."'
 reddens = [
   "tests/test_manifests.py::test_no_storefront_string_advertises_what_the_readme_says_is_not_yet",
 ]
@@ -4303,13 +4368,14 @@ reddens = [
 # verbatim, so it is the kind that drifts whenever the sentence is reworded: the check that
 # caught it is reading every entry's `before` back out of its file and counting. Re-pointed
 # again when the profile adapters rewrote the sentence to eight items that each leave it in the
-# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it; the
-# mutation cuts it back to one.
+# change that ships them, and again as `upgrade` and then `uninstall` shipped and left it, and
+# again as `assess` shipped, and again as the state machine shipped; the mutation cuts it back
+# to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"
 file = "README.md"
-before = "> discipline. **Not yet:** `assess`, the adoption state machine, the memory MCP server, a\n> hold-the-line baseline, the `uvx` form of the gate, and adapters for Cursor or Hermes \u2014 each\n> leaves this"
-after = "> discipline. **Not yet:** `assess` \u2014 each\n> leaves this"
+before = "> discipline. **Not yet:** the memory MCP server, a hold-the-line baseline, the `uvx` form\n> of the gate, and adapters for Cursor or Hermes \u2014 each leaves this"
+after = "> discipline. **Not yet:** the memory MCP server \u2014 each leaves this"
 reddens = [
   "tests/test_manifests.py::test_the_readme_still_declares_what_has_not_shipped",
 ]
@@ -4477,6 +4543,20 @@ reddens = [
   "tests/test_fixtures.py::test_the_gates_on_the_fixture_report_what_they_examined[commit check]",
 ]
 
+# A commit whose `encoding` header names one git cannot convert from prints its message raw, and
+# a pull request can push one: the strict decode raised `UnicodeDecodeError`, a `ValueError`,
+# past every caller — an internal error, and past any caller that runs gates one by one.
+[[mutation]]
+name = "the commit range lets a message that is not UTF-8 escape as a traceback"
+file = "src/keelline/guards/commit.py"
+before = """    except UnicodeDecodeError:
+        raise Refusal("""
+after = """    except ZeroDivisionError:
+        raise Refusal("""
+reddens = [
+  "tests/guards/test_commit.py::test_a_message_git_prints_in_bytes_that_are_not_text_is_a_refusal_not_a_traceback",
+]
+
 # `docs check` is the row no success field can hold: it answers `findings: []` and the same
 # `OK:` line whether it read the documents or returned early. Its companion plants one
 # violation per walk, so each walk has a mutation of its own.
@@ -4539,25 +4619,6 @@ before = "                files[str(path.relative_to(root))] = path.read_bytes()
 after = "                files[str(path.relative_to(root))] = str(path.stat().st_size).encode()"
 reddens = [
   "tests/test_snapshot.py::test_the_ordinary_walk_holds_a_files_bytes_and_not_only_its_name",
-]
-
-# The decode-containment case matched on the COMMAND NAME, which the pre-existing generic arm
-# emits too: with the merge-base arm's `raise` replaced by a fall-through, `match="merge-base"`
-# was satisfied by *"git could not be run, so `merge-base HEAD main` never executed"* — the
-# exact misdiagnosis `test_a_git_that_could_not_be_launched_is_not_reported_as_an_exit_code`
-# exists to forbid. Measured: 16 passed, two tests contradicting each other, both green. The
-# case now matches the clause only this arm produces.
-[[mutation]]
-name = "the undecodable merge-base falls through to the unlaunchable-git sentence"
-file = "src/keelline/guards/attribute.py"
-before = """
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
-            f"is no merge-base to compare against"
-        ) from None"""
-after = '        code, merge_base = -1, ""'
-reddens = [
-  "tests/guards/test_attribute.py::test_git_output_this_process_cannot_decode_is_a_failure_and_not_a_traceback[merge-base]",
 ]
 
 # Three of the D5 artifact gate's four claims were unheld, each removable with the module's
@@ -4838,32 +4899,32 @@ reddens = [
 [[mutation]]
 name = "the tree listing goes back on the argument-free timeout"
 file = "src/keelline/guards/attribute.py"
-before = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
-after = '        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
+before = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)'
+after = '    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref)'
 reddens = [
   "tests/guards/test_attribute.py::test_the_tree_listing_is_not_bounded_by_the_argument_free_cap",
 ]
 
-# §4.3. All five gates carry `continue-on-error: true`, so while the base is not `installed` a
-# Keelline that cannot even import produced five `::warning`s and a green job — for every
-# adopting project, which by design is every project's first weeks. This is the one unguarded
-# step given the guard back.
+# The step whose exit status is the verdict. `keelline gate` already exits 0 for an advisory
+# gate's findings, so `continue-on-error` there could only turn a refusal or an enforced gate's
+# failure green — and the job with it, for every caller.
 [[mutation]]
-name = "the proof that Keelline runs at all becomes advisory too"
+name = "a judging step that may fail turns an enforced gate green"
 file = ".github/workflows/check.yml"
 before = """
-      - name: Keelline runs at all"""
+      - name: The configuration and the built-in gates
+"""
 after = """
-      - name: Keelline runs at all
-        continue-on-error: true"""
+      - name: The configuration and the built-in gates
+        continue-on-error: true
+"""
 reddens = [
-  "tests/test_fixtures.py::test_something_outside_the_advisory_arm_proves_keelline_runs_at_all",
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
 ]
 
-# §4.3. On a `pull_request` the workflow file comes from the merge commit, so `with: base:` is
-# the author's. A `base:` naming a branch whose `keelline.toml` says `initialised` yielded
-# `enforce=false` without the tree's own file being touched, and the byte-equality rule never
-# fired.
+# On a `pull_request` the caller workflow comes from the merge commit, so `with: base:` is the
+# author's. A `base:` naming a branch the author pushed would choose the configuration the change
+# is judged against, without the tree's own `keelline.toml` being touched.
 [[mutation]]
 name = "a pull request's base: input is preferred over the platform's own answer again"
 file = ".github/workflows/check.yml"
@@ -5213,10 +5274,10 @@ reddens = [
 
 # DC2's own argument for giving the overlay's declared floor a row rather than folding it into
 # `versions`: a `local-only` project on a machine that records an overlay must not go red for a
-# requirement it has no relationship with. `red` is what gates the exit code, and wave 5's
-# `assess` is planned to gate on it too, so the level here is a verdict something downstream
-# reads -- an unconditional red makes `doctor` exit 1 in a repository that never opens the
-# overlay. `memory.mode` is the gate, and it is compared and never printed.
+# requirement it has no relationship with. `red` is what gates the exit code, so the level
+# here is a verdict something downstream reads -- an unconditional red makes `doctor` exit 1
+# in a repository that never opens the overlay. `memory.mode` is the gate, and it is compared
+# and never printed.
 [[mutation]]
 name = "an unrelated overlay's declared floor reddens a project that never reads it"
 file = "src/keelline/doctor/checks.py"
@@ -5251,11 +5312,11 @@ reddens = [
   "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
 ]
 
-# DC6, and the second half of one rule: a remote URL's last path segment and a checkout's
-# directory name are both repository-authored, so the value that fails the grammar is the one
-# thing the refusal must not carry. The anchor is `PROJECT_NAME`, the loader's own grammar in
-# the package, and the remedy — write `[project] name` yourself — is what a project whose
-# directory this tool cannot name still has. The loader refuses the same grammar the same way.
+# The second half of one rule: a remote URL's last path segment and a checkout's directory name are
+# both repository-authored, so the value that fails the grammar is the one thing the refusal must
+# not carry. The anchor is `PROJECT_NAME`, the loader's own grammar in the package, and the remedy —
+# answer it with `--name`, or write `[project] name` yourself — is what a project whose directory
+# this tool cannot name still has. The loader refuses the same grammar the same way.
 [[mutation]]
 name = "a detected name outside the grammar is quoted back in the refusal"
 file = "src/keelline/project/detect.py"
@@ -5453,8 +5514,8 @@ reddens = [
 
 # `[ci] ref` is repository-authored — on the adoption path it is whatever `keelline.toml`
 # already carried, and the loader bounds it to "a string" and nothing more — and it lands in the
-# `uses:` line of a YAML file GitHub executes. `GATE_BRANCH`'s rule, read onto the second value
-# this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
+# `uses:` line of a YAML file GitHub executes. The branch grammar's rule (`BRANCH_NAME`), read onto
+# the second value this template interpolates. The anchor is `CI_REF`, a constant in the installed package that
 # nothing a repository writes can move, and a value outside it costs the artifact, not the run.
 [[mutation]]
 name = "a [ci] ref outside the grammar is rendered into the workflow's uses line"
@@ -5487,17 +5548,17 @@ reddens = [
 ]
 
 # The highest-value new guard in the `project` area, and it had a test and no entry.
-# `[ci] gate_branch` is repository-authored and is interpolated into two positions of a YAML file
-# GitHub executes — a `branches:` list and a `${{ }}` default — so it is quoted there *and* held
-# to a shape here, because quoting alone still admits a newline, which closes the list and lets
-# further keys be written into the workflow. The anchor is `GATE_BRANCH`, a compiled constant in
-# the installed package; the party bounded is the repository, which cannot move it. A value
-# outside the grammar costs the artifact rather than the run, and the sentence names the key and
-# the grammar and never the value.
+# `[ci] gate_branch` is repository-authored and is interpolated into four places of a YAML file
+# GitHub executes — the three `branches:` lists and the literal `base:` — so it is quoted there
+# *and* held to a shape here, because quoting alone still admits a newline, which closes the
+# string and lets further keys be written into the workflow. The anchor is `BRANCH_NAME`, a
+# compiled constant in the installed package; the party bounded is the repository, which cannot
+# move it. A value outside the grammar costs the artifact rather than the run, and the sentence
+# names the key and the grammar and never the value.
 [[mutation]]
 name = "a gate_branch outside the grammar is interpolated into the rendered workflow"
 file = "src/keelline/project/templates.py"
-before = "    if not GATE_BRANCH.match(config.ci.gate_branch):"
+before = "    if not BRANCH_NAME.match(config.ci.gate_branch):"
 after = "    if False:"
 reddens = [
   "tests/project/test_templates.py::test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise",
@@ -7035,7 +7096,7 @@ reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_art
 [[mutation]]
 name = "a guard whose git timed out reads as no repository"
 file = "src/keelline/project/ignored.py"
-before = "    if _in_work_tree(root):\n        raise Refusal(UNANSWERED)"
+before = "    if in_work_tree(root):\n        raise Refusal(UNANSWERED)"
 after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
 reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]
 
@@ -7286,6 +7347,832 @@ before = "from keelline.scaffold import MANIFEST_PATH, Plan, apply"
 after = "from keelline.scaffold import MANIFEST_PATH, Plan, apply, plan"
 reddens = ["tests/project/test_planning_seam.py::test_only_the_planning_seam_imports_the_planner_or_the_ignore_guard"]
 
+# Every configured gate as a value (`keelline.assess.gates`), each a verdict CI reads once the
+# gates run through it: a gate that could not judge counts as failing, one gate's error never
+# stops the rest, each built-in finds what its area's command finds, and a custom gate is
+# bounded, reported by exit status, and ended whole — its whole process group, on a timeout and
+# on any other exit from the wait.
+[[mutation]]
+name = "a gate that could not judge counts as passing"
+file = "src/keelline/assess/gates.py"
+before = "        return bool(self.findings) or not self.answered"
+after = "        return bool(self.findings)"
+reddens = ["tests/assess/test_gates.py::test_a_commit_range_git_cannot_read_is_a_gate_that_did_not_answer"]
+
+[[mutation]]
+name = "a gate that raises aborts every gate after it"
+file = "src/keelline/assess/gates.py"
+before = "    except KeellineError:"
+after = "    except ValueError:"
+reddens = ["tests/assess/test_gates.py::test_a_gate_that_raises_did_not_answer_and_every_gate_after_it_still_runs"]
+
+[[mutation]]
+name = "run_gates answers a repeated or reordered name as given"
+file = "src/keelline/assess/gates.py"
+before = "    return tuple(_guarded(gate, context) for name, gate in gates.items() if name in wanted)"
+after = "    return tuple(_guarded(gates[name], context) for name in names)"
+reddens = ["tests/assess/test_gates.py::test_each_named_gate_runs_once_in_the_configured_order"]
+
+[[mutation]]
+name = "the docs gate drops the budget checks"
+file = "src/keelline/docs/hygiene.py"
+before = "    return check_budgets(root, config) + check_links(root, config)"
+after = "    return check_links(root, config)"
+reddens = ["tests/assess/test_gates.py::test_the_docs_gate_finds_an_over_budget_agents_file"]
+
+[[mutation]]
+name = "the bugs gate finds nothing"
+file = "src/keelline/ledger/check.py"
+before = "    return problems(root, config)"
+after = "    return []"
+reddens = ["tests/assess/test_gates.py::test_the_bugs_gate_finds_a_broken_entry"]
+
+[[mutation]]
+name = "the plan gate finds nothing"
+file = "src/keelline/docs/plans.py"
+before = "    return lint(root, config, plans=[], base=base).findings"
+after = "    return []"
+reddens = ["tests/assess/test_gates.py::test_the_plan_gate_finds_a_plan_the_change_touches"]
+
+[[mutation]]
+name = "the commit gate maps no violation to a finding"
+file = "src/keelline/guards/commit.py"
+before = "        for violation in report.violations"
+after = "        for violation in ()"
+reddens = ["tests/assess/test_gates.py::test_the_commit_gate_finds_an_attribution_trailer_after_the_base"]
+
+[[mutation]]
+name = "the trail gate reports a stale listing as current"
+file = "src/keelline/docs/trail.py"
+before = '    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]'
+after = "    return []"
+reddens = ["tests/assess/test_gates.py::test_a_stale_trail_is_a_failing_gate"]
+
+[[mutation]]
+name = "a custom gate's non-zero exit passes"
+file = "src/keelline/assess/gates.py"
+before = "        if code == 0:"
+after = "        if True:"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_that_exits_non_zero_is_one_finding_and_its_output_passes_through"]
+
+[[mutation]]
+name = "a custom gate past its time limit aborts the gate run"
+file = "src/keelline/assess/gates.py"
+before = "        except subprocess.TimeoutExpired:"
+after = "        except ValueError:"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_did_not_answer"]
+
+[[mutation]]
+name = "a timed-out custom gate's children run on after it reported"
+file = "src/keelline/assess/gates.py"
+before = "        os.killpg(process.pid, signal.SIGKILL)"
+after = "        process.kill()"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_leaves_nothing_running"]
+
+# Without a session of its own no process group has the command's pid, so the kill ends nothing
+# and the bounded reap's own `TimeoutExpired` escapes after `KILL_WAIT_SECONDS`: that, not the
+# marker, is what reddens here, and the sleeping command is left to its own end.
+[[mutation]]
+name = "a custom gate shares Keelline's process group"
+file = "src/keelline/assess/gates.py"
+before = "                start_new_session=True,"
+after = "                start_new_session=False,"
+reddens = ["tests/assess/test_gates.py::test_a_custom_gate_past_its_time_limit_leaves_nothing_running"]
+
+[[mutation]]
+name = "an interrupted custom gate's tree runs on after Keelline exits"
+file = "src/keelline/assess/gates.py"
+before = "            _end(process)  # on an interrupt or any other exit, as subprocess.run's own kill did"
+after = "            pass"
+reddens = ["tests/assess/test_gates.py::test_an_interrupted_custom_gate_leaves_nothing_running"]
+
+# The planning seam's checker has to see a planner however a module spells its way to it: from
+# the seam module's own top-level binding, and at the end of a dotted chain rooted at an imported
+# package. Both guard the test module that holds the seam, which is what a later command's
+# bypass would have to get past.
+[[mutation]]
+name = "the planning seam's checker stops knowing the seam module binds the planner"
+file = "tests/project/test_planning_seam.py"
+before = '    "keelline.project.footprint": {"plan", "left_copies", "local_copies", "refuse_ignored"},'
+after = ""
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_reached_through_the_seam_module",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+[[mutation]]
+name = "the planning seam's checker stops resolving a dotted chain"
+file = "tests/project/test_planning_seam.py"
+before = "                    found.add(node.attr)"
+after = "                    pass"
+reddens = [
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_fully_dotted_planner",
+  "tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively",
+]
+
+# `replan` asks no guard, so it plans only on a `Passes` whose `predict` already asked the ignore
+# guard about the same templates.
+[[mutation]]
+name = "a footprint command replans what it never predicted"
+file = "src/keelline/project/footprint.py"
+before = "        if not self._predicted:"
+after = "        if False:"
+reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicting_is_refused"]
+
+# `init --questions` prints what `detect` returns and carries it as a JSON Schema, so each
+# repository-authored value is held to its grammar before either sees it, the schema's patterns
+# are ones a JSON Schema validator reads, and the questions are refused, and write nothing,
+# wherever `init` would.
+[[mutation]]
+name = "origin/HEAD reaches the card unbounded"
+file = "src/keelline/project/detect.py"
+before = "    if not BRANCH_NAME.match(branch):"
+after = "    if not branch:"
+reddens = [
+  "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
+]
+
+[[mutation]]
+name = "an underivable name reaches the questions as their default"
+file = "src/keelline/project/detect.py"
+before = '        name, name_source = "", NOT_DERIVABLE'
+after = "        pass"
+reddens = [
+  "tests/project/test_questions.py::test_a_name_outside_the_grammar_is_left_to_ask_and_never_printed",
+]
+
+[[mutation]]
+name = "the schema carries a Python anchor ECMA-262 does not read"
+file = "src/keelline/project/questions.py"
+before = '    return pattern.pattern.removesuffix("\\Z") + "$"'
+after = "    return pattern.pattern"
+reddens = ["tests/project/test_questions.py::test_the_free_text_patterns_are_anchored_for_ecma_262"]
+
+[[mutation]]
+name = "the questions are asked over a keelline.toml that already answers them"
+file = "src/keelline/project/init.py"
+before = "    if answering and (root / CONFIG_FILE).is_file():"
+after = "    if False:"
+reddens = ["tests/project/test_questions.py::test_the_questions_are_refused_where_init_would_refuse"]
+
+[[mutation]]
+name = "a machine file that does not load stops the questions"
+file = "src/keelline/project/questions.py"
+before = "    except Failure:"
+after = "    except KeyError:"
+reddens = [
+  "tests/project/test_questions.py::test_a_machine_file_that_does_not_parse_still_yields_the_questions",
+]
+
+[[mutation]]
+name = "the questions take a flag that plans or writes"
+file = "src/keelline/project/commands.py"
+before = "        if args.dry_run or not args.ci or _given(args) != NO_ANSWERS:"
+after = "        if False:"
+reddens = ["tests/project/test_command.py::test_questions_take_no_flag_that_writes_or_plans"]
+
+[[mutation]]
+name = "an id offered as local names no whole file of the footprint"
+file = "src/keelline/project/templates.py"
+before = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")'
+after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-histroy")'
+reddens = [
+  "tests/project/test_templates.py::test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass",
+]
+
+# The rest of the planning seam: a relative import resolved like an absolute one, the private
+# planner called only by the seam, and `replan` opened only by a `predict` the guard passed.
+[[mutation]]
+name = "the planning seam's checker reads a relative import as a top-level module"
+file = "tests/project/test_planning_seam.py"
+before = "    if not node.level:"
+after = "    if True:"
+reddens = ["tests/project/test_planning_seam.py::test_the_checker_sees_a_planner_imported_relatively"]
+
+[[mutation]]
+name = "a footprint command plans through the seam's private planner"
+file = "src/keelline/project/init.py"
+before = "    footprint = passes.replan(passes.footprint)"
+after = "    footprint = passes._plan(passes.footprint, force=())"
+reddens = ["tests/project/test_planning_seam.py::test_only_the_seam_calls_its_private_planner"]
+
+[[mutation]]
+name = "a refused prediction opens replan"
+file = "src/keelline/project/footprint.py"
+before = '''        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
+        # is frozen, hence `object.__setattr__`.
+        object.__setattr__(self, "_predicted", True)'''
+after = '''        object.__setattr__(self, "_predicted", True)
+        refuse_ignored(self.root, self.config, *plans, removing=self.removing)'''
+reddens = [
+  "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
+]
+
+# A file a person or a repository owns that is not UTF-8 is its reader's own failure, never an
+# internal error: `keelline.toml` and the machine file, which most commands read first, and the
+# trust record, which fails loudly rather than reading as empty.
+[[mutation]]
+name = "a keelline.toml that is not UTF-8 crashes every command that loads it"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+after = """    except KeyError:
+        raise ConfigError(NOT_UTF8.format(path=path)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[keelline.toml, as every command loads it]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[bugs-check-keelline-toml]",
+]
+
+[[mutation]]
+name = "a machine file that is not UTF-8 crashes every command that loads the configuration"
+file = "src/keelline/config/loader.py"
+before = """    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+after = """    except KeyError:
+        raise MachineConfigError(NOT_UTF8.format(path=machine)) from None"""
+reddens = [
+  "tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the machine file, under the loader]",
+  "tests/test_undecodable.py::test_a_command_meeting_an_undecodable_file_fails_and_does_not_crash[init-machine]",
+]
+
+[[mutation]]
+name = "a trust record that is not UTF-8 crashes instead of refusing loudly"
+file = "src/keelline/memory/trust.py"
+before = """    except UnicodeDecodeError:
+        raise UnreadableTrustRecord("""
+after = """    except KeyError:
+        raise UnreadableTrustRecord("""
+reddens = ["tests/test_undecodable.py::test_an_undecodable_file_is_its_readers_own_failure[the trust record]"]
+
+[[mutation]]
+name = "the tracked-env probe stops reporting a committed .env file"
+file = "src/keelline/assess/probes.py"
+before = '                if (base := PurePosixPath(name).name) == ".env"'
+after = '                if (base := PurePosixPath(name).name) == ".nothing"'
+reddens = ["tests/assess/test_probes.py::test_a_tracked_env_file_is_a_warning_and_an_example_is_not"]
+
+[[mutation]]
+name = "a probe reads a git query that did not answer as nothing found"
+file = "src/keelline/assess/probes.py"
+before = "    return out if code in answers else None"
+after = "    return out"
+reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_is_not_nothing_found"]
+
+[[mutation]]
+name = "the codeowners probe reads an owner-less line as owned"
+file = "src/keelline/assess/probes.py"
+before = "                owners = words[1:]"
+after = '                owners = ["x"]'
+reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[the-last-match-names-no-one]"]
+
+[[mutation]]
+name = "the codeowners probe reads a directory-only pattern as a file's owner"
+file = "src/keelline/assess/probes.py"
+before = "    if not directory and _components(parts, names):"
+after = "    if _components(parts, names):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name[directory-only]",
+  "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
+]
+
+[[mutation]]
+name = "the codeowners probe reads a recursive wildcard as at least one directory"
+file = "src/keelline/assess/probes.py"
+before = "            least = 1 if i == len(pattern) - 1 else 0"
+after = "            least = 1"
+reddens = [
+  "tests/assess/test_probes.py::test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included",
+  "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
+]
+
+[[mutation]]
+name = "the codeowners probe reads a double star inside a component as recursive"
+file = "src/keelline/assess/probes.py"
+before = '        if pattern[i] == "**":'
+after = '        if pattern[i].startswith("**"):'
+reddens = ["tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar"]
+
+[[mutation]]
+name = "the codeowners probe reads a last star as owning nested files"
+file = "src/keelline/assess/probes.py"
+before = '    if parts[-1] == "*" and not directory:'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[direct-children-only]",
+]
+
+[[mutation]]
+name = "the codeowners matcher retries the same position for ever"
+file = "src/keelline/assess/probes.py"
+before = "            resume += 1"
+after = "            resume += 0"
+reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_answered_promptly"]
+
+[[mutation]]
+name = "the codeowners probe reads any word holding an at sign as an owner"
+file = "src/keelline/assess/probes.py"
+before = "            if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '            if not words or not all("@" in word for word in words[1:]):'
+reddens = [
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[two-ats]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-email-without-a-dot]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[an-empty-team]",
+]
+
+# The base a change is judged against. A base with no `keelline.toml` at the project's path is the
+# bootstrap, where the change decides its own configuration, so each way of reaching it by
+# accident — a tag answering for the base, git failing and read as "no copy", a root the base
+# never had — is a guard.
+[[mutation]]
+name = "a short base name is resolved by git, and a tag of its spelling answers for the base"
+file = "src/keelline/assess/rule.py"
+before = "    if not BASE_REF.match(base):"
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_a_short_name_is_refused_because_a_tag_can_take_its_place"]
+
+[[mutation]]
+name = "a full ref name that does not exist is read as the tag of its spelling"
+file = "src/keelline/assess/rule.py"
+before = '    if base.startswith("refs/"):'
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself"]
+
+[[mutation]]
+name = "git failing to read the base is read as the base having no keelline.toml"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_UNREADABLE)"
+after = '        return ""'
+reddens = [
+  "tests/assess/test_read_base.py::test_git_failing_to_list_the_base_is_a_failure_and_never_the_bootstrap",
+  "tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself",
+]
+
+# git hands the base's blob over losslessly, a surrogate escape for each byte that is not UTF-8,
+# and `tomllib` parses those: without the refusal, bytes the loader refuses in the tree's own
+# copy would govern the run.
+[[mutation]]
+name = "a base copy that is not UTF-8 is parsed and governs the run"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_NOT_UTF8) from None"
+after = "        pass"
+reddens = [
+  "tests/assess/test_read_base.py::test_a_base_copy_that_is_not_utf8_is_a_failure_and_never_the_bootstrap",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
+]
+
+# The refusal once looked for surrogate escapes in the text `git_run` decoded, which only a
+# UTF-8 locale leaves: under latin-1 every byte decodes, so a copy that is not UTF-8 was parsed
+# and a valid one read as mojibake. The bytes git printed are decoded as UTF-8 instead.
+[[mutation]]
+name = "the base copy is read in the locale's codec rather than as UTF-8"
+file = "src/keelline/assess/rule.py"
+before = '        return answer_bytes(text).decode("utf-8")'
+after = """        text.encode("utf-8")
+        return text"""
+reddens = [
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[utf-8]",
+  "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
+]
+
+[[mutation]]
+name = "a project root reached through a symlink reads the base at a path it never had"
+file = "src/keelline/assess/rule.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_root_moved_behind_a_symlink_is_refused",
+  "tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused",
+]
+
+[[mutation]]
+name = "the ancestor that resolves to the top is looked for from the nearest end"
+file = "src/keelline/assess/rule.py"
+before = "    chain = (*reversed(lexical.parents), lexical)"
+after = "    chain = (lexical, *lexical.parents)"
+reddens = ["tests/assess/test_read_base.py::test_a_component_linked_back_to_the_repository_s_top_is_refused"]
+
+[[mutation]]
+name = "a project in a subdirectory reads the base's copy at the repository's top"
+file = "src/keelline/assess/rule.py"
+before = '    path = f"{prefix}{CONFIG_FILE}"'
+after = "    path = CONFIG_FILE"
+reddens = ["tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path"]
+
+[[mutation]]
+name = "the local default base is a short name a tag can answer for"
+file = "src/keelline/config/layout.py"
+before = '    return f"refs/remotes/origin/{config.project.base_branch}"'
+after = '    return f"origin/{config.project.base_branch}"'
+reddens = ["tests/assess/test_read_base.py::test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called"]
+
+[[mutation]]
+name = "a root outside any repository is judged as if git had answered"
+file = "src/keelline/assess/rule.py"
+before = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if code != 0:"""
+after = """    code, out = git_run(lexical, "rev-parse", "--show-toplevel", "--show-prefix")
+    if False:"""
+reddens = ["tests/assess/test_read_base.py::test_a_root_outside_any_repository_is_a_failure"]
+
+# The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
+# govern its run, so each guard that says `refused`, and each that picks the configuration and the
+# enforcement the run uses, is a guard.
+[[mutation]]
+name = "a gate the base enforces may be dropped from enforced"
+file = "src/keelline/assess/rule.py"
+before = "    if backward or not after.enforcing >= before.enforcing:"
+after = "    if backward:"
+reddens = ["tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[gate-dropped]"]
+
+[[mutation]]
+name = "the lifecycle may move back while every gate still enforces"
+file = "src/keelline/assess/rule.py"
+before = "    backward = _ORDER[after.state] < _ORDER[before.state]"
+after = "    backward = False"
+reddens = ["tests/assess/test_rule.py::test_state_cannot_move_back_even_when_every_gate_still_enforces"]
+
+[[mutation]]
+name = "a raised budget is read as a tightening"
+file = "src/keelline/assess/rule.py"
+before = "    lower = sides.tree.budgets.effective(name) <= sides.base.budgets.effective(name)"
+after = "    lower = True"
+reddens = [
+  "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[budget-raised]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+]
+
+[[mutation]]
+name = "a built-in gate the base enforces may be removed from [gates] builtin"
+file = "src/keelline/assess/rule.py"
+before = "    if (before - after) & sides.base.keelline.enforcing:"
+after = "    if False:"
+reddens = ["tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[built-in-removed]"]
+
+[[mutation]]
+name = "a custom gate the base enforces may be removed, renamed or given another command"
+file = "src/keelline/assess/rule.py"
+before = "    return Verdict.REFUSED if name in sides.base.keelline.enforcing else Verdict.NEUTRAL"
+after = "    return Verdict.NEUTRAL"
+reddens = [
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-removed]",
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-run-changed]",
+  "tests/assess/test_rule.py::test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command[custom-renamed]",
+]
+
+[[mutation]]
+name = "a moved workflow pin is admitted without the platform's word for the running commit"
+file = "src/keelline/assess/rule.py"
+before = "    vouched = bool(sides.workflow_sha) and pin == sides.workflow_sha"
+after = "    vouched = True"
+reddens = [
+  "tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[no-workflow-sha]",
+  "tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[another-commit]",
+]
+
+[[mutation]]
+name = "a moved workflow pin is admitted when the release tags could not be read"
+file = "src/keelline/assess/rule.py"
+before = "    pinned = pin == sides.base.ci.ref or (vouched and sides.released(pin) is True)"
+after = "    pinned = pin == sides.base.ci.ref or (vouched and sides.released(pin) is not False)"
+reddens = ["tests/assess/test_rule.py::test_a_pin_the_platform_does_not_vouch_for_is_refused_while_enforcing[tags-unreadable]"]
+
+[[mutation]]
+name = "a recorded version other than the running Keelline's is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    at_running = new == sides.running"
+after = "    at_running = True"
+reddens = ["tests/assess/test_rule.py::test_a_version_that_is_not_the_running_keelline_s_is_not_an_upgrade"]
+
+[[mutation]]
+name = "a version moving down is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    upward = later(old, new) is False"
+after = "    upward = True"
+reddens = [
+  "tests/assess/test_rule.py::test_a_version_moving_down_is_not_an_upgrade",
+  "tests/assess/test_rule.py::test_a_release_moved_to_its_own_pre_release_is_not_an_upgrade",
+]
+
+[[mutation]]
+name = "a version pair Keelline does not order is admitted as an upgrade"
+file = "src/keelline/assess/rule.py"
+before = "    upward = later(old, new) is False"
+after = "    upward = later(old, new) is not True"
+reddens = ["tests/assess/test_rule.py::test_a_version_pair_keelline_does_not_order_is_not_an_upgrade"]
+
+[[mutation]]
+name = "a key the rule cannot tell the direction of is only noted while a gate enforces"
+file = "src/keelline/assess/rule.py"
+before = "    return Verdict.REFUSED if sides.base.keelline.enforcing else Verdict.NOTED"
+after = "    return Verdict.NOTED"
+reddens = [
+  "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[path-moved-while-enforcing]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[moves-another-default]",
+]
+
+[[mutation]]
+name = "a refused change still runs under its own configuration"
+file = "src/keelline/assess/rule.py"
+before = "    return replace(verdict, config=base) if verdict.refused else verdict"
+after = "    return verdict"
+reddens = ["tests/assess/test_rule.py::test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides"]
+
+[[mutation]]
+name = "an admitted change runs under the base's paths"
+file = "src/keelline/assess/rule.py"
+before = "    return replace(verdict, config=base) if verdict.refused else verdict"
+after = "    return replace(verdict, config=base)"
+reddens = [
+  "tests/assess/test_rule.py::test_a_path_moved_while_nothing_enforces_is_noted_and_the_run_uses_it",
+  "tests/assess/test_rule.py::test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths",
+]
+
+[[mutation]]
+name = "a gate the change promotes or adds does not enforce in its own run"
+file = "src/keelline/assess/rule.py"
+before = "    enforcing = base.keelline.enforcing | tree.keelline.enforcing"
+after = "    enforcing = base.keelline.enforcing"
+reddens = [
+  "tests/assess/test_rule.py::test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths",
+  "tests/assess/test_rule.py::test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides",
+  "tests/assess/test_rule.py::test_a_gate_added_to_an_installed_project_enforces_in_the_run_that_adds_it",
+]
+
+[[mutation]]
+name = "a budget is compared as written rather than as it takes effect"
+file = "src/keelline/assess/rule.py"
+before = '            values |= {f"budgets.{name}": table.effective(name) for name in Budgets.NAMES}'
+after = '            values |= {f"budgets.{name}": table.configured.get(name) for name in Budgets.NAMES}'
+reddens = [
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[lowers-a-budget]",
+  "tests/assess/test_rule.py::test_a_preset_switch_is_judged_by_every_value_it_moves[raises-a-budget]",
+]
+
+# The base read, fix round: each git argument and refusal whose removal lets a change reach "no
+# copy on the base" — the bootstrap — held by a case that runs on every platform.
+[[mutation]]
+name = "a project under a directory named like pathspec magic reads no copy on the base"
+file = "src/keelline/assess/rule.py"
+before = '        "--literal-pathspecs",'
+after = '        "--no-pager",'
+reddens = ["tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy"]
+
+[[mutation]]
+name = "the base's copy is listed relative to the project root rather than the repository's top"
+file = "src/keelline/assess/rule.py"
+before = '        "--full-tree",'
+after = '        "--name-only",'
+reddens = [
+  "tests/assess/test_read_base.py::test_a_project_in_a_subdirectory_reads_the_base_s_copy_at_its_own_path",
+  "tests/assess/test_read_base.py::test_a_project_under_a_directory_named_like_pathspec_magic_reads_its_own_copy",
+]
+
+[[mutation]]
+name = "a base id that names a tree is read as if it named a commit"
+file = "src/keelline/assess/rule.py"
+before = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"'
+after = '        root, "rev-parse", "--verify", "--quiet", "--end-of-options", base'
+reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]
+
+[[mutation]]
+name = "a prefix git spells otherwise than the caller is read at the caller's spelling"
+file = "src/keelline/assess/rule.py"
+before = '    if linked or spelled != prefix.rstrip("\n"):'
+after = "    if linked:"
+reddens = ["tests/assess/test_read_base.py::test_a_prefix_git_spells_otherwise_than_the_caller_is_refused"]
+
+# "No ledger yet" is read off the tree, which a pull request writes: with the arm answering
+# nothing, a change that deletes the ledger and its index switches an enforced `bugs` gate off
+# while code still cites entry files.
+[[mutation]]
+name = "a tree with no ledger reports no citation of an entry file"
+file = "src/keelline/ledger/check.py"
+before = "        return _dangling_citations(root, config, set())"
+after = "        return found"
+reddens = [
+  "tests/ledger/test_check.py::test_with_no_ledger_every_citation_of_an_entry_file_dangles",
+  "tests/ledger/test_commands.py::test_check_reports_a_citation_when_there_is_no_ledger",
+  "tests/assess/test_gate_command.py::test_deleting_the_ledger_does_not_switch_an_enforced_bugs_gate_off",
+]
+
+# `keelline gate` refuses a symlinked `keelline.toml`, and `assess` and `init` read it through
+# the same reader: followed, a clone's link to `/dev/zero` ends the run by exhausting memory.
+[[mutation]]
+name = "assess follows a symlinked keelline.toml"
+file = "src/keelline/assess/assessment.py"
+before = "    text = read_document(root)"
+after = '    text = (root / CONFIG_FILE).read_text(encoding="utf-8") if (root / CONFIG_FILE).is_file() else None'
+reddens = ["tests/assess/test_command.py::test_a_symlinked_keelline_toml_is_refused_and_never_followed"]
+
+[[mutation]]
+name = "init follows a symlinked keelline.toml that carries its version"
+file = "src/keelline/project/init.py"
+before = "    text = read_document(root)"
+after = '    text = (root / CONFIG_FILE).read_text(encoding="utf-8") if (root / CONFIG_FILE).is_file() else None'
+reddens = ["tests/project/test_init.py::test_a_symlinked_document_is_refused_even_when_it_carries_its_version"]
+
+# A clone's `keelline.toml` configures commands, and the adoption's next step runs them: the
+# dry run the person approves says so, naming the gates, so the `init` skill can ask first.
+[[mutation]]
+name = "init adopts a file's custom gates without a word"
+file = "src/keelline/project/commands.py"
+before = "    if report.custom_gates:"
+after = "    if False:"
+reddens = [
+  "tests/project/test_command.py::test_an_adopted_document_s_custom_gates_are_named_in_a_note_before_anything_runs_them",
+]
+
+# The base's copy governs the change, so one that does not load fails the run: read as "no copy",
+# it would be the bootstrap, and the change would judge itself. The second entry is the wider
+# mistake, a handler that answers any error that way: a change can make the base's load refuse,
+# by planting a symlink on a path only the base's `[paths]` names.
+[[mutation]]
+name = "a base keelline.toml that does not load is read as the base having none"
+file = "src/keelline/assess/rule.py"
+before = "        raise Failure(BASE_DOES_NOT_LOAD.format(reason=exc)) from None"
+after = "        return ConfigVerdict(None, (), tree, tree.keelline.enforcing)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[unknown-section]",
+  "tests/assess/test_gate_command.py::test_a_base_that_does_not_load_fails_the_run_and_names_the_base_s_copy[not-toml]",
+]
+
+[[mutation]]
+name = "any error loading the base's copy is read as the base having none"
+file = "src/keelline/assess/rule.py"
+before = "    except ConfigError as exc:"
+after = """    except Exception:
+        return ConfigVerdict(None, (), tree, tree.keelline.enforcing)
+    except ConfigError as exc:"""
+reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
+
+[[mutation]]
+name = "the assess summary prints each finding's path instead of a count"
+file = "src/keelline/assess/assessment.py"
+before = '        count = len(g.findings) if g.answered else "could not run"'
+after = '        count = ", ".join(f.path for f in g.findings) if g.answered else "could not run"'
+reddens = ["tests/assess/test_assessment.py::test_the_summary_prints_counts_and_never_a_path"]
+
+[[mutation]]
+name = "uninstall leaves the inventory assess wrote"
+file = "src/keelline/project/uninstall.py"
+before = "    for target in (ASSESSMENT, MANIFEST_PATH.as_posix()):"
+after = "    for target in (MANIFEST_PATH.as_posix(),):"
+reddens = [
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[fixed-names-in-the-clone-s-excludes]",
+  "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[artifacts-kept-out-of-git]",
+]
+
+[[mutation]]
+name = "a docs/cli.md section drops out of the Contents"
+file = "docs/cli.md"
+before = "- [`keelline memory fit`](#keelline-memory-fit)"
+after = ""
+reddens = ["tests/test_documents.py::test_the_cli_reference_contents_lists_every_section_in_order"]
+
+[[mutation]]
+name = "an advisory gate's failure fails the gate run"
+file = "src/keelline/assess/report.py"
+before = "        return tuple(r.name for r in self.results if r.failing and r.name in enforcing)"
+after = "        return tuple(r.name for r in self.results if r.failing)"
+reddens = ["tests/assess/test_report.py::test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused"]
+
+[[mutation]]
+name = "an annotation writes any finding's path as its file"
+file = "src/keelline/assess/report.py"
+before = "        if located and PATH_VALUE.match(located):"
+after = "        if located:"
+reddens = ["tests/assess/test_report.py::test_a_path_outside_the_printable_grammar_is_annotated_without_a_location"]
+
+[[mutation]]
+name = "a refused key's annotation skips the per-level cap"
+file = "src/keelline/assess/report.py"
+before = '                emit("error", CONFIG_FILE, None, REFUSED_KEY.format(key=change.key))'
+after = '                lines.append(f"::error::{REFUSED_KEY.format(key=change.key)}")'
+reddens = [
+  "tests/assess/test_report.py::test_refusals_share_the_cap_with_findings",
+  "tests/assess/test_report.py::test_a_path_is_written_from_the_repository_s_root",
+]
+
+[[mutation]]
+name = "an annotation's file is written from the project root, not the repository's"
+file = "src/keelline/assess/report.py"
+before = '        located = run.prefix + path if path else ""'
+after = "        located = path"
+reddens = ["tests/assess/test_report.py::test_a_path_is_written_from_the_repository_s_root"]
+
+[[mutation]]
+name = "an annotation carries a finding's detail"
+file = "src/keelline/assess/report.py"
+before = '            emit(level, path, finding.line, f"{result.name}: {finding.rule}")'
+after = '            emit(level, path, finding.line, f"{result.name}: {finding.detail}")'
+reddens = ["tests/assess/test_report.py::test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_detail"]
+
+[[mutation]]
+name = "gate --base takes a short name, which a tag of the same spelling answers for"
+file = "src/keelline/assess/commands.py"
+before = "    if not BASE_REF.match(value):"
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_short_base_name_is_refused_at_the_parser"]
+
+# The step that judges must execute nothing the pull request wrote: a custom gate's files could
+# otherwise rewrite the verdict in this process's memory.
+[[mutation]]
+name = "gate --builtin runs the custom gates too"
+file = "src/keelline/assess/commands.py"
+before = '    if args.part == "builtin":'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those"]
+
+[[mutation]]
+name = "gate --only passes a name the configuration lacks on to the gates, which quote it"
+file = "src/keelline/assess/commands.py"
+before = "    if stray:"
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_name_the_configuration_does_not_have_is_refused_and_not_quoted"]
+
+[[mutation]]
+name = "gate admits a moved workflow pin that no release tag names"
+file = "src/keelline/assess/commands.py"
+before = "        released=lambda sha: is_released(sha, runner, cwd=root),"
+after = "        released=lambda sha: True,"
+reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused"]
+
+[[mutation]]
+name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
+file = "src/keelline/assess/commands.py"
+before = "        GateContext(root, verdict.config, base), [n for n in only if n != CONFIG_CHECK]"
+after = "        GateContext(root, loads(tree_text, root, machine=machine, interactive=False), base), [n for n in only if n != CONFIG_CHECK]"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_refused_change_runs_the_base_s_command_for_a_gate_the_base_enforces",
+  "tests/assess/test_gate_command.py::test_a_refused_change_is_checked_at_the_base_s_paths",
+  "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]
+
+[[mutation]]
+name = "gate --builtin reads which gates are custom off the tree, not the verdict's configuration"
+file = "src/keelline/assess/commands.py"
+before = "    custom = verdict.config.gates.custom"
+after = "    custom = loads(tree_text, root, machine=machine, interactive=False).gates.custom"
+reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
+
+[[mutation]]
+name = "a gate run that judged passes although the rule refused a key"
+file = "src/keelline/assess/report.py"
+before = "        return 1 if self.blocking or (self.judged and self.verdict.refused) else 0"
+after = "        return 1 if self.blocking else 0"
+reddens = [
+  "tests/assess/test_report.py::test_the_exit_code_counts_only_what_enforces_and_what_the_rule_refused",
+  "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
+  "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
+]
+
+[[mutation]]
+name = "gate never counts the configuration check as run, so no refusal fails it"
+file = "src/keelline/assess/commands.py"
+before = "    gate_run = GateRun(verdict, results, judged=CONFIG_CHECK in only, prefix=prefix)"
+after = "    gate_run = GateRun(verdict, results, judged=False, prefix=prefix)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
+  "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
+]
+
+[[mutation]]
+name = "gate reads the names to run off the tree, so the custom step skips a gate the base keeps"
+file = "src/keelline/assess/commands.py"
+before = "    configured = verdict.config.gate_names"
+after = "    configured = loads(tree_text, root, machine=machine, interactive=False).gate_names"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_gate_only_the_refused_tree_defines_is_not_run_and_the_run_fails",
+  "tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it",
+]
+
+# Inside a work tree, a filter git gave no answer for — it could not be run, ran past its time
+# limit, or refused the checkout — was read as an empty set, and the listing named every
+# document on disk: a gitignored local-only one went into the committed roadmap. One entry per
+# filter, because each names its own line.
+[[mutation]]
+name = "the trail reads an ignore question git gave no answer to as nothing ignored"
+file = "src/keelline/docs/trail.py"
+before = '        _unasked(root, "check-ignore", code, "ignores", "a local-only one")'
+after = "        pass"
+reddens = [
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[-1-check-ignore]",
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[128-check-ignore]",
+]
+
+[[mutation]]
+name = "the trail reads an untracked question git gave no answer to as nothing untracked"
+file = "src/keelline/docs/trail.py"
+before = '        _unasked(root, "ls-files", code, "tracks", "an untracked one")'
+after = "        pass"
+reddens = [
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[-1-ls-files]",
+  "tests/docs/test_trail.py::test_a_repository_git_gave_no_answer_about_fails_rather_than_listing_everything[128-ls-files]",
+]
 
 # The oracle's runs share a bytecode cache warmed from HEAD, and a `.pyc` is trusted on
 # mtime-in-whole-seconds and size. A mutated write that kept HEAD's mtime and HEAD's length
@@ -7363,3 +8250,1037 @@ after = ""
 reddens = [
   "tests/scripts/test_mutation_oracle.py::test_every_run_keeps_its_temporary_files_to_itself",
 ]
+
+# The custom gates execute files the pull request can change. Under the default `if: success()`
+# they run only once the judging step passed; `if: always()` would run them after a refusal, in
+# a job whose verdict is already failing, and a step that may run whatever came before it is a
+# step nothing orders.
+[[mutation]]
+name = "the custom step runs after a refusal"
+file = ".github/workflows/check.yml"
+before = """
+      - name: The project's own gates
+"""
+after = """
+      - name: The project's own gates
+        if: always()
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `--builtin` is what keeps every command from `[gates.custom]` out of the process that decides
+# the verdict. Drop it and the judging step runs the pull request's own test suite, `Makefile`
+# or script, with the runner's privileges, before its exit status is read.
+[[mutation]]
+name = "the judging step runs the repository's own gate commands"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
+]
+
+# The base step resolves the base once to a commit, and the judging step must judge against
+# that commit. Judged against the tree's own HEAD, every change to `keelline.toml` compares
+# equal to itself, and a pull request that stops enforcing a gate passes the configuration check.
+[[mutation]]
+name = "the judging step judges the tree against itself"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# A refused key and an enforcing gate's findings reach the pull request's page as annotations.
+# Without `--annotate` the job fails with no line saying which key or which finding, and the
+# author reads the raw log to find out.
+[[mutation]]
+name = "the judging step stops annotating"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# The job summary is the one place every gate's mode and outcome and every changed key's verdict
+# are listed together, uncapped by the platform's ten annotations per level.
+[[mutation]]
+name = "the judging step writes no job summary"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
+]
+
+# An upgrade's moved `[ci] ref` is admitted only at the commit the platform says is running.
+# Without `--workflow-sha` nothing names that commit, so every upgrade pull request that moves
+# the pin is refused and lands only by a direct push.
+[[mutation]]
+name = "the judging step drops the running workflow's commit"
+file = ".github/workflows/check.yml"
+before = '            --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+after = '            --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
+]
+
+# `python3 -m` puts the working directory first on `sys.path`. The gate steps run from the
+# workspace, which the pull request writes nothing into; `-P` is the second layer, and the one
+# that keeps a module the checkout carries from standing in for Keelline's own if a gate step
+# ever runs from the caller's checkout, as the base step it replaced once did.
+[[mutation]]
+name = "the judging step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# `only:` is how a matrix caller gives each gate its own check row. Drop the loop and every leg
+# runs every gate, so each row reports the whole job's verdict under one gate's name.
+[[mutation]]
+name = "only: runs every gate whatever it names"
+file = ".github/workflows/check.yml"
+before = '          for name in $ONLY; do only+=("--only=$name"); done'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
+]
+
+# `$ONLY` is split unquoted, which is also where the shell globs: a name like `d*` would be
+# expanded against the workspace and reach `keelline gate` as whatever files matched.
+[[mutation]]
+name = "only: names are expanded as file patterns"
+file = ".github/workflows/check.yml"
+before = "          set -f"
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
+]
+
+# git resolves a short `origin/<base>` through `refs/tags/` before `refs/remotes/`, and
+# `fetch-depth: 0` fetches every tag. So whoever may push a tag named `origin/main` would choose
+# the commit whose configuration every pull request is judged against. The anchor is the fully
+# qualified remote-tracking ref, which `actions/checkout` writes from the platform.
+[[mutation]]
+name = "a tag named like the tracking branch chooses the base"
+file = ".github/workflows/check.yml"
+before = '          base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||'
+after = '          base_sha="$(git rev-parse --verify --quiet "origin/$base^{commit}")" ||'
+reddens = [
+  "tests/test_fixtures.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base",
+]
+
+# A caller that runs for pull requests into any branch lets a pull request collect a green check
+# against a looser base and then be retargeted onto the gate branch. The anchor is the caller
+# file `keelline init` writes, which `/.github/`'s code owners review.
+[[mutation]]
+name = "the caller runs for pull requests into any branch"
+file = "src/keelline/templates/project/keelline.yml"
+before = """
+  pull_request:
+    branches: ["%%GATE_BRANCH%%"]
+"""
+after = """
+  pull_request:
+"""
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
+
+# `base:` is a literal so that the reusable workflow refuses a pull request whose base is not
+# the gate branch, even where the trigger has been widened by hand. Following `github.base_ref`
+# again, it agrees with whatever branch the pull request targets, and the refusal never fires.
+[[mutation]]
+name = "the caller's base: follows the pull request again"
+file = "src/keelline/templates/project/keelline.yml"
+before = '      base: "%%GATE_BRANCH%%"'
+after = "      base: ${{ github.base_ref || '%%GATE_BRANCH%%' }}"
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
+
+# `only:` is the caller's, and the caller is pull-request content. A pull request that loosens
+# `enforced` and sets `only: docs` in its own caller would run the `docs` gate under the base's
+# configuration, pass it, and never meet the configuration check that refuses the loosening. So
+# the judging step asks for `config` whatever else `only:` names; the tighten-only rule does not
+# rest on one more input the pull request can edit.
+[[mutation]]
+name = "the judging step skips the configuration check when only: names a gate"
+file = ".github/workflows/check.yml"
+before = '          if [ "${#only[@]}" -gt 0 ]; then only+=("--only=config"); fi'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
+]
+
+# `-P` keeps the working directory off `sys.path` and nothing else: a `PYTHONPATH` entry inside
+# the caller's checkout puts every module the pull request adds ahead of the standard library in
+# the process that decides the verdict. Measured when the case was written: a planted
+# `tomllib.py` ran and the step still exited 0.
+[[mutation]]
+name = "the judging step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src:project
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[judging]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And in the custom step, where a planted module in Keelline's own process could report an
+# enforcing custom gate as passing whatever its command exited with.
+[[mutation]]
+name = "the custom step's PYTHONPATH reaches into the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src:project
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The judging step runs from the workspace, which the pull request writes nothing into. From the
+# caller's checkout, `-P` would be the only thing between a module the pull request adds and the
+# verdict, and a relative `PYTHONPATH` would resolve inside the checkout.
+[[mutation]]
+name = "the judging step runs from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        working-directory: project
+        env:
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An `if:` on the job skips it, and a skipped job is a required check the platform reports as
+# passing: every step's own guard would hold while the verdict never ran.
+[[mutation]]
+name = "the gates job gains a condition of its own"
+file = ".github/workflows/check.yml"
+before = """
+    runs-on: ubuntu-latest
+"""
+after = """
+    if: false
+    runs-on: ubuntu-latest
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# A program handed to an interpreter with `-c` runs with its working directory first on
+# `sys.path` unless a flag says otherwise, and a spelling check for `python3 -c` alone missed
+# `python3 -P -c`, `python -I -c` and every other spelling in between.
+[[mutation]]
+name = "a step hands the interpreter a program on the command line again"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: python3 -P -c 'import keelline'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The custom step reads `only:` the way the judging step does, so a matrix leg named for one
+# gate runs that gate. Drop its loop and every leg runs every custom gate's command, each one
+# reported under the leg's name.
+[[mutation]]
+name = "the custom step runs every custom gate whatever only: names"
+file = ".github/workflows/check.yml"
+before = '          for name in $ONLY; do custom+=("--only=$name"); done'
+after = "          :"
+reddens = [
+  "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
+]
+
+# The custom step's process reports whether an enforcing custom gate passed, so a module the
+# checkout carries must not load in it either.
+[[mutation]]
+name = "the custom step imports from its working directory"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The `env:` reader used to stop at the first line it could not parse, so a key written after a
+# comment was in no equality and in no case's environment. `BASH_ENV` is sourced by the step's
+# non-interactive bash before its script: pull-request shell code in the process that decides
+# the verdict.
+[[mutation]]
+name = "a key after a comment in the judging step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+          # where the step's shell reads its start-up file
+          BASH_ENV: project/.ci-env
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And after a blank line. A key the reader never reads is a key no equality holds, whatever the
+# interpreter's flags turn off: `PYTHONUSERBASE` here, and anything else bash or Python reads.
+[[mutation]]
+name = "a key after a blank line in the custom step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+
+          PYTHONUSERBASE: project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A step spelled `- run:` has no `- name:` line, and the step walk read it as more lines of the
+# step above: eight steps counted over nine, and a script the pull request supplied running
+# before the judging step, unseen.
+[[mutation]]
+name = "a step with no name hides inside the step above it"
+file = ".github/workflows/check.yml"
+before = """
+      - name: Keelline runs at all
+"""
+after = """
+      - run: bash project/setup.sh
+      - name: Keelline runs at all
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# `-c` with its flags joined, `-Pc`, is the same program on the command line, and it slipped a
+# pattern written for `-c` alone.
+[[mutation]]
+name = "a step runs a program with joined short flags"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: python3 -Pc 'import keelline'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A program on standard input puts the working directory first on `sys.path` just as `-c` does.
+[[mutation]]
+name = "a step runs a program from standard input"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: echo 'import keelline' | python3 -"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# The strict reader every workflow test reads through. YAML never ends a block at a comment, and
+# the `env:` reader it replaced did: a key written after a comment at seven or eight spaces was
+# in no assertion. Count a comment as content and a comment line ends a block, or is refused as
+# a line nothing owns.
+[[mutation]]
+name = "the workflow reader counts a comment line as content"
+file = "tests/workflow_yaml.py"
+before = '        return bool(self.text) and not self.text.startswith("#")'
+after = "        return bool(self.text)"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_comment_or_a_blank_line_never_ends_a_block",
+]
+
+# A reader that keeps one of two values for one key lets the other pass unseen: a `PYTHONPATH`
+# into the checkout first and the good one last read as the good one.
+[[mutation]]
+name = "the workflow reader keeps the last of a key written twice"
+file = "tests/workflow_yaml.py"
+before = "            if key in mapping:"
+after = "            if False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_key_written_twice_in_one_mapping_is_refused",
+]
+
+# A plain scalar that continues on the next line is a value this reader would read as its first
+# line alone, so it is refused.
+[[mutation]]
+name = "the workflow reader reads a continued plain scalar as its first line"
+file = "tests/workflow_yaml.py"
+before = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if following is not None and following.indent > indent:
+"""
+after = """
+                mapping[key] = _scalar(value, line)
+                following = self._next_content()
+                if False:
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[plain-continued]",
+]
+
+# A line indented between a block's key and its children belongs to nothing; read on, it would be
+# a key of whichever mapping the reader happened to be in.
+[[mutation]]
+name = "the workflow reader passes over a line nothing owns"
+file = "tests/workflow_yaml.py"
+before = """
+                if line.indent > indent:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+after = """
+                if False:
+                    raise _refuse(line, "a line indented where nothing can own it")
+"""
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_shape_outside_the_subset_is_refused_naming_its_line[orphan-indentation]",
+]
+
+# A literal block ends at the first non-blank line indented less than its first line. Read past
+# it, and a step's script swallows the step's own `env:`, and the next step's.
+[[mutation]]
+name = "the workflow reader runs a literal block past its end"
+file = "tests/workflow_yaml.py"
+before = "                elif line.indent < body_indent:"
+after = "                elif False:"
+reddens = [
+  "tests/test_workflow_yaml.py::test_a_literal_block_ends_at_a_line_indented_less_even_a_comment",
+  "tests/test_workflow_yaml.py::test_every_workflow_reads_whole_and_agrees_with_the_run_scan",
+]
+
+# A comment at the step's own indentation inside the judging step's `env:`, then `BASH_ENV`,
+# which the step's non-interactive bash sources before its script. A comment never ends a block.
+[[mutation]]
+name = "a key after a comment at the step's indentation in the judging step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+        # a note
+          BASH_ENV: project/.ci-env
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And at seven spaces in the custom step, with `PYTHONUSERBASE`.
+[[mutation]]
+name = "a key after a comment at seven spaces in the custom step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+       # a note
+          PYTHONUSERBASE: project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# An earlier step's environment reaches the judging step through `$GITHUB_ENV` and `$GITHUB_PATH`
+# the moment that step runs anything the pull request wrote: `BASH_ENV` on the proof step
+# sources a file from the checkout before `python3 -m keelline --version`.
+[[mutation]]
+name = "the proof step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = """
+        env:
+          PYTHONPATH: keelline/src
+        run: python3 -m keelline --version
+"""
+after = """
+        env:
+          PYTHONPATH: keelline/src
+          BASH_ENV: project/.ci-env
+        run: python3 -m keelline --version
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And the base step, which runs from the caller's checkout, so a relative `BASH_ENV` names a file
+# the pull request wrote.
+[[mutation]]
+name = "the base step's shell sources a file from the checkout"
+file = ".github/workflows/check.yml"
+before = "          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+after = """          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BASH_ENV: .ci-env"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A script that writes `$GITHUB_ENV` or `$GITHUB_PATH` chooses every later step's environment or
+# interpreter, outside any step's `env:` block, where no equality over the blocks can see it.
+[[mutation]]
+name = "the base step sets the environment of every later step"
+file = ".github/workflows/check.yml"
+before = """          } >> "$GITHUB_OUTPUT\""""
+after = """          } >> "$GITHUB_OUTPUT"
+          echo "PYTHONPATH=project" >> "$GITHUB_ENV\""""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The whitelist read only what followed `python`: an assignment in front of the command, such as
+# `PYTHONUSERBASE=…`, passed it, and an assignment of another name reaches the interpreter too.
+[[mutation]]
+name = "the judging step's command gains an assignment in front of it"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A script line that changes the verdict's process without being an invocation: an exported
+# variable reaches the interpreter, and a sourced file runs whatever it says. Every script is held
+# line for line.
+[[mutation]]
+name = "the judging step exports a user base inside the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+          set -f
+"""
+after = """
+          set -f
+          export PYTHONUSERBASE=project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+[[mutation]]
+name = "the custom step sources a file from the caller's checkout"
+file = ".github/workflows/check.yml"
+before = """
+          set +o noglob
+"""
+after = """
+          set +o noglob
+          [ -f project/.ci-env ] && . project/.ci-env || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The same class in an earlier step: the gate steps' `PYTHONPATH` is `keelline/src`, and the
+# interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into Keelline's
+# own checkout is code in the verdict's process.
+[[mutation]]
+name = "the base step copies a file into Keelline's own checkout"
+file = ".github/workflows/check.yml"
+before = """
+          git check-ref-format --branch "$base" >/dev/null
+"""
+after = """
+          git check-ref-format --branch "$base" >/dev/null
+          cp .ci/sitecustomize.py ../keelline/src/ 2>/dev/null || true
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# An invocation matched as a prefix admitted a line that runs something else after it.
+[[mutation]]
+name = "the judging step's command line runs a second command before the gate"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -s -m keelline gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+  "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
+]
+
+# The token's grant, held by value and not only by key: the project's own gates run with it in
+# reach, and the caller's grant is the ceiling for every step of the reusable workflow.
+[[mutation]]
+name = "the reusable workflow's token may write the repository"
+file = ".github/workflows/check.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/test_check_workflow.py::test_the_job_s_token_can_read_the_repository_and_nothing_more",
+]
+
+[[mutation]]
+name = "the caller init writes grants its token write access to the repository"
+file = "src/keelline/templates/project/keelline.yml"
+before = "  contents: read"
+after = "  contents: write"
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothing_more",
+]
+
+# `-P` leaves the user site directory on, and a `.pth` file in it runs at the interpreter's
+# start-up; `-s` is what keeps one the pull request commits out of the gate steps' processes if
+# anything ever points the user base into the checkout.
+[[mutation]]
+name = "the judging step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[judging]",
+]
+
+[[mutation]]
+name = "the custom step reads the user site directory again"
+file = ".github/workflows/check.yml"
+before = '          python3 -P -s -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+after = '          python3 -P -m keelline gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+reddens = [
+  "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
+]
+
+# `keelline adopt begin` and `keelline adopt promote`: the state machine's one write is
+# `keelline.toml`'s `state` and `enforced`, and each guard below decides whether it happens.
+[[mutation]]
+name = "adopt begin accepts a plan not named as an adoption plan"
+file = "src/keelline/assess/state.py"
+before = "    if not is_adoption_plan(config, relative):"
+after = "    if False:"
+reddens = [
+  "tests/assess/test_state.py::test_begin_refuses_a_plan_that_is_not_an_adoption_plan",
+]
+
+[[mutation]]
+name = "adopt begin accepts a plan that fails plan check"
+file = "src/keelline/assess/state.py"
+before = "    if findings:"
+after = "    if False:"
+reddens = [
+  "tests/assess/test_state.py::test_begin_fails_an_adoption_plan_that_fails_plan_check",
+]
+
+[[mutation]]
+name = "adopt begin moves an installed project back to adopting"
+file = "src/keelline/assess/state.py"
+before = '    if state != "initialised":'
+after = "    if False:"
+reddens = [
+  "tests/assess/test_state.py::test_begin_never_moves_an_installed_project_back",
+]
+
+[[mutation]]
+name = "a named promotion writes the gates that passed"
+file = "src/keelline/assess/state.py"
+before = "    if (names and (failing or unanswered)) or not promoted:"
+after = "    if not promoted:"
+reddens = [
+  "tests/assess/test_state.py::test_named_gates_are_promoted_all_together_or_not_at_all",
+]
+
+[[mutation]]
+name = "a promotion with no names writes nothing once one gate fails"
+file = "src/keelline/assess/state.py"
+before = "    if (names and (failing or unanswered)) or not promoted:"
+after = "    if failing or unanswered or not promoted:"
+reddens = [
+  "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
+]
+
+[[mutation]]
+name = "promoting every configured gate never installs the project"
+file = "src/keelline/assess/state.py"
+before = '    after = "installed" if installed else "adopting"'
+after = '    after = "adopting"'
+reddens = [
+  "tests/assess/test_state.py::test_promoting_every_configured_gate_installs_the_project",
+]
+
+[[mutation]]
+name = "a promotion writes the state and not the list"
+file = "src/keelline/assess/state.py"
+before = '        rewrite_owned(root, {("keelline", "state"): state, ("keelline", "enforced"): enforced})'
+after = '        rewrite_owned(root, {("keelline", "state"): state})'
+reddens = [
+  "tests/assess/test_state.py::test_a_promotion_is_what_the_gate_enforces_next",
+]
+
+[[mutation]]
+name = "promote runs the gates before it knows it can write"
+file = "src/keelline/assess/state.py"
+before = "    _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs"
+after = "    pass"
+reddens = [
+  "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
+]
+
+# The trial rewrite sets values no document holds, so the editor's own refusal, which names the
+# value it was setting as the line to write by hand, would tell a person to write
+# `state = "installed"` with no gate earned. The remedy names the values as they stand.
+[[mutation]]
+name = "the uneditable-document refusal names the trial's made-up values as the remedy"
+file = "src/keelline/assess/state.py"
+before = "        raise OwnedKeyError(UNEDITABLE.format(**values)) from None"
+after = "        raise"
+reddens = [
+  "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
+  "tests/assess/test_state.py::test_an_uneditable_document_s_remedy_names_the_list_as_it_stands",
+]
+
+# An adopting project whose every configured gate already enforces is completed to `installed`;
+# with the branch gone, the completion is the "nothing left" refusal an installed project gets.
+[[mutation]]
+name = "an adopting project whose every gate enforces is refused rather than installed"
+file = "src/keelline/assess/state.py"
+before = '        if state == "installed":'
+after = "        if True:"
+reddens = [
+  "tests/assess/test_state.py::test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed",
+]
+
+[[mutation]]
+name = "adopt promote exits 0 with a gate failing"
+file = "src/keelline/assess/commands.py"
+before = '    return Result("\n".join(lines), data, exit_code=1 if advisory else 0)'
+after = '    return Result("\n".join(lines), data)'
+reddens = [
+  "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
+]
+
+# The write re-stamps the manifest's record, so a manifest it cannot read refuses it; read
+# before the gates, that refusal comes before any custom command runs.
+[[mutation]]
+name = "promote runs the gates before it reads the manifest the write re-stamps"
+file = "src/keelline/assess/state.py"
+before = "    Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here"
+after = "    pass"
+reddens = [
+  "tests/assess/test_state.py::test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs",
+]
+
+# A project that configures no gate has nothing wanted, which is also the shape of an adopting
+# project whose every gate enforces; only the one with a gate to have earned is completed.
+[[mutation]]
+name = "promote installs a project that configures no gate"
+file = "src/keelline/assess/state.py"
+before = "        if not configured:"
+after = "        if False:"
+reddens = [
+  "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
+]
+
+[[mutation]]
+name = "adopt begin reads a plan outside the root"
+file = "src/keelline/assess/state.py"
+before = "    if not resolved.is_relative_to(root):"
+after = "    if False:"
+reddens = [
+  "tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent",
+]
+
+# The two keys state one fact and the editor edits them one at a time, so its own refusal names
+# only the key it failed on: `enforced = []` alone, which beside `adopting` enforces nothing.
+[[mutation]]
+name = "the state machine's write refusal names one key of the two it sets"
+file = "src/keelline/assess/state.py"
+before = "        raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None"
+after = "        raise"
+reddens = [
+  "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
+]
+
+# The answers on `init --yes`: each held to its grammar or its choices by the parser, each
+# reaching only a document this run creates, and a name `--name` answers never refused by the
+# detection it replaces.
+[[mutation]]
+name = "an answered name is still detected strictly"
+file = "src/keelline/project/init.py"
+before = "        found = detect(root, lenient=given.name is not None or existing is not None)"
+after = "        found = detect(root, lenient=existing is not None)"
+reddens = [
+  "tests/project/test_command.py::test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes",
+]
+
+[[mutation]]
+name = "an answer overrides a keelline.toml the user wrote"
+file = "src/keelline/project/init.py"
+before = "    precheck(root, answering=given != NO_ANSWERS)"
+after = "    precheck(root, answering=False)"
+reddens = [
+  "tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[answers-over-a-committed-document-init]",
+]
+
+[[mutation]]
+name = "an answer outside its grammar is taken as typed"
+file = "src/keelline/project/commands.py"
+before = "        if not pattern.match(value):"
+after = "        if False:"
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+[[mutation]]
+name = "--local takes a file no gate can do without"
+file = "src/keelline/project/commands.py"
+before = "        choices=LOCAL_ELIGIBLE,"
+after = ""
+reddens = [
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+# The same line as "an id offered as local names no whole file of the footprint", with another
+# `after`: here the id is a whole file, and one a gate reads at its committed path.
+[[mutation]]
+name = "a file a gate reads at its committed path is offered as local"
+file = "src/keelline/project/templates.py"
+before = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history")'
+after = 'LOCAL_ELIGIBLE = ("documentation-policy", "adr-template", "ledger-runbook", "roadmap-history", "bug-index")'
+reddens = [
+  "tests/project/test_answer_flags.py::test_every_file_offered_as_local_leaves_every_gate_green",
+  "tests/project/test_questions.py::test_no_file_a_gate_reads_at_its_committed_path_is_offered_as_local",
+]
+
+# A `keelline.toml` this run creates gates the branch it names, so the caller it renders runs for
+# the repository's own pull requests.
+[[mutation]]
+name = "a fresh repository's caller gates the preset's branch, not its own"
+file = "src/keelline/project/init.py"
+before = '            tables.setdefault("ci", {})["gate_branch"] = branch'
+after = "            pass"
+reddens = ["tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose"]
+
+# An adopted `keelline.toml` is checked as every later command will load it: the text on disk,
+# with a missing `[keelline] version` added by the key editor while planning, before any network
+# call and any write, dry run included. The stamp is written only by a run that writes, and the
+# report says "wrote" only then.
+[[mutation]]
+name = "an adopted document the next command cannot load is adopted anyway"
+file = "src/keelline/project/init.py"
+before = "        loads(on_disk, root, machine=machine)"
+after = "        pass"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_is_written",
+]
+
+[[mutation]]
+name = "the adopted version is checked without being added"
+file = "src/keelline/project/init.py"
+before = "    return rewrite(text, {VERSION: keelline.__version__}), True"
+after = "    return text, True"
+reddens = ["tests/project/test_init.py::test_a_version_the_editor_cannot_add_is_refused_by_the_dry_run_too"]
+
+[[mutation]]
+name = "an adopted document without a version is left unloadable"
+file = "src/keelline/project/init.py"
+before = "        rewrite_owned(root, {VERSION: keelline.__version__})"
+after = "        pass"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line",
+]
+
+[[mutation]]
+name = "an adopted document's added version goes unmentioned"
+file = "src/keelline/project/commands.py"
+before = "    if report.stamped:"
+after = "    if False:"
+reddens = ["tests/project/test_command.py::test_an_adopted_document_without_a_version_is_named_in_a_note"]
+
+[[mutation]]
+name = "a refused adoption reports its version stamp as written"
+file = "src/keelline/project/commands.py"
+before = '        verb = "would write" if report.dry_run or report.refused else "wrote"'
+after = '        verb = "would write" if report.dry_run else "wrote"'
+reddens = ["tests/project/test_command.py::test_a_refused_adoption_says_its_version_would_be_written"]
+
+# The other half of the same line: an adopted file with no `[project] name` is answered by the
+# loader, not by detection, whose remedy (`--name`) is refused over a `keelline.toml`.
+[[mutation]]
+name = "an adopted file's missing name is refused by detection"
+file = "src/keelline/project/init.py"
+before = "        found = detect(root, lenient=given.name is not None or existing is not None)"
+after = "        found = detect(root, lenient=given.name is not None)"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_detection",
+]
+
+# The branch a rendered caller names follows git's own branch-name rules, so no workflow gates a
+# branch no repository can have. Each rule dropped once.
+[[mutation]]
+name = "the gate branch grammar takes a '..' git refuses"
+file = "src/keelline/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes a '.lock' component git refuses"
+file = "src/keelline/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes the name HEAD git refuses"
+file = "src/keelline/config/schema.py"
+before = '''    r"^(?!HEAD$)(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+# The skills README maps every harness tool name a skill body may not use, for both harnesses;
+# Codex's ask tool is one of them, and a README that stops naming it leaves the lint's list with
+# a name the mapping no longer explains.
+[[mutation]]
+name = "the skills README drops Codex's name for its ask tool"
+file = "skills/README.md"
+before = "`request_user_input` in the modes that offer it"
+after = "the ask tool in the modes that offer it"
+reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_for_both_harnesses"]
+
+# The loader holds `[project] base_branch` and `release_branch` to the branch grammar: the value
+# becomes `refs/remotes/origin/<it>`, reaches `test attribute`'s and `plan check`'s messages, and
+# `keelline gate` blamed `--base` for it.
+[[mutation]]
+name = "a project branch outside the branch grammar loads"
+file = "src/keelline/config/loader.py"
+before = "        if not BRANCH_NAME.match(getattr(project, key)):"
+after = "        if False:"
+reddens = [
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[spaced-base_branch]",
+  "tests/config/test_loader.py::test_a_project_branch_outside_the_branch_grammar_is_refused_by_name[range-release_branch]",
+  "tests/assess/test_gate_command.py::test_a_base_branch_outside_its_grammar_is_named_and_never_blamed_on_base",
+]
+
+# git resolves a short `origin/<branch>` through `refs/tags/` first: a tag of that spelling on the
+# change's head made `plan check`'s range empty, and it printed OK having linted nothing.
+[[mutation]]
+name = "plan check's default base is a short name a tag can shadow"
+file = "src/keelline/docs/plans.py"
+before = "    base = base or local_base(config)"
+after = '    base = base or f"origin/{config.project.base_branch}"'
+reddens = ["tests/docs/test_plans.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base"]
+
+[[mutation]]
+name = "adopt begin reads a plan that is not there"
+file = "src/keelline/assess/state.py"
+before = "    if not resolved.is_file():"
+after = "    if False:"
+reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_outside_the_root_or_absent"]
+
+# A first trail listing records a row with no declared state as `delivered`, without a word, and
+# the first document of a fresh project is its adoption plan.
+[[mutation]]
+name = "adopt begin accepts a plan whose trail row declares no state"
+file = "src/keelline/assess/state.py"
+before = '    if "trail" in config.gate_names and declared_state(root, config, relative) is None:'
+after = "    if False:"
+reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_row_declares_no_state"]
+
+# A custom gate can leave `keelline.toml` unparseable before the promotion writes; relabelled as a
+# shape the editor does not rewrite, the remedy sends the person to edit two keys of a file that
+# does not load.
+[[mutation]]
+name = "a promotion relabels a document that does not parse as a shape refusal"
+file = "src/keelline/assess/state.py"
+before = "    except UnparsedDocument:"
+after = "    except ():"
+reddens = ["tests/assess/test_state.py::test_a_document_a_custom_gate_left_invalid_is_refused_as_invalid_toml"]
+
+# `--root ..` was refused in the symlink sentence with nothing linked. Still refused, since `..`
+# after a linked component is not what the spelling names, and now for what it is.
+[[mutation]]
+name = "a root spelled with '..' is refused as a symlink"
+file = "src/keelline/assess/rule.py"
+before = '    if ".." in lexical.parts:'
+after = "    if False:"
+reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+
+# Inside a work tree git refuses a repository (a worktree whose git directory is gone, dubious
+# ownership) with the exit it gives outside one, and "not untracked" passed the profile's check
+# without looking, where every other probe reports that it could not look.
+[[mutation]]
+name = "a profile's tracked check reads git refusing the repository as nothing untracked"
+file = "src/keelline/profiles/evaluate.py"
+before = "    if code == -1 or (code != 0 and in_work_tree(root)):"
+after = "    if code == -1:"
+reddens = ["tests/profiles/test_evaluate.py::test_tracked_names_a_located_file_in_a_repository_git_refuses_rather_than_passing_it"]
+
+# A merge group reports no base the reusable workflow reads, so with the literal `base:` another
+# branch's queue would be judged against the gate branch's configuration. The caller subscribes
+# to the gate branch's queue alone.
+[[mutation]]
+name = "the caller runs for every branch's merge queue"
+file = "src/keelline/templates/project/keelline.yml"
+before = """
+  merge_group:
+    branches: ["%%GATE_BRANCH%%"]
+"""
+after = """
+  merge_group:
+"""
+reddens = [
+  "tests/project/test_templates.py::test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget",
+]
+
+# A refusal from the base's own load (a symlink the change planted on a path only the base's
+# `[paths]` names) still fails the run, and says it is the base's configuration that met it.
+[[mutation]]
+name = "the base's load refusal does not say it is the base's"
+file = "src/keelline/assess/rule.py"
+before = "        raise Refusal(BASE_REFUSED.format(reason=exc)) from None"
+after = "        raise"
+reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_base_s_copy_fail_to_load_and_pass"]
+
