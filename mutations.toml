@@ -1530,13 +1530,26 @@ after = '    skip = _ignored(root, paths)'
 reddens = ["tests/docs/test_trail.py::test_an_untracked_or_ignored_document_is_not_listed"]
 
 # A gate that cannot answer must say so in its exit code; this one ran green for its whole
-# life on a checkout that had no base ref.
+# life on a checkout that had no base ref. It raises, so the `plan` gate could not run, as
+# `commit` could not, and `plan check` prints the cause as its own finding.
 [[mutation]]
 name = "an unresolvable base reads as a clean run"
 file = "src/keelline/docs/plans.py"
-before = '            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])'
-after = '            return Lint([], [], [])'
-reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_a_finding_not_an_ok"]
+before = "            raise BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root))"
+after = "            return Lint([], [], [])"
+reddens = [
+  "tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok",
+  "tests/assess/test_command.py::test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_judge",
+]
+
+# `plan check` is the one surface that prints an unresolvable base as a finding, its documented
+# output; let the exception through and it ends as a bare `failed:` with no findings listed.
+[[mutation]]
+name = "plan check stops printing an unresolvable base as its finding"
+file = "src/keelline/docs/commands.py"
+before = "    except BaseUnresolvable as exc:"
+after = "    except ():"
+reddens = ["tests/docs/test_plans.py::test_a_base_that_will_not_resolve_is_raised_never_an_ok"]
 
 # `\s*` crosses newlines under MULTILINE, so an empty marker would be satisfied by any later text.
 [[mutation]]
@@ -8513,9 +8526,9 @@ reddens = ["tests/assess/test_gate_command.py::test_a_change_cannot_make_the_bas
 
 [[mutation]]
 name = "the assess summary prints each finding's path instead of a count"
-file = "src/keelline/assess/assessment.py"
-before = '        count = len(g.findings) if g.answered else "could not run"'
-after = '        count = ", ".join(f.path for f in g.findings) if g.answered else "could not run"'
+file = "src/keelline/assess/report.py"
+before = "    return len(result.findings) if result.answered else UNANSWERED"
+after = '    return ", ".join(f.path for f in result.findings) if result.answered else UNANSWERED'
 reddens = ["tests/assess/test_assessment.py::test_the_summary_prints_counts_and_never_a_path"]
 
 [[mutation]]
@@ -9442,7 +9455,7 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
 after = "    if not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_named_gates_are_promoted_all_together_or_not_at_all",
@@ -9451,8 +9464,8 @@ reddens = [
 [[mutation]]
 name = "a promotion with no names writes nothing once one gate fails"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
-after = "    if failing or unanswered or waiting or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+after = "    if len(promoted) < len(results) or waiting or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
 ]
@@ -9776,8 +9789,8 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed beside one that waits for the base"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (failing or unanswered or waiting)) or not promoted:"
-after = "    if (names and (failing or unanswered)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+after = "    if (names and len(promoted) < len(results)) or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
 ]
@@ -10432,3 +10445,23 @@ after = '''
 reddens = [
   "tests/assess/test_probes.py::test_a_query_that_does_not_answer_after_one_that_did_is_could_not_look[commit-types]",
 ]
+
+# One gate result, one `--json` row, whichever command ran the gate: `gate` used to drop
+# `reason` and `failing`, and `adopt promote` gave no row at all.
+[[mutation]]
+name = "gate --json rows drop a gate's reason and failing"
+file = "src/keelline/assess/report.py"
+before = """        "failing": result.failing,
+    }"""
+after = """    }"""
+reddens = [
+  "tests/assess/test_gate_command.py::test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding",
+  "tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row",
+]
+
+[[mutation]]
+name = "adopt promote --json marks no gate it promoted enforcing"
+file = "src/keelline/assess/commands.py"
+before = "        \"gates\": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],"
+after = "        \"gates\": [gate_row(r, enforcing=False) for r in transition.results],"
+reddens = ["tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row"]

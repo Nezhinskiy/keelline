@@ -591,19 +591,45 @@ def test_a_base_that_is_not_there_is_named_as_the_reason_plan_and_commit_did_not
     tmp_path: Path, branch: str
 ) -> None:
     # The fixture has an origin and no remote-tracking ref, so the default base is not there:
-    # `plan` reports `base-unresolvable` and `commit` could not run, which read as a defect in
-    # the plan. The note says why and names `--base`, and the last line where the findings are.
-    # Mutation (by hand): the note dropped -> the `--base` assertion reddens. The `--base` it
-    # suggests is the project's own base branch: a fixed `refs/heads/main` sent a `develop`
-    # project to a branch it does not have. Mutation (oracle): "the missing-base note suggests
-    # main whatever the base branch" -> `develop` reddens.
+    # `plan` and `commit` could not run, which read as a defect in the tree. The note says why
+    # and names `--base`, and the last line where the findings are. Mutation (by hand): the note
+    # dropped -> the `--base` assertion reddens. The `--base` it suggests is the project's own
+    # base branch: a fixed `refs/heads/main` sent a `develop` project to a branch it does not
+    # have. Mutation (oracle): "the missing-base note suggests main whatever the base branch" ->
+    # `develop` reddens.
     root, _ = _project(tmp_path, branch=branch)
     code, out, err = _cli(root, tmp_path, "adopt", "promote")
     assert code == 1, err
     lines = out.splitlines()
-    assert "still advisory: plan (1 finding(s)), commit (could not run)" in lines[0]
+    assert "still advisory: plan (could not run), commit (could not run)" in lines[0]
     assert lines[1:] == [BASE_NOT_THERE.format(branch=branch), FINDINGS_ELSEWHERE]
     assert lines[1].endswith(f"such as refs/heads/{branch}")
+
+
+def test_every_command_that_runs_gates_gives_a_gate_the_same_json_row(tmp_path: Path) -> None:
+    # One gate result had three `--json` shapes: `assess` wrote `name`, `enforcing`, `answered`,
+    # `reason`, `count` and `failing`; `gate` dropped `reason` and `failing`; `adopt promote`
+    # gave no row, only lists of names. Now each is `report.gate_row`, so the rows agree key for
+    # key and value for value, and `adopt promote` marks enforcing the gates it promoted.
+    # Mutations (oracle): "adopt promote --json marks no gate it promoted enforcing" and "gate
+    # --json rows drop a gate's reason and failing".
+    root, base = _project(tmp_path)
+    (root / "AGENTS.md").write_text(OVER_BUDGET, encoding="utf-8")
+    code, out, err = _cli(root, tmp_path, "assess", "--base", base, "--json")
+    assert code == 1, err
+    assessed = {row["name"]: row for row in json.loads(out)["gates"]}
+    code, out, err = _cli(root, tmp_path, "gate", "--base", base, "--json")
+    assert code == 0, err
+    assert {row["name"]: row for row in json.loads(out)["gates"]} == assessed
+    code, out, err = _cli(root, tmp_path, "adopt", "promote", "--base", base, "--json")
+    assert code == 1, err
+    printed = json.loads(out)
+    promoted = set(printed["promoted"])
+    assert promoted == set(BUILTIN_GATES) - {"docs"}
+    expected = {name: {**row, "enforcing": name in promoted} for name, row in assessed.items()}
+    assert {row["name"]: row for row in printed["gates"]} == expected
+    assert (expected["docs"]["failing"], expected["docs"]["answered"]) == (True, True)
+    assert printed["failing"] == {"docs": expected["docs"]["count"]}
 
 
 def test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists(tmp_path: Path) -> None:

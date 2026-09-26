@@ -695,9 +695,11 @@ red`, `reddens 8 assertions`) is a finding unless its own sentence marks it an e
 Fenced code is fixture text, and so is a path claim that lands outside the project root —
 an absolute one, or one that walks out through `..` — which is never settled against the
 filesystem, because that answer would be about the machine rather than about the repository. A
-base that does not resolve is a finding (`1`), never an OK: in CI the cause is a checkout too
-shallow to hold the ref (`fetch-depth: 0`). A `REF` shaped like an option is refused (`2`)
-before git sees it. Uncommitted plans
+base that does not resolve is this command's `base-unresolvable` finding (`1`), never an OK: in
+CI the cause is a checkout too shallow to hold the ref (`fetch-depth: 0`). The `plan` gate that
+`keelline assess`, `keelline gate` and `keelline adopt promote` run reads the same cause as a
+gate that could not run, as `commit` does, because it says nothing about any plan. A `REF`
+shaped like an option is refused (`2`) before git sees it. Uncommitted plans
 are not in the diff; the line counts them and `--json` names them, and naming one as `PATH`
 lints it. **Writes** nothing.
 
@@ -718,14 +720,20 @@ toward no total, and the inventory lists them under `skipped`.
 `REF` is the revision `plan` and `commit` compare against, and the one `bugs` asks whether it
 carried the ledger when the tree has none, default `refs/remotes/origin/<project.base_branch>` —
 the fully qualified name, so a tag cannot stand in for it. Where that ref does not exist (no
-`origin`, or not fetched), `plan` reports `base-unresolvable` and `commit` could not run, as does
-`bugs` in a tree with no ledger, and each counts as failing; a `note:` after the summary says the
-base is missing and suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
+`origin`, or not fetched), `plan` and `commit` could not run, as `bugs` could not in a tree with
+no ledger, and each counts as failing; a `note:` after the summary says the base is missing and
+suggests `--base refs/heads/<project.base_branch>`, as `adopt promote` does.
 
-A gate that could not judge the tree — an unreadable plan, a range git cannot read, a custom
-gate that could not start or ran past `custom_timeout_seconds` — is failing: a gate that could
-not look has not passed. The summary says `could not run`; `--json` carries `answered: false`
-and a fixed `reason` naming the command that shows why.
+A gate that could not judge the tree — a base that is not there, an unreadable plan, a range git
+cannot read, a custom gate that could not start or ran past `custom_timeout_seconds` — is
+failing: a gate that could not look has not passed. A gate never reports that as a finding; it
+is the one outcome every command that runs gates spells `could not run`, and `--json` carries it
+as `answered: false` with a fixed `reason` naming the command that shows why.
+
+**A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
+gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
+could not run; `reason`, that fixed text, else empty; `count`, its findings; and `failing`, true
+when it has a finding or could not run. A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
@@ -750,8 +758,8 @@ advisory command until its candidates are triaged.
 overwritten on every run that gets that far and never read back: format `1`, with `format`,
 `keelline` (the version that wrote it), `base`, `state`, `enforcing` (the gates
 `[keelline] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
-custom gates `--builtin` left out, else empty), `gates` (per
-gate: `name`, `enforcing`, `answered`, `reason`, `count`, `failing`) and `items` (per item:
+custom gates `--builtin` left out, else empty), `gates` (a gate's row each, above) and `items`
+(per item:
 `probe`, the gate or probe that found it; `rule`; `principle`, a number in
 [the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;
 `remedy`; `where`, at most 200 labels; and `count`, how many there were, never capped). A gate's
@@ -903,9 +911,11 @@ ten per level per step and drops the others without a word.
 **`--summary FILE`** appends a markdown table — each gate's mode, count and outcome, and each
 changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
 `config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
-`gates` (`{name, enforcing, answered, count}` each) and `not_on_base`, the custom gates not run
-until the base has their command. It lists no finding: `keelline assess --json`
-is where findings are serialised.
+`gates` (a gate's row each, as
+[`keelline assess`](#keelline-assess---base-ref---builtin---root-path---machine-path) defines
+it, `enforcing` as this run enforces it) and `not_on_base`, the custom gates not run until the
+base has their command. It lists no finding: `keelline assess --json` is where findings are
+serialised.
 
 **Reads** `keelline.toml`, the base's copy through git, every file a gate reads, and — only when
 `--workflow-sha` matches a moved `[ci] ref` — the public repository's tags. **Writes** nothing
@@ -991,14 +1001,15 @@ with another command, is not run and not promoted, and is named `(not on the bas
 the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
-`--json` carries, on exit 0 or 1, `before`, `after`, `promoted`, `failing`, which maps each gate
-that ran and did not pass to its finding count, `unanswered`, the gates that could not run, and
-`not_on_base`, the custom gates not run because the base does not have their command.
-When a gate stays advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs` is
-among them and the base is not in the checkout, a `note:` saying so and naming `--base` with the
-project's base branch, since a
-`base-unresolvable` finding is about the checkout and not the plan.
+`--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
+as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
+which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
+could not run, and `not_on_base`, the custom gates not run because the base does not have their
+command. When a gate stays advisory, the summary ends with a line saying where its findings are
+(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs`
+could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
+the project's base branch, since a gate that could not run for want of the base says nothing
+about the tree.
 
 **There is no demotion.** Loosening is an edit to `keelline.toml`, and `keelline gate` refuses
 it to any pull request while anything enforces. It lands only through a push that bypasses

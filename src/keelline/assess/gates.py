@@ -7,10 +7,12 @@ drift apart. Every gate takes `(root, config, base)`, so each one is a value her
 reads the base or not.
 
 A gate that could not judge the tree is not a passing gate: its result is `answered=False`, and
-`failing` counts it. Its `reason` is fixed text built from the gate's own command, its name and
-the configured bound, never from an exception's text or the base, because both can carry what a
-repository authored. A custom gate's output goes to this process's standard error as it ran and
-is read by nothing here, so none of it reaches a result.
+`failing` counts it. That is the one contract: a gate function that cannot judge raises a
+`KeellineError`, and never returns a finding that stands for "could not look", so every command
+that runs gates reads one cause one way. Its `reason` is fixed text built from the gate's own
+command, its name and the configured bound, never from an exception's text or the base, because
+both can carry what a repository authored. A custom gate's output goes to this process's
+standard error as it ran and is read by nothing here, so none of it reaches a result.
 
 **A custom gate's process group ends with it.** Its command runs in a session of its own, and
 that session's process group is ended however the command finishes — exit, timeout or

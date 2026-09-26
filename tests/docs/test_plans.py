@@ -5,6 +5,7 @@ sample data.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -13,9 +14,16 @@ from typing import Any
 
 import pytest
 
+from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load
 from keelline.config.schema import Config
-from keelline.docs.plans import asserted_outcomes, lint, touched_plans
+from keelline.docs.plans import (
+    BaseUnresolvable,
+    asserted_outcomes,
+    lint,
+    plan_gate,
+    touched_plans,
+)
 from keelline.errors import Failure, Refusal
 from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import git, plant_path
@@ -234,15 +242,27 @@ def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
 
 
 @needs_git
-def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> None:
-    # This gate ran green for its whole life on a shallow checkout that had no base ref.
-    # Mutation: return an empty finding list when `touched_plans` is None — this reddens.
+def test_a_base_that_will_not_resolve_is_raised_never_an_ok(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # This gate ran green for its whole life on a shallow checkout that had no base ref. The
+    # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
+    # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
+    # finding, exit 1. Mutation (oracle): "an unresolvable base reads as a clean run" -> nothing
+    # is raised and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "seed")
-    result = lint(root, config, plans=[])
-    assert [f.rule for f in result.findings] == ["base-unresolvable"] and result.linted == []
+    with pytest.raises(BaseUnresolvable, match="fetch-depth: 0"):
+        lint(root, config, plans=[])
+    with pytest.raises(BaseUnresolvable):
+        plan_gate(root, config, "refs/remotes/origin/main")
+    common = ["--root", str(root), "--machine", str(tmp_path / "m.toml"), "--json"]
+    assert run(["plan", "check", *common], parser=build_parser(discover_registrars())) == 1
+    printed = json.loads(capsys.readouterr().out)
+    assert [f["rule"] for f in printed["findings"]] == ["base-unresolvable"]
+    assert printed["linted"] == []
 
 
 @needs_git
@@ -285,7 +305,7 @@ def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
     # does not resolve": that finding sends a reader to `fetch-depth: 0` in a clone that holds
     # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
     # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
-    # `touched_plans` — the base-unresolvable finding comes back instead of the `Failure` and
+    # `touched_plans` — `BaseUnresolvable` is raised instead of this `Failure` and
     # this reddens.
     from keelline.docs import plans as module
 

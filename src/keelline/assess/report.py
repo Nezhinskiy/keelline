@@ -1,5 +1,6 @@
 """What a gate run hands a person: its exit code, the platform's workflow commands, and a job
-summary.
+summary; and the one shape every command gives a gate's result, as a line, a table cell and a
+`--json` row.
 
 **What prints.** Counts, gate names, modes, rule ids and changed key names: Keelline's own
 vocabulary, or a name the loader bounded. A finding's `detail` can quote the repository and never
@@ -12,6 +13,11 @@ all.
 word, so every command goes through one emitter capped per level, and past the cap one
 `::notice::` counts what was held back.
 
+**One gate result, one shape.** `keelline assess`, `keelline gate` and `keelline adopt promote`
+each report the gates they ran, and each does it through `gate_row` for `--json`, `gate_line`
+or `findings_text` for a printed line and `count_cell` for a table, so a gate that could not
+judge the tree is spelled `could not run` everywhere and carries the same keys everywhere.
+
 **What fails the run.** An enforced gate that is failing, and, when the configuration check ran,
 a key the rule refused. An advisory gate's findings are annotated and never fail it, and nor does
 a custom gate left waiting because the base does not have its command: the base enforces no
@@ -21,6 +27,7 @@ command it lacks.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from keelline.assess.gates import GateResult
 from keelline.assess.rule import ConfigVerdict, Verdict
@@ -44,6 +51,41 @@ FINDINGS_ELSEWHERE = (
 # A custom gate whose command the base does not have: the change added or re-commanded it, and
 # it runs once it lands there.
 NOT_ON_BASE = "not run until the base has this command"
+# A gate that could not judge the tree, wherever its count would print: `answered` is false and
+# `reason` names the command that shows why.
+UNANSWERED = "could not run"
+
+
+def mode(enforcing: bool) -> str:
+    return "enforcing" if enforcing else "advisory"
+
+
+def count_cell(result: GateResult) -> int | str:
+    """A table's findings cell: the count, or `UNANSWERED`."""
+    return len(result.findings) if result.answered else UNANSWERED
+
+
+def findings_text(result: GateResult) -> str:
+    """`N finding(s)`, or `UNANSWERED`, for a printed line."""
+    return f"{len(result.findings)} finding(s)" if result.answered else UNANSWERED
+
+
+def gate_line(result: GateResult, *, enforcing: bool) -> str:
+    """`<name>: <mode>, N finding(s)` or `<name>: <mode>, could not run`."""
+    return f"{result.name}: {mode(enforcing)}, {findings_text(result)}"
+
+
+def gate_row(result: GateResult, *, enforcing: bool) -> dict[str, Any]:
+    """A gate's `--json` row, one shape for every command that runs gates. Counts, a name the
+    loader bounded and the fixed `reason`; a finding's detail is never in it."""
+    return {
+        "name": result.name,
+        "enforcing": enforcing,
+        "answered": result.answered,
+        "reason": result.reason,
+        "count": len(result.findings),
+        "failing": result.failing,
+    }
 
 
 @dataclass(frozen=True)
@@ -136,12 +178,11 @@ def summary(run: GateRun) -> str:
         rows = ["| gate | mode | findings | verdict |", "|---|---|---|---|"]
         for result in run.results:
             enforcing = result.name in run.verdict.enforcing
-            count = len(result.findings) if result.answered else "could not run"
-            mode = "enforcing" if enforcing else "advisory"
-            rows.append(f"| {result.name} | {mode} | {count} | {_outcome(result, enforcing)} |")
+            cells = (result.name, mode(enforcing), count_cell(result), _outcome(result, enforcing))
+            rows.append("| {} | {} | {} | {} |".format(*cells))
         for name in run.waiting:
-            mode = "enforcing" if name in run.verdict.enforcing else "advisory"
-            rows.append(f"| {name} | {mode} | not run | {NOT_ON_BASE} |")
+            enforcing = name in run.verdict.enforcing
+            rows.append(f"| {name} | {mode(enforcing)} | not run | {NOT_ON_BASE} |")
         blocks.append(rows)
     if run.judged:
         if run.verdict.base_state is not None and run.verdict.changes:

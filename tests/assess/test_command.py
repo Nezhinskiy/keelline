@@ -49,9 +49,9 @@ def test_a_base_the_checkout_lacks_is_named_as_why_the_gates_that_read_it_fail(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The path the `init` skill sends a new user down: a repository with no origin, where `plan`
-    # reports `base-unresolvable` and `commit` could not run, each with a remedy about plans and
-    # commit messages. `adopt promote` explained the missing base in a note, `assess` did not.
-    # Mutation (oracle): "assess never explains a base the checkout lacks" -> the note is gone.
+    # and `commit` could not run, each with a remedy about plans and commit messages. `adopt
+    # promote` explained the missing base in a note, `assess` did not. Mutation (oracle):
+    # "assess never explains a base the checkout lacks" -> the note is gone.
     root = repository(tmp_path, origin=None)
     git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
     answered = init(
@@ -215,10 +215,11 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The first thing a person runs after `init`: `origin` is configured and never fetched, so
-    # the default base does not exist. `plan` reports it and `commit` could not run; both are
-    # failing, so the command exits 1, and the inventory is still written where git ignores it.
-    # Mutation (advisory): the default base spelled as `HEAD` -> both gates read an empty
-    # range, nothing fails, and the exit code reddens.
+    # the default base does not exist. `plan` and `commit` could not run, one gate contract for
+    # one cause: `plan` reported a `base-unresolvable` finding here, a second outcome for the
+    # same missing base. Both are failing, so the command exits 1, and the inventory is still
+    # written where git ignores it. Mutation (advisory): the default base spelled as `HEAD` ->
+    # both gates read an empty range, nothing fails, and the exit code reddens.
     root = repository(tmp_path)
     init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
     git(root, "add", "-A")
@@ -226,7 +227,7 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     assert _assess(root, tmp_path, "--json") == 1
     printed = json.loads(capsys.readouterr().out)
     failing = {g["name"]: g["answered"] for g in printed["gates"] if g["failing"]}
-    assert failing == {"plan": True, "commit": False}
+    assert failing == {"plan": False, "commit": False}
     assert printed["base"] == "refs/remotes/origin/main"
     assert git(root, "check-ignore", "--", ASSESSMENT).strip() == ASSESSMENT
 

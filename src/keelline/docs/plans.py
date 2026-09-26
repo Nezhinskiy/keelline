@@ -153,6 +153,16 @@ _ASSERTED = (
 )
 
 
+class BaseUnresolvable(Failure):
+    """git cannot resolve the range, so nothing was linted: an answer about the checkout, not
+    about a plan.
+
+    Raised, never returned as a finding, so a gate run reads it as a gate that could not judge,
+    as it reads every other gate's. `plan check` alone turns it into its `base-unresolvable`
+    finding, which is that command's own output.
+    """
+
+
 @dataclass(frozen=True)
 class Lint:
     findings: list[Finding]
@@ -351,8 +361,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)
         if touched is None:
-            detail = _BASE_UNRESOLVABLE.format(base=base, root=root)
-            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])
+            raise BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root))
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
             raise Failure(
@@ -375,6 +384,7 @@ def plan_gate(root: Path, config: Config, base: str) -> list[Finding]:
     `base` touches.
 
     `plan check` calls `lint` itself rather than this function, because it reports more than
-    findings — which plans it linted, and the uncommitted ones it did not.
+    findings — which plans it linted, and the uncommitted ones it did not. A base git cannot
+    resolve raises `BaseUnresolvable`, so the gate could not run; it is never a finding here.
     """
     return lint(root, config, plans=[], base=base).findings

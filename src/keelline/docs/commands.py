@@ -10,12 +10,11 @@ from typing import TYPE_CHECKING
 from keelline import fsops
 from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, common_flags, root_and_config
-from keelline.findings import labels
+from keelline.findings import Finding, labels
 from keelline.result import Result
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
-    from keelline.findings import Finding
 
 _OK = "OK: documentation budgets and link targets"
 _PLAN_OK = (
@@ -121,10 +120,15 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
 
 
 def run_plan_check(args: argparse.Namespace) -> Result:
-    from keelline.docs.plans import lint
+    from keelline.docs.plans import BaseUnresolvable, Lint, lint
 
     root, config = root_and_config(args)
-    result = lint(root, config, plans=[Path(p).resolve() for p in args.paths], base=args.base)
+    try:
+        result = lint(root, config, plans=[Path(p).resolve() for p in args.paths], base=args.base)
+    except BaseUnresolvable as exc:
+        # The command's own output, as documented: a finding, exit 1. A gate run reads the same
+        # cause as a gate that could not run.
+        result = Lint([Finding("base-unresolvable", "", None, str(exc))], [], [])
     linted = [p.relative_to(root).as_posix() for p in result.linted]
     unlinted = [p.relative_to(root).as_posix() for p in result.unlinted]
     data = {

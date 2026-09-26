@@ -28,10 +28,10 @@ plan's path or text.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-from keelline.assess.gates import GateContext, run_gates
+from keelline.assess.gates import GateContext, GateResult, run_gates
 from keelline.assess.rule import read_base_gates
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
@@ -88,9 +88,18 @@ class Transition:
     before: str
     after: str
     promoted: tuple[str, ...] = ()
-    failing: dict[str, int] = field(default_factory=dict)  # ran and did not pass: its count
-    unanswered: tuple[str, ...] = ()  # could not run
+    results: tuple[GateResult, ...] = ()  # every gate this run ran, in the order it ran them
     waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
+
+    @property
+    def failing(self) -> dict[str, int]:
+        """Each gate that ran and did not pass, with its finding count."""
+        return {r.name: len(r.findings) for r in self.results if r.answered and r.failing}
+
+    @property
+    def unanswered(self) -> tuple[str, ...]:
+        """Each gate that could not run."""
+        return tuple(r.name for r in self.results if not r.answered)
 
 
 def begin(root: Path, config: Config, plan: Path) -> Transition:
@@ -218,14 +227,14 @@ def promote(
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
     waiting = _not_on_base(root, config, wanted, base=base, machine=machine)
     results = run_gates(GateContext(root, config, base), [n for n in wanted if n not in waiting])
-    failing = {r.name: len(r.findings) for r in results if r.answered and r.failing}
-    unanswered = tuple(r.name for r in results if not r.answered)
     promoted = tuple(r.name for r in results if not r.failing)
-    if (names and (failing or unanswered or waiting)) or not promoted:
-        return Transition(state, state, (), failing, unanswered, waiting)
+    # With names, every one passes or nothing is written: one that failed, could not run or waits
+    # holds the rest back.
+    if (names and (len(promoted) < len(results) or waiting)) or not promoted:
+        return Transition(state, state, (), results, waiting)
     enforced = enforcing | set(promoted)
     installed = enforced >= set(configured)
     after = "installed" if installed else "adopting"
     listed = () if installed else tuple(n for n in configured if n in enforced)
     _write(root, after, listed)
-    return Transition(state, after, promoted, failing, unanswered, waiting)
+    return Transition(state, after, promoted, results, waiting)

@@ -73,11 +73,11 @@ KEPT = "the plan passes plan check; the state stays {after}"
 # Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
 BASE_NOT_THERE = (
     "note: the base this run compares against is not in this checkout (no origin, or not "
-    "fetched), so the gates that read it cannot judge: plan reports base-unresolvable, and "
-    "commit, and bugs in a tree with no ledger, could not run; fetch it, or pass --base with a "
-    "refs/ name or a commit id that exists, such as refs/heads/{branch}"
+    "fetched), so the gates that read it could not run: plan, commit, and bugs in a tree with "
+    "no ledger; fetch it, or pass --base with a refs/ name or a commit id that exists, such as "
+    "refs/heads/{branch}"
 )
-# The gates that read the base, whose failure the note may explain.
+# The gates that read the base, whose not running the note may explain.
 BASE_READERS = frozenset({"plan", "commit", "bugs"})
 WAITING = (
     "note: a custom gate is promoted once the base's keelline.toml has its command, since "
@@ -89,13 +89,13 @@ ONLY_UNKNOWN = (
 )
 
 
-def _base_missing(root: Path, base: str, failing: set[str]) -> bool:
-    """Whether a gate that reads the base failed, and the base is not in this checkout: then its
-    failure says nothing about the tree, and the note says why. The base is the parser's
-    grammar, the loader's, or a revision a person typed, and is not printed."""
+def _base_missing(root: Path, base: str, unanswered: set[str]) -> bool:
+    """Whether a gate that reads the base could not run, and the base is not in this checkout:
+    then the note says why. The base is the parser's grammar, the loader's, or a revision a
+    person typed, and is not printed."""
     from keelline.gitenv import git_run
 
-    if not failing & BASE_READERS:
+    if not unanswered & BASE_READERS:
         return False
     return git_run(root, "rev-parse", "--verify", "--quiet", "--end-of-options", base)[0] != 0
 
@@ -108,7 +108,8 @@ def run_assess(args: argparse.Namespace) -> Result:
     assessment = assess(root, machine=machine, base=args.base, builtin=args.builtin)
     write(root, assessment)
     summary = render(assessment)
-    if _base_missing(root, assessment.base, set(assessment.would_fail)):
+    unanswered = {g.name for g in assessment.gates if not g.answered}
+    if _base_missing(root, assessment.base, unanswered):
         summary += "\n\n" + BASE_NOT_THERE.format(branch=assessment.base_branch)
     if ignored(root) is False:
         summary += f"\n\n{NOT_IGNORED}"
@@ -136,6 +137,9 @@ def run_gate(args: argparse.Namespace) -> Result:
         NOT_ON_BASE,
         GateRun,
         config_line,
+        gate_line,
+        gate_row,
+        mode,
         summary,
         workflow_commands,
     )
@@ -202,13 +206,8 @@ def run_gate(args: argparse.Namespace) -> Result:
         verdict, results, judged=CONFIG_CHECK in only, prefix=prefix, waiting=waiting
     )
     lines = [config_line(verdict)] if gate_run.judged else []
-    for result in results:
-        mode = "enforcing" if result.name in verdict.enforcing else "advisory"
-        count = f"{len(result.findings)} finding(s)" if result.answered else "could not run"
-        lines.append(f"{result.name}: {mode}, {count}")
-    for name in waiting:
-        mode = "enforcing" if name in verdict.enforcing else "advisory"
-        lines.append(f"{name}: {mode}, {NOT_ON_BASE}")
+    lines += [gate_line(r, enforcing=r.name in verdict.enforcing) for r in results]
+    lines += [f"{name}: {mode(name in verdict.enforcing)}, {NOT_ON_BASE}" for name in waiting]
     data = {
         "config": {
             "judged": gate_run.judged,
@@ -217,15 +216,7 @@ def run_gate(args: argparse.Namespace) -> Result:
             "refused": verdict.refused,
             "enforcing": sorted(verdict.enforcing),
         },
-        "gates": [
-            {
-                "name": r.name,
-                "enforcing": r.name in verdict.enforcing,
-                "answered": r.answered,
-                "count": len(r.findings),
-            }
-            for r in results
-        ],
+        "gates": [gate_row(r, enforcing=r.name in verdict.enforcing) for r in results],
         "not_on_base": list(waiting),
     }
     if not lines:
@@ -248,12 +239,18 @@ def run_gate(args: argparse.Namespace) -> Result:
 
 
 def _transition(transition: Transition) -> dict[str, object]:
-    """`--json` for `adopt promote`: the state before and after, and what each gate came to."""
+    """`--json` for `adopt promote`: the state before and after, a row per gate it ran in the
+    shape every gate command gives one, enforcing when this run promoted it, and the same
+    outcomes by name."""
+    from keelline.assess.report import gate_row
+
+    promoted = set(transition.promoted)
     return {
         "before": transition.before,
         "after": transition.after,
+        "gates": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],
         "promoted": list(transition.promoted),
-        "failing": dict(transition.failing),
+        "failing": transition.failing,
         "unanswered": list(transition.unanswered),
         "not_on_base": list(transition.waiting),
     }
@@ -271,7 +268,7 @@ def run_adopt_begin(args: argparse.Namespace) -> Result:
 
 
 def run_adopt_promote(args: argparse.Namespace) -> Result:
-    from keelline.assess.report import FINDINGS_ELSEWHERE
+    from keelline.assess.report import FINDINGS_ELSEWHERE, findings_text
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
 
@@ -280,8 +277,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     machine = Path(args.machine) if args.machine else None
     transition = promote(root, config, args.gates, base=base, machine=machine)
     # Gate names only: the loader holds each to a grammar, and a count is Keelline's own.
-    advisory = [f"{name} ({count} finding(s))" for name, count in transition.failing.items()]
-    advisory += [f"{name} (could not run)" for name in transition.unanswered]
+    advisory = [f"{r.name} ({findings_text(r)})" for r in transition.results if r.failing]
     advisory += [f"{name} (not on the base)" for name in transition.waiting]
     parts = [f"promoted: {', '.join(transition.promoted) or 'nothing'}"]
     if advisory:
@@ -289,8 +285,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     parts.append(f"state {transition.after}")
     lines = ["; ".join(parts)]
     if advisory:
-        judged = {*transition.failing, *transition.unanswered}
-        if _base_missing(root, base, judged):
+        if _base_missing(root, base, set(transition.unanswered)):
             lines.append(BASE_NOT_THERE.format(branch=config.project.base_branch))
         if transition.waiting:
             lines.append(WAITING)

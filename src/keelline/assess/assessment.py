@@ -38,6 +38,7 @@ import keelline
 from keelline.assess.gates import Gate, GateContext, GateResult, configured, run_gates
 from keelline.assess.model import Item, item
 from keelline.assess.probes import ProbeContext, run_probes
+from keelline.assess.report import count_cell, gate_row
 from keelline.config.layout import local_base
 from keelline.config.loader import load
 from keelline.errors import Refusal
@@ -128,17 +129,7 @@ def document(assessment: Assessment) -> dict[str, Any]:
         "state": assessment.state,
         "enforcing": list(assessment.enforcing),
         "skipped": list(assessment.skipped),
-        "gates": [
-            {
-                "name": g.name,
-                "enforcing": g.name in assessment.enforcing,
-                "answered": g.answered,
-                "reason": g.reason,
-                "count": len(g.findings),
-                "failing": g.failing,
-            }
-            for g in assessment.gates
-        ],
+        "gates": [gate_row(g, enforcing=g.name in assessment.enforcing) for g in assessment.gates],
         "items": [
             {
                 "probe": i.probe,
@@ -188,9 +179,8 @@ def render(assessment: Assessment) -> str:
         "|---|---|---|---|",
     ]
     for g in assessment.gates:
-        count = len(g.findings) if g.answered else "could not run"
         lines.append(
-            f"| {g.name} | {'yes' if g.name in assessment.enforcing else 'no'} | {count} | "
+            f"| {g.name} | {'yes' if g.name in assessment.enforcing else 'no'} | {count_cell(g)} | "
             f"{'yes' if g.failing else 'no'} |"
         )
     if assessment.skipped:

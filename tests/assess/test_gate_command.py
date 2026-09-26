@@ -98,7 +98,16 @@ def test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding(tmp_path:
     assert set(printed["config"]) == {"judged", "base_state", "changes", "refused", "enforcing"}
     assert printed["config"]["changes"] == [{"key": "keelline.enforced", "verdict": "refused"}]
     assert printed["config"]["refused"] is True
-    assert printed["gates"] == [{"name": "docs", "enforcing": True, "answered": True, "count": 0}]
+    assert printed["gates"] == [
+        {
+            "name": "docs",
+            "enforcing": True,
+            "answered": True,
+            "reason": "",
+            "count": 0,
+            "failing": False,
+        }
+    ]
 
 
 def test_an_enforced_custom_gate_runs_its_command_and_fails_on_its_exit_status(

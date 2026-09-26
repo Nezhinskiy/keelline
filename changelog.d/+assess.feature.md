@@ -9,5 +9,8 @@ and `--json` prints the same document; the summary prints counts.
 `[gates.custom]` names, so a clone whose commands you have not agreed to run can still be
 assessed; the `init` skill uses it when you decline to run them.
 When the base it compares against is not in the checkout — no `origin`, or not fetched — the
-summary ends with a note saying that is why `plan`, `commit` and `bugs` fail, and suggests
-`--base refs/heads/<base_branch>` with the project's own base branch.
+summary ends with a note saying that is why `plan`, `commit` and `bugs` could not run, and
+suggests `--base refs/heads/<base_branch>` with the project's own base branch. A gate that could
+not judge the tree is reported as `could not run`, never as a finding, and `assess`,
+`keelline gate` and `keelline adopt promote` give each gate they ran the same `--json` row:
+`name`, `enforcing`, `answered`, `reason`, `count` and `failing`.
