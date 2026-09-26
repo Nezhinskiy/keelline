@@ -65,7 +65,7 @@ from keelline.attach.write import LEDGER as ATTACH_LEDGER
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import KEELLINE_DIRECTORY
 from keelline.errors import Refusal
-from keelline.project.init import NO_ANSWERS, Given, InitReport, init
+from keelline.project.init import ANSWER_SHEET, NO_ANSWERS, Given, InitReport, init
 from keelline.project.templates import LOCAL_ELIGIBLE
 from keelline.project.uninstall import NOTHING, UninstallReport, uninstall
 from keelline.project.upgrade import UpgradeReport, upgrade
@@ -139,6 +139,9 @@ class Case:
     given: Given = NO_ANSWERS
     # Whether the clone commits the case's `keelline.toml`; a fresh clone has none.
     written: bool = True
+    # The one refusal a hostile case must meet, where another guard would also refuse it and so
+    # hide the one the row is about.
+    refusal: str | None = None
 
     def document(self, *, with_paths: bool) -> str:
         text = DOCUMENT
@@ -267,6 +270,7 @@ HOSTILE = (
         ignore=(".env",),
         plant={".env": FOREIGN},
         given=Given(local=("roadmap-history",)),
+        refusal=ANSWER_SHEET,
     ),
 )
 
@@ -524,6 +528,9 @@ def test_no_hostile_input_reaches_a_file_git_hides(
     hidden = _hidden(root, case, command)
     git_before = _git_files(root)
     refused = _outcome(command, root, tmp_path, case.given)
+    if case.refusal is not None:
+        # Without it the answers row passes on the ignore guard's refusal of `.env` alone.
+        assert refused == [case.refusal], refused
     finished = command if refused is None else None
     _assert_invariant(root, tmp_path, hidden, git_before, finished=finished)
 

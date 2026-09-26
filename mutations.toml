@@ -8984,7 +8984,10 @@ name = "an answer overrides a keelline.toml the user wrote"
 file = "src/keelline/project/init.py"
 before = "    precheck(root, answering=given != NO_ANSWERS)"
 after = "    precheck(root, answering=False)"
-reddens = ["tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused"]
+reddens = [
+  "tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused",
+  "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[answers-over-a-committed-document-init]",
+]
 
 [[mutation]]
 name = "an answer outside its grammar is taken as typed"
