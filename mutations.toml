@@ -8973,8 +8973,8 @@ reddens = [
 [[mutation]]
 name = "an answered name is still detected strictly"
 file = "src/keelline/project/init.py"
-before = "        found = detect(root, lenient=given.name is not None)"
-after = "        found = detect(root)"
+before = "        found = detect(root, lenient=given.name is not None or existing is not None)"
+after = "        found = detect(root, lenient=existing is not None)"
 reddens = [
   "tests/project/test_command.py::test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes",
 ]
@@ -9067,3 +9067,14 @@ file = "src/keelline/project/commands.py"
 before = '        verb = "would write" if report.dry_run or report.refused else "wrote"'
 after = '        verb = "would write" if report.dry_run else "wrote"'
 reddens = ["tests/project/test_command.py::test_a_refused_adoption_says_its_version_would_be_written"]
+
+# The other half of the same line: an adopted file with no `[project] name` is answered by the
+# loader, not by detection, whose remedy (`--name`) is refused over a `keelline.toml`.
+[[mutation]]
+name = "an adopted file's missing name is refused by detection"
+file = "src/keelline/project/init.py"
+before = "        found = detect(root, lenient=given.name is not None or existing is not None)"
+after = "        found = detect(root, lenient=given.name is not None)"
+reddens = [
+  "tests/project/test_init.py::test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_detection",
+]

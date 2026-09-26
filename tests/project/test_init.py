@@ -22,6 +22,7 @@ from keelline.project.upgrade import upgrade
 from keelline.release.api import Pin
 from keelline.scaffold import MANIFEST_PATH, Manifest, Style, Verb, extract
 from tests.gitfixture import LsRemote, git, needs_git
+from tests.project.repos import repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
@@ -552,6 +553,9 @@ REFUSED_HEADS = {
     "state-outside": 'state = "bogus"\n',
     "partial-installed": 'state = "installed"\nenforced = ["docs"]\n',
     "no-project": "",
+    # An empty file parses to `{}`, which is falsy: no table is copied and no head is read, a
+    # path of its own through `_tables` and `_as_on_disk`.
+    "empty-file": "",
 }
 
 
@@ -565,10 +569,12 @@ def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_
     # command could load. The file is now checked as it will be on disk, in the dry run too.
     # Mutation (oracle): "an adopted document the next command cannot load is adopted anyway".
     root = _repo(tmp_path)
-    document = f'[keelline]\nversion = "0.1.0"\n{REFUSED_HEADS[case]}'
-    if case != "no-project":
-        document += '\n[project]\nname = "widget"\n'
-    document += '\n[ci]\nmode = "none"\n'
+    document = ""
+    if case != "empty-file":
+        document = f'[keelline]\nversion = "0.1.0"\n{REFUSED_HEADS[case]}'
+        if case != "no-project":
+            document += '\n[project]\nname = "widget"\n'
+        document += '\n[ci]\nmode = "none"\n'
     (root / CONFIG_FILE).write_text(document, encoding="utf-8")
     before = snapshot(root)
     for dry_run in (True, False):
@@ -626,3 +632,24 @@ def test_a_symlinked_document_with_no_version_is_refused_by_the_dry_run_too(
             _init(root, tmp_path, dry_run=dry_run)
         assert_snapshot_unchanged(root, before)
         assert elsewhere.read_text(encoding="utf-8") == '[project]\nname = "widget"\n'
+
+
+@needs_git
+def test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_detection(
+    tmp_path: Path,
+) -> None:
+    # A hand-written file with no `[project]`, in a repository whose origin names no project:
+    # detection used to refuse naming `--name` as the remedy, and `--name` over a
+    # `keelline.toml` is refused as an answer over the answer sheet. The file is the answer, so
+    # what it lacks is the loader's to say, and writing `[project] name` there is the remedy
+    # that reaches the end. Mutation (by hand): detection strict for an adopted file again ->
+    # `Refusal` (the detected-name sentence) in place of `ConfigError`.
+    root = repository(tmp_path, origin="git@github.com:owner/Not A.git")
+    (root / CONFIG_FILE).write_text(
+        '[keelline]\nversion = "0.1.0"\n\n[ci]\nmode = "none"\n', encoding="utf-8"
+    )
+    before = snapshot(root)
+    for dry_run in (True, False):
+        with pytest.raises(ConfigError, match=r"\[project\] is missing required key\(s\): name"):
+            _init(root, tmp_path, dry_run=dry_run, ci=False)
+        assert_snapshot_unchanged(root, before)

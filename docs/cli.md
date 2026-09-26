@@ -967,7 +967,9 @@ When nothing answers, `init` detects:
 
 Both name candidates, the remote's segment and the directory name, are repository-authored.
 So one outside `[project] name`'s grammar is refused naming the grammar and the remedy, and
-never the value, unless `--name` answers it.
+never the value, unless `--name` answers it. With a `keelline.toml` you wrote, the file answers
+it: one with no `[project] name` fails (`1`) with the loader's own sentence, whatever the
+repository suggests.
 
 **A `keelline.toml` you wrote is the answer sheet, not an obstacle.** Every key it carries is
 read and kept: the name, the paths, the memory mode, the budgets, the gates. The file itself

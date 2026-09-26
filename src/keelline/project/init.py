@@ -189,7 +189,8 @@ def _tables(
 
     **Detection runs only when no `[project]` table answers for the repository**, and not merely
     when some key of the head is absent; **it is lenient when `--name` answers the name, the one
-    value it refuses.** `detect` is the one call here that can refuse — a directory name or a
+    value it refuses, or when an adopted file leaves it out**, which the loader then refuses
+    with its own sentence. `detect` is the one call here that can refuse — a directory name or a
     remote's last segment outside `PROJECT_NAME` — and the remedy for that refusal is to answer it
     with `--name`, or to write `[project] name` into `keelline.toml` by hand and run `init` again. A
     branch that consulted `detect` for anything the preset can default would make that second remedy
@@ -212,7 +213,9 @@ def _tables(
                 tables[name] = dict(table)
     head_refused = False
     if "project" not in tables:
-        found = detect(root, lenient=given.name is not None)
+        # Lenient where something else answers the name: `--name`, or an adopted file, whose
+        # missing `[project] name` is the loader's to refuse, since `--name` cannot reach it.
+        found = detect(root, lenient=given.name is not None or existing is not None)
         head_refused = found.head_refused and given.base_branch is None
         head.setdefault("agents", list(given.agents or found.agents))
         profile = found.profile if given.profile is None else given.profile
@@ -220,7 +223,9 @@ def _tables(
             head.setdefault("profile", profile)
         name = given.name or found.name
         branch = given.base_branch or found.base_branch
-        tables["project"] = {"name": name, "base_branch": branch, "release_branch": branch}
+        tables["project"] = {"base_branch": branch, "release_branch": branch}
+        if name:
+            tables["project"] = {"name": name, **tables["project"]}
         # The rendered caller gates this branch. Written only where it differs from the preset's,
         # so a `main` repository's file is unchanged. An adopted file reaches this block only
         # when it has no `[project]`, and the on-disk check in `init` refuses that one.
