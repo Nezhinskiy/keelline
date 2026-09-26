@@ -597,48 +597,65 @@ def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(tmp_path: Path) ->
         "def test_quick() -> None:\n    pass\n",
         encoding="utf-8",
     )
-    waiting = threading.Thread(target=module._run, args=(("test_slow.py::test_slow",), tmp_path))
+    waiting = threading.Thread(
+        target=module._run, args=(("test_slow.py::test_slow",), tmp_path), daemon=True
+    )
     waiting.start()
-    deadline = time.monotonic() + 30
-    while not module._live and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert module._live, "the slow run never started"
-    module._stop_runs()
-    waiting.join(timeout=20)
-    assert not waiting.is_alive(), "a stop left a pytest run going"
-    with pytest.raises(module.Stopped):
-        module._run(("test_slow.py::test_quick",), tmp_path)
+    try:
+        deadline = time.monotonic() + 30
+        while not module._live and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert module._live, "the slow run never started"
+        module._stop_runs()
+        waiting.join(timeout=10)
+        assert not waiting.is_alive(), "a stop left a pytest run going"
+        with pytest.raises(module.Stopped):
+            module._run(("test_slow.py::test_quick",), tmp_path)
+    finally:
+        # Under a mutation the sleeping pytest outlives the assertion; end it here so the
+        # oracle's mutated run costs the ten-second bound, not the whole minute.
+        for child in list(module._live):
+            child.kill()
 
 
 @needs_git
-def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(tmp_path: Path) -> None:
+def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The stop wiring end to end, which the test above does not reach: that one calls
     # `_stop_runs` itself, so `_prove`'s own arm could stop calling it and nothing would notice.
     # A real `SIGTERM`, sent once a job's pytest is running, becomes `SystemExit` in the main
-    # thread; the arm must end that pytest — it sleeps for two minutes — and the checkouts must
+    # thread; the arm must end that pytest — it sleeps for half a minute — and the checkouts must
     # be gone when `main` returns. A terminate that waited for the entry instead is the one a
     # process manager's grace period ends in a `SIGKILL`, leaking every checkout.
     #
-    # Mutation (declared): the arm stops calling `_stop_runs` -> the jobs wait out the sleeping
-    # pytest and the time bound reddens.
+    # Mutation (declared): the arm stops calling `_stop_runs` -> the job waits out the sleeping
+    # pytest and the time bound reddens. The fixture sleeps on its first run only, so that
+    # mutated run costs one sleep rather than the clean run's and the mutated run's both.
     root = tmp_path / "repo"
     root.mkdir()
     _repo_with_guard(root)
     _recommit(
         root,
         {
-            "tests/test_guard.py": "import time\n"
+            "tests/test_guard.py": "import os\n"
+            "import time\n"
+            "from pathlib import Path\n"
             "\n"
             "from pkg.guard import GUARD\n"
             "\n"
             "\n"
             "def test_the_guard_holds() -> None:\n"
-            "    time.sleep(120)\n"
+            "    first = Path(os.environ['ORACLE_PROBE'])\n"
+            "    if not first.exists():\n"
+            "        first.write_text('ran', encoding='utf-8')\n"
+            "        time.sleep(30)\n"
             "    assert GUARD\n",
         },
     )
     module = oracle(root=root)
     module.__dict__["DECLARATION"] = root / "mutations.toml"
+    monkeypatch.setenv("ORACLE_PROBE", str(tmp_path / "probe.txt"))
 
     def terminate_once_pytest_runs() -> None:
         deadline = time.monotonic() + 60
@@ -654,7 +671,7 @@ def test_a_terminate_mid_run_ends_it_promptly_and_leaves_no_checkout(tmp_path: P
     started = time.monotonic()
     with pytest.raises(SystemExit):
         module.main([])
-    assert time.monotonic() - started < 60, "the terminate waited for the entry to finish"
+    assert time.monotonic() - started < 20, "the terminate waited for the entry to finish"
     assert not module._live
     left = [
         path for path in Path(module.TEMPDIR).glob(f"{module.SCRATCH_PREFIX}*") if path.is_dir()
