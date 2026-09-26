@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline.areas import SubParsers
-from keelline.command import common_flags, root_and_config
+from keelline.command import common_flags, grammar, root_and_config
 from keelline.result import Result
 
 if TYPE_CHECKING:
@@ -116,18 +116,6 @@ def run_assess(args: argparse.Namespace) -> Result:
     return Result(summary, document(assessment), exit_code=1 if assessment.would_fail else 0)
 
 
-def base_ref(value: str) -> str:
-    """`--base` for `keelline gate`, whose verdict reads the base's `keelline.toml`, and `adopt
-    promote`, which writes enforcement off the comparison: refused at the parser unless it is a
-    full commit id or a full `refs/` name, before anything runs, since git resolves a shorter
-    name through the tags first and a tag of that spelling would decide either."""
-    from keelline.assess.rule import BASE_REF, BASE_SHAPE
-
-    if not BASE_REF.match(value):
-        raise argparse.ArgumentTypeError(BASE_SHAPE)
-    return value
-
-
 def run_gate(args: argparse.Namespace) -> Result:
     from keelline import __version__
     from keelline.assess import rule
@@ -164,7 +152,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     runner = subprocess_runner()
     verdict = rule.judge(
         root,
-        rule.read_base(root, base),
+        rule.read_base(root, base, prefix=prefix),
         tree_text,
         machine=machine,
         running=__version__,
@@ -295,6 +283,13 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
+    from keelline.assess.rule import BASE_REF, BASE_SHAPE
+
+    # `--base` for `keelline gate`, whose verdict reads the base's `keelline.toml`, and `adopt
+    # promote`, which writes enforcement off the comparison: refused at the parser unless it is a
+    # full commit id or a full `refs/` name, since git resolves a shorter name through the tags
+    # first and a tag of that spelling would decide either.
+    base_ref = grammar(BASE_REF, BASE_SHAPE)
     parser = common_flags(groups.add_parser("assess", help=ASSESS_HELP))
     parser.add_argument("--base", default=None, help=BASE_HELP)
     parser.add_argument("--builtin", action="store_true", help=ASSESS_BUILTIN_HELP)

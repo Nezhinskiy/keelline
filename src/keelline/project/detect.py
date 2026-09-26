@@ -174,9 +174,9 @@ def detect(root: Path, *, lenient: bool = False) -> Detected:
     """
     origin = _origin(root)
     name, name_source = _name(root, origin)
-    if not PROJECT_NAME.match(name) and not lenient:
-        raise Refusal(NOT_A_NAME)
     if not PROJECT_NAME.match(name):
+        if not lenient:
+            raise Refusal(NOT_A_NAME)
         name, name_source = "", NOT_DERIVABLE
     base_branch, branch_source, head_refused, head_unrecorded, remotes_unknown = _base_branch(root)
     agents, agents_source = _agents(root)

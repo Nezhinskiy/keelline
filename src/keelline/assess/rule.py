@@ -142,14 +142,16 @@ def repository_prefix(root: Path) -> str:
     return spelled
 
 
-def read_base(root: Path, base: str) -> str | None:
+def read_base(root: Path, base: str, *, prefix: str | None = None) -> str | None:
     """The base's `keelline.toml` at the project's own path, or `None` when git listed nothing
     there: the bootstrap, and the only answer that means it. Any other git failure fails the run,
-    and so does a copy that is not UTF-8 text, which is never parsed.
+    and so does a copy that is not UTF-8 text, which is never parsed. `prefix` is
+    `repository_prefix(root)`, asked here unless the caller already has it.
     """
     if not BASE_REF.match(base):
         raise Refusal(BASE_SHAPE)
-    prefix = repository_prefix(root)
+    if prefix is None:
+        prefix = repository_prefix(root)
     if base.startswith("refs/"):
         # Exactly this ref: when it is missing, git would take `refs/tags/<base>` instead.
         _read(root, "show-ref", "--verify", "--quiet", "--end-of-options", base)

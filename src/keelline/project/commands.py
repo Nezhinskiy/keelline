@@ -33,13 +33,11 @@ above the plans, such as a missing `--yes` or a repository that is already initi
 from __future__ import annotations
 
 import argparse
-import re
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.areas import SubParsers
-from keelline.command import DRY_RUN_HELP, common_flags
+from keelline.command import DRY_RUN_HELP, common_flags, grammar
 from keelline.errors import Refusal
 from keelline.result import Result
 from keelline.scaffold import Plan, Verb, printable, render_report, unlinks
@@ -102,17 +100,6 @@ QUESTIONS_ALONE = (
     "--questions writes nothing and takes no flag but --root, --machine and --json; the "
     "answers go on `keelline init --yes`"
 )
-
-
-def _grammar(pattern: re.Pattern[str], rule: str) -> Callable[[str], str]:
-    """An argparse `type` that refuses with the rule and never with the value."""
-
-    def check(value: str) -> str:
-        if not pattern.match(value):
-            raise argparse.ArgumentTypeError(rule)
-        return value
-
-    return check
 
 
 def _given(args: argparse.Namespace) -> Given:
@@ -430,10 +417,10 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     )
     name_rule = f"not {NAME_RULE}"
     branch_rule = f"not a plain branch name: {BRANCH_RULE}"
-    answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
+    answers.add_argument("--name", type=grammar(PROJECT_NAME, name_rule), help="[project] name")
     answers.add_argument(
         "--base-branch",
-        type=_grammar(BRANCH_NAME, branch_rule),
+        type=grammar(BRANCH_NAME, branch_rule),
         help="[project] base_branch and release_branch",
     )
     answers.add_argument(

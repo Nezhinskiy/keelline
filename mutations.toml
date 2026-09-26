@@ -5722,8 +5722,8 @@ reddens = [
 [[mutation]]
 name = "a detected name outside the grammar is quoted back in the refusal"
 file = "src/keelline/project/detect.py"
-before = "        raise Refusal(NOT_A_NAME)"
-after = '        raise Refusal(f"{NOT_A_NAME}: {name}")'
+before = '            raise Refusal(NOT_A_NAME)'
+after = '            raise Refusal(f"{NOT_A_NAME}: {name}")'
 reddens = [
   "tests/project/test_detect.py::test_a_name_outside_the_grammar_is_refused_without_being_quoted",
 ]
@@ -8505,11 +8505,14 @@ after = '            emit(level, path, finding.line, f"{result.name}: {finding.d
 reddens = ["tests/assess/test_report.py::test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_detail"]
 
 [[mutation]]
-name = "gate --base takes a short name, which a tag of the same spelling answers for"
-file = "src/keelline/assess/commands.py"
-before = "    if not BASE_REF.match(value):"
-after = "    if False:"
-reddens = ["tests/assess/test_gate_command.py::test_a_short_base_name_is_refused_at_the_parser"]
+name = "a flag's grammar takes a value outside it as typed: gate --base a short name a tag answers for, init an answer"
+file = "src/keelline/command.py"
+before = '        if not pattern.match(value):'
+after = '        if False:'
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_short_base_name_is_refused_at_the_parser",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
 
 # The step that judges must execute nothing the pull request wrote: a custom gate's files could
 # otherwise rewrite the verdict in this process's memory.
@@ -9468,15 +9471,6 @@ after = "    precheck(root, answering=False)"
 reddens = [
   "tests/project/test_command.py::test_an_answer_over_a_document_the_user_wrote_is_refused",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[answers-over-a-committed-document-init]",
-]
-
-[[mutation]]
-name = "an answer outside its grammar is taken as typed"
-file = "src/keelline/project/commands.py"
-before = "        if not pattern.match(value):"
-after = "        if False:"
-reddens = [
-  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
 ]
 
 [[mutation]]
