@@ -76,7 +76,14 @@ class Gate:
 
 
 BUILTIN: tuple[Gate, ...] = (
-    Gate("docs", None, "run `keelline docs check` and fix each finding", "docs check", docs_gate),
+    Gate(
+        "docs",
+        None,
+        "run `keelline docs check` and fix each finding; a checked document kept out of git "
+        "([artifacts] local) drops docs from [gates] builtin instead",
+        "docs check",
+        docs_gate,
+    ),
     Gate("bugs", 1, "run `keelline bugs check` and fix each finding", "bugs check", bugs_gate),
     Gate(
         "plan",
@@ -95,7 +102,8 @@ BUILTIN: tuple[Gate, ...] = (
     Gate(
         "trail",
         None,
-        "run `keelline docs trail` and commit the roadmap it rewrites",
+        "run `keelline docs trail` and commit the roadmap it rewrites; a roadmap kept out of "
+        "git ([artifacts] local) drops trail from [gates] builtin instead",
         "docs trail --check",
         trail_gate,
     ),

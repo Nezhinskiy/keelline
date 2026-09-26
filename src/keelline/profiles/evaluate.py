@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from keelline.config.paths import PathEscape, contained
-from keelline.gitenv import git_run
+from keelline.gitenv import git_run, in_work_tree
 from keelline.profiles.model import Check, CheckKind, Locator, Profile
 
 _GLOB = frozenset("*?[")
@@ -203,10 +203,13 @@ def _untracked(root: Path, relative: str) -> bool | None:
     output alone.
 
     `None` is `git_run`'s `-1`: git could not run or ran past its bound. That is no answer, and
-    reading it as "not untracked" passed a check that never looked.
+    reading it as "not untracked" passed a check that never looked. So is a refusal inside a
+    work tree (a worktree whose git directory is gone, a checkout of dubious ownership), which
+    git answers exactly as it answers outside one: whether this is a repository is read off the
+    disk, as every other probe reads it.
     """
     code, out = git_run(root, "ls-files", "--others", "--exclude-standard", "--", relative)
-    if code == -1:
+    if code == -1 or (code != 0 and in_work_tree(root)):
         return None
     return code == 0 and bool(out.strip())
 

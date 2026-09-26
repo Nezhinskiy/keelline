@@ -15,6 +15,7 @@ from keelline.project.api import ASSESSMENT
 from keelline.project.init import init
 from tests.assess.smoke import BASE, smoke_repo
 from tests.gitfixture import LsRemote, git, needs_git
+from tests.project.repos import DOCUMENT as BASE_DOCUMENT
 from tests.project.repos import repository
 
 CUSTOM_GATE = '\n[gates.custom.tests]\nrun = ["git", "--version"]\n'
@@ -175,3 +176,47 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
     assert failing == {"plan": True, "commit": False}
     assert printed["base"] == "refs/remotes/origin/main"
     assert git(root, "check-ignore", "--", ASSESSMENT).strip() == ASSESSMENT
+
+
+@needs_git
+def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_what_to_drop(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Both gates read the committed place, where a file kept out of git is not, so both fail on
+    # every run; the remedy that told the person to commit the roadmap was the wrong one, and the
+    # configuration reference's answer is to drop the gate. The file's own `[artifacts] local`
+    # is the adopted document's to write: `--local` does not offer these two.
+    root = repository(tmp_path)
+    (root / CONFIG_FILE).write_text(
+        BASE_DOCUMENT + '\n[artifacts]\nlocal = ["roadmap", "agents-skeleton"]\n', encoding="utf-8"
+    )
+    init(root, machine=tmp_path / "m.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "chore: keelline init")
+    head = git(root, "rev-parse", "HEAD").strip()
+    assert _assess(root, tmp_path, "--base", head, "--json") == 1
+    printed = json.loads(capsys.readouterr().out)
+    failing = {g["name"] for g in printed["gates"] if g["failing"]}
+    assert {"trail", "docs"} <= failing
+    remedies = {i["probe"]: i["remedy"] for i in printed["items"] if i["probe"] in failing}
+    for gate in ("trail", "docs"):
+        assert f"drops {gate} from [gates] builtin" in remedies[gate]
+
+
+@needs_git
+def test_a_probe_that_raises_exits_2_and_leaves_the_last_inventory_as_it_was(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # "Compute everything, then write once": an error the command has no answer for is the
+    # frame's internal error, and the inventory the last finished run wrote stays. Mutation (by
+    # hand): `write` moved above the probes -> a half-built inventory replaces it.
+    root = smoke_repo(tmp_path)
+    assert _assess(root, tmp_path, "--base", BASE) == 0
+    before = (root / ASSESSMENT).read_bytes()
+
+    def boom(context: object) -> list[object]:
+        raise RuntimeError("a probe the command has no answer for")
+
+    monkeypatch.setattr("keelline.assess.assessment.run_probes", boom)
+    assert _assess(root, tmp_path, "--base", BASE) == 2
+    assert (root / ASSESSMENT).read_bytes() == before

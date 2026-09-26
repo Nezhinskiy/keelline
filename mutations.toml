@@ -9247,3 +9247,13 @@ file = "src/keelline/assess/rule.py"
 before = '    if ".." in lexical.parts:'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+
+# Inside a work tree git refuses a repository (a worktree whose git directory is gone, dubious
+# ownership) with the exit it gives outside one, and "not untracked" passed the profile's check
+# without looking, where every other probe reports that it could not look.
+[[mutation]]
+name = "a profile's tracked check reads git refusing the repository as nothing untracked"
+file = "src/keelline/profiles/evaluate.py"
+before = "    if code == -1 or (code != 0 and in_work_tree(root)):"
+after = "    if code == -1:"
+reddens = ["tests/profiles/test_evaluate.py::test_tracked_names_a_located_file_in_a_repository_git_refuses_rather_than_passing_it"]
