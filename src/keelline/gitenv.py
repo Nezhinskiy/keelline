@@ -57,6 +57,14 @@ GIT_TIMEOUT_SECONDS = 5
 # read its `-1` as no answer.
 QUERY_TIMEOUT_SECONDS = 30
 
+# The least bound `git_run` gives a call, whatever bound its caller asked for: none, so each
+# bound above, and each caller's own, is the one that applies. Only Keelline's own test suite
+# raises it (`tests/conftest.py`), because a test's verdict must not turn on how loaded the
+# machine running it is: beside other work, a five-second `rev-parse` in a full parallel run has
+# run out, and its caller read that as no answer. A test about a bound running out sets this
+# back to zero and passes a small bound of its own.
+BOUND_FLOOR_SECONDS: float = 0
+
 # What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
 # does not say which of the three it was, because none of them is an answer about the
 # repository: a caller that words `-1` as one cause — "git is not installed", "the fetch timed
@@ -168,7 +176,7 @@ def git_run(
             input=given,
             capture_output=True,
             check=False,
-            timeout=timeout,
+            timeout=max(timeout, BOUND_FLOOR_SECONDS),
             env=scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError, UnicodeEncodeError):

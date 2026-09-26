@@ -1367,6 +1367,16 @@ before = "    except (OSError, subprocess.SubprocessError, UnicodeEncodeError):"
 after = "    except (OSError, subprocess.SubprocessError):"
 reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_minus_one"]
 
+# The floor under every `git_run` bound is the test suite's, so a loaded machine cannot decide a
+# test; in the product it is zero, or it would widen every bound a caller chose, the two-second
+# session-start sync's among them.
+[[mutation]]
+name = "the product ships a floor under every git bound"
+file = "src/keelline/gitenv.py"
+before = "BOUND_FLOOR_SECONDS: float = 0"
+after = "BOUND_FLOOR_SECONDS: float = 60"
+reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
+
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
 # the subset stays valid YAML only because the leading class is YAML's whole indicator set.
 [[mutation]]

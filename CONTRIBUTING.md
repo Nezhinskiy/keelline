@@ -132,7 +132,11 @@ a time in a checkout no other job touches, with as many jobs as the process has 
 unless `--jobs` says otherwise. So a test that a `reddens` names runs beside other tests in
 other processes and must be safe to — no shared path outside `tmp_path`, no wall-clock bound
 that load could break. A test that fails under contention fails on the mutated run for a reason
-that is not the mutation, and that reads as *caught*.
+that is not the mutation, and that reads as *caught*. The product's own bounds on `git` are one
+such clock, so `tests/conftest.py` lifts every `git_run` bound to a floor of its own; a test
+about a bound running out sets `gitenv.BOUND_FLOOR_SECONDS` back to zero and passes a small
+bound of its own, as `tests/test_git_run.py` does. A `keelline` the suite starts as a separate
+process runs without the floor.
 
 ```toml
 [[mutation]]

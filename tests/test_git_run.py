@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import locale
 import os
 import shutil
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import gitenv
 from keelline.gitenv import NO_ANSWER, git_run
 from tests.gitfixture import plant_path
 
@@ -206,19 +208,55 @@ def test_a_name_asked_on_stdin_matches_the_rule_that_names_it_whatever_the_local
     assert (code, out) == (0, f"{CAFE}\0")
 
 
+def _a_git_that_sleeps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    """A stand-in `git` first on `PATH` that answers nothing, exit 0, after `seconds`."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stand_in = bin_dir / "git"
+    stand_in.write_text(f"#!/bin/sh\nexec sleep {seconds}\n", encoding="utf-8")
+    stand_in.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
 def test_a_git_past_its_time_limit_is_minus_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The third cause `-1` still carries, and the one the callers' safeguards are kept for: a
     # `git` that hangs is no answer, whatever it would have said. The stand-in on `PATH` sleeps
-    # past a bound far below it.
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    stand_in = bin_dir / "git"
-    stand_in.write_text("#!/bin/sh\nexec sleep 5\n", encoding="utf-8")
-    stand_in.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    # past a bound far below it. The suite's floor is set back to the product's zero, or the
+    # bound this test is about would be lifted past the sleep.
+    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", 0)
+    _a_git_that_sleeps(tmp_path, monkeypatch, 5)
     assert git_run(tmp_path, "rev-parse", timeout=0.2) == (-1, "")
+
+
+def test_the_suite_floor_outlasts_a_bound_its_caller_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `tests/conftest.py` lifts every `git_run` bound to its floor, so a loaded machine cannot
+    # run a caller's two- or five-second bound out and turn a test red for the load. A `git` that
+    # answers after half a second, under a bound a fifth of that, still answers here. Mutation
+    # (advisory): `timeout=max(timeout, BOUND_FLOOR_SECONDS)` back to `timeout=timeout` — the
+    # floor is never applied, the call runs out, and this reddens.
+    _a_git_that_sleeps(tmp_path, monkeypatch, 0.5)
+    assert git_run(tmp_path, "rev-parse", timeout=0.1) == (0, "")
+
+
+def test_the_product_ships_with_no_floor_under_its_bounds() -> None:
+    # Read from the source, because the suite has already raised the value this process sees.
+    # A floor above zero in the product would widen every bound a caller chose, the session-start
+    # sync's two seconds among them, whose handler shares a ten-second entry. Mutation (oracle):
+    # "the product ships a floor under every git bound" -> this reddens.
+    tree = ast.parse(Path(gitenv.__file__).read_text(encoding="utf-8"))
+    shipped = [
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "BOUND_FLOOR_SECONDS"
+    ]
+    assert len(shipped) == 1 and isinstance(shipped[0], ast.Constant), shipped
+    assert shipped[0].value == 0
 
 
 def test_no_answer_names_each_cause_git_run_folds_into_minus_one() -> None:
