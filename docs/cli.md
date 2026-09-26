@@ -1978,19 +1978,19 @@ to it, and a called workflow cannot grant itself a scope the caller did not have
 checkout, with an error that names neither the cause nor the remedy. Give the calling job
 `permissions: { contents: read }` if the file sets any permissions at all.
 
-**One job, and what it runs.** The job, `gates`, checks out the caller, checks out Keelline
-**at the commit the `uses:` line pins** — read off the platform's own record of which reusable
+**One job, and what it runs.** The job, `gates`, checks out the caller, checks out Keelline **at
+the commit the `uses:` line pins** — read off the platform's own record of which reusable
 workflow is running, never off the caller's inputs, and asserted against `git rev-parse HEAD`
-before anything else runs — resolves the base to one commit, and runs `keelline gate` against
-it in two steps. The first, "The configuration and the built-in gates", judges the configuration
-and runs the built-in gates, and executes nothing your repository wrote. The second, "The
-project's own gates", runs the commands `[gates.custom]` names, and only if the first passed.
-Each gate is advisory or enforcing, with every finding as an annotation, and each step that runs
-a check appends a table to the job summary. No resolver and no build backend; the network is the two checkouts and whatever
-`setup-python` fetches when the runner has no matching interpreter cached. It is one job because
-a job is billed by the whole minute: a push costs one runner-minute, not one per gate. Its
-check, in the caller `init` writes, is `check / gates`. The job is cancelled after 15 minutes;
-a custom gate that needs longer belongs in a workflow of your own.
+before anything else runs — resolves the base to one commit, and runs `keelline gate` against it
+in two steps. The first, "The configuration and the built-in gates", judges the configuration and
+runs the built-in gates, and executes nothing your repository wrote. The second, "The project's
+own gates", runs the commands `[gates.custom]` names, and only if the first passed. Each gate is
+advisory or enforcing, with every finding as an annotation, and each step that runs a check
+appends its results to the job summary. No resolver and no build backend; the network is the two
+checkouts and whatever `setup-python` fetches when the runner has no matching interpreter cached.
+It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
+one per gate. Its check, in the caller `init` writes, is `check / gates`. The job is cancelled
+after 15 minutes; a custom gate that needs longer belongs in a workflow of your own.
 
 **Your own gates run on a bare runner.** The second step has the runner image and the
 interpreter `python-version` names, and nothing of your project's: a custom gate that needs
@@ -2247,8 +2247,8 @@ the file loads (`unknown section(s)`), so the grammar above is the whole of it. 
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
 requests into it and pushes to it, and passes it as a literal `base:` — and `ref` is written by
-`init` and judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by `commit
-check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
+`init` and judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
+`commit check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
 `keelline assess`, `keelline gate` and the reusable workflow.
 
