@@ -1285,7 +1285,11 @@ def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
 
 # A `git` that runs the real one as though another user owned every repository it opens, which
 # is how git's own suite drives `safe.directory`: git then refuses the repository with exit 128.
-# `where` limits it to the directories one arm of the guard asks from.
+# `where` limits it to the directories one arm of the guard asks from. Where it applies it reads
+# neither the system nor the global configuration, as `tests/ledger/test_write.py`'s wrapper does:
+# a machine whose either file sets `safe.directory = *` — GitHub's Ubuntu images write it into
+# `/etc/gitconfig`, which the product's `git` reads — trusts every repository, so git described
+# the one this wrapper exists to have refused and only the path arm was left to be tested.
 DUBIOUS: dict[str, Callable[[Path], str]] = {
     "every-call": lambda main: "true",
     # Only the walk up from the candidate: `main` is the checkout the listing names by its git
@@ -1305,7 +1309,9 @@ def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) ->
         "#!/bin/sh\n"
         f"if {where}; then\n"
         "  GIT_TEST_ASSUME_DIFFERENT_OWNER=1\n"
-        "  export GIT_TEST_ASSUME_DIFFERENT_OWNER\n"
+        "  GIT_CONFIG_NOSYSTEM=1\n"
+        f"  GIT_CONFIG_GLOBAL={os.devnull}\n"
+        "  export GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL\n"
         "fi\n"
         f'exec "{real_git}" "$@"\n',
         encoding="utf-8",
