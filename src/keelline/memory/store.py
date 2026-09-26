@@ -47,7 +47,6 @@ about the whole module rather than about `resolve` alone.
 
 from __future__ import annotations
 
-import subprocess
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -58,7 +57,7 @@ from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
+from keelline.gitenv import git_run
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -69,10 +68,6 @@ LOCAL_STORE = Path(".keelline") / "local" / "memory"
 PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
-# `keelline.gitenv` and not a copy: `hooks.dispatch` runs `git` too, and the reason this module
-# scrubs is exactly the reason that one has to. See that module's docstring.
-_GIT_ENV_KEEP = GIT_ENV_KEEP
-_GIT_TIMEOUT_SECONDS = GIT_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -109,7 +104,7 @@ class GitUnavailable(Failure):
     `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
     every caller read "could not ask" as "the answer is nothing" — and the user was told to run
     `keelline attach` when the real fault was their `git`. This review machine hit exactly that
-    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `_GIT_ENV_KEEP` scrubs
+    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `GIT_ENV_KEEP` scrubs
     `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
     """
 
@@ -140,7 +135,7 @@ class GitAnswer:
         return self.value
 
 
-def _git_is_usable() -> bool:
+def _git_is_usable(root: Path) -> bool:
     """Whether the `git` on this PATH works at all, asked with the same scrubbed environment.
 
     The discriminator for a non-zero exit, and the reason this is a second call rather than a
@@ -151,48 +146,32 @@ def _git_is_usable() -> bool:
     exits non-zero for every invocation, including `--version`. Asking a question that needs no
     repository separates "git said no" from "git cannot speak".
 
+    Asked from `root`, as the question that failed was, so a `root` git cannot enter is "cannot
+    speak" here too, as it was when the first question could not be launched there at all.
+
     Not cached. It runs only after a query has already failed, and caching it would make the
     answer depend on which test ran first.
     """
-    try:
-        # S603/S607, answered once for both `subprocess` sites in this module. List form, never
-        # `shell=True`, so no argument is ever re-parsed by a shell; every argument is a
-        # literal written here, with no repository-controlled value among them; and `git` is
-        # deliberately resolved through `PATH` rather than pinned, because the machine owner's
-        # `git` is the one that must answer — a hardcoded `/usr/bin/git` is what would pick the
-        # Xcode shim on macOS over the working `git` the owner installed. `PATH` reaches this
-        # call through `_GIT_ENV_KEEP`, which is the machine owner's own environment and not a
-        # repository's: a committed `.claude/settings.json` `env` block can set it, and that is
-        # a harness-level exposure this module cannot close and does not pretend to.
-        done = subprocess.run(
-            ["git", "--version"],  # noqa: S607 - see the comment above
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return done.returncode == 0
+    return git_run(root, "--version")[0] == 0
 
 
 def _git(root: Path, *args: str) -> GitAnswer:
-    try:
-        done = subprocess.run(  # noqa: S603 - see `_git_is_usable`
-            ["git", *args],  # noqa: S607 - see `_git_is_usable`
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError):
+    """git's one-line answer to `args` asked in `root`, through `gitenv.git_run`.
+
+    Its own `subprocess.run(text=True)` decoded strictly, so an `origin` URL holding a byte that
+    is not UTF-8 ended `init --questions` and `init --yes` as `internal error:
+    UnicodeDecodeError`. `git_run` scrubs the environment as this did, and decodes losslessly:
+    the answer is what git printed, a path as the filesystem spells it, less its line ending
+    alone — never `strip()`, which takes a trailing space off a path that ends in one.
+    """
+    code, out = git_run(root, *args)
+    if code == -1:
         return GitAnswer(None, ran=False)
-    if done.returncode != 0:
+    if code != 0:
         # `git` ran and declined, *or* `git` is broken. `_git_is_usable` is what tells them
         # apart; without it every caller read the second as the first.
-        return GitAnswer(None, ran=_git_is_usable())
-    return GitAnswer(done.stdout.strip() or None)
+        return GitAnswer(None, ran=_git_is_usable(root))
+    return GitAnswer(out.removesuffix("\n") or None)
 
 
 def main_checkout(root: Path) -> Path:
@@ -315,6 +294,10 @@ def origin_remote(root: Path) -> str | None:
     `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
     one would make the comparison answer for a different repository than the session is in.
     Two lanes asking one question two ways is how they stop agreeing.
+
+    A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
+    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
+    repository's, and `attach`, which would write it into one, refuses it by name.
 
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
     The distinction is the whole of `GitAnswer`: "no origin remote" is a fact about the

@@ -1817,7 +1817,8 @@ Exits `0` on success; `1` under `--check` on a mismatch **or** on a non-zero cou
 groups that are still real directories, which are the two findings the paragraphs above explain
 and the same number for both; `2` on a refusal: a store outside the
 recorded overlay, a mismatch without `--trust-remote`, a widening without `--yes`, a checkout
-with no `origin` remote, an existing `.keelline/local/attach.json` naming files or settings keys
+with no `origin` remote or with one whose URL is not UTF-8 text, which the overlay's record
+cannot hold, an existing `.keelline/local/attach.json` naming files or settings keys
 `attach` could not have written, a `memory.groups` entry that leaves this project's share of the
 overlay, a `memory.groups` entry that does not name a subdirectory of this project's
 `paths.memory`, or a `paths.memory` that is itself a symlink — a refusal distinct from that one,

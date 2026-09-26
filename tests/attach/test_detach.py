@@ -300,10 +300,10 @@ def _a_git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     whole process.
     """
 
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("git: command not found")
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(

@@ -135,7 +135,8 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
     listing itself answers the same way when git gave none — it could not be run, or ran past
     its bound: `git_output`'s `""` for a failure is an empty listing, which would scan no file.
     """
-    toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()
+    # The line ending alone, never `strip()`: a root that ends in a space is still that root.
+    toplevel = git_output(root, "rev-parse", "--show-toplevel").removesuffix("\n")
     if not toplevel or Path(toplevel).resolve() != root.resolve():
         return None
     code, listed = git_run(

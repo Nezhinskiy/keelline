@@ -63,10 +63,10 @@ def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
     nothing — and it is the ordinary "not bound" one rather than a machine fault.
     """
 
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("git: command not found")
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
 
 
 def _project_and_store(

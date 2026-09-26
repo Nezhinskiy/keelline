@@ -682,10 +682,10 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     seen: dict[str, object] = {}
     argv_seen: list[str] = []
 
-    def fake(argv: list[str], **kwargs: object) -> sp.CompletedProcess[str]:
+    def fake(argv: list[str], **kwargs: object) -> sp.CompletedProcess[bytes]:
         seen.update(kwargs)
         argv_seen.extend(argv)
-        return sp.CompletedProcess(argv, 0, stdout="", stderr="")
+        return sp.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
     # A `GIT_DIR` the session happens to carry makes git answer for a different repository
     # than the one the range is about; `scrubbed_env` is what drops it.

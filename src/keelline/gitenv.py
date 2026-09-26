@@ -16,9 +16,13 @@ answer — a hardcoded path is what picks the Xcode shim on macOS over the worki
 installed. A committed `.claude/settings.json` `env` block can set `PATH` in a non-interactive
 session, which is a harness-level exposure this module cannot close and does not pretend to.
 
-`git_run` is the runner the ledger and docs areas call; `memory.store._git` keeps its
-three-valued answer and its usability probe, which are the memory lane's, and is not rewritten
-here (Premise 17).
+`git_run` is the one runner, and every `git` this project asks a question of goes through it —
+the hook path's toplevel, the memory store's three-valued answer and its usability probe, the
+hooks directory, the dirty count and the commit range included, which each used to run a
+`subprocess.run(text=True)` of their own and raise out of the command on one byte that was not
+UTF-8. One decoding boundary, so each site decides only what an answer means to it. The
+`Runner` seam in `keelline.runner`, which launches the owner's own commands — `git clone` among
+them — for their exit code and a message, is the other.
 """
 
 from __future__ import annotations
@@ -85,6 +89,21 @@ def pipe_encoding() -> str:
     return sys.getfilesystemencoding()
 
 
+def answer_lines(answer: str) -> list[str]:
+    """A line-oriented `git_run` answer, split where git ended each line: at `\\n` alone.
+
+    Never `str.splitlines()`, which also breaks at `\\r`, `\\v`, `\\f`, `\\x1c` to `\\x1e`,
+    `\\x85` and the Unicode line and paragraph separators — characters git prints raw inside a
+    path — so a worktree at `…/wt\\rx` was listed as `…/wt`, a directory that is not it. A
+    single-line answer is `answer.removesuffix("\\n")` for the same reason, and never `strip()`,
+    which takes a trailing space or `\\r` off a path that ends in one. No answer is no lines.
+    """
+    lines = answer.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def answer_bytes(answer: str) -> bytes:
     """The bytes git printed for a `git_run` answer, for a caller that must read them as UTF-8
     whatever the locale: decoding is lossless both ways and nothing translates a line ending,
@@ -98,10 +117,10 @@ def git_run(
 ) -> tuple[int, str]:
     """`(returncode, stdout)` of `git -C root args`; `(-1, "")` when git gave no answer.
 
-    The one place this project runs `git` outside the memory store's own resolver: every
-    argument list is built from constants by the caller, every pathspec follows `--` or
-    `--end-of-options`, and no configuration value reaches this list without `contained()`
-    having refused the `-`-shaped ones. Resolved through PATH for the reason above: the machine
+    The one place this project runs `git` to ask it something: every argument list is built
+    from constants by the caller, every pathspec follows `--` or `--end-of-options`, and no
+    configuration value reaches this list without `contained()` having refused the `-`-shaped
+    ones. Resolved through PATH for the reason above: the machine
     owner's git must answer. A non-zero exit is returned, not collapsed — `check-ignore` answers
     1 for "nothing matched", and that is an answer.
 

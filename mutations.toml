@@ -239,19 +239,24 @@ reddens = [
 [[mutation]]
 name = "a broken git reads as a repository that answered"
 file = "src/keelline/memory/store.py"
-before = '        return GitAnswer(None, ran=_git_is_usable())'
+before = '        return GitAnswer(None, ran=_git_is_usable(root))'
 after = '        return GitAnswer(None)'
 reddens = [
   "tests/memory/test_store.py::test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound",
 ]
 
+# Every `git` this project asks a question of now goes through `git_run`, the hook path's
+# toplevel and the memory store's resolver included, so one scrub is what keeps an inherited
+# `GIT_DIR` from answering for a different repository than the session is in.
 [[mutation]]
-name = "the hook path's git inherits the session's GIT_DIR again"
-file = "src/keelline/hooks/dispatch.py"
+name = "the git runner, and with it the hook path and the store, inherits the session's GIT_DIR"
+file = "src/keelline/gitenv.py"
 before = '            env=scrubbed_env(),'
 after = ''
 reddens = [
   "tests/hooks/test_dispatch.py::test_an_inherited_git_dir_never_reaches_the_hook_paths_git",
+  "tests/memory/test_store.py::test_an_inherited_git_dir_never_reaches_the_git_helper",
+  "tests/test_git_run.py::test_the_environment_is_scrubbed",
 ]
 
 [[mutation]]
@@ -900,8 +905,8 @@ reddens = [
 [[mutation]]
 name = "the commit stream is split on a byte a message can carry"
 file = "src/keelline/guards/commit.py"
-before = '    fields = completed.stdout.split("\x00")'
-after = '    fields = completed.stdout.split("\x01")'
+before = '    fields = text.split("\x00")'
+after = '    fields = text.split("\x01")'
 reddens = [
   "tests/guards/test_commit.py::test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records",
 ]
@@ -914,8 +919,8 @@ reddens = [
 [[mutation]]
 name = "the log stops being NUL-terminated"
 file = "src/keelline/guards/commit.py"
-before = '                "-z",'
-after = '                "--reverse",'
+before = '        "-z",'
+after = '        "--reverse",'
 reddens = [
   "tests/guards/test_commit.py::test_check_range_reports_each_offending_commit_once",
 ]
@@ -1137,6 +1142,11 @@ reddens = [
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
+  "tests/test_git_answers.py::test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path",
+  "tests/test_git_answers.py::test_an_origin_url_that_is_not_utf_8_is_answered_as_itself",
+  "tests/test_git_answers.py::test_init_questions_on_an_origin_url_that_is_not_utf_8_asks_and_does_not_crash",
+  "tests/test_git_answers.py::test_a_hooks_path_that_is_not_utf_8_is_the_directory_git_names",
+  "tests/test_git_answers.py::test_a_dirty_name_that_is_not_utf_8_is_counted_and_not_raised",
 ]
 
 # The other way to read a byte that is not UTF-8, and the one that fails open: as no answer.
@@ -1204,6 +1214,88 @@ reddens = [
   "tests/test_git_run.py::test_a_carriage_return_in_a_name_comes_back_as_itself",
   "tests/test_git_run.py::test_a_carriage_return_asked_on_stdin_is_matched_and_answered_as_itself",
   "tests/docs/test_trail.py::test_an_ignored_document_whose_name_holds_a_carriage_return_is_not_listed",
+]
+
+# A line-oriented answer is split where git ended each line. `str.splitlines()` also breaks at
+# `\r`, U+2028 and five more that git prints raw inside a name: a worktree at `…/wt\rx` was
+# listed as `…/wt` — `setup` recorded it among the project's checkouts, and `attach` links into
+# every checkout it lists — and one dirty name counted as two.
+[[mutation]]
+name = "setup splits git's listing of checkouts at a carriage return inside a path"
+file = "src/keelline/setup/run.py"
+before = "    lines = answer_lines(out)"
+after = "    lines = out.splitlines()"
+reddens = [
+  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
+]
+
+[[mutation]]
+name = "attach splits git's worktree listing at a carriage return inside a path"
+file = "src/keelline/attach/write.py"
+before = "        lines = answer_lines(block)"
+after = "        lines = block.splitlines()"
+reddens = [
+  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
+]
+
+[[mutation]]
+name = "the dirty count counts a name holding a line separator twice"
+file = "src/keelline/guards/hygiene.py"
+before = "    return sum(1 for line in answer_lines(out) if line.strip())"
+after = "    return sum(1 for line in out.splitlines() if line.strip())"
+reddens = ["tests/test_git_answers.py::test_a_dirty_name_holding_a_line_separator_is_one_entry"]
+
+[[mutation]]
+name = "the overlay's sync row counts a name holding a line separator twice"
+file = "src/keelline/overlay/sync.py"
+before = "    dirty = sum(1 for line in answer_lines(status) if line.strip())"
+after = "    dirty = sum(1 for line in status.splitlines() if line.strip())"
+reddens = ["tests/test_git_answers.py::test_a_dirty_name_holding_a_line_separator_is_one_entry"]
+
+# A path answer loses its line ending and nothing else: `strip()` also took a trailing space
+# off, so the hook path named a checkout that is not there and the ledger sweep, whose root no
+# longer equalled itself, walked the disk and swept ignored files.
+[[mutation]]
+name = "the hook path strips a checkout path that ends in a space"
+file = "src/keelline/hooks/dispatch.py"
+before = '    top = out.removesuffix("\n")'
+after = "    top = out.strip()"
+reddens = [
+  "tests/test_git_answers.py::test_the_hook_path_reads_a_checkout_path_that_is_not_utf_8_as_that_path",
+]
+
+[[mutation]]
+name = "the ledger sweep strips a root that ends in a space and walks the disk instead"
+file = "src/keelline/ledger/scan.py"
+before = '    toplevel = git_output(root, "rev-parse", "--show-toplevel").removesuffix("\n")'
+after = '    toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()'
+reddens = [
+  "tests/test_git_answers.py::test_the_ledger_sweep_asks_git_for_a_root_whose_name_ends_in_a_space",
+]
+
+# The overlay's binding record is UTF-8 TOML. An `origin` URL git prints in other bytes reached
+# `_record_binding`, attach's last write, and raised there after four artifacts were written.
+[[mutation]]
+name = "attach meets an origin URL that is not UTF-8 after its first write"
+file = "src/keelline/attach/write.py"
+before = """    if binding.remote is not None and not _utf_8(binding.remote):
+        raise Refusal(ORIGIN_NOT_TEXT)
+"""
+after = ""
+reddens = [
+  "tests/test_git_answers.py::test_attach_refuses_an_origin_it_cannot_record_before_writing_anything",
+]
+
+# The commit range is judged as UTF-8, and git prints a log in `i18n.logOutputEncoding`, which
+# the owner's global configuration sets: under latin-1 a plain `café` read as unjudgeable.
+[[mutation]]
+name = "the commit range reads the log in whatever encoding git was configured to print"
+file = "src/keelline/guards/commit.py"
+before = """        "--encoding=UTF-8",
+"""
+after = ""
+reddens = [
+  "tests/test_git_answers.py::test_the_commit_range_is_read_in_utf_8_whatever_git_is_told_to_print",
 ]
 
 # git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path

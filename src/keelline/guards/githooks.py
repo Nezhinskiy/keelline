@@ -19,13 +19,12 @@ enumerated under D14 by the plan that added them.
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
 from keelline import fsops
 from keelline.errors import Refusal
-from keelline.gitenv import GIT_TIMEOUT_SECONDS, scrubbed_env
+from keelline.gitenv import NO_ANSWER, git_run
 
 HOOK_NAME = "prepare-commit-msg"
 HOOK_MARKER = "# keelline:prepare-commit-msg"
@@ -102,29 +101,23 @@ class Removed(NamedTuple):
 
 
 def hooks_dir(root: Path) -> Path:
-    try:
-        # S603/S607: list form; `root` is a path this process was handed by a person or a
-        # test, not a repository value; `git` through PATH because the owner's git answers.
-        # No `--` after `--git-path hooks`: measured, git prints a literal `--` as a second
-        # line there. `hooks` is a constant, so nothing here is a value to close off.
-        completed = subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), "rev-parse", "--git-path", "hooks"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    # Neither refusal carries a byte this module did not compute, for the reason `commit.commits_in`
-    # states beside its own three: `rev-parse`'s stderr is repository-authored — it quotes the
-    # offending CONFIG VALUE, `core.hooksPath` included — and `TimeoutExpired.__str__` renders the
-    # whole argv. `root` is the caller's own path and is the actionable part; it is all that is
-    # printed. This defect was found and fixed in `commits_in` during this lane's own review and
-    # was still here, which is why the reasoning is repeated rather than pointed at.
-    except (OSError, subprocess.TimeoutExpired):
-        raise Refusal(f"git could not name the hooks directory of {root}") from None
-    answer = completed.stdout.strip()
-    if completed.returncode != 0 or not answer:
+    """The directory git runs `root`'s hooks from, as git names it: `core.hooksPath` when set.
+
+    Through `gitenv.git_run`, so the answer is the directory on disk whatever its bytes — this
+    call decoded strictly on its own, and a `core.hooksPath` that was not UTF-8 ended `setup
+    --git-hooks`, `attach` and `doctor` as an internal error. No `--` after `--git-path hooks`:
+    measured, git prints a literal `--` as a second line there. `hooks` is a constant, so
+    nothing here is a value to close off.
+    """
+    code, out = git_run(root, "rev-parse", "--git-path", "hooks")
+    # Neither refusal carries a byte this module did not compute, for the reason
+    # `commit.commits_in` states beside its own: `rev-parse`'s stderr is repository-authored — it
+    # quotes the offending CONFIG VALUE, `core.hooksPath` included — and is never read. `root` is
+    # the caller's own path and is the actionable part; it is all that is printed.
+    if code == -1:
+        raise Refusal(f"git could not name the hooks directory of {root} ({NO_ANSWER})")
+    answer = out.removesuffix("\n")
+    if code != 0 or not answer:
         raise Refusal(
             f"git could not name the hooks directory of {root}; run it yourself to see why"
         )

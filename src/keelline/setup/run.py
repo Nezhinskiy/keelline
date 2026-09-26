@@ -113,7 +113,7 @@ from keelline import REPOSITORY_URL, __version__, fsops
 from keelline.config.paths import PathEscape, contained
 from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
-from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
+from keelline.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from keelline.overlay.api import (
     create,
     init_instance,
@@ -584,7 +584,9 @@ def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
         raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=NO_ANSWER))
     if code == _GIT_REFUSED and not keyed and in_work_tree(start):
         raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=start))
-    lines = out.splitlines()
+    # Split where git ended each line: `splitlines()` also broke a path at a `\r` it holds, and
+    # recorded `…/wt` among the checkouts for a worktree at `…/wt\rx` (`gitenv.answer_lines`).
+    lines = answer_lines(out)
     return lines if code == 0 and lines else None
 
 

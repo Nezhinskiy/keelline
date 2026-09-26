@@ -63,7 +63,7 @@ from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
 from keelline.fsops import UnsafePath
-from keelline.gitenv import git_run
+from keelline.gitenv import answer_bytes, answer_lines, git_run
 from keelline.guards.api import hooks_dir
 from keelline.memory.api import (
     COMMON_GROUP,
@@ -125,6 +125,15 @@ FALLBACK_KEY = "autoMemoryDirectory"
 NO_ORIGIN = (
     "this repository has no `origin` remote, so there is nothing for the overlay to record; "
     "add one, or bind the clone that has it"
+)
+# Beside it, and above every write for the same reason. The binding record is UTF-8 TOML, and an
+# `origin` URL git prints in other bytes cannot be written into it: read losslessly, it reached
+# `_record_binding`, the last write, and raised `UnicodeEncodeError` there, after the ignore
+# region, the Codex rules, the settings merge and the ledger. The URL is not quoted: a remote URL
+# is repository-authored.
+ORIGIN_NOT_TEXT = (
+    "this repository's `origin` URL is not UTF-8 text, so the overlay cannot record it; set it "
+    "again with `git remote set-url origin URL`"
 )
 # The sixth, and the first of the two whose trigger is repository-authored (§7.4:
 # `memory.groups` reaches no guard of its own). One constant for the check above every write
@@ -451,6 +460,16 @@ def _record_binding(binding: Binding) -> bool:
     return True
 
 
+def _utf_8(answer: str) -> bool:
+    """Whether git printed `answer` in UTF-8, the bytes asked and not the `str`: under a latin-1
+    filesystem codec every byte decodes, and the escapes that would show it never appear."""
+    try:
+        answer_bytes(answer).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def _first_attach(record: Path) -> str | None:
     if not record.is_file():
         return None
@@ -663,8 +682,11 @@ def _worktrees(root: Path) -> list[Path]:
     # the owner's links were written, on a machine whose `git` was fine; and `detach` in the
     # same state completed. Skipped here, so both halves read the same set.
     found: list[Path] = []
+    # Lines split where git ended them: `splitlines()` also broke a path at a `\r` it holds, and
+    # listed `…/wt` — a directory that is not the worktree, and one this lane links into — for
+    # the worktree at `…/wt\rx` (`gitenv.answer_lines`).
     for block in out.split("\n\n"):
-        lines = block.splitlines()
+        lines = answer_lines(block)
         if any(line == "prunable" or line.startswith("prunable ") for line in lines):
             continue
         found.extend(
@@ -903,6 +925,8 @@ def attach(
             "the overlay records a different remote under this project's name, so this is not "
             "the repository it was bound to; pass --trust-remote only if it should be"
         )
+    if binding.remote is not None and not _utf_8(binding.remote):
+        raise Refusal(ORIGIN_NOT_TEXT)
     if binding.remote is None:
         raise Refusal(NO_ORIGIN)
     # The sixth refusal, and it belongs here for the reason the five above it do. `ledger()`

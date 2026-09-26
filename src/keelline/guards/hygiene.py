@@ -32,13 +32,12 @@ from __future__ import annotations
 import importlib.util
 import re
 import struct
-import subprocess
 from collections.abc import Iterable, Mapping
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from keelline.gitenv import scrubbed_env
+from keelline.gitenv import answer_lines, git_run
 from keelline.guards import bashscan
 from keelline.guards.roots import contained_roots
 
@@ -173,26 +172,18 @@ def red_exit(raw: Mapping[str, Any]) -> int | None:
 
 def _dirty_count(root: Path) -> int | None:
     """Uncommitted changes, or `None` when git could not answer. Never `0` for the latter:
-    the two mean opposite things to a person deciding whether to trust a red run."""
-    try:
-        # S603/S607: list form, never `shell=True`, so nothing is re-parsed by a shell. `root`
-        # is the project root the dispatcher resolved or `--root` resolved, not a repository
-        # value, and `--` closes the argument list so no pathspec can be smuggled in. `git` is
-        # resolved through `PATH` for the reason `gitenv` gives: the machine owner's `git` is
-        # the one that must answer.
-        completed = subprocess.run(  # noqa: S603 - see the comment above
-            ["git", "-C", str(root), "status", "--porcelain", "--"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=STATUS_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.TimeoutExpired):
+    the two mean opposite things to a person deciding whether to trust a red run.
+
+    Through `gitenv.git_run`: `root` is the project root the dispatcher resolved or `--root`
+    resolved, not a repository value, and `--` closes the argument list so no pathspec can be
+    smuggled in. `status --porcelain` prints a name raw under `core.quotePath=false`, and this
+    call's own strict decode made one that was not UTF-8 an internal error; counted by the
+    lines git wrote (`answer_lines`), a name holding a line separator is still one entry.
+    """
+    code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)
+    if code != 0:
         return None
-    if completed.returncode != 0:
-        return None
-    return sum(1 for line in completed.stdout.splitlines() if line.strip())
+    return sum(1 for line in answer_lines(out) if line.strip())
 
 
 def _recorded_source_mtime(pyc: Path) -> int | None:

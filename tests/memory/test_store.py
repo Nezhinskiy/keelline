@@ -526,15 +526,15 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 #
 # `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty stdout alike, so every
 # caller read a broken `git` as a fact about the repository. The review machine hit exactly that
-# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `_GIT_ENV_KEEP`
+# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `GIT_ENV_KEEP`
 # scrubs `DEVELOPER_DIR` — and was told to run `keelline attach`.
 
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("git: command not found")
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
@@ -604,7 +604,7 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The review machine's own shape, reproduced: a `git` that *runs* and fails everything —
-    # the Xcode shim with an unaccepted licence, reached because `_GIT_ENV_KEEP` scrubs
+    # the Xcode shim with an unaccepted licence, reached because `GIT_ENV_KEEP` scrubs
     # `DEVELOPER_DIR`. Exit codes alone cannot tell this from a correct "no such remote" (2) or
     # "not a git repository" (128), which is why the discriminator is a second question that
     # needs no repository.
@@ -616,10 +616,10 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     machine = a_machine_file(tmp_path, overlay)
     real = subprocess.run
 
-    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(args, 69, "", "You have not agreed to the licence\n")
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", broken)
+    monkeypatch.setattr("keelline.gitenv.subprocess.run", broken)
     with pytest.raises(GitUnavailable):
         resolve(root, config, machine=machine)
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", real)
+    monkeypatch.setattr("keelline.gitenv.subprocess.run", real)
