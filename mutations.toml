@@ -4705,6 +4705,18 @@ reddens = [
   "tests/test_fixtures.py::test_the_block_a_contributor_copies_is_the_one_ci_runs",
 ]
 
+# Across workers, coverage leaves one data file per worker in the root until it combines them,
+# and the neutrality gate walks untracked files too. Unignored, they reached its whole-tree count
+# as undecodable files on whichever run a worker finished first.
+[[mutation]]
+name = "coverage's per-worker data files reach the neutrality gate again"
+file = ".gitignore"
+before = ".coverage.*\n"
+after = ""
+reddens = [
+  "tests/test_neutral.py::test_a_coverage_worker_file_is_not_a_file_the_gate_walks",
+]
+
 # §4.5 item 1. `scripts/check_artifacts.py` imported `keelline.overlay.layout` for the very
 # constant `overlay/api.py` said had been trimmed *because* nothing outside the area imported
 # it. The boundary walk stopped at `src/`, so the false docstring and the violation merged

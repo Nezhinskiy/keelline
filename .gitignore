@@ -6,6 +6,8 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+# One per worker while `pytest -n auto --cov` runs, combined into `.coverage` at the end.
+.coverage.*
 coverage.xml
 htmlcov/
 # A stray one in changelog.d used to turn a red release gate green.

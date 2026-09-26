@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.gitfixture import run_git
+
 ROOT = Path(__file__).resolve().parents[1]
 THIS = Path(__file__).resolve()
 FULL_TABLE_TREES = ("src", "tests", "scripts")
@@ -279,6 +281,24 @@ def tracked_files() -> list[Path]:
         for p in ROOT.rglob("*")
         if p.is_file() and p.relative_to(ROOT).parts[0] not in FALLBACK_EXCLUDED
     )
+
+
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
+def test_a_coverage_worker_file_is_not_a_file_the_gate_walks(tmp_path: Path) -> None:
+    """The suite runs across workers, and under `--cov` each one leaves its own data file in
+    the root while the others still run — `.coverage.<host>.pid<pid>.X<random>x`, SQLite and
+    undecodable. `tracked_files` reads `--others --exclude-standard`, so a `.gitignore` naming
+    only `.coverage` handed seven of them to `test_the_gate_reads_the_whole_tree` mid-run on
+    2026-09-26: `UNDECODABLE` 0, counted 7, and which run it reddened was a matter of timing.
+
+    Asked of git's rules without the file, so this module writes nothing into the tree it walks,
+    and in `gitfixture`'s sealed environment, so a developer's global excludes cannot answer for
+    the repository's own `.gitignore`.
+    Mutation: drop `.coverage.*` from `.gitignore` -> reddens here, on every run.
+    """
+    worker = ".coverage.runner_host.pid4242.XaBcDeFx"
+    ignored = run_git(ROOT, "check-ignore", "-q", "--no-index", worker, home=tmp_path)
+    assert ignored.returncode == 0, ignored.stderr
 
 
 # **What the split gives up, stated as a decision rather than left as an accident.** The two
