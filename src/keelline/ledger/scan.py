@@ -26,10 +26,9 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
-from keelline.gitenv import git_run
+from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
 from keelline.identifiers import identifiers
-from keelline.ledger.git import QUERY_TIMEOUT_SECONDS, git_output
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -133,11 +132,12 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
     falls back to walking instead of silently scanning nothing — a guard that reports OK
     because it looked at no files is the failure mode this whole module exists to prevent. The
     listing itself answers the same way when git gave none — it could not be run, or ran past
-    its bound: `git_output`'s `""` for a failure is an empty listing, which would scan no file.
+    its bound: an empty answer for a failure is an empty listing, which would scan no file.
     """
     # The line ending alone, never `strip()`: a root that ends in a space is still that root.
-    toplevel = git_output(root, "rev-parse", "--show-toplevel").removesuffix("\n")
-    if not toplevel or Path(toplevel).resolve() != root.resolve():
+    code, out = git_run(root, "rev-parse", "--show-toplevel", timeout=QUERY_TIMEOUT_SECONDS)
+    toplevel = out.removesuffix("\n")
+    if code != 0 or not toplevel or Path(toplevel).resolve() != root.resolve():
         return None
     code, listed = git_run(
         root,

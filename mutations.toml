@@ -1267,8 +1267,8 @@ reddens = [
 [[mutation]]
 name = "the ledger sweep strips a root that ends in a space and walks the disk instead"
 file = "src/keelline/ledger/scan.py"
-before = '    toplevel = git_output(root, "rev-parse", "--show-toplevel").removesuffix("\n")'
-after = '    toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()'
+before = '    toplevel = out.removesuffix("\n")'
+after = '    toplevel = out.strip()'
 reddens = [
   "tests/test_git_answers.py::test_the_ledger_sweep_asks_git_for_a_root_whose_name_ends_in_a_space",
 ]

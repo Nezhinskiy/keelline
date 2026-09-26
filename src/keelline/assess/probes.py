@@ -37,17 +37,13 @@ from typing import TYPE_CHECKING
 from keelline.assess.model import Item, item
 from keelline.config.paths import PathEscape, contained
 from keelline.findings import Severity
-from keelline.gitenv import git_run
+from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
 from keelline.scaffold import EntriesError, marker_id, owned_ids
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
-# Wall-clock bound on one probe's git query. It mirrors the ledger's own bound on its local
-# queries, which is private to that area: a `log --all` or a `grep` over a long history is not
-# a five-second `rev-parse`, and none of these reaches the network.
-QUERY_TIMEOUT_SECONDS = 30
 COULD_NOT_LOOK = "could-not-look"
 PROFILE = "profile"
 PROFILE_NOT_SHIPPED = "profile-not-shipped"

@@ -33,7 +33,7 @@ from keelline.assess.probes import (
 )
 from keelline.config.loader import load, preset_defaults
 from keelline.findings import Severity
-from keelline.gitenv import git_run
+from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.presets import load_preset
 from keelline.project.api import CI_WORKFLOW
 from tests.assess.smoke import smoke_repo
@@ -837,15 +837,7 @@ def test_the_git_bound_is_the_query_bound(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(probes, "git_run", recording)
     _all(root, tmp_path)
     assert seen
-    assert set(seen) == {probes.QUERY_TIMEOUT_SECONDS}
-
-
-def test_the_probes_git_bound_is_the_ledger_s() -> None:
-    # The value mirrors the ledger's own bound on a local query, which is private to that area.
-    # Mutation (advisory): either constant changed alone -> reddens.
-    from keelline.ledger.git import QUERY_TIMEOUT_SECONDS as LEDGER_BOUND
-
-    assert probes.QUERY_TIMEOUT_SECONDS == LEDGER_BOUND
+    assert set(seen) == {QUERY_TIMEOUT_SECONDS}
 
 
 def test_git_log_all_on_a_repository_with_no_commit_answers_zero(tmp_path: Path) -> None:

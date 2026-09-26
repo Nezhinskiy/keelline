@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from keelline import fsops
-from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
+from keelline.gitenv import NO_ANSWER, QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
 from keelline.identifiers import DIGITS, identifiers
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER
 from keelline.ledger.entries import (
@@ -24,7 +24,6 @@ from keelline.ledger.entries import (
     related_field,
     scalar,
 )
-from keelline.ledger.git import QUERY_TIMEOUT_SECONDS
 from keelline.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
 from keelline.ledger.scan import citation_roots, scannable
 
