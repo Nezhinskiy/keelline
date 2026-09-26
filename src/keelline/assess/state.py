@@ -154,12 +154,12 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
     state = config.keelline.state
     wanted = [n for n in configured if n in (names or configured) and n not in enforcing]
     if not wanted:
+        if not configured:
+            # Nothing configured is nothing wanted too, and completing the state would install
+            # a project that never earned a gate, whether it had begun adopting or not.
+            raise Refusal(NO_GATE)
         if state == "installed":
             raise Refusal(ALL_ENFORCE)
-        if state == "initialised":
-            # Nothing enforces yet, so nothing is wanted only when nothing is configured: no
-            # gate was earned, and completing the state would install a project that has none.
-            raise Refusal(NO_GATE)
         # Every configured gate enforces and the state never said so: complete it.
         _write(root, "installed", ())
         return Transition(state, "installed")

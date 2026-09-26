@@ -8936,15 +8936,15 @@ reddens = [
   "tests/assess/test_state.py::test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs",
 ]
 
-# An initialised project that configures no gate has nothing wanted, which is also the shape
-# of an adopting project whose every gate enforces; only the adopting one is completed.
+# A project that configures no gate has nothing wanted, which is also the shape of an adopting
+# project whose every gate enforces; only the one with a gate to have earned is completed.
 [[mutation]]
-name = "promote installs an initialised project that configures no gate"
+name = "promote installs a project that configures no gate"
 file = "src/keelline/assess/state.py"
-before = '        if state == "initialised":'
+before = "        if not configured:"
 after = "        if False:"
 reddens = [
-  "tests/assess/test_state.py::test_an_initialised_project_with_no_gate_is_refused_rather_than_installed",
+  "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
 ]
 
 [[mutation]]

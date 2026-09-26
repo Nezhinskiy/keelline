@@ -877,12 +877,13 @@ enforces is refused rather than skipped. Once every configured gate enforces, th
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run. An `adopting` project whose
 every configured gate already enforces — one that removed the last gate it had not promoted — is
-moved to `installed` with no gate run. The state never moves back. A name, a gate already
-enforcing, nothing left to promote, a `keelline.toml` the editor cannot rewrite in place and a
-manifest it cannot read are each refused before the first gate runs; a refusal from the editor
-names `state` and `enforced` together, one line each: as they stand when the check before the
-gates finds it, and as the command would write them when the write itself refuses, so following
-it either leaves the project as it was or makes the transition whole.
+moved to `installed` with no gate run; a project that configures no gate is refused, since it
+has none to have earned. The state never moves back. A name, a gate already enforcing, nothing
+left to promote, a `keelline.toml` the editor cannot rewrite in place and a manifest it cannot
+read are each refused before the first gate runs; a refusal from the editor names `state` and
+`enforced` together, one line each: as they stand when the check before the gates finds it, and
+as the command would write them when the write itself refuses, so following it either leaves the
+project as it was or makes the transition whole.
 
 `--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
 commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable
@@ -904,7 +905,7 @@ list, or `keelline.toml` no longer loads.
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
 | 1 | a gate failed or could not run: with names, nothing was written; without, the others were enforced |
-| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, an `initialised` project that configures no gate, or `keelline.toml` refused |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, or `keelline.toml` refused |
 
 ## `keelline memory refs`
 
