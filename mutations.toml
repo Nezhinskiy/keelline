@@ -9081,3 +9081,26 @@ after = "        found = detect(root, lenient=given.name is not None)"
 reddens = [
   "tests/project/test_init.py::test_an_adopted_document_with_no_name_is_answered_by_the_loader_and_not_by_detection",
 ]
+
+# The branch a rendered caller names follows git's own branch-name rules, so no workflow gates a
+# branch no repository can have. Each rule dropped once.
+[[mutation]]
+name = "the gate branch grammar takes a '..' git refuses"
+file = "src/keelline/project/templates.py"
+before = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+after = '''    r"^(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+  "tests/project/test_command.py::test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing",
+]
+
+[[mutation]]
+name = "the gate branch grammar takes a '.lock' component git refuses"
+file = "src/keelline/project/templates.py"
+before = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+after = '''    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"'''
+reddens = [
+  "tests/project/test_templates.py::test_the_gate_branch_grammar_refuses_what_git_refuses",
+  "tests/project/test_templates.py::test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow",
+]

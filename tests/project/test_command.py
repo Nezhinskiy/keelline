@@ -422,13 +422,23 @@ def test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes(
     [
         ("--yes", "--name", "Not A Name"),
         ("--yes", "--base-branch", "a b"),
+        ("--yes", "--base-branch", "a..b"),
         ("--yes", "--local", "bug-index"),
         ("--yes", "--memory-mode", "cloud"),
         ("--yes", "--profile", "rust"),
         ("--yes", "--agent", "cursor"),
         ("--questions", "--yes"),
     ],
-    ids=["name", "branch", "not-eligible", "mode", "profile", "agent", "questions-and-yes"],
+    ids=[
+        "name",
+        "branch",
+        "branch-git-refuses",
+        "not-eligible",
+        "mode",
+        "profile",
+        "agent",
+        "questions-and-yes",
+    ],
 )
 def test_the_parser_refuses_an_answer_outside_its_grammar_and_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], argv: tuple[str, ...]
@@ -494,3 +504,12 @@ def test_an_adopted_document_without_a_version_is_named_in_a_note(tmp_path: Path
     assert STAMPED.format(verb="would write") in printed
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
     assert json.loads(printed)["stamped"] is True
+
+
+@needs_git
+def test_a_branch_with_a_slash_and_a_dot_is_a_base_branch_the_parser_takes(tmp_path: Path) -> None:
+    # The branch grammar follows git's own rules, which a release branch meets: tightening it
+    # must not refuse `release/2.0`. Mutation (by hand): refuse every `.` or `/` -> this reddens.
+    root = repository(tmp_path)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "release/2.0")
+    assert code == 0, printed

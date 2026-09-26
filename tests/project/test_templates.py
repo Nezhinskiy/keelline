@@ -23,6 +23,7 @@ from keelline.project.templates import (
     CI_WORKFLOW,
     COMPUTED,
     CONFIG_ARTIFACT,
+    GATE_BRANCH,
     IGNORE_ARTIFACT,
     LOCAL_ELIGIBLE,
     NO_REF,
@@ -39,6 +40,7 @@ from keelline.project.templates import (
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
+from tests.gitfixture import needs_git, run_git
 from tests.workflow_yaml import load
 
 SHA = "a" * 40
@@ -683,3 +685,51 @@ def test_every_target_any_configuration_writes_is_one_every_configuration_could(
     for each in prepared:
         listed = {(i, target) for i, targets in each.could_write.items() for target in targets}
         assert written <= listed
+
+
+# Names inside the grammar's character set, each one git's branch-name rules accept or refuse.
+BRANCH_NAMES = (
+    "main",
+    "develop",
+    "release/2.0",
+    "release/2.x",
+    "v1.2.3",
+    "feature/a-b_c",
+    "a..b",
+    "a//b",
+    "a/",
+    "a.",
+    "a.lock",
+    "a/b.lock",
+    "a.lock/b",
+    "a/.b",
+    "a/..",
+    ".a",
+    "-a",
+)
+
+
+@needs_git
+@pytest.mark.parametrize("name", BRANCH_NAMES)
+def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: str) -> None:
+    # `[ci] gate_branch`, `--base-branch` and a detected `origin/HEAD` are all held to
+    # `GATE_BRANCH` before a rendered caller names the branch; a name git itself refuses as a
+    # branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a component starting
+    # with `.`) is a caller that can never run, so the grammar refuses it too, and `release/2.0`
+    # stays legal. Mutations (oracle): "the gate branch grammar takes a '..' git refuses" and
+    # "the gate branch grammar takes a '.lock' component git refuses" -> the `a..b` and `.lock`
+    # cases redden.
+    accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
+    assert bool(GATE_BRANCH.match(name)) == accepted, name
+
+
+@pytest.mark.parametrize("name", ["a..b", "a//b", "a/", "a.lock", "a/.b"])
+def test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow(name: str) -> None:
+    # The hand-written `[ci] gate_branch` half of the same rule: the artifact is skipped with the
+    # fixed reason, and the value is never echoed.
+    recorded = _recording(preset_defaults("widget"))
+    prepared = _prepared(
+        replace(recorded, ci=replace(recorded.ci, gate_branch=name)), resolution=PINNED
+    )
+    assert "ci-workflow" not in {t.id for t in prepared.footprint}, name
+    assert prepared.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch")

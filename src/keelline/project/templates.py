@@ -93,7 +93,14 @@ IGNORE_ARTIFACT = "gitignore"
 # The value is repository-authored and lands in three places in one YAML file — the two
 # `branches:` lists and the literal `base:` — so it is quoted there *and* held to a shape here:
 # quoting alone would still admit a newline, which closes the string and writes further keys.
-GATE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
+# Inside that character set it refuses what git's own branch-name rules refuse
+# (`git check-ref-format --branch`), so a caller never names a branch no repository can have:
+# `..`, `//`, a component starting with `.`, a component ending in `.lock`, and a trailing `/` or
+# `.`. `@{` and `-` at the start are outside the set already. The lookaheads end on `$`, which
+# ECMA-262 reads as the end too, so `init --questions` can hand the pattern to a JSON Schema client.
+GATE_BRANCH = re.compile(
+    r"^(?!.*\.\.)(?!.*//)(?!.*/\.)(?!.*\.lock(?:/|$))(?!.*[./]$)[A-Za-z0-9][A-Za-z0-9._/-]*\Z"
+)
 # The grammar `[ci] ref` must match before it is written into the rendered workflow's `uses:`
 # line, for the same reason `GATE_BRANCH` exists and with the same provenance: the value is
 # repository-authored — on the adoption path it is whatever `keelline.toml` already carried —

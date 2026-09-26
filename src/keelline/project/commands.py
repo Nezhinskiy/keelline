@@ -405,7 +405,10 @@ def _answers(parser: argparse.ArgumentParser) -> None:
         "answers", "each replaces one default; `keelline init --questions` lists them"
     )
     name_rule = f"not one lowercase path segment matching {PROJECT_NAME.pattern}"
-    branch_rule = f"not a plain branch name matching {GATE_BRANCH.pattern}"
+    branch_rule = (
+        "not a plain branch name: letters, digits, '.', '_', '-' and '/', led by a letter or "
+        "digit, and one git accepts (no '..', '//', '.lock' component, or trailing '/' or '.')"
+    )
     answers.add_argument("--name", type=_grammar(PROJECT_NAME, name_rule), help="[project] name")
     answers.add_argument(
         "--base-branch",
