@@ -15,11 +15,11 @@ import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.docs import trail as trail_module
 from keelline.docs.trail import (
     END_MARKER,
     MARKER,
     _ignored,
-    _named_in_utf_8,
     read_trail,
     rebuild,
     render_listing,
@@ -329,15 +329,22 @@ def test_an_ignored_document_whose_name_holds_a_carriage_return_is_not_listed(
     assert "widget-design" in text
 
 
-def test_a_document_name_that_is_not_utf_8_is_never_interpolated() -> None:
+def test_a_document_name_that_is_not_utf_8_is_never_interpolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The roadmap is UTF-8, and a name the filesystem holds in other bytes reaches Python with
     # surrogate escapes: written into the listing it raised `UnicodeEncodeError` — an internal
     # error from `docs trail`, and a `docs trail --check` stale for good, since the remedy it
-    # names crashed the same way. Asked of the predicate, because APFS refuses to create such a
-    # name; the end-to-end case below runs where the disk holds it. Mutation (declared): drop
-    # the name's UTF-8 check -> this reddens.
-    assert _named_in_utf_8(Path(os.fsdecode(b"2026-04-04-caf\xc3\xa9.md")))
-    assert not _named_in_utf_8(Path(os.fsdecode(b"2026-04-04-caf\xe9.md")))
+    # names crashed the same way. APFS refuses to create such a name, so here the predicate is
+    # made to refuse an ordinary one and the listing must ask it; the end-to-end case below runs
+    # where the disk holds the name. Mutation (declared): drop the check from `render_listing`
+    # -> this reddens.
+    root, config = corpus(tmp_path, specs=("2026-01-01-widget-design.md",), trail=None)
+    monkeypatch.setattr(
+        trail_module, "utf_8_name", lambda name: name != "2026-01-01-widget-design.md"
+    )
+    with pytest.raises(Failure, match="single line of UTF-8 text"):
+        listing(root, config)
 
 
 @needs_git

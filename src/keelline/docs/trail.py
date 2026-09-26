@@ -11,7 +11,6 @@ unimplemented work has shipped.
 
 from __future__ import annotations
 
-import os
 import re
 import tomllib
 from dataclasses import dataclass
@@ -26,6 +25,7 @@ from keelline.docs.themes import RULE as THEME_RULE
 from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
 from keelline.findings import Finding
+from keelline.fsops import utf_8_name
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 
 if TYPE_CHECKING:
@@ -114,23 +114,6 @@ def _interpolable(value: str) -> bool:
     as a different listing and `--check` was stale forever.
     """
     return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value
-
-
-def _named_in_utf_8(path: Path) -> bool:
-    """Whether a document's name is UTF-8 on disk, so the UTF-8 roadmap can hold the row and a
-    link that names the file.
-
-    A name the filesystem holds in other bytes — latin-1, on Linux — reaches Python with
-    surrogate escapes, and writing it into the roadmap raised `UnicodeEncodeError`: an internal
-    error from `docs trail`, with `--check` stale for good. The bytes are asked and not the
-    `str`, because under a latin-1 filesystem codec every byte decodes and the escapes that
-    would show it never appear.
-    """
-    try:
-        os.fsencode(path.name).decode("utf-8")
-    except UnicodeDecodeError:
-        return False
-    return True
 
 
 def read_trail(path: Path) -> Trail:
@@ -287,7 +270,7 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
         # which is the failure its other two guards exist to prevent, and the operator has a
         # remedy either way. The link is checked too — it is the same name, joined to the
         # configured `specs`/`plans` path, and that path is repository-authored as well.
-        if not (_interpolable(row) and _interpolable(link) and _named_in_utf_8(path)):
+        if not (_interpolable(row) and _interpolable(link) and utf_8_name(path.name)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))
         listed.add(row)
         buckets.setdefault(theme_of(path.name, trail), []).append((row, link))

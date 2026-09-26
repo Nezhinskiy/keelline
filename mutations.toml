@@ -82,7 +82,7 @@ reddens = [
 [[mutation]]
 name = "a digest entry is unframed again, so a routing key can splice two into one"
 file = "src/keelline/memory/trust.py"
-before = '    return (hashlib.sha256(key.encode("utf-8")).hexdigest() + content).encode("ascii")'
+before = '    return (hashlib.sha256(key_bytes).hexdigest() + content).encode("ascii")'
 after = '    return (key + content).encode("utf-8")'
 reddens = [
   "tests/memory/test_trust.py::test_a_routing_key_cannot_splice_two_entries_into_one",
@@ -1319,6 +1319,18 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read",
 ]
 
+# A trust routing key is a note's file name. One the disk holds in bytes that are not UTF-8
+# raised `UnicodeEncodeError` out of `store_digest`, and `may_inject`, every session-start bundle,
+# `memory trust` and `memory index` failed together on one committed file.
+[[mutation]]
+name = "the trust digest encodes a note name strictly again"
+file = "src/keelline/memory/trust.py"
+before = '    key_bytes = key.encode("utf-8", "surrogateescape")'
+after = '    key_bytes = key.encode("utf-8")'
+reddens = [
+  "tests/memory/test_trust.py::test_a_note_named_in_bytes_that_are_not_utf_8_still_has_a_digest_entry",
+]
+
 # git's answers were decoded, and its `stdin` encoded, with the locale's codec while every path
 # they are compared with uses the filesystem's. On macOS the filesystem is UTF-8 whatever the
 # locale, so under a latin-1 locale a non-ASCII name never matched: a gitignored document read
@@ -1723,12 +1735,13 @@ reddens = [
 [[mutation]]
 name = "a document filename carries the end marker into the generated roadmap"
 file = "src/keelline/docs/trail.py"
-before = '''        if not (_interpolable(row) and _interpolable(link) and _named_in_utf_8(path)):
+before = '''        if not (_interpolable(row) and _interpolable(link) and utf_8_name(path.name)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))'''
 after = "        pass"
 reddens = [
   "tests/docs/test_commands.py::test_no_repository_authored_value_can_grow_the_roadmap",
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker",
+  "tests/docs/test_trail.py::test_a_document_name_that_is_not_utf_8_is_never_interpolated",
 ]
 
 # A carriage return is a line break to every reader of the roadmap but the one that wrote it:
@@ -1743,17 +1756,31 @@ reddens = [
   "tests/docs/test_trail.py::test_no_repository_authored_value_reaches_the_listing_carrying_a_marker[carriage-return]",
 ]
 
-# The roadmap is UTF-8, and a document name the disk holds in other bytes reaches Python with
-# surrogate escapes: written into the listing it raised `UnicodeEncodeError`, an internal error,
-# and `docs trail --check` stayed stale with a remedy that crashed the same way.
+# The roadmap and `MEMORY.md` are UTF-8, and a file name the disk holds in other bytes reaches
+# Python with surrogate escapes: written into either it raised `UnicodeEncodeError`, an internal
+# error from `docs trail` (with `--check` stale for good) and from `memory index`.
 [[mutation]]
-name = "a document name that is not UTF-8 is written into the generated roadmap"
-file = "src/keelline/docs/trail.py"
-before = '        os.fsencode(path.name).decode("utf-8")'
-after = '        os.fsencode(path.name).decode("utf-8", "surrogateescape")'
+name = "a file name that is not UTF-8 is read as one a UTF-8 file can hold"
+file = "src/keelline/fsops.py"
+before = '        os.fsencode(name).decode("utf-8")'
+after = '        os.fsencode(name).decode("utf-8", "surrogateescape")'
 reddens = [
-  "tests/docs/test_trail.py::test_a_document_name_that_is_not_utf_8_is_never_interpolated",
+  "tests/test_fsops.py::test_a_name_is_utf_8_by_its_bytes_on_disk_not_by_its_str",
   "tests/docs/test_trail.py::test_a_tracked_document_named_in_bytes_that_are_not_utf_8_is_refused_by_name_not_crashed_on",
+  "tests/memory/test_notes.py::test_a_note_named_in_bytes_that_are_not_utf_8_is_quarantined",
+]
+
+[[mutation]]
+name = "the memory walk hands the index a note whose name it cannot write"
+file = "src/keelline/memory/notes.py"
+before = """            if not utf_8_name(path.name):
+                unreadable.append((path, f"{path}: {NAME_NOT_UTF_8}"))
+                continue
+"""
+after = ""
+reddens = [
+  "tests/memory/test_notes.py::test_a_note_whose_name_is_not_utf_8_is_quarantined_by_its_name",
+  "tests/memory/test_notes.py::test_a_note_named_in_bytes_that_are_not_utf_8_is_quarantined",
 ]
 
 # A trailing `; echo` hides the exit code the harness notification reports, but only after a

@@ -105,8 +105,9 @@ What it does, in order:
    note ranked for the session leads its section whatever its position within a sub-heading.
 
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
-the harness's line or byte caps, or when a file in the store cannot be parsed as a note. The
-same findings are printed on the write path too — they just do not fail it, because `--check`
+the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one
+whose name is not UTF-8 on disk included, since the index names every note by its file's name.
+The same findings are printed on the write path too — they just do not fail it, because `--check`
 is the mode that fails a build.
 
 Exits `2` if `MEMORY.md` is a symlink this store may not follow (the target rule: outside

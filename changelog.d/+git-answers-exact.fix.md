@@ -30,3 +30,9 @@ attribute` runs, `gh`, `git clone`, `pre-commit`, `towncrier`, and the hook wrap
 probes — is read with a replacement character for a byte that is not text. One such byte ended
 `test attribute` as an internal error before it reached a verdict, and made `doctor`'s `wrapper`
 row say only that the check could not run instead of naming the wrapper's refusal.
+
+A memory note whose file name is not UTF-8 on disk no longer ends `keelline memory index` as an
+internal error: it is set aside like a note that will not parse, and reported, because the index
+names every note by its file's name. The same name no longer breaks the store's trust digest,
+which made every session-start bundle and `memory trust` fail on one such committed file; a name
+that is valid UTF-8 hashes as it always did, so no recorded approval changes.
