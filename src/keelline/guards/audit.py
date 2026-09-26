@@ -159,6 +159,28 @@ def _is_double_constructor(func: ast.expr, fake_classes: frozenset[str]) -> bool
     return False
 
 
+def _module_scope_statements(tree: ast.Module) -> list[ast.stmt]:
+    """Every statement that runs at module scope, inside top-level compound statements too.
+
+    A function or class body is never entered: a name bound there is local to it, so it must
+    not make the other tests of the file look like they assert on a double.
+    """
+    found: list[ast.stmt] = []
+    pending: list[ast.AST] = list(tree.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        if isinstance(node, ast.stmt):
+            found.append(node)
+        pending.extend(
+            child
+            for child in ast.iter_child_nodes(node)
+            if isinstance(child, ast.stmt | ast.excepthandler | ast.match_case)
+        )
+    return found
+
+
 class _ModuleFacts:
     """Per-file context: what is imported from the code roots, and what is a double."""
 
@@ -179,8 +201,11 @@ class _ModuleFacts:
                         fake_classes.add(name)
         self.fake_classes = frozenset(fake_classes)
 
+        # Module scope only. A double bound inside one test is that test's own local, which
+        # `_DoubleAssertVisitor` tracks there; walking the whole tree made every other test in
+        # the file that reuses the name look like it asserts on a double.
         self.module_doubles: set[str] = set()
-        for node in ast.walk(tree):
+        for node in _module_scope_statements(tree):
             if (
                 isinstance(node, ast.Assign)
                 and isinstance(node.value, ast.Call)
@@ -238,27 +263,41 @@ class _DoubleAssertVisitor(ast.NodeVisitor):
         self.tainted: set[str] = set()
         self.hits: list[tuple[int, str]] = []
 
+    def _rebind(self, names: list[str], *, double: bool = False, tainted: bool = False) -> None:
+        """A binding replaces whatever the name held, a module-level double included.
+
+        Without the discard, a test that shadows a module-level double with its real subject,
+        or rebinds one of its own doubles to it, had every assertion on that subject flagged.
+        """
+        self.doubles.difference_update(names)
+        self.tainted.difference_update(names)
+        if double:
+            self.doubles.update(names)
+        elif tainted:
+            self.tainted.update(names)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         value = node.value.value if isinstance(node.value, ast.Await) else node.value
         targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        # Classified before the rebinding, so `client = client.session` keeps `client` a double.
         if isinstance(value, ast.Call):
-            if _is_double_constructor(value.func, self.facts.fake_classes):
-                self.doubles.update(targets)
-            elif self._invokes_double(value):
-                self.tainted.update(targets)
-        elif isinstance(value, ast.Attribute | ast.Name) and _root_name(value) in self.doubles:
-            self.doubles.update(targets)
+            double = _is_double_constructor(value.func, self.facts.fake_classes)
+            self._rebind(targets, double=double, tainted=not double and self._invokes_double(value))
+        else:
+            aliases_a_double = (
+                isinstance(value, ast.Attribute | ast.Name) and _root_name(value) in self.doubles
+            )
+            self._rebind(targets, double=aliases_a_double)
         self.generic_visit(node)
 
     def visit_With(self, node: ast.With) -> None:
         for item in node.items:
             ctx = item.context_expr
-            if (
-                isinstance(ctx, ast.Call)
-                and isinstance(item.optional_vars, ast.Name)
-                and _is_double_constructor(ctx.func, self.facts.fake_classes)
-            ):
-                self.doubles.add(item.optional_vars.id)
+            if isinstance(item.optional_vars, ast.Name):
+                double = isinstance(ctx, ast.Call) and _is_double_constructor(
+                    ctx.func, self.facts.fake_classes
+                )
+                self._rebind([item.optional_vars.id], double=double)
         self.generic_visit(node)
 
     visit_AsyncWith = visit_With  # type: ignore[assignment]
@@ -425,7 +464,10 @@ _KNOWN_BAD = '''
 from unittest.mock import MagicMock
 
 from widget.boot import boot_demo
+from widget.clock import FakeClock
 from widget.fixtures import build_fixtures
+
+CLOCK = FakeClock()
 
 
 def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
@@ -439,13 +481,29 @@ def test_stub_returns_configured_value() -> None:
     client = MagicMock()
     client.fetch.return_value = {"ok": True}
     assert client.fetch() == {"ok": True}
+
+
+def test_module_level_clock_reads_its_configured_time() -> None:
+    """Asserts on a double bound at module scope, which every test in the file can see."""
+    assert CLOCK.now() == 5
 '''
+
+# Every (test, shape) the known-bad sample must produce. Checked per test rather than per
+# shape: one test producing a shape would otherwise hide the loss of every other way to it.
+_KNOWN_BAD_EXPECTED = frozenset(
+    {
+        ("test_boot_demo_builds_fixtures_in_resolved_locale", "names-but-never-invokes"),
+        ("test_stub_returns_configured_value", "assert-on-double"),
+        ("test_module_level_clock_reads_its_configured_time", "assert-on-double"),
+    }
+)
 
 _KNOWN_GOOD = '''
 from unittest.mock import MagicMock
 
 from widget.boot import boot_demo
 from widget.fixtures import build_fixtures
+from widget.send import RecordingSender
 
 
 def test_boot_demo_builds_fixtures_in_resolved_locale() -> None:
@@ -460,10 +518,22 @@ def test_client_receipt_carries_the_transport_response() -> None:
     client = MagicMock()
     client.fetch.return_value = {"ok": True}
     assert boot_demo(client=client) == "booted"
+
+
+def test_recording_sender_keeps_what_it_was_given() -> None:
+    sender = RecordingSender()
+    boot_demo(sender=sender)
+    assert sender.sent == ["booted"]
+
+
+def test_the_senders_receipt_carries_the_message_id(sender) -> None:
+    """`sender` is a fixture here; the double a sibling test bound under that name is not it."""
+    receipt = sender.send("booted")
+    assert receipt.message_id == "1"
 '''
 
-# The corpora above import from `widget.boot` and `widget.fixtures`, so the self-test grades
-# the scanner with exactly this root set. It is the module's own fixture, not a repository's
+# The corpora above import only from modules under `widget`, so the self-test grades the
+# scanner with exactly this root set. It is the module's own fixture, not a repository's
 # configuration, which is why it is a constant here and not a parameter.
 _SELF_TEST_ROOTS = frozenset({"widget"})
 
@@ -482,10 +552,9 @@ def run_self_test() -> list[str]:
         bad.write_text(_KNOWN_BAD, encoding="utf-8")
         good.write_text(_KNOWN_GOOD, encoding="utf-8")
 
-        bad_shapes = {f.shape for f in scan_file(bad, SHAPES, _SELF_TEST_ROOTS)}
-        for shape in SHAPES:
-            if shape not in bad_shapes:
-                problems.append(f"known-bad sample was NOT flagged for {shape!r}")
+        flagged = {(f.test, f.shape) for f in scan_file(bad, SHAPES, _SELF_TEST_ROOTS)}
+        for test, shape in sorted(_KNOWN_BAD_EXPECTED - flagged):
+            problems.append(f"known-bad sample was NOT flagged: {test} for {shape!r}")
 
         for finding in scan_file(good, SHAPES, _SELF_TEST_ROOTS):
             problems.append(f"known-good sample was flagged: {finding.render()}")

@@ -468,6 +468,15 @@ configuration has no per-command switch to turn it off with. Gating belongs to a
 triaged them to zero, and that lane has not shipped. Refuses (`2`) if its own self-test no
 longer discriminates. **Writes** nothing.
 
+A double, for the first shape, is a `Mock`-family object, a `patch(...)`, or an instance of a
+class whose name starts `Fake`, `Stub`, `Dummy`, `Spy`, `Recording` or `Scripted`, reaching the
+test in one of three ways: bound in the test, by assignment or `with ... as`; bound at module
+scope, inside a top-level compound statement too; or as a parameter named `mock_*`, `stub_*`,
+`fake_*`, `dummy_*`, `*_mock`, `*_stub` or `*_fake`, which is how a fixture delivers one. A name
+assigned from a double's attribute is one as well. A binding replaces what the name held: from
+the point a test binds it to anything else it is not a double, and a double another test binds
+is that test's own.
+
 The `--json` object carries `summary` (the line the command would have printed), `files` (how
 many test files were scanned), `import_roots` (the
 top-level names treated as the code under test) and `findings`, sorted by path then line. Each

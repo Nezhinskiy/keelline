@@ -622,6 +622,104 @@ reddens = [
   "tests/guards/test_audit.py::test_flags_a_test_that_names_an_entry_point_it_never_invokes",
 ]
 
+# Module-level doubles collected by walking the whole file: a double bound inside one test made
+# the name a double in every sibling. The sibling in the named test takes the name as a fixture,
+# because a sibling that binds it replaces what it held either way, and against that shape this
+# mutation survived. Measured here: it also reddens the self-test, whose known-good corpus
+# carries the shape, and the CLI test, because the command refuses on a self-test problem.
+[[mutation]]
+name = "a double bound in one test is a double in every test of the file"
+file = "src/keelline/guards/audit.py"
+before = '        for node in _module_scope_statements(tree):'
+after = '        for node in ast.walk(tree):'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_bound_in_one_test_does_not_leak_into_its_siblings",
+]
+
+# No module scope at all. Measured here: it reddens both module-level tests, the self-test
+# (its known-bad corpus asserts on a module-level double, and the per-test expectations are
+# what make that loss visible: graded per shape, a second assert-on-double test hid it) and
+# the CLI test.
+[[mutation]]
+name = "a module-level double is not a double"
+file = "src/keelline/guards/audit.py"
+before = '    pending: list[ast.AST] = list(tree.body)'
+after = '    pending: list[ast.AST] = []'
+reddens = [
+  "tests/guards/test_audit.py::test_a_module_level_double_is_a_double_in_every_test",
+]
+
+# The obvious fix for the leak, narrowing to the top-level statements, drops a global bound
+# under a top-level `try` or `if`. Measured here: it reddens the one test below and nothing else.
+[[mutation]]
+name = "a double bound under a top-level compound statement is not module-level"
+file = "src/keelline/guards/audit.py"
+before = '            if isinstance(child, ast.stmt | ast.excepthandler | ast.match_case)'
+after = '            if False'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_bound_under_a_top_level_compound_statement_is_module_level",
+]
+
+# A shape with no known-bad test expected to produce it is graded by nothing, and the self-test
+# passes over it. Measured here: deleting `names-but-never-invokes`'s only expectation leaves the
+# self-test green and reddens the test below alone.
+[[mutation]]
+name = "a shape loses its only known-bad expectation"
+file = "src/keelline/guards/audit.py"
+before = '        ("test_boot_demo_builds_fixtures_in_resolved_locale", "names-but-never-invokes"),'
+after = ''
+reddens = [
+  "tests/guards/test_audit.py::test_every_shape_has_a_known_bad_test_the_self_test_expects_it_from",
+]
+
+# The visitor only ever added names to its set of doubles, so a test that bound a name to its
+# real subject after it had been a double, its own or the module's, had every assertion on that
+# subject flagged. Measured here: the three cases that rebind a double redden, the derived-value
+# case does not.
+[[mutation]]
+name = "rebinding a double's name to the real subject keeps it a double"
+file = "src/keelline/guards/audit.py"
+before = '        self.doubles.difference_update(names)'
+after = '        pass'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double shadowed by the test]",
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a double rebound to the real subject]",
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double rebound by `with ... as`]",
+]
+
+# The same for a value derived from a double. Measured here: it reddens that case alone.
+[[mutation]]
+name = "rebinding a double-derived value to the subject's keeps it derived"
+file = "src/keelline/guards/audit.py"
+before = '        self.tainted.difference_update(names)'
+after = '        pass'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a value from a double rebound to one from the subject]",
+]
+
+# `with ... as` restored to its old shape, adding a double and never replacing one. Measured
+# here: it reddens the `with` case alone.
+[[mutation]]
+name = "a with-binding only ever adds a double"
+file = "src/keelline/guards/audit.py"
+before = '                self._rebind([item.optional_vars.id], double=double)'
+after = '                self.doubles.update([item.optional_vars.id] if double else [])'
+reddens = [
+  "tests/guards/test_audit.py::test_a_binding_replaces_what_the_name_held[a module-level double rebound by `with ... as`]",
+]
+
+# Discarding the targets before the value is classified reads `client = client.session` as a
+# binding to something that is not a double. The `before` is the comment that states the order,
+# replaced by the discard it warns against. Measured here: it reddens the test below alone.
+[[mutation]]
+name = "the targets are discarded before the value is classified"
+file = "src/keelline/guards/audit.py"
+before = '        # Classified before the rebinding, so `client = client.session` keeps `client` a double.'
+after = '        self.doubles.difference_update(targets)'
+reddens = [
+  "tests/guards/test_audit.py::test_a_double_rebound_to_its_own_attribute_is_still_a_double",
+]
+
 # The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
 # than a wider net. The canonical harness attribution is a `Generated with` footer, a blank
 # line, then a `Co-Authored-By:` trailer; judging the final paragraph alone removed the trailer
