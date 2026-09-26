@@ -8317,3 +8317,96 @@ after = '          python3 -m keelline gate --custom --root "$ROOT" --base "$BAS
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
+
+# The `env:` reader used to stop at the first line it could not parse, so a key written after a
+# comment was in no equality and in no case's environment. `BASH_ENV` is sourced by the step's
+# non-interactive bash before its script: pull-request shell code in the process that decides
+# the verdict.
+[[mutation]]
+name = "a key after a comment in the judging step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # `continue-on-error` here could only turn a refusal or an enforced gate's failure green.
+        env:
+          PYTHONPATH: keelline/src
+          # where the step's shell reads its start-up file
+          BASH_ENV: project/.ci-env
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# And after a blank line. `-P` does not turn off the user site directory, so a `.pth` file under
+# `PYTHONUSERBASE` inside the checkout runs in Keelline's own process.
+[[mutation]]
+name = "a key after a blank line in the custom step's env goes unread"
+file = ".github/workflows/check.yml"
+before = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+"""
+after = """
+        # each line an oracle entry names is found once in this file.
+        env:
+          PYTHONPATH: keelline/src
+
+          PYTHONUSERBASE: project/.local
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# A step spelled `- run:` has no `- name:` line, and the step walk read it as more lines of the
+# step above: eight steps counted over nine, and a script the pull request supplied running
+# before the judging step, unseen.
+[[mutation]]
+name = "a step with no name hides inside the step above it"
+file = ".github/workflows/check.yml"
+before = """
+      - name: Keelline runs at all
+"""
+after = """
+      - run: bash project/setup.sh
+      - name: Keelline runs at all
+"""
+reddens = [
+  "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
+]
+
+# The search for a step's script walked past the step into the next one, so a step whose script
+# is not a `run: |` block handed back its neighbour's, and a case about one step ran another.
+[[mutation]]
+name = "a step's script is searched for past the step"
+file = "tests/test_fixtures.py"
+before = '    run = next(i for i in range(start, end) if lines[i].strip() == "run: |")'
+after = '    run = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")'
+reddens = [
+  "tests/test_fixtures.py::test_a_step_s_script_is_never_read_from_the_step_after_it",
+]
+
+# `-c` with its flags joined, `-Pc`, is the same program on the command line, and it slipped a
+# pattern written for `-c` alone.
+[[mutation]]
+name = "a step runs a program with joined short flags"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: python3 -Pc 'import keelline'"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]
+
+# A program on standard input puts the working directory first on `sys.path` just as `-c` does.
+[[mutation]]
+name = "a step runs a program from standard input"
+file = ".github/workflows/check.yml"
+before = "        run: python3 -m keelline --version"
+after = "        run: echo 'import keelline' | python3 -"
+reddens = [
+  "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
+]

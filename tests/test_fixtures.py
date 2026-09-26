@@ -734,12 +734,30 @@ def test_an_expression_is_not_mistaken_for_flow_syntax(tmp_path: Path) -> None:
 
 
 def step_script(workflow: Path, step_name: str) -> str:
-    """The `run: |` block of the named step, dedented, straight out of the shipped file."""
+    """The `run: |` block of the named step, dedented, straight out of the shipped file.
+
+    Looked for inside the named step only: up to the next line at the step's own dash, or
+    outside it. A step whose script is spelled another way (`run: >`, `run: |-`, a one-liner)
+    would otherwise hand back the NEXT step's script under this step's name, and a case about
+    the judging step would run the custom step's shell and pass. The body's indentation is its
+    first non-blank line's, as YAML reads a block scalar, so a leading blank line cannot widen
+    it to the rest of the file.
+    """
     lines = workflow.read_text(encoding="utf-8").splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {step_name}")
-    run = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")
+    dash = len(lines[start]) - len(lines[start].lstrip())
+    end = next(
+        (
+            i
+            for i in range(start + 1, len(lines))
+            if lines[i].strip() and len(lines[i]) - len(lines[i].lstrip()) <= dash
+        ),
+        len(lines),
+    )
+    run = next(i for i in range(start, end) if lines[i].strip() == "run: |")
     body = lines[run + 1 :]
-    indent = len(body[0]) - len(body[0].lstrip())
+    first = next(line for line in body if line.strip())
+    indent = len(first) - len(first.lstrip())
     collected: list[str] = []
     for line in body:
         if line.strip() and len(line) - len(line.lstrip()) < indent:
@@ -749,6 +767,28 @@ def step_script(workflow: Path, step_name: str) -> str:
     # `env:`, and one spliced into `run:` would be a command injection the test would run.
     assert "${{" not in "\n".join(collected), collected
     return "\n".join(collected) + "\n"
+
+
+def test_a_step_s_script_is_never_read_from_the_step_after_it(tmp_path: Path) -> None:
+    # The cases that run `check.yml`'s steps name a step and get its script. A step whose script
+    # is not a `run: |` block has none to give, and the search used to walk on into the next
+    # step and return that one's, so a case about the first step ran the second. Mutation
+    # (declared): the search runs to the end of the file again.
+    workflow = tmp_path / "two.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    steps:\n"
+        "      - name: first\n"
+        "        run: echo first\n"
+        "      - name: second\n"
+        "        run: |\n"
+        "          echo second\n",
+        encoding="utf-8",
+    )
+    assert step_script(workflow, "second") == "echo second\n"
+    with pytest.raises(StopIteration):
+        step_script(workflow, "first")
 
 
 def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:

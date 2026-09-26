@@ -27,7 +27,14 @@ import keelline
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import clone, commit
 from tests.gitfixture import git, needs_git
-from tests.test_fixtures import CHECK_WORKFLOW, ROOT, needs_bash, needs_workflow, step_script
+from tests.test_fixtures import (
+    CHECK_WORKFLOW,
+    ROOT,
+    needs_bash,
+    needs_workflow,
+    run_blocks,
+    step_script,
+)
 
 JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
@@ -50,18 +57,28 @@ OVER_BUDGET = "".join("word\n" for _ in range(400))
 # carry a trailing `# vN`, which a reader anchored at `\S+$` refused, and so never counted
 # `setup-python`: the walk's count is only a claim about the job if every spelling is read.
 _STEP = re.compile(r"^      - (?:name: (?P<name>.+)|uses: (?P<uses>\S+)(?:\s+#.*)?)$")
-_JOB = re.compile(r"^  ([a-z-]+):$", re.MULTILINE)
-_IF = re.compile(r"^        if: (?P<condition>.+)$")
-# A key of a step (past its `- name:` line), of the job, or of the workflow itself; a comment
-# is not one.
-_STEP_KEY = re.compile(r"^        ([a-z-]+):", re.MULTILINE)
-_JOB_KEY = re.compile(r"^    ([a-z-]+):", re.MULTILINE)
-_TOP_KEY = re.compile(r"^([a-z-]+):", re.MULTILINE)
+# A plain mapping key at the start of a line; `_keys` says what a line that is not one means.
+_KEY_LINE = re.compile(r"^ *(?P<key>[a-z-]+):(?: |$)")
 _ENV_ENTRY = re.compile(r"^          (?P<key>[A-Z_]+): (?P<value>.+)$")
-# Any interpreter started with `-c`, whatever flags come between: a program handed over on the
-# command line runs with its working directory first on `sys.path` unless `-P` or `-I` says
-# otherwise, and this workflow has no step that needs one.
-_PYTHON_C = re.compile(r"\bpython3?\b[^\n]*\s-c\b")
+# Every interpreter the job starts, and what follows it on the line. Only two invocations are
+# Keelline's, and a whitelist rather than a list of bad spellings: `-c` with flags before it,
+# `-Pc`, a program on standard input (`python3 -`, a heredoc, a pipe) and a script path are each
+# a program the working directory can reach, and a pattern for each is a pattern for the ones
+# thought of.
+_PYTHON = re.compile(r"\bpython[\d.]*\b(?P<rest>[^\n]*)")
+KEELLINE_INVOCATIONS = (" -m keelline --version", " -P -m keelline gate ")
+# Each step's keys past its dash line, in order: what may reach each step is its keys, so a key
+# added to any step — `if:`, `continue-on-error:`, `shell:`, `working-directory:` — reddens.
+STEP_KEYS = [
+    ("The caller's repository", ["uses", "with"]),
+    ("Keelline, at this workflow's own commit", ["uses", "with"]),
+    ("The checkout is the commit this workflow file is at", ["env", "run"]),
+    ("actions/setup-python", ["with"]),
+    (PROOF, ["env", "run"]),
+    (BASE_STEP, ["id", "working-directory", "env", "run"]),
+    (JUDGE, ["env", "run"]),
+    (CUSTOM, ["env", "run"]),
+]
 
 
 def _jobs_text() -> str:
@@ -70,33 +87,63 @@ def _jobs_text() -> str:
     return text[text.index("\njobs:\n") :]
 
 
-def _steps() -> list[tuple[str, bool, str | None]]:
-    """`(name, may it fail, its if: condition)` for each step of the job, in order."""
-    steps: list[tuple[str, bool, str | None]] = []
-    for line in _jobs_text().splitlines():
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _meaningful(line: str) -> bool:
+    """Neither blank nor a comment: a line YAML reads as content."""
+    stripped = line.strip()
+    return bool(stripped) and not stripped.startswith("#")
+
+
+def _keys(text: str, indent: int) -> list[str]:
+    """Every key at exactly `indent` spaces in `text`, in order.
+
+    A line at that indentation that is content and not a plain key — a quoted key, a flow
+    mapping, a list item — fails here instead of being skipped: a line reader that passes over
+    what it cannot read reports clean over exactly that line.
+    """
+    keys: list[str] = []
+    for line in text.splitlines():
+        if not _meaningful(line) or _indent(line) != indent:
+            continue
+        match = _KEY_LINE.match(line)
+        assert match is not None, f"not a plain key at {indent} spaces: {line!r}"
+        keys.append(match.group("key"))
+    return keys
+
+
+def _steps() -> list[tuple[str, str]]:
+    """`(name, text)` for each step of the job, in order; a `uses:` step with no name is named
+    by its action, without the ref.
+
+    Every line from `steps:` to the end of the file belongs to a step, and a content line that
+    is neither a step's dash line nor indented past it fails here: a step spelled `- run:` or
+    `- id:` would otherwise be read as lines of the step above it, and the walk would count
+    eight steps over nine.
+    """
+    text = _jobs_text()
+    marker = "\n    steps:\n"
+    steps: list[tuple[str, list[str]]] = []
+    for line in text[text.index(marker) + len(marker) :].splitlines():
         match = _STEP.match(line)
-        if match:
-            steps.append((match.group("name") or match.group("uses"), False, None))
+        if match is not None:
+            name = match.group("name") or match.group("uses").split("@")[0]
+            steps.append((name, [line]))
             continue
-        if not steps:
+        if not _meaningful(line):
+            if steps:
+                steps[-1][1].append(line)
             continue
-        name, may_fail, condition = steps[-1]
-        if line == "        continue-on-error: true":
-            steps[-1] = (name, True, condition)
-        elif (guard := _IF.match(line)) is not None:
-            steps[-1] = (name, may_fail, guard.group("condition"))
-    return steps
+        assert steps and _indent(line) >= 8, f"a line no step owns: {line!r}"
+        steps[-1][1].append(line)
+    return [(name, "\n".join(lines) + "\n") for name, lines in steps]
 
 
 def _step_text(name: str) -> str:
-    """Every line of the named step, from its `- name:` line to the next step's."""
-    lines = _jobs_text().splitlines()
-    start = lines.index(f"      - name: {name}")
-    end = next(
-        (i for i in range(start + 1, len(lines)) if _STEP.match(lines[i])),
-        len(lines),
-    )
-    return "\n".join(lines[start:end]) + "\n"
+    """Every line of the named step, from its dash line to the next step's."""
+    return dict(_steps())[name]
 
 
 def _clone(tmp_path: Path, base: str = BASE) -> tuple[Path, str]:
@@ -115,16 +162,27 @@ def _commit(workspace: Path, path: str, text: str) -> None:
 
 
 def _step_env(step: str) -> dict[str, str]:
-    """The named step's `env:` block, as written: each key and its value's text."""
+    """The named step's `env:` block, as written: each key and its value's text.
+
+    The block is every line indented past the `env:` key, up to the next line that is not, as
+    YAML reads it; and every one of those lines must be an entry. A reader that stopped at the
+    first line it could not parse — a comment, a blank line, a key with a digit in it — left
+    every key after that line out of the equality that holds the block, and out of the
+    environment the cases run the step under.
+    """
     lines = _step_text(step).splitlines()
     start = lines.index("        env:") + 1
-    env: dict[str, str] = {}
+    owned: list[str] = []
     for line in lines[start:]:
-        match = _ENV_ENTRY.match(line)
-        if match is None:
+        if line.strip() and _indent(line) <= 8:
             break
-        env[match.group("key")] = match.group("value")
-    return env
+        owned.append(line)
+    assert [line for line in owned if not _ENV_ENTRY.match(line)] == [], owned
+    return {
+        match.group("key"): match.group("value")
+        for match in (_ENV_ENTRY.match(line) for line in owned)
+        if match is not None
+    }
 
 
 def _judge(workspace: Path, base_sha: str, only: str, step: str = JUDGE) -> tuple[int, str, str]:
@@ -184,20 +242,20 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # `keelline gate` already exits 0 for an advisory gate's findings, so no step here needs
     # either. Mutations (declared): the judging step gains `continue-on-error: true`; the custom
     # step gains `if: always()`, which would run the repository's commands after a refusal.
-    assert _JOB.findall(_jobs_text()) == ["gates"], _JOB.findall(_jobs_text())
+    assert _keys(_jobs_text(), 2) == ["gates"], _keys(_jobs_text(), 2)
     # And the job itself carries neither: an `if:` on `gates` skips it, and a skipped job is a
     # required check the platform reports as passing. So the job's keys are held whole, which
     # also keeps a job-level `env:` from reaching every step. Mutation (declared): the job gains
     # an `if:`.
-    assert _JOB_KEY.findall(_jobs_text()) == ["runs-on", "timeout-minutes", "defaults", "steps"]
+    assert _keys(_jobs_text(), 4) == ["runs-on", "timeout-minutes", "defaults", "steps"]
     steps = _steps()
-    names = [name for name, _, _ in steps]
-    # The walk's count before anything is read off it: a reader that stopped matching one
-    # spelling would drop a step, and every `index` below would still find the others.
-    assert len(steps) == 8, steps
-    assert any(name.startswith("actions/setup-python@") for name in names), names
-    assert [(name, may_fail) for name, may_fail, _ in steps if may_fail] == [], steps
-    assert [(name, condition) for name, _, condition in steps if condition] == [], steps
+    names = [name for name, _ in steps]
+    # Every step's keys, whole, in order: a step that may fail or may be skipped carries a key
+    # the list does not, and a step spelled `- run:` with no name is a line no step owns, which
+    # the walk refuses rather than fold into the step above it. Mutation (declared): such a step
+    # before the proof step.
+    found = [(name, _keys(text, 8)) for name, text in steps]
+    assert found == STEP_KEYS, found
     # A Keelline that cannot run fails under its own name before anything reads as a finding,
     # the base is resolved before either gate step reads it, and the repository's own commands
     # run last.
@@ -216,9 +274,22 @@ def test_both_gate_steps_start_python_without_the_working_directory_on_its_path(
     # the judging step.
     for step in (JUDGE, CUSTOM):
         assert "python3 -P -m keelline gate" in step_script(CHECK_WORKFLOW, step), step
-    # Any spelling: `python3 -P -c` and `python -I -c` are still a program on the command line.
-    # Mutation (declared): the proof step reads the version with `python3 -P -c`.
-    assert _PYTHON_C.findall(_jobs_text()) == []
+    # And no interpreter the job starts runs anything but Keelline, in any spelling: every
+    # invocation in every script, comments aside, is one of Keelline's two. Mutations (declared):
+    # the proof step runs `python3 -P -c`, `python3 -Pc`, or a program on standard input.
+    invocations = [
+        match.group("rest")
+        for block in run_blocks(CHECK_WORKFLOW)
+        for line in block.splitlines()
+        if _meaningful(line)
+        for match in _PYTHON.finditer(line)
+    ]
+    assert len(invocations) == 3, invocations
+    assert [
+        rest
+        for rest in invocations
+        if rest != KEELLINE_INVOCATIONS[0] and not rest.startswith(KEELLINE_INVOCATIONS[1])
+    ] == [], invocations
 
 
 @needs_workflow
@@ -332,10 +403,10 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
     request wrote, which the step walk above holds.
     """
     text = CHECK_WORKFLOW.read_text(encoding="utf-8")
-    assert _TOP_KEY.findall(text) == ["name", "on", "permissions", "jobs"], _TOP_KEY.findall(text)
+    assert _keys(text, 0) == ["name", "on", "permissions", "jobs"], _keys(text, 0)
     assert "    defaults:\n      run:\n        shell: bash\n    steps:\n" in _jobs_text()
     for step in (JUDGE, CUSTOM):
-        assert _STEP_KEY.findall(_step_text(step)) == ["env", "run"], step
+        assert _keys(_step_text(step), 8) == ["env", "run"], step
         assert _step_env(step) == {
             "PYTHONPATH": "keelline/src",
             "ROOT": "${{ steps.base.outputs.root }}",
@@ -343,13 +414,9 @@ def test_the_verdict_s_process_gets_only_the_environment_its_step_names() -> Non
             "WORKFLOW_SHA": "${{ job.workflow_sha }}",
             "ONLY": "${{ inputs.only }}",
         }, step
-    lines = _jobs_text().splitlines()
-    setup = next(i for i, line in enumerate(lines) if "- uses: actions/setup-python@" in line)
-    assert lines[setup + 1 : setup + 3] == [
-        "        with:",
-        "          python-version: ${{ inputs.python-version }}",
-    ], lines[setup : setup + 4]
-    assert _STEP.match(lines[setup + 3]), lines[setup + 3]
+    setup = _step_text("actions/setup-python")
+    assert _keys(setup, 10) == ["python-version"], setup
+    assert "          python-version: ${{ inputs.python-version }}\n" in setup, setup
 
 
 @needs_git
