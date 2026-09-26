@@ -24,7 +24,7 @@ from keelline.config.owned import OwnedKeyError
 from keelline.config.schema import BUILTIN_GATES, Config
 from keelline.errors import Failure, Refusal
 from keelline.project.templates import CONFIG_ARTIFACT
-from keelline.scaffold import Manifest, digest
+from keelline.scaffold import Manifest, ManifestError, digest
 from tests.gitfixture import git, needs_git
 from tests.project.repos import repository
 
@@ -325,6 +325,22 @@ def test_an_uneditable_document_s_remedy_names_the_list_as_it_stands(tmp_path: P
     assert '`state = "adopting"`' in message
     assert '`enforced = ["docs"]`' in message
     assert "config" not in message
+
+
+def test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs(tmp_path: Path) -> None:
+    # The write re-stamps the manifest's record of `keelline.toml`, so a manifest that does not
+    # parse refuses the write; found only there, it was found after every gate, a custom
+    # command included, had run. Mutation (declared): the pre-check's `Manifest.read` made
+    # `pass` -> the marker gate runs and the marker appears.
+    root, base = _project(tmp_path)
+    _with_marker_gate(root)
+    manifest = root / ".keelline" / "manifest.json"
+    manifest.write_text("{not json", encoding="utf-8")
+    before = _document(root)
+    with pytest.raises(ManifestError):
+        promote(root, _config(root, tmp_path), [], base=base)
+    assert not (root / MARKER).exists()
+    assert _document(root) == before
 
 
 def test_a_custom_gate_runs_its_command_when_promoted(tmp_path: Path) -> None:

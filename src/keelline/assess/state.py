@@ -13,9 +13,10 @@ run. The state never moves back: there is no demotion, and loosening is an owner
 `rewrite_owned` and nothing else, so the manifest's record of an untouched document is
 re-stamped with it and `uninstall` still takes the file back. Neither asks the ignore guard:
 `keelline.toml` is a fixed name, which that guard exempts so that a person may keep it out of
-git. Everything that could refuse the write — a name, a gate already enforcing, nothing left to
-promote, a document the editor cannot rewrite — is checked before the first gate runs, because
-a custom gate is a command and running it is not free.
+git. Every refusal of the write that can be known in advance — a name, a gate already
+enforcing, nothing left to promote, a document the editor cannot rewrite, a manifest the
+re-stamp cannot read — comes before the first gate runs, because a custom gate is a command and
+running it is not free. What is left is the disk refusing the write itself.
 
 **What prints.** Gate names, which the loader holds to a grammar, counts and fixed text; never a
 plan's path or text.
@@ -35,6 +36,7 @@ from keelline.config.schema import CONFIG_CHECK, Config
 from keelline.docs.api import lint
 from keelline.errors import Failure, Refusal
 from keelline.project.api import rewrite_owned
+from keelline.scaffold import Manifest
 
 NOT_AN_ADOPTION_PLAN = (
     "the adoption plan must be a markdown file directly under [paths] plans, with keelline as "
@@ -128,6 +130,7 @@ def promote(root: Path, config: Config, names: Sequence[str], *, base: str) -> T
         rewrite_owned(root, {("keelline", "state"): "installed", ("keelline", "enforced"): ()})
         return Transition(state, "installed")
     _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
+    Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
     results = run_gates(GateContext(root, config, base), wanted)
     failing = {r.name: len(r.findings) for r in results if r.answered and r.failing}
     unanswered = tuple(r.name for r in results if not r.answered)

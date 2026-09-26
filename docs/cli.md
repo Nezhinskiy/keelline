@@ -875,9 +875,11 @@ failed. With names, they pass together or nothing is written, and a named gate t
 enforces is refused rather than skipped. Once every configured gate enforces, the state becomes
 `installed` and `enforced` is emptied: under `installed` an empty list means every configured
 gate, so a gate the project adds later enforces from its first run. An `adopting` project whose
-every configured gate already enforces — one that removed the last gate it had not promoted —
-is moved to `installed` with no gate run. The state never moves back. Everything that could
-refuse the write is checked before the first gate runs.
+every configured gate already enforces — one that removed the last gate it had not promoted — is
+moved to `installed` with no gate run. The state never moves back. A name, a gate already
+enforcing, nothing left to promote, a `keelline.toml` the editor cannot rewrite in place and a
+manifest it cannot read are each refused before the first gate runs; the refusal of the editor
+names the two keys as they stand, in the one-line shape it rewrites.
 
 `--base` is what `plan` and `commit` judge a range against, as for `keelline gate`: a 40-hex
 commit or a `refs/…` name, `refs/remotes/origin/<project.base_branch>` by default. The reusable

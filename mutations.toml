@@ -8924,3 +8924,14 @@ after = '    return Result("; ".join(parts), data)'
 reddens = [
   "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
 ]
+
+# The write re-stamps the manifest's record, so a manifest it cannot read refuses it; read
+# before the gates, that refusal comes before any custom command runs.
+[[mutation]]
+name = "promote runs the gates before it reads the manifest the write re-stamps"
+file = "src/keelline/assess/state.py"
+before = "    Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here"
+after = "    pass"
+reddens = [
+  "tests/assess/test_state.py::test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs",
+]
