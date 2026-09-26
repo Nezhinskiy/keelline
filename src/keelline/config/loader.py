@@ -161,6 +161,19 @@ def _merged(raw: dict[str, Any], defaults: dict[str, Any], name: str) -> dict[st
     return {**defaults.get(name, {}), **_table(raw, name)}
 
 
+def _gate_branch(ci: dict[str, Any], project: Project) -> dict[str, Any]:
+    """`[ci]` with `gate_branch` taken from `[project] base_branch` when the file leaves it out.
+
+    The rendered workflow runs only for pull requests into `gate_branch`, and `assess`, `plan
+    check` and `adopt promote` judge against `base_branch`. A fixed default of `main` made a
+    hand-written file that named `develop` as its base, and said nothing about `[ci]`, render a
+    workflow that never ran for a pull request into `develop` — local runs and CI judging two
+    different branches, with nothing printed. So the preset carries no `gate_branch`: left out,
+    it is the base branch, which the loader has already held to the branch grammar.
+    """
+    return {"gate_branch": project.base_branch, **ci}
+
+
 @cache
 def _schema_types(cls: type[Any]) -> dict[str, Any]:
     """Real type objects for a schema class, resolved once per process.
@@ -513,7 +526,7 @@ def loads(
     _enum("memory", "mode", memory.mode, MEMORY_MODES)
     ledger = _build(Ledger, "ledger", _merged(raw, defaults, "ledger"))
     artifacts = _build(Artifacts, "artifacts", _merged(raw, defaults, "artifacts"))
-    ci = _build(Ci, "ci", _merged(raw, defaults, "ci"))
+    ci = _build(Ci, "ci", _gate_branch(_merged(raw, defaults, "ci"), project))
     _enum("ci", "mode", ci.mode, CI_MODES)
     gates = _gates(raw, defaults)
     commit_messages = _build(
@@ -560,16 +573,17 @@ def preset_defaults(project: str, *, preset: str = "recommended") -> Config:
     raw = load_preset(preset)
     defaults = dict(raw.get("defaults", {}))
     head = {**defaults.get("keelline", {}), "preset": preset, "version": __version__}
+    project_config = _build(Project, "project", {**defaults.get("project", {}), "name": project})
     return Config(
         keelline=_build(Keelline, "keelline", head),
-        project=_build(Project, "project", {**defaults.get("project", {}), "name": project}),
+        project=project_config,
         paths=_build(Paths, "paths", defaults.get("paths", {})),
         memory=_build(Memory, "memory", defaults.get("memory", {})),
         budgets=Budgets(preset=dict(raw.get("budgets", {}))),
         native_caps=_build(NativeCaps, "native_caps", dict(raw.get("native_caps", {}))),
         ledger=_build(Ledger, "ledger", defaults.get("ledger", {})),
         artifacts=_build(Artifacts, "artifacts", defaults.get("artifacts", {})),
-        ci=_build(Ci, "ci", defaults.get("ci", {})),
+        ci=_build(Ci, "ci", _gate_branch(dict(defaults.get("ci", {})), project_config)),
         gates=_gates({}, defaults),
         commit_messages=_build(
             CommitMessages, "commit_messages", defaults.get("commit_messages", {})

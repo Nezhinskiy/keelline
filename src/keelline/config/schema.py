@@ -48,7 +48,7 @@ PATH_VALUE = re.compile(
 SECTION_NAME = re.compile(r"^[a-z][a-z_]*\Z")
 # The one grammar for a branch name Keelline reads or writes: `[project] base_branch` and
 # `release_branch`, which the loader holds to it, `[ci] gate_branch`, which a rendered workflow
-# is withheld over, `--base-branch`, and a detected `origin/HEAD`. Each is repository-authored or
+# is withheld over, `--base-branch`, and a detected base branch. Each is repository-authored or
 # typed, and each reaches a git ref, an output line or a YAML file GitHub executes, where quoting
 # alone would still admit a newline. Inside that character set it refuses what git's own
 # branch-name rules refuse (`git check-ref-format --branch`), so nothing names a branch no

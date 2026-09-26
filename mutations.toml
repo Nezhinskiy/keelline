@@ -7671,8 +7671,8 @@ reddens = ["tests/project/test_planning_seam.py::test_replanning_before_predicti
 [[mutation]]
 name = "origin/HEAD reaches the card unbounded"
 file = "src/keelline/project/detect.py"
-before = "    if not BRANCH_NAME.match(branch):"
-after = "    if not branch:"
+before = "        if BRANCH_NAME.match(head):"
+after = "        if head:"
 reddens = [
   "tests/project/test_detect.py::test_a_remote_head_outside_the_branch_grammar_is_reported_as_the_default",
 ]
@@ -9288,14 +9288,18 @@ reddens = [
   "tests/project/test_questions.py::test_no_file_a_gate_reads_at_its_committed_path_is_offered_as_local",
 ]
 
-# A `keelline.toml` this run creates gates the branch it names, so the caller it renders runs for
-# the repository's own pull requests.
+# A `keelline.toml` that leaves `[ci] gate_branch` out gates its own base branch, whether this run
+# created it or a person wrote it, so the caller it renders runs for the repository's own pull
+# requests.
 [[mutation]]
-name = "a fresh repository's caller gates the preset's branch, not its own"
-file = "src/keelline/project/init.py"
-before = '            tables.setdefault("ci", {})["gate_branch"] = branch'
-after = "            pass"
-reddens = ["tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose"]
+name = "a document that leaves [ci] gate_branch out gates main, not its base branch"
+file = "src/keelline/config/loader.py"
+before = '    return {"gate_branch": project.base_branch, **ci}'
+after = '    return {"gate_branch": "main", **ci}'
+reddens = [
+  "tests/project/test_answer_flags.py::test_a_fresh_repository_gates_the_branch_it_chose",
+  "tests/project/test_answer_flags.py::test_an_adopted_document_s_workflow_gates_the_branch_its_file_names",
+]
 
 # An adopted `keelline.toml` is checked as every later command will load it: the text on disk,
 # with a missing `[keelline] version` added by the key editor while planning, before any network
@@ -9767,4 +9771,56 @@ before = "    if code == _GIT_REFUSED and not keyed and in_work_tree(start):"
 after = "    if code == _GIT_REFUSED and in_work_tree(start):"
 reddens = [
   "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
+]
+
+# `origin/HEAD` is read as the full ref and only the exact `refs/remotes/origin/` prefix is
+# stripped: git shortens a ref only as far as it stays unambiguous, so a tag or a local branch
+# named `origin/<branch>` made the short form `remotes/origin/<branch>`, which passed the grammar
+# and became the base branch.
+[[mutation]]
+name = "origin/HEAD is read in its short form"
+file = "src/keelline/project/detect.py"
+before = '    code, out = git_run(root, "symbolic-ref", ref)'
+after = '    code, out = git_run(root, "symbolic-ref", "--short", ref)'
+reddens = [
+  "tests/project/test_detect.py::test_a_ref_named_like_the_remote_branch_never_reaches_the_base_branch",
+  "tests/project/test_detect.py::test_with_no_remote_head_the_base_branch_is_the_branch_checked_out",
+]
+
+[[mutation]]
+name = "a remote head outside refs/remotes/origin/ is read whole"
+file = "src/keelline/project/detect.py"
+before = '    return full.removeprefix(prefix) if full.startswith(prefix) else ""'
+after = "    return full.removeprefix(prefix)"
+reddens = [
+  "tests/project/test_detect.py::test_a_remote_head_outside_the_remote_s_namespace_is_reported_as_the_default",
+]
+
+# With no `origin/HEAD` — a repository nobody cloned — the branch checked out is the base branch,
+# held to the same grammar, and the report says so when it is not `main`.
+[[mutation]]
+name = "no remote head leaves the default whatever is checked out"
+file = "src/keelline/project/detect.py"
+before = '    current = _symbolic(root, "HEAD", HEADS_PREFIX)'
+after = "    current = None"
+reddens = [
+  "tests/project/test_detect.py::test_with_no_remote_head_the_base_branch_is_the_branch_checked_out",
+]
+
+[[mutation]]
+name = "the checked-out branch skips the grammar"
+file = "src/keelline/project/detect.py"
+before = "    if current and BRANCH_NAME.match(current):"
+after = "    if current:"
+reddens = [
+  "tests/project/test_detect.py::test_a_checked_out_branch_nothing_can_name_leaves_the_default",
+]
+
+[[mutation]]
+name = "the checked-out branch is never noted"
+file = "src/keelline/project/init.py"
+before = "        return HEAD_CURRENT"
+after = '        return ""'
+reddens = [
+  "tests/project/test_command.py::test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted",
 ]

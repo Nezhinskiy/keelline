@@ -1009,8 +1009,8 @@ Without it nothing is written, and the refusal (`2`) names `--questions`.
 
 Each answer flag replaces one default and writes one key:
 - `--name` writes `[project] name`;
-- `--base-branch` writes `[project] base_branch` and `release_branch`, and `[ci] gate_branch`
-  when the branch is not `main`, so the workflow gates the branch pull requests merge into;
+- `--base-branch` writes `[project] base_branch` and `release_branch`; `[ci] gate_branch`,
+  left out, is that branch, so the workflow gates the branch pull requests merge into;
 - `--agent`, once per harness, writes `[keelline] agents`;
 - `--profile` writes `[keelline] profile`, an empty value meaning none;
 - `--memory-mode` writes `[memory] mode`;
@@ -1020,7 +1020,7 @@ The parser refuses a value outside its grammar or its choices (`2`), and it refu
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
 letters, digits, `.`, `_`, `-` and `/` and led by a letter or digit: no `..`, `//`, component
 starting with `.` or ending in `.lock`, no trailing `/` or `.`, and not `HEAD`. The same
-grammar holds `[ci] gate_branch` and a detected `origin/HEAD`. Answer flags reach only a
+grammar holds `[ci] gate_branch` and a detected base branch. Answer flags reach only a
 `keelline.toml` this run creates. Over one the repository already has, they are refused
 (`2`), because that file is the answer. Passing a default as its flag loads as the same
 configuration as not passing it.
@@ -1028,9 +1028,11 @@ configuration as not passing it.
 When nothing answers, `init` detects:
 - the project's name from `origin`'s last path segment, lower-cased and with `.git` stripped,
   else from the checkout's directory name;
-- the base branch from `refs/remotes/origin/HEAD` with `origin/` stripped, when that is a
-  plain branch name, else `main` — and, when it is not `main`, the same branch as
-  `[ci] gate_branch`, so the workflow gates the branch pull requests merge into;
+- the base branch from `refs/remotes/origin/HEAD`, read as the full ref with exactly
+  `refs/remotes/origin/` stripped, when that is a plain branch name, else `main` with a `note:`
+  saying so; where no clone recorded an `origin/HEAD`, from the branch checked out, when that is
+  a plain branch name, with a `note:` when it is not `main`, else `main`. The workflow gates the
+  same branch, since `[ci] gate_branch` left out is the base branch;
 - the agent surfaces from which of `.claude/` and `.codex/` the repository carries, both when
   it carries neither;
 - `[keelline] profile` from the first shipped profile whose markers sit at the root
@@ -2450,7 +2452,7 @@ local = []               # scaffold template ids whose artifact is written under
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
 ref = ""                 # the commit of the Keelline release the workflow is pinned to;
                          # `init` writes it; `v1` is the documented mutable opt-in
-gate_branch = "main"     # the branch a gate reads its configuration from
+gate_branch = "main"     # the branch the workflow gates; left out, [project] base_branch
 
 [gates]
 builtin = ["docs", "bugs", "plan", "commit", "trail"]  # the built-in gates this project runs
@@ -2467,20 +2469,21 @@ types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", 
 the file loads (`unknown section(s)`), so the grammar above is the whole of it. All three
 `[ci]` keys are read today: `mode` decides whether `keelline init` renders a CI workflow at all
 and which form, `gate_branch` is the branch the rendered workflow gates — it runs for pull
-requests into it and pushes to it, and passes it as a literal `base:`; `init` writes it into the
-file it creates when the base branch it chose is not `main` — and `ref` is written by `init` and
-judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
+requests into it and pushes to it, and passes it as a literal `base:`; left out, it is `[project]
+base_branch`, so a file that names `develop` as its base gates `develop` — and `ref` is written by
+`init` and judged by `doctor`'s `ci-ref` row. `[commit_messages] attribution_check` is read by
 `commit check`, `[commit_messages] types` by `keelline assess`'s commit-vocabulary probe,
 `[artifacts] local` by the scaffold engine, and `[gates]` and `[keelline] enforced` by
 `keelline assess`, `keelline gate` and the reusable workflow.
 
-Every value above is what a key you leave out takes, from the `recommended` preset — with two
+Every value above is what a key you leave out takes, from the `recommended` preset — with three
 exceptions, and one line that is an example rather than a default. `[keelline] version` and
 `[project] name` have no default at all and are yours to write: a file without `version` does
 not load at all (`[keelline] is missing required key(s): version`). And `[keelline] state`
 defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
-`installed` above shows a set value, not what an omitted key takes. Everything from
-`[project] base_branch` down is the preset's default exactly as written. `[project]
+`installed` above shows a set value, not what an omitted key takes. `[ci] gate_branch` has no
+preset default: left out, it is `[project] base_branch`, whose default is `main`. Everything else
+from `[project] base_branch` down is the preset's default exactly as written. `[project]
 base_branch` and `release_branch` are branch names git accepts, from letters, digits, `.`, `_`,
 `-` and `/` (the grammar `--base-branch` and `[ci] gate_branch` follow); anything else does not
 load, and the refusal names the key and never the value.

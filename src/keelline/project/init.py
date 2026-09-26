@@ -51,13 +51,12 @@ from keelline.config.loader import (
     CONFIG_FILE,
     UNPARSEABLE,
     loads,
-    preset_defaults,
     read_document,
     toml_position,
 )
 from keelline.config.owned import rewrite
 from keelline.errors import Failure, Refusal
-from keelline.project.detect import detect
+from keelline.project.detect import CURRENT_BRANCH, DEFAULT_BRANCH, Detected, detect
 from keelline.project.footprint import prepare
 from keelline.project.rewrite import rewrite_owned
 from keelline.project.templates import CI_ARTIFACT
@@ -102,7 +101,14 @@ HEAD_DEFAULTED = (
     "origin/HEAD does not name a plain branch, so [project] base_branch and release_branch are "
     "main, and so is the branch the workflow gates; if pull requests merge into another branch, "
     "answer it with `keelline init --yes --base-branch BRANCH` while nothing is written, or set "
-    "[project] base_branch, release_branch and [ci] gate_branch in keelline.toml"
+    "[project] base_branch and release_branch in keelline.toml, which the workflow follows"
+)
+# Fixed text too, though the branch passed the grammar: one sentence whatever it is called.
+HEAD_CURRENT = (
+    "no origin/HEAD is recorded, so [project] base_branch and release_branch are the branch "
+    "checked out now, and so is the branch the workflow gates; if pull requests merge into "
+    "another branch, answer it with `keelline init --yes --base-branch BRANCH` while nothing is "
+    "written, or set [project] base_branch and release_branch in keelline.toml"
 )
 VERB_NOTE = (
     "AGENTS.md is absent: the run writes the skeleton first and the `agents-md` region is then "
@@ -144,7 +150,8 @@ class InitReport:
     ref: str = ""
     # How many names in `[keelline] agents` no harness answers to; a count, never the names.
     unknown_harnesses: int = 0
-    # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar.
+    # `HEAD_DEFAULTED` when the detected base branch replaced a remote head outside the grammar;
+    # `HEAD_CURRENT` when, with no remote head, it is a checked-out branch other than `main`.
     head_note: str = ""
     # Whether this run's plan adds `[keelline] version` to a `keelline.toml` a person wrote. It
     # is written only by a run that is neither a dry run nor refused.
@@ -185,10 +192,10 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
 
 def _tables(
     root: Path, existing: dict[str, object] | None, *, ci: bool, given: Given
-) -> tuple[dict[str, dict[str, object]], bool]:
+) -> tuple[dict[str, dict[str, object]], str]:
     """The document's tables, in order: Keelline's two keys, then the repository's own answers
-    or the ones `given` carries; and whether detection put the default base branch in place of
-    a remote head outside the grammar, with no `--base-branch` answering it.
+    or the ones `given` carries; and the note for a detected base branch no remote head named
+    (`_head_note`), empty when `--base-branch` answers it.
 
     **Detection runs only when no `[project]` table answers for the repository**, and not merely
     when some key of the head is absent; **it is lenient when `--name` answers the name, the one
@@ -214,12 +221,12 @@ def _tables(
             table = existing.get(name)
             if isinstance(table, dict):
                 tables[name] = dict(table)
-    head_refused = False
+    head_note = ""
     if "project" not in tables:
         # Lenient where something else answers the name: `--name`, or an adopted file, whose
         # missing `[project] name` is the loader's to refuse, since `--name` cannot reach it.
         found = detect(root, lenient=given.name is not None or existing is not None)
-        head_refused = found.head_refused and given.base_branch is None
+        head_note = _head_note(found) if given.base_branch is None else ""
         head.setdefault("agents", list(given.agents or found.agents))
         profile = found.profile if given.profile is None else given.profile
         if profile:
@@ -229,18 +236,25 @@ def _tables(
         tables["project"] = {"base_branch": branch, "release_branch": branch}
         if name:
             tables["project"] = {"name": name, **tables["project"]}
-        # The rendered caller gates this branch. Written only where it differs from the preset's,
-        # so a `main` repository's file is unchanged. An adopted file reaches this block only
-        # when it has no `[project]`, and the on-disk check in `init` refuses that one.
-        if branch != preset_defaults(name).ci.gate_branch:
-            tables.setdefault("ci", {})["gate_branch"] = branch
+        # No `[ci] gate_branch`: the loader takes it from `base_branch` when the file leaves it
+        # out, so the rendered caller gates this branch and follows it if a person edits it.
     if given.memory_mode is not None:
         tables["memory"] = {"mode": given.memory_mode}
     if given.local:
         tables["artifacts"] = {"local": list(given.local)}
     if not ci:
         tables.setdefault("ci", {})["mode"] = "none"
-    return tables, head_refused
+    return tables, head_note
+
+
+def _head_note(found: Detected) -> str:
+    """The note for a base branch that no remote head named: the default standing in for one
+    outside the grammar, or, with none recorded, a checked-out branch other than `main`."""
+    if found.head_refused:
+        return HEAD_DEFAULTED
+    if found.sources.get("base_branch") == CURRENT_BRANCH and found.base_branch != DEFAULT_BRANCH:
+        return HEAD_CURRENT
+    return ""
 
 
 def _rendered(tables: dict[str, dict[str, object]]) -> str:
@@ -322,7 +336,7 @@ def init(
     precheck(root, answering=given != NO_ANSWERS)
     read = _existing(root)
     existing = read[1] if read is not None else None
-    tables, head_refused = _tables(root, existing, ci=ci, given=given)
+    tables, head_note = _tables(root, existing, ci=ci, given=given)
     document = _rendered(tables)
     config = loads(document, root, machine=machine)
     on_disk, stamped = _as_on_disk(read)
@@ -368,7 +382,7 @@ def init(
         note,
         ref,
         passes.unknown_harnesses,
-        HEAD_DEFAULTED if head_refused else "",
+        head_note,
         stamped,
         tuple(sorted(config.gates.custom)) if existing is not None else (),
     )

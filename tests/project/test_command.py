@@ -26,7 +26,7 @@ from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import load, loads
 from keelline.config.schema import Config
 from keelline.project.commands import CUSTOM_GATES, STAMPED, run_init
-from keelline.project.init import HEAD_DEFAULTED
+from keelline.project.init import HEAD_CURRENT, HEAD_DEFAULTED
 from keelline.project.templates import _ci
 from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
@@ -373,6 +373,24 @@ def test_a_remote_head_outside_the_grammar_is_noted_and_never_quoted(tmp_path: P
     # the note keyed on detection alone -> this reddens.
     code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
     assert code == 0 and "origin/HEAD" not in printed, printed
+
+
+@needs_git
+def test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted(tmp_path: Path) -> None:
+    # With no `origin/HEAD`, a repository on `develop` takes `develop` as its base: the report
+    # says where the branch came from, so a person on a feature branch reads it before the
+    # workflow gates the wrong one. `main` is what the default was anyway, and says nothing.
+    # Mutation (oracle): "the checked-out branch is never noted" -> the note assertion reddens.
+    root = repository(tmp_path, origin=None)
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and HEAD_CURRENT not in printed, printed
+    git(root, "symbolic-ref", "HEAD", "refs/heads/develop")
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run")
+    assert code == 0 and f"note: {HEAD_CURRENT}" in printed, printed
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--json")
+    assert json.loads(printed)["head_note"] == HEAD_CURRENT
+    code, printed = _invoke(root, tmp_path, "--yes", "--dry-run", "--base-branch", "develop")
+    assert code == 0 and HEAD_CURRENT not in printed, printed
 
 
 def _answers(schema: dict[str, Any]) -> list[str]:
