@@ -504,8 +504,8 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
     # `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
-    # `config/paths.py` says so in as many words, and names `attach` as the caller that has to call
-    # the containment itself. The entry decides a directory created inside the OVERLAY, which is the
+    # `config/paths.py` says so in as many words, and leaves the containment to the module that
+    # consumes the field. The entry decides a directory created inside the OVERLAY, which is the
     # one tree `attach` trusts, so a `..` in it is refused rather than created, and refused rather
     # than crashing out as a raw `OSError`.
     #

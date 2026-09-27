@@ -288,7 +288,7 @@ def _deduplicated(memory: Memory) -> Memory:
     """`memory.groups` with each entry kept once, in the order the document wrote them.
 
     `_build` coerced the list with `tuple(value)` and nothing else, and it is the one
-    repository-authored list four separate areas report as a **count** a user is asked to act
+    repository-authored list four places report as a **count** a user is asked to act
     on. `groups = ["developer", "developer"]` made `attach.binding.unlinked_groups` walk one
     directory twice, so `attach` refused naming two groups that never moved into the overlay,
     `attach --check` printed `real_directories: 2`, and the session line told the model two --

@@ -363,7 +363,7 @@ def rmdir_within(root: Path, target: str) -> None:
     Public, and here rather than private to its caller, for the reason `mkdirs_within` gives one
     function above: "a private helper leaves each of them to re-derive this, and the failure mode of
     getting it wrong is silent". The hook sink asked for it — its marker tree is keyed by session
-    and must be pruned, which is the one removal driven by a directory listing that the
+    and must be pruned, one of the two removals driven by a directory listing that the
     enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) permits — and it is the whole of the
     difference from `remove_within`, so a later hardening of that walk reaches this too instead of
     leaving a copy behind.

@@ -61,8 +61,11 @@ CITATIONS = (
     ("plan section", re.compile(r"\bPremise\s+\d+|(?i:\bglobal\s+constraint)")),
     # The plans' word for a unit of work. A module, a test and a document all name the area, the
     # module or the command they mean instead: "the foundation lane" told a reader nothing that
-    # `keelline.hooks.dispatch` does not tell them better.
-    ("plan unit", re.compile(r"(?i:\blanes?\b)")),
+    # `keelline.hooks.dispatch` does not tell them better. A letter and not a word character is the
+    # boundary, because `\b` counts `_` as a word character and a snake_case test name walked past
+    # it. The pattern spells the word `l[a]nes` so that `mutations.toml`, which quotes this line,
+    # is not refused for quoting it; the bookkeeping arm below spells its word the same way.
+    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),
 )
 
 # The plans' own bookkeeping, which means nothing once the code has shipped: the wave a line
@@ -73,7 +76,7 @@ CODE_ONLY = (
     (
         "plan vocabulary",
         re.compile(
-            r"(?i:\bwave\b)|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"
+            r"(?i:(?<![^\W\d_])w[a]ve(?![^\W\d_]))|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"
             r"|(?i:\bitem\s+\d+)|(?i:\bfinding\s+\d+)"
         ),
     ),
@@ -177,6 +180,7 @@ def test_the_citation_gate_discriminates() -> None:
         "under Premise\n12",
         "the foundation lane",
         "Lanes that scaffold",
+        "def test_what_every_downstream_lane_reaches_for",
     ):
         assert citations(planted), planted
     for clean in (
@@ -190,6 +194,7 @@ def test_the_citation_gate_discriminates() -> None:
         "exit code 2 (a refusal)",
         "a global constant",
         "a plane of glass",
+        "planes and lanemarks",
     ):
         assert citations(clean) == [], clean
 
@@ -221,6 +226,7 @@ def test_the_plan_vocabulary_gate_discriminates() -> None:
         "landed in wave 4",
         "this\nwave exists to remove it",
         "Wave A2's writing commands",
+        "tests/test_neutral_wave2.py",
         "Task 12 wrote this guard",
         "Fix round 2 moved the check",
         "the second fix round",
@@ -238,6 +244,7 @@ def test_the_plan_vocabulary_gate_discriminates() -> None:
         "fix the round-trip",
         "one finding per line",
         "a microwave 3 times",
+        "the waveform",
         "sourced [S12], at the source's own date",
         "SHA256 and S3TC",
     ):

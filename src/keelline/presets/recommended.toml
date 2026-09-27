@@ -1,5 +1,7 @@
-# Owned by `keelline.config`: [budgets], [native_caps], [defaults.*]; by `keelline.memory`:
-# [rules]; by `keelline.assess`: [assess]. `keelline.setup` owns every other section.
+# Who reads what: the configuration loader (`keelline.config`) reads [budgets], [native_caps] and
+# [defaults.*] into a project's configuration; `keelline.memory` reads [rules]; `keelline.assess`
+# reads [assess]; `keelline.setup` reads [plugins] and [deny] when it installs a machine, and
+# [defaults.personal] and [defaults.keelline] for its own answers.
 
 [budgets]
 agents_md_lines = 300

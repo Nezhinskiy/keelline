@@ -336,7 +336,7 @@ def test_rmdir_within_removes_an_empty_directory_and_tolerates_an_absent_one(
 def test_rmdir_within_refuses_an_escaping_target(tmp_path: Path) -> None:
     # The same containment as its sibling, asserted separately: this walk is what stands between a
     # payload-controlled marker segment and an `rmdir` loop outside the hook sink's marker tree,
-    # the one removal a directory listing drives (CONTRIBUTING.md#enumerated-writes), and a new
+    # one of the two removals a listing drives (CONTRIBUTING.md#enumerated-writes), and a new
     # public name on this surface is read as that guarantee.
     outside = tmp_path / "outside"
     (outside / "victim").mkdir(parents=True)

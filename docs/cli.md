@@ -92,7 +92,9 @@ keelline memory index --check    # report drift, write nothing
 **Reads** every `*.md` under each configured group, and the current `MEMORY.md`.
 
 **Writes** each note whose `index:` line it filled in, and `MEMORY.md` — in overlay mode, the file
-the symlink points at, not the link.
+the symlink points at, not the link — and, when the store was trusted before the run,
+`~/.config/keelline/trust.json` (or the file beside `--machine`), re-recorded over the files it
+wrote (see below). Under `--check`, nothing.
 
 What it does, in order:
 
@@ -229,8 +231,10 @@ finding (`1`) that names it as the development dependency it is, rather than a t
 
 **Writes**, without `--draft`, `CHANGELOG.md`, and consumes the fragment files: towncrier
 removes each one from `changelog.d/` and, in a git checkout, stages both changes in the index —
-`git add` of `CHANGELOG.md`, `git rm` of each tracked fragment. With `--draft` nothing is written
-and the rendered section is printed.
+`git add` of `CHANGELOG.md`, `git rm` of each tracked fragment. When the tracked fragments were
+all that `changelog.d/` held, as they are while every file there is a `+…` fragment, `git rm`
+removes the directory itself too. With `--draft` nothing is written and the rendered section is
+printed.
 
 ## `keelline release hashes [--check]`
 
@@ -284,8 +288,13 @@ per diagnostic record, rotated to `diagnostics.1.jsonl` once it would pass 256 K
 root, or a relative one, nothing is written there and a `once_key` handler is asked on every
 invocation. One handler writes outside it: `worktree-link`, on `SessionStart` in a worktree
 other than the checkout that holds the store, makes the link tree `keelline attach` makes — a
-symlink for each memory group and for `MEMORY.md`, at the store's own place in the worktree —
-and creates the harness memory link, or withdraws it when the store's trust no longer covers it.
+symlink for each memory group and for `MEMORY.md`, at the store's own place in the worktree,
+with the directories above each link created as it is made — and creates the harness memory
+link, `~/.claude/projects/<slug>/memory`, with the directories above it inside the home
+directory. Either kind of link replaces a symlink already at its name that points anywhere else,
+a dangling one included, and leaves a real file or directory there alone. When the store's trust
+no longer covers the harness link, the handler withdraws it instead, and only when it points at
+this store.
 
 ## Hooks
 
@@ -605,7 +614,10 @@ this tool did not generate (`2`), and an allocated identifier whose file already
 naming `bugs check`) each leave the tree exactly as it was. A skipped fetch is reported on the
 result line, not hidden.
 
-**Writes** the entry file and `<paths.bug_index>`.
+**Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
+and, unless `--no-fetch`, whatever the `git fetch --quiet origin` it runs before allocating
+writes into the repository — the remote-tracking refs, `FETCH_HEAD` and the fetched objects —
+even when a rejection that follows the allocation leaves the working tree as it was.
 
 ## `keelline bugs index [--check]`
 
@@ -828,8 +840,10 @@ custom gates `--builtin` left out, else empty), `gates` (a gate's row each, abov
 findings become one item per rule, at `warning`. `--json` prints the same object with `summary`
 beside it. When git does not ignore the file where it is written, the summary ends with a note
 saying so. A `.keelline` that is a symlink or not a directory, or a directory at the inventory's
-place, is a refusal and nothing is written. Anything else at that place, a symlink included, is
-replaced by the file, and what a symlink pointed at is left as it was.
+place, is a refusal and the inventory is not written. Anything else at that place, a symlink
+included, is replaced by the file, and what a symlink pointed at is left as it was. Without
+`--builtin`, a custom gate writes whatever its command writes, and every gate runs before the
+inventory is written, so that refusal comes after the custom gates have run.
 
 The summary prints counts and Keelline's own words — gate names, probe and rule ids,
 severities, remedies — and never a path the repository chose: one table with a row per gate
@@ -1315,8 +1329,10 @@ that every target goes through the containment walk and none may leave the proje
 pass through a symlink:
 - `keelline.toml`, or only its missing `[keelline] version` when you wrote it;
 - `CLAUDE.md`, `[paths] agents_md` and `.gitignore`;
-- the documents in the table above (the profile's rules and the Claude pointer only when a
-  profile is set);
+- the documents in the table above (the profile's rules only when a profile is set, and the
+  Claude pointer only when a profile is set and `[keelline] agents` lists `claude`), each at its
+  place in the table, except that a document `[artifacts] local` lists is written under
+  `.keelline/local/artifacts/` at that place instead;
 - `.github/workflows/keelline.yml`, where a ref is recorded;
 - `.keelline/manifest.json`;
 - `.keelline/local/artifacts.json`, when `[artifacts] local` lists anything.
@@ -1546,9 +1562,14 @@ file an artifact targets, `git check-ignore` for each existing file a write or r
 a place a `[paths]` value chose, and, under `[ci] mode = "reusable"`, the public repository's
 tags.
 
-**Writes** the footprint through the scaffold engine, and the record of what it wrote kept out of
-git, then `keelline.toml`, last, so the version is the commit point: a run interrupted before it
-leaves the old version recorded, and the next run re-plans from there.
+**Writes** the footprint through the scaffold engine — every `create`, `update`, `region_update`,
+`remove` and `relocated` in the report, and each file `--force` takes — then
+`.keelline/manifest.json`, the committed record, written even when a write or removal fails
+part-way, and `.keelline/local/artifacts.json`, the record kept out of git, only when what it
+records changed; then `keelline.toml`, last (with `.keelline/manifest.json` again when its
+`config` record is re-stamped), so the version is the commit point: a run interrupted before it
+leaves the old version recorded, and the next run re-plans from there. Under `--dry-run`,
+nothing.
 
 Exits `0` when it applied the plan or there was nothing to do. `1` on a finding: the plan carries
 refusals — the report's REFUSED section names each, and nothing was written — or a `keelline.toml`
@@ -1604,10 +1625,12 @@ file, so what you wrote into the skeleton is judged on its own bytes.
 is what keeps `.keelline/local/` out of git: attach's ledger, the local-only memory notes, and the
 artifacts `[artifacts] local` keeps out of git. So it is taken out in a pass of its own, after the
 disk shows nothing left under `.keelline/local/`. Every directory above a file a pass removed goes
-once it is empty, deepest first, and no other: an empty directory a `[paths]` value merely names may
-be yours. Then `keelline.toml`, which the write-once pass holds back for this point; then the
-ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, and `.keelline/` once it is empty. A
-directory someone committed where a ledger file belongs stays. So does a harness's own directory
+once it is empty, deepest first, and so does every empty directory under
+`.keelline/local/artifacts/`, Keelline's own, which no `[paths]` value reaches; no other goes: an
+empty directory a `[paths]` value merely names may be yours. Then `keelline.toml`, which the
+write-once pass holds back for this point; then the ledger: `.keelline/assessment.json`,
+`.keelline/manifest.json`, and `.keelline/local/` and `.keelline/` once each is empty. A directory
+someone committed where a ledger file belongs stays. So does a harness's own directory
 (`.claude/`, `.codex/`, or the same name in any other case), even when it is empty, whoever made it:
 `init` may have created `.claude/` to hold the rule it wrote there, but nothing records who made an
 empty directory, and to `init` its presence means the project uses that harness. So a later `init`
@@ -1672,9 +1695,17 @@ other. Run it on a checkout you trust.
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
 `[paths]` value chose, and what is under `.keelline/local/`.
 
-**Writes** only removals, and region removals, through the scaffold engine, and the record of what
-it wrote kept out of git, `.keelline/local/artifacts.json`, which each pass rewrites as it removes
-what that record names; then removes that record, and the ledger.
+**Writes** only removals, and region removals, through the scaffold engine, and after each pass
+the two records of what is left: `.keelline/manifest.json`, which every pass rewrites, whether or
+not it finished, and `.keelline/local/artifacts.json`, the record kept out of git, which a pass
+rewrites when it removed something that record names. Each pass also removes every directory
+above a file it removed, once that directory is empty. After the write-once pass it removes
+`.keelline/local/artifacts.json` and then prunes the empty directories it finds by walking
+`.keelline/local/artifacts/`, deepest first, that directory included; after the last pass, the
+ledger: `.keelline/assessment.json`, `.keelline/manifest.json`, then `.keelline/local/` and
+`.keelline/`, each once it is empty. A harness's own directory is never removed. When
+`keelline.toml` is gone and nothing records it, only the ledger is removed. Under `--dry-run`,
+nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
@@ -1732,9 +1763,12 @@ trial run against it did not reproduce the race, and one clean run cannot rule o
 asynchronous generation step that sometimes outlasts a clone. If the second attempt is still
 empty, the command fails (`1`) naming both attempts and what GitHub said in between.
 
-**Writes** the instance directory and, on `--local`, every file of the template plus
-`.keelline/manifest.json`. Exits `0` on success, `1` when no tree arrived, `2` on a refused name
-or a missing `--root`.
+**Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
+plus `.keelline/manifest.json`. On `--template`, through `gh repo create <owner>/<name> --private
+--template <owner>/keelline-overlay-template --clone`, a new private repository on GitHub under
+`<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
+from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
+Exits `0` on success, `1` when no tree arrived, `2` on a refused name or a missing `--root`.
 
 ---
 
@@ -1761,8 +1795,10 @@ traceback.
 Both halves are idempotent. A manifest that already carries the suffix is not rewritten, so a
 second run reports nothing renamed.
 
-**Writes** the three manifests and, where the overlay carries one, `.keelline/manifest.json` —
-through the same contained walk every other write in this project goes through. Exits `0`; `1` on
+**Writes** each of the three manifests that does not already carry the suffix and, where the
+overlay carries one that records a manifest it rewrote, `.keelline/manifest.json` — through the
+same contained walk every other write in this project goes through; and, through the
+`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. Exits `0`; `1` on
 a manifest that exists and cannot be read or is not JSON; `2` on an owner that is not one path
 segment, or on a scaffold manifest that cannot be trusted.
 
@@ -1841,8 +1877,11 @@ finding (`1`) naming it.
 both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
 it. There is no `--root`: the tree is rendered from this Keelline's own package.
 
-**Writes** nothing outside a temporary directory this command creates and removes. Exits `0`;
-`1` on a `gh` or `git` that failed, `2` on a refusal.
+**Writes**, without `--yes`, nothing outside a temporary directory this command creates and
+removes. With it, on GitHub through `gh` and `git`: the public repository `<owner>/<name>`, when
+there is none; its template flag, when it is not set; and a commit pushed to its default branch,
+unless it already carries this Keelline's template. The clone and the commit are made in the
+same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, `2` on a refusal.
 
 ---
 
@@ -1923,7 +1962,9 @@ and the repository never grants a capability.
 `.keelline/local/` untracked, and is written first), `.claude/settings.local.json`,
 `.codex/rules/`, the ledger `.keelline/local/attach.json`, the link tree under `paths.memory` in
 this checkout and in every existing worktree, the harness memory link, and — in the overlay —
-`projects/<name>/project.toml` and this project's note directories. The ledger is the only record
+`projects/<name>/project.toml`, this project's note directories and, through the
+`pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
+`pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are Keelline's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else.
 
@@ -1991,8 +2032,11 @@ only the *starting* point that has to be the one holding the record.
 `.claude/settings.local.json`, drops the hook entries marked `# keelline:…` there (a group that
 mixes one of those with your own entry is split, never replaced), removes the `.codex/rules/`
 files it wrote, withdraws the link tree from this checkout and every worktree together with the
-harness memory link, removes the `keelline:ignore` region, and deletes the ledger. A file left
-holding nothing is removed rather than left empty.
+harness memory link, removes the `keelline:ignore` region, and deletes the ledger,
+`.keelline/local/attach.json`. A file left holding nothing is removed rather than left empty.
+Last, each directory the ledger records `attach` as having created — of `.keelline/local/`,
+`.keelline/`, `.codex/rules/`, `.codex/` and `.claude/`, in that order — is removed when it is
+empty, and left standing otherwise.
 
 **The `keelline:ignore` region in `.gitignore` goes only if the manifest does not record it.**
 On a repository `keelline init` set up, that block is the footprint's — recorded in
@@ -2116,19 +2160,26 @@ from. Everywhere else inside a checkout, a `git` that gives no answer, refuses t
 found (another user's under `safe.directory`, or one whose `.git` it cannot read) or cannot list
 its checkouts is a refusal.
 
-**Writes** `--machine`'s file, `<home>/.claude/settings.json`, and — only with `--overlay` — the
-new or recorded overlay itself. Exits `0` on success, `2` on a refused `--overlay` (missing,
-not an overlay, reachable from the project root, at a path that is not UTF-8 text and so cannot
-be recorded in the machine file, or `create:` without `--yes`), and `2` when a
-symlink stands between `<home>` and the settings file: that file is written through a walk that
-never follows one. Every one of those refusals happens before the first write, **with one
-exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that
-arrived, so it runs after the repository has been created on GitHub and cloned — along with the
-machine file, the settings merge and the plugin installs. That refusal says so, and names the
-repository and where it was cloned to, because nothing else would. Everything else `create:` can
-be refused for — the missing `--yes`, a malformed spec, a name that is not one path segment, a
-destination the project root could reach or the machine file could not record — still happens
-before `gh` is run at all.
+**Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
+it, once for the preset and again for the overlay root `--overlay` records;
+`<home>/.claude/settings.json`, or the file `--settings` names in its place; and, through the plugin
+commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
+`claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
+registrations and installed plugins those commands write into each harness's own configuration.
+`--overlay <path>` writes nothing in the overlay; it is only recorded.
+`--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
+repository on GitHub and its clone — and then what `overlay init` writes in that clone. Exits `0`
+on success, `2` on a refused `--overlay` (missing, not an overlay, reachable from the project
+root, at a path that is not UTF-8 text and so cannot be recorded in the machine file, or `create:`
+without `--yes`), and `2` when a symlink stands between `<home>` and the settings file: that file
+is written through a walk that never follows one. Every one of those refusals happens before the
+first write, **with one exception**: for `--overlay create:<owner>/<name>`, "not an overlay" is a
+check on the tree that arrived, so it runs after the repository has been created on GitHub and
+cloned — along with the machine file, the settings merge and the plugin installs. That refusal
+says so, and names the repository and where it was cloned to, because nothing else would.
+Everything else `create:` can be refused for — the missing `--yes`, a malformed spec, a name that
+is not one path segment, a destination the project root could reach or the machine file could not
+record — still happens before `gh` is run at all.
 
 The symlink refusal names the link, where it leads, and a `keelline setup --home …` that writes
 the file the link leads to — and where no `--home` can express the layout, it says that instead
@@ -2160,7 +2211,9 @@ one machine-wide — and a single invocation has only one exit code to report, s
 the two.
 
 **Writes** the hook file in `--root`'s hooks directory, and the `.local` file beside it only
-when a foreign hook was there to preserve. Exits `0`; `2` when `--preset` is also given.
+when a foreign hook was there to preserve, by renaming that hook. Under `--uninstall` it removes
+the hook file only when it is Keelline's, and renames the `.local` file beside it, when there is
+one, back to `prepare-commit-msg`. Exits `0`; `2` when `--preset` is also given.
 
 ---
 

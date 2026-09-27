@@ -146,8 +146,8 @@ def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
 
 def test_the_methodology_walks_are_not_empty() -> None:
     # The vacuity guard for every parametrised test below: an empty methodology directory
-    # or an empty sources table passes them all vacuously. Named apart from the two gate
-    # guards in `tests/test_neutral_wave2.py` so `-k` can pick one.
+    # or an empty sources table passes them all vacuously. Named apart from the gate guards in
+    # `tests/test_neutral.py` so `-k` can pick one.
     assert PRINCIPLES in public_documents()
     assert len(sources()) >= SOURCES_FLOOR
     assert len(principle_sections()) >= PRINCIPLES_FLOOR

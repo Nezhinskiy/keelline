@@ -12,9 +12,7 @@ defined here.** `detect_harness` and the four names of the sink's on-disk layout
 exactly that reason, and `dispatch.py` and `sink.py` import them from here like everybody else.
 CONTRIBUTING records the exception.
 
-**Three names below have no importer outside this area**, and the refactor pass that trimmed every
-area's surface left all three, with the reason beside each rather than the silence that made that
-pass necessary:
+**Three names below have no importer outside this area**, and each stays for the reason beside it:
 
 - `HandlerFn` is `Handler.run`'s type. `Handler` is what `guards/hooks.py` and
   `memory/hooks.py` build, and a consumer that holds one before registering it — a table of
@@ -27,8 +25,7 @@ pass necessary:
 For this area, removing a name from `__all__` is not a trim in any case: `api.py` defines these
 and `tests/test_surfaces.py` holds `DEFINES_ITS_OWN` areas to `imported | defined == __all__`,
 so a defined name absent from the list reddens the contract. Trimming one is a decision to move
-its definition into a private module, which is a different change with a different argument, and
-one this pass does not make.
+its definition into a private module, which is a different change with a different argument.
 """
 
 from __future__ import annotations

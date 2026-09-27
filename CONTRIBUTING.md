@@ -70,7 +70,9 @@ wall-clock timeout, how many bytes of a repository-authored file are read, how d
 descends — is a *named cap*: a constant in the code, almost always a module-level one with a
 name, and never a configuration key. None of them is a project's to move, because each one
 protects the run itself from a hung program, an oversized file or a pathological input, and a
-`keelline.toml` is repository-authored (principle 5).
+`keelline.toml` is repository-authored (principle 5). The one timeout a project does set,
+`[gates] custom_timeout_seconds`, bounds the project's own gate command rather than anything
+Keelline runs for itself.
 
 The comment beside a named cap says what it bounds and why the number is what it is. When the number
 has to agree with a shipped file, the comment names that file, so a change to either is visibly a
@@ -92,10 +94,12 @@ writes), and the one handler that writes outside it.
 Removal is held tighter. Every file or directory Keelline removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
 a directory above a file the same run removed — and none is found by listing a directory and
-removing what the listing returned. The one exception is the hook sink's marker tree: sessions are
-unbounded in number, so the sink lists its `markers/` directory and prunes all but the newest
-`MARKER_SESSIONS_KEPT` sessions, inside that one owned directory and through the same `fsops` walk
-as every other removal. A temporary directory a command creates for itself and removes whole when
+removing what the listing returned, with two exceptions, each inside a directory only Keelline
+writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
+prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. And `keelline uninstall` walks
+`.keelline/local/artifacts/` and removes the directories it finds there that are empty, because
+that tree holds nothing but the local artifacts the same run just removed. Both go through `fsops`,
+as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
 ## Areas

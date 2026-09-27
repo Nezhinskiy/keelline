@@ -66,7 +66,7 @@ SLOTS: dict[Bundle, int] = {
 # from, `hook_output_chars`, is a `[native_caps]` key, which is where a change to the platform's
 # number belongs.
 #
-# **For the hooks area, which reads `SLOTS` out of this file: the `hooks.json` entries must
+# **For `hooks/hooks.json`, whose slot count `doctor` checks `SLOTS` against: its entries must
 # not pass `--json`.** The margin is additive only because `memory session-context` prints
 # the text raw. Through `cli._emit`'s `json.dumps({"summary": ...}, indent=2)` the envelope and
 # the escaping both count against the same platform cap, and a cap-length standing bundle no

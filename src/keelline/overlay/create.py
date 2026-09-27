@@ -273,8 +273,8 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     advertises, and attributing to the owner an edit Keelline itself made. Re-stamping is the
     narrow answer of the two the review offered; rendering the suffix through the `Template`
     instead would put an owner-dependent value into the shipped tree, which every *other*
-    consumer of that tree (`upgrade`'s hash rule, `keelline.release`) would then have to know
-    about. A `--template` clone carries no ledger at all, and gets no record written for it.
+    consumer of that tree (`upgrade`'s hash rule, `overlay publish-template`) would then have to
+    know about. A `--template` clone carries no ledger at all, and gets no record written for it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it

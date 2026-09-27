@@ -1192,8 +1192,19 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate stops seeing the plans' unit of work"
 file = "tests/test_public_anchors.py"
-before = '    ("plan unit", re.compile(r"(?i:\blanes?\b)")),'
-after = '    ("plan unit", re.compile(r"(?i:\blanes?\b)(?!)")),'
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))(?!)")),'
+reddens = [
+  "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
+]
+
+# A letter, not a word character, is the boundary: `\b` counts `_` as part of a word, so a
+# test named for "every downstream" unit of work, snake_case, walked past an arm written with it.
+[[mutation]]
+name = "the public-anchor gate lets a snake_case name carry the plans' unit of work"
+file = "tests/test_public_anchors.py"
+before = '    ("plan unit", re.compile(r"(?i:(?<![^\W\d_])l[a]nes?(?![^\W\d_]))")),'
+after = '    ("plan unit", re.compile(r"(?i:\bl[a]nes?\b)")),'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_gate_discriminates",
 ]
@@ -1203,7 +1214,7 @@ reddens = [
 [[mutation]]
 name = "the public-anchor gate stops seeing the unit a plan shipped in"
 file = "tests/test_public_anchors.py"
-before = '            r"(?i:\bwave\b)|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
+before = '            r"(?i:(?<![^\W\d_])w[a]ve(?![^\W\d_]))|\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
 after = '            r"\bTask\s+\d+|(?i:\bfix\s+round)|(?i:\bround\s+\d+)"'
 reddens = [
   "tests/test_public_anchors.py::test_the_plan_vocabulary_gate_discriminates",
@@ -3063,7 +3074,7 @@ reddens = [
 ]
 
 # `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
-# names `attach` as the caller that has to call the containment itself). The entry decides a
+# leaves the containment to the module that consumes the field). The entry decides a
 # directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
 # has to reach the caller as a refusal and not as silence.
 #
@@ -6802,7 +6813,7 @@ reddens = [
   "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
-# The one list four areas report as a count, and the one fault none of those areas can fix for
+# The one list four places report as a count, and the one fault none of those areas can fix for
 # itself. `_build` coerced it with `tuple(value)`, so a repeated entry was walked twice and
 # counted twice -- in `attach`'s refusal, in `--check`'s `real_directories` and in the session
 # line -- about one directory whose remedy was already done.

@@ -479,7 +479,7 @@ def test_unknown_sections_name_the_typo_and_count_the_rest_never_quoting_them(
 
 
 def test_a_repeated_memory_group_is_one_group(tmp_path: Path) -> None:
-    """The list four areas read as a count is deduplicated in the order it was written.
+    """The list four places read as a count is deduplicated in the order it was written.
 
     `_build` coerced it with `tuple(value)` and nothing else, so `["a", "a"]` made
     `unlinked_groups` walk one directory twice: `attach` refused naming two groups that never

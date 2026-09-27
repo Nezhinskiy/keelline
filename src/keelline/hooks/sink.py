@@ -3,9 +3,9 @@
 Two of the three path segments below are payload-controlled — the marker key a handler chose, and
 the session id off the hook's stdin — so both are hashed to a fixed-width hex name, and every write
 and removal still goes through `fsops`' `O_NOFOLLOW` walk. Two controls rather than one, because
-what runs here is not only a write but a `remove_within` loop over a directory listing: the one
-removal the enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) lets a listing drive, and
-only inside this one directory.
+what runs here is not only a write but a `remove_within` loop over a directory listing: one of the
+two removals the enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) lets a listing drive,
+and only inside this one directory.
 
 Nothing here ever raises at its caller. A hook runs on every tool call, so an unwritable
 `${CLAUDE_PLUGIN_DATA}` must cost a lost marker and never a refused Bash command — which is
@@ -51,6 +51,10 @@ PROBE = ".probe"
 # disk one line at a time. Capping the serialised line instead would cut inside whichever field
 # sorts first and leave `doctor` a record it cannot parse.
 DIAGNOSTIC_FIELD_CHARS = 2_000
+# How many sessions' marker directories survive a prune. A marker only has to outlive its own
+# session, so fifty is room for many concurrent and recent sessions while the tree stays bounded
+# however long a machine runs. A named cap (CONTRIBUTING.md#named-caps); no shipped file changes
+# with it.
 MARKER_SESSIONS_KEPT = 50
 # A session id the payload did not carry. `parse_event` types `session_id` as `str | None`, and
 # every such invocation used to share one constant segment -- `sha256("")`, a hex pair anything
