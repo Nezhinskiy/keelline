@@ -13,6 +13,7 @@ from keelline.guards import bgcleanup
 from keelline.guards.hooks import register
 from keelline.hooks.api import EVENTS, Decision, Handler, HookEvent, Policy
 from keelline.hooks.dispatch import Recorder, dispatch
+from tests.floor import floor_env
 from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -179,6 +180,7 @@ def hook(event: str, stdin: str, cwd: Path) -> subprocess.CompletedProcess[str]:
             "PATH": "/usr/bin:/bin",
             "PYTHONPATH": str(ROOT / "src"),
             "CLAUDE_PROJECT_DIR": str(cwd),
+            **floor_env(),
         },
     )
 

@@ -1497,18 +1497,76 @@ reddens = ["tests/test_git_run.py::test_a_stdin_this_process_cannot_encode_is_mi
 [[mutation]]
 name = "the product ships a floor under every git bound"
 file = "src/keelline/gitenv.py"
-before = "BOUND_FLOOR_SECONDS: float = 0"
-after = "BOUND_FLOOR_SECONDS: float = 60"
+before = 'asked = float(os.environ.get(FLOOR_VARIABLE, ""))'
+after = 'asked = float(os.environ.get(FLOOR_VARIABLE, "60"))'
 reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
 
-# The same floor set by a plain assignment below the annotated one, which a reading of that one
-# line in the source missed: the value an import leaves is the one every caller gets.
+# The floor reaches the product through one environment variable, so a `keelline` the suite
+# starts as a separate process runs under it too. Ignore it, and the launcher's hook runs its
+# `git` out at the product's own bound.
 [[mutation]]
-name = "a second assignment ships a floor under every git bound"
+name = "the git runner ignores the floor a test runner sets"
 file = "src/keelline/gitenv.py"
-before = "BOUND_FLOOR_SECONDS: float = 0"
-after = "BOUND_FLOOR_SECONDS: float = 0\nBOUND_FLOOR_SECONDS = 60"
-reddens = ["tests/test_git_run.py::test_the_product_ships_with_no_floor_under_its_bounds"]
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=timeout,"
+reddens = [
+  "tests/test_floor.py::test_a_keelline_the_suite_starts_runs_its_git_under_the_floor",
+  "tests/test_git_run.py::test_the_suite_floor_outlasts_a_bound_its_caller_asked_for",
+]
+
+# The variable may only raise a bound: one that stands in for the caller's bound shortens it.
+[[mutation]]
+name = "the floor replaces the caller's bound instead of raising it"
+file = "src/keelline/gitenv.py"
+before = "            timeout=max(timeout, bound_floor()),"
+after = "            timeout=bound_floor() or timeout,"
+reddens = ["tests/test_git_run.py::test_the_floor_variable_never_shortens_a_bound"]
+
+# Uncapped, a huge value reaches `subprocess.run` as a timeout it cannot represent, and its
+# `OverflowError` is not one of the causes `git_run` reads as no answer.
+[[mutation]]
+name = "the floor variable is honoured without its ceiling"
+file = "src/keelline/gitenv.py"
+before = "    return min(asked, FLOOR_CEILING_SECONDS)"
+after = "    return asked"
+reddens = [
+  "tests/test_git_run.py::test_the_floor_variable_is_capped[1e300]",
+  "tests/test_git_run.py::test_the_floor_variable_is_capped[inf]",
+]
+
+# `nan` compares false with everything, so only a check that asks "above zero?" refuses it; one
+# that asks "zero or below?" lets it through as the floor.
+[[mutation]]
+name = "a floor variable that is not a number is honoured"
+file = "src/keelline/gitenv.py"
+before = "    if not asked > 0:"
+after = "    if asked <= 0:"
+reddens = ["tests/test_git_run.py::test_a_floor_variable_that_is_no_positive_number_raises_nothing[nan]"]
+
+# Every spawner that strips the developer's `KEELLINE_*` variables goes through one predicate,
+# and the floor is the name it keeps; strip it too and a spawned `keelline` runs under the bare
+# bounds again.
+[[mutation]]
+name = "the suite's developer strip drops the floor"
+file = "tests/floor.py"
+before = "    return name.startswith(DEVELOPERS) and name != gitenv.FLOOR_VARIABLE"
+after = "    return name.startswith(DEVELOPERS)"
+reddens = [
+  "tests/test_floor.py::test_a_spawner_strips_the_developers_variables_and_keeps_the_floor",
+  "tests/test_floor.py::test_a_keelline_the_suite_starts_runs_its_git_under_the_floor",
+]
+
+# Both smoke scripts build a session on one base environment that strips every `KEELLINE_*`
+# variable; the suite's floor is the one it keeps, or their entries run under the bare bounds the
+# floor exists to lift.
+[[mutation]]
+name = "the hook smoke strips the suite's floor"
+file = "scripts/smoke_hooks.py"
+before = """        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+after = """        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))"""
+reddens = [
+  "tests/scripts/test_smoke_scripts.py::test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable",
+]
 
 # The suite's floor lifts every bound past git's latency, so a bound shrunk below it passes every
 # test that runs through it; a table of the named bounds holds each to a second.

@@ -694,7 +694,7 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(sp, "run", fake)
     # The bound is read below `git_run`, where the suite's floor has already lifted it: at the
     # product's zero, or a dropped `timeout=` would reach `fake` as the floor and pass.
-    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", 0)
+    monkeypatch.delenv(gitenv.FLOOR_VARIABLE)
     assert commits_in(Path("/nowhere"), "a..b") == []
 
     # `seen["timeout"] == LOG_TIMEOUT_SECONDS` alone is an expectation read from the subject

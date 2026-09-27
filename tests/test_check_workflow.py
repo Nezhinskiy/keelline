@@ -26,6 +26,7 @@ import pytest
 import keelline
 from keelline.config.loader import CONFIG_FILE
 from tests.assess.baserepo import clone, commit
+from tests.floor import floor_env
 from tests.gitfixture import git, needs_git
 from tests.test_fixtures import (
     CHECK_WORKFLOW,
@@ -314,6 +315,8 @@ def _judge(
             "PATH": f"{interpreter or Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
             "HOME": str(workspace),
             "GITHUB_STEP_SUMMARY": str(summary),
+            # The suite's floor under the product's `git`, for the `keelline gate` the step runs.
+            **floor_env(),
             **named,
             **(extra or {}),
         },

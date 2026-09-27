@@ -57,13 +57,30 @@ GIT_TIMEOUT_SECONDS = 5
 # read its `-1` as no answer.
 QUERY_TIMEOUT_SECONDS = 30
 
-# The least bound `git_run` gives a call, whatever bound its caller asked for: none, so each
-# bound above, and each caller's own, is the one that applies. Only Keelline's own test suite
-# raises it (`tests/conftest.py`), because a test's verdict must not turn on how loaded the
-# machine running it is: beside other work, a five-second `rev-parse` in a full parallel run has
-# run out, and its caller read that as no answer. A test about a bound running out sets this
-# back to zero and passes a small bound of its own.
-BOUND_FLOOR_SECONDS: float = 0
+# The one input that raises the least bound `git_run` gives a call, whatever bound its caller
+# asked for. Unset, there is no floor, and each bound above, and each caller's own, is the one that
+# applies. Keelline's own test suite sets it (`tests/conftest.py`), in its own process and in every
+# `keelline` it starts, so that a verdict does not turn on how loaded the machine running it is; a
+# test about a bound running out removes it and passes a small bound of its own.
+#
+# **Why a variable here is safe.** It is read from this process's environment and from nothing a
+# repository commits: no `keelline.toml` key, no machine-file key, no argument names it. It can only
+# raise: `bound_floor` never answers below zero, and `git_run` takes the larger of it and the
+# caller's bound, so no value of it shortens any bound, and one that is not a positive number is
+# ignored. A repository reaches a process's environment only through something that applies a file
+# it commits — a harness's `.claude/settings.json` `env` block, which applies without a trust
+# prompt in a non-interactive session, or a `direnv`, `mise` or devcontainer environment — and
+# every one of those sets `PATH` as readily, which chooses the `git` every call here executes (the
+# module docstring). So a repository that sets this variable gains only a longer wait on a `git` it
+# could replace outright. In a hook that wait can outlast the harness's own timeout on the entry,
+# which ends the hook unanswered; what an unanswered hook lets through, the same file's own `git`
+# lets through at once, by answering whatever a guard wants to hear. The wait is capped all the
+# same, at `FLOOR_CEILING_SECONDS`.
+FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
+# Ten minutes: far above what any load makes a local `git` take, and far below a timeout that
+# `subprocess` cannot represent — `timeout=1e300` raises `OverflowError`, which `git_run` does
+# not catch, so an uncapped value would end every caller as an internal error.
+FLOOR_CEILING_SECONDS: float = 600
 
 # What `git_run`'s `(-1, "")` means, in one clause a caller's message can build on. The runner
 # does not say which of the three it was, because none of them is an answer about the
@@ -71,6 +88,23 @@ BOUND_FLOOR_SECONDS: float = 0
 # out" — is wrong about the other two. What git printed is never one of them: its output is
 # decoded losslessly, so an answer is always read.
 NO_ANSWER = "git could not be run, ran past its time limit, or could not be given its input"
+
+
+def bound_floor() -> float:
+    """The least bound `git_run` gives a call now: what `FLOOR_VARIABLE` says when it says a
+    positive number, never past `FLOOR_CEILING_SECONDS`, and zero otherwise.
+
+    Read at every call rather than once at import, so a test that removes the variable is under
+    the product's own bounds from its next call, in this process and in any it starts.
+    """
+    try:
+        asked = float(os.environ.get(FLOOR_VARIABLE, ""))
+    except ValueError:
+        return 0.0
+    # Written so that `nan`, which compares false with everything, falls to zero with the rest.
+    if not asked > 0:
+        return 0.0
+    return min(asked, FLOOR_CEILING_SECONDS)
 
 
 def in_work_tree(root: Path) -> bool:
@@ -176,7 +210,7 @@ def git_run(
             input=given,
             capture_output=True,
             check=False,
-            timeout=max(timeout, BOUND_FLOOR_SECONDS),
+            timeout=max(timeout, bound_floor()),
             env=scrubbed_env(),
         )
     except (OSError, subprocess.SubprocessError, UnicodeEncodeError):

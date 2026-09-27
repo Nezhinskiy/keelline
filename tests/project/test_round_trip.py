@@ -8,7 +8,6 @@ of `init`, `upgrade`, `uninstall` and `rewrite_owned`, so it declares none of it
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -16,6 +15,7 @@ from pathlib import Path
 
 import keelline
 from keelline.scaffold import Manifest, digest
+from tests.floor import developer_free_environ
 from tests.gitfixture import git, needs_git
 from tests.project.repos import tree
 
@@ -24,9 +24,7 @@ OLDER = "0.0.1"
 
 
 def _keelline(root: Path, home: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    env = {
-        k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "KEELLINE_", "XDG_"))
-    }
+    env = developer_free_environ()
     env["HOME"] = str(home)
     return subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "keelline"), *argv, "--root", str(root)],

@@ -15,6 +15,7 @@ import pytest
 from keelline.guards.hygiene import LEAD
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 from keelline.hooks.commands import LINKED, _output_cap, run_hook
+from tests.floor import floor_env
 from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +60,7 @@ def hook(
         "PYTHONPATH": str(ROOT / "src"),
         "CLAUDE_PROJECT_DIR": str(cwd),
         "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
+        **floor_env(),
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
