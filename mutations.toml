@@ -11887,3 +11887,14 @@ after = "            return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_walk_that_lands_elsewhere_than_the_filesystem_is_no_answer",
 ]
+
+# Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
+# workflow shows the platform taking a caller's value, through the expression, as the job's bound.
+[[mutation]]
+name = "no real run passes the reusable workflow a time limit of its own"
+file = ".github/workflows/smoke.yml"
+before = "      timeout-minutes: 25"
+after = "      timeout-minutes: 15"
+reddens = [
+  "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
+]

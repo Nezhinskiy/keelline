@@ -2453,7 +2453,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter Keelline runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
-| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any other value fails the job in its first step, before anything is checked out |
+| `timeout-minutes` | `15` | the job's time limit, in whole minutes from 5 to 60; a value outside the range fails the job in its first step, before anything is checked out, and so does a fraction the runner does not render as a whole number |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -2486,15 +2486,25 @@ project whose own gates need longer adds one line under its `with:`:
       timeout-minutes: 30
 ```
 
-The range is fixed at 5 to 60, in this file and not in yours. 5 is the least a healthy run
-needs — two full-depth checkouts, an interpreter and two gate runs on a runner that has cached
-nothing — and 60 is the most a pull request can spend of your runner time per push. The caller
-file is pull-request content, so that line is one a pull request can edit, and this is exactly
-what it can move: the limit, anywhere from 5 to 60. It cannot remove the limit, raise it past
-60, or turn running out into a pass: a job that runs out of time is cancelled, and a required
-check that was cancelled has not passed; and a value outside the range — a fraction included — fails the
-job in its first step rather than being quietly replaced. Under the settings below, a change to
-that line needs a code owner's review like any other change to `.github/`.
+The range is fixed at 5 to 60, in this file and not in yours. 5 is the least a healthy run needs —
+two full-depth checkouts, an interpreter and two gate runs on a runner that has cached nothing —
+and 60 is the most this input lets one run of the job spend of your runner time. The caller file is
+pull-request content, so that line is one a pull request can edit, and this is what it can move
+through the input: this job's limit, anywhere from 5 to 60, in every run the pull request starts —
+one per push, and one per edit of its title, description or base. Through the input it cannot
+remove the limit, raise it past 60, or turn running out into a pass: a job that runs out of time is
+cancelled, and a required check that was cancelled has not passed. A value outside the range fails
+the job in its first step rather than being quietly replaced. A fraction inside it is the job's
+limit by then and fails that step too, unless the runner renders it as a whole number — it keeps
+fifteen significant digits, so `5.000000000000001` is `5` — and either way the limit stays inside
+the range.
+
+**What the input does not bound.** The rest of the caller file is pull-request content as well, and
+runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg
+with a limit of its own, and a `uses:` pointed at another workflow runs none of this file, under
+whatever limit that workflow sets, up to the platform's own 360 minutes. That is a change to
+`.github/`, and under the settings below a code owner reviews it before it merges — not before it
+runs, since a pull request's run starts before any review.
 
 **Your own gates run on a bare runner.** The second step has the runner image and the
 interpreter `python-version` names, and nothing of your project's: a custom gate that needs

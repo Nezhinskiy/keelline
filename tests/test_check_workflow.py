@@ -384,7 +384,8 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
 # the default otherwise, so the expression can yield nothing but a number from the least to the
 # most. An expression that yields something the platform does not read as a number is an error
 # that fails the job before it starts ("Unexpected value"), which is closed too; this shape never
-# reaches that, and never hands the platform a number it would have to judge.
+# reaches that, and never hands the platform a number outside the range. A fraction inside it is
+# handed over as it is, and the bound step then fails the job under that bound.
 _BOUND = re.compile(
     r"\$\{\{ inputs\.timeout-minutes >= (\d+) && inputs\.timeout-minutes <= (\d+) "
     r"&& inputs\.timeout-minutes \|\| (\d+) \}\}"
@@ -398,7 +399,7 @@ def test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds
     # bound the job had when it had no input, and the job's `timeout-minutes` reads it only
     # between the least and the most, the default standing in for anything else. Mutation
     # (declared): the expression's upper bound becomes 600, so a pull request could buy ten
-    # runner-hours per push.
+    # runner-hours per run of this job.
     inputs = _workflow()["on"]
     assert isinstance(inputs, dict), inputs
     call = inputs["workflow_call"]
@@ -426,6 +427,26 @@ def _bound_step(value: str) -> tuple[int, str]:
         env={"PATH": "/usr/bin:/bin", "TIMEOUT_MINUTES": value},
     )
     return done.returncode, done.stdout + done.stderr
+
+
+SMOKE_WORKFLOW = CHECK_WORKFLOW.parent / "smoke.yml"
+
+
+@pytest.mark.skipif(not SMOKE_WORKFLOW.is_file(), reason="smoke.yml is not in the sdist")
+def test_a_real_run_passes_the_time_limit_a_value_of_its_own() -> None:
+    # The cases here hold the expression's text and run the bound step's script; neither proves
+    # that the platform takes a value a caller passed, through the expression, as the job's bound.
+    # Every caller `init` writes passes none, so only the smoke's own call of this file can: it
+    # passes a value inside the bounds that is not the default. Mutation (declared): the smoke
+    # call passes the default, and no run takes a caller's value any more.
+    document = load(SMOKE_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
+    job = document["jobs"]["same-repository-form"]
+    assert isinstance(job, dict) and job["uses"] == "./.github/workflows/check.yml", job
+    passed = job["with"]
+    assert isinstance(passed, dict) and isinstance(passed["timeout-minutes"], str), passed
+    value = int(passed["timeout-minutes"])
+    assert TIMEOUT_LEAST <= value <= TIMEOUT_MOST and value != TIMEOUT_DEFAULT, value
 
 
 @needs_bash
