@@ -15,7 +15,7 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import NO_ANSWER
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.ledger import check
 from keelline.ledger.check import EVIDENCE_LABEL, EVIDENCE_PLACEHOLDER, problems, uninitialised
 from keelline.ledger.entries import load_entries
@@ -473,7 +473,7 @@ def test_a_listing_git_refuses_at_a_merge_base_is_a_failure_never_an_empty_ledge
     # listing's failure arm dropped -> `[]`.
     root, config, base = _committed_ledger(tmp_path, ("BR-001",))
     _drop(root, config, "BR-001")
-    real = check.git_run
+    real = git_run
 
     def refused(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
         return (128, "") if args[0] == "ls-tree" else real(where, *args, **kwargs)
