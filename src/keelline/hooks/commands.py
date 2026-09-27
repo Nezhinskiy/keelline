@@ -18,8 +18,9 @@ from keelline.presets import load_preset
 
 # Fixed text, never the link's target: what a link in the project's root points at is the
 # repository's choice. Asked of the name itself (`is_symlink`) and before any `is_file`, which
-# follows the link, so the answer does not depend on the target: a link to a regular file reached
-# the loader's refusal as an internal error, and one to `/dev/zero` was taken for no file at all.
+# follows the link, so the answer does not depend on the target: followed, a link to a regular
+# file would reach the loader's refusal as an internal error, and one to `/dev/zero` would read
+# as no file at all.
 LINKED = (
     "keelline: keelline.toml is a symbolic link, and no Keelline command reads keelline.toml "
     "through one; replace the link with the file itself"

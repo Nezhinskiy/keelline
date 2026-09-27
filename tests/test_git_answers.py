@@ -14,15 +14,12 @@ runs where the disk cannot hold such a name (APFS refuses one).
 
 from __future__ import annotations
 
-import io
 import os
-from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
 from keelline.attach.write import _worktrees, attach
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.errors import Refusal
 from keelline.guards.commit import commits_in
 from keelline.guards.githooks import hooks_dir
@@ -34,6 +31,7 @@ from keelline.overlay.sync import overlay_sync
 from keelline.project.detect import NOT_DERIVABLE, detect
 from keelline.setup.run import _repository
 from tests.attach.test_write import RULE, FakeRunner, _attachable
+from tests.cli import cli
 from tests.gitfixture import git, needs_git, plant_path
 from tests.guards.test_hygiene import config, repo
 from tests.project.repos import repository
@@ -98,18 +96,14 @@ def test_an_origin_url_that_is_not_utf_8_is_answered_as_itself(tmp_path: Path) -
 
 @needs_git
 def test_init_questions_on_an_origin_url_that_is_not_utf_8_asks_and_does_not_crash(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The command it was reproduced with, through the real parser. Mutation (declared, on
     # `gitenv`): the decode made strict again -> this reddens.
-    root = repository(tmp_path, origin=DECODED_URL)
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()) as printed:
-        code = run(["init", "--questions", *flags], parser=parser)
-    assert code == 0
-    assert "internal error" not in capsys.readouterr().err
-    assert "caf" not in printed.getvalue()
+    code, out, err = cli(repository(tmp_path, origin=DECODED_URL), tmp_path, "init", "--questions")
+    assert code == 0, err
+    assert "internal error" not in err
+    assert "caf" not in out
 
 
 @needs_git

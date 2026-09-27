@@ -18,9 +18,9 @@ session, which is a harness-level exposure this module cannot close and does not
 
 `git_run` is the one runner for every question this project asks git about a repository it
 works on — the hook path's toplevel, the memory store's three-valued answer and its usability
-probe, the hooks directory, the dirty count and the commit range included, which each used to
-run a `subprocess.run(text=True)` of their own and raise out of the command on one byte that was
-not UTF-8. One decoding boundary, so each site decides only what an answer means to it. The
+probe, the hooks directory, the dirty count and the commit range included. One decoding
+boundary, and a lossless one, so no byte of git's answer can raise out of a command and each
+site decides only what an answer means to it. The
 `Runner` seam in `keelline.runner`, which launches the owner's own commands — `git clone` among
 them — for their exit code and a message, is the other. One question goes through that seam
 and not through `git_run`, on purpose: `keelline overlay publish`, a maintainer command, asks

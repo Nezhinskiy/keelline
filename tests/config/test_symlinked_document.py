@@ -11,15 +11,13 @@ only thing that can make these cases pass, and a regression cannot hang the suit
 
 from __future__ import annotations
 
-import io
-from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import pytest
 
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE, load
 from keelline.config.paths import PathEscape
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
@@ -62,14 +60,10 @@ def test_load_refuses_a_symlinked_keelline_toml(tmp_path: Path) -> None:
 def test_every_command_family_refuses_a_symlinked_keelline_toml(
     tmp_path: Path, argv: list[str]
 ) -> None:
-    root = _linked(tmp_path)
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-        code = run([*argv, *flags], parser=parser)
-    assert code == 2, err.getvalue()
-    assert f"{CONFIG_FILE!r} passes through a symlink" in err.getvalue()
-    assert out.getvalue() == ""
+    code, out, err = cli(_linked(tmp_path), tmp_path, *argv)
+    assert code == 2, err
+    assert f"{CONFIG_FILE!r} passes through a symlink" in err
+    assert out == ""
 
 
 @pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
@@ -91,10 +85,7 @@ def test_init_refuses_a_symlinked_keelline_toml_whatever_it_points_at(
     if target != "regular-file":
         (root / CONFIG_FILE).unlink()
         (root / CONFIG_FILE).symlink_to(target)
-    parser = build_parser(discover_registrars())
-    flags = ["--root", str(root), "--machine", str(tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
-        code = run([*argv, *flags], parser=parser)
-    assert code == 2, err.getvalue()
-    assert f"{CONFIG_FILE!r} passes through a symlink" in err.getvalue()
-    assert out.getvalue() == ""
+    code, out, err = cli(root, tmp_path, *argv)
+    assert code == 2, err
+    assert f"{CONFIG_FILE!r} passes through a symlink" in err
+    assert out == ""

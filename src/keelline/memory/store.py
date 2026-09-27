@@ -158,10 +158,9 @@ def _git_is_usable(root: Path) -> bool:
 def _git(root: Path, *args: str) -> GitAnswer:
     """git's one-line answer to `args` asked in `root`, through `gitenv.git_run`.
 
-    Its own `subprocess.run(text=True)` decoded strictly, so an `origin` URL holding a byte that
-    is not UTF-8 ended `init --questions` and `init --yes` as `internal error:
-    UnicodeDecodeError`. `git_run` scrubs the environment as this did, and decodes losslessly:
-    the answer is what git printed, a path as the filesystem spells it, less its line ending
+    `git_run` scrubs the environment and decodes losslessly, so an `origin` URL holding a byte
+    that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
+    answer is what git printed, a path as the filesystem spells it, less its line ending
     alone — never `strip()`, which takes a trailing space off a path that ends in one.
     """
     code, out = git_run(root, *args)

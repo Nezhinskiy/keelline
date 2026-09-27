@@ -58,10 +58,10 @@ def _git_toplevel(cwd: Path) -> Path | None:
     gives in as many words — "it must be a real git answer, not one an inherited `GIT_DIR`
     produced" — and `project_root()` feeds *every* hook decision, so an inherited `GIT_DIR` or
     `GIT_WORK_TREE` made every handler answer for a different repository than the session is in.
-    It also decodes the answer losslessly: this call decoded strictly on its own, and on Linux a
-    checkout under a directory named in latin-1 bytes made every hook an internal error, which
-    PreToolUse turns into a refusal of every tool call. The line ending alone is taken off, so a
-    path that ends in a space is still that path.
+    It also decodes the answer losslessly, so on Linux a checkout under a directory named in
+    latin-1 bytes is that directory; decoded strictly, it would make every hook an internal
+    error, which PreToolUse turns into a refusal of every tool call. The line ending alone is
+    taken off, so a path that ends in a space is still that path.
     """
     code, out = git_run(cwd, "rev-parse", "--show-toplevel")
     top = out.removesuffix("\n")

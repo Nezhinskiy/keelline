@@ -1278,7 +1278,7 @@ reddens = [
 [[mutation]]
 name = "attach meets an origin URL that is not UTF-8 after its first write"
 file = "src/keelline/attach/write.py"
-before = """    if binding.remote is not None and not _utf_8(binding.remote):
+before = """    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)
 """
 after = ""

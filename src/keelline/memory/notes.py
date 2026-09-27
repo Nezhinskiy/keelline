@@ -436,7 +436,7 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
             if path.name.startswith((".", "_")):
                 continue
             # The index names a note by its file's name, and `MEMORY.md` is UTF-8: a name the
-            # disk holds in other bytes ended `memory index` as an internal error.
+            # disk holds in other bytes cannot be written into it, so the note is unreadable.
             if not utf_8_name(path.name):
                 unreadable.append((path, f"{path}: {NAME_NOT_UTF_8}"))
                 continue

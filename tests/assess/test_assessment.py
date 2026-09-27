@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from keelline.assess.assessment import (
     FORMAT,
     NOT_IGNORED,
@@ -20,9 +18,9 @@ from keelline.assess.assessment import (
 )
 from keelline.assess.gates import BUILTIN
 from keelline.attach.api import IGNORE_BODY
-from keelline.cli import build_parser, discover_registrars, run
 from keelline.project.api import ASSESSMENT
 from tests.assess.smoke import BASE, smoke_repo
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 
 # One word a line, so the file is over the line budget and nothing else a word could trip.
@@ -93,21 +91,19 @@ def test_the_summary_prints_counts_and_never_a_path(tmp_path: Path) -> None:
 
 
 @needs_git
-def test_an_inventory_git_does_not_ignore_is_named_in_the_summary(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_an_inventory_git_does_not_ignore_is_named_in_the_summary(tmp_path: Path) -> None:
     # Mutation: drop the `ignored(root) is False` branch in `run_assess` -> the last line is the
     # table's and the first assertion on the summary reddens.
-    parser = build_parser(discover_registrars())
     kept = smoke_repo(tmp_path / "kept")
     bare = smoke_repo(tmp_path / "bare")
     (bare / ".gitignore").unlink()
     git(bare, "commit", "-qam", "chore: no ignore region")
     summaries = {}
     for name, root in (("kept", kept), ("bare", bare)):
-        argv = ["assess", "--root", str(root), "--machine", str(_machine(tmp_path)), "--base", BASE]
-        assert run([*argv, "--json"], parser=parser) == 0
-        summaries[name] = json.loads(capsys.readouterr().out)["summary"]
+        argv = ("assess", "--base", BASE, "--json")
+        code, out, err = cli(root, tmp_path, *argv, machine=_machine(tmp_path))
+        assert code == 0, err
+        summaries[name] = json.loads(out)["summary"]
     assert ignored(bare) is False
     assert summaries["bare"].splitlines()[-1] == NOT_IGNORED
     assert ignored(kept) is True

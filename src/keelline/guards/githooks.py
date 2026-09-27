@@ -103,11 +103,10 @@ class Removed(NamedTuple):
 def hooks_dir(root: Path) -> Path:
     """The directory git runs `root`'s hooks from, as git names it: `core.hooksPath` when set.
 
-    Through `gitenv.git_run`, so the answer is the directory on disk whatever its bytes — this
-    call decoded strictly on its own, and a `core.hooksPath` that was not UTF-8 ended `setup
-    --git-hooks`, `attach` and `doctor` as an internal error. No `--` after `--git-path hooks`:
-    measured, git prints a literal `--` as a second line there. `hooks` is a constant, so
-    nothing here is a value to close off.
+    Through `gitenv.git_run`, so a `core.hooksPath` in any bytes is the directory git names,
+    and `setup --git-hooks`, `attach` and `doctor` each read it as that directory. No `--` after
+    `--git-path hooks`: measured, git prints a literal `--` as a second line there. `hooks` is a
+    constant, so nothing here is a value to close off.
     """
     code, out = git_run(root, "rev-parse", "--git-path", "hooks")
     # Neither refusal carries a byte this module did not compute, for the reason

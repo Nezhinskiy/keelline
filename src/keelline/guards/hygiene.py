@@ -176,8 +176,8 @@ def _dirty_count(root: Path) -> int | None:
 
     Through `gitenv.git_run`: `root` is the project root the dispatcher resolved or `--root`
     resolved, not a repository value, and `--` closes the argument list so no pathspec can be
-    smuggled in. `status --porcelain` prints a name raw under `core.quotePath=false`, and this
-    call's own strict decode made one that was not UTF-8 an internal error; counted by the
+    smuggled in. `status --porcelain` prints a name raw under `core.quotePath=false`, in
+    whatever bytes the disk holds it, and `git_run` reads those losslessly; counted by the
     lines git wrote (`answer_lines`), a name holding a line separator is still one entry.
     """
     code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)
