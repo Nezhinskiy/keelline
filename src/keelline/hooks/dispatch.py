@@ -88,9 +88,10 @@ def project_root(cwd: Path, env: Mapping[str, str]) -> Path | None:
     """`CLAUDE_PROJECT_DIR`, else a walk for `.git`, else git itself.
 
     `keelline hook` runs as a subprocess on every tool call, and Codex sets `PLUGIN_ROOT`,
-    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (measured), so the fallback
-    is the Codex hot path. `git rev-parse --show-toplevel` costs about 8 ms of a 33 ms
-    invocation and the walk about 0.004 ms; git stays behind it for what a walk cannot see,
+    `PLUGIN_DATA` and `CLAUDE_PLUGIN_ROOT` but no `CLAUDE_PROJECT_DIR` (measured in the spike
+    record, `docs/plans/2026-09-05-agent-harness-p0-spikes.md`, in its *Codex plugin hooks* trial),
+    so the fallback is the Codex hot path. `git rev-parse --show-toplevel` costs about 8 ms of a
+    33 ms invocation and the walk about 0.004 ms; git stays behind it for what a walk cannot see,
     such as `GIT_DIR` and a bare repository.
     """
     root_var = env.get("CLAUDE_PROJECT_DIR")

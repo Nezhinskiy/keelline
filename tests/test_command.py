@@ -115,7 +115,7 @@ def test_every_shared_flag_carries_the_one_help_string_or_a_named_exception() ->
     # The floor is the walk's own non-emptiness, asserted before anything is filtered out of it:
     # a `_flags()` that found nothing would make the comparison below vacuously true. Measured
     # on this tree the walk finds 55 occurrences; the floor is deliberately well under that, so
-    # that a later wave registering a command does not have to edit an unrelated number.
+    # that a command registered later does not have to edit an unrelated number.
     #
     # Mutation (declared): `common_flags`' `help=MACHINE_HELP` -> `help="machine file"` ->
     # every `--machine` diverges and this reddens listing them.

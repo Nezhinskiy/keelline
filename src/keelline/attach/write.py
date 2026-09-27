@@ -603,15 +603,14 @@ def _group_directories(binding: Binding, config: Config) -> list[str]:
 def _check_groups(binding: Binding, config: Config) -> None:
     """Refuse a `memory.groups` entry that leaves this project's share of the overlay — first.
 
-    Path containment, and repository configuration never grants capability: `memory.groups` is
-    repository-authored and reaches no guard of its own — `config/paths.py` says so in as many
-    words, and names this lane as the one that has to call the containment itself. This lane
-    was calling it, and calling it too late: the refusal came out of `_prepare_store`, which
-    runs after the ignore region, the `.codex/rules/` copies, the settings merge, the ledger
-    **and** the overlay's binding record. So a clone committing `groups = ["../../escape"]`
-    got `attach` to write five artifacts and exit 2, with `doctor._attached` — which keys on
-    the ledger existing — then reporting the repository attached and the binding *bound*,
-    because the record had been written too.
+    `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
+    `config/paths.py` says so in as many words, and names this lane as the one that has to call the
+    containment itself. This lane was calling it, and calling it too late: the refusal came out of
+    `_prepare_store`, which runs after the ignore region, the `.codex/rules/` copies, the settings
+    merge, the ledger **and** the overlay's binding record. So a clone committing
+    `groups = ["../../escape"]` got `attach` to write five artifacts and exit 2, with
+    `doctor._attached` — which keys on the ledger existing — then reporting the repository attached
+    and the binding *bound*, because the record had been written too.
 
     Hoisting it here is not only a reordering: it is this project's own two-stage rule, which
     `attach` was skipping for this one path. `config.paths.contained` "decides whether a
@@ -1184,10 +1183,10 @@ def detach(root: Path, *, machine: Path | None, home: Path | None) -> Detached:
     not a piece of local state: deleting it would turn every later re-attach into a first
     attach, and re-ask a question that was already answered.
 
-    `machine` and `home` are keyword-required for the reason every writer in this module takes
-    them, and required rather than defaulted for the reason `attach` gives: a resolver without a
-    machine file reads the developer's real `~/.config/keelline/`, and the harness link is under
-    their real home. A caller that means "the machine owner's own" says `None` out loud.
+    `machine` and `home` are keyword-required, as they are on `attach` and on every helper here
+    that takes them, and required rather than defaulted for the reason `attach` gives: a resolver
+    without a machine file reads the developer's real `~/.config/keelline/`, and the harness link
+    is under their real home. A caller that means "the machine owner's own" says `None` out loud.
 
     **What it may refuse on, and when.** `detach` cannot refuse the way `attach` does once it has
     begun: by the time it reaches the link tree the recorded allow rules, the marked hook entries

@@ -31,12 +31,13 @@
 # `PATH` — so gating `KEELLINE_PYTHON_CANDIDATES` alone moved the choice from one variable to
 # another. Dropping the entry is not the answer: a spike measured the need for this last-resort
 # fall-through, and a machine whose Python lives under `pyenv`, `nix` or `asdf` has none at any
-# of the four absolute paths. What a hostile clone can actually stage is narrower than "any `PATH`" — a shipped
-# interpreter plus a `PATH` entry naming its own tree — so **no candidate that resolves inside
-# the project root is used**, which costs those installations nothing because their interpreter
-# is never under the checkout. It is the containment `setup` applies to a recorded overlay root,
-# one layer down. The residue is the case that ruling accepts: a genuinely vendored in-tree
-# toolchain refuses under `closed` and degrades under `open`, and `doctor`'s wrapper row names it.
+# of the four absolute paths. What a hostile clone can actually stage is narrower than "any
+# `PATH`" — a shipped interpreter plus a `PATH` entry naming its own tree — so **no candidate
+# that resolves inside the project root is used**, which costs those installations nothing
+# because their interpreter is never under the checkout. It is the containment `setup` applies
+# to a recorded overlay root, one layer down. The residue is the case this accepts: a genuinely
+# vendored in-tree toolchain refuses under `closed` and degrades under `open`, and `doctor`'s
+# wrapper row names it.
 #
 # **A containment is worth no more than the anchor it measures against, and this one has two.**
 # `CLAUDE_PROJECT_DIR` reaches this process from the same committed `env` block the containment

@@ -483,8 +483,9 @@ def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_i
     # empties the index bundle for this very reason (`inside_project` turns True the moment any
     # group resolves inside the checkout) — but `memory index` used to write the line into
     # `common/memory`'s `MEMORY.md` regardless, which every *other* project on the machine reads
-    # and which, as the overlay's shared half, syncs across every machine. The reviewer built
-    # this tree by hand, since `attach` is another lane's and is not present here.
+    # and which, as the overlay's shared half, syncs across every machine. The tree is built
+    # by hand rather than through `attach`, because a group committed as an ordinary directory
+    # is a shape `attach` never produces.
     config = overlay_project / "keelline.toml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(

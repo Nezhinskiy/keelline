@@ -295,7 +295,7 @@ def test_the_overlay_readme_counts_the_files_a_create_actually_leaves() -> None:
 
 
 def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
-    # S1: the comment beside `CAPABILITY_FILES` said the two names were "not spelled twice"
+    # The comment beside `CAPABILITY_FILES` said the two names were "not spelled twice"
     # while the tuple was built by filtering `OVERLAY_FILES` against a second spelling of
     # them. One spelling now: `CAPABILITY_NAMES` is unpacked into `OVERLAY_FILES` and
     # `CAPABILITY_FILES` is that same tuple.

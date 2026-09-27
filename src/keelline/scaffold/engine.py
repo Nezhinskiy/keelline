@@ -77,7 +77,7 @@ _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.E
 
 
 def validate_sources(config: Config) -> None:
-    """The second containment rule: the two values that name a file inside the *plugin* root.
+    """Contain the two values that name a file inside the *plugin* root, not the project root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
     path segment and looked up against the listing. The preset half is already enforced by the

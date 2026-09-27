@@ -304,8 +304,8 @@ def origin_remote(root: Path) -> str | None:
     repository and reads as *not this one*, while "could not ask" is a fault on this machine,
     and collapsing them tells the user to run `keelline attach` about their own `git`.
 
-    The value is repository-authored — a remote URL is one of the bytes a clone controls —
-    so a caller that shows it wraps it first.
+    The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
+    that shows it wraps it first.
     """
     origin = _git(root, "remote", "get-url", "origin")
     if origin.unavailable:

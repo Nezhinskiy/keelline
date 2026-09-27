@@ -124,15 +124,15 @@ def _recorded(overlay: Path, project: str) -> str | None:
     except UnicodeDecodeError:
         raise Failure(f"{where} is not UTF-8 text") from None
     except UNPARSEABLE as exc:
-        # A refused value is bounded before it may print, which closes here the leak three
-        # other sites close too. `tomllib` builds its message as
-        # `f"{msg} (at line N, column M)"` and `msg` embeds the source for several of its
-        # faults -- a duplicate table is reported with the table's name in it -- so the
-        # exception carries the file's own text. This file is the overlay's, whose bytes
-        # are the machine owner's and may print, with one exception that decides it: the value
-        # Keelline writes into it is this repository's `origin`, and a remote URL may not print
-        # wherever it came from. `toml_position` bounds it to the suffix, and `from None`
-        # because a chained `__cause__` would print the message a traceback away.
+        # A refused value is bounded before it may print, closing the leak every other
+        # `toml_position` caller closes. `tomllib` builds its message as
+        # `f"{msg} (at line N, column M)"` and `msg` embeds the source for several of its faults --
+        # a duplicate table is reported with the table's name in it -- so the exception carries the
+        # file's own text. This file is the overlay's, whose bytes are the machine owner's and may
+        # print, with one exception that decides it: the value Keelline writes into it is this
+        # repository's `origin`, and a remote URL may not print wherever it came from.
+        # `toml_position` bounds it to the suffix, and `from None` because a chained `__cause__`
+        # would print the message a traceback away.
         raise Failure(f"{where} is not valid TOML {toml_position(exc)}") from None
     value = raw.get("remote")
     return value if isinstance(value, str) and value else None
@@ -142,8 +142,8 @@ def _state(recorded: str | None, origin: str | None) -> str:
     """`unbound`, `bound` or `mismatch` — and never `bound` because nobody looked.
 
     A hostile clone is caught by this comparison: `attach` compares the remote to the overlay's
-    record and refuses. The clone chooses `project.name`; it does not choose which remote the
-    overlay recorded under that name.
+    record and refuses a mismatch unless the owner passes `--trust-remote`. The clone chooses
+    `project.name`; it does not choose which remote the overlay recorded under that name.
     """
     if recorded is None:
         return UNBOUND

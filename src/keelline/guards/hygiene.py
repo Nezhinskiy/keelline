@@ -54,9 +54,10 @@ _PYTHON_ARGV0_PREFIX = "python"
 # code is then taken for the run's own. The documented shape puts `Exit code N` at the very
 # START of `error`, which is what the pair is protecting.
 _EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")
-# Its own named cap, not `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local,
-# argument-free, read-only" queries, and `git status --porcelain` walks the worktree. A
-# timeout here is `None`, "could not answer", which `test hygiene` turns into a refusal.
+# A named cap (CONTRIBUTING.md#named-caps) of its own, and no shipped file changes with it. Not
+# `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local, argument-free, read-only" queries, and
+# `git status --porcelain` walks the worktree. A timeout here is `None`, "could not answer", which
+# `test hygiene` turns into a refusal.
 STATUS_TIMEOUT_SECONDS = 20
 # PEP 552: every .pyc opens with a 4-byte magic, then a 4-byte little-endian flags word, then
 # four more bytes whose MEANING is decided by bit 0 of those flags.

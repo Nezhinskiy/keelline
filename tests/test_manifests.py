@@ -148,8 +148,8 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
 
     towncrier reads the part before `.<type>.md` as the fragment's issue reference and
     `issue_format = "{issue}"` renders it in parentheses at the end of the bullet, so the 26
-    fragments assembled for 0.1.0 would each have published an internal lane slug — one of
-    them a wave number. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
+    fragments assembled for 0.1.0 would each have published an internal slug nobody outside
+    the repository can read. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
     reference and leaves the slug readable in the repository, and it is per-fragment, so a
     fragment that one day names a real issue still renders its reference.
 

@@ -12,11 +12,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this
     # test alone.
     #
-    # Thirteen names left in the refactor pass that trimmed every area's surface: the `assess`
-    # vocabulary and the writing half with the three return types that came with it. Outside
-    # this area `keelline.assess.gates` imports `bugs_gate`; the six others below have no
-    # importer — so what stays, stays on the argument written beside it in `api.py`: the two
-    # artifacts this area leaves on a project's disk.
+    # Outside this area, `keelline.assess.gates` imports `bugs_gate` and
+    # `keelline.project.templates` imports `render_index`; the other names stay on the argument
+    # written beside them in `api.py`: the two artifacts this area leaves on a project's disk.
     required = {
         # the entry file's grammar, and the error a file that will not parse raises
         "Entry",

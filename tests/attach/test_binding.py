@@ -169,13 +169,14 @@ def test_a_different_remote_is_a_mismatch_and_never_a_bind(tmp_path: Path) -> No
 
 def test_a_project_name_that_is_not_one_path_segment_is_refused(tmp_path: Path) -> None:
     # `project.name` is validated as one path segment matching [a-z0-9][a-z0-9._-]*, and
-    # `../common` is the value path containment protects against here. A name is a directory
-    # under the overlay's `projects/`, so a name that escapes reads another project's store.
+    # `../common` is the value to refuse: a name is a directory under the overlay's `projects/`,
+    # so this one names the shared `common/` tree, and any name that escapes reads a store that
+    # is not this project's.
     #
-    # The exception class is the tree's rather than the plan's, and the difference is worth
-    # stating: `config.loader.load` already holds `project.name` to that pattern and reports it
-    # as a `ConfigError`, which is a `Failure`. This test therefore also pins *how*
-    # `read_binding` gets the name — through `load`, never out of the raw TOML, which is the
+    # The exception is `ConfigError` and not the `Refusal` `read_binding` raises for its own checks,
+    # and the difference is worth stating: `config.loader.load` already holds `project.name` to that
+    # pattern and reports it as a `ConfigError`, which is a `Failure`. This test therefore also pins
+    # *how* `read_binding` gets the name — through `load`, never out of the raw TOML, which is the
     # only spelling that inherits the check.
     with pytest.raises(ConfigError):
         _read(tmp_path, recorded=None, origin="x", name="../common")
@@ -279,9 +280,7 @@ def test_a_binding_record_that_cannot_be_read_stops_the_run(tmp_path: Path) -> N
 def test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stopped(
     tmp_path: Path,
 ) -> None:
-    """A refused value is bounded before it may print, at the fourth site of this family.
-
-    Only the position prints.
+    """A binding record that will not parse is reported by its parse position alone.
 
     **Which file this is, and why it is not exempt.** `projects/<name>/project.toml` lives in
     the overlay, whose bytes are the machine owner's own and may print — but the one value
@@ -289,8 +288,7 @@ def test_a_binding_record_that_will_not_parse_reports_only_where_the_parser_stop
     it came from. `tomllib` builds its message as `f"{msg} (at line N, column M)"` and `msg`
     embeds the source for several of its faults, so interpolating the exception whole would put
     the *file's own text* into a `Failure` that `skills/attach/SKILL.md` has the model relay.
-    `config.loader.toml_position` bounds it to the suffix, which is the same extractor the two
-    loader sites and `project.init` already use.
+    `config.loader.toml_position` bounds it to the suffix, as it does for every other caller.
 
     Mutation (oracle): the message interpolates `exc` again -> the `not in` reddens.
     """
@@ -389,8 +387,6 @@ def test_binding_for_takes_the_config_it_is_handed_rather_than_loading_a_second_
 
 
 def test_read_binding_still_checks_the_store(tmp_path: Path) -> None:
-    # `_project_and_store` returns a `(root, store)` pair, not a triple — `machine` is a
-    # separate helper (`_machine`), as every other test in this module already calls it.
     root, _ = _project_and_store(
         tmp_path, recorded=None, origin="git@github.com:o/p.git", name="widget"
     )

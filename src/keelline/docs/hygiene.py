@@ -1,4 +1,4 @@
-"""Small always-loaded documents and existing link targets (every bound is a budget)."""
+"""Small always-loaded documents and existing link targets; each bound is a `[budgets]` key."""
 
 from __future__ import annotations
 

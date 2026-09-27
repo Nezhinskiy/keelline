@@ -276,7 +276,7 @@ def test_an_adopted_ref_is_what_the_workflow_pins_and_the_document_is_not_rewrit
     create-once artifact already on disk — kept the recorded one. `doctor`'s `ci-ref` row then
     reports red ("the workflow pins a different ref from [ci] ref") on a repository whose `init`
     had printed a success line. Not reachable before the first release exists, which is why no
-    wave's own review could see it.
+    review made before one could see it.
 
     Mutation (oracle): drop `and existing is None` from the pin-writing guard -> the workflow
     pins the resolved sha again and the first assertion reddens.

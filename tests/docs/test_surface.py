@@ -13,12 +13,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # substituted line. Measured by hand instead — re-exporting `trail.TRAIL_FILE` reddens this
     # test and this test alone.
     #
-    # Ten names left in the refactor pass that trimmed every area's surface: the trail half,
-    # published in one sentence about `templates` for the install path, a lane that pass left
-    # out of scope. Outside this area `project` imports `trail_target`, `keelline.assess.gates`
-    # the three gate functions and `keelline.assess.state` `lint` and `declared_state`; the
-    # other names below have no importer, so they stay on the argument written beside them in
-    # `api.py`.
+    # Outside this area, `project` imports `trail_target`, `keelline.assess.gates` imports the
+    # three gate functions, and `keelline.assess.state` imports `lint` and `declared_state`; the
+    # other names below have no importer and stay on the argument written beside them in `api.py`.
     required = {
         # the four checks this area is, one call each
         "check_budgets",
@@ -28,7 +25,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # what `lint` returns: a value a consumer can hold and cannot declare is the one thing
         # a surface exists to prevent
         "Lint",
-        # the install path, absent when this list was trimmed: `project` ships `trail.toml`
+        # the install path: `project` ships `trail.toml`
         # beside the roadmap and must put it where `docs trail` reads it, a location only
         "trail_target",
         # the three gates keelline.assess.gates runs, each this area's own command's function

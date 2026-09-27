@@ -802,12 +802,8 @@ def _a_reaped_pid() -> int:
 def test_a_second_oracle_refuses_rather_than_sweeping_the_first_ones_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `sweep_stale_scratch` has always assumed a single writer and its own docstring says so —
-    # "a second run started while the first is working would sweep the first's checkout out from
-    # under it". Nothing enforced it, and during the review of a refactor pass exactly that
-    # happened: a filtered run started beside an unfiltered one removed its checkout, and every
-    # mutation after that point reported FINDING. 138 of them, all false, on a clean tree. A
-    # comment naming a hazard does not stop the hazard.
+    # `sweep_stale_scratch` assumes a single writer: without the lock, a second run started
+    # beside a first removes its checkout and turns every later mutation into a false FINDING.
     #
     # The assertion is the *checkout surviving*, not the exit code: a refusal that still swept
     # would exit 1 too, and exit 1 is what this oracle returns for a finding as well.

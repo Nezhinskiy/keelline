@@ -106,8 +106,8 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
     **`initialised` does not run `init` here.** It builds the repository `init` is run *over*:
     notes already in `paths.memory` as real directories, `[ci] mode = "none"`, and one commit,
     so the history predates Keelline. `keelline init --yes` is `_install_path`'s step 0, which
-    is where the launcher environment lives. The flag keeps the name the plan gives it in both
-    fixtures, because renaming one of the pair would split them.
+    is where the launcher environment lives. The flag keeps the name `_install_path` gives it,
+    because renaming one of the pair would split them.
 
     `[ci] mode = "none"` because this repository wants no workflow — a `ci` mode that asked for
     one would have `init` reach for the release pin and a remote, which is a different lane's

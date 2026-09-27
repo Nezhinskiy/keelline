@@ -538,8 +538,9 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
-    # so this walks the registered command end to end without shelling out — which the global
-    # constraints forbid a test to do. The write path stays a unit test over the stub.
+    # so this walks the registered command end to end without shelling out, which no test does —
+    # CONTRIBUTING.md's Tests section routes such calls through a stub runner, and the write
+    # path stays a unit test over the stub in `tests/release/test_notes.py`.
     root = _at(tmp_path, "1.2.3")
     argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
     assert run(argv, parser=build_parser([register])) == 2

@@ -451,7 +451,7 @@ def test_strip_removes_only_the_offending_line_of_a_mixed_final_paragraph() -> N
 
 
 def test_strip_leaves_a_doubled_blank_in_the_body_alone() -> None:
-    """A strip is not a reformat. This was the plan's collapse test, inverted by review.
+    """A strip is not a reformat: a doubled blank the author left in the body survives it.
 
     The first cut collapsed blank runs across the whole message once anything was removed, so
     a strip silently reflowed a body the author had spaced on purpose — and the docstring

@@ -22,9 +22,9 @@ from keelline.errors import Refusal
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
-# Upper-case letters and digits, one to eight characters, letter first. Not a budget: a cap on
-# what may be interpolated into a regular expression and a filename, and the eight is what a
-# `PREFIX-nnn.md` filename stays readable at.
+# Upper-case letters and digits, one to eight characters, letter first. Not a budget but a named cap
+# (CONTRIBUTING.md#named-caps) on what may be interpolated into a regular expression and a filename,
+# and the eight is what a `PREFIX-nnn.md` filename stays readable at.
 PREFIX = re.compile(r"\A[A-Z][A-Z0-9]{0,7}\Z")
 # Three digits or more: `renumber` and every reader enforce it. The plan lint's `Fixes` rule
 # and the allocator's `git log` reader build their patterns from this same constant, so none of

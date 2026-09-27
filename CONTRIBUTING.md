@@ -56,6 +56,48 @@ sequence drives the screen. So a name the repository chose — a file name, a no
 command's `--json` carries the name, and `quoted` in a refusal, where the message is the only
 place the name appears.
 
+Two narrower rules follow from the same stance. The code cites each by name, and this is where
+the name is defined.
+
+### Named caps
+
+A bound comes from one of three places. A limit a project may tune — a document's line or word
+count, a note's time to live — is a key under `[budgets]`, which a project may lower below its
+preset and never raise. A limit the harness sets — how much of an index it loads, how many
+characters of a hook's output it keeps — is a key under `[native_caps]`. Code reads both
+through `Config` (`src/keelline/config/schema.py`). Every other bound — a subprocess's
+wall-clock timeout, how many bytes of a repository-authored file are read, how deep a parser
+descends — is a *named cap*: a constant in the code, almost always a module-level one with a
+name, and never a configuration key. None of them is a project's to move, because each one
+protects the run itself from a hung program, an oversized file or a pathological input, and a
+`keelline.toml` is repository-authored (principle 5).
+
+The comment beside a named cap says what it bounds and why the number is what it is. When the number
+has to agree with a shipped file, the comment names that file, so a change to either is visibly a
+change to both: `doctor`'s `WORKFLOW_MAX_BYTES` names `src/keelline/templates/project/keelline.yml`,
+which it must stay well above, and `NEARLY_FULL` names `hooks/hooks.json`, where a bundle's slot
+count is raised. When no such file exists — a timeout on a hung `git`, the longest command
+`bg-cleanup` will read — the comment says so rather than inventing one.
+
+### Enumerated writes
+
+A command's section in [docs/cli.md](docs/cli.md) names every path the command writes, almost
+always in a paragraph that opens with **Writes** (a read-only command says "writes nothing"
+there), and the command writes those paths and no others: a change that makes a command write
+somewhere new names the path there in the same commit. A few sections say it in their prose
+rather than under that label, and `keelline hook`, which is internal, has none: everything it
+writes is inside the one directory Keelline owns under the data root the harness hands it
+(`${CLAUDE_PLUGIN_DATA}/keelline/`), and `src/keelline/hooks/sink.py` says what goes there.
+
+Removal is held tighter. Every file or directory Keelline removes is one it names before it looks —
+a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
+a directory above a file the same run removed — and none is found by listing a directory and
+removing what the listing returned. The one exception is the hook sink's marker tree: sessions are
+unbounded in number, so the sink lists its `markers/` directory and prunes all but the newest
+`MARKER_SESSIONS_KEPT` sessions, inside that one owned directory and through the same `fsops` walk
+as every other removal. A temporary directory a command creates for itself and removes whole when
+it finishes is outside the rule: nothing but that command ever wrote into it.
+
 ## Areas
 
 An area is a subpackage of `src/keelline/` that the CLI frame and the hook registry discover by
@@ -225,7 +267,7 @@ do not add an entry to the exemption.
 A test must never read or write the developer's real `~/.config/keelline/`, `~/.claude/` or
 `~/.codex/`. Pass `--machine` to a command, `machine=` to `resolve`, `home=` where a function
 takes one, and use `tmp_path` for everything else. A test must not shell out to `gh`, `claude`,
-`codex` or `pre-commit` either: `overlay.api.Runner` is the seam those calls go through, and a
+`codex` or `pre-commit` either: `keelline.runner.Runner` is the seam those calls go through, and a
 stub records the argv, which is the part of them that can be wrong in a way somebody notices.
 
 ## Commits and changelog

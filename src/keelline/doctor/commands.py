@@ -86,9 +86,8 @@ def run_doctor(args: argparse.Namespace) -> Result:
     # `checks.CI_REF_TIMEOUT_SECONDS` carries the argument for the number.
     checks = run_checks(
         root,
-        # `None` means the machine owner's own, said out loud rather than defaulted — the rule
-        # every function that takes `home` follows, and for the reason `attach.write` gives: a
-        # resolver without one reads the developer's real `~`.
+        # `None` means the machine owner's own, said out loud rather than defaulted, for the reason
+        # `attach.write.attach` gives: a resolver without one reads the developer's real `~`.
         home=Path(args.home).expanduser() if args.home else None,
         machine=Path(args.machine) if args.machine else None,
         runner=subprocess_runner(timeout=CI_REF_TIMEOUT_SECONDS),

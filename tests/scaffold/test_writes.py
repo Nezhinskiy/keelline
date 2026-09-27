@@ -1,4 +1,5 @@
-"""The enumerated-writes rule for this lane: `apply` touches the project root and nothing else.
+"""The enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) for `scaffold`: `apply` touches
+the project root and nothing else.
 
 Two instruments, because a tree diff and a syscall trace fail on different things. The diff answers
 "did exactly the planned paths change"; it is blind to a write anywhere it does not walk, which is

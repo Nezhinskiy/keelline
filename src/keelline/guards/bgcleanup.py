@@ -150,8 +150,9 @@ class Verdict(NamedTuple):
 
 ALLOW = Verdict(None, None)
 
-# A named cap, not a config key. Above it the guard does not read the command at all. 64 KiB is
-# far past any command a person or a model types and far below where tokenizing costs seconds.
+# A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it. Above it the guard
+# does not read the command at all. 64 KiB is far past any command a person or a model types and far
+# below where tokenizing costs seconds.
 MAX_COMMAND_CHARS = 65_536
 
 # The backgrounding operator, as an operator PIECE. `bashscan.tokenize` emits `&&`, `>&`,
@@ -208,11 +209,11 @@ _SHELL_INTERPRETERS = frozenset(
 # an enumerated probe set rather than against a reading of this comment.
 _SHELL_C_FLAG = re.compile(r"\A-[A-Zabd-z]*c[A-Za-z]*\Z")
 
-# A named cap on descent into a command hidden inside a string, not a config key. Real nesting
-# rarely goes past one level. Exceeding it stops looking, which ALLOWS, and that direction is
-# deliberate: it risks a leak in a shape -- a shell inside a shell inside a shell -- nobody
-# reaches by accident, while denying on depth alone would refuse legitimate deep nesting that
-# carries no `&` this reader can see.
+# A named cap (CONTRIBUTING.md#named-caps) on descent into a command hidden inside a string, and no
+# shipped file changes with it. Real nesting rarely goes past one level. Exceeding it stops looking,
+# which ALLOWS, and that direction is deliberate: it risks a leak in a shape -- a shell inside a
+# shell inside a shell -- nobody reaches by accident, while denying on depth alone would refuse
+# legitimate deep nesting that carries no `&` this reader can see.
 _MAX_RECURSION_DEPTH = 3
 
 LEAK_REASON = (

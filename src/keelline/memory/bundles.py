@@ -59,16 +59,12 @@ SLOTS: dict[Bundle, int] = {
 # part packed to `_cap` and emitted raw is the bundle plus one trailing newline: measured at
 # `hook_output_chars = 10000`, 9,985 characters emitted with 15 to spare.
 #
-# **The named-cap rule, stated as the deviation it is.** A budget, a cap or a TTL comes from
-# `config.budgets`, `config.native_caps`, or a named module constant *whose comment says which
-# shipped file must change with it*. There is no such file for this one and there should not be:
-# it is the headroom between a cap this lane does not own and the way this lane emits text, and a
-# project that could widen it would be a project that could make its own bundles overrun the
-# platform truncation silently. So this names no shipped file, which is a
-# departure from the rule's literal wording rather than a satisfaction of it — the same
-# departure `gitenv.GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` make, and it is flagged here
-# rather than dressed up as compliance. The cap it is subtracted from, `hook_output_chars`, is
-# where that rule is actually satisfied.
+# **A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it.** There is no
+# such file for this one and there should not be: it is the headroom between a cap this lane does
+# not own and the way this lane emits text, and a project that could widen it would be a project
+# that could make its own bundles overrun the platform truncation silently. The cap it is subtracted
+# from, `hook_output_chars`, is a `[native_caps]` key, which is where a change to the platform's
+# number belongs.
 #
 # **For the `hooks-core` lane, which reads `SLOTS` out of this file: the `hooks.json` entries
 # must not pass `--json`.** The margin is additive only because `memory session-context` prints

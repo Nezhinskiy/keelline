@@ -504,12 +504,11 @@ def _with_groups(root: Path, listed: str) -> None:
 def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
-    # Path containment, and repository configuration never grants capability: `memory.groups` is
-    # repository-authored and reaches no guard of its own — `config/paths.py` says so in as many
-    # words, and names this lane as the one that has to call the containment itself. The entry
-    # decides a directory created inside the OVERLAY, which is the one tree `attach` trusts, so a
-    # `..` in it is refused rather than created, and refused rather than crashing out as a raw
-    # `OSError`.
+    # `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
+    # `config/paths.py` says so in as many words, and names this lane as the one that has to call
+    # the containment itself. The entry decides a directory created inside the OVERLAY, which is
+    # the one tree `attach` trusts, so a `..` in it is refused rather than created, and refused
+    # rather than crashing out as a raw `OSError`.
     #
     # **And refused before the first write**, which is the half this case was missing. The
     # containment was called from `_prepare_store`, which runs after the ignore region, the

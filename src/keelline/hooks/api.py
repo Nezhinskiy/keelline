@@ -76,13 +76,14 @@ def detect_harness(env: Mapping[str, str], payload: Mapping[str, Any] | None = N
     """Which harness this process is running under, from the environment and the stdin payload.
 
     Here rather than in `dispatch.py` because two areas ask the question: the dispatcher stamps
-    `HookEvent.harness` with it, and `memory index` renders the index only on Codex, which has no
-    native auto-memory. Two spellings of this rule would be two answers to "which harness", which is
-    the drift a shared vocabulary exists to stop.
+    `HookEvent.harness` with it, and `memory session-context --bundle index` injects the index only
+    on Codex, which has no native auto-memory to load it. Two spellings of this rule would be two
+    answers to "which harness", which is the drift a shared vocabulary exists to stop.
 
-    Measured on both harnesses: Codex sets PLUGIN_ROOT/PLUGIN_DATA and ALSO CLAUDE_PLUGIN_ROOT, so
-    the CLAUDE_* names alone identify nothing; Codex's SessionStart stdin also carries `model` and
-    `permission_mode`, which Claude Code's does not.
+    Measured on both harnesses in the *Codex plugin hooks* trial of the spike record
+    (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): Codex sets PLUGIN_ROOT/PLUGIN_DATA and
+    ALSO CLAUDE_PLUGIN_ROOT, so the CLAUDE_* names alone identify nothing; Codex's SessionStart
+    stdin also carries `model` and `permission_mode`, which Claude Code's does not.
     """
     if "PLUGIN_ROOT" in env:
         return "codex"

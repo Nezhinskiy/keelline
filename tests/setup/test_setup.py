@@ -459,12 +459,12 @@ def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
 def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_attach(
     tmp_path: Path,
 ) -> None:
-    # The C→D seam, asserted rather than assumed — and asserted through both halves, which is
-    # what makes it the seam and not a guess: `setup --overlay <path>` records a root, and
-    # `attach.read_binding` must accept a `--store` that is that root's own share for this
-    # project and refuse, by the specific "own directory inside the overlay" guard, one that
-    # is not. A bare `pytest.raises(Refusal)` with no message match could not tell that guard
-    # apart from any other refusal `read_binding` might raise for an unrelated reason.
+    # The seam between `setup` and `attach`, asserted rather than assumed — and asserted through
+    # both halves, which is what makes it the seam and not a guess: `setup --overlay <path>` records
+    # a root, and `attach.read_binding` must accept a `--store` that is that root's own share for
+    # this project and refuse, by the specific "own directory inside the overlay" guard, one that is
+    # not. A bare `pytest.raises(Refusal)` with no message match could not tell that guard apart
+    # from any other refusal `read_binding` might raise for an unrelated reason.
     #
     # No new mutations.toml entry: the guard both arms exercise is `binding.py`'s own
     # store-must-match-`permitted_roots` check, already load-bearing there under "the overlay root

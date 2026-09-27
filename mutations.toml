@@ -3288,12 +3288,13 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_overlay_that_cannot_be_asked_vouches_for_nothing_and_says_so",
 ]
 
-# S8, and the anchor half of it. `git` is a program this file CHOOSES, resolved through the same
-# `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex hot path, where
-# `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a `git` had that
-# binary EXECUTED on every hook invocation, before any guard of ours, and its stdout became the
-# root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the anchor was
-# itself environment-chosen is "a redirect with a longer name" for the third time in one file.
+# The anchor half of the interpreter containment. `git` is a program this file CHOOSES, resolved
+# through the same `PATH` a committed `.claude/settings.json` `env` block sets -- so on the Codex
+# hot path, where `CLAUDE_PROJECT_DIR` is unset and `git` is the only anchor, a clone that ships a
+# `git` had that binary EXECUTED on every hook invocation, before any guard of ours, and its stdout
+# became the root. Gating `KEELLINE_PYTHON_CANDIDATES` and containing the interpreter while the
+# anchor was itself environment-chosen is "a redirect with a longer name" for the third time in one
+# file.
 [[mutation]]
 name = "the wrapper resolves git through PATH again"
 file = "hooks/run-hook.sh"
@@ -3316,13 +3317,13 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_no_git_at_any_absolute_path_is_a_token_rather_than_a_silent_run[open-0]",
 ]
 
-# The other half of S8: the containment was measured against `CLAUDE_PROJECT_DIR` alone, which
-# reaches this process from the very `env` block it exists to defeat. Measured on the shipped
+# The other half of the interpreter containment: it was measured against `CLAUDE_PROJECT_DIR` alone,
+# which reaches this process from the very `env` block it exists to defeat. Measured on the shipped
 # wrapper: `PATH=<clone>` with `CLAUDE_PROJECT_DIR=<outside the clone>` made the clone's own
-# `python3` "outside the project root" and it ran the launcher. Git's answer enters the
-# containment as the checkout list, so this asks the wrapper to stop asking `git` where the
-# other checkouts are and keep only the root it is standing in -- which a run from a linked
-# worktree can tell apart, and a run in the main checkout cannot.
+# `python3` "outside the project root" and it ran the launcher. Git's answer enters the containment
+# as the checkout list, so this asks the wrapper to stop asking `git` where the other checkouts are
+# and keep only the root it is standing in -- which a run from a linked worktree can tell apart, and
+# a run in the main checkout cannot.
 #
 # This entry used to name the separate `under_root "$dir" "$git_project"` arm in `in_project`,
 # and it SURVIVED: the checkout list contains the git root, so the arm was a duplicate and no
@@ -3552,10 +3553,9 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overlay",
 ]
 
-# The global constraints make `gh` optional and a missing binary "a reported finding, never a
-# traceback" — and never a misattributed one. Without this arm the command launches two more
-# subprocesses, can sleep ten seconds, and blames the owner's GitHub authentication for a binary
-# that was never on PATH.
+# `gh` is an optional binary, and a missing one is a reported finding, never a traceback — and never
+# a misattributed one. Without this arm the command launches two more subprocesses, can sleep ten
+# seconds, and blames the owner's GitHub authentication for a binary that was never on PATH.
 [[mutation]]
 name = "overlay create --template asks GitHub about a `gh` that could not run"
 file = "src/keelline/overlay/create.py"
@@ -5885,7 +5885,8 @@ reddens = [
   "tests/release/test_pins.py::test_is_released_judges_semver_tags_and_never_the_alias",
 ]
 
-# One helper, two readers: the section list and the unknown-key lists inside a known table. Dropping the filter reddens both, which is the point of their sharing it.
+# One helper, two readers: the section list and the unknown-key lists inside a known table. Dropping
+# the filter reddens both, which is the point of their sharing it.
 [[mutation]]
 name = "an unknown name is no longer bounded before it prints"
 file = "src/keelline/config/loader.py"

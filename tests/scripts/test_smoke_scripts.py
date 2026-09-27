@@ -62,7 +62,8 @@ sys.exit(1)
 def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # S8's matrix lives in tests/hooks/test_wrapper.py; this is the positive row per entry:
+    # The wrapper's fail-closed matrix lives in tests/hooks/test_wrapper.py; this is the
+    # positive row per entry:
     # every `hooks.json` command, fed the event it is filed under, exits as the policy says.
     # The closed `PreToolUse` entry is fed a leaking background command and must exit 2 with
     # a reason; every open entry exits 0.
@@ -267,7 +268,8 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     # machine configuration inside the clone and a PATH into the clone. Asserted separately:
     # nothing untrusted reaches the session-start output, the hook ignored the clone's
     # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
-    # not run: Keelline does not depend on `mcp`, and the script says so in its own output.
+    # not run: Keelline ships no MCP server yet (the README lists the memory MCP server under
+    # "Not yet"), and the script says so in its own output.
     #
     # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with

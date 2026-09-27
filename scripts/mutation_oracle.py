@@ -125,12 +125,9 @@ def _holder(lock: Path) -> str | None:
 def single_run(tempdir: Path | None = None) -> Iterator[Path]:
     """Hold the one-oracle-at-a-time lock, or refuse naming what holds it.
 
-    **`sweep_stale_scratch` assumes a single writer and nothing enforced it.** Its own docstring
-    states the assumption — "a second run started while the first is working would sweep the
-    first's checkout out from under it" — and that is exactly what happened during the review of
-    a refactor pass: a filtered run started beside an unfiltered one removed its checkout, and
-    every mutation after that point reported `FINDING`. 138 of them, all false, on a tree with
-    nothing wrong with it. A comment naming a hazard does not stop the hazard; this does.
+    **`sweep_stale_scratch` assumes a single writer, and this is what enforces it:** a second run
+    started beside a first would sweep the first's checkout out from under it, and every mutation
+    after that point would report a false `FINDING`.
 
     `O_CREAT | O_EXCL` is the whole mechanism: the create either wins or raises, with no window
     between the test and the write. A lock whose writer has died is taken over rather than

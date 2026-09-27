@@ -83,8 +83,8 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
 
 def test_every_dispatched_event_has_at_least_one_handler() -> None:
     # An entry for an event nothing handles spawns a process to emit an empty envelope, and
-    # looks installed in doctor's listing. The dispatcher carries five events; three of them
-    # have no handler in this build, and the lane that adds one adds its entry.
+    # looks installed in doctor's listing. The dispatcher carries five events; two of them
+    # have no handler in this build, and a handler added for one arrives with its entry.
     events = {handler.event for handler in discover()}
     for _, _matcher, entry in _entries():
         words = entry["command"].split()

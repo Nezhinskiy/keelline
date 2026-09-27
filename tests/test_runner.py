@@ -87,7 +87,7 @@ def test_a_command_that_hangs_is_not_reported_as_one_that_is_missing(tmp_path: P
         runner.NETWORK_TIMEOUT_SECONDS = before
     assert hung.code == TIMED_OUT
     # Non-vacuous: a binary that really is missing still answers NOT_FOUND, which is the mapping
-    # the global constraints ask for — an optional binary is a finding, never a traceback.
+    # an optional binary needs — a missing one is a finding, never a traceback.
     assert _SubprocessRunner().run(["keelline-no-such-binary"], tmp_path).code == NOT_FOUND
 
 

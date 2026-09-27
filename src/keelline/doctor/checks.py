@@ -135,10 +135,10 @@ _TOKEN = re.compile(r"\bKL_[A-Z_]+\b")
 # green attached installation — `keelline.doctor.__init__` counts them and names the one that
 # leaves the machine — because three more are launched inside the areas the rows below call.
 #
-# A cap that is not a config key names the shipped file that must change with it; there is
-# none, because this bounds `keelline --version` behind an interpreter probe and nothing about it
-# is a project's to tune. Wide enough for a cold interpreter start on a loaded machine, narrow
-# enough that a hung probe does not hang `doctor`.
+# A named cap (CONTRIBUTING.md#named-caps), and no shipped file changes with it: this bounds
+# `keelline --version` behind an interpreter probe, and nothing about it is a project's to tune.
+# Wide enough for a cold interpreter start on a loaded machine, narrow enough that a hung probe does
+# not hang `doctor`.
 WRAPPER_TIMEOUT_SECONDS = 30
 # Wall-clock bound on the one call this area makes that leaves the machine: the `ci-ref` row's
 # `git ls-remote` over the public repository's tags, which `doctor/commands.py` builds the runner
@@ -283,10 +283,12 @@ def _own_root() -> Path | None:
     return own if (own / WRAPPER).is_file() else None
 
 
-# Both names, because both reach this process: measured, Codex exports `PLUGIN_ROOT` and also
-# `CLAUDE_PLUGIN_ROOT`, so a rule written against one of them is `config/machine.py`'s own
-# finding again — "gating one of a pair of equivalent inputs is not a partial defence, it is a
-# redirect with a longer name". Neither is ever executed; see `plugin_root`.
+# Both names, because both reach this process: Codex exports `PLUGIN_ROOT` and also
+# `CLAUDE_PLUGIN_ROOT`, as the spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`)
+# measured in its *Codex plugin hooks* trial, so a rule written against one of them is
+# `config/machine.py`'s own finding again — "gating one of a pair of equivalent inputs is not a
+# partial defence, it is a redirect with a longer name". Neither is ever executed; see
+# `plugin_root`.
 NAMED_ROOTS = ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
 
 
@@ -649,11 +651,10 @@ def _attached(context: Context) -> Row:
             "run `keelline attach --store <overlay>/projects/<project>/memory --check`",
         )
     answer = _binding_answer(context)
-    # The ledger exists, so from here on this row's job is to say what the **overlay** makes of
-    # it, because a repository is untrusted input (principle 5). Every arm below but the last
-    # refuses to print the word "attached": the ledger asserting one is exactly what a clone can
-    # commit, and the only thing that confirms it is the overlay, whose root comes from the
-    # machine configuration and which this repository cannot choose.
+    # The ledger exists, so from here on this row's job is to say what the **overlay** makes of it
+    # (principle 5), for the reason `_granted_commands` gives: the ledger is a path a clone can
+    # commit, and the overlay is the one source a repository cannot choose. Every arm below but the
+    # last refuses to print the word "attached".
     if isinstance(answer, str):
         return _uncorroborated(answer)
     state = answer.state
@@ -1097,11 +1098,10 @@ def _budgets(context: Context) -> Row:
 # `native_caps.hook_output_chars`. `doctor` reports a bundle that does not fit *and* one that
 # reaches the cap, and the second needs a threshold that the first does not.
 #
-# A fraction and not `parts == slots`: `preset-rules` has one slot and any preset at all fills
-# it, so that predicate warns on every correct installation and says nothing. A cap that is not
-# a config key names the shipped file that must change with it — this one names
-# `hooks/hooks.json`, which is where a slot count is raised when this warning turns out to be
-# right.
+# A fraction and not `parts == slots`: `preset-rules` has one slot and any preset at all fills it,
+# so that predicate warns on every correct installation and says nothing. A named cap
+# (CONTRIBUTING.md#named-caps), and the shipped file that changes with it is `hooks/hooks.json`,
+# which is where a slot count is raised when this warning turns out to be right.
 NEARLY_FULL = 0.9
 
 
@@ -1146,8 +1146,9 @@ def _bundles(context: Context) -> Row:
 def _cli_path(context: Context) -> Row:
     """Whether `keelline` resolves by name on this machine.
 
-    Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content, so a skill that
-    says `keelline …` needs the name to resolve on PATH there.
+    Codex performs no `${CLAUDE_PLUGIN_ROOT}` substitution in skill content, as the spike record's
+    *plugin-root substitution and executable bits* trial measured, so a skill that says `keelline …`
+    needs the name to resolve on PATH there.
 
     **Asked of `context.env`, like every other check that reads the environment.** It used to
     call `shutil.which("keelline")`, which reads `os.environ["PATH"]` directly — the one check
@@ -1308,11 +1309,11 @@ ALIAS = "v1"
 # The rendered workflow, which is the pin GitHub actually acts on.
 WORKFLOW = ".github/workflows/keelline.yml"
 # Bound on the read of that file, which a repository authors. `DIAGNOSTICS_MAX_BYTES` is the same
-# number for the same reason one function down, and a cap that is not a config key names the
-# shipped file that must change with it: `templates/project/keelline.yml`, which renders to well
-# under 2 KiB. Two orders of magnitude above it leaves room for a project that adds jobs of its
-# own around the call, and still refuses to read a file no `init` could have written into a
-# one-line diagnostic.
+# number for the same reason one function down. A named cap (CONTRIBUTING.md#named-caps), and the
+# shipped file that changes with it is `templates/project/keelline.yml`, which renders to well under
+# 2 KiB. Two orders of magnitude above it leaves room for a project that adds jobs of its own around
+# the call, and still refuses to read a file no `init` could have written into a one-line
+# diagnostic.
 WORKFLOW_MAX_BYTES = 256 * 1024
 # Its `uses:` ref is the word after `@`; a trailing ` # v0.1.0` version comment is not part of it.
 _USES = re.compile(r"uses:\s*\S+/\.github/workflows/check\.yml@(\S+)")

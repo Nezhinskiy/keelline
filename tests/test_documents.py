@@ -43,7 +43,7 @@ FRESH_MONTHS = 2
 BACKING_LABELS = ("sourced", "measured", "thin")
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
-# `| S12 | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
+# `| S<n> | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
 # published cell is a month or the word `living` for a maintained page that carries no date.
 _SOURCE_ROW = re.compile(
     r"^\| (S\d+) \| ([^|]+) \| (\d{4}-\d{2}|living) \| (\d{4}-\d{2}) \| "
@@ -171,8 +171,8 @@ def test_every_source_row_parses_and_the_table_has_no_other_rows() -> None:
 
 
 def test_every_citation_resolves_and_every_source_is_cited() -> None:
-    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a row `S98`
-    # nothing cites → the second reddens. Both directions, because an uncited source is a
+    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a source row
+    # that no `[S98]` cites → the second reddens. Both directions, because an uncited source is a
     # source someone meant to use and forgot, which is a claim left without its evidence.
     cited = set(_CITATION.findall(PRINCIPLES.read_text(encoding="utf-8")))
     cited |= set(_CITATION.findall((METHODOLOGY / "README.md").read_text(encoding="utf-8")))

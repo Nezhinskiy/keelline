@@ -395,9 +395,9 @@ def test_the_engine_refuses_a_control_directory_target_the_loader_never_sees(
 
 
 def test_two_of_the_fixtures_own_fields_reach_no_guard_in_this_lane(tmp_path: Path) -> None:
-    """`ledger.code_roots` and `memory.index_extra` are contained targets as well, and this lane
-    consumes neither: `config/paths.py`'s docstring hands them to whichever lane first reads them,
-    which is `ledger` and `memory-engine`. Pinned here so the day one of them starts refusing, this
+    """`ledger.code_roots` and `memory.index_extra` are contained targets as well, and `scaffold`
+    consumes neither: `config/paths.py`'s docstring hands them to whichever area first reads them,
+    which is `ledger` and `memory`. Pinned here so the day one of them starts refusing, this
     assertion is the reminder that every contained target these fixtures name is finally guarded."""
     write_config(tmp_path, HOSTILE_FIELDS_SCAFFOLD_NEVER_READS)
     config = load_at(tmp_path)

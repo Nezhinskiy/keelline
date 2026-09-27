@@ -200,13 +200,12 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
 
 # --- `check.yml`'s base-ref step, run as the shell script it is -------------------------
 #
-# The repository carries no YAML parser and this plan adds no dependency to check its own
-# prose, so a workflow is otherwise proven only by the run that first executes it. The one
-# part of `check.yml` that is *logic* rather than platform plumbing is the step that decides
-# which base commit the gates' configuration comes from and which project root the gates run
-# in. That step's `run:` body is extracted from the shipped file — never retyped here, or the
-# test would hold a copy and the file would be free to drift — and run with `bash` against real
-# repositories.
+# The repository carries no YAML parser and adds no dependency to check its own prose, so a workflow
+# is otherwise proven only by the run that first executes it. The one part of `check.yml` that is
+# *logic* rather than platform plumbing is the step that decides which base commit the gates'
+# configuration comes from and which project root the gates run in. That step's `run:` body is
+# extracted from the shipped file — never retyped here, or the test would hold a copy and the file
+# would be free to drift — and run with `bash` against real repositories.
 
 CHECK_WORKFLOW = ROOT / ".github" / "workflows" / "check.yml"
 BASE_STEP = "The base ref and the project root"

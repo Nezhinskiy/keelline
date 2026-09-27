@@ -311,11 +311,12 @@ def run_session_context(args: argparse.Namespace) -> Result:
     # environment to read; `detect_harness` is the hook area's own answer to the same question.
     #
     # **No payload is passed, so only the environment half of that answer is in play here.**
-    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
-    # which the dispatcher does and this call site does not: there is no stdin payload at a
-    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as
-    # measured on a Codex session, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names
-    # identify nothing and neither "claude" nor "unknown" reaches the render.
+    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*, which
+    # the dispatcher does and this call site does not: there is no stdin payload at a command
+    # invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as the spike
+    # record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
+    # hooks* trial, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing and
+    # neither "claude" nor "unknown" reaches the render.
     #
     # **This is the one shipped command whose output depends on the ambient environment**, and
     # it is deliberate rather than incidental: the bundle exists for the harness that has no

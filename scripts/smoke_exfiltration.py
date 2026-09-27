@@ -15,8 +15,8 @@ trusted it, then not reaching one after the record lapses, then not reaching one
 record is deleted. A row that could only ever have been green is not evidence.
 
 The scenario's MCP arm — `memory_search` under an explicit `project=` — is not run: Keelline
-does not depend on the `mcp` package, and the run says so in its own output rather than leaving
-a silent gap in the scenario.
+ships no MCP server yet (the README lists the memory MCP server under "Not yet"), and the run
+says so in its own output rather than leaving a silent gap in the scenario.
 """
 
 from __future__ import annotations

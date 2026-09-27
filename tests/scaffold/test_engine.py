@@ -163,9 +163,10 @@ def test_force_overrides_a_hand_edit(tmp_path: Path) -> None:
 
 
 def test_a_once_artifact_is_never_updated(tmp_path: Path) -> None:
-    # `skip_modified` and not `unchanged`: the plan's decision table says so, and `unchanged`
-    # renders as "up to date" for a file Keelline deliberately never looks inside again. The
-    # user needs "left alone because it is yours", which is the statement that is true.
+    # `skip_modified` and not `unchanged`: a file that is present with no record is `skip_modified`
+    # for a `template` or a `once` kind, and `unchanged` renders as "up to date" for a file Keelline
+    # deliberately never looks inside again. The user needs "left alone because it is yours", which
+    # is the statement that is true.
     (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
     template = a_template(id="claude-md", kind=Kind.ONCE, target="CLAUDE.md")
     result = plan(tmp_path, a_config(tmp_path), [template])

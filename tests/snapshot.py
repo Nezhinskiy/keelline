@@ -1,9 +1,9 @@
 """The tree-snapshot helpers five test modules share.
 
-Here rather than in `tests/test_install_path.py`, because two `attach` test modules importing
-an installer-focused module's private names was S3 of the install-path review. The `git` this
-module used to publish beside them is `tests/gitfixture.py`'s now: running `git` and reading a
-tree back are two concerns, and only one of them was duplicated twenty-three times.
+Here rather than in `tests/test_install_path.py`, because an `attach` test module that imports an
+installer-focused module's private names is coupled to a module it does not test. The `git` this
+module used to publish beside them is `tests/gitfixture.py`'s now: running `git` and reading a tree
+back are two concerns, and only one of them was duplicated twenty-three times.
 """
 
 from __future__ import annotations

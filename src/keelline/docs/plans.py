@@ -108,9 +108,9 @@ _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+
 # Present tense only, so "verified"/"confirmed" — a report — is not among them.
 _GOVERNOR = r"(?:->|→|\bwatch(?:ing)?\b|\bverif(?:y|ies)\b|\bconfirms?\b)"
 # How far an outcome may sit from the instruction that governs it and still be read as its
-# consequence (a bound on a regular expression's reach, not a budget — no shipped file
-# changes with it). Wide enough for a clause, narrow enough that a data-flow arrow early in a
-# long paragraph cannot reach a "must stay green" constraint at its end.
+# consequence: a named cap (CONTRIBUTING.md#named-caps) on a regular expression's reach, and no
+# shipped file changes with it. Wide enough for a clause, narrow enough that a data-flow arrow early
+# in a long paragraph cannot reach a "must stay green" constraint at its end.
 _OUTCOME_SPAN = 60
 # Governed and bounded; or ungoverned but counted, because "reddens 8 assertions" is a
 # measurement, and a measurement written in the present tense has not been taken yet.

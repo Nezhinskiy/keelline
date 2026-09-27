@@ -30,9 +30,9 @@ from pathlib import Path
 from keelline.errors import Failure
 from keelline.fsops import utf_8_name, write_atomically
 
-# Sort sentinel for a note whose `startup` metadata could not be parsed as an int. Not a named
-# cap: this is not a budget or cap read from config, and no shipped file needs to change if it
-# does — it only needs to sort after every real startup rank the corpus can hold.
+# Sort sentinel for a note whose `startup` metadata could not be parsed as an int. Not a named cap
+# (CONTRIBUTING.md#named-caps): it bounds nothing, and only needs to sort after every real startup
+# rank the corpus can hold.
 UNRANKED = 10_000
 FENCE = "---"
 _KEY = re.compile(r"^(?P<indent> *)(?P<key>[A-Za-z_][A-Za-z0-9_]*):(?P<rest>.*)$")

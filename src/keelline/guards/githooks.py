@@ -10,10 +10,11 @@ checkout and every worktree.
 A foreign hook of the same name is kept as `<name>.local` and the shipped hook `exec`s it
 last, so nothing that was already running stops running. `uninstall` puts it back.
 
-This is the one place this lane writes outside a project root on purpose: the hooks
-directory is git's, and in a worktree it is not under the checkout at all. The writes are
-`fsops.write_atomically` on the hook path and a rename of the foreign hook beside it; both are
-enumerated writes, named here in advance as every path Keelline writes is.
+This is the one place this lane writes outside a project root on purpose: the hooks directory is
+git's, and in a worktree it is not under the checkout at all. The writes are
+`fsops.write_atomically` on the hook path and a rename of the foreign hook beside it, and both paths
+are named in `docs/cli.md`'s **Writes** paragraph for `keelline setup --git-hooks`, as the
+enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) asks of every path a command writes.
 """
 
 from __future__ import annotations
@@ -150,7 +151,7 @@ def install(root: Path) -> Installed:
         raise Refusal(f"{local} already exists and was not preserved by keelline; move it aside")
     preserved: Path | None = None
     if target.exists() and not replaced:
-        target.rename(local)  # beside the hook, in git's own directory: an enumerated write
+        target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
         preserved = local

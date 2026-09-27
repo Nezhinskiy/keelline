@@ -109,9 +109,9 @@ def _extract(root: Path, ref: str, into: Path) -> None:
             check=False,
             env=scrubbed_env(),
         )
-    # A missing binary is a reported finding, never a traceback (the global constraints make
-    # every external program optional): `gitenv.git_run` answers `(-1, "")` on an `OSError` and
-    # `runner` answers `Completed(NOT_FOUND, ...)`; this is the same rule for `tar`.
+    # A missing binary is a reported finding, never a traceback, because Keelline installs no
+    # external program it launches: `gitenv.git_run` answers `(-1, "")` on an `OSError` and `runner`
+    # answers `Completed(NOT_FOUND, ...)`; this is the same rule for `tar`.
     except OSError as exc:
         raise Failure(f"extracting {ref}: tar could not be run ({exc})") from None
     archive.unlink()

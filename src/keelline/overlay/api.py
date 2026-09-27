@@ -4,12 +4,12 @@ The list is chosen from what consumers outside this area actually reach for. A l
 something absent from it grows it deliberately, in a commit that says which lane and why — it
 does not import a private module of this area.
 
-`setup` builds an overlay and so needs `create`, `init_instance`, `target_root`,
-`require_overlay` and `overlay_fault`; `Created` and `Initialised` come with the first two,
-because a return type absent from this list is a value `setup` can hold and cannot declare.
-`attach` reads `common/claude` and `common/codex` inside the layout (`COMMON_CLAUDE`,
-`COMMON_CODEX`). The runner is a leaf (`keelline.runner`), not this area's; it used to be
-published here on behalf of three other areas, a shape that moving it into a leaf module ended.
+`setup` builds an overlay and so needs `create`, `init_instance`, `target_root`, `require_overlay`
+and `overlay_fault`; `Created` and `Initialised` come with the first two, because a return type
+absent from this list is a value `setup` can hold and cannot declare. `attach` reads `common/claude`
+and `common/codex` inside the layout (`COMMON_CLAUDE`, `COMMON_CODEX`). The runner is a leaf module
+(`keelline.runner`), not this area's: every area that launches a program imports it from there, and
+none reaches it through this surface.
 
 Two names are here with no importer in `src/`, on purpose:
 

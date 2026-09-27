@@ -38,17 +38,18 @@ from keelline.scaffold import Manifest, apply, digest, plan
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "keelline-overlay-template"
-# The directory whose presence says a generated repository actually arrived — the exact probe
-# the one measured trial of template generation used, and the one thing a repository created
-# from this template always carries.
-# Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says why:
-# this one answers "did a tree arrive here", which is the question idempotence asks of a clone
+# The directory whose presence says a generated repository actually arrived — the exact probe the
+# spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) used in its *template creation
+# race and renaming* trial, and the one thing a repository created from this template always
+# carries. Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says
+# why: this one answers "did a tree arrive here", which is the question idempotence asks of a clone
 # `gh` gave up on half way through.
 PROBE = ".claude-plugin"
-# How long to wait before the one retry, when `gh` says the repository exists and the clone
-# brought nothing down. The one measured trial of template generation did not reproduce that
-# race, so this is carried on the strength of reasoning rather than of a measurement: generation
-# is asynchronous on GitHub's side and one clean run cannot rule out a slow one.
+# How long to wait before the one retry, when `gh` says the repository exists and the clone brought
+# nothing down. The spike record's *template creation race and renaming* trial did not reproduce
+# that race in its one attempt, so this is carried on the strength of reasoning rather than of a
+# measurement: generation is asynchronous on GitHub's side and one clean run cannot rule out a slow
+# one.
 RETRY_WAIT_SECONDS = 10
 # The precondition `docs/cli.md` names and the command itself never did. `--template` generates
 # from a repository on the owner's own account, and that repository has to have been published
@@ -191,11 +192,12 @@ def _from_template(
     if _populated(target):
         return Created(target, "template", (f"created {slug} from {TEMPLATE_REPOSITORY}",))
     if created.code in (NOT_FOUND, TIMED_OUT):
-        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state
-        # two further subprocesses and a ten-second wait can learn anything about: `gh repo
-        # view` would ask the same absent binary a second question, get the same answer, and the
-        # failure would then name GitHub for a fault that is this machine's. The global
-        # constraints make `gh` optional — so this is a reported finding that names it.
+        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
+        # further subprocesses and a ten-second wait can learn anything about: `gh repo view` would
+        # ask the same absent binary a second question, get the same answer, and the failure would
+        # then name GitHub for a fault that is this machine's. Keelline does not install `gh`, so
+        # its absence is the machine owner's to fix: a reported finding that names it, never a
+        # traceback.
         raise Failure(
             f"`gh repo create {slug} …` could not be run ({_detail(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "

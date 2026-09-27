@@ -11,15 +11,8 @@ def test_the_memory_surface_carries_what_every_downstream_lane_reaches_for() -> 
     # deliberately, in a commit that says which lane and why — it does not import a private
     # module, and it does not get told after the fact that its import was a review finding.
     #
-    # **An equality now, and it was a subset.** The old comment said why: ten names were on
-    # `__all__` and had never been justified here, and "adding ten justifications for exports
-    # this plan did not ship would be this list claiming a review it never had". That is the
-    # honest form of a list nobody had audited — and it is also what let the surface reach
-    # seventy names, forty-five of them with no importer anywhere. The refactor pass that
-    # trimmed every area's surface is that review: every name below now has its argument, in
-    # `api.py` or beside it here, so the assertion can be the one every other area is held to. A
-    # subset lets an export arrive unnoticed, which is the hole `tests/guards/test_surface.py`
-    # names.
+    # An equality, because every name below has its argument, in `api.py` or beside it here, and
+    # a subset lets an export arrive unnoticed — the hole `tests/guards/test_surface.py` names.
     #
     # No `mutations.toml` entry, for the reason every other area's surface test gives: the
     # mutation is adding an export, which is two lines in `api.py` — the import and the

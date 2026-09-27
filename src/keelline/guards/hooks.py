@@ -6,9 +6,10 @@ neither the configuration layer nor the presets, and discovery imports every are
 module — so a module-level import here reddens a test that belongs to no area at all.
 
 `bg-cleanup` is the one `Policy.CLOSED` handler in the plugin. It does not catch its own exceptions:
-a guard for an action with a high cost of error fails closed, and the dispatcher is what turns an
-exception from a CLOSED handler into exit 2 with a reason. `judge` itself returns rather than raises
-on any string, so what reaches that policy is a genuine defect, not an unusual command.
+a guard for an action with a high cost of error fails closed (principle 6), and the dispatcher is
+what turns an exception from a CLOSED handler into exit 2 with a reason. `judge` itself returns
+rather than raises on any string, so what reaches that policy is a genuine defect, not an unusual
+command.
 
 Nothing a repository controls is put into `HookResult.context`. The restore hint is built from
 the command's own text — model- or user-authored, never repository bytes — and the hygiene
@@ -29,8 +30,9 @@ from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
 if TYPE_CHECKING:
     from keelline.config.schema import Config
 
-# The matcher both handlers share. Codex reports every shell-routed action as `Bash` too
-# (measured on both harnesses), so this one name serves both harnesses.
+# The matcher both handlers share. Codex reports every shell-routed action as `Bash` too, as the
+# spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
+# hooks* trial, so this one name serves both harnesses.
 BASH = "Bash"
 
 # The dispatcher owns the once-per-context bookkeeping, so the handler declares the key

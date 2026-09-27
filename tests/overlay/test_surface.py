@@ -41,8 +41,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "MARKETPLACE_MANIFEST",
         "CODEX_PLUGIN_MANIFEST",
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
-        # outside `src/`, and the one an earlier trim of this list did not see because the
-        # boundary walk stopped at `src/`
+        # outside `src/`, which a walk of `src/` alone does not see
         "OVERLAY_FILES",
         # the floor an overlay declares and whether a running Keelline meets it, for `doctor`'s
         # `overlay-requires` row

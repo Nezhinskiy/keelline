@@ -7,10 +7,11 @@ have run* against a stub instead of shelling out to `gh`, `git` or `pre-commit`.
 `subprocess.run` would hide the argv, which is the only part of these calls that can be wrong in
 a way a user notices: a missing `--private` publishes somebody's private overlay.
 
-A missing binary is a finding, never a traceback (the global constraints make `gh`, `git` and
-`pre-commit` optional), so an `OSError` from the launch becomes `Completed(NOT_FOUND, ...)` and
-the caller turns it into a note. A binary that ran and never returned gets its own code,
-`TIMED_OUT`, because "not installed" and "hung for five minutes" are different findings.
+A missing binary is a finding, never a traceback: Keelline installs none of `gh`, `git` and
+`pre-commit`, and has to report on a machine that lacks any of them. So an `OSError` from the launch
+becomes `Completed(NOT_FOUND, ...)` and the caller turns it into a note. A binary that ran and never
+returned gets its own code, `TIMED_OUT`, because "not installed" and "hung for five minutes" are
+different findings.
 """
 
 from __future__ import annotations
@@ -29,11 +30,12 @@ NOT_FOUND = 127
 # as `NOT_FOUND` -- which every caller reads as "gh is not installed". A wrong finding is worse
 # than a slow one, and the two states have different remedies.
 TIMED_OUT = 124
-# Wall-clock bound on one call, and deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`
-# (a named cap, not a config key). That one bounds a local, argument-free query that neither
-# touches the network nor grows with the repository; every call here does the opposite — `gh
-# repo create --clone` waits on GitHub to generate a repository from a template, and the clone
-# that follows comes down the wire. Tune this for a hung process, not for a slow link.
+# Wall-clock bound on one call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
+# changes with it. Deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`, which bounds a local,
+# argument-free query that neither touches the network nor grows with the repository; every call
+# here does the opposite — `gh repo create --clone` waits on GitHub to generate a repository from a
+# template, and the clone that follows comes down the wire. Tune this for a hung process, not for a
+# slow link.
 NETWORK_TIMEOUT_SECONDS = 300
 # Inherit the environment rather than scrub it: these are the machine owner's own authenticated
 # commands, and `gh` needs its token and `git` its ssh-agent to work at all. What is dropped is

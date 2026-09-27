@@ -274,8 +274,8 @@ def _attached(tmp_path: Path) -> Path:
 def test_a_repository_without_a_configuration_reports_one_line_and_skips_the_rest(
     tmp_path: Path,
 ) -> None:
-    # A repository with no keelline.toml gets silent plugin hooks and one `not-initialised`
-    # row from doctor. Sixteen red checks for a repository that never heard of Keelline is
+    # A repository with no keelline.toml gets one red `not-initialised` row from doctor and a skip
+    # for every other check. Sixteen red checks for a repository that never heard of Keelline is
     # noise, not a diagnosis.
     checks = _checks(tmp_path, tmp_path)
     assert _by_name(checks, "not-initialised").status == "red"
@@ -1681,10 +1681,11 @@ def _no_overlay_machine(tmp_path: Path) -> Path:
 def test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached(
     tmp_path: Path,
 ) -> None:
-    # The universal case on a machine where `setup` has never run, and the second half of item
-    # 1: `read_binding` refuses for this too, and the row used to print "attached" over it. It
-    # is a fact about *our own inputs*, so it is a `skip` that says what could not be asked —
-    # never a warning that accuses the repository, and never the word "attached".
+    # The universal case on a machine where `setup` has never run, and the other refusal beside the
+    # one the test above covers: `read_binding` refuses for this too, and the row used to print
+    # "attached" over it. It is a fact about *our own inputs*, so it is a `skip` that says what
+    # could not be asked — never a warning that accuses the repository, and never the word
+    # "attached".
     #
     # Mutation (declared): `if context.overlay is None: return NO_OVERLAY` -> `if False:` ->
     # the reason becomes `UNRESOLVED` (the refusal is indistinguishable once the arm is gone)

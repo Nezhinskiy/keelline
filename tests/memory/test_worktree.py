@@ -242,8 +242,8 @@ def test_no_new_top_level_entry_appears_anywhere_but_the_home_directory(tmp_path
 # therefore left out of `store.groups` — the store's own overlay-boundary check.
 # A worktree link built from `store.path / group` would still find a real symlink sitting at
 # that path in the checkout and materialise it, carrying a sideways link across the project
-# boundary into every worktree. This is the "resolve test again, under an overlay fixture" the
-# brief's mutation notes ask for, since the nine tests above never produce an unavailable group.
+# boundary into every worktree. So the resolve test runs again here under an overlay fixture,
+# because the nine tests above never produce an unavailable group.
 
 
 def an_overlay_checkout(tmp_path: Path) -> tuple[Path, Store, Config]:
@@ -1003,12 +1003,13 @@ def test_the_worktree_module_writes_links_only_through_fsops() -> None:
 def test_a_group_directory_that_is_a_symlink_in_the_worktree_is_refused_and_nothing_lands_behind_it(
     tmp_path: Path,
 ) -> None:
-    # S9's shape at the worktree: the branch checked out there commits the configured store as a
-    # symlink to a directory outside the checkout. `link` raises rather than following it, and
-    # the outside directory gains nothing. The refusal is `PathEscape` and not `UnsafePath`,
-    # because `keelline.memory.hooks` catches `PartialLink` — an `OSError`, which `UnsafePath`
-    # is — before `Refusal`, so an escape arriving as an `OSError` would be reported as "N
-    # links made" rather than as the containment refusal it is.
+    # The containment fixture of the spike record
+    # (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`), at the worktree: the branch checked out
+    # there commits the configured store as a symlink to a directory outside the checkout. `link`
+    # raises rather than following it, and the outside directory gains nothing. The refusal is
+    # `PathEscape` and not `UnsafePath`, because `keelline.memory.hooks` catches `PartialLink` — an
+    # `OSError`, which `UnsafePath` is — before `Refusal`, so an escape arriving as an `OSError`
+    # would be reported as "N links made" rather than as the containment refusal it is.
     root, store, config = a_checkout(tmp_path)
     tree = a_worktree(root, tmp_path / "wt")
     elsewhere = tmp_path / "elsewhere"
@@ -1054,8 +1055,8 @@ def test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_lin
     # name — "never a partial link" — is earned by `pytest.raises(Refusal)` itself: the two
     # classes are disjoint (`PartialLink` is an `OSError`, `Refusal` is not), so a run that
     # raised `PartialLink` fails here. An `assert not isinstance(..., PartialLink)` inside the
-    # block would say it a second time and could not fail, which is the vacuous shape this
-    # wave exists to remove.
+    # block would say it a second time and could not fail, and an assertion that cannot fail
+    # proves nothing.
     #
     # Mutation (declared): `if not root.is_dir():` -> `if False:` -> `PartialLink` again, and
     # `pytest.raises(Refusal)` reddens.

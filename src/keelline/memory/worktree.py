@@ -358,11 +358,11 @@ def link(worktree: Path, store: Store, config: Config, *, home: Path | None = No
     the two can no longer disagree about where the overlay is.
 
     Raises `PathEscape` rather than skipping when a name leaves the tree. Every `name` here is
-    repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and it reaches
-    no guard of its own), and `store.groups` was validated
-    against the *main checkout's* tree — a worktree is a separate checkout of a separate
-    branch, so its own copy of that subtree can hold a symlink the main one does not. Skipping
-    one escaping name would leave the next name in the list free to try the same thing.
+    repository-controlled (`memory.groups` is an ordinary `keelline.toml` list, and it reaches no
+    guard of its own), and `store.groups` was validated against the *main checkout's* tree — a
+    worktree is a separate checkout of a separate branch, so its own copy of that subtree can hold a
+    symlink the main one does not. Skipping one escaping name would leave the next name in the list
+    free to try the same thing.
 
     **The harness link is the one hop that leaves keelline's gate, so it is the one that asks
     about trust.** Every link above lands inside the worktree, where the only reader is this
@@ -471,12 +471,12 @@ def attach_main(
 ) -> Links:
     """Build the link tree in the checkout that owns the store, in overlay mode.
 
-    The case `link` excludes. `link` is right that the main checkout "already holds the real
-    store, not a link to it" in `local-only` and `in-repo`; in `overlay` mode the real store
-    lives in the overlay and the checkout holds a tree of links, so the owning checkout needs an
-    entry point of its own. It lives here rather than in `attach` because the two share `_link`,
-    `_unlink` and the gate above, and a second copy of that gate in another area is the most
-    expensive duplication this code could make.
+    The case `link` excludes. `link` is right that the main checkout "already holds the real store,
+    not a link to it" in `local-only` and `in-repo`; in `overlay` mode the real store lives in the
+    overlay and the checkout holds a tree of links, so the owning checkout needs an entry point of
+    its own. It lives here rather than in `attach` because the two share `_link`, `_unlink` and the
+    gate above, and a second copy of that gate in another area would be a trust check that can drift
+    from the first.
 
     **It takes a `store_path` and not a resolved `Store`, because there is nothing to resolve
     yet:** in overlay mode `resolve()` reads the link tree, and the link tree is what this

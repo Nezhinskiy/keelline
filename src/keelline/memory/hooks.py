@@ -1,11 +1,11 @@
 """Handlers this area contributes; `hooks-core` owns the entries that invoke them.
 
-Every import of `keelline.config`, `keelline.memory.store` and their neighbours happens
-**inside** a handler body. `tests/test_areas.py` asserts that `discover()` in a clean
-interpreter imports neither the configuration layer nor the presets, and discovery imports
-every area's `hooks` module — so a module-level `from keelline.config.schema import Config`
-here reddens a cross-area test this area does not own. The annotation is a string under
-`TYPE_CHECKING`, exactly as `keelline.hooks.api` already writes it.
+Every import of `keelline.config`, `keelline.memory.store` and their neighbours happens **inside** a
+handler body. `tests/test_areas.py` asserts that `discover()` in a clean interpreter imports neither
+the configuration layer nor the presets, and discovery imports every area's `hooks` module — so a
+module-level `from keelline.config.schema import Config` here reddens a test that belongs to no area
+at all. The annotation is a string under `TYPE_CHECKING`, exactly as `keelline.hooks.api` already
+writes it.
 
 There is no `SessionStart` context handler here, and that absence is the design: the four
 injection bundles are invoked as their own `hooks.json` entries so each gets its own platform

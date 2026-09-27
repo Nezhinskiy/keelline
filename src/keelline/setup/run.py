@@ -9,35 +9,34 @@ or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
-`setup --preset recommended` reset `reply_language` back to `""` even after the owner had set it
-by hand — exactly the value `skills/setup/SKILL.md` calls "the user's to set" and
-`setup.machine`'s own docstring promises survives a rewrite that "only set one of them".
-`_new_personal_values` computes only the keys the machine file does not
-already carry, and that is what both `write_machine` and the settings file's `pluginConfigs`
-receive — an empty dict on every run after the first, once every key has a recorded value.
+`setup --preset recommended` reset `reply_language` back to `""` even after the owner had set it by
+hand — exactly the value `skills/setup/SKILL.md` calls "the user's to set" and `setup.machine`'s own
+docstring promises survives a rewrite that "only set one of them". `_new_personal_values` computes
+only the keys the machine file does not already carry, and that is what both `write_machine` and the
+settings file's `pluginConfigs` receive — an empty dict on every run after the first, once every key
+has a recorded value.
 
-**Marketplaces are registered before anything is installed from them, and per-plugin sources
-are never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a
-fresh machine and always failed there — `obra` and `upstash` are GitHub accounts, not
-marketplace names, and every measured successful install in this tree's own spike record
-(`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) is preceded by a `marketplace add`.
-Checked before writing this fix (`gh api repos/...`, `claude plugin
-marketplace list` on the machine this was written on): `superpowers` and `context7` both ship
-in Anthropic's own official marketplace, `anthropics/claude-plugins-official`, which a Claude
-Code install already carries — the `marketplace add` this module still issues is idempotent
-defence in depth, not a first registration, and its own real output confirms that
-(`✔ Marketplace 'claude-plugins-official' already on disk`). No non-interactive, non-guessed
-source could be established for Codex, so nothing is attempted there for these two plugins; the
-recommended preset's own `[plugins.claude]` table and the README carry the reasoning and the
-recommendation respectively.
+**Marketplaces are registered before anything is installed from them, and per-plugin sources are
+never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a fresh
+machine and always failed there — `obra` and `upstash` are GitHub accounts, not marketplace names,
+and every measured successful install in this tree's own spike record
+(`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) is preceded by a `marketplace add`. Checked
+before writing this fix (`gh api repos/...`, `claude plugin marketplace list` on the machine this
+was written on): `superpowers` and `context7` both ship in Anthropic's own official marketplace,
+`anthropics/claude-plugins-official`, which a Claude Code install already carries — the
+`marketplace add` this module still issues is idempotent defence in depth, not a first registration,
+and its own real output confirms that (`✔ Marketplace 'claude-plugins-official' already on disk`).
+No non-interactive, non-guessed source could be established for Codex, so nothing is attempted there
+for these two plugins; the recommended preset's own `[plugins.claude]` table and the README carry
+the reasoning and the recommendation respectively.
 
-**Two harnesses, two verbs, and no unmeasured flags.** Claude Code installs a plugin with
-`claude plugin install <name>@<marketplace>`, bare — the spike record's own transcript reports
-`(scope: user)` as the *default* a bare install already gets, not something a flag adds, and
-`-y` appears in that record only on `plugin uninstall`, never `install`. Codex adds one with
+**Two harnesses, two verbs, and no unmeasured flags.** Claude Code installs a plugin with `claude
+plugin install <name>@<marketplace>`, bare — the spike record's own transcript reports
+`(scope: user)` as the *default* a bare install already gets, not something a flag adds, and `-y`
+appears in that record only on `plugin uninstall`, never `install`. Codex adds one with
 `codex plugin add <name>@<marketplace>` when a marketplace is declared for it — measured, not
-assumed, in that same spike record. A harness or a plugin
-with no declared marketplace gets a note, never a guessed argv.
+assumed, in that same spike record. A harness or a plugin with no declared marketplace gets a note,
+never a guessed argv.
 
 **`pluginConfigs` and not a flat top-level key.** Claude Code's own settings reference files a
 plugin's non-sensitive `userConfig` answers under `pluginConfigs[<plugin-id>].options`, keyed by

@@ -284,9 +284,10 @@ class Report(NamedTuple):
     violations: tuple[Violation, ...]
 
 
-# A wall-clock bound on one `git log` over a range (a named cap, not a config key). Larger than
-# `gitenv.GIT_TIMEOUT_SECONDS` because a pull-request range can be hundreds of commits; a
-# `git log` that takes longer than this is a repository this command cannot judge in CI.
+# A wall-clock bound on one `git log` over a range: a named cap (CONTRIBUTING.md#named-caps), and no
+# shipped file changes with it. Larger than `gitenv.GIT_TIMEOUT_SECONDS` because a pull-request
+# range can be hundreds of commits; a `git log` that takes longer than this is a repository this
+# command cannot judge in CI.
 LOG_TIMEOUT_SECONDS = 60
 ATTRIBUTION_LABELS = tuple(label for label, _ in _PATTERNS)
 

@@ -356,8 +356,7 @@ def test_an_enumerated_value_is_refused_without_being_quoted(
 def test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped(
     tmp_path: Path,
 ) -> None:
-    """`tomllib`'s own message, the one value in this module that was still unbounded, is
-    repository-authored and never prints raw.
+    """`tomllib`'s own message can carry the document's own bytes, and it never prints raw.
 
     It is built as `f"{msg} (at line N, column M)"`, and `msg` embeds the source for at least
     five of the parser's faults — a duplicate table, a duplicate inline-table key, a redefined
@@ -366,10 +365,9 @@ def test_a_document_that_will_not_parse_reports_only_where_the_parser_stopped(
     through `keelline.project.init`, into a refusal the `init` skill is instructed to relay to a
     model. Both documents this loader reads are somebody else's, so both arms are held here.
 
-    An earlier fix closed the sibling leak in this same function — the unknown-section list, which
-    `_named` now bounds to `SECTION_NAME` — and this completes it: the two ways a
-    repository-authored table name could reach a loader message were the section list and the
-    parse failure.
+    The sibling leak in this same function is the unknown-section list, which `_named` bounds to
+    `SECTION_NAME`: the two ways a table name from either document could reach a loader message
+    are the section list and the parse failure, and both are bounded.
 
     Mutation (oracle): `toml_position` returns `str(exc)` -> both `not in`s redden.
     """

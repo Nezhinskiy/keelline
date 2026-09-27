@@ -147,9 +147,6 @@ UNPUSHED = (
 # first and is the one carrying a number. `NO_UPSTREAM` carries the dirty count itself so the
 # no-upstream case still reports the half that is knowable, and `UNPUSHED` is reached only with
 # a real `ahead` to print.
-#
-# This condition was left twice during development on the grounds that it was specified exactly.
-# A specification decides what to build; it does not decide whether a sentence is true.
 
 
 def _asked_before(event: HookEvent) -> bool:

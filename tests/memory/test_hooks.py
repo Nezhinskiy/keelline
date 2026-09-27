@@ -71,9 +71,9 @@ def test_every_handler_declares_a_known_event_and_an_open_policy() -> None:
 
 
 def test_no_session_start_context_handler_is_registered() -> None:
-    # The four injection bundles are `hooks.json` entries, not handlers: foundation's
-    # dispatcher joins every handler's context for one event and clamps the join to a single
-    # platform cap, which would collapse the numbered slots, each with its own cap, that the
+    # The four injection bundles are `hooks.json` entries, not handlers: the dispatcher in
+    # `keelline.hooks.dispatch` joins every handler's context for one event and clamps the join to a
+    # single platform cap, which would collapse the numbered slots, each with its own cap, that the
     # entries exist to keep apart.
     names = [h.name for h in register() if h.event == "SessionStart"]
     assert names == ["worktree-link"]
