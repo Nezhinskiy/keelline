@@ -192,10 +192,10 @@ def run_gate(args: argparse.Namespace) -> Result:
     names = [n for n in only if n != CONFIG_CHECK and n not in waiting]
     context = GateContext(root, verdict.config, base)
     judged = CONFIG_CHECK in only
-    # A custom gate the base does not enforce runs files the change can edit, in the process
-    # that holds the verdict: on a hosted runner with passwordless `sudo`, enough to rewrite or
-    # end that process. So the configuration check, the built-ins and the base's enforced custom
-    # gates decide the run first, and once it has failed no other custom gate starts.
+    # A custom gate, one the base enforces included, can run files the change can edit, in the
+    # process that holds the verdict: on a hosted runner with passwordless `sudo`, enough to
+    # rewrite or end that process. So the configuration check and the built-ins decide the run
+    # first, then the base's enforced custom gates, and once it has failed no custom gate starts.
     results = run_gates(
         context,
         names,

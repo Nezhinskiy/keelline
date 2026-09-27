@@ -5,9 +5,9 @@ the built-in gates first, then your own gates from `[gates.custom]`, only once t
 passed, so no command your repository wrote runs where the verdict is decided. Both start Python
 as `python3 -P -s`, so neither a module in the checkout nor a `.pth` file in a user site
 directory loads in their process. Within a step every gate runs whatever the one before it said,
-so fixing findings does not cost a round trip each, except a custom gate the base does not
-enforce, which does not start once the run has failed; a custom gate runs on the runner image
-with nothing of your project installed, so it installs its own toolchain.
+so fixing findings does not cost a round trip each, except a custom gate, which does not start
+once the run has failed; a custom gate runs on the runner image with nothing of your project
+installed, so it installs its own toolchain.
 
 The base is resolved once to a commit from `refs/remotes/origin/<base>`, so a tag named like the
 branch cannot stand in for it; on a pull request a `base:` input that disagrees with the base the

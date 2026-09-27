@@ -8671,21 +8671,34 @@ reddens = [
   "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
 ]
 
-# A custom gate the base does not enforce runs files the change can edit, in the process that
-# holds the verdict, and on a hosted runner that code has passwordless `sudo`: it can rewrite or
-# end the waiting parent and turn a failure into a pass. So once the configuration check, the
-# built-ins or the base's enforced custom gates have failed the run, no other custom gate starts;
-# the one that would have started writes `marker`.
+# A custom gate runs files the change can edit, in the process that holds the verdict, and on a
+# hosted runner that code has passwordless `sudo`: it can rewrite or end the waiting parent and
+# turn a failure into a pass. So once the configuration check, the built-ins or a custom gate the
+# base enforces have failed the run, no custom gate starts, another enforced one included; the
+# one that would have started writes `marker`.
 [[mutation]]
 name = "a custom gate outside the base's enforced ones starts after the run has already failed"
 file = "src/keelline/assess/gates.py"
-before = "        if failed is not None and name in custom and name not in first and failed(tuple(results)):"
+before = "        if failed is not None and name in custom and failed(tuple(results)):"
 after = "        if False:"
 reddens = [
-  "tests/assess/test_gates.py::test_no_custom_gate_outside_first_starts_once_the_run_has_failed",
+  "tests/assess/test_gates.py::test_no_custom_gate_starts_once_the_run_has_failed",
   "tests/assess/test_gate_command.py::test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed",
   "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[enforced-built-in]",
   "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[refused-key]",
+]
+
+# The base's enforced custom gates go first, and one of them can itself run files the change can
+# edit (a test runner beside a pinned policy): once another has failed the run, it would run the
+# change's code in the process holding that verdict, so it is not started either.
+[[mutation]]
+name = "an enforced custom gate starts after another has already failed the run"
+file = "src/keelline/assess/gates.py"
+before = "        if failed is not None and name in custom and failed(tuple(results)):"
+after = "        if failed is not None and name in custom and name not in first and failed(tuple(results)):"
+reddens = [
+  "tests/assess/test_gates.py::test_no_custom_gate_starts_once_the_run_has_failed",
+  "tests/assess/test_gate_command.py::test_no_enforced_custom_gate_starts_once_another_has_failed_the_run",
 ]
 
 [[mutation]]

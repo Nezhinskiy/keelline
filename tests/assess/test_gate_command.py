@@ -375,6 +375,47 @@ def test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed(
     assert (project / "marker").exists()
 
 
+def test_no_enforced_custom_gate_starts_once_another_has_failed_the_run(tmp_path: Path) -> None:
+    # Two gates the base enforces, as the docs suggest: a pinned policy and a test runner, which
+    # runs files the change can edit. The policy sorts first and fails, so the run has failed,
+    # and the test runner would then run the change's code in the process holding that verdict:
+    # the same premise as an advisory gate, with the gate enforced. So it is not started either;
+    # it would have written `marker`. Mutation (declared): the question asked only before a gate
+    # outside the base's enforced ones -> `tests` runs and writes `marker`.
+    tests = custom_gate("tests", "open('marker', 'w').close()")
+    both = POLICY_BASE.replace('["policy"]', '["policy", "tests"]') + tests
+    project = clone(tmp_path, both, also=POLICY)
+    _forbidden(project)
+    code, out, _ = cli(project, tmp_path, "gate", "--custom")
+    assert code == 1
+    assert out.splitlines() == [
+        "policy: enforcing, 1 finding(s)",
+        f"tests: enforcing, {STOPPED}",
+        FINDINGS_ELSEWHERE,
+    ]
+    assert not (project / "marker").exists()
+    code, out, _ = cli(project, tmp_path, "gate", "--custom", "--json")
+    assert code == 1
+    assert json.loads(out)["gates"][1] == {
+        "name": "tests",
+        "enforcing": True,
+        "answered": False,
+        "reason": STOPPED,
+        "count": 0,
+        "failing": True,
+    }
+    assert not (project / "marker").exists()
+    # The other side: with the policy passing, the test runner runs as it always did.
+    (project / "forbidden.txt").unlink()
+    commit(project, "fix: the forbidden file is gone")
+    code, out, _ = cli(project, tmp_path, "gate", "--custom")
+    assert (code, out.splitlines()) == (
+        0,
+        ["policy: enforcing, 0 finding(s)", "tests: enforcing, 0 finding(s)"],
+    )
+    assert (project / "marker").exists()
+
+
 @pytest.mark.parametrize("failing", ["enforced-built-in", "refused-key"])
 def test_a_bare_run_that_has_already_failed_starts_no_custom_gate(
     tmp_path: Path, failing: str

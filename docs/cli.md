@@ -740,7 +740,8 @@ gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, fa
 could not run; `reason`, that fixed text, else empty; `count`, its findings; and `failing`, true
 when it has a finding or could not run. A custom gate `keelline gate` did not start because the
 run had already failed has a row too, `answered` false and `reason` `not run: the run had already
-failed`, since it judged nothing. A row names no finding: `assess` lists them as items.
+failed`, and `failing` true, since it judged nothing and a gate that did not look has not passed.
+A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
@@ -826,12 +827,17 @@ that the custom gates share one checkout: a gate the change wrote, run before th
 enforced ones, could rewrite the script they are about to execute. For the same reason the
 built-in gates run first, then the custom gates the base enforces, then every other custom gate.
 And once the run has failed — a refused key, or an enforcing gate among those that failed or
-could not run — no other custom gate starts: each prints `<name>: advisory, not run: the run had
-already failed` (or `enforcing`), and its `--json` row says the same, `answered` false with that
-`reason`. A custom gate runs files the change can edit in the process that holds the verdict,
-and on a GitHub-hosted runner with passwordless `sudo`, which could rewrite that process and turn
-its failure into a pass; so the verdict of the base's enforced gates is decided before any
-custom gate it does not enforce starts. When every one of them passed, the rest run.
+could not run — no custom gate starts, one the base enforces included: each prints `<name>:
+advisory, not run: the run had already failed` (or `enforcing`), and its `--json` row says the
+same, `answered` false with that `reason`. A custom gate can run files the change can edit, and
+it runs in the process that holds the verdict, on a GitHub-hosted runner with passwordless
+`sudo`, which could rewrite that process and turn its failure into a pass. An enforced gate is
+no exception: a test runner the base enforces beside a pinned policy runs the change's code, and
+started after the policy failed it would run after the verdict was decided. So once the verdict
+is a failure no custom gate runs, and a pinned gate named to sort first among the enforced ones
+has passed before any other custom gate starts. When every gate before it has passed, a custom
+gate runs as always; one that was not started is judged on the next run, once the failure is
+fixed.
 Each custom gate runs in a session of its own, and the command's process group is ended when
 the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
 background in that group runs on into the next gate. A descendant that leaves the command's
@@ -2294,8 +2300,8 @@ its own: a custom gate executes files the pull request can change with the runne
 which on a GitHub-hosted runner include passwordless `sudo`. In the process that decides the
 verdict those files could rewrite it; in a later step, only its own results are left to them.
 Within that step the base's enforced gates run first, and once one of them has failed no other
-custom gate starts, so the process that holds a failing verdict runs nothing more that the base
-does not enforce.
+custom gate starts, enforced or not, so the process that holds a failing verdict runs nothing
+more that the change can edit.
 What it guarantees, and how to pin those files, is in the `keelline gate` section.
 
 **One row per gate, if you want one.** Each leg of a matrix in your own caller is its own check
@@ -2379,10 +2385,9 @@ the job. What enforces is what the base's `[keelline] enforced` names, with any 
 itself adds there, and every configured gate once `[keelline] state` is `installed`.
 `keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
 before it said, so a project fixing its documents does not pay a round trip per finding; the one
-exception is a custom gate the base does not enforce, which is not started once the run has
-failed. A
-custom gate runs in the second step, and only with the command the base gives it ("Which custom
-gates run" under `keelline gate`). The job's token is `contents: read` and neither checkout
+exception is a custom gate, which is not started once the run has failed. A custom gate runs
+in the second step, and only with the command the base gives it ("Which custom gates run" under
+`keelline gate`). The job's token is `contents: read` and neither checkout
 keeps it, and the judging step's verdict was decided before any command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and

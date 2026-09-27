@@ -25,9 +25,10 @@ signal (a sudo or setuid descendant).
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
 gate executes files the change can edit, so one that ran earlier could rewrite what a later one
 executes; `keelline gate` names the base's enforced gates in `first`, so no other custom gate
-runs before them. And it starts none of the others once its run has failed (`failed`, then
-`stopped`): a custom gate runs in the process that holds the verdict, and a command that can
-rewrite that process could turn the failure into a pass.
+runs before them. And it starts no custom gate at all once its run has failed (`failed`, then
+`stopped`), one of the base's enforced gates included: a custom gate runs files the change can
+edit in the process that holds the verdict, and a command that can rewrite that process could
+turn the failure into a pass.
 """
 
 from __future__ import annotations
@@ -58,8 +59,9 @@ CUSTOM_COULD_NOT_RUN = (
     "the command in [gates.custom.{name}] run could not start, or ran past {seconds}s"
 )
 CUSTOM_REMEDY = "fix what [gates.custom.{name}] run reports; its output is printed as it ran"
-# A custom gate `keelline gate` did not start because the run had already failed: every such gate
-# runs files the change can edit, in the process that holds the verdict.
+# A custom gate `keelline gate` did not start because the run had already failed: any custom gate,
+# one the base enforces included, can run files the change can edit, in the process that holds
+# the verdict.
 ALREADY_FAILED = "the run had already failed"
 STOPPED = f"not run: {ALREADY_FAILED}"
 
@@ -289,10 +291,10 @@ def run_gates(
     """A result for each configured gate `names` asks for, each run once: the built-ins and the
     custom gates `first` names, then every other custom gate, each group in configured order.
 
-    `failed` is asked, with the results so far, before each custom gate outside `first` starts;
-    when it answers that the run has already failed, that gate is not started and its result is
-    `stopped`. Otherwise one gate that does not answer never stops another. A name the
-    configuration does not hold is a `KeyError`: callers validate names before they ask.
+    `failed` is asked, with the results so far, before each custom gate starts, those `first`
+    names included; when it answers that the run has already failed, that gate is not started
+    and its result is `stopped`. Otherwise one gate that does not answer never stops another. A
+    name the configuration does not hold is a `KeyError`: callers validate names before they ask.
     """
     gates = configured(context.config)
     wanted = {gates[name].name for name in names}
@@ -300,7 +302,7 @@ def run_gates(
     order = sorted(gates, key=lambda name: name in custom and name not in first)
     results: list[GateResult] = []
     for name in (name for name in order if name in wanted):
-        if failed is not None and name in custom and name not in first and failed(tuple(results)):
+        if failed is not None and name in custom and failed(tuple(results)):
             results.append(stopped(name))
         else:
             results.append(_guarded(gates[name], context))

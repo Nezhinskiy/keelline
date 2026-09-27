@@ -10,12 +10,13 @@ adds or re-commands is reported as not run until it lands on the base, and fails
 meanwhile. The custom gates the base enforces run before every other custom gate, so no gate
 but another of those can rewrite what one of them executes before it runs; two of them share
 one checkout, which only a matrix leg per gate separates. Once the run has failed, no custom gate
-the base does not enforce starts: each is reported as not run because the run had already failed,
-since it would run files the change can edit in the process that holds the failing verdict. Each
-gate's command runs in a process group of its own, which ends when the command does, so nothing
-it left in that group runs on into the next gate; a descendant that leaves the command's process
-group (a new session, or a job-control shell's own group), or one Keelline may not signal (a sudo
-or setuid descendant), is not ended.
+starts, one the base enforces included: each is reported as not run because the run had already
+failed, since it could run files the change can edit in the process that holds the failing
+verdict, and so a pinned gate named to sort first has passed before any other custom gate runs.
+Each gate's command runs in a process group of its own, which ends when the command does, so
+nothing it left in that group runs on into the next gate; a descendant that leaves the command's
+process group (a new session, or a job-control shell's own group), or one Keelline may not signal
+(a sudo or setuid descendant), is not ended.
 
 What a pull request may change is judged key by key over what the loader derives, never by byte:
 it may enforce more gates and move its state forward, add a gate, drop or re-command one the base
