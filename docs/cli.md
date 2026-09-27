@@ -1348,17 +1348,18 @@ pins the ref **it** records, and `doctor` judges whether that is a released comm
 job.
 
 Seven states cost the artifact rather than the run, each reported under `skipped` with one
-sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate has not shipped;
-the public repository could not be asked for its tags; no released tag matches the
-Keelline running, which is every repository's state before the first release; the `keelline.toml`
-this repository already had records no `[ci] ref`, so there is nothing a workflow could pin that
-anything records; `[ci] ref` is not a full-length commit sha, which is the only immutable form
-and the only one `init` renders — the documented mutable `v1` alias is a file you write by hand;
-and `[ci] gate_branch` is not a plain branch name. `--no-ci` is the first of those on purpose: it
-puts `[ci] mode = "none"` into the document this run builds and asks no remote anything. **On a
-repository that already has a `keelline.toml` the flag governs this run and nothing more** — that
-document is a create-once artifact, reported `skip_modified`, so the file still says whatever it
-said and the next `init` would ask the remote again. Writing `none` there is yours to do.
+sentence: `[ci] mode` is `none`; `[ci] mode` is `uvx`, whose form of the gate has not shipped; the
+public repository could not be asked for its tags; no released tag matches the Keelline running,
+which is every repository's state before the first release; the `keelline.toml` this repository
+already had records no `[ci] ref`, so there is nothing a workflow could pin that anything records;
+`[ci] ref` is not a full-length commit sha, which is the only immutable form and the only one
+`init` renders — the mutable `v1` alias, from `1.0.0` on, is a file you write by hand, and until
+then a `0.x` project pins the commit; and `[ci] gate_branch` is not a plain branch name. `--no-ci`
+is the first of those on purpose: it puts `[ci] mode = "none"` into the document this run builds
+and asks no remote anything. **On a repository that already has a `keelline.toml` the flag governs
+this run and nothing more** — that document is a create-once artifact, reported `skip_modified`, so
+the file still says whatever it said and the next `init` would ask the remote again. Writing `none`
+there is yours to do.
 
 **The two states about the remote are reported only on a run that creates the document.** On the
 adoption path the answer is the fifth one whatever the remote said, because it is the whole
@@ -1543,10 +1544,11 @@ that right and run `keelline upgrade` again. The `CI:` line says the workflow pi
 when this run created it, refreshed it or found it current; a workflow the report lists
 `skip_modified` or refuses was left as it is and may pin anything, and the line says so.
 
-**A `[ci] ref` that is not a commit is yours.** The documented `v1` alias, or any other value
-that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade` moves
-`[keelline] version` alone: it never replaces that ref with a sha, and never renders a workflow
-over the one you wrote around it. The `CI:` line says no workflow was rendered around the ref.
+**A `[ci] ref` that is not a commit is yours.** The `v1` alias, documented from `1.0.0` on, or any
+other value that is not a full-length sha, is a choice to track a moving Keelline, so `upgrade`
+moves `[keelline] version` alone: it never replaces that ref with a sha, and never renders a
+workflow over the one you wrote around it. The `CI:` line says no workflow was rendered around the
+ref.
 
 **A project recording a newer Keelline is refused** (`2`), before anything is written: an older
 plugin would repin an older release and put older bytes over newer ones. The recorded version is
@@ -2318,7 +2320,7 @@ nobody sees, so that is where they all are.
 | `cli-path` | whether `keelline` resolves on `PATH` | `PATH` |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
 | `overlay-requires` | whether the overlay this machine records requires a Keelline the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `keelline.toml` |
-| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias, reported as mutable), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
+| `ci-ref` | whether `[ci] ref` is the commit of a released Keelline tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/keelline.yml*, read as a regular file and to a bound |
 | `store-debris` | files in the note store that are not notes | the note store |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/keelline/diagnostics.jsonl` |
 | `ignored-env` | `KEELLINE_CONFIG` or `XDG_CONFIG_HOME` set and not honoured | the environment |
@@ -2746,7 +2748,7 @@ local = []               # scaffold template ids whose artifact is written under
 [ci]
 mode = "reusable"        # reusable | uvx | none — how this project means to be gated
 ref = ""                 # the commit of the Keelline release the workflow is pinned to;
-                         # `init` writes it; `v1` is the documented mutable opt-in
+                         # `init` writes it; from 1.0.0, `v1` is the mutable opt-in
 gate_branch = "main"     # the branch the workflow gates; left out, [project] base_branch
 
 [gates]
