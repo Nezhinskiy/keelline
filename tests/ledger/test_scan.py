@@ -14,6 +14,7 @@ import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
+from keelline.fsops import UnsafePath
 from keelline.gitenv import git_run
 from keelline.ledger.scan import (
     FIXTURE_MARKER,
@@ -23,6 +24,7 @@ from keelline.ledger.scan import (
     code_mentions,
     entry_citations,
     mention_roots,
+    said,
     scannable,
 )
 from tests.gitfixture import git, plant_path
@@ -249,3 +251,17 @@ def test_the_citation_pattern_follows_the_configured_ledger_directory(tmp_path: 
     _root, config = project(tmp_path, '\n[paths]\nbugs = "docs/defects"\n')
     assert citation_pattern(config).search("docs/defects/BR-001.md")
     assert not citation_pattern(config).search("docs/bugs/BR-001.md")
+
+
+def test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by() -> None:
+    # `str(OSError)` carries the file the call opened, by the path it was given — the absolute
+    # one under this machine's layout — so an error with a file name is said by its `strerror`
+    # alone. Keelline's own path refusals carry no file name and no errno: their message is the
+    # only thing they say, and it names the path relative to the root, so it is said whole
+    # rather than as its class's name. Mutation: drop the fall-back to `str(error)` in `said` —
+    # the second assertion reddens.
+    assert said(PermissionError(13, "Permission denied", "/machine/checkout/src/a.py")) == (
+        "Permission denied"
+    )
+    refusal = "'src/x/a.py': 'x' is a symlink or not a directory"
+    assert said(UnsafePath(refusal)) == refusal

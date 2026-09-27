@@ -11424,7 +11424,7 @@ reddens = [
 name = "a stale trail.toml key prints unclipped"
 file = "src/keelline/docs/trail.py"
 before = "listed_names([clipped(key) for key in stale])"
-after = "listed_names([quoted(key) for key in stale])"
+after = "listed_names([repr(key) for key in stale])"
 reddens = [
   "tests/docs/test_commands.py::test_a_stale_key_of_any_length_prints_clipped_to_its_start_and_its_length",
 ]
@@ -11445,6 +11445,15 @@ before = "    return error.strerror or type(error).__name__"
 after = "    return str(error)"
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
+]
+
+[[mutation]]
+name = "an error with no file name is said as its class name"
+file = "src/keelline/ledger/scan.py"
+before = "        return str(error) or type(error).__name__"
+after = "        return error.strerror or type(error).__name__"
+reddens = [
+  "tests/ledger/test_scan.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
 ]
 
 [[mutation]]

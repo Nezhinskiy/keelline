@@ -188,7 +188,13 @@ def is_fixture_holder(head: bytes) -> bool:
 def said(error: OSError) -> str:
     """What an `OSError` says about a file, without naming it: `str(error)` carries the path as it
     was opened — the absolute one, under this machine's own layout — and every report of a
-    scanned file names it beside this, relative to the root."""
+    scanned file names it beside this, relative to the root.
+
+    An error with no file name has no such path in it, and is said whole: `fsops.UnsafePath` is
+    raised with a message alone, no errno, naming the path relative to the root, and the message
+    is the only thing it says."""
+    if error.filename is None:
+        return str(error) or type(error).__name__
     return error.strerror or type(error).__name__
 
 

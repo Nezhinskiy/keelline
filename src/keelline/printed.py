@@ -41,10 +41,12 @@ def quoted(name: str) -> str:
 
 
 # How many characters of a name a refusal prints before it clips the rest to a count. A named cap
-# (CONTRIBUTING.md#named-caps) with no shipped file to agree with: `quoted` escapes a name and does
-# not bound its length, and a TOML key or label is bounded in length by nothing, so one `[states]`
-# key of 200 000 characters made a stderr line of 200 185 bytes. 120 is well past any name an
-# operator would type, and short enough that the start still says which one it is.
+# (CONTRIBUTING.md#named-caps), and `docs/cli.md` states the number for the two refusals that use
+# it (`docs trail`'s stale `[states]` keys and its `[[theme]]` label), so a change to either is a
+# change to both. `quoted` escapes a name and does not bound its length, and a TOML key or label
+# is bounded in length by nothing, so one `[states]` key of 200 000 characters made a stderr line
+# of 200 185 bytes. 120 is well past any name an operator would type, and short enough that the
+# start still says which one it is.
 CLIPPED_CHARS = 120
 
 
