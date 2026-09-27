@@ -1278,7 +1278,7 @@ reddens = [
 [[mutation]]
 name = "attach meets an origin URL that is not UTF-8 after its first write"
 file = "src/keelline/attach/write.py"
-before = """    if binding.remote is not None and not _utf_8(binding.remote):
+before = """    if binding.remote is not None and not fsops.utf_8_name(binding.remote):
         raise Refusal(ORIGIN_NOT_TEXT)
 """
 after = ""
@@ -8131,15 +8131,15 @@ reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_i
 [[mutation]]
 name = "the codeowners probe reads an owner-less line as owned"
 file = "src/keelline/assess/probes.py"
-before = "            owners = words[1:]"
-after = '            owners = ["x"]'
+before = "            owned = len(words) > 1"
+after = "            owned = True"
 reddens = ["tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[the-last-match-names-no-one]"]
 
 [[mutation]]
 name = "the codeowners probe reads a directory-only pattern as a file's owner"
 file = "src/keelline/assess/probes.py"
-before = "    if not directory and _components(parts, names):"
-after = "    if _components(parts, names):"
+before = "    last = end - 1 if directory else end"
+after = "    last = end"
 reddens = [
   "tests/assess/test_probes.py::test_a_trailing_slash_owns_a_directory_and_never_a_file_of_that_name[directory-only]",
   "tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar",
@@ -8148,7 +8148,7 @@ reddens = [
 [[mutation]]
 name = "the codeowners probe reads a recursive wildcard as at least one directory"
 file = "src/keelline/assess/probes.py"
-before = "            least = 1 if i == len(pattern) - 1 else 0"
+before = "            least = 1 if i == len(parts) - 1 else 0"
 after = "            least = 1"
 reddens = [
   "tests/assess/test_probes.py::test_a_recursive_wildcard_matches_zero_directories_adjacent_ones_included",
@@ -8158,15 +8158,15 @@ reddens = [
 [[mutation]]
 name = "the codeowners probe reads a double star inside a component as recursive"
 file = "src/keelline/assess/probes.py"
-before = '        if pattern[i] == "**":'
-after = '        if pattern[i].startswith("**"):'
+before = '        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.sub("*", part)'
+after = '        "**" if part.startswith("**") else _STAR_RUN.sub("*", part)'
 reddens = ["tests/assess/test_probes.py::test_the_matcher_agrees_with_git_on_its_grammar"]
 
 [[mutation]]
 name = "the codeowners probe reads a last star as owning nested files"
 file = "src/keelline/assess/probes.py"
-before = '    if parts[-1] == "*" and not directory:'
-after = "    if False:"
+before = '    first = 1 if directory or parts[-1] != "*" else end  # direct children only'
+after = "    first = 1"
 reddens = [
   "tests/assess/test_probes.py::test_a_last_star_owns_direct_children_only_where_github_and_git_differ",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[direct-children-only]",
@@ -8182,8 +8182,8 @@ reddens = ["tests/assess/test_probes.py::test_a_pattern_of_many_wildcards_is_ans
 [[mutation]]
 name = "the codeowners probe reads any word holding an at sign as an owner"
 file = "src/keelline/assess/probes.py"
-before = "        if not words or not all(_OWNER.fullmatch(word) for word in words[1:]):"
-after = '        if not words or not all("@" in word for word in words[1:]):'
+before = "            if not all(_OWNER.fullmatch(word) for word in words[1:]):"
+after = '            if not all("@" in word for word in words[1:]):'
 reddens = [
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[a-bare-at]",
   "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_owns_the_workflows[no-domain]",
@@ -9467,7 +9467,7 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
 after = "    if not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_named_gates_are_promoted_all_together_or_not_at_all",
@@ -9476,8 +9476,8 @@ reddens = [
 [[mutation]]
 name = "a promotion with no names writes nothing once one gate fails"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
-after = "    if len(promoted) < len(results) or waiting or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if len(promoted) < len(results) or waiting or skipped or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
 ]
@@ -9783,7 +9783,7 @@ reddens = ["tests/assess/test_state.py::test_begin_refuses_a_plan_whose_trail_ro
 [[mutation]]
 name = "promote enforces a custom gate whose command the base does not have"
 file = "src/keelline/assess/state.py"
-before = "    waiting = _not_on_base(root, config, wanted, base=base, machine=machine)"
+before = "    waiting = _not_on_base(root, config, asked, base=base, machine=machine)"
 after = "    waiting = ()"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
@@ -9792,8 +9792,8 @@ reddens = [
 [[mutation]]
 name = "a named promotion writes the gates that passed beside one that waits for the base"
 file = "src/keelline/assess/state.py"
-before = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
-after = "    if (names and len(promoted) < len(results)) or not promoted:"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if (names and (len(promoted) < len(results) or skipped)) or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_a_custom_gate_the_base_does_not_have_is_neither_run_nor_promoted",
 ]
@@ -10111,6 +10111,28 @@ file = "src/keelline/docs/trail.py"
 before = '            themes.append((entry["label"], compile_theme(entry["pattern"])))'
 after = '            themes.append((entry["label"], re.compile(entry["pattern"])))'
 reddens = ["tests/docs/test_themes.py::test_a_pattern_re_would_backtrack_on_for_hours_answers_at_once"]
+
+# The matcher cannot backtrack, but a match costs the name's length times the pattern's and every
+# name is tried against every theme, so an unbounded pattern could hold the gate for seconds per
+# name.
+[[mutation]]
+name = "a theme pattern of any length is compiled"
+file = "src/keelline/docs/themes.py"
+before = "    if len(pattern) > PATTERN_MAX_CHARS:"
+after = "    if False:"
+reddens = [
+  "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
+  "tests/docs/test_themes.py::test_a_pattern_is_compiled_up_to_its_bound_and_refused_past_it",
+]
+
+[[mutation]]
+name = "a trail.toml of any number of themes is read"
+file = "src/keelline/docs/trail.py"
+before = "    if len(declared) > THEMES_MAX:"
+after = "    if False:"
+reddens = [
+  "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
+]
 
 [[mutation]]
 name = "a theme piece is looked for from the start of the name, not after the piece before it"
@@ -10503,10 +10525,104 @@ reddens = [
 [[mutation]]
 name = "the scope probe never asks past Keelline's workflow"
 file = "src/keelline/assess/probes.py"
-before = "    return Looked(tuple(label for label, owned in probed if not owned))"
+before = "    return Looked(tuple(where), unread)"
 after = "    return Looked()"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported",
+]
+
+[[mutation]]
+name = "the scope probe never asks about a workflow the repository has"
+file = "src/keelline/assess/probes.py"
+before = "    unowned = [path for path in asked if not _governed(rules, path)]"
+after = "    unowned: list[str] = []"
+reddens = [
+  "tests/assess/test_probes.py::test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it",
+]
+
+[[mutation]]
+name = "the scope probe names an unowned workflow outside the path grammar"
+file = "src/keelline/assess/probes.py"
+before = "    named = [path for path in unowned if PATH_VALUE.match(path)]"
+after = "    named = list(unowned)"
+reddens = [
+  "tests/assess/test_probes.py::test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_directory",
+]
+
+[[mutation]]
+name = "the scope probe asks every workflow whatever the budget"
+file = "src/keelline/assess/probes.py"
+before = "    asked = existing.where[: sum(total <= SCOPE_WORK_MAX for total in spent)]"
+after = "    asked = existing.where"
+reddens = [
+  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+]
+
+[[mutation]]
+name = "the scope budget counts lines, not characters"
+file = "src/keelline/assess/probes.py"
+before = "    spent = accumulate(len(text) * len(path) for path in existing.where)"
+after = '    spent = accumulate(text.count("\n") + 1 for path in existing.where)'
+reddens = [
+  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+]
+
+[[mutation]]
+name = "the scope budget is too small to ask a monorepo's workflows"
+file = "src/keelline/assess/probes.py"
+before = "SCOPE_WORK_MAX = 300_000_000"
+after = "SCOPE_WORK_MAX = 200_000_000"
+reddens = [
+  "tests/assess/test_probes.py::test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow",
+]
+
+[[mutation]]
+name = "a run of stars is walked at every match"
+file = "src/keelline/assess/probes.py"
+before = '        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.sub("*", part)'
+after = '        "**" if len(part) > 1 and not part.strip("*") else part'
+reddens = [
+  "tests/assess/test_probes.py::test_a_run_of_stars_inside_a_component_is_read_once_as_one_star",
+]
+
+# A code-owners line is read on spaces and tabs, with a comment only from a `#` at the line's
+# start or after a blank; a line holding any other whitespace or a control character is read
+# owner-less, the side that warns whichever way GitHub splits it.
+[[mutation]]
+name = "a line GitHub may split elsewhere keeps its owners"
+file = "src/keelline/assess/probes.py"
+before = "            owned = False"
+after = "            owned = True"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-no-break-space-before-the-owner]",
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-vertical-tab-before-the-owner]",
+]
+
+[[mutation]]
+name = "a comment starts at any hash"
+file = "src/keelline/assess/probes.py"
+before = '_COMMENT = re.compile(r"(?:^|[ \t])#")'
+after = '_COMMENT = re.compile(r"#")'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-hash-inside-the-owner]",
+]
+
+[[mutation]]
+name = "a line GitHub may split elsewhere decides nothing"
+file = "src/keelline/assess/probes.py"
+before = "        if _ODD.search(kept):"
+after = "        if False:"
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-no-break-space-after-the-pattern]",
+]
+
+[[mutation]]
+name = "the scope probe reads a workflows directory it could not list as nothing unowned"
+file = "src/keelline/assess/probes.py"
+before = "    unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))"
+after = "    unread = () if asked == existing.where else (_WORKFLOWS,)"
+reddens = [
+  "tests/assess/test_probes.py::test_a_workflows_directory_scope_cannot_read_is_could_not_look",
 ]
 
 [[mutation]]
@@ -10530,8 +10646,8 @@ reddens = [
 [[mutation]]
 name = "the scope probe repeats what codeowners reports"
 file = "src/keelline/assess/probes.py"
-before = "    if isinstance(found, Looked) or not _governed(found[1], CI_WORKFLOW):"
-after = "    if isinstance(found, Looked):"
+before = "    if not _governed(rules, CI_WORKFLOW):"
+after = "    if False:"
 reddens = [
   "tests/assess/test_probes.py::test_a_line_owning_only_keelline_s_workflow_leaves_the_rest_of_github_reported[the-caller-unowned]",
 ]
@@ -10621,6 +10737,64 @@ after = """    }"""
 reddens = [
   "tests/assess/test_gate_command.py::test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding",
   "tests/assess/test_state.py::test_every_command_that_runs_gates_gives_a_gate_the_same_json_row",
+]
+
+# In a clone the base is the clone author's, so a base that has a custom gate's command is no
+# brake on running it: without `--builtin`, `adopt promote` runs the clone's commands whatever the
+# person answered.
+[[mutation]]
+name = "adopt promote --builtin still runs the custom gates"
+file = "src/keelline/assess/state.py"
+before = "    skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)"
+after = "    skipped: tuple[str, ...] = ()"
+reddens = [
+  "tests/assess/test_state.py::test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone",
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "adopt promote --builtin hands on a command that runs the custom gates"
+file = "src/keelline/assess/commands.py"
+before = "        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.builtin else FINDINGS_ELSEWHERE)"
+after = "        lines.append(FINDINGS_ELSEWHERE)"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "gate --builtin hands on a command that runs the custom gates"
+file = "src/keelline/assess/commands.py"
+before = '        lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.part == "builtin" else FINDINGS_ELSEWHERE)'
+after = "        lines.append(FINDINGS_ELSEWHERE)"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_failing_run_ends_by_saying_where_the_findings_are",
+]
+
+[[mutation]]
+name = "a named custom gate --builtin did not run holds nothing back"
+file = "src/keelline/assess/state.py"
+before = "    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:"
+after = "    if (names and (len(promoted) < len(results) or waiting)) or not promoted:"
+reddens = [
+  "tests/assess/test_state.py::test_builtin_runs_no_custom_gate_and_promotes_the_built_ins_alone",
+]
+
+[[mutation]]
+name = "adopt promote drops --builtin on the way to the promotion"
+file = "src/keelline/assess/commands.py"
+before = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=args.builtin)"
+after = "    transition = promote(root, config, args.gates, base=base, machine=machine, builtin=False)"
+reddens = [
+  "tests/assess/test_state.py::test_adopt_promote_builtin_names_the_custom_gates_it_did_not_run",
+]
+
+[[mutation]]
+name = "the init skill hands over adopt promote without --builtin after a no"
+file = "skills/init/references/adoption.md"
+before = "     `keelline adopt promote --builtin`: without the flag it runs the commands the user"
+after = "     `keelline adopt promote`: without the flag it runs the commands the user"
+reddens = [
+  "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
 ]
 
 [[mutation]]

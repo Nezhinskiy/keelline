@@ -90,6 +90,7 @@ class Transition:
     promoted: tuple[str, ...] = ()
     results: tuple[GateResult, ...] = ()  # every gate this run ran, in the order it ran them
     waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
+    skipped: tuple[str, ...] = ()  # custom gates not run: `--builtin` asked for none
 
     @property
     def failing(self) -> dict[str, int]:
@@ -198,13 +199,24 @@ def _not_on_base(
 
 
 def promote(
-    root: Path, config: Config, names: Sequence[str], *, base: str, machine: Path | None
+    root: Path,
+    config: Config,
+    names: Sequence[str],
+    *,
+    base: str,
+    machine: Path | None,
+    builtin: bool = False,
 ) -> Transition:
     """Enforce the named gates if every one of them passes now, or, with none named, each
     configured gate not yet enforcing that passes; `base` is what `plan` and `commit` judge a
     range against, what `bugs` compares the ledger with (where HEAD forked from it), and what a
     custom gate's command must already be on (`machine` loads the base's copy, as the tree's
-    was loaded)."""
+    was loaded).
+
+    `builtin` runs no custom gate, for a clone whose commands the person has not agreed to run:
+    in a clone the base is the clone author's, so its having the command is no brake. A custom
+    gate is promoted only by a run that ran it, so each one wanted is `skipped` and stays
+    advisory, and a named one holds the rest back as a gate that waits does."""
     configured = config.gate_names
     if any(name not in configured for name in names):
         raise Refusal(NOT_A_GATE)
@@ -225,16 +237,18 @@ def promote(
         return Transition(state, "installed")
     _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
-    waiting = _not_on_base(root, config, wanted, base=base, machine=machine)
-    results = run_gates(GateContext(root, config, base), [n for n in wanted if n not in waiting])
+    skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)
+    asked = [n for n in wanted if n not in skipped]
+    waiting = _not_on_base(root, config, asked, base=base, machine=machine)
+    results = run_gates(GateContext(root, config, base), [n for n in asked if n not in waiting])
     promoted = tuple(r.name for r in results if not r.failing)
-    # With names, every one passes or nothing is written: one that failed, could not run or waits
-    # holds the rest back.
-    if (names and (len(promoted) < len(results) or waiting)) or not promoted:
-        return Transition(state, state, (), results, waiting)
+    # With names, every one passes or nothing is written: one that failed, could not run, waits
+    # or was not run holds the rest back.
+    if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:
+        return Transition(state, state, (), results, waiting, skipped)
     enforced = enforcing | set(promoted)
     installed = enforced >= set(configured)
     after = "installed" if installed else "adopting"
     listed = () if installed else tuple(n for n in configured if n in enforced)
     _write(root, after, listed)
-    return Transition(state, after, promoted, results, waiting)
+    return Transition(state, after, promoted, results, waiting, skipped)

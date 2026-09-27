@@ -314,6 +314,7 @@ keelline gate --only docs --only config               # a few of them; config is
 keelline adopt begin docs/plans/2026-09-23-keelline-adoption.md   # check the adoption plan; the project is adopting
 keelline adopt promote docs                           # enforce one gate, if it passes now
 keelline adopt promote                                # enforce every gate that passes now; name the rest
+keelline adopt promote --builtin                      # the same, running none of the repository's own gate commands
 
 # Diagnosing an installation
 keelline doctor                                       # sixteen checks over this installation, one line

@@ -48,8 +48,8 @@ class UnsafeNote(Refusal):
 
 # Byte length of the per-invocation nonce (`secrets.token_hex`): 8 bytes is 64 bits of entropy,
 # enough that no note can predict or reuse it. Fixed by design, not a budget or cap — no shipped
-# config file has any business overriding it (consistent with `_GIT_TIMEOUT_SECONDS` in
-# store.py and `UNRANKED` in notes.py, which name a constant for the same reason).
+# config file has any business overriding it (consistent with `gitenv.GIT_TIMEOUT_SECONDS` and
+# `UNRANKED` in notes.py, which name a constant for the same reason).
 _NONCE_BYTES = 8
 
 

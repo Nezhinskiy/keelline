@@ -37,6 +37,7 @@ from keelline.project.uninstall import KEPT_CONFIG
 from keelline.release.api import Resolution
 from keelline.runner import Completed
 from keelline.scaffold import Manifest
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 from tests.snapshot import assert_snapshot_unchanged, snapshot
@@ -655,14 +656,12 @@ def test_uninstall_says_it_keeps_a_keelline_toml_you_wrote(tmp_path: Path) -> No
     (root / "keelline.toml").write_text(DOCUMENT, encoding="utf-8")
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
-    parser = build_parser(discover_registrars())
-    argv = ["uninstall", "--root", str(root), "--machine", str(tmp_path / "absent.toml")]
-    with redirect_stdout(io.StringIO()) as out:
-        assert run([*argv, "--dry-run"], parser=parser) == 0
-    assert f"note: {KEPT_CONFIG}" in out.getvalue().splitlines()
-    with redirect_stdout(io.StringIO()) as out:
-        assert run([*argv, "--json"], parser=parser) == 0
-    assert json.loads(out.getvalue())["kept_config"] is True
+    code, out, err = cli(root, tmp_path, "uninstall", "--dry-run")
+    assert code == 0, err
+    assert f"note: {KEPT_CONFIG}" in out.splitlines()
+    code, out, err = cli(root, tmp_path, "uninstall", "--json")
+    assert code == 0, err
+    assert json.loads(out)["kept_config"] is True
     assert (root / "keelline.toml").is_file()
 
 

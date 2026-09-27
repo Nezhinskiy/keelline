@@ -249,3 +249,24 @@ def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None
     # and the relay follows both. Mutation (by hand): the `Otherwise` branch deleted -> reddens.
     otherwise = adoption.index("- Otherwise, run `keelline assess`.")
     assert first_run < otherwise < adoption.index("Either way, relay the summary")
+
+
+def test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
+    # After a no, the first step assessed with `--builtin`, and the closing message then handed
+    # over `keelline adopt promote`, which runs every custom gate the clone configures: in a
+    # clone the base is the clone author's, so its having the command is no brake. Every command
+    # the skill names that runs gates is named with `--builtin` for a no as well. Mutation
+    # (oracle): the closing step's `--builtin` dropped -> `adopt promote` has no such form and
+    # this reddens.
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (SKILLS / "init" / "SKILL.md", *(SKILLS / "init" / "references").glob("*.md"))
+    )
+    words = " ".join(text.split())
+    named = [
+        c for c in ("keelline assess", "keelline adopt promote", "keelline gate") if c in words
+    ]
+    assert named == ["keelline assess", "keelline adopt promote"]
+    for command in named:
+        assert f"`{command} --builtin`" in words, command
+    assert "A no holds for the whole adoption" in words

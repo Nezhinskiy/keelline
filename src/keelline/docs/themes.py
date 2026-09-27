@@ -1,9 +1,9 @@
 """A `trail.toml` theme's `pattern`: the part of regular-expression syntax a filename filter needs,
 matched without backtracking.
 
-A theme's `pattern` is repository-authored and was compiled with `re`, whose backtracking a
-pattern such as `(a+)+$` turns exponential on a name of forty characters: `keelline docs trail`,
-the `trail` gate and `keelline assess` then never finished. The language kept here is a subset of
+A theme's `pattern` is repository-authored, and `re`'s backtracking turns a pattern such as
+`(a+)+$` exponential on a name of forty characters, so under `re` `keelline docs trail`, the
+`trail` gate and `keelline assess` would never finish. The language kept here is a subset of
 the regular expressions such files already hold, with the meaning `re.search` gives them on a
 name of one line: literal text, `.` for any one character, `.*` for any run of them, `|`
 between alternatives, `^` and `$` at an alternative's two ends, and `\\` before a punctuation
@@ -18,12 +18,22 @@ else — a group, a class, another quantifier — is refused rather than guessed
 Placing each piece at its leftmost fit after the one before leaves the longest rest for the ones
 after it, so the leftmost fit is the only placement worth trying, and a match is one left-to-right
 pass: at most the name's length times the pattern's, whatever either holds.
+
+**Why a pattern has a length bound.** That product is still the repository's to choose: a match
+costs up to the name's length times the pattern's, so an unbounded pattern could hold the `trail`
+gate for seconds per name, and a `trail.toml` of such patterns past its job's time limit.
+`PATTERN_MAX_CHARS` bounds each pattern, and `docs.trail` bounds how many themes a file may hold,
+since every name is tried against every theme until one matches.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The longest theme `pattern`, in characters: a filename filter needs a few dozen, and a match
+# costs up to the name's length times this.
+PATTERN_MAX_CHARS = 256
+TOO_LONG = f"a theme's `pattern` is at most {PATTERN_MAX_CHARS} characters"
 RULE = (
     "a theme's `pattern` is literal text with `.` for any one character, `.*` for any run of "
     "characters, `|` between alternatives, `^` and `$` at an alternative's start and end, and "
@@ -93,7 +103,9 @@ _REFUSED = frozenset("()[]{}+?*")
 
 def compile_theme(pattern: str) -> ThemePattern:
     """`pattern` in the theme language, or `ValueError` naming no part of it: the text is the
-    repository's, and `RULE` is what the person needs."""
+    repository's, and `RULE`, or `TOO_LONG` past `PATTERN_MAX_CHARS`, is what the person needs."""
+    if len(pattern) > PATTERN_MAX_CHARS:
+        raise ValueError(TOO_LONG)
     alternatives: list[_Alternative] = []
     start, end = False, False
     pieces: list[Piece] = []

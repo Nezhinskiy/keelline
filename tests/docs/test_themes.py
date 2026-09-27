@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from keelline.docs.themes import RULE, compile_theme
+from keelline.docs.themes import PATTERN_MAX_CHARS, RULE, TOO_LONG, compile_theme
 
 TOKENS = ("a", "b", ".", ".*", "|", "^", "$", "\\.")
 NAMES = ["".join(chars) for n in range(5) for chars in itertools.product("ab.", repeat=n)]
@@ -112,3 +112,12 @@ def test_a_pattern_re_would_backtrack_on_for_hours_answers_at_once(tmp_path: Pat
         timeout=60,
     )
     assert (done.returncode, done.stdout.strip()) == (0, "Unfiled"), done.stderr
+
+
+def test_a_pattern_is_compiled_up_to_its_bound_and_refused_past_it() -> None:
+    # The length bound is the language's own, so a caller other than `trail.toml`'s reader meets
+    # it too; the refusal is a fixed sentence, never the pattern.
+    assert compile_theme("a" * PATTERN_MAX_CHARS).search("a" * PATTERN_MAX_CHARS)
+    with pytest.raises(ValueError) as refused:
+        compile_theme("a" * (PATTERN_MAX_CHARS + 1))
+    assert str(refused.value) == TOO_LONG

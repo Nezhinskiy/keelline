@@ -77,9 +77,10 @@ _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
 # cannot read is U+FFFD rather than a `UnicodeDecodeError`. The rule rests on what every caller
 # does with the output — quotes it in a message, matches it against a grammar (`git ls-remote`'s
 # tag lines, `gh`'s JSON), or ignores it for an exit code — and on none of them comparing it
-# with a path or opening one, which is what `gitenv.git_run`'s lossless reading is for. Strict,
-# one byte ended the command as an internal error: `test attribute` over a test run whose output
-# quoted a latin-1 filename, measured. U+FFFD prints, and a UTF-8 file can hold it.
+# with a path or opening one, which is what `gitenv.git_run`'s lossless reading is for. Read
+# strictly, one such byte would end the command as an internal error — `test attribute` over a
+# test run whose output quotes a latin-1 filename, for one. U+FFFD prints, and a UTF-8 file can
+# hold it.
 _DECODE_ERRORS = "replace"
 
 

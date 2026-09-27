@@ -45,10 +45,16 @@ HELD = "{count} more {level} annotation(s) not shown; the job summary counts the
 BOOTSTRAP = "the base has no keelline.toml at this path, so this tree's decides"
 UNCHANGED = "keelline.toml unchanged from the base"
 # The last line of a run a gate failed: the lines are counts, and this says where what they count
-# is. Fixed text, so nothing a repository wrote reaches it.
+# is. Fixed text, so nothing a repository wrote reaches it. A run under `--builtin` names the
+# command with `--builtin` too: the line is relayed as what to run next, and a run asked to leave
+# the custom gates' commands alone hands over none that runs them.
 FINDINGS_ELSEWHERE = (
     "details: `keelline assess --json` lists every finding, and each gate's own command shows "
     "its own"
+)
+BUILTIN_FINDINGS_ELSEWHERE = (
+    "details: `keelline assess --builtin --json` lists every finding of the built-in gates, and "
+    "each gate's own command shows its own"
 )
 # A custom gate whose command the base does not have: the change added or re-commanded it, and
 # it runs once it lands there.

@@ -86,7 +86,7 @@ STAMPED = (
 CUSTOM_GATES = (
     "note: keelline.toml configures {count} custom gate(s), {names}; `keelline assess`, "
     "`keelline gate` and `keelline adopt promote` run each one's command from [gates.custom], "
-    "so read those commands before running any of the three"
+    "so read those commands before running any of the three; each takes --builtin to run none"
 )
 CUSTOM_GATES_SHOWN = 5
 QUESTIONS_HELP = (

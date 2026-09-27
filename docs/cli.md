@@ -59,7 +59,7 @@ Three things hold everywhere:
 - [`keelline assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-assess---base-ref---builtin---root-path---machine-path)
 - [`keelline gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#keelline-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`keelline adopt begin PLAN [--root PATH] [--machine PATH]`](#keelline-adopt-begin-plan---root-path---machine-path)
-- [`keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---root-path---machine-path)
+- [`keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#keelline-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`keelline memory refs`](#keelline-memory-refs)
 - [`keelline init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#keelline-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
 - [`keelline init --questions [--root PATH] [--machine PATH]`](#keelline-init---questions---root-path---machine-path)
@@ -684,10 +684,11 @@ regular expression: literal text, `.` for any one character, `.*` for any run of
 between alternatives, `^` and `$` at an alternative's start and end, and `\` before a
 punctuation character to take it literally — `.*`, `widget` and `gadget|gizmo` are all
 patterns. It is matched without backtracking, so no pattern can make a run take longer than
-the name's length times its own. Any other syntax — a group, a class, `+`, `?` or `{n}` — is
-refused rather than read otherwise.
+the name's length times its own, and a pattern holds at most 256 characters and a `trail.toml`
+at most 32 themes, since every name is tried against every theme until one matches. Any other
+syntax — a group, a class, `+`, `?` or `{n}` — is refused rather than read otherwise.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
-syntax, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+syntax or longer than 256 characters, more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
 otherwise split the block and push repository prose into the roadmap. A listed document's name
 is held to the same rule, and to one more: a name that is not a single line, carries either
@@ -764,8 +765,8 @@ A row names no finding: `assess` lists them as items.
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
 | `foreign-hooks` | the committed hook settings of each harness `[keelline] agents` selects | advice | 5 | a hook entry without Keelline's marker |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but Keelline's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file; not judged under `[ci] mode = "none"` |
-| `codeowners-scope` | the same file | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns both. `where` names `.github/workflows/`, the file, or both. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | warning | 7 | the line that governs Keelline's caller workflow names no owner, or there is no file. Words are separated by spaces and tabs, a `#` starts a comment at the line's start or after a blank, a line with an owner outside `@user`, `@org/team` and an email address decides nothing, and a line holding any other whitespace or control character is read with no owner; not judged under `[ci] mode = "none"` |
+| `codeowners-scope` | the same file, and `.github/workflows/*.yml` and `*.yaml` | warning | 7 | the caller workflow is owned, but a workflow a pull request could add — asked at a name no project gives one, as `.yml` and as `.yaml`, so `keelline*` or `*.yml` alone does not own it — a workflow the repository already has, or the code-owners file itself is not; a `/.github/` rule in a file kept at `.github/CODEOWNERS` owns all three, until a later line with no owner takes a file back out of it. `where` names `.github/workflows/`, each unowned workflow whose path is inside the plain-path grammar (any other is counted under `.github/workflows/`), and the file. Each workflow asked costs the code-owners file's length times its path's, in characters; past 300,000,000 in all, the workflows not yet asked are `could-not-look`. Silent where `codeowners` reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this Keelline does not ship is one `profile-not-shipped` warning |
 
@@ -932,7 +933,8 @@ in place of the count, or `not run: the run had already failed` for a custom gat
 once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
 that fails with a gate failing ends with one `details:` line saying
-where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate
+where the findings are: `keelline assess --json` (`keelline assess --builtin --json` under
+`--builtin`), or the gate's own command. Key names and gate
 names print; values from `keelline.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
@@ -1004,7 +1006,7 @@ file. `--json` carries, on exit 0, `before` and `after`, the state on each side.
 | 1 | the plan has findings under `plan check`, or its trail row declares no state, and nothing was written; or `keelline.toml` is missing or does not load |
 | 2 | `PLAN` is not an adoption plan, there is no file at the path given (named without the path), or `keelline.toml` is refused |
 
-## `keelline adopt promote [GATE …] [--base REF] [--root PATH] [--machine PATH]`
+## `keelline adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
 `[keelline] enforced`. With no `GATE`, it runs every configured gate that does not enforce yet,
@@ -1036,12 +1038,20 @@ a `note:` saying to land it on the base branch first, because `keelline gate` wo
 in the pull request that carries the promotion. A base that cannot be read, or has no
 `keelline.toml`, has no command, so every custom gate waits.
 
+`--builtin` runs the built-in gates and no custom gate, as `keelline assess --builtin` does: for
+a clone whose commands you have not agreed to run, where the base is the clone author's and its
+having a command is no brake. A custom gate is promoted only by a run that ran its command, so
+each one is not run and not promoted, is named `(not run, as --builtin asked)` with a `note:`
+saying that without `--builtin` the command runs them, and, named beside other gates, holds them
+back as a gate not on the base does.
+
 `--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
 as `keelline assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
-could not run, and `not_on_base`, the custom gates not run because the base does not have their
-command. When a gate stays advisory, the summary ends with a line saying where its findings are
-(`keelline assess --json`, or the gate's own command), and, when `plan`, `commit` or `bugs`
+could not run, `not_on_base`, the custom gates not run because the base does not have their
+command, and `skipped`, the custom gates `--builtin` did not run. When a gate stays advisory, the summary ends with a line saying where its findings are
+(`keelline assess --json`, or `keelline assess --builtin --json` under `--builtin`, or the
+gate's own command), and, when `plan`, `commit` or `bugs`
 could not run and the base is not in the checkout, a `note:` saying so and naming `--base` with
 the project's base branch, since a gate that could not run for want of the base says nothing
 about the tree.
@@ -1055,7 +1065,7 @@ list, or `keelline.toml` no longer loads.
 | Exit | Meaning |
 |---|---|
 | 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
-| 1 | a gate failed, could not run, or is a custom gate whose command the base does not have: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
+| 1 | a gate failed, could not run, is a custom gate whose command the base does not have, or is a custom gate `--builtin` did not run: with names, nothing was written; without, the others were enforced; or `keelline.toml` is missing or does not load |
 | 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `keelline.toml` refused |
 
 ## `keelline memory refs`
@@ -2373,7 +2383,8 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller);
+  (`keelline assess` warns, `codeowners-scope`, when a line owns only the caller, or when a
+  later line with no owner takes a workflow back out of the `/.github/` rule);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;
