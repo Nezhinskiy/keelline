@@ -25,9 +25,9 @@ absolute `relative` restarted the walk at `/` — `openat` ignores its `dir_fd` 
 path. On Linux, where `/etc` and `/var` are real directories, that completed and yielded a
 descriptor outside the root; macOS refused it only incidentally, because those two happen to
 be symlinks there. No caller reached it — `scaffold.engine` calls `contained()` first — but
-the seam is the point: five later lanes are queued behind "every lane that puts a file into a
-repository calls it instead of writing files of its own", and the name of this function is
-what they will read as the guarantee. It is the guarantee now.
+the seam is the point: every area that puts a file into a repository calls it instead of writing
+files of its own, and the name of this function is what those callers read as the guarantee. It
+is the guarantee now.
 
 `contained()` in `config.paths` is still the right first call for a *configured* string: it
 answers about the project root, reports a `Refusal` a user can act on, and catches a committed
@@ -57,14 +57,98 @@ NEW_FILE_MODE = 0o644
 _DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _PARENT = ".."
 _HERE = "."
+# Git's control directory, reserved at every depth and in any case.
+#
+# **Where the anchor comes from.** The rule is "no component of a path *relative to a root* may
+# be git's control directory", and the root is the checkout a person handed the CLI — resolved
+# by `project.detect`, or passed on the command line. `.git` is git's own name inside that
+# root. So the party being contained is the clone, which authors the path string and can author
+# nothing else here: it cannot move `.git`, cannot choose the root, and cannot rename the
+# directory out from under this check.
+#
+# **Case-insensitively**, because the default filesystem on macOS is case-insensitive and
+# `.GIT/hooks/pre-commit` reaches the same file there; **at every depth**, because a `.git`
+# below the top is a submodule's control directory and is exactly as off-limits.
+#
+# **`.git` and not "a leading dot".** `.github/workflows/keelline.yml` is an artifact this
+# project ships and `.keelline/manifest.json` is its own ledger, so a leading-dot rule would
+# refuse Keelline's own footprint. `.gitignore`, `.gitattributes` and `.gitkeep` are ordinary
+# files and are untouched by an equality test on the whole component.
+#
+# The one place Keelline does write inside `.git` is `guards.githooks.install`, and it does not
+# come through here: git itself names the directory (`rev-parse --git-path hooks`), the result
+# is an absolute path this process computed, and the write is `write_atomically`, the plain-path
+# form for a caller that already holds a trusted path. No repository-authored string reaches it.
+CONTROL_DIRECTORY = ".git"
 
 
 class UnsafePath(OSError):
     """A component of the path is a symlink, is not a directory, or leaves the root."""
 
 
-def _checked(relative: str) -> tuple[str, ...]:
+def path_key(relative: str) -> str:
+    """The form in which two root-relative paths are compared for identity: case-folded.
+
+    The default filesystems on macOS and Windows fold case, so `claude.md` and `CLAUDE.md` are
+    one file there, and a rule that asks "is this the same file" by exact string equality answers
+    no for a pair the disk answers yes for. It is a pure string rule, the same on every
+    filesystem, so a case-sensitive machine refuses and withholds exactly what a folding one
+    must, and the tests that hold it redden on Linux too. Where a comparison must stay exact (a
+    `--force` path, an exemption that only relaxes a guard), its caller says why.
+    """
+    return relative.casefold()
+
+
+def names_component(relative: str, name: str) -> bool:
+    """Whether any component of `relative` is `name`, spelled in any case.
+
+    The one test behind `names_control_directory` and `config.paths.names_keelline_directory`:
+    at any depth, and in any case, because the default filesystems on macOS and Windows fold
+    case and `.GIT` or `.Keelline` reaches the same directory there. `name` is lower-case.
+    """
+    return any(part.lower() == name for part in relative.split("/"))
+
+
+def names_control_directory(relative: str) -> bool:
+    """Whether any component of `relative` is git's control directory, spelled in any case.
+
+    Public and separate from the walk, because two callers need the same answer and must not
+    each write their own version of it: `checked_components` refuses on it, and
+    `config.paths.validate_paths` asks it a key at a time so its refusal can name the key
+    without printing the repository-authored value. See `CONTROL_DIRECTORY` for the rule and
+    for where its anchor comes from.
+    """
+    return names_component(relative, CONTROL_DIRECTORY)
+
+
+def utf_8_name(name: str) -> bool:
+    """Whether a name the filesystem gave is UTF-8 on disk, so a UTF-8 file can hold it.
+
+    A name held in other bytes — latin-1, on Linux — reaches Python with surrogate escapes, and
+    writing it into a UTF-8 file raises `UnicodeEncodeError`, which would end `docs trail`,
+    `memory index` or `attach` as an internal error. The bytes are asked and not the `str`,
+    because under a latin-1 filesystem codec every byte decodes and the escapes that would show
+    it never appear.
+    """
+    try:
+        os.fsencode(name).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
+
+    **Public, and the one place this rule lives.** `config.paths.contained()` used to carry a
+    second copy of it, written against `Path(relative).parts` — and the two agreed only about
+    the values nobody had to think about. Those parts are normalised, so `docs//x.md`,
+    `docs/x/` and `./docs` reached `contained()` as `('docs', 'x.md')`, `('docs', 'x')` and
+    `('docs',)`: a configured path that `plan()` reported no refusal for and that the walk below
+    then refused at the write, part-way through a pass, with earlier artifacts already on disk.
+    Two spellings of one rule is the defect; there is one spelling now, and `contained()` calls
+    it. That is also why this is not private: `contained()` is in a subpackage and this is a
+    leaf module, so the call goes this way and the leaf stays a leaf.
 
     The split is on the **raw string**, not on `PurePosixPath(relative).parts`. Those parts are
     already normalised — `.` and empty segments are dropped, a trailing slash disappears — so a
@@ -77,8 +161,16 @@ def _checked(relative: str) -> tuple[str, ...]:
       the filesystem root;
     * `..`, which walks out one component at a time; and `.`, and an empty segment (`a//b`, a
       trailing slash), which are merely odd rather than dangerous — refused because this
-      function's answer is what five later lanes will read as "contained", and a surface that
-      quietly rewrites its argument is a surface whose guarantee has to be restated per caller.
+      function's answer is what every caller reads as "contained", and a surface that quietly
+      rewrites its argument is a surface whose guarantee has to be restated per caller;
+    * and git's control directory, at any depth and in any case — see `CONTROL_DIRECTORY`.
+      Staying inside the root is not the whole of containment for a repository-scoped tool:
+      `.git/hooks/pre-commit` is inside every root Keelline is ever handed, and a clone that
+      pointed a `MANAGED_REGION` artifact at it had the developer's executable hook rewritten
+      in place, because `_mode_of` carries an existing file's 0755 onto the replacement. This
+      is the last line before the write, under `contained()` rather than instead of it, and it
+      covers the callers that never had a configured string to check — `attach`, `overlay` and
+      `hooks` all pass paths that `contained()` never sees.
     """
     if relative.startswith("/"):
         raise UnsafePath(f"{relative!r} is absolute; a path here must stay inside the root")
@@ -92,6 +184,11 @@ def _checked(relative: str) -> tuple[str, ...]:
             raise UnsafePath(
                 f"{relative!r} contains {part!r}; a path here must stay inside the root"
             )
+    if names_control_directory(relative):
+        raise UnsafePath(
+            f"{relative!r} names {CONTROL_DIRECTORY!r}; git's control directory is not a "
+            "repository-scoped tool's to write into"
+        )
     return parts
 
 
@@ -102,9 +199,9 @@ def open_within(root: Path, relative: str) -> Iterator[tuple[int, str]]:
     The caller writes through the descriptor, so nothing between this walk and the write can
     redirect it: `os.replace(..., src_dir_fd=fd, dst_dir_fd=fd)` never re-resolves the parent.
 
-    `relative` must stay inside `root` by its own spelling — see `_checked`.
+    `relative` must stay inside `root` by its own spelling — see `checked_components`.
     """
-    parts = _checked(relative)
+    parts = checked_components(relative)
     fd = os.open(root, _DIR_FLAGS)
     opened = [fd]
     try:
@@ -223,14 +320,15 @@ def mkdirs_within(root: Path, target: str) -> None:
     symlink anywhere along the path refuses with nothing created.
 
     Public, and here rather than in `scaffold.engine` where it was written, because it is the
-    subtle half of the surface rule the scaffold plan states: "every later lane that puts a
-    file into a repository calls it instead of writing files of its own". `attach`, `setup`,
-    `overlay` and `hooks-core` all write files that are not `Template`s; a private helper
-    leaves each of them to re-derive this, and the failure mode of getting it wrong is silent.
+    subtle half of the surface rule that every area putting a file into a repository calls it
+    instead of writing files of its own. `attach`, `setup`, `overlay` and `hooks` all write
+    files that are not `Template`s; a private helper leaves each of them to re-derive this, and
+    the failure mode of getting it wrong is silent.
     """
-    # `_checked` and not `PurePosixPath(target).parts`, so the whole target is refused by
+    # `checked_components` and not `PurePosixPath(target).parts`, so the whole target is
+    # refused by
     # its own spelling before any directory is created, rather than one branch at a time.
-    parts = _checked(target)[:-1]
+    parts = checked_components(target)[:-1]
     for depth in range(len(parts)):
         branch = "/".join(parts[: depth + 1])
         with open_within(root, branch) as (dir_fd, name), contextlib.suppress(FileExistsError):
@@ -262,12 +360,13 @@ def rmdir_within(root: Path, target: str) -> None:
     on macOS and EISDIR on Linux, so a caller that reached for it got an `OSError` it was most
     likely already swallowing, and a tree that quietly never shrank.
 
-    Public, and here rather than private to its caller, for the reason `mkdirs_within` gives
-    one function above: "a private helper leaves each of them to re-derive this, and the
-    failure mode of getting it wrong is silent". `hooks-core` asked for it — the dispatcher's
-    marker tree is keyed by session and must be pruned, which is the one removal loop D14
-    permits — and it is the whole of the difference from `remove_within`, so a later hardening
-    of that walk reaches this too instead of leaving a copy behind.
+    Public, and here rather than private to its caller, for the reason `mkdirs_within` gives one
+    function above: "a private helper leaves each of them to re-derive this, and the failure mode of
+    getting it wrong is silent". The hook sink asked for it — its marker tree is keyed by session
+    and must be pruned, one of the two removals driven by a directory listing that the
+    enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) permits — and it is the whole of the
+    difference from `remove_within`, so a later hardening of that walk reaches this too instead of
+    leaving a copy behind.
     """
     with open_within(root, target) as (dir_fd, name), contextlib.suppress(FileNotFoundError):
         os.rmdir(name, dir_fd=dir_fd)

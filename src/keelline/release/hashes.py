@@ -1,9 +1,9 @@
-"""The release's record of the files the harness executes without Python (§5.9, DC5).
+"""The release's record of the files the harness executes without Python (`hooks/hashes.json`).
 
 Kept true on every commit and not only at a tag: `release check` compares the record to
 the tree, so a change to the wrapper that forgot to re-record fails CI. `doctor files`
 compares the INSTALLED copies to the INSTALLED record; a determined attacker who edits
-both is not this check's threat — tag protection and the pinned SHA are (D16). Post-install
+both is not this check's threat — tag protection and the pinned SHA are. Post-install
 modification, a broken checkout, a partial update: those are.
 """
 

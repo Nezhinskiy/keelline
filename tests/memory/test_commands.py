@@ -9,6 +9,8 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.memory.api import DELIMITER
+from keelline.printed import UNPRINTABLE
+from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 from tests.gitfixture import git
 
 CONFIG = """
@@ -235,7 +237,7 @@ def test_indexing_a_trusted_store_does_not_revoke_its_own_trust(
     (notes / "c.md").write_text(NOTE_WITHOUT_INDEX, encoding="utf-8")
     assert invoke(["memory", "trust", "--in-repo-memory", *common(project)]) == 0
     assert invoke(["memory", "index", *common(project)]) == 0
-    # The index bundle renders only under Codex, which has no native auto-memory (§9.5), so the
+    # The index bundle renders only under Codex, which has no native auto-memory, so the
     # harness has to be named for it to be one of the three bundles this walks. The other two
     # are harness-neutral, which is its own assertion below. Through `_under_codex` like every
     # other site: this one was never vacuous, because it asserts the bundle is **non**-empty and
@@ -292,9 +294,9 @@ def test_fit_says_so_when_the_trust_gate_is_what_empties_the_bundles(
 # --- the index seam: the file that is written, checked, harvested and injected ---------------
 #
 # The `project` fixture above is `local-only`, which is the one shape in which `MEMORY.md`
-# cannot be anything but a real file in the repository. Overlay mode is where §6.3 puts the
-# index: `paths.memory` is a real directory of links *inside* the checkout, `MEMORY.md` beside
-# them is either a link into the machine's own overlay share or a real file the clone shipped,
+# cannot be anything but a real file in the repository. Overlay mode is where the index moves:
+# `paths.memory` is a real directory of links *inside* the checkout, `MEMORY.md` beside them
+# is either a link into the machine's own overlay share or a real file the clone shipped,
 # and every note resolves far outside the repository. This fixture goes through the real
 # resolver so the shape is the real one.
 
@@ -427,8 +429,8 @@ def test_an_index_the_repository_ships_is_not_harvested_into_the_machines_notes(
 def test_the_machines_own_index_is_still_harvested_into_the_machines_notes(
     overlay_project: Path,
 ) -> None:
-    # The rule is one trust domain, not "never harvest in overlay mode". §6.3 makes a symlinked
-    # index into this project's own overlay share a legitimate member of the tree `attach`
+    # The rule is one trust domain, not "never harvest in overlay mode". A symlinked index into
+    # this project's own overlay share is a legitimate member of the link tree `attach`
     # creates, and the curation a session wrote there is exactly what the harvest exists to
     # keep. A fix that refused this would delete the feature instead of gating it.
     share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory"
@@ -445,10 +447,10 @@ def test_the_machines_own_index_is_still_harvested_into_the_machines_notes(
 
 
 @needs_git
-def test_memory_index_bootstraps_a_dangling_section_6_3_link(
+def test_memory_index_bootstraps_a_dangling_attach_link(
     overlay_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `attach` creates the §6.3 symlink before any content exists behind it — that ordering is
+    # `attach` creates the index symlink before any content exists behind it — that ordering is
     # the whole point of a link over a copy. `index_source` correctly answers "nothing to read"
     # for a dangling link, but `_destination` used to read that same `None` as "refused", the
     # answer meant for a link resolving *outside* the permitted roots, and raised `Refusal`
@@ -473,16 +475,17 @@ def test_memory_index_bootstraps_a_dangling_section_6_3_link(
 def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_index(
     overlay_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `_harvestable` closes index→note. Nothing closed note→index: a group need not be a §6.3
-    # symlink to resolve at all — `_group_targets` accepts a real, committed directory in every
-    # mode — so a repository can ship one group as ordinary committed content beside an
+    # `_harvestable` closes index→note. Nothing closed note→index: a group need not be an
+    # `attach` symlink to resolve at all — `_group_targets` accepts a real, committed directory
+    # in every mode — so a repository can ship one group as ordinary committed content beside an
     # otherwise honest overlay store. That note's own `index:` frontmatter is then
     # repository-authored text with no trust record behind it, and `may_inject` correctly
     # empties the index bundle for this very reason (`inside_project` turns True the moment any
     # group resolves inside the checkout) — but `memory index` used to write the line into
     # `common/memory`'s `MEMORY.md` regardless, which every *other* project on the machine reads
-    # and, per §6.2, which syncs across every machine. The reviewer built this tree by hand,
-    # since `attach` is another lane's and is not present here.
+    # and which, as the overlay's shared half, syncs across every machine. The tree is built
+    # by hand rather than through `attach`, because a group committed as an ordinary directory
+    # is a shape `attach` never produces.
     config = overlay_project / "keelline.toml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
@@ -511,6 +514,93 @@ def test_a_repository_committed_group_is_not_published_into_the_shared_overlay_i
     # Named the way `refused_harvest` already is: a silent drop is how this class of defect
     # survives.
     assert "malicious" in capsys.readouterr().out
+
+
+@needs_git
+def test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes(
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The two refusals above name what they held back, and both names are the repository's: a
+    # committed note's file name (its `name:` when it has none) and a `memory.index_extra`
+    # entry, which `_extra` checks for line breaks and link syntax but not for an escape
+    # sequence. Both reached the terminal raw. `--json` still names them. Mutation: drop
+    # `printable` from `_printed`, or join either list raw in `_publish` — each reddens.
+    config = overlay_project / "keelline.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace('groups = ["developer"]', 'groups = ["developer", "project-stable"]')
+        .replace("index_extra = []", 'index_extra = ["docs/x\\u001b[2J.md"]'),
+        encoding="utf-8",
+    )
+    committed = overlay_project / "docs" / "memory" / "project-stable"
+    committed.mkdir(parents=True)
+    crafted = "evil\x1b[2J"
+    (committed / f"{crafted}.md").write_text(
+        '---\ndescription: "d"\nindex: "line"\nmetadata:\n  type: project\n---\n\nBody.\n',
+        encoding="utf-8",
+    )
+    share = overlay_project.parent / "overlay" / "projects" / "widget" / "memory" / "MEMORY.md"
+    share.write_text("# shared index\n", encoding="utf-8")
+    (overlay_project / "docs" / "memory" / "MEMORY.md").symlink_to(share)
+
+    assert invoke(["memory", "index", *common(overlay_project)]) == 0
+    captured = capsys.readouterr()
+    assert f"{UNPRINTABLE} took no line" in captured.out
+    assert f"{UNPRINTABLE} took no pointer" in captured.out
+    assert_never_raw(captured.out, captured.err)
+    assert invoke(["memory", "index", "--check", "--json", *common(overlay_project)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["refused_publish"] == [crafted]
+    assert payload["refused_extra"] == ["docs/x\x1b[2J.md"]
+
+
+@needs_git
+def test_a_note_refused_a_harvested_line_is_named_without_its_crafted_bytes(
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The harvest's refusal names the machine's own notes that declined a line from a committed
+    # `MEMORY.md`. The index entry that points at one cannot hold a line break, but the note's
+    # file name can hold an escape sequence, and it reached the terminal raw. Mutation: join
+    # `refused_harvest` raw in `_harvest` — this reddens.
+    crafted = "evil\x1b[2J"
+    overlay = overlay_project.parent / "overlay" / "common" / "memory"
+    (overlay / f"{crafted}.md").write_text(
+        "---\ndescription: d\nmetadata:\n  type: project\n---\n\nBody.\n", encoding="utf-8"
+    )
+    (overlay_project / "docs" / "memory" / "MEMORY.md").write_text(
+        f"- [a committed line](developer/{crafted}.md)\n", encoding="utf-8"
+    )
+    assert invoke(["memory", "index", "--check", "--json", *common(overlay_project)]) in (0, 1)
+    assert json.loads(capsys.readouterr().out)["refused_harvest"] == [crafted]
+    invoke(["memory", "index", "--check", *common(overlay_project)])
+    captured = capsys.readouterr()
+    assert f"{UNPRINTABLE} took no index line" in captured.out
+    assert_never_raw(captured.out, captured.err)
+
+
+@needs_git
+def test_a_group_linking_outside_the_share_is_named_escaped_never_raw(
+    overlay_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # In overlay mode a group may be a link only into this project's share; the refusal of one
+    # that is not names the group, which `memory.groups` lets the repository spell as it likes.
+    # Mutation: name the group unquoted in `_group_targets`' "links outside" reason — this
+    # reddens.
+    elsewhere = overlay_project.parent / "elsewhere"
+    elsewhere.mkdir()
+    (overlay_project / "docs" / "memory" / CRAFTED).symlink_to(elsewhere, target_is_directory=True)
+    config = overlay_project / "keelline.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            'groups = ["developer"]', f'groups = ["developer", "{CRAFTED_TOML}"]'
+        ),
+        encoding="utf-8",
+    )
+    assert invoke(["memory", "refs", *common(overlay_project)]) == 2
+    captured = capsys.readouterr()
+    assert "links outside this project's share of the overlay" in captured.err
+    assert_never_raw(captured.out, captured.err)
+    assert repr(CRAFTED) in captured.err
 
 
 def test_editing_index_extra_alone_cannot_slip_a_pointer_past_the_trust_record(
@@ -556,6 +646,32 @@ def test_a_note_the_store_cannot_parse_is_counted_and_fails_the_check(
     assert "broken.md" in capsys.readouterr().out
     assert invoke(["memory", "index", "--check", *common(project)]) == 1
     assert "broken.md" in capsys.readouterr().out
+
+
+def test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The file name is whatever the store holds, and in-repo mode that is a committed file: a
+    # line break and `::error::` forged a workflow command in CI, an escape sequence reached the
+    # terminal. `--json` still carries the path. Mutation: drop `printable` from `_printed` —
+    # this reddens; print the absolute path instead of the store-relative one — the last
+    # assertion reddens.
+    notes = project / ".keelline" / "local" / "memory" / "developer"
+    crafted = f"{CRAFTED}.md"
+    (notes / crafted).write_text("no frontmatter at all\n", encoding="utf-8")
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    captured = capsys.readouterr()
+    assert (
+        f"1 file(s) in the store cannot be read as a note, so they reach neither the index "
+        f"nor any injection bundle: {UNPRINTABLE}" in captured.out
+    )
+    assert_never_raw(captured.out, captured.err)
+    assert invoke(["memory", "index", "--check", "--json", *common(project)]) == 1
+    assert json.loads(capsys.readouterr().out)["unreadable"][0].endswith(crafted)
+    # A name inside the grammar is still named, so the ordinary case keeps its pointer.
+    (notes / crafted).rename(notes / "broken.md")
+    assert invoke(["memory", "index", "--check", *common(project)]) == 1
+    assert "developer/broken.md" in capsys.readouterr().out
 
 
 def test_the_check_summary_never_says_current_while_the_exit_code_says_otherwise(
@@ -765,7 +881,11 @@ def test_refs_refuses_a_partial_resolution_with_the_reasons_wrapped_as_data(
     shutil.rmtree(project / ".keelline" / "local" / "memory" / "project-volatile")
     assert invoke(["--json", "memory", "refs", *common(project)]) == 2
     summary = json.loads(capsys.readouterr().out)["summary"]
-    assert "1 configured group(s) could not be resolved (project-volatile)" in summary
+    # The line above the region counts and names no group: a name is repository text, and
+    # outside the region it would reach an agent as prose.
+    head = summary.split(DELIMITER, 1)[0]
+    assert "1 configured group(s) could not be resolved, so" in head
+    assert "project-volatile" not in head
     # The reason itself, where the pointer used to be.
     assert "project-volatile is not in the store" in summary
     assert summary.count(DELIMITER) == 2  # inside the region that says the text is data
@@ -809,7 +929,7 @@ def test_the_index_bundle_emits_only_under_codex(
 ) -> None:
     # Claude Code reads MEMORY.md natively; injecting it again would spend three of the ten
     # capped SessionStart entries on something the harness already has. Codex has no native
-    # auto-memory (§9.5), so it is the one that needs it.
+    # auto-memory, so it is the one that needs it.
     store = _a_trusted_store_with_an_index(project)
     codex = _session_context(store, monkeypatch, capsys, bundle="index", env={"PLUGIN_ROOT": "/p"})
     claude = _session_context(
@@ -823,8 +943,8 @@ def test_every_other_bundle_is_harness_neutral(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The branch must be one bundle wide. A harness check that swallowed standing rules on
-    # Claude Code would empty the channel the whole store exists for, and the smoke check at
-    # the end of this wave would still pass because it runs under Claude Code.
+    # Claude Code would empty the channel the whole store exists for, and
+    # `scripts/smoke_hooks.py` would still pass because it runs under Claude Code.
     store = _a_trusted_store_with_an_index(project)
     for bundle in ("preset-rules", "standing-rules", "volatile-notes"):
         claude = _session_context(

@@ -1,4 +1,4 @@
-"""Small always-loaded documents and existing link targets (D7: every bound is a budget)."""
+"""Small always-loaded documents and existing link targets; each bound is a `[budgets]` key."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from keelline.config.paths import contained
 from keelline.errors import Failure
 from keelline.findings import Finding
+from keelline.printed import quoted
 from keelline.prose import blank_fences, resolves_within
 
 if TYPE_CHECKING:
@@ -24,7 +25,12 @@ STATUS_HEADING = "## Current status"
 # rebuilding from there would swallow every line between that subheading and the end marker.
 # One definition, so the two readers cannot disagree about where the listing starts.
 TRAIL_MARKER_LINE = re.compile(rf"^{re.escape(TRAIL_MARKER)}$", re.MULTILINE)
-_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+# Neither half may cross the bracket or parenthesis that opens another link. With `[^\]]+` and
+# `[^)]+` a text of repeated `[a](` made every opening bracket scan to the end of the text:
+# 20,000 characters took 0.55 s, and each doubling four times as long, over any document a
+# change can commit. The one link the old pattern read and this one does not is a target holding
+# a parenthesis, which it cut at the first `)` and so never named a real file.
+_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\[\]]+\]\(([^()]+)\)")
 _IGNORED_LINK_PREFIXES = ("#", "/", "http://", "https://", "mailto:")
 
 
@@ -32,7 +38,7 @@ def read_document(path: Path, where: str | Path) -> str:
     """One repository document's text, or a `Failure` naming it.
 
     `cli.run` maps a `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for a
-    refusal or an internal error (C5). One latin-1 byte in `AGENTS.md`, in the roadmap, in a
+    refusal or an internal error. One latin-1 byte in `AGENTS.md`, in the roadmap, in a
     plan or in `trail.toml` reached the frame as `internal error: UnicodeDecodeError` and exit
     2 — telling the operator this tool is broken rather than that their file is, with nothing in
     the message to act on. A repository's malformed input must read as their input being wrong.
@@ -43,14 +49,17 @@ def read_document(path: Path, where: str | Path) -> str:
     offending byte, and the byte came out of the file.
 
     `where` is how this area's findings already name the file, so the message names the
-    configured path rather than an absolute one under a runner's scratch directory.
+    configured path rather than an absolute one under a runner's scratch directory. It goes
+    through `quoted` here rather than at each caller: a plan's name is the pull request's, and
+    `plan check` prints this refusal in CI, so no caller may forget the bound.
     """
+    shown = quoted(Path(where).as_posix())
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
-        raise Failure(f"{where}: is not valid UTF-8 ({error.reason})") from None
+        raise Failure(f"{shown}: is not valid UTF-8 ({error.reason})") from None
     except OSError as error:
-        raise Failure(f"{where}: could not be read ({error.strerror or error})") from None
+        raise Failure(f"{shown}: could not be read ({error.strerror or error})") from None
 
 
 def section_lines(text: str, heading: str) -> int | None:
@@ -164,3 +173,12 @@ def check_links(root: Path, config: Config) -> list[Finding]:
         if landed is not None and not landed.exists():
             found.append(Finding("missing-link", config.paths.agents_md, None, target))
     return found
+
+
+def docs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `docs` gate's whole composition: the budgets and the link targets.
+
+    `docs check` with no flag answers with this function. `base` is unread: every gate takes the
+    same three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    return check_budgets(root, config) + check_links(root, config)

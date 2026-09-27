@@ -39,7 +39,7 @@ def _populate(argv: list[str], cwd: Path) -> None:
 
 
 def test_creating_from_the_template_asks_github_for_a_private_repository(tmp_path: Path) -> None:
-    # §6.1 and D1: a template rather than a fork, because a fork's visibility is bound to the
+    # A template rather than a fork, because a fork's visibility is bound to the
     # upstream network and cannot be made private. The `--private` flag is that decision.
     runner = FakeRunner(on_call=_populate)
     create("octo", "keelline-private", source="template", root=tmp_path, runner=runner)
@@ -49,10 +49,10 @@ def test_creating_from_the_template_asks_github_for_a_private_repository(tmp_pat
 
 
 def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: Path) -> None:
-    # Findings → S6: the race did not reproduce in the one trial that was run, and one clean
-    # run cannot rule out an asynchronous generation step that sometimes outlasts the clone.
-    # The retry is therefore carried on the strength of the design, not of a measurement — so
-    # it is asserted here rather than left to be discovered by whoever hits it.
+    # The race did not reproduce in the one measured trial of template generation, and one
+    # clean run cannot rule out an asynchronous generation step that sometimes outlasts the
+    # clone. The retry is therefore carried on the strength of reasoning, not of a measurement
+    # — so it is asserted here rather than left to be discovered by whoever hits it.
     empty = FakeRunner()
     with pytest.raises(Failure):
         create("octo", "keelline-private", source="template", root=tmp_path, runner=empty)
@@ -62,8 +62,8 @@ def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: 
 
 
 def test_an_existing_populated_clone_is_left_alone(tmp_path: Path) -> None:
-    # §6.1 requires idempotence in as many words, because `gh` "may give up on the clone with
-    # the repository already created" — so the second run finds a tree and must not re-create.
+    # `create` is idempotent because `gh` may give up on the clone with the repository already
+    # created — so the second run finds a tree and must not re-create.
     (tmp_path / "keelline-private" / ".claude-plugin").mkdir(parents=True)
     (tmp_path / "keelline-private" / ".claude-plugin" / "plugin.json").write_text(
         "{}", encoding="utf-8"
@@ -86,17 +86,17 @@ def test_the_local_source_touches_no_network(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("name", ["../escape", "a/b", "", "-flag"])
 def test_a_name_that_is_not_one_path_segment_is_refused(tmp_path: Path, name: str) -> None:
-    # §7.4's source rule, applied to a value that becomes a directory name, a remote path and
-    # later a marketplace selector. `-flag` is in the list because §3 requires that a
-    # configured value shaped like an option never reaches a subprocess in an option's position.
+    # A name is one path segment, because it becomes a directory name, a remote path and later
+    # a marketplace selector. `-flag` is in the list because a configured value shaped like an
+    # option never reaches a subprocess in an option's position.
     with pytest.raises(Refusal):
         create("octo", name, source="local", root=tmp_path, runner=FakeRunner())
 
 
 def test_init_renames_the_plugin_and_marketplace_for_the_owner(tmp_path: Path) -> None:
-    # §6.1: "so two overlays never collide". Findings → S6 Step 3 measured that an
-    # owner-suffixed pair, pushed to a private SSH remote, was added and installed without
-    # error under a scratch CLAUDE_CONFIG_DIR.
+    # The owner's suffix is what keeps two overlays installed into one harness from colliding.
+    # A measured trial added and installed an owner-suffixed pair, pushed to a private SSH
+    # remote, without error under a scratch CLAUDE_CONFIG_DIR.
     created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
     init_instance(created.root, "OctoCat", runner=FakeRunner())
     plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
@@ -106,8 +106,8 @@ def test_init_renames_the_plugin_and_marketplace_for_the_owner(tmp_path: Path) -
 
 
 def test_init_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -> None:
-    # §6.4: gitleaks runs twice, and one of the two is this hook. A missing `pre-commit` is a
-    # reported finding, never a traceback — the binary is optional by the global constraints.
+    # gitleaks runs twice over the overlay, and one of the two is this hook. A missing
+    # `pre-commit` is a reported finding, never a traceback — the binary is optional.
     created = create("octo", "keelline-private", source="local", root=tmp_path, runner=FakeRunner())
     missing = FakeRunner(answers={"pre-commit": Completed(127, "", "not found")})
     result = init_instance(created.root, "octo", runner=missing)
@@ -145,10 +145,10 @@ def test_init_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_the_cli_never_picks_the_github_source_for_you() -> None:
-    # Task 6's own rule, which has no other witness: "`--template` is never the default: an
-    # invocation with neither flag refuses and names both". §6.1 permits creating a repository
-    # on an account only after explicit confirmation, and a non-interactive caller — the usual
-    # one in this harness — can express confirmation only by naming the source. Mutation:
+    # A rule with no other witness: `--template` is never the default, and an invocation with
+    # neither flag refuses and names both. A repository is created on an account only after
+    # explicit confirmation, and a non-interactive caller — the usual one in this harness — can
+    # express confirmation only by naming the source. Mutation:
     # `source="template"` in that parser's `set_defaults` and this reddens; it is declared in
     # `mutations.toml`, because the failure creates a repository nobody asked for.
     from keelline.cli import build_parser, discover_registrars
@@ -215,10 +215,10 @@ def test_a_render_that_cannot_start_leaves_no_probe_behind(
 def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -> None:
     # `SEGMENT` has a lowercase leading class and a mixed-case GitHub login is ordinary, so the
     # two commands have to fold alike. `create` validated the raw value while `init_instance`
-    # folded first, which refused `--owner OctoCat` from the wave's headline command and
-    # accepted it from the other — one owner string, two answers, and a refusal saying "is not
-    # one path segment" about a value that is one. Mutation: validate `owner` rather than
-    # `account` in `create` and the first half reddens with a `Refusal`.
+    # folded first, which refused `--owner OctoCat` from `overlay create` and accepted it from
+    # the other — one owner string, two answers, and a refusal saying "is not one path segment"
+    # about a value that is one. Mutation: validate `owner` rather than `account` in `create`
+    # and the first half reddens with a `Refusal`.
     remote = tmp_path / "remote"
     remote.mkdir()
     runner = FakeRunner(on_call=_populate)
@@ -238,11 +238,11 @@ def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -
 def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subprocess(
     tmp_path: Path,
 ) -> None:
-    # Review finding 4. `Completed` has carried `code` and `stderr` since this seam was written
-    # and this lane threw both away: with `gh` absent from `PATH`, the command launched three
-    # subprocesses and then exited 1 saying "GitHub did not confirm the repository exists; check
-    # `gh auth status`" — a cause that was not the cause, about a binary that was not there.
-    # A missing optional binary is a reported finding, and never a misattributed one.
+    # `Completed` has carried `code` and `stderr` since this seam was written and `overlay.create`
+    # threw both away: with `gh` absent from `PATH`, the command launched three subprocesses and
+    # then exited 1 saying "GitHub did not confirm the repository exists; check `gh auth status`" —
+    # a cause that was not the cause, about a binary that was not there. A missing optional binary
+    # is a reported finding, and never a misattributed one.
     #
     # Mutation (`mutations.toml`, "overlay create --template asks GitHub about a `gh` that
     # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more
@@ -272,7 +272,7 @@ def test_a_gh_that_is_not_installed_is_named_as_the_cause_and_costs_one_subproce
 
 
 def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> None:
-    # The other arm of the same finding, and the one `docs/cli.md` names as the likeliest
+    # The other arm of the same defect, and the one `docs/cli.md` names as the likeliest
     # reason `--template` fails: `<owner>/keelline-overlay-template` does not exist, because
     # this owner has never run `keelline overlay publish-template`. `gh`'s own stderr says so,
     # and is quoted rather than replaced by a guess about authentication.
@@ -289,7 +289,7 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
 
 
 def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> None:
-    # Review finding 16. `init_instance`'s own docstring gives the rationale — a harness
+    # `init_instance`'s own docstring gives the rationale — a harness
     # installs a plugin by the name in its manifest, so two owners' overlays under one
     # configuration directory are one plugin fighting itself — and the project ships a Codex
     # half of everything else, but `.codex-plugin/plugin.json` was left unsuffixed, so the

@@ -1,4 +1,4 @@
-"""The release area's import surface: everything another lane may import from it.
+"""The release area's import surface: everything another area may import from it.
 
 `doctor` is the first consumer — `files` compares an installed plugin against the hashes the
 release recorded, which needs the file list, the two readers and the class that says "present
@@ -9,9 +9,15 @@ these two it spelled all four paths again by hand, which is the drift a publishe
 exists to stop. `drift` is here for the repository's own manifest test, which holds the
 committed record current.
 
-`write_record` is deliberately absent. Writing the record is the release lane's own act, and
-`release hashes` is the one caller; a surface that published it would invite a lane to record
-a release it is not responsible for.
+`write_record` is deliberately absent. Writing the record is this area's own act, and
+`release hashes` is the one caller; a surface that published it would invite another area to
+record a release it is not responsible for.
+
+`Pin`, `Resolution`, `released`, `resolve_pin` and `is_released` are published for `init`, which
+writes the pin, `doctor`'s `ci-ref` row, which judges it, and `keelline gate`, which admits a
+moved `[ci] ref` only at a released commit (`is_released`) — all ask this area because "which
+commit is release X" is this area's own question. `released` is published so the row can ask
+the remote once for the sha and the alias both.
 """
 
 from keelline.release.hashes import (
@@ -22,12 +28,18 @@ from keelline.release.hashes import (
     drift,
     read_record,
 )
+from keelline.release.pins import Pin, Resolution, is_released, released, resolve_pin
 
 __all__ = [
     "HASHED_FILES",
     "RECORD",
+    "Pin",
+    "Resolution",
     "UnreadableRecord",
     "digests",
     "drift",
+    "is_released",
     "read_record",
+    "released",
+    "resolve_pin",
 ]

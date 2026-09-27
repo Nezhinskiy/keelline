@@ -1,17 +1,17 @@
-"""Where the notes are, and the four ways that answer can be a lie (§9.1).
+"""Where the notes are, and the four ways that answer can be a lie.
 
 A store is a per-project value with no machine-level default, because the wrong answer is not
 "no memory" but *another project's* memory reaching this session. Four things are therefore
 checked, and each closes a hole the other three leave open:
 
 1. **The shape.** In overlay mode `paths.memory` is a real directory holding one link per
-   group (§6.3). It is not one link: `developer` points into the overlay's `common/memory`,
+   group. It is not one link: `developer` points into the overlay's `common/memory`,
    which is shared across projects and cannot live under `projects/<name>/`. A single link at
    `paths.memory` would lose the cross-project half of the store outright.
 2. **Containment inside the store.** A group name is repository-controlled — `memory.groups`
    is an ordinary `keelline.toml` list — so `groups = ["../secret"]` must not become a read,
    and certainly not a write, outside the store. `config/paths.py` says in as many words that
-   this field reaches no guard of its own and that the lane consuming it owns the check.
+   this field reaches no guard of its own and that the module consuming it owns the check.
 3. **The link's target.** A link is honoured only when it lands inside *this project's* share
    of the recorded overlay: `common/memory`, or `projects/<the bound name>/memory`. Testing
    containment in the overlay root alone lets an honestly-named, honestly-bound project point
@@ -29,8 +29,8 @@ that applies with no trust prompt in a non-interactive session.
 
 **The machine file makes the same claim now.** `machine_config_path` gates `KEELLINE_CONFIG`
 behind `interactive` — and `XDG_CONFIG_HOME` with it, which it did not, and which made the
-first gate worth nothing: both variables reach the same file and this lane routes §9.1's
-overlay anchor (`overlay_root(None)`) and §9.4's trust record (`trust._trust_file(None)`)
+first gate worth nothing: both variables reach the same file and this area routes the store's
+overlay anchor (`overlay_root(None)`) and the trust record (`trust._trust_file(None)`)
 through it. A committed `env` block therefore chose which overlay root `permitted_roots` was
 computed from, and which `trust.json` `may_inject` consulted, wherever no `--machine` was
 threaded.
@@ -47,17 +47,18 @@ about the whole module rather than about `resolve` alone.
 
 from __future__ import annotations
 
-import subprocess
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from keelline.config.loader import UNPARSEABLE
 from keelline.config.machine import machine_config_path
 from keelline.config.paths import PathEscape, contained
 from keelline.config.schema import Config
 from keelline.errors import Failure
-from keelline.gitenv import GIT_ENV_KEEP, GIT_TIMEOUT_SECONDS, scrubbed_env
+from keelline.gitenv import git_run
+from keelline.printed import quoted
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -68,10 +69,6 @@ LOCAL_STORE = Path(".keelline") / "local" / "memory"
 PROJECTS = "projects"
 PROJECT_RECORD = "project.toml"
 COMMON = Path("common") / "memory"
-# `keelline.gitenv` and not a copy: `hooks.dispatch` runs `git` too, and the reason this module
-# scrubs is exactly the reason that one has to. See that module's docstring.
-_GIT_ENV_KEEP = GIT_ENV_KEEP
-_GIT_TIMEOUT_SECONDS = GIT_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -108,7 +105,7 @@ class GitUnavailable(Failure):
     `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty answer alike, so
     every caller read "could not ask" as "the answer is nothing" — and the user was told to run
     `keelline attach` when the real fault was their `git`. This review machine hit exactly that
-    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `_GIT_ENV_KEEP` scrubs
+    state: `/usr/bin/git` was the Xcode shim with an unaccepted licence, `GIT_ENV_KEEP` scrubs
     `DEVELOPER_DIR`, and thirty tests failed with a message about an unrecorded origin remote.
     """
 
@@ -139,7 +136,7 @@ class GitAnswer:
         return self.value
 
 
-def _git_is_usable() -> bool:
+def _git_is_usable(root: Path) -> bool:
     """Whether the `git` on this PATH works at all, asked with the same scrubbed environment.
 
     The discriminator for a non-zero exit, and the reason this is a second call rather than a
@@ -150,48 +147,31 @@ def _git_is_usable() -> bool:
     exits non-zero for every invocation, including `--version`. Asking a question that needs no
     repository separates "git said no" from "git cannot speak".
 
+    Asked from `root`, as the question that failed was, so a `root` git cannot enter is "cannot
+    speak" here too, as it was when the first question could not be launched there at all.
+
     Not cached. It runs only after a query has already failed, and caching it would make the
     answer depend on which test ran first.
     """
-    try:
-        # S603/S607, answered once for both `subprocess` sites in this module. List form, never
-        # `shell=True`, so no argument is ever re-parsed by a shell; every argument is a
-        # literal written here, with no repository-controlled value among them; and `git` is
-        # deliberately resolved through `PATH` rather than pinned, because the machine owner's
-        # `git` is the one that must answer — a hardcoded `/usr/bin/git` is what would pick the
-        # Xcode shim on macOS over the working `git` the owner installed. `PATH` reaches this
-        # call through `_GIT_ENV_KEEP`, which is the machine owner's own environment and not a
-        # repository's: a committed `.claude/settings.json` `env` block can set it, and that is
-        # a harness-level exposure this module cannot close and does not pretend to.
-        done = subprocess.run(
-            ["git", "--version"],  # noqa: S607 - see the comment above
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return done.returncode == 0
+    return git_run(root, "--version")[0] == 0
 
 
 def _git(root: Path, *args: str) -> GitAnswer:
-    try:
-        done = subprocess.run(  # noqa: S603 - see `_git_is_usable`
-            ["git", *args],  # noqa: S607 - see `_git_is_usable`
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.SubprocessError):
+    """git's one-line answer to `args` asked in `root`, through `gitenv.git_run`.
+
+    `git_run` scrubs the environment and decodes losslessly, so an `origin` URL holding a byte
+    that is not UTF-8 is still an answer `init --questions` and `init --yes` can read: the
+    answer is what git printed, a path as the filesystem spells it, less its line ending
+    alone — never `strip()`, which takes a trailing space off a path that ends in one.
+    """
+    code, out = git_run(root, *args)
+    if code == -1:
         return GitAnswer(None, ran=False)
-    if done.returncode != 0:
+    if code != 0:
         # `git` ran and declined, *or* `git` is broken. `_git_is_usable` is what tells them
         # apart; without it every caller read the second as the first.
-        return GitAnswer(None, ran=_git_is_usable())
-    return GitAnswer(done.stdout.strip() or None)
+        return GitAnswer(None, ran=_git_is_usable(root))
+    return GitAnswer(out.removesuffix("\n") or None)
 
 
 def main_checkout(root: Path) -> Path:
@@ -256,7 +236,7 @@ def _registered_worktree(root: Path) -> Path | None:
         return None
     try:
         recorded = (private_dir / _BACK_POINTER).read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if not recorded or Path(recorded).parent.resolve() != root.resolve():
         return None
@@ -294,9 +274,11 @@ def overlay_root(machine: Path | None) -> Path | None:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise MachineConfigError(f"{path} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise MachineConfigError(f"{path} is not UTF-8 text") from None
     try:
         raw = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         raise MachineConfigError(f"{path} is not valid TOML: {exc}") from exc
     section = raw.get("overlay")
     if not isinstance(section, dict):
@@ -311,15 +293,19 @@ def origin_remote(root: Path) -> str | None:
     Public because `attach` compares it against the overlay's record and must not reach for a
     `subprocess.run` of its own: `_git` scrubs `GIT_DIR` and `GIT_WORK_TREE`, and an inherited
     one would make the comparison answer for a different repository than the session is in.
-    Two lanes asking one question two ways is how they stop agreeing.
+    Two areas asking one question two ways is how they stop agreeing.
+
+    A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
+    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
+    repository's, and `attach`, which would write it into one, refuses it by name.
 
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.
     The distinction is the whole of `GitAnswer`: "no origin remote" is a fact about the
     repository and reads as *not this one*, while "could not ask" is a fault on this machine,
     and collapsing them tells the user to run `keelline attach` about their own `git`.
 
-    The value is repository-authored — a remote URL is on the Global Constraints' own list —
-    so a caller that shows it wraps it first.
+    The value is repository-authored (principle 5): a clone chooses its own remote URL, so a caller
+    that shows it wraps it first.
     """
     origin = _git(root, "remote", "get-url", "origin")
     if origin.unavailable:
@@ -337,7 +323,7 @@ def _bound(overlay: Path, project: str, root: Path) -> bool:
         return False
     try:
         raw = tomllib.loads(record.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
         return False
     recorded = raw.get("remote")
     if not isinstance(recorded, str) or not recorded:
@@ -357,7 +343,7 @@ def _inside(candidate: Path, parent: Path) -> bool:
 
 
 def permitted_roots(overlay: Path, project: str) -> tuple[Path, Path]:
-    """This project's whole share of the overlay: the common notes and its own (§6.2)."""
+    """This project's whole share of the overlay: the common notes and its own."""
     return overlay / COMMON, overlay / PROJECTS / project / "memory"
 
 
@@ -371,7 +357,7 @@ COMMON_GROUP = "developer"
 
 
 def overlay_group_target(overlay: Path, project: str, group: str) -> Path:
-    """Where one group's notes live inside the overlay (§6.2).
+    """Where one group's notes live inside the overlay.
 
     A rule and deliberately not a probe over what happens to exist: a group directory that is
     not there yet is a first attach, not a reason to link somewhere else. The answer is always
@@ -400,16 +386,16 @@ def _group_targets(
             unavailable[group] = str(exc)
             continue
         if not target.exists():
-            unavailable[group] = f"{group} is not in the store"
+            unavailable[group] = f"{quoted(group)} is not in the store"
             continue
         if target.is_symlink():
             if overlay is None:
-                unavailable[group] = f"{group} is a link and no overlay is recorded"
+                unavailable[group] = f"{quoted(group)} is a link and no overlay is recorded"
                 continue
             allowed = permitted_roots(overlay, config.project.name)
             if not any(_inside(target, permitted) for permitted in allowed):
                 unavailable[group] = (
-                    f"{group} links outside this project's share of the overlay "
+                    f"{quoted(group)} links outside this project's share of the overlay "
                     f"({', '.join(str(p) for p in allowed)})"
                 )
                 continue
@@ -441,12 +427,12 @@ def _resolve_at(
         if declared is None:
             return None, f"paths.memory ({config.paths.memory!r}) does not stay inside the project"
         base = declared
-        # §9.1 check 1: in every mode but `local-only` and an explicit `override`, `paths.memory`
-        # itself must be a real directory — one link per group, not one link for the whole
-        # store. This has to hold in overlay mode too, not just `in-repo`: a group directory
+        # Check 1, the shape: in every mode but `local-only` and an explicit `override`,
+        # `paths.memory` itself must be a real directory — one link per group, not one link for the
+        # whole store. This has to hold in overlay mode too, not just `in-repo`: a group directory
         # reached *through* a symlinked `paths.memory` is not itself a symlink, so the per-group
-        # check below (`permitted_roots`) never runs, and the whole store silently becomes
-        # whatever `paths.memory` was pointed at — including another project's share.
+        # check below (`permitted_roots`) never runs, and the whole store silently becomes whatever
+        # `paths.memory` was pointed at — including another project's share.
         if declared.is_symlink():
             return None, (
                 f"{config.paths.memory} is a symlink; {mode} memory must be a real directory"
@@ -466,7 +452,10 @@ def _resolve_at(
         return None, f"{base} does not exist; run `keelline attach`"
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
-        reason = "; ".join(f"{k}: {v}" for k, v in unavailable.items()) or "the store has no groups"
+        reason = (
+            "; ".join(f"{quoted(k)}: {v}" for k, v in unavailable.items())
+            or "the store has no groups"
+        )
         return None, reason
     return Store(base, mode, root, groups, unavailable, machine), None
 
@@ -510,7 +499,7 @@ def resolve(
     machine: Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> Store | None:
-    # `env` is accepted and never read: §9.1 forbids selecting a store through the
+    # `env` is accepted and never read: a store is never selected through the
     # environment, and a parameter that exists and is ignored is a claim a test can pin.
     del env
     return resolved(root, config, override=override, machine=machine)[0]
@@ -529,7 +518,7 @@ def refusal_reason(
     messages) and out of `config.paths.memory`, both repository-controlled and neither
     schema-constrained — a TOML multi-line string carries literal newlines through unchanged,
     so this can come back multi-line, and the same repository text can appear in it twice. It
-    must never reach model context unwrapped: see `keelline.memory.hooks`, this lane's own
+    must never reach model context unwrapped: see `keelline.memory.hooks`, this area's own
     consumer, which refuses to put this text into `HookResult.context` for exactly that reason.
     A consumer that must show the detail wraps it first with `trust.wrap`.
     """
@@ -537,7 +526,7 @@ def refusal_reason(
 
 
 def inside_project(store: Store) -> bool:
-    """Whether any note actually lives in the repository — the predicate §9.4 turns on.
+    """Whether any note actually lives in the repository — the predicate the trust gate turns on.
 
     Not `memory.mode`, which the clone chooses, and not the store directory, which in overlay
     mode is a real directory of links inside the project. What decides whether a note is the
@@ -559,7 +548,8 @@ def inside_project(store: Store) -> bool:
     store belonging to the machine owner. Answering False there is what let a clone that
     escaped the resolver reach the model with no trust record and no `trust.wrap`: a gate
     whose default for the unclassifiable is "ungated" is the wrong way round. `overlay` keeps
-    its answer, because outside `store.root` is precisely where §6.2 puts those notes.
+    its answer, because outside `store.root` is precisely where the overlay's layout puts those
+    notes.
     """
     if any(_inside(target, store.root) for target in store.groups.values()):
         return True

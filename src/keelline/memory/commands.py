@@ -1,4 +1,4 @@
-"""The `memory` group (§5.2). Every command takes `--store PATH` (§9.1).
+"""The `memory` group. Every command takes `--store PATH`.
 
 `--store` is an override of *where the notes are*, not of the rules about them: it is held to
 the same target rule as a link the resolver found, so passing a path is not a way around the
@@ -24,6 +24,7 @@ from keelline.command import CHECK_HELP, common_flags
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.errors import Failure, Refusal
+from keelline.findings import labels
 from keelline.hooks.api import detect_harness
 from keelline.memory import trust
 from keelline.memory.bundles import Bundle, fit, render
@@ -39,6 +40,7 @@ from keelline.memory.index import (
 )
 from keelline.memory.inventory import inventory, totals
 from keelline.memory.store import Store, in_repository, resolved
+from keelline.printed import printable, quoted
 from keelline.result import Result
 
 
@@ -52,7 +54,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # **stdout** under `--json` — twice, in one object, since the envelope carries it as both
 # `summary` and the message. `memory session-context` is a `hooks.json` entry, so the invariant
 # was holding only on the expectation that those entries never pass `--json`: an expectation
-# owned by a different lane, asserted by no test here, and contradicted by `hooks.py` going to
+# owned by a different area, asserted by no test here, and contradicted by `hooks.py` going to
 # real lengths to keep this same string out of `HookResult.context`.
 #
 # So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
@@ -160,11 +162,18 @@ def _with(summary: str, note: str | None) -> str:
     return summary if note is None else f"{summary}; {note}"
 
 
+def _printed(names: list[str]) -> str:
+    """Names the store or `keelline.toml` supplied, joined for a summary line. Each is a file
+    name or a `name:` a repository can commit, escape sequences included, so each goes through
+    `printable`; `--json` carries them whole."""
+    return ", ".join(map(printable, names))
+
+
 def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
     """What `index._harvestable` declined to persist, named where a person will read it."""
     if not reconciled.refused_harvest:
         return None
-    names = ", ".join(reconciled.refused_harvest)
+    names = _printed(reconciled.refused_harvest)
     return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
 
 
@@ -173,10 +182,10 @@ def _publish(reconciled: Reconciliation, store: Store) -> str | None:
     index = store.path / INDEX_NAME
     said = []
     if reconciled.refused_publish:
-        said.append(_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_publish), index=index))
+        said.append(_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index))
     if reconciled.refused_extra:
         said.append(
-            _EXTRA_NOT_PUBLISHED.format(names=", ".join(reconciled.refused_extra), index=index)
+            _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
         )
     return "; ".join(said) or None
 
@@ -191,7 +200,7 @@ _UNREADABLE_NOTES = (
 )
 
 
-def _findings(report: IndexCheck, config: Config) -> list[str]:
+def _findings(report: IndexCheck, config: Config, store: Store) -> list[str]:
     """Everything `memory index` must both say out loud and exit non-zero for.
 
     One list, read by the summary and by the exit code, because the two disagreed: the summary
@@ -215,7 +224,12 @@ def _findings(report: IndexCheck, config: Config) -> list[str]:
     if report.unreadable:
         found.append(
             _UNREADABLE_NOTES.format(
-                count=len(report.unreadable), paths=", ".join(report.unreadable)
+                count=len(report.unreadable),
+                # Store-relative, which is what `memory refs` names too: the absolute prefix is
+                # this machine's and never inside the path grammar.
+                paths=_printed(
+                    [Path(p).relative_to(store.path).as_posix() for p in report.unreadable]
+                ),
             )
         )
     return found
@@ -227,7 +241,7 @@ def run_index(args: argparse.Namespace) -> Result:
     before = trust.snapshot(store, config)
     reconciled = reconcile(store, config, write=not args.check)
     report = check_index(store, config, reconciled)
-    findings = _findings(report, config)
+    findings = _findings(report, config, store)
     if args.check:
         if report.drifted:
             findings.insert(0, "the index is out of date; run `keelline memory index`")
@@ -292,16 +306,17 @@ def run_session_context(args: argparse.Namespace) -> Result:
         known = ", ".join(b.value for b in Bundle)
         raise Refusal(f"unknown bundle {args.bundle!r}; known: {known}") from exc
     store, config = _store(args)
-    # §9.5: "On Codex the handler also injects the index, because Codex has no native
-    # auto-memory." Here rather than in `bundles.render`, which is a library function with no
+    # On Codex the index bundle is injected too, because Codex has no native auto-memory to load the
+    # index itself. Here rather than in `bundles.render`, which is a library function with no
     # environment to read; `detect_harness` is the hook area's own answer to the same question.
     #
     # **No payload is passed, so only the environment half of that answer is in play here.**
-    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*,
-    # which the dispatcher does and this call site does not: there is no stdin payload at a
-    # command invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and also
-    # sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing (S1) and neither
-    # "claude" nor "unknown" reaches the render.
+    # `detect_harness` reads a stdin pair (`model`/`permission_mode`) *when it is handed one*, which
+    # the dispatcher does and this call site does not: there is no stdin payload at a command
+    # invocation. What decides it here is `PLUGIN_ROOT` alone — Codex sets it and, as the spike
+    # record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) measured in its *Codex plugin
+    # hooks* trial, also sets `CLAUDE_PLUGIN_ROOT`, so the `CLAUDE_*` names identify nothing and
+    # neither "claude" nor "unknown" reaches the render.
     #
     # **This is the one shipped command whose output depends on the ambient environment**, and
     # it is deliberate rather than incidental: the bundle exists for the harness that has no
@@ -376,25 +391,28 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
 #
 # The reasons are built out of `memory.groups` entries and name paths, so they are
 # repository-authored text and reach a reader the way `_no_store`'s reason does: inside
-# `trust.wrap`, with the region markers that say the text is data.
+# `trust.wrap`, with the region markers that say the text is data. So the line above the region
+# counts and names no group: escaping bounds a name's bytes, not its meaning, and a group named as
+# a sentence would otherwise reach an agent as prose outside the markers.
 _UNAVAILABLE_GROUPS = (
-    "{count} configured group(s) could not be resolved ({names}), so the walk read a subset and "
+    "{count} configured group(s) could not be resolved, so the walk read a subset and "
     "no answer from it means anything; the reasons below are repository-authored text, shown as "
     "data"
 )
 
 
 def _unavailable(unavailable: dict[str, str]) -> Refusal:
-    names = sorted(unavailable)
-    reasons = "\n".join(f"{group}: {unavailable[group]}" for group in names)
-    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable), names=", ".join(names))
+    # Each name through `quoted`: `memory.groups` is repository-written and bounded by no
+    # grammar, and `trust.wrap` delimits text for the model without escaping a byte for the
+    # terminal. The store's own reasons quote the group the same way.
+    reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in sorted(unavailable))
+    head = _UNAVAILABLE_GROUPS.format(count=len(unavailable))
     return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
 
 
 def run_refs(args: argparse.Namespace) -> Result:
     from dataclasses import asdict
 
-    from keelline.findings import labels
     from keelline.memory.refs import check_refs
 
     store, config = _store(args)

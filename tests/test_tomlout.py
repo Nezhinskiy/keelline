@@ -13,8 +13,9 @@ from keelline.tomlout import dumps
 
 def test_a_value_with_a_quote_and_a_newline_round_trips() -> None:
     # This module exists because the value it was written for is a git remote URL — repository-
-    # authored bytes, by the Global Constraints' own list. Unescaped, a crafted URL closes its
-    # own string and writes further keys into a record that decides what `attach` trusts.
+    # authored bytes, which are untrusted input like everything else a repository carries.
+    # Unescaped, a crafted URL closes its own string and writes further keys into a record that
+    # decides what `attach` trusts.
     hostile = 'git@h:o/p.git"\nremote = "git@evil:o/p.git'
     parsed = tomllib.loads(dumps({"project": {"remote": hostile}}))
     assert parsed["project"] == {"remote": hostile}

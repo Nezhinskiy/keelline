@@ -61,7 +61,7 @@ def test_guard_bg_cleanup_passes_a_payload_for_another_tool_like_the_handler_doe
 def test_guard_bg_cleanup_refuses_what_it_cannot_read(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], stdin: str
 ) -> None:
-    # Fail-closed (§5.2): a guard that cannot read its input must not answer "allowed".
+    # Fail-closed: a guard that cannot read its input must not answer "allowed".
     feed(monkeypatch, stdin)
     assert invoke(["guard", "bg-cleanup"]) == 2
     assert "refused" in capsys.readouterr().err
@@ -225,7 +225,7 @@ def test_commit_strip_refuses_an_option_shaped_path() -> None:
 
 
 def test_commit_strip_keeps_gits_trailing_comment_block_intact(tmp_path: Path) -> None:
-    # T5-2: a realistic `prepare-commit-msg` file — subject, blank, an attribution trailer,
+    # A realistic `prepare-commit-msg` file — subject, blank, an attribution trailer,
     # then git's own comment block (`core.commentChar` default `#`). `offending_lines` judges
     # only the message's *trailing attribution block* (commit.py's docstring), and in this file
     # the last paragraph is git's comment block, which is not attribution and therefore ends
@@ -434,7 +434,8 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
     # Keelline's own tests with its own `ledger.code_roots` the scanner names six
     # name-collision candidates (measured, and recorded in the command's own comment), so an
     # exit 1 would be red on this repository from the first run, and the schema has no
-    # per-command enable switch to turn it off with. Gating belongs to the `assess` lane.
+    # per-command enable switch to turn it off with. It stays its own advisory command, and
+    # `keelline assess` leaves it out of the inventory until its candidates are triaged.
     # Reddened by giving `run_test_audit`'s findings branch `exit_code=1`; measured, and it
     # reddened this test alone -- so the exit code is pinned, not merely the default.
     root = repo(tmp_path)
@@ -457,7 +458,7 @@ def test_test_audit_entrypoints_scans_the_configured_roots(
         str(tmp_path / "m.toml"),
         "--json",
     ]
-    assert invoke(argv) == 0  # advisory (Premise 8); the candidates are in the data
+    assert invoke(argv) == 0  # advisory, never a failure; the candidates are in the data
     out = json.loads(capsys.readouterr().out)
     assert out["import_roots"] == ["widget"]
     assert out["findings"][0]["shape"] == "names-but-never-invokes"
@@ -502,8 +503,8 @@ def test_test_audit_entrypoints_refuses_when_the_scanner_stops_discriminating(
 def test_test_attribute_runs_the_three_trees_and_reports_the_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The argv wiring end to end (D4): the real launcher, the real `git archive`, the real
-    # `sh`. `repo()` leaves HEAD on `main`, so the merge-base with `main` is HEAD itself and a
+    # The argv wiring end to end: the real launcher, the real `git archive`, the real `sh`.
+    # `repo()` leaves HEAD on `main`, so the merge-base with `main` is HEAD itself and a
     # command that always passes gives the "not reproduced" sentence — the one verdict of the
     # five that a green command can produce, so the assertion names it rather than asserting
     # that some sentence came back. The `--json` keys are the documented contract
@@ -572,13 +573,13 @@ def test_test_attribute_refuses_a_base_shaped_like_an_option(
 ) -> None:
     # Exit 2, the third code the CLI row promises: `--base` reaches `git merge-base` as an
     # argument, so a `-`-shaped value is refused above the first subprocess rather than
-    # becoming an option to it (§3). Reddened by deleting the `base.startswith("-")` raise in
-    # `attribute`; measured — the command then exits 1 with git's own complaint.
+    # becoming an option to it. Reddened by deleting the `base.startswith("-")`
+    # raise in `attribute`; measured — the command then exits 1 with git's own complaint.
     #
-    # Fix round 1, item 4. The assertion was `== 2` plus the word "refused:", which ANY refusal
-    # on this path satisfies — `_root_and_config`'s missing-configuration refusal reaches the
-    # same two lines, and only the hand-measured mutation ruled that reading out. The refusal's
-    # own sentence is matched instead, so the test names the arm it is about.
+    # The assertion was once `== 2` plus the word "refused:", which ANY refusal on this path
+    # satisfies — `_root_and_config`'s missing-configuration refusal reaches the same two
+    # lines, and only the hand-measured mutation ruled that reading out. The refusal's own
+    # sentence is matched instead, so the test names the arm it is about.
     root = repo(tmp_path)
     argv = [
         "test",

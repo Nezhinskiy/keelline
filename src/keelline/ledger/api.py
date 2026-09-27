@@ -1,4 +1,4 @@
-"""The import surface: everything a consumer lane may import from this area.
+"""The import surface: everything a consumer may import from this area.
 
 A module and not the package's `__init__`, for the reason `keelline.guards.api` and
 `keelline.memory.api` both give: area discovery imports a package before it imports the
@@ -6,12 +6,12 @@ submodule it wants, so a re-export list in `__init__.py` would pull this whole a
 it the configuration layer — into every `discover()` call. `tests/ledger/test_surface.py`
 asserts the `__init__` imports nothing at all.
 
-**Nothing outside this area imports any name on this list**, measured over `src/`, `scripts/`
-and `tests/` — not one, and that was true of the nineteen names this list used to hold as well.
-So every name below is here on an argument rather than on a caller, and the argument is written
-beside it.
+**Outside this area, `keelline.assess.gates` imports `bugs_gate`, and `keelline.project.templates`
+(with its tests) imports `render_index` to write a new project's first index, and nothing else on
+this list**, measured over `src/`, `scripts/` and `tests/`. So every other name below is here on
+an argument rather than on a caller, and the argument is written beside it.
 
-What is left is the two artifacts this area leaves on a project's disk, which outlive any lane
+What is left is the two artifacts this area leaves on a project's disk, which outlive any area
 that reads them:
 
 - the entry file's grammar — `parse_entry`, `load_entries` and the `Entry` they yield, with
@@ -26,41 +26,35 @@ that reads them:
 `Entry` is also what keeps this surface above `tests/test_surfaces.py`'s own floor, which
 refuses a surface exporting no function or record at all.
 
-**Trimmed, in the wave-3 refactor pass: thirteen names.** `problems`, `uninitialised`,
-`STATUSES`, `SEVERITIES`, `FIXTURE_MARKER`, `ENTRIES_MISSING` and `FOREIGN_CONTENT` were
-published against `assess` — "the rule vocabulary and the inertness rule, and the two refusal
-messages it reports under its own headings". `next_identifier`, `file_entry` and `renumber`
-were "what a lane that files or moves an entry without going through the command calls", and
-`Allocation`, `Filed` and `Renumbered` came with them as their return types. No such lane
-exists, and no document says which of these names one would reach for. That is the ruling
-`overlay/api.py` made about a template tree published against "the release lane will need it"
-and `guards/api.py` made again over twenty-nine names published against `assess`: a lane that
-does not exist grows this list when it arrives, in a commit that says which lane and why.
+**What is not here.** The rule vocabulary and the refusal messages `bugs check` reports
+(`problems` and its constants) stay in `keelline.ledger.check`, and the verbs that file or move an
+entry (`file_entry`, `next_identifier`, `renumber`) stay in `keelline.ledger.write` with their
+return types: no area outside this one files or moves an entry without the command, and a type
+no published signature names is a value nobody can be handed. An area that needs one grows this
+list, in a commit that says which area and why.
 
-The three return types went with their verbs rather than being kept as orphans. The surface
-contract requires a type a *published* signature names; with `file_entry`, `next_identifier` and
-`renumber` gone, no published signature names `Filed`, `Allocation` or `Renumbered`, and a type
-on a surface whose verb is not is a value nobody can be handed. Each is still where it was
-written and is reachable from `keelline.ledger.write`, which is what `ledger/commands.py` and
-this area's own tests already do.
-
-**What is left is a smaller version of the same question, and it is the owner's.** The six below
-have no importer either. Whether this area publishes at all is a structural decision and not a
-refactor's — the previous pass measured that and said so, and this one acts as far as the rule
-reaches and leaves the floor standing rather than emptying a list a test forbids to be empty.
+Of the six names of the two artifacts, only `render_index` has an importer. Whether this area
+publishes at all is a structural decision and the owner's; the list stays above the floor
+`tests/test_surfaces.py` holds every surface to.
 
 The identifier grammar and the finding shape are **not** here: they are leaves
 (`keelline.identifiers`, `keelline.findings`) that three areas share, and a consumer imports
 them from there. The surface test pins every export to this area's own modules, so
 re-exporting a leaf would redden it.
+
+**`bugs_gate` is `keelline assess`'s.** It is `(root, config, base) -> list[Finding]`, the
+`bugs` gate's whole composition, and `bugs check` answers with the same function; `problems`
+stays behind it in `keelline.ledger.check`.
 """
 
+from keelline.ledger.check import bugs_gate
 from keelline.ledger.entries import Entry, LedgerError, load_entries, parse_entry
 from keelline.ledger.index import is_generated_index, render_index
 
 __all__ = [
     "Entry",
     "LedgerError",
+    "bugs_gate",
     "is_generated_index",
     "load_entries",
     "parse_entry",

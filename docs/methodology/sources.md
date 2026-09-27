@@ -37,3 +37,4 @@ The citation pack for [principles.md](principles.md); how to read a row is in
 | S30 | OpenAI, "Codex as a platform: build on the open agent harness" | 2026-08 | 2026-09 | https://developers.openai.com/blog/codex-as-a-platform | the Codex harness open-sourced | |
 | S31 | Anthropic, "Building effective agents" | 2024-12 | 2026-09 | https://www.anthropic.com/engineering/building-effective-agents | the case for simple, composable patterns over frameworks | older; foundational |
 | S32 | GitHub Docs: About secret scanning | living | 2026-09 | https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning | availability of secret scanning per repository visibility and plan | |
+| S33 | ESLint docs: Bulk suppressions | living | 2026-09 | https://eslint.org/docs/latest/use/suppressions | a linter that fails new violations while suppressing the ones already there: the hold-the-line step principle 7 records as next | |

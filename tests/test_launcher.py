@@ -57,7 +57,7 @@ def _is_below_the_floor(path: str) -> bool:
 
 def _old_python() -> str | None:
     named = os.environ.get(OLD_PYTHON_ENV)
-    if named:
+    if named is not None:
         # Named explicitly, so a wrong answer is a failure rather than a skip: the whole point
         # of setting it is to stop this test from quietly not running.
         assert Path(named).is_file(), f"{OLD_PYTHON_ENV}={named!r} is not a file"
@@ -79,3 +79,18 @@ def test_an_old_interpreter_is_refused_with_a_reason() -> None:
     )
     assert completed.returncode == 2
     assert "3.11 or newer" in completed.stderr
+
+
+def test_a_named_but_empty_old_interpreter_is_a_failure_not_a_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # CI writes the variable from a step's output, and a step whose lookup came back empty
+    # writes it empty rather than leaving it unset. Read as "not named", that empty value sent
+    # the test to the PATH search, which finds nothing below 3.11 on `ubuntu-latest`, and the
+    # guard skipped green: the state the variable exists to end.
+    #
+    # Mutation (declared): `if named is not None:` back to `if named:` -> the empty value is
+    # searched past and this reddens.
+    monkeypatch.setenv(OLD_PYTHON_ENV, "")
+    with pytest.raises(AssertionError, match="is not a file"):
+        _old_python()

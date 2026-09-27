@@ -1,6 +1,6 @@
 """The two smoke scripts, run here against the checkout as the plugin root.
 
-CI runs them against the INSTALLED copy (DC8); this proves the scripts' own logic — that a
+CI runs them against the INSTALLED copy; this proves the scripts' own logic — that a
 mismatch is reported and a match is not — so a green CI row means the plugin, not the script.
 """
 
@@ -14,6 +14,9 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from keelline import gitenv
+from tests.floor import SUITE_GIT_FLOOR_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -59,7 +62,8 @@ sys.exit(1)
 def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # S8's matrix lives in tests/hooks/test_wrapper.py; this is the positive row per entry:
+    # The wrapper's fail-closed matrix lives in tests/hooks/test_wrapper.py; this is the
+    # positive row per entry:
     # every `hooks.json` command, fed the event it is filed under, exits as the policy says.
     # The closed `PreToolUse` entry is fed a leaking background command and must exit 2 with
     # a reason; every open entry exits 0.
@@ -259,12 +263,13 @@ def test_hooks_json_gaining_an_entry_is_reported_rather_than_quietly_run(
 def test_the_exfiltration_scenario_holds_against_the_checkout(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # S10 (§14): a hostile clone with in-repo memory at `startup: -1`, a `project.name`
-    # naming another project, and a committed settings `env` block naming a machine
-    # configuration inside the clone and a PATH into the clone. Asserted separately: nothing
-    # untrusted reaches the session-start output, the hook ignored the clone's
-    # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm
-    # is not run: `mcp` is not in wave 3, and the script says so in its own output.
+    # The clone-to-exfiltration scenario: a hostile clone with in-repo memory at `startup: -1`,
+    # a `project.name` naming another project, and a committed settings `env` block naming a
+    # machine configuration inside the clone and a PATH into the clone. Asserted separately:
+    # nothing untrusted reaches the session-start output, the hook ignored the clone's
+    # KEELLINE_CONFIG, the planted interpreter never ran, and `attach` refuses. The MCP arm is
+    # not run: Keelline ships no MCP server yet (the README lists the memory MCP server under
+    # "Not yet"), and the script says so in its own output.
     #
     # The count as well as the exit code, because six of the eight rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
@@ -311,3 +316,19 @@ def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     assert code == 1
     out = capsys.readouterr().out
     assert "FAIL  the owner's own trust record lets the note through" in out, out
+
+
+def test_a_hook_entry_keeps_the_suite_floor_and_no_other_keelline_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both smoke scripts strip every `KEELLINE_*` variable so an entry never reads this
+    # developer's own Keelline, and without an exception that strip would take the suite's floor
+    # under the product's `git` bounds too. The floor alone is kept, spelled as the product
+    # spells it, in the one base environment both scripts build on. Mutation (oracle): "the hook
+    # smoke strips the suite's floor" -> this reddens.
+    smoke = _load("smoke_hooks")
+    assert smoke.FLOOR_VARIABLE == gitenv.FLOOR_VARIABLE
+    monkeypatch.setenv("KEELLINE_CONFIG", str(tmp_path / "developer.toml"))
+    env = smoke.session_env(plugin_root=ROOT, project=tmp_path, home=tmp_path, data=tmp_path)
+    assert env[gitenv.FLOOR_VARIABLE] == str(SUITE_GIT_FLOOR_SECONDS)
+    assert "KEELLINE_CONFIG" not in env

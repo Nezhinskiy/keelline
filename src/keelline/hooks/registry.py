@@ -14,7 +14,7 @@ from keelline.hooks.api import EVENTS, Handler, Policy
 
 
 class UnknownHookEvent(Refusal):
-    """A handler registered for an event name §5.3's table does not carry."""
+    """A handler registered for an event name `api.EVENTS` does not carry."""
 
 
 class UnknownHookPolicy(Refusal):
@@ -25,7 +25,7 @@ def _known_policy(policy: object) -> bool:
     """Exactly what `dispatch`'s `handler.policy == Policy.CLOSED` will accept.
 
     Comparison, not `isinstance`: `Policy` is a StrEnum and `dispatch` compares by value, so a
-    lane that builds a Handler from a configuration string hands us `"closed"` and must be
+    caller that builds a Handler from a configuration string hands us `"closed"` and must be
     accepted. Nor is this a membership test — `"closed" in set(Policy)` happens to be True only
     because `str` precedes `Enum` in the MRO and keeps `str.__hash__`; dropping the `str` mixin
     would silently start refusing correct policies. Mirroring `==` cannot drift that way.

@@ -5,14 +5,55 @@ description: Upgrade the Keelline footprint in a repository after a plugin updat
 
 # Upgrading the footprint
 
-Written against the CLI contract; the command ships with the `upgrade` lane and is not
-available yet. If an invocation below is rejected as an unknown command, say so and
-stop — do not improvise a substitute.
+`keelline upgrade` moves `[keelline] version` to the Keelline running and refreshes every
+footprint file whose bytes are still the ones Keelline wrote. When the workflow pins Keelline by
+commit, `[ci] ref` and the workflow's pin move with the version: all three, or none. A file the
+user edited is skipped and named, never overwritten.
 
-1. Run `keelline upgrade --dry-run` and relay each artifact with its verdict: update, skip
-   (hand-edited), new, or remove — plus the migrations that would run and the `[ci] ref` it
-   would bump to.
-2. A skipped file is one the user edited; ask before passing `keelline upgrade --force PATH`
-   for it, and never force a path the user did not name.
-3. Run `keelline upgrade`, then relay what it wrote. On Codex, relay which hooks now need
-   re-trusting.
+1. Run `keelline upgrade --dry-run` and relay what it prints: the opening line, the
+   `keelline.toml:` line with each key it would move, the `footprint:` report with each file's
+   verdict, the `CI:` line, and every `note:` line.
+2. For each file reported `skip_modified`, edited by the user or never written by Keelline, ask
+   whether the user wants it overwritten. Only on a yes for that file, add `--force <path>` for
+   it, with the path exactly as the report prints it. Never force a path the user did not name.
+3. If any `--force` was added, run `keelline upgrade --dry-run` again with the same flags and
+   relay the new report, so the user sees what forcing changes before anything is written.
+4. Run `keelline upgrade` with the same flags, and relay the real run's report the same way.
+5. Ask the user to commit `keelline.toml`, `.keelline/manifest.json` and the changed files
+   together.
+
+## Rules
+
+- **An exit of 1 wrote nothing.** A `REFUSED` section names each artifact and why. Relay every
+  line and stop.
+- **An exit of 2 is a refusal, and it may have come part-way through.** A refusal about the
+  project itself — not initialised, no `keelline.toml`, a newer, unreadable or unordered
+  recorded version, a key written in a shape it will not edit — comes before any write. One that
+  says a file cannot be written comes while writing: what was done before it is on disk and recorded.
+  Relay it as printed, run `git status` to show the user what changed, and after they fix the
+  cause run `keelline upgrade --dry-run` again, which plans from what is there now. When it
+  says the project records a newer Keelline than the one running, the plugin is what needs
+  updating: relay that, and never edit `[keelline] version` to get past it.
+- **A `note:` saying `[keelline] version` and `[ci] ref` were left as they are is not a
+  failure.** The footprint was still refreshed, and the note says what would let the three move
+  together. Relay it as printed. When the workflow is reported `skip_modified`, forcing it is
+  step 2's question like any other file's.
+- **A `[ci] ref` that is not a commit, such as `v1`, is the user's choice.** Only the version
+  moves and the workflow is left as it is. Relay the `CI:` line, and never change the ref.
+- **`keelline.toml` keeps every byte but the values it moves.** If the command refuses to
+  rewrite a key because of how the file writes it, relay the refusal: it names the key and the
+  value to set by hand.
+- **A `note:` about records this Keelline does not produce is not an error.** Those files were
+  left where they are, on purpose.
+- **A file kept out of git is refreshed only while it holds what Keelline last wrote there.**
+  One that changed since is skipped like an edited file, because nothing brings it back once it
+  is overwritten. A copy left behind where the artifact no longer goes (its id left
+  `[artifacts] local`, or its `[paths]` value moved) is removed as `relocated` while it holds
+  those bytes, and skipped once it changed. Ask before forcing a skipped one, like any other.
+- **A refusal saying git ignores files at a place a `[paths]` value chose wrote nothing.** Relay
+  it with the files it names. Pointing that key at a path git does not ignore, or taking it out,
+  is the user's decision; never edit `keelline.toml` or an ignore file to get past it.
+- **A target printed as `<id>` is one the manifest recorded outside the path grammar.** Relay it
+  as printed, and never look up or guess the path behind it.
+- **There are no hooks to re-trust.** `init` writes no project-level hook entries, so an upgrade
+  changes none.

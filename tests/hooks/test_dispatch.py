@@ -69,7 +69,7 @@ def test_a_handler_stays_silent_on_every_event_but_its_own(registered: str, othe
 
 
 def test_a_decision_that_arrived_as_a_plain_string_still_denies() -> None:
-    # A lane building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
+    # A handler building a HookResult dynamically hands us "deny", not Decision.DENY. `Decision` is
     # a StrEnum, so the comparison must be by value: under identity this deny would be an
     # unrecognised verdict instead, which an OPEN handler's policy swallows.
     result = HookResult(decision=cast(Decision, "deny"))
@@ -106,7 +106,7 @@ def test_a_closed_handler_that_raises_refuses() -> None:
 
 
 def test_a_policy_that_arrived_as_a_plain_string_still_closes() -> None:
-    # A lane that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
+    # An area that builds a Handler dynamically hands us "closed", not Policy.CLOSED; mypy
     # cannot see that, so the cast stands in for it.
     closed = cast(Policy, "closed")
     outcome = dispatch(event(), [handler("g", closed, RuntimeError("boom"))], None, sink=Recorder())
@@ -282,7 +282,7 @@ def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> 
 
 def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     # No JSON envelope fits in 20 characters, so the honest output is none at all: anything
-    # longer than the cap is replaced by the platform with a preview and a file path (§9.5).
+    # longer than the cap is replaced by the platform with a preview and a file path.
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)
@@ -328,6 +328,33 @@ def test_a_once_per_context_handler_runs_once_and_is_skipped_afterwards() -> Non
     assert first["hookSpecificOutput"]["additionalContext"] == "A"
     assert "additionalContext" not in second["hookSpecificOutput"]
     assert recorder.marks == {"ledger-notes"}
+
+
+def test_a_once_per_context_handler_that_says_nothing_keeps_its_one_delivery() -> None:
+    """An empty result is not a delivery, so the handler is asked again.
+
+    `dispatch` banks a `once_key` only `if handler.once_key is not None and delivered`, and
+    `delivered` is `bool(result.context) or result.decision == Decision.DENY` -- spending a
+    handler's single delivery on a result that said nothing would let the first unrelated Bash
+    call of a session consume a notice meant for the first failing test run. That is the right
+    rule and it has a consequence worth stating: a handler whose healthy answer is silence runs
+    on every matching event, and pays whatever it pays to decide that, every time.
+    `attach/hooks.py` is the handler that made this worth writing down -- its own docstring said
+    the opposite about which path its `git` calls fall on.
+
+    Mutation: `mutations.toml`'s "a silent handler spends its one delivery".
+    """
+    recorder = Recorder()
+    silent = handler("a", Policy.OPEN, HookResult(), once_key="overlay-status")
+    for _ in range(3):
+        outcome = dispatch(event(), [silent], None, sink=recorder)
+        assert "additionalContext" not in json.loads(outcome.stdout)["hookSpecificOutput"]
+    assert recorder.marks == set()
+    # Non-vacuous: the same handler with something to say does bank it, so this is about the
+    # emptiness of the result and not about the key being ignored.
+    speaking = handler("a", Policy.OPEN, HookResult(context="A"), once_key="overlay-status")
+    dispatch(event(), [speaking], None, sink=recorder)
+    assert recorder.marks == {"overlay-status"}
 
 
 def test_a_handler_without_a_once_key_runs_every_time() -> None:

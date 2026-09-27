@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
+from keelline.gitenv import ForkUnknown, fork_points, git_run
 from keelline.identifiers import identifiers
 from keelline.ledger.entries import (
     Entry,
@@ -47,40 +51,207 @@ _EVIDENCE_BOUNDARY = re.compile(
 )
 _CONFLICT_MARKER = re.compile(r"^(<{7} |={7}$|>{7} )", re.MULTILINE)
 _BODY_STATE_BULLET = re.compile(r"^- \*\*(Status|Severity):\*\*", re.MULTILINE)
+LEDGER_REMOVED = (
+    "a commit this change forked from the base at carries the ledger ({bugs} or {index}) and "
+    "this tree has neither; deleting the ledger does not switch the bugs gate off: restore it "
+    "from the base"
+)
+ENTRY_REMOVED = (
+    "a commit this change forked from the base at carries this entry and this tree does not; "
+    "ledger entries are never deleted: restore it from the base, and move one with `keelline "
+    "bugs renumber`, which leaves a `void` entry at the old number"
+)
+_BASE_UNREAD = (
+    "what the commits HEAD forked from `{base}` at hold of {bugs} and {index} is unknown under "
+    "{root} ({cause}), so whether this change deleted the ledger or an entry of it is unknown "
+    "and the bugs gate proved nothing. Fetch the whole history (`fetch-depth: 0` in CI), or "
+    "pass a `--base` this clone holds that shares history with HEAD"
+)
+
+
+@dataclass(frozen=True)
+class _BaseLedger:
+    carried: bool  # the fork point has the ledger directory or the index
+    entries: tuple[str, ...]  # the entry files directly under the directory there, by name
 
 
 def uninitialised(root: Path, config: Config) -> bool:
     """No ledger yet: no ledger directory *and* no index this tool generated. The second half
     is the point — the directory missing on its own also describes a ledger whose entry files
-    were deleted under a generated index that still links every one of them. `bugs check` is
-    inert here (exit 0), which is what lets the gate be registered before the first entry."""
+    were deleted under a generated index that still links every one of them. Only citations
+    are checked here, so the gate can be registered before the first entry."""
     return not bugs_dir(root, config).is_dir() and not is_generated_index(index_text(root, config))
 
 
-def problems(root: Path, config: Config) -> list[Finding]:
-    """Every ledger violation under `root`, most structural first.
+def _base_ledger(root: Path, config: Config, base: str) -> _BaseLedger:
+    """What the commits HEAD forked from `base` at carry of the ledger: whether any has the
+    directory or the index, and the `<PREFIX>-nnn.md` entry files directly under the directory
+    in any of them.
 
-    Returns an empty list before the ledger directory exists *and* before this tool has
-    written an index — there is nothing it owns, which is what lets the check be registered in
-    CI one change before the first entry is filed. A generated index with no ledger directory
-    behind it is the other thing that shape describes, and it is the ledger having been
-    deleted.
+    Those commits are `git merge-base --all <base> HEAD`, every best common ancestor, the ones
+    `plan` diffs against too. What the base gained after the change
+    forked is not the change's to have kept, so a branch behind its base is not blamed for an
+    entry filed since; and what the change forked with, it still answers for, on a stale branch
+    as on the merge commit CI checks out, whose base parent the base can have moved past. A
+    history the change shapes itself can give it several merge bases, and the one `merge-base`
+    alone answers, the newest by date, can predate an entry another of them carries: a merge
+    deletes that entry all the same. So each is listed with one `git ls-tree -r` of the two
+    configured paths, whose names come back relative to `root`, and their entries are united.
+    Entries are append-only, so on a base that kept its entries the union refuses no branch that
+    deleted nothing; an entry removed from the base itself, by a direct push, is still named on
+    a branch whose merge bases include one from before the removal, and is restored on the base.
+
+    A base shaped like an option is refused, as `plan check` refuses it. Fork points
+    `gitenv.fork_points` cannot name — a base git cannot resolve, one that shares no commit with
+    HEAD, a shallow clone, and one git cannot say is shallow or not — and a listing git does not
+    give, are a `Failure` — "could not run" to a gate — and never "the base has no ledger",
+    which would pass exactly the change this question exists to catch.
+    """
+    if base.startswith("-"):
+        raise Refusal(f"{base!r} looks like an option, not a base ref")
+    bugs, index = config.paths.bugs, config.paths.bug_index
+
+    def unread(unknown: ForkUnknown) -> Failure:
+        cause = unknown.cause
+        return Failure(
+            _BASE_UNREAD.format(bugs=bugs, index=index, base=base, root=root, cause=cause)
+        )
+
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise unread(forks)
+    found: set[str] = set()
+    for fork in forks:
+        code, out = git_run(root, "ls-tree", "-r", "-z", "--name-only", fork, "--", bugs, index)
+        if code != 0:
+            raise unread(ForkUnknown.of(code))
+        found.update(name for name in out.split("\0") if name)
+    names = sorted(found)
+    ids = identifiers(config)
+    under = f"{bugs}/"
+    entries = tuple(
+        name.removeprefix(under)
+        for name in names
+        if name.startswith(under)
+        and name.endswith(".md")
+        and ids.is_identifier(name.removeprefix(under).removesuffix(".md"))
+    )
+    return _BaseLedger(bool(names), entries)
+
+
+def _removed_entries(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
+    """Every entry file `base` carries whose exact name this tree's ledger directory does not
+    hold, one finding each.
+
+    Entries are append-only: `bugs renumber` leaves a `void` entry at the number it moves from,
+    so no command this project ships deletes one, and a change that does is refused whatever
+    still mentions the identifier. The mentions cannot decide it, and nor can the fixtures
+    marker, which is an exemption a file grants itself.
+
+    The names are compared with the directory's own listing, never looked up one by one: a
+    filesystem that folds case finds `BR-001.md` at `br-001.md`, which the ledger, loading its
+    entries by exact name, does not, so a rename in case alone passed there and failed on Linux.
+    A directory that is not there, or cannot be listed, holds no entry.
+    """
+    if base is None:
+        return []
+    try:
+        present = set(os.listdir(bugs_dir(root, config)))
+    except OSError:
+        present = set()
+    return [
+        Finding("entry-removed", f"{config.paths.bugs}/{name}", None, ENTRY_REMOVED)
+        for name in base.entries
+        if name not in present
+    ]
+
+
+def _dangling_mentions(root: Path, config: Config, known: set[str]) -> list[Finding]:
+    """Every identifier the scanned files mention that `known` does not hold, one finding per
+    identifier at its first mention."""
+    found: list[Finding] = []
+    for identifier, locations in sorted(code_mentions(root, config).items()):
+        if identifier not in known:
+            path_, line = locations[0]
+            found.append(
+                Finding(
+                    "dangling-mention",
+                    path_.as_posix(),
+                    line,
+                    f"mentions {identifier}, which has no entry file "
+                    f"(referenced {len(locations)} time(s))",
+                )
+            )
+    return found
+
+
+def _unledgered(root: Path, config: Config, base: _BaseLedger | None) -> list[Finding]:
+    """The findings for a tree with no ledger: the ledger the change forked with, when it
+    forked with one, and every mention and citation of an entry, since with no ledger each one
+    dangles.
+
+    "No ledger" is read off the tree, which a pull request writes, so the tree's word for it
+    cannot be what switches the gate off: the commits the change forked from the base at are
+    asked whether it had one, and a mention of an identifier is as much a reference as a
+    citation of its file. A project that registers the gate before its first entry has no
+    ledger there and mentions none, and stays green, as does a branch forked before the base's
+    first entry. With no `base` — `bugs check` run without `--base` — only the tree is judged.
+    The one `ledger-removed` finding stands for every entry that commit carried.
     """
     found: list[Finding] = []
+    if base is not None and base.carried:
+        bugs, index = config.paths.bugs, config.paths.bug_index
+        found.append(
+            Finding("ledger-removed", bugs, None, LEDGER_REMOVED.format(bugs=bugs, index=index))
+        )
+    empty: set[str] = set()
+    found.extend(_dangling_mentions(root, config, empty))
+    return found + _dangling_citations(root, config, empty)
+
+
+def _dangling_citations(root: Path, config: Config, known: set[str]) -> list[Finding]:
+    """Every entry file a document or source cites that `known` does not hold, one finding per
+    identifier at its first citation."""
+    found: list[Finding] = []
+    for identifier, locations in sorted(entry_citations(root, config).items()):
+        if identifier not in known:
+            path_, line = locations[0]
+            found.append(
+                Finding(
+                    "dangling-citation",
+                    path_.as_posix(),
+                    line,
+                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist "
+                    f"(referenced {len(locations)} time(s))",
+                )
+            )
+    return found
+
+
+def problems(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """Every ledger violation under `root`, most structural first.
+
+    Before the ledger directory exists *and* before this tool has written an index there is
+    nothing it owns, which is what lets the check be registered in CI one change before the
+    first entry is filed: only a reference to an entry is reported then, since with no ledger
+    every one of them dangles, and, against a `base`, a ledger the change forked with
+    (`_unledgered`). A generated index with no ledger directory behind it is the other thing
+    that shape describes, and it is the ledger having been deleted. Against a `base`, every arm
+    past that one also names each entry the change forked with and the tree lacks
+    (`entry-removed`). Both are read at every commit HEAD forked from `base` at
+    (`_base_ledger`).
+    """
+    carried = _base_ledger(root, config, base) if base else None
     if uninitialised(root, config):
-        return found
+        return _unledgered(root, config, carried)
     ids = identifiers(config)
     bugs = bugs_dir(root, config)
     index_name = config.paths.bug_index
+    # First: a deleted entry is the most structural finding a ledger can have.
+    found = _removed_entries(root, config, carried)
     if not bugs.is_dir():
-        return [
-            Finding(
-                "entries-missing",
-                index_name,
-                None,
-                ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name),
-            )
-        ]
+        missing = ENTRIES_MISSING.format(bugs=config.paths.bugs, index=index_name)
+        return [Finding("entries-missing", index_name, None, missing), *found]
 
     entries: list[Entry] = []
     required = set(config.ledger.evidence_boundary_required_for)
@@ -172,32 +343,20 @@ def problems(root: Path, config: Config) -> list[Finding]:
     elif current != render_index(sorted(entries, key=lambda e: e.number), config):
         found.append(Finding("stale-index", index_name, None, "is stale; run: keelline bugs index"))
 
-    for identifier, locations in sorted(code_mentions(root, config).items()):
-        if identifier not in known:
-            path_, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-mention",
-                    path_.as_posix(),
-                    line,
-                    f"mentions {identifier}, which has no entry file "
-                    f"(referenced {len(locations)} time(s))",
-                )
-            )
+    found.extend(_dangling_mentions(root, config, known))
     # Wider than the scan above, and reported separately because a citation says something a
     # bare mention does not: it names a path, so a reader who follows it gets a 404 rather than
     # an unfamiliar identifier. Closing an entry and renaming its file is the shape that leaves
     # one behind, and it lands in a docs-only commit.
-    for identifier, locations in sorted(entry_citations(root, config).items()):
-        if identifier not in known:
-            path_, line = locations[0]
-            found.append(
-                Finding(
-                    "dangling-citation",
-                    path_.as_posix(),
-                    line,
-                    f"cites {config.paths.bugs}/{identifier}.md, which does not exist "
-                    f"(referenced {len(locations)} time(s))",
-                )
-            )
-    return found
+    return found + _dangling_citations(root, config, known)
+
+
+def bugs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `bugs` gate's whole composition: every ledger violation, before there is a ledger
+    every reference to an entry, and against the base a ledger or an entry the change forked
+    with that the tree lacks.
+
+    `bugs check` answers with this function, with `--base` as `base` or `""`, which judges the
+    tree alone; every gate run passes the base it judges against.
+    """
+    return problems(root, config, base)

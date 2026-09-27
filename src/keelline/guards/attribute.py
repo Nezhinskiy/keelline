@@ -6,6 +6,13 @@ Between (2) and (3) the only variable is the code; between (1) and (2) the only 
 the environment — provided the command syncs its own environment, which is the caller's to
 arrange and the reason the command is an argument.
 
+Run (3) needs one merge base, and a history can have several: each is as much "before this
+change" as the others, a failure can pass on one and fail on another, and the one git picks
+alone, the newest by date, is not the one the change forked from in any sense the others are
+not. So several merge bases, like a shallow clone where the real one can be cut off and an older
+commit stand in for it, leave the attribution undetermined: a `Failure` naming why, before
+anything runs, and never a verdict read off a tree chosen for the reader.
+
 Nothing here runs `git checkout`, `git stash` or `git reset`: `git archive` reads the object
 database, and this module never writes the working tree or moves the checkout between
 commits. Run 1 does execute the caller's command *in* the working tree, so whatever that
@@ -20,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from keelline.errors import Failure, Refusal
-from keelline.gitenv import git_run, scrubbed_env
+from keelline.gitenv import NO_ANSWER, SHALLOW, ForkUnknown, fork_points, git_run, scrubbed_env
 from keelline.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 
 VERDICTS = (
@@ -90,18 +97,12 @@ def _extract(root: Path, ref: str, into: Path) -> None:
     """
     into.mkdir()
     archive = into.parent / f"{into.name}.tar"
-    # `git_run` decodes STDERR strictly too, so the containment below is not only about the
-    # listing: any git in this module whose diagnostic text carries a non-UTF-8 byte raises
-    # `UnicodeDecodeError` out of a library function, which is the traceback the constraints
-    # forbid. `git archive` writes the tar to a file, so its stdout is empty and its stderr is
-    # the whole of what gets decoded — and a `Failure` and not a skip, because unlike the
-    # listing there is no weaker answer available: nothing was extracted.
-    try:
-        code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
-    except UnicodeDecodeError:
-        raise Failure(
-            f"`git archive {ref}` printed output this process cannot decode; nothing was extracted"
-        ) from None
+    code, _ = git_run(root, "archive", "--format=tar", "-o", str(archive), ref, timeout=120)
+    # `-1` is `git_run`'s "no answer" — not launched or past its bound — and not an exit
+    # status: "exited -1" names no cause. A `Failure` and not the listing's skip below, because
+    # there is no weaker answer available: nothing was extracted.
+    if code == -1:
+        raise Failure(f"{NO_ANSWER}, so `git archive {ref}` extracted nothing")
     if code != 0:
         raise Failure(f"`git archive {ref}` exited {code}; nothing was extracted")
     try:
@@ -115,44 +116,34 @@ def _extract(root: Path, ref: str, into: Path) -> None:
             check=False,
             env=scrubbed_env(),
         )
-    # A missing binary is a reported finding, never a traceback (the global constraints make
-    # every external program optional): `gitenv.git_run` answers `(-1, "")` on an `OSError` and
-    # `runner` answers `Completed(NOT_FOUND, ...)`; this is the same rule for `tar`.
+    # A missing binary is a reported finding, never a traceback, because Keelline installs no
+    # external program it launches: `gitenv.git_run` answers `(-1, "")` on an `OSError` and `runner`
+    # answers `Completed(NOT_FOUND, ...)`; this is the same rule for `tar`.
     except OSError as exc:
         raise Failure(f"extracting {ref}: tar could not be run ({exc})") from None
     archive.unlink()
     if done.returncode != 0:
         raise Failure(f"extracting {ref} exited {done.returncode}")
-    try:
-        # `timeout=120`, matching the `git archive` twenty lines up, and for the same reason
-        # `gitenv` asks a caller to pass its own bound: the default is documented there as the
-        # cap for "a local, argument-free, read-only query … which neither touches the network
-        # nor grows with the repository", and `ls-tree -r` is the one call in this module whose
-        # cost IS the repository's size. On the five-second cap a large or slow-volume tree
-        # timed out, `git_run` returned `(-1, "")`, the `code == 0 and missing` test below went
-        # False, and the export-rule comparison was skipped with no note — so the verdict was
-        # then computed from a tree that really was missing files. The author had already
-        # judged this tree big enough to need more than the default when giving `git archive`
-        # its 120.
-        code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
-    # `-z` is what makes this reachable, so it arrived with the fix above: without it `ls-tree`
-    # octal-escapes a non-ASCII name and the answer is always ASCII, and with it the bytes come
-    # through raw. `git_run` runs with `text=True` and strict decoding while catching only
-    # `OSError` and `SubprocessError`, so a tracked name this process's locale cannot decode —
-    # a latin-1 filename committed on Linux, any non-ASCII name under an uncoerced `C` locale —
-    # raised `UnicodeDecodeError` out of a library function. Contained at the call site and not
-    # in `git_run`: its other callers ask for a sha or a config value and never for raw bytes,
-    # and widening a shared seam for one caller's new appetite is how a seam stops meaning
-    # anything.
+    # `timeout=120`, matching the `git archive` above, and for the same reason `gitenv` asks a
+    # caller to pass its own bound: the default is documented there as the cap for "a local,
+    # argument-free, read-only query … which neither touches the network nor grows with the
+    # repository", and `ls-tree -r` is the one call in this module whose cost IS the
+    # repository's size. On the five-second cap a large or slow-volume tree timed out, `git_run`
+    # returned `(-1, "")`, the `code == 0 and missing` test below went False, and the
+    # export-rule comparison was skipped with no note — so the verdict was then computed from a
+    # tree that really was missing files. The author had already judged this tree big enough
+    # to need more than the default when giving `git archive` its 120.
+    code, listing = git_run(root, "ls-tree", "-r", "--name-only", "-z", ref, timeout=120)
+    # `-z` prints a tracked name raw, and `git_run` decodes it losslessly: a latin-1 filename
+    # committed on Linux is one more expected name, spelled as the extraction's own path, so it
+    # can neither hide an export rule nor be reported missing when it is there.
     #
-    # A listing that cannot be read is no listing at all, which is exactly what the `code != 0`
-    # arm below already does with one that could not be produced. Skipping is the right answer
+    # A listing git gave no answer for — it ran past its bound — is no listing at all, and the
+    # comparison is skipped. Skipping is the right answer
     # rather than a cop-out: this comparison exists to catch an export rule, it cannot answer
     # that question about a listing it never read, and raising on it would be one more
     # over-eager `Failure` on a healthy tree — the defect this whole comparison has now
     # produced in three separate shapes.
-    except UnicodeDecodeError:
-        code, listing = -1, ""
     expected = {name for name in listing.split("\0") if name}
     missing = [
         name for name in expected if not (into / name).exists() and not (into / name).is_symlink()
@@ -165,27 +156,39 @@ def _extract(root: Path, ref: str, into: Path) -> None:
         )
 
 
+def _merge_base(root: Path, base: str) -> str:
+    """The one commit run (3) extracts, or a `Failure` saying why there is none.
+
+    `gitenv.fork_points` names every merge base, or says why they are not known. More than one
+    is undetermined: naming them all is the report, and picking one would be a verdict about a
+    tree nobody asked for.
+    """
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        if forks.cause == SHALLOW:
+            remedy = "; fetch the whole history (`git fetch --unshallow`) and run it again"
+        elif forks.answered:
+            remedy = f"; is {base} fetched, and is --root inside a checkout?"
+        else:
+            remedy = ""
+        raise Failure(
+            f"the attribution is undetermined: the merge base of HEAD and {base} is unknown "
+            f"({forks.cause}){remedy}"
+        )
+    if len(forks) > 1:
+        raise Failure(
+            f"the attribution is undetermined: HEAD and {base} have {len(forks)} merge bases "
+            f"({', '.join(forks)}), each as much before this change as the others, and a "
+            f"failure can pass on one and fail on another; merge {base} into the change so its "
+            f"tip is the one merge base, or pass `--base` naming the commit to compare against"
+        )
+    return forks[0]
+
+
 def attribute(root: Path, *, command: str, base: str, runner: Runner) -> Attribution:
     if base.startswith("-"):
         raise Refusal("--base must name a ref, not an option")
-    # Guarded for the reason `_extract` gives: `git_run` decodes stderr strictly, so git's own
-    # error text carrying a non-UTF-8 byte escapes as a bare `UnicodeDecodeError`. A `Failure`
-    # and not the `(-1, "")` skip, because this command has no verdict without a merge-base.
-    try:
-        code, merge_base = git_run(root, "merge-base", "HEAD", base)
-    except UnicodeDecodeError:
-        raise Failure(
-            f"`git merge-base HEAD {base}` printed output this process cannot decode, so there "
-            f"is no merge-base to compare against"
-        ) from None
-    merge_base = merge_base.strip()
-    # `git_run`'s own sentinel for "the binary could not be launched at all", which is not an
-    # exit code and must not be rendered as one: `exited -1; is origin/main fetched?` sends a
-    # reader to fetch a ref when the answer is that there is no git here.
-    if code == -1:
-        raise Failure(f"git could not be run, so `merge-base HEAD {base}` never executed")
-    if code != 0 or not merge_base:
-        raise Failure(f"`git merge-base HEAD {base}` exited {code}; is {base} fetched?")
+    merge_base = _merge_base(root, base)
     ambient = _executed("working tree", runner.run(["sh", "-c", command], root))
     with tempfile.TemporaryDirectory(prefix="keelline-attribute-") as scratch:
         head = Path(scratch) / "head"

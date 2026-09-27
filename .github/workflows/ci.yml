@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# One run per branch, and the newest is the one that counts. A lane that pushes three commits
+# One run per branch, and the newest is the one that counts. A branch that pushes three commits
 # to an open pull request in five minutes queues three full matrices, and nobody reads the
 # first two answers — measured on this repository: `wp/fsops` alone ran six times. Never on
 # `main`: that run is the record that the branch everyone pulls is green, and the next push
@@ -47,20 +47,28 @@ jobs:
             python: "3.13"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: An interpreter below the floor, for the launcher's version guard
-        # `scripts/keelline` is the only thing between a Python 3.9 user and a SyntaxError, and
-        # `test_an_old_interpreter_is_refused_with_a_reason` skipped for want of one on every
-        # machine that has ever run it — so the guard was asserted nowhere, ever. Before
-        # `setup-uv`, so the project's own interpreter still wins on PATH; the test is handed
-        # this one by path rather than by searching, and fails rather than skips when it is set.
-        id: old-python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
-        with:
-          python-version: "3.10"
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
+      - name: An interpreter below the floor, for the launcher's version guard
+        # `scripts/keelline` is the only thing between a Python 3.9 user and a SyntaxError, and
+        # `test_an_old_interpreter_is_refused_with_a_reason` skipped for want of one on every
+        # machine that has ever run it — so the guard was asserted nowhere, ever. The test is
+        # handed this one by path rather than by searching, and fails rather than skips when it
+        # is set, so a wrong path here is a red job and not a quiet skip.
+        #
+        # uv's build rather than `setup-python`'s: macOS runners carry no 3.10, and
+        # `setup-python` spent 24 s of that job downloading one. `--no-bin` keeps the runner's
+        # PATH as `setup-uv` left it; `--no-project` asks for 3.10 alone rather than against this
+        # project's `requires-python`, which 3.10 is below by design. The lookup is assigned on a
+        # line of its own because `bash -e` ignores a failed substitution inside `echo`'s
+        # argument, and an empty path must fail this step rather than reach the test empty.
+        id: old-python
+        run: |
+          uv python install --no-bin 3.10
+          old="$(uv python find --no-project 3.10)"
+          echo "python-path=$old" >> "$GITHUB_OUTPUT"
       - name: Install
         run: uv sync --locked
       - name: Lint and format
@@ -75,13 +83,13 @@ jobs:
         # invisible: the walk's loop was covered, just never with an escaping path.
         env:
           KEELLINE_OLD_PYTHON: ${{ steps.old-python.outputs.python-path }}
-        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
+        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
       - name: Version discipline
         run: uv run keelline release check
       - name: Build
         run: uv build
       - name: The artifacts carry what an installed Keelline needs
-        # D5: every earlier test resolves the template tree to the checkout; only an artifact
+        # Every earlier test resolves the template tree to the checkout; only an artifact
         # can say whether the build backend shipped it.
         run: uv run python scripts/check_artifacts.py dist
       - name: An installed wheel renders the overlay template
@@ -135,19 +143,23 @@ jobs:
   # never banked as a proof, which is the failure that would matter.
   oracle:
     runs-on: ubuntu-latest
-    # Derived, not rounded. The oracle is 2.02 s per entry on this runner (751 s / 372 entries,
-    # measured), so the 387 entries `mutations.toml` now holds cost ~782 s; checkout, `setup-uv`
-    # against a warm cache and `uv sync --locked` are the whole of the rest of this job and come
-    # to ~60 s, which is the figure to re-measure from this job's first run. Call the shape
-    # ~842 s.
+    # Derived, not rounded. The oracle proves entries in one scratch checkout per CPU the
+    # runner gives it — four on `ubuntu-latest` — against a bytecode cache warmed once from HEAD,
+    # and was measured at 173 s for 566 entries in this job, 0.31 s an entry. Until that change it
+    # ran one entry at a time with every pytest compiling from source: 2.02 s an entry, 1135 s for
+    # 562, under a 25-minute bound. The rest of the job came to ~8 s on that run; the budget
+    # test keeps its 60 s allowance for setup and 60 s for runner variance anyway.
     #
-    # 19 minutes is 1140 s, so the margin is ~298 s. Sixty of that absorbs runner variance — a
-    # nominally 889 s job was cancelled at 918 s, about 30 s of slip, and this doubles it — which
-    # leaves ~238 s, or roughly **118 further mutation entries** before this number has to move.
-    # At the rate the rule that every assertion ships with its mutation generates them, that is
-    # the figure to watch; when it is reached, exactly one job's budget changes and nothing else
-    # is hostage to it, which is the third reason this is a job rather than a step.
-    timeout-minutes: 19
+    # 12 minutes is 720 s: less both allowances that leaves 600 s, which at this rate holds
+    # roughly **1,900 entries** in all, and at twice the rate — a runner with half the CPUs —
+    # about 950. No count of today's entries is written here, because every change that adds one
+    # would falsify it: the budget test counts `mutations.toml` itself, projects exactly this
+    # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
+    # measurement rather than at it, because a bound this job hits is a cancelled check, not a
+    # finding; and below the old 25, because a hung pytest should cost twelve minutes, not
+    # twenty-five. Not sharded: a matrix would rename the `oracle` check the branch protection
+    # requires, and multiply the setup cost; the parallelism lives inside the job instead.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -175,6 +187,6 @@ jobs:
           claude plugin validate .claude-plugin/marketplace.json --strict
           claude plugin validate .codex-plugin/plugin.json
       - name: The platform's own tag tool agrees with the manifests
-        # D12: `claude plugin tag --dry-run` checks the manifest side of "one version"; the
+        # `claude plugin tag --dry-run` checks the manifest side of "one version"; the
         # six-source gate above checks the rest. A dry run creates nothing.
         run: claude plugin tag --dry-run .

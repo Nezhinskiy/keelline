@@ -73,11 +73,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from keelline.config.layout import local_base
 from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, ForkUnknown, fork_points, git_run
 from keelline.identifiers import identifiers
 from keelline.prose import blank_fences, path_references, resolves_within
 
@@ -107,9 +108,9 @@ _OUTCOME = r"(?:reddens?|go(?:es)?\s+red|turns?\s+red|stays?\s+green|remains?\s+
 # Present tense only, so "verified"/"confirmed" — a report — is not among them.
 _GOVERNOR = r"(?:->|→|\bwatch(?:ing)?\b|\bverif(?:y|ies)\b|\bconfirms?\b)"
 # How far an outcome may sit from the instruction that governs it and still be read as its
-# consequence (D7: a bound on a regular expression's reach, not a budget — no shipped file
-# changes with it). Wide enough for a clause, narrow enough that a data-flow arrow early in a
-# long paragraph cannot reach a "must stay green" constraint at its end.
+# consequence: a named cap (CONTRIBUTING.md#named-caps) on a regular expression's reach, and no
+# shipped file changes with it. Wide enough for a clause, narrow enough that a data-flow arrow early
+# in a long paragraph cannot reach a "must stay green" constraint at its end.
 _OUTCOME_SPAN = 60
 # Governed and bounded; or ungoverned but counted, because "reddens 8 assertions" is a
 # measurement, and a measurement written in the present tense has not been taken yet.
@@ -125,9 +126,13 @@ _MARKED_AS_EXPECTATION = re.compile(r"\bexpect(?:s|ed|ation|ations)?\b", re.IGNO
 _SENTENCE_END = re.compile(r"[.!?][)\]\"'`]*\s")
 
 _BASE_UNRESOLVABLE = (
-    "git cannot resolve `{base}...HEAD` under {root}, so NOTHING was linted and this gate "
-    "proved nothing. In CI the cause is a checkout too shallow to hold the base ref "
-    "(`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does not have."
+    "which plans HEAD changes against `{base}` is unknown under {root} ({cause}), so NOTHING "
+    "was linted and this gate proved nothing. Fetch the whole history (`fetch-depth: 0` in CI), "
+    "or pass a `--base` this clone holds that shares history with HEAD."
+)
+_NO_ANSWER = (
+    "{no_answer}, so which plans HEAD changes against `{base}` under {root} could not be listed "
+    "and NOTHING was linted"
 )
 _SCOPE_MISSING = (
     'no `**Scope:**` admission criterion — one line saying "a change belongs to this branch '
@@ -148,6 +153,16 @@ _ASSERTED = (
 )
 
 
+class BaseUnresolvable(Failure):
+    """git cannot find the commits HEAD forked from the base at, so nothing was linted: an
+    answer about the checkout, not about a plan.
+
+    Raised, never returned as a finding, so a gate run reads it as a gate that could not judge,
+    as it reads every other gate's. `plan check` alone turns it into its `base-unresolvable`
+    finding, which is that command's own output.
+    """
+
+
 @dataclass(frozen=True)
 class Lint:
     findings: list[Finding]
@@ -165,8 +180,26 @@ def _is_git_repo(root: Path) -> bool:
     return git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0
 
 
-def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
-    """Plans this change touches; None when git cannot answer.
+def _unresolved(unknown: ForkUnknown, base: str, root: Path) -> Failure:
+    """What a question about the change's plans git did not answer means to this lint: a
+    `Failure` when git gave no answer at all, and `BaseUnresolvable` otherwise."""
+    if not unknown.answered:
+        # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
+        # git that could not be run or ran past its bound is a clone that may hold every ref.
+        return Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
+    return BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root, cause=unknown.cause))
+
+
+def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path]:
+    """Plans this change touches: those merging it could alter on `base`. `BaseUnresolvable`
+    when that cannot be known, and a `Failure` when git gave no answer at all.
+
+    A plan is one of them when HEAD's copy differs from `base`'s and from that of any commit
+    `gitenv.fork_points` names. If it equals every fork point's, git's merge takes the base's
+    copy; if it equals the base's, the merge leaves it as it is; either way merging alters
+    nothing. Every fork point, not the one `<base>...HEAD` diffs against: that one can already
+    hold an old plan the change puts back. And the base too, because against a fork point alone
+    a plan the base changed since it reads as the change's own.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -175,24 +208,36 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     vanishes from the gate in silence. `-z` NUL-terminates each record instead and never quotes;
     the trailing empty field falls out with everything that does not end in `.md`.
 
-    The base is refused when it is shaped like an option (§3), in the one spelling
-    `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. `--` closes
-    the pathspec but sits behind the slot `base` interpolates into, so a `--base` of
-    `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a
-    caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
-    with empty stdout — so this function answered `[]` rather than None and the gate reported
-    OK having linted nothing. That is the state the `base-unresolvable` finding exists to make
-    impossible, reached by an option-shaped typo instead of by a shallow checkout. The
-    `origin/<base_branch>` composition is safe for its prefix alone, which is a property of
-    that one caller and not of this argument.
+    The base is refused when it is shaped like an option (principle 5), in the one spelling
+    `guards.commit.commits_in` and `guards.commands.run_commit_strip` already use. It reaches a
+    git argv slot ahead of any `--`, where git reads it as its own option: a `--base` of
+    `--output=<path>` makes `git diff` write the diff to a file at a caller-chosen absolute
+    path, outside `contained()` and outside `fsops`, and exit 0 with empty stdout — an empty
+    list, and a gate reporting OK having linted nothing. That is the state `BaseUnresolvable`
+    exists to make impossible — raised, it is a `plan` gate that could not run and `plan
+    check`'s `base-unresolvable` finding — reached by an option-shaped typo instead of by a
+    shallow checkout. The default,
+    `config.layout.local_base`, is safe for its `refs/remotes/origin/` prefix alone, which is a
+    property of that one caller and not of this argument.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
-    code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
-    if code != 0:
-        return None
-    return [root / name for name in out.split("\0") if name.endswith(".md")]
+    forks = fork_points(root, base)
+    if isinstance(forks, ForkUnknown):
+        raise _unresolved(forks, base, root)
+
+    def changed(since: str) -> set[str]:
+        code, out = git_run(root, "diff", "--name-only", "-z", since, "HEAD", "--", relative)
+        if code != 0:
+            raise _unresolved(ForkUnknown.of(code), base, root)
+        return {name for name in out.split("\0") if name.endswith(".md")}
+
+    found: set[str] = set()
+    for fork in forks:
+        found |= changed(fork)
+    found &= changed(base)
+    return [root / name for name in sorted(found)]
 
 
 def unlinted_plans(root: Path, plans_dir: Path) -> list[Path] | None:
@@ -321,7 +366,7 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
 
 def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = None) -> Lint:
     plans_dir = contained(root, config.paths.plans)
-    base = base or f"origin/{config.project.base_branch}"
+    base = base or local_base(config)
     unlinted: list[Path] = []
     if plans:
         missing = [p for p in plans if not p.is_file()]
@@ -340,9 +385,6 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
         selected = list(plans)
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)
-        if touched is None:
-            detail = _BASE_UNRESOLVABLE.format(base=base, root=root)
-            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
             raise Failure(
@@ -358,3 +400,14 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     for path in sorted(selected):
         findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=fixes))
     return Lint(findings, sorted(selected), sorted(unlinted))
+
+
+def plan_gate(root: Path, config: Config, base: str) -> list[Finding]:
+    """The `plan` gate's whole composition: `lint`'s findings over the plans the change since
+    `base` touches.
+
+    `plan check` calls `lint` itself rather than this function, because it reports more than
+    findings — which plans it linted, and the uncommitted ones it did not. A base git cannot
+    resolve raises `BaseUnresolvable`, so the gate could not run; it is never a finding here.
+    """
+    return lint(root, config, plans=[], base=base).findings

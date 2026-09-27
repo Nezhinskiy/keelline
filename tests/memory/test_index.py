@@ -275,6 +275,17 @@ def test_check_reports_drift_against_the_file_on_disk(tmp_path: Path) -> None:
     assert check_index(store, config, reconciled).drifted is False
 
 
+def test_an_index_that_is_not_utf8_is_drift_and_not_a_crash(tmp_path: Path) -> None:
+    # It is not what the render writes, whatever else it holds, so `memory index --check` says
+    # to run `keelline memory index`, which replaces it. Mutation (by hand): the read left
+    # unguarded -> this reddens on `UnicodeDecodeError`.
+    store, config = a_store(tmp_path)
+    reconciled = reconcile(store, config, write=False)
+    path = write_index(store, config, render_index(reconciled, config, store))
+    path.write_bytes(b"\xff\xfe# Memory\n")
+    assert check_index(store, config, reconciled).drifted is True
+
+
 def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:
     store, config = a_store(tmp_path)
     result = check_index(store, config, reconcile(store, config, write=False))
@@ -320,7 +331,7 @@ def test_a_two_line_index_entry_never_corrupts_the_note_it_names(tmp_path: Path)
 
 def test_index_extra_entries_that_leave_the_project_root_are_dropped(tmp_path: Path) -> None:
     # `config/paths.py` names `memory.index_extra` among the fields its own guard does not
-    # cover and assigns the check to the lane that consumes them. These strings land verbatim
+    # cover and assigns the check to the area that consumes them. These strings land verbatim
     # in `MEMORY.md`, which the `index` bundle injects.
     store, config = a_store(
         tmp_path, extra='["docs/handbooks/ledger.md", "../../secret.md", "/etc/passwd"]'
@@ -344,8 +355,8 @@ def test_an_index_extra_entry_reached_through_a_symlink_is_dropped(tmp_path: Pat
 
 def test_a_symlinked_index_is_not_harvested_outside_overlay_mode(tmp_path: Path) -> None:
     # Harvesting reads the same file injection does and writes what it finds into each note's
-    # `index:` frontmatter, so it is held to the same §9.1 target rule: outside overlay mode a
-    # symlinked index is refused outright, exactly as an ungoverned group symlink is. Without
+    # `index:` frontmatter, so it is held to the same per-link target rule: outside overlay mode
+    # a symlinked index is refused outright, exactly as an ungoverned group symlink is. Without
     # that, another file's titles are persisted into this project's notes — and in overlay mode
     # from there onto every machine.
     store, config = a_store(tmp_path)
@@ -414,9 +425,23 @@ def test_index_extra_is_rendered_as_the_path_it_was_validated_as(tmp_path: Path)
     # Validated as a path and consumed as text was the whole defect: the string that reaches
     # `MEMORY.md` is now the one `contained` returned, relative to the store root, not the one
     # `keelline.toml` happened to spell.
-    store, config = a_store(tmp_path, extra='["./docs/handbooks//ledger.md"]')
+    store, config = a_store(tmp_path, extra='["docs/handbooks/ledger.md"]')
     text = render_index(reconcile(store, config, write=False), config, store)
     assert "- [docs/handbooks/ledger.md](docs/handbooks/ledger.md)" in text
+
+
+def test_an_index_extra_entry_that_needs_normalising_is_held_back_rather_than_tidied(
+    tmp_path: Path,
+) -> None:
+    # `contained()` used to normalise a leading `./` and a doubled `//` away — `Path(...).parts`
+    # drops both — and this loop then published the tidied string. It no longer does: the
+    # component rule is `fsops`' now, and `fsops` refuses those spellings at the write, so
+    # `contained()` refuses them here too and the entry joins the class this loop already holds
+    # back (`..`, an absolute path, a symlinked component). A repository-authored value is not
+    # rewritten into something writable on its author's behalf; it is left out of `MEMORY.md`.
+    store, config = a_store(tmp_path, extra='["./docs/handbooks//ledger.md"]')
+    text = render_index(reconcile(store, config, write=False), config, store)
+    assert "ledger.md" not in text
     assert "./docs" not in text
 
 
@@ -464,7 +489,7 @@ def test_an_index_extra_entry_that_merely_ends_in_a_line_break_is_dropped(tmp_pa
     assert "ledger.md" not in text
 
 
-# --- CRITICAL 1: a permitted but dangling §6.3 link must bootstrap, not refuse ----------------
+# --- a permitted but dangling `attach` link must bootstrap, not refuse ------------------------
 
 OVERLAY_CONFIG = """
 [keelline]
@@ -487,12 +512,13 @@ index_extra = {extra}
 
 
 def an_overlay_store(tmp_path: Path, *, extra: str = "[]") -> tuple[Store, Config, Path]:
-    """A store shaped like the §6.3 tree `attach` creates, except `developer` is a real,
+    """A store shaped like the link tree `attach` creates, except `developer` is a real,
     repository-committed directory rather than a symlink into the overlay's own share — the
-    "mixed" shape the reviewer built by hand, since `attach` (another lane) is not present to
-    build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
+    "mixed" shape the reviewer built by hand, since this test does not run `attach` (another
+    area) to build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
     overlay/projects/widget/memory)`; only the second is created here, which is enough for the
-    §9.1 resolution check `_resolved_if_permitted` runs — it never requires the far end to exist.
+    per-link resolution check `_resolved_if_permitted` runs — it never requires the far end to
+    exist.
     """
     root = tmp_path / "project"
     base = root / "docs" / "memory"
@@ -566,7 +592,7 @@ def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
         write_index(store, config, "text")
 
 
-# --- CRITICAL 2: note→index is repository data too, and machine state may not receive it -----
+# --- note→index is repository data too, and machine state may not receive it -----------------
 
 
 def test_a_repository_committed_notes_curated_line_is_not_published_to_machine_state(
@@ -583,7 +609,8 @@ def test_a_repository_committed_notes_curated_line_is_not_published_to_machine_s
         note("malicious", index=payload), encoding="utf-8"
     )
     share = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
-    share.write_text("# shared index\n", encoding="utf-8")  # pre-created: isolates this from C1
+    # pre-created: isolates this from the dangling-link bootstrap
+    share.write_text("# shared index\n", encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share)
 
     reconciled = reconcile(store, config, write=False)
@@ -621,7 +648,7 @@ def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(
 ) -> None:
     # The rule is one trust domain, not "never publish to machine state": a note that already
     # lives outside the repository — the ordinary overlay shape, once `attach` has actually
-    # built the real §6.3 tree — must keep reaching the index it always has. A fix of this shape
+    # built the real link tree — must keep reaching the index it always has. A fix of this shape
     # that forgot this case would silently break every legitimate overlay store instead of only
     # closing the hole. Unlike `an_overlay_store`, `developer` here is the honest shape: a
     # symlink into the overlay's own share, not a repository-committed directory.

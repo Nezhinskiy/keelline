@@ -1,4 +1,4 @@
-"""D5: nothing inspected a built artifact. `resources.files` resolves to the checkout under
+"""Nothing used to inspect a built artifact. `resources.files` resolves to the checkout under
 `uv run`, so a `uv_build` change that dropped the template tree from the wheel would break
 `overlay create --local` for every installed user while every test stayed green."""
 
@@ -15,6 +15,7 @@ from types import ModuleType
 import pytest
 
 from keelline.overlay.api import OVERLAY_FILES
+from keelline.project.api import PROJECT_FILES
 from keelline.scaffold import MANIFEST_PATH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_artifacts.py"
@@ -31,9 +32,13 @@ def checker() -> ModuleType:
 
 
 def _wheel(path: Path, *, without: str | None = None) -> Path:
+    """A synthetic wheel holding what `WHEEL_MUST` names; keep this list in step with it."""
     names = [
         "keelline/presets/recommended.toml",
         *(f"keelline/templates/overlay/{r}" for r in OVERLAY_FILES),
+        *(f"keelline/templates/project/{n}" for n in PROJECT_FILES),
+        "keelline/profiles/python/profile.toml",
+        "keelline/profiles/python/rules.md",
     ]
     with zipfile.ZipFile(path, "w") as archive:
         for name in names:
@@ -69,6 +74,13 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
     missing = f"keelline/templates/overlay/{OVERLAY_FILES[-1]}"
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]
+    # Both trees, because both are read at runtime by `resources.files` and `WHEEL_MUST` is
+    # what says so: the overlay's tree answers `overlay create --local` and the project's
+    # answers `keelline init`, and a build that dropped either is invisible to every other test.
+    absent = f"keelline/templates/project/{PROJECT_FILES[-1]}"
+    assert module.check_wheel(_wheel(tmp_path / "p.whl", without=absent)) == [
+        f"wheel: missing {absent}"
+    ]
 
 
 def test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named(tmp_path: Path) -> None:

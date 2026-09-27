@@ -1,9 +1,9 @@
 """The two fixture projects the smoke workflow runs against, held to what they claim.
 
 `smoke-project` is a project every gate passes on, with `state = "installed"` so the gates
-enforce; `hostile-project` (Task 15) is the S10 clone. Both are read by CI from this tree,
-so a fixture that drifted from what a gate accepts would fail the smoke workflow with a
-message about the fixture rather than about Keelline.
+enforce; `hostile-project` is the clone the clone-to-exfiltration scenario runs. Both are read
+by CI from this tree, so a fixture that drifted from what a gate accepts would fail the smoke
+workflow with a message about the fixture rather than about Keelline.
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ import io
 import re
 import shutil
 import subprocess
-import sys
-from collections.abc import Iterator
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from tests.gitfixture import git
+from tests.workflow_yaml import load, runs
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "tests" / "fixtures" / "smoke-project"
@@ -76,10 +76,11 @@ def test_every_gate_the_workflow_runs_passes_on_the_smoke_fixture(
     # reddens (measured by hand, not declared: the fixture is data and the oracle mutates
     # source).
     #
-    # `--base HEAD~1` and not the default: `plan check` defaults to `origin/<base_branch>`, and
-    # this copy is a fresh repository with no remote, where an unresolvable base is a finding
-    # (`docs/cli.md`: "A base that does not resolve is a finding (1), never an OK"). CI passes
-    # `origin/<base>` and has one; the fixture's own two commits are the equivalent here.
+    # `--base HEAD~1` and not the default: `plan check` defaults to
+    # `refs/remotes/origin/<base_branch>`, and this copy is a fresh repository with no remote,
+    # where an unresolvable base is a finding (`docs/cli.md`: "A base that does not resolve is a
+    # finding (1), never an OK"). CI's `keelline gate` passes the base as the commit it
+    # resolved; the fixture's own two commits are the equivalent here.
     root = _copy_as_repository(tmp_path)
     code, printed = _invoke(root, tmp_path, argv)
     assert code == 0, printed
@@ -199,22 +200,22 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
 
 # --- `check.yml`'s base-ref step, run as the shell script it is -------------------------
 #
-# The repository carries no YAML parser and this plan adds no dependency to check its own
-# prose, so a workflow is otherwise proven only by the run that first executes it. The one
-# part of `check.yml` that is *logic* rather than platform plumbing is the step that decides
-# which base ref the gate's configuration comes from and whether the run enforces. That step's
-# `run:` body is extracted from the shipped file — never retyped here, or the test would hold
-# a copy and the file would be free to drift — and run with `bash` against real repositories.
+# The repository carries no YAML parser and adds no dependency to check its own prose, so a workflow
+# is otherwise proven only by the run that first executes it. The one part of `check.yml` that is
+# *logic* rather than platform plumbing is the step that decides which base commit the gates'
+# configuration comes from and which project root the gates run in. That step's `run:` body is
+# extracted from the shipped file — never retyped here, or the test would hold a copy and the file
+# would be free to drift — and run with `bash` against real repositories.
 
 CHECK_WORKFLOW = ROOT / ".github" / "workflows" / "check.yml"
-BASE_STEP = "The base ref, and the configuration it carries"
+BASE_STEP = "The base ref and the project root"
 needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not installed")
 # `.github/` is outside `source-include`: it is this repository's own continuous integration
 # and not source a downstream packager needs, and `scripts/check_artifacts.py` states that the
 # sdist exists so such a packager can run the suite. So the cases below skip where the file
 # they are about is not there, rather than the tree gaining a line to ship CI configuration.
-# There are **ten** of them, all of which really do run `check.yml`'s base step; the comment
-# said five for as long as there have been more than five.
+# Five cases here really do run `check.yml`'s base step, and `tests/test_check_workflow.py`
+# imports this marker for its own, which run the two gate steps.
 needs_workflow = pytest.mark.skipif(
     not CHECK_WORKFLOW.is_file(), reason="check.yml is not in the sdist"
 )
@@ -239,6 +240,13 @@ _SHORT_VERSION = re.compile(
     r"^## The short version\n.*?^```bash\n(.*?)^```", re.MULTILINE | re.DOTALL
 )
 _TEMPLATE_BLOCK = re.compile(r"^## Verification\n.*?^```\n(.*?)^```", re.MULTILINE | re.DOTALL)
+# The release's first step, "be on `main`, current, and green": a list item, so its block is
+# indented under the item.
+_RELEASE_BLOCK = re.compile(
+    r"^1\. \*\*Be on `main`, current, and green\.\*\*.*?^   ```bash\n(.*?)^   ```",
+    re.MULTILINE | re.DOTALL,
+)
+RELEASING = ROOT / "RELEASING.md"
 _COVERAGE_FLOOR = re.compile(r"--cov-fail-under=(\d+)")
 
 
@@ -257,8 +265,8 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     # Mutation: drop the mutation-oracle line from `CONTRIBUTING.md`'s block -> reddens naming
     # it. The floor first: a `run:` walk that returned nothing would satisfy every `in` below
     # by making `ci` the empty string.
-    bodies = run_blocks(CI_WORKFLOW)
-    assert len(bodies) == EXPECTED_BLOCKS["ci.yml"], len(bodies)
+    bodies = scripts(CI_WORKFLOW.read_text(encoding="utf-8"))
+    assert bodies, "ci.yml runs no script"
     ci = "\n".join(bodies)
     floor = _COVERAGE_FLOOR.search(ci)
     assert floor is not None, "ci.yml no longer runs pytest with a coverage floor"
@@ -270,9 +278,18 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
     match = _TEMPLATE_BLOCK.search(PR_TEMPLATE.read_text(encoding="utf-8"))
     assert match is not None, "the pull-request template has no `## Verification` block"
     blocks[".github/pull_request_template.md"] = match.group(1)
+    # The release's own check ran the suite in one process and left the oracle out: a third
+    # copy of the list, and the one run last before a tag. Mutation (by hand): drop `-n auto`
+    # from `RELEASING.md`'s `pytest` line -> reddens naming it.
+    match = _RELEASE_BLOCK.search(RELEASING.read_text(encoding="utf-8"))
+    assert match is not None, "RELEASING.md's first step has no bash block"
+    blocks["RELEASING.md"] = match.group(1)
 
     # Every gate the contributor is asked to run locally, in the spelling CI runs it in.
+    # `pytest -n auto` among them, the suite across workers. Mutation: drop `-n auto` from
+    # `ci.yml`'s `pytest` line -> reddens naming it.
     required = (
+        "pytest -n auto",
         f"--cov-fail-under={floor.group(1)}",
         "scripts/mutation_oracle.py",
         "ruff check .",
@@ -291,23 +308,29 @@ def test_the_block_a_contributor_copies_is_the_one_ci_runs() -> None:
 
 ORACLE_COMMAND = "scripts/mutation_oracle.py"
 ORACLE_JOB = "oracle"
-# Measured on the last green `checks (ubuntu-latest, 3.13)`: 751 s for the 372 entries
-# `mutations.toml` held that day. Re-measure it from the `oracle` job's own runs; it is here as
-# a number rather than as prose so that the budget below is checked rather than described.
-ORACLE_SECONDS_PER_ENTRY = 751 / 372
+# Measured on the `oracle` job's own run: 173 s for the 566 entries `mutations.toml` held that
+# day, four jobs on `ubuntu-latest` against a warm bytecode cache. It was 751 s for 372 while the
+# oracle ran one entry at a time and compiled from source on every run. Re-measure it from that
+# job's runs; it is here as a number rather than as prose so that the budget below is checked
+# rather than described.
+ORACLE_SECONDS_PER_ENTRY = 173 / 566
 # Checkout, `setup-uv` against a warm cache and `uv sync --locked` — the whole of the job that
 # is not the oracle itself. Estimated from the 128 s of non-oracle work in `checks` on the same
 # runner, which also carries lint, types, the test run, the build and a wheel install.
 ORACLE_SETUP_SECONDS = 60
+# The runner-variance allowance the job's own comment in `ci.yml` reserves: a nominally 889 s job
+# was cancelled at 918 s, about 30 s of slip, and this doubles it. Projected without it, this test
+# stayed green some thirty entries past the point that comment says to raise the budget.
+ORACLE_VARIANCE_SECONDS = 60
 
 
 def _ci_jobs() -> dict[str, list[str]]:
     """Every job in `ci.yml`, as the raw lines underneath it.
 
-    Indentation arithmetic and not a YAML parser, for the reason `_release_jobs` gives further
-    down and `_scan` gives at length: this repository ships no runtime dependency and
-    `tests/test_import_boundary.py` is why none arrives through a test either. A job is a key at
-    indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to it.
+    Indentation arithmetic over the raw lines, where `tests.workflow_yaml` reads mappings: the
+    question below is which job's body names a command anywhere, a comment included. A job is a
+    key at indent 2 under `jobs:` that ends in a colon; everything until the next one belongs to
+    it.
     """
     jobs: dict[str, list[str]] = {}
     current: str | None = None
@@ -349,10 +372,10 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
     **The budget assertion is the one that earns its place.** The oracle grows by construction:
     the rule is that every new assertion ships with the mutation that reddens it, so the entry
-    count only goes up, at about two seconds each. Projecting the cost from the live entry count
-    means the next branch to outgrow the bound reddens *here*, in a contributor's own test run,
-    rather than as a cancelled job fifteen minutes into CI. That is the whole difference between
-    arithmetic somebody can act on and arithmetic somebody discovers.
+    count only goes up, at about a third of a second each on four CPUs. Projecting the cost from
+    the live entry count means the next branch to outgrow the bound reddens *here*, in a
+    contributor's own test run, rather than as a cancelled job minutes into CI. That is the whole
+    difference between arithmetic somebody can act on and arithmetic somebody discovers.
 
     No mutation travels with `ORACLE_SECONDS_PER_ENTRY` itself: lowering it weakens the
     projection without reddening anything, so there is nothing for an entry to catch. It is a
@@ -386,7 +409,7 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
     budget = int(bounds[0].split(":", 1)[1].strip()) * 60
     entries = len(tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"])
     assert entries > 0, "mutations.toml declares nothing, so this projects no cost at all"
-    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS
+    projected = entries * ORACLE_SECONDS_PER_ENTRY + ORACLE_SETUP_SECONDS + ORACLE_VARIANCE_SECONDS
     assert budget >= projected, (
         f"{entries} mutation entries project ~{projected:.0f} s against a {budget} s bound — "
         f"raise `timeout-minutes` on the {ORACLE_JOB!r} job, and say in the comment what the "
@@ -397,164 +420,23 @@ def test_the_mutation_oracle_has_a_job_of_its_own_with_a_budget_that_fits() -> N
 
 
 WORKFLOWS = ROOT / ".github" / "workflows"
-# The workflows that run a shell, so a per-file floor is a claim about them and an empty walk
-# cannot pass. `smoke-release.yml` is out because it is two reusable-workflow calls and
-# legitimately runs none — measured, 0 blocks — and that is the only file with an exemption.
+# The workflows that run a shell, so the walk below cannot pass by reading nothing: each holds a
+# script. `smoke-release.yml` is two reusable-workflow calls and legitimately runs none.
 SCRIPTED = {"ci.yml", "check.yml", "release.yml", "smoke.yml"}
-# What `run_blocks` returns for each shipped workflow, measured 2026-09-19 with this module's
-# own reader. Equalities rather than floors: the `>= 5` per file and `>= 25` overall they
-# replace left seven of thirty-three bodies droppable, five of them `ci.yml`'s, with this
-# module green — and the character floor at 4,000 against a measured 8,097 did not close the
-# truncation shape its own comment claimed it closed (every body cut to eight lines came to
-# 4,059). `smoke-release.yml` is two reusable-workflow calls and legitimately runs no shell,
-# which is why it is 0 here rather than exempt from the walk.
-EXPECTED_BLOCKS = {
-    "check.yml": 10,
-    # 12 -> 13 when the mutation oracle became a job of its own: the step left `checks` and the
-    # new job carries its own `uv sync --locked` beside it, so one body moved and one was added.
-    "ci.yml": 13,
-    "release.yml": 7,
-    "smoke-release.yml": 0,
-    "smoke.yml": 6,
-}
-# And the size, per file, so a reader that returns the right NUMBER of bodies and truncates
-# each of them reddens on the file it truncated rather than against a whole-set total with
-# headroom in it. Floors and not equalities, because a workflow gaining a line is ordinary and
-# a workflow losing half its script is not.
-EXPECTED_CHARACTERS = {
-    # Re-measured when the import proof and the pull-request base refusal landed: 5030 -> 6503.
-    # Kept level with the measurement rather than left where it was, because a floor with a
-    # thousand characters of headroom under it is a floor a truncation walks past.
-    "check.yml": 6503,
-    # 882 -> 899 for the same move: `uv sync --locked` is the body the oracle's own job added.
-    "ci.yml": 899,
-    "release.yml": 1683,
-    "smoke-release.yml": 0,
-    "smoke.yml": 3042,
-}
 
 
-# `${{ … }}` is YAML plain text and not flow syntax, so it is removed before a line is asked
-# whether it carries a brace. Non-greedy, because two expressions on one line are two.
-_EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
+def scripts(text: str) -> list[str]:
+    """Every step script in a workflow, read by `tests.workflow_yaml`'s strict reader, which reads
+    the whole file or refuses the first line outside its subset — so a script cannot be cut short
+    or passed over, and a step spelled as a flow mapping, `- {"run":"…"}`, is refused rather
+    than read as no step. `defaults: run:` is a mapping of settings, not a script, and is not
+    one."""
+    return [run for run in runs(load(text)) if isinstance(run, str)]
 
 
-def _scan(workflow: Path) -> Iterator[tuple[str, str]]:
-    """The file, cut into what a `run:` key owns and everything else.
-
-    **One rule, and it replaces four rounds of enumerating shapes: a `run:` key owns the rest of
-    its own line and every following line indented past the KEY's column.** That is what YAML
-    indentation means, and it is true of an inline one-liner, a block scalar, an indented plain
-    scalar, a quoted scalar that wraps, and a plain scalar that continues onto the next line —
-    without this function knowing which of those it is looking at. Enumerating them is what was
-    wrong four times: a reader that knows five shapes is a reader that is blind to the sixth,
-    and it reports clean while being so.
-
-    The key's column and not the line's, because a step whose first key is `run` carries the
-    list dash on the same line (the ordinary spelling for a step with no `name`), and measuring
-    at the dash would make the step's own sibling keys part of its script — `env:` among them,
-    which is exactly where a `${{ }}` belongs.
-
-    **Everything a `run:` key introduces is collected, and nothing is classified.** Telling a
-    script from something else needs a classifier, and a classifier fails by reading a script as
-    settings — the same hole wearing the name of a feature. So the rule is applied to the key's
-    NAME alone, and the cost of that is stated here rather than exempted away. It is a cry-wolf
-    cost and never a hole: every case below fails loudly, in the safe direction, in front of
-    whoever writes it.
-
-    There are three of them, and they are one class and one consequence rather than a list to
-    keep up with.
-
-    **A key named `run` that is not a script.** `defaults: run:` is a mapping of `shell` and
-    `working-directory`, and an action input that happens to be called `run` under `with:` is
-    another. Both are collected and scanned identically. So
-    `defaults: run: working-directory: ${{ inputs.path }}` — standard, correct Actions, and not
-    an injection — fails the guard over these blocks. That is a decision for whoever first needs
-    it to take deliberately, with a red test in front of them, rather than a hole dug in
-    advance.
-
-    **The first of those two shapes is already in this tree**, and saying otherwise was how
-    the cost stopped being visible: `check.yml`'s `defaults: run:` mapping is this reader's
-    first collected block for that file, scanned as a body like any other. It is harmless
-    because it carries only `shell: bash` and no expression — and it is exactly where
-    `working-directory: ${{ inputs.path }}` would be written, so the next person to reach for
-    that hits the red test this paragraph exists to explain rather than one it told them
-    could not happen.
-
-    **A comment indented past a one-liner's key column**, which this rule introduced and the
-    reader before it did not have: a one-liner used to be taken and the following lines left
-    alone, and now the key owns them. So
-
-        - run: echo a
-            # never splice ${{ github.ref }} here — use env:
-
-    is one body carrying an expression, and the guard fails pointing at a comment — which is
-    exactly the comment a repository shipping this guard tends to write. Keeping it is the same
-    trade as the first: the alternative is a rule that knows what a comment is, which is a
-    classifier, which is the hole.
-
-    What it yields: `("run", body)` for each `run:` key, and `("line", raw)` for every line
-    outside one. The second stream exists so the brace refusal below can ask its question
-    without a `run:` body's own braces answering it.
-    """
-    lines = workflow.read_text(encoding="utf-8").splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        stripped = line.strip()
-        index += 1
-        if stripped.startswith("- "):
-            stripped = stripped[2:].lstrip()
-        if not stripped.startswith("run:"):
-            yield "line", line
-            continue
-        indent = line.index("run:")
-        body = [rest] if (rest := stripped[len("run:") :].strip()) else []
-        while index < len(lines):
-            following = lines[index]
-            if following.strip() and len(following) - len(following.lstrip()) <= indent:
-                break
-            body.append(following)
-            index += 1
-        yield "run", "\n".join(body)
-
-
-def run_blocks(workflow: Path) -> list[str]:
-    """Everything every `run:` key in the file owns, one string each."""
-    return [body for kind, body in _scan(workflow) if kind == "run"]
-
-
-def braced_lines(workflow: Path) -> list[str]:
-    """Every line outside a `run:` body that still carries a brace once `${{ … }}` is removed.
-
-    **What it is for** is the one shape the indentation rule above cannot reach: a step spelled
-    as a flow mapping — `- {run: "…"}` — puts the whole step on one line inside braces, and
-    there is no following line to own. It is **refused rather than parsed**: writing a
-    flow-mapping parser is the enumeration again, one level down, and the failure mode of the
-    thing that replaced is a shape nobody thought of. So the day a workflow spells a step that
-    way, the guard says so loudly instead of silently not seeing it.
-
-    **What it actually checks is broader than that, deliberately, and the name says so.** It
-    reports anything brace-shaped rather than deciding what the braces mean — a flow sequence of
-    mappings, a flow-style `matrix` entry, `extra: {a: 1}`, a quoted JSON-ish scalar such as
-    `CFG: '{"a": 1}'`. All of those are refused too, and none of them is a flow-mapping step.
-    Classifying them apart is the classifier again; refusing anything brace-shaped is the
-    conservative answer, and the message a reader gets names the brace they wrote rather than a
-    flow-mapping step that is not there. None of these shapes appears in this tree.
-
-    `${{ … }}` is removed first because it is plain text that carries braces: without the strip
-    every line of every workflow here would be reported, and a guard that cries wolf on every
-    line is a guard somebody deletes. The strip is not a way past the check either — a brace
-    outside an expression survives it, which is what `- {run: "echo ${{ x }}"}` is.
-
-    Lines inside a `run:` body are not asked at all: a heredoc's own Python carries braces, and
-    they are already scanned as the script they are.
-    """
-    return [
-        line
-        for kind, line in _scan(workflow)
-        if kind == "line" and "{" in _EXPRESSION.sub("", line)
-    ]
+def spliced(text: str) -> list[str]:
+    """The scripts in a workflow that carry a `${{ }}` expression."""
+    return [script for script in scripts(text) if "${{" in script]
 
 
 @needs_workflows_dir
@@ -563,185 +445,100 @@ def test_no_workflow_splices_an_expression_into_a_shell() -> None:
     # `${{ }}` inside a `run:` is interpolated by the platform before the shell sees the script,
     # so a ref name, a branch name or a pull-request title that carries shell metacharacters
     # runs as the workflow's own code. Every value in these files reaches a shell through
-    # `env:` instead.
+    # `env:` instead. Mutation (oracle): "a workflow splices an expression into a shell" puts one
+    # into `check.yml`'s checkout assertion.
     #
     # `*.y*ml`: the platform reads `.yaml` too, and a workflow added with the other spelling
-    # would never be scanned while the `>=` assertion below went on passing.
+    # would never be read while the `>=` assertion below went on passing.
     workflows = sorted(WORKFLOWS.glob("*.y*ml"))
     assert {p.name for p in workflows} >= SCRIPTED, workflows
-    # Equality, so a workflow added to this directory fails here — naming it — rather than
-    # raising `KeyError` inside the loop, which is a redness about a missing dictionary key and
-    # not about an unmeasured file.
-    assert {p.name for p in workflows} == set(EXPECTED_BLOCKS), workflows
-    read: list[str] = []
     for workflow in workflows:
-        blocks = run_blocks(workflow)
-        # Per file and not for all of them, and the measured count as an EQUALITY. The `>= 5`
-        # per file and `>= 25` overall that stood here left seven of the bodies droppable and
-        # the character floor at 4,000 left every body truncatable to eight lines. Measured on
-        # this tree, against this test alone: `run_blocks` returning the first seven bodies of
-        # each file — GREEN; every body cut to its first eight lines — GREEN. With the
-        # equalities: `('check.yml', 7) … 7 == 9` and `('check.yml', 1264) … 1264 >= 5030`.
-        # An equality moves when somebody edits a workflow, which is exactly when a reader
-        # regression would otherwise hide behind the headroom.
-        #
-        # `smoke-release.yml` is in the table at 0 rather than exempt from the walk: it is two
-        # reusable-workflow calls and legitimately runs no shell, and an exemption nobody can
-        # see is how a file stops being read without anybody deciding that.
-        #
-        # No `mutations.toml` entry travels with the table itself, and the reason is that there
-        # is nothing for one to mutate: a number changed here reddens this assertion by
-        # construction, which proves the arithmetic rather than the reader. What has to be
-        # load-bearing is the reader, and that is held by the four `_scan` entries already in
-        # `mutations.toml`, one of which reddens this very case.
-        assert len(blocks) == EXPECTED_BLOCKS[workflow.name], (workflow.name, len(blocks))
-        size = sum(len(block) for block in blocks)
-        assert size >= EXPECTED_CHARACTERS[workflow.name], (workflow.name, size)
-        read.extend(blocks)
-        for block in blocks:
-            assert "${{" not in block, (workflow.name, block)
-        # Refused and not classified: anything brace-shaped outside a `run:` body. What it is
-        # for is the step spelled as a flow mapping — `- {run: "…"}` — which has no following
-        # line for the indentation rule to own; what it reports is every brace, because deciding
-        # which ones are a step is the classifier the rule above exists without.
-        assert braced_lines(workflow) == [], (workflow.name, braced_lines(workflow))
-    # Two floors and not one, for the reason the whole-tree gate needed two: a reader that
-    # collects the right NUMBER of bodies and truncates each of them to its first line passes a
-    # count and fails a size. The per-file assertions above are what do the work now; these are
-    # the whole-set restatement, at the measured values rather than at half of them.
-    # Re-measured when the oracle got a job of its own: 36 bodies, 12,127 characters (check.yml
-    # 6,503, ci.yml 899, release.yml 1,683, smoke.yml 3,042, smoke-release.yml 0). The figure
-    # stood at 10,637 from 2026-09-19 while `check.yml` grew from 5,030 to 6,503 underneath it,
-    # so the whole-set floor had picked up about 1,500 characters of slack — which is exactly
-    # the truncation headroom its own comment two paragraphs up argues against. Moved level with
-    # the measurement rather than left where it was.
-    assert len(read) == sum(EXPECTED_BLOCKS.values()), len(read)
-    assert sum(len(block) for block in read) >= 12_127, sum(len(block) for block in read)
+        text = workflow.read_text(encoding="utf-8")
+        assert scripts(text) or workflow.name not in SCRIPTED, workflow.name
+        assert spliced(text) == [], (workflow.name, spliced(text))
 
 
-def test_a_run_key_owns_every_line_indented_past_it(tmp_path: Path) -> None:
-    # The rule, stated as a case rather than as a list of shapes. Eight bodies in eight
-    # spellings, each carrying an expression, so a body the reader truncates or cannot see is a
-    # body the guard above reports clean. Five of these eight were holes in successive rounds;
-    # the last two — a plain scalar that continues onto the next line and a quoted one that
-    # wraps — are here because the rule covers them without being told to, which is the whole
-    # of why it replaced the list. Mutations (declared): drop the continuation
-    # loop, drop the value on the key's own line, drop the dash strip, measure the indent at
-    # the line instead of the key.
-    workflow = tmp_path / "synthetic.yml"
-    workflow.write_text(
+def test_an_expression_is_found_in_every_spelling_of_a_script(tmp_path: Path) -> None:
+    # The check above is only as good as what it reads: a script in each spelling the reader
+    # takes, each carrying an expression, is found, and one kept in `env:` is not. Mutation
+    # (oracle): "the expression check reads no script" -> nothing is found and this reddens.
+    text = (
         "jobs:\n"
         "  one:\n"
-        "    defaults:\n"
-        "      run:\n"
-        "        shell: bash ${{ inputs.shell }}\n"
         "    steps:\n"
-        "      - run: >\n"
-        "          echo folded ${{ github.ref }}\n"
         "      - run: |\n"
-        "          echo dashed-block ${{ github.actor }}\n"
+        "          echo block ${{ github.actor }}\n"
         "        env:\n"
         "          SAFE: ${{ github.sha }}\n"
         "      - run: echo inline ${{ github.job }}\n"
         "      - name: with a name of its own\n"
         "        run: echo named ${{ github.workflow }}\n"
-        "      - name: an indented plain scalar, which carries no marker at all\n"
-        "        run:\n"
-        "          echo plain ${{ github.run_id }}\n"
-        "      - run: echo continued\n"
-        "          && echo ${{ github.event.pull_request.title }}\n"
-        '      - run: "echo quoted\n'
-        '          && echo ${{ github.head_ref }}"\n',
-        encoding="utf-8",
+        '      - run: "echo quoted ${{ github.head_ref }}"\n'
+        "      - run: echo clean\n"
     )
-    blocks = run_blocks(workflow)
-    # Eight: the seven scripts and the `defaults: run:` mapping. Every one of them was
-    # collected by the same rule and every one of them is scanned, so the count below and the
-    # scan above are over the same set — and no classifier has to tell a mapping from a script.
-    assert len(blocks) == 8, blocks
-    for wanted in ("folded", "dashed-block", "inline", "named", "plain", "continued", "quoted"):
-        assert any(wanted in block for block in blocks), (wanted, blocks)
-    # Every one of them carries its expression into the scan, which is the property the guard
-    # rests on: a body collected but truncated at its first line reports clean. The two
-    # continuation shapes are exactly that case — the value begins on the key's line and the
-    # expression is on the next one.
-    for block in blocks:
-        assert "${{" in block, block
-    continued = next(block for block in blocks if "continued" in block)
-    assert "pull_request.title" in continued, continued
-    quoted = next(block for block in blocks if "quoted" in block)
-    assert "head_ref" in quoted, quoted
-    # And the dashed block stops at its own `env:` rather than swallowing it — the direction
-    # that would have produced a spurious finding on `env:`, which is where an expression
-    # belongs.
-    dashed = next(block for block in blocks if "dashed-block" in block)
-    assert "SAFE" not in dashed, dashed
-    assert braced_lines(workflow) == []
-
-
-def test_a_step_spelled_as_a_flow_mapping_is_refused_rather_than_parsed(tmp_path: Path) -> None:
-    # The one shape the indentation rule cannot reach, because there is no following line to
-    # own. It is reported, not read: a flow-mapping parser would be the enumeration again one
-    # level down, and the failure mode of the thing being replaced is a shape nobody thought
-    # of. Mutation (declared): stop reporting it and the reader sees a workflow with one step
-    # in it, silently.
-    workflow = tmp_path / "flow.yml"
-    workflow.write_text(
-        "jobs:\n"
-        "  one:\n"
-        "    steps:\n"
-        '      - {run: "echo flow ${{ github.actor }}"}\n'
-        "      - run: echo ordinary\n",
-        encoding="utf-8",
-    )
-    # The step in braces is not a `run:` body the reader can see...
-    assert run_blocks(workflow) == ["echo ordinary"], run_blocks(workflow)
-    # ...so it is named here instead, with the expression stripped before the question is asked
-    # so that `${{ }}` — which is plain text, not flow syntax — cannot answer it.
-    flow = braced_lines(workflow)
-    assert len(flow) == 1, flow
-    assert "run" in flow[0] and "{" in flow[0], flow
-
-
-def test_an_expression_is_not_mistaken_for_flow_syntax(tmp_path: Path) -> None:
-    # The negative of the test above, and the reason `_EXPRESSION` exists: every `${{ }}` in
-    # these files carries braces, and a brace check that counted them would report every
-    # workflow in the tree as a flow mapping — a guard that cries wolf on every line is a guard
-    # somebody deletes.
-    workflow = tmp_path / "ordinary.yml"
-    workflow.write_text(
-        "jobs:\n"
-        "  one:\n"
-        "    if: ${{ github.event_name == 'push' }}\n"
-        "    steps:\n"
-        "      - uses: actions/checkout@v4\n"
-        "        with:\n"
-        "          ref: ${{ github.sha }} and ${{ github.ref }}\n",
-        encoding="utf-8",
-    )
-    assert braced_lines(workflow) == []
+    found = spliced(text)
+    assert [script.split()[1] for script in found] == ["block", "inline", "named", "quoted"]
+    assert all("SAFE" not in script for script in found)
 
 
 def step_script(workflow: Path, step_name: str) -> str:
-    """The `run: |` block of the named step, dedented, straight out of the shipped file."""
-    lines = workflow.read_text(encoding="utf-8").splitlines()
-    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {step_name}")
-    run = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")
-    body = lines[run + 1 :]
-    indent = len(body[0]) - len(body[0].lstrip())
-    collected: list[str] = []
-    for line in body:
-        if line.strip() and len(line) - len(line.lstrip()) < indent:
-            break
-        collected.append(line[indent:] if line.strip() else "")
+    """The named step's script, straight out of the shipped file.
+
+    Read by `tests.workflow_yaml`'s strict reader, which reads the whole file or fails: the
+    line reader this replaced looked for `run: |` from the step's name to the end of the file,
+    so a step whose script was spelled another way handed back the next step's, and a case
+    about one step ran another. Exactly one step of that name, in any job, and it has a script.
+    """
+    document = load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), document
+    jobs = document.get("jobs")
+    assert isinstance(jobs, dict), jobs
+    found = [
+        step
+        for job in jobs.values()
+        if isinstance(job, dict) and isinstance(job.get("steps"), list)
+        for step in job["steps"]  # type: ignore[union-attr]
+        if isinstance(step, dict) and step.get("name") == step_name
+    ]
+    assert len(found) == 1, (step_name, found)
+    script = found[0].get("run")
+    assert isinstance(script, str), (step_name, found[0])
     # No `${{ }}` may survive into the script: every value the step uses arrives through
     # `env:`, and one spliced into `run:` would be a command injection the test would run.
-    assert "${{" not in "\n".join(collected), collected
-    return "\n".join(collected) + "\n"
+    assert "${{" not in script, script
+    return script if script.endswith("\n") else script + "\n"
+
+
+def test_a_step_s_script_is_never_read_from_the_step_after_it(tmp_path: Path) -> None:
+    # The cases that run `check.yml`'s steps name a step and get its script. A reader that
+    # searched onward for `run: |` handed back the next step's script for a step spelled with a
+    # one-line `run:`, so a case about the first step ran the second. The strict reader gives
+    # each step its own.
+    workflow = tmp_path / "two.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  one:\n"
+        "    steps:\n"
+        "      - name: first\n"
+        "        run: echo first\n"
+        "      - name: second\n"
+        "        run: |\n"
+        "          echo second\n",
+        encoding="utf-8",
+    )
+    assert step_script(workflow, "first") == "echo first\n"
+    assert step_script(workflow, "second") == "echo second\n"
 
 
 def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
-    """A clone whose `origin/main` carries `on_base` as `keelline.toml`, or carries none."""
+    """A clone whose `origin/main` carries `on_base` as `keelline.toml`, or carries none.
+
+    The upstream also has a branch `a-branch-the-author-pushed`, so the clone tracks it: the
+    disagreement case then meets a `base:` naming a branch that exists, which is the attack,
+    and not a missing ref that fails for another reason. Measured when the case was written:
+    with the branch absent the step with its refusal removed still exits 1, "not in this
+    checkout"; with it present it exits 0.
+    """
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     git(upstream, "init", "-q", "-b", "main")
@@ -750,6 +547,7 @@ def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
         (upstream / "keelline.toml").write_text(on_base, encoding="utf-8")
     git(upstream, "add", "-A")
     git(upstream, "commit", "-qm", "chore: base")
+    git(upstream, "branch", "a-branch-the-author-pushed")
     project = tmp_path / "project"
     git(tmp_path, "clone", "-q", str(upstream), str(project))
     return project
@@ -767,18 +565,13 @@ def _run_base_step(
         text=True,
         check=False,
         env={
-            # The step reads the base's `keelline.toml` with `python3 -c "import tomllib"`, and
-            # `tomllib` arrived in 3.11 — the floor this project sets and the version
-            # `setup-python` installs on the runner. A system `python3` older than that would
-            # fail the step here for a reason the workflow will never meet, so the interpreter
-            # running this suite goes first on the PATH.
-            "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin",
+            # The step runs no interpreter: git and the shell's own builtins are all it needs.
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
             "GITHUB_OUTPUT": str(output),
             "INPUT_BASE": "",
             "INPUT_PATH": ".",
             "PR_BASE": "",
             "DEFAULT_BRANCH": "",
-            "CURRENT_REF": "refs/pull/7/merge",
             **environment,
         },
     )
@@ -790,104 +583,35 @@ def _run_base_step(
 INSTALLED = '[keelline]\nversion = "0.1.0"\nstate = "installed"\n\n[project]\nname = "p"\n'
 
 
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_base_branch_with_no_configuration_is_advisory_and_not_refused(tmp_path: Path) -> None:
-    # D8's bootstrap: a project adopting the gate has no `keelline.toml` on its base branch
-    # yet, and the run that would add one must not be the run that refuses it. `absent` is a
-    # named state and not a fall-through — the fall-through is what `initialised` would be.
-    project = _project_with_a_base(tmp_path, on_base=None)
-    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
-    assert code == 0, printed
-    assert written["state"] == "absent", written
-    assert written["enforce"] == "false", written
-    assert written["base"] == "main"
-    assert written["root"] == "project/."
+def _main(project: Path) -> str:
+    """The commit the clone's remote-tracking `main` names: the base every case expects."""
+    return git(project, "rev-parse", "refs/remotes/origin/main").strip()
 
 
 @needs_git
 @needs_bash
 @needs_workflow
-def test_an_installed_base_enforces(tmp_path: Path) -> None:
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
-    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
-    assert code == 0, printed
-    assert written["state"] == "installed", written
-    assert written["enforce"] == "true", written
+def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base(tmp_path: Path) -> None:
+    """git resolves a short `origin/main` through `refs/tags/` before `refs/remotes/`, and
+    `fetch-depth: 0` fetches every tag, so whoever may push a tag of that name would choose the
+    configuration every pull request is judged against. The step resolves the fully qualified
+    tracking ref, once, and every later read uses the commit it wrote.
 
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_branch_that_changes_an_installed_projects_configuration_is_refused(
-    tmp_path: Path,
-) -> None:
-    # DC7, and the reason the configuration is read from the base ref at all: the tree under
-    # review may not choose what is enforced over it. The anchor is `origin/main` in the
-    # caller's own checkout, which the branch cannot write.
+    Mutation (declared): the short `origin/$base^{commit}` in place of the qualified name ->
+    `base_sha` is the tag's commit.
+    """
     project = _project_with_a_base(tmp_path, on_base=INSTALLED)
     (project / "keelline.toml").write_text(
-        INSTALLED.replace('state = "installed"', 'state = "adopting"'), encoding="utf-8"
+        INSTALLED.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
     )
-    code, _written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
-    assert code == 1, printed
-    assert "may not change an installed project's gate configuration" in printed, printed
-
-
-# Every `- name:`/`- uses:` step in `check.yml`'s one job, in order, with the keys that decide
-# whether a failure is allowed to pass. A line reader rather than a parser, for the reason the
-# `run:` scanner gives one screen up: this repository ships no YAML parser and a classifier is
-# the hole.
-_STEP = re.compile(r"^      - (?:name: (?P<name>.+)|uses: (?P<uses>\S+))$")
-
-
-def check_steps() -> list[tuple[str, bool]]:
-    """`(step name, is it allowed to fail)` for each step of `check.yml`'s job, in order."""
-    steps: list[tuple[str, bool]] = []
-    for line in CHECK_WORKFLOW.read_text(encoding="utf-8").splitlines():
-        match = _STEP.match(line)
-        if match:
-            steps.append((match.group("name") or match.group("uses"), False))
-        elif steps and line.strip() == "continue-on-error: true":
-            steps[-1] = (steps[-1][0], True)
-    return steps
-
-
-@needs_workflow
-def test_something_outside_the_advisory_arm_proves_keelline_runs_at_all() -> None:
-    """Advisory mode used to make "Keelline cannot import" indistinguishable from "your
-    documents have findings".
-
-    All five gates carry `continue-on-error: true`, and while the base's state is not
-    `installed` the Verdict turns each failure into one `::warning` and exits 0. So a bad
-    checkout, a renamed module, or an interpreter below the 3.11 floor — which
-    `inputs.python-version` can name and nothing validates — produced five warnings and a green
-    job for every adopting project, which by design is every project's first weeks. Nothing
-    outside the advisory arm asked whether the harness ran at all.
-
-    Advisory means "your findings do not fail the job". It does not mean "our harness not
-    running does not fail the job", and this is the step that says so.
-
-    Mutation (declared): the proof step gains `continue-on-error: true` -> this reddens.
-    """
-    steps = check_steps()
-    names = [name for name, _ in steps]
-    # The walk's floor before anything is read off it: a regex that stopped matching would make
-    # every `in` below fail loudly, but an `any()` over an empty list would not.
-    assert len(steps) >= 8, steps
-    gates = ["docs check", "bugs check", "plan check", "commit check", "docs trail"]
-    assert set(gates) <= set(names), names
-    allowed = {name: may_fail for name, may_fail in steps}
-    # The premise, asserted rather than assumed: every gate really is advisory, which is what
-    # makes an unguarded step necessary in the first place.
-    assert all(allowed[gate] for gate in gates), allowed
-    proof = "Keelline runs at all"
-    assert proof in names, names
-    assert allowed[proof] is False, allowed
-    # And it runs before the first gate, or a broken harness still produces the five warnings
-    # before anything says why.
-    assert names.index(proof) < min(names.index(gate) for gate in gates), names
+    git(project, "add", "-A")
+    git(project, "commit", "-qm", "chore: loosen")
+    git(project, "tag", "origin/main")
+    git(project, "checkout", "-q", "--detach", "HEAD~1")
+    code, written, printed = _run_base_step(project, tmp_path, PR_BASE="main")
+    assert code == 0, printed
+    assert written["base_sha"] == _main(project), (written, printed)
+    assert written["base_sha"] != git(project, "rev-parse", "refs/tags/origin/main").strip()
 
 
 @needs_git
@@ -896,19 +620,18 @@ def test_something_outside_the_advisory_arm_proves_keelline_runs_at_all() -> Non
 def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
     tmp_path: Path,
 ) -> None:
-    """The half of "a pull request cannot turn off the gates it is about to face" that was not.
+    """The caller's `base:` may not choose the configuration a pull request is judged against.
 
     On a `pull_request` event the platform runs the workflow file from the merge commit — the
     author's copy — and `with: base:` lives in it. So a pull request could point `base:` at a
-    branch it had pushed whose `keelline.toml` says `state = "initialised"`, get `enforce=false`
-    without touching the tree's own `keelline.toml`, and every gate would become one
-    `::warning` while the required status check still reported. The byte-equality rule never
-    fires, because nothing differs.
+    branch it had pushed, whose `keelline.toml` enforces nothing, and be judged against that
+    without touching the tree's own `keelline.toml`.
 
     The platform's `github.base_ref` is the answer that cannot be written from the branch, so
-    where both are present and they disagree the step refuses. This costs a legitimate caller
-    nothing: on a pull request `base:` decides nothing anyway, which the agreeing case below
-    is here to keep true.
+    where both are present and they disagree the step refuses, and never echoes the author's
+    value, which has not been validated and could carry a workflow command of its own. This
+    costs a legitimate caller nothing: on a pull request `base:` decides nothing anyway, which
+    the agreeing case below is here to keep true.
 
     Mutation (declared): the disagreement test is removed -> this reddens on the exit code.
     """
@@ -918,15 +641,15 @@ def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
     )
     assert code == 1, printed
     assert "this pull request's base is 'main'" in printed, printed
-    # Nothing was written, so no later step can read a base or an `enforce` from this run.
+    assert "a-branch-the-author-pushed" not in printed, printed
+    # Nothing was written, so no later step can read a base commit from this run.
     assert written == {}, written
 
     # Agreeing is not refused, and `base:` still decides on every event that reports no base —
     # which is what makes the refusal free.
     code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main", PR_BASE="main")
     assert code == 0, printed
-    assert written["base"] == "main", written
-    assert written["enforce"] == "true", written
+    assert written["base_sha"] == _main(project), written
 
 
 @needs_git
@@ -941,9 +664,9 @@ def test_the_base_ref_falls_back_to_the_pull_requests_base_and_then_the_default_
     # guessing a branch name.
     project = _project_with_a_base(tmp_path, on_base=INSTALLED)
     _code, written, _printed = _run_base_step(project, tmp_path, PR_BASE="main")
-    assert written["base"] == "main"
+    assert written["base_sha"] == _main(project), written
     _code, written, _printed = _run_base_step(project, tmp_path, DEFAULT_BRANCH="main")
-    assert written["base"] == "main"
+    assert written["base_sha"] == _main(project), written
     code, written, printed = _run_base_step(project, tmp_path)
     assert code == 1, printed
     assert "no base ref" in printed, printed
@@ -955,18 +678,16 @@ def test_the_base_ref_falls_back_to_the_pull_requests_base_and_then_the_default_
 @needs_workflow
 def test_a_path_input_cannot_write_the_steps_own_outputs(tmp_path: Path) -> None:
     # `p` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a `path:`
-    # carrying a newline used to write further `key=value` lines — and the keys the next steps
-    # read are `base`, `state` and `enforce`, the last of which is the whole of the base-ref
-    # rule's teeth. The caller already chooses `base:` by design, so this was not an escalation
-    # of what it may decide; it was an unvalidated value on a control channel.
+    # carrying a newline would write further `key=value` lines — and `base_sha` is the commit
+    # whose configuration governs the gates. A forged one would choose it.
     project = _project_with_a_base(tmp_path, on_base=INSTALLED)
     code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="main", INPUT_PATH="sub\nenforce=true"
+        project, tmp_path, INPUT_BASE="main", INPUT_PATH=f"sub\nbase_sha={'0' * 40}"
     )
     assert code == 1, printed
     assert "must be a plain relative path" in printed, printed
     assert written == {}, written
-    # And the other half of the same check, so `root=` below is provably inside the checkout.
+    # And the other half of the same check, so `root=` below stays inside the checkout.
     code, written, printed = _run_base_step(
         project, tmp_path, INPUT_BASE="main", INPUT_PATH="../elsewhere"
     )
@@ -978,50 +699,7 @@ def test_a_path_input_cannot_write_the_steps_own_outputs(tmp_path: Path) -> None
 @needs_git
 @needs_bash
 @needs_workflow
-def test_the_base_branch_itself_is_exempt_from_the_equality_rule(tmp_path: Path) -> None:
-    # DC7's strict form applies "on any branch but the base branch itself". A push to the base
-    # branch IS the change, so comparing it against `origin/<base>` would refuse every merge —
-    # and the arm that exempts it had no test.
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
-    (project / "keelline.toml").write_text(
-        INSTALLED.replace('state = "installed"', 'state = "installed"\nprofile = ""'),
-        encoding="utf-8",
-    )
-    code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="main", CURRENT_REF="refs/heads/main"
-    )
-    assert code == 0, printed
-    assert written["state"] == "installed", written
-    assert written["enforce"] == "true", written
-    assert "::error" not in printed, printed
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_differing_configuration_under_a_base_that_is_not_installed_warns(
-    tmp_path: Path,
-) -> None:
-    # The advisory half of the same comparison (D8): while the base's state is `adopting` the
-    # branch may change the configuration, and the run says so rather than refusing. Without
-    # this the refusal arm and the warning arm are one untested branch between them.
-    adopting = INSTALLED.replace('state = "installed"', 'state = "adopting"')
-    project = _project_with_a_base(tmp_path, on_base=adopting)
-    (project / "keelline.toml").write_text(INSTALLED, encoding="utf-8")
-    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main")
-    assert code == 0, printed
-    assert written["state"] == "adopting", written
-    assert written["enforce"] == "false", written
-    assert "::warning" in printed and "advisory while the base's state is adopting" in printed
-    assert "::error" not in printed, printed
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_from(
-    tmp_path: Path,
-) -> None:
+def test_a_project_root_below_the_checkout_is_where_the_gates_run(tmp_path: Path) -> None:
     # The `path:` input, which is what the smoke workflow and a monorepo use. It reaches the
     # shell through `env:` and is used as a path prefix, never as a command.
     project = _project_with_a_base(tmp_path, on_base=None)
@@ -1030,74 +708,6 @@ def test_a_project_root_below_the_checkout_is_where_the_configuration_is_read_fr
     )
     assert code == 0, printed
     assert written["root"] == "project/sub/project", written
-    assert "sub/project/keelline.toml is not on origin/main" in printed, printed
-
-
-# --- `check.yml`'s verdict step, run as the shell script it is --------------------------
-
-VERDICT_STEP = "Verdict"
-
-
-def _run_verdict(tmp_path: Path, **environment: str) -> tuple[int, str]:
-    done = subprocess.run(
-        ["bash", "-e", "-c", step_script(CHECK_WORKFLOW, VERDICT_STEP)],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-        env={
-            "PATH": "/usr/bin:/bin",
-            "ENFORCE": "false",
-            "STATE": "absent",
-            "O_DOCS": "success",
-            "O_BUGS": "success",
-            "O_PLAN": "success",
-            "O_COMMIT": "success",
-            "O_TRAIL": "success",
-            **environment,
-        },
-    )
-    return done.returncode, done.stdout + done.stderr
-
-
-@needs_bash
-@needs_workflow
-def test_the_verdict_fails_the_job_only_where_the_base_says_installed(tmp_path: Path) -> None:
-    # D8 in three lines of shell, and the reviewer's point that reading it is not running it.
-    # Enforcing and clean is the control: a verdict that failed there would be noticed at once,
-    # and one that passes everything would not.
-    code, printed = _run_verdict(tmp_path, ENFORCE="true", STATE="installed")
-    assert code == 0, printed
-    assert "::error" not in printed and "::warning" not in printed, printed
-
-    code, printed = _run_verdict(tmp_path, ENFORCE="true", STATE="installed", O_DOCS="failure")
-    assert code == 1, printed
-    assert "::error::docs failed" in printed, printed
-
-    code, printed = _run_verdict(tmp_path, ENFORCE="false", STATE="adopting", O_DOCS="failure")
-    assert code == 0, printed
-    assert "::warning::docs failed, advisory while the base's state is adopting" in printed
-    assert "::error" not in printed, printed
-
-
-@needs_bash
-@needs_workflow
-def test_every_gate_is_named_in_the_verdict_and_not_only_the_first(tmp_path: Path) -> None:
-    # "Every gate ran, whatever the first one said" is the step's own claim, and a loop that
-    # stopped at the first failure would satisfy every assertion above.
-    code, printed = _run_verdict(
-        tmp_path,
-        ENFORCE="true",
-        STATE="installed",
-        O_DOCS="failure",
-        O_BUGS="failure",
-        O_PLAN="failure",
-        O_COMMIT="failure",
-        O_TRAIL="failure",
-    )
-    assert code == 1, printed
-    for name in ("docs", "bugs", "plan", "commit", "trail"):
-        assert f"::error::{name} failed" in printed, (name, printed)
 
 
 RELEASE_WORKFLOW = WORKFLOWS / "release.yml"
@@ -1108,33 +718,23 @@ needs_release_workflow = pytest.mark.skipif(
 )
 
 
-def _release_jobs() -> dict[str, dict[str, str]]:
-    """Every job in `release.yml`, with the two keys this module asks about.
+def _release_jobs() -> dict[str, dict[str, Any]]:
+    """Every job in `release.yml`, as `tests.workflow_yaml`'s strict reader reads it.
 
-    Indentation arithmetic rather than a YAML parser: the package carries no runtime
-    dependency and `tests/test_import_boundary.py` is why none arrives through a test either,
-    and `environment:` and `needs:` are each written on one line in this file. A job that stops
-    writing them that way is a finding for whoever writes it, so the callers below assert the
-    walk found something rather than trusting it to have.
+    It reads the whole file or fails, so `needs:` is the list it says and a membership test on it
+    is exact: a line reader that kept `needs:` as the text `[build, environment-gate-legacy]`
+    passed a substring test for `environment-gate`. The callers below still assert the walk found
+    something rather than trusting it to have.
     """
-    jobs: dict[str, dict[str, str]] = {}
-    current: str | None = None
-    inside = False
-    for line in RELEASE_WORKFLOW.read_text(encoding="utf-8").splitlines():
-        if line.rstrip() == "jobs:":
-            inside = True
-            continue
-        if not inside or not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip())
-        if indent == 2 and line.rstrip().endswith(":"):
-            current = line.strip().rstrip(":")
-            jobs[current] = {}
-        elif indent == 4 and current is not None and ":" in line:
-            key, _, value = line.strip().partition(":")
-            if key in ("environment", "needs"):
-                jobs[current][key] = value.split("#")[0].strip()
-    return jobs
+    document = load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
+    return {name: dict(job) for name, job in document["jobs"].items() if isinstance(job, dict)}
+
+
+def _needs(job: dict[str, Any]) -> list[str]:
+    """A job's `needs:`, one name or a list of them, as the list the platform reads."""
+    needs = job.get("needs", [])
+    return [needs] if isinstance(needs, str) else list(needs)
 
 
 def _gate_environment() -> str:
@@ -1164,7 +764,7 @@ def test_every_job_behind_the_pypi_environment_waits_for_the_environment_gate() 
     assert len(gated) >= 2, gated
     assert set(gated.values()) == {_gate_environment()}, (gated, _gate_environment())
     for name in gated:
-        assert GATE_JOB in jobs[name].get("needs", ""), (name, jobs[name])
+        assert GATE_JOB in _needs(jobs[name]), (name, jobs[name])
     # And the gate itself is not behind the environment it is asking about: it has to run in
     # the one case the environment asks nobody, which is the case it exists for.
     assert "environment" not in jobs[GATE_JOB], jobs[GATE_JOB]

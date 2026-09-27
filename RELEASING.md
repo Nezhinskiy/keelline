@@ -35,20 +35,22 @@ to lag. That is the form `release.yml` runs.
 
 ## 2. Cutting a release
 
-**If this is the first release, do §3 first.** The `pypi` environment is the only human
+**If this is the first release, do section 3 first.** The `pypi` environment is the only human
 gate this process has, and it is a gate only once it exists: GitHub **auto-creates** an
 environment that a job names and the repository does not have, with no protection rules on it.
-So a first release run top to bottom without §3 waits for nobody — `publish` runs unapproved
-and fails on Trusted Publishing for want of a pending publisher, and `github-release` runs
-unapproved and creates a public GitHub Release. §3 is what makes step 7's sentence true.
+So a first release run top to bottom without section 3 waits for nobody — `publish` runs
+unapproved and fails on Trusted Publishing for want of a pending publisher, and
+`github-release` runs unapproved and creates a public GitHub Release. Section 3 is what makes
+step 7's sentence true.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything
    not merged is not in the release.
 
    ```bash
    git switch main && git pull
-   uv run pytest --cov --cov-report=term-missing --cov-fail-under=92
+   uv run pytest -n auto --cov --cov-report=term-missing --cov-fail-under=92
    uv run ruff check . && uv run ruff format --check . && uv run mypy
+   uv run python scripts/mutation_oracle.py
    uv run keelline release check
    claude plugin validate --strict .claude-plugin/plugin.json
    claude plugin validate --strict .claude-plugin/marketplace.json
@@ -56,8 +58,8 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    claude plugin tag --dry-run .
    ```
 
-2. **Decide the version.** This is a judgement, not a command: the design names `v1.0.0` for
-   the first public release and the tree currently says `0.1.0` and "Development Status :: 3 -
+2. **Decide the version.** This is a judgement, not a command: `v1.0.0` is the intended
+   first public release and the tree currently says `0.1.0` and "Development Status :: 3 -
    Alpha". Every mechanism in this file works with whatever number you pick — the gate compares
    the tag to the sources rather than to a number it knows, and the alias is the major.
 
@@ -87,10 +89,22 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    uv run keelline release check                           # must print "one version everywhere: X.Y.Z"
    ```
 
-   Read what it wrote. A fragment written as a note to the author rather than as a release note
-   is worth fixing now — this is the text users see. The version comes before the changelog
-   because `release notes` refuses a `--version` that is not the project's; after this step
-   `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+   Read what it wrote, and **edit it**. A fragment written as a note to the author rather than
+   as a release note is worth fixing now — this is the text users see. The version comes before
+   the changelog because `release notes` refuses a `--version` that is not the project's; after
+   this step `CHANGELOG.md` carries the heading and `changelog.d/` is empty.
+
+   **On a first release, fold the `Fixed` entries into the features they repair.** There is no
+   released version for a fix to be a fix *relative to*, so every `Fixed` entry in 0.1.0
+   describes a bug no user could have met — and reads as a warning about the release it ships
+   in. `init`, `attach`, `doctor` and `overlay` each accumulated several of these while 0.1.0
+   was being built, which is correct while it is being built: the fragments are the per-commit
+   record, and a fold done earlier is undone by the next commit. Do it here, once, over the
+   assembled file: state the feature as what it now is, delete the fixes that only describe
+   its development, and keep the ones a reader of 0.1.0 has to act on — a grammar that refuses
+   a `keelline.toml` which loaded before, a flag that means something narrower than it sounds.
+   The same folding applies to a `Changed` entry that changed something never released.
+   `release check --tag` cannot judge this: it counts pending fragments and never reads them.
 
 5. **Edit the README's install section, then commit.** In `README.md`, replace everything
    between `<!-- release-install:begin -->` and `<!-- release-install:end -->` — the markers,
@@ -133,7 +147,7 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    gh run watch <id> --exit-status
    ```
 
-   `build` runs the gate against the tag, tests, builds and attests. **Once §3's `pypi`
+   `build` runs the gate against the tag, tests, builds and attests. **Once section 3's `pypi`
    environment exists with a required reviewer**, `publish` waits for its approval, and
    `github-release` waits for the same environment and does not depend on `publish`, so a
    declined PyPI still leaves you a Release. Without that environment both jobs run straight
@@ -230,6 +244,18 @@ workflow directory the platform reads, so those two pins rot here until somebody
 A rendered overlay ships its own `dependabot.yml` and keeps itself current from then on;
 what this line is about is the state every *new* overlay starts from. Check them here, at
 the release that publishes the template.
+
+**The project workflow's pin, and what the first tag unlocks.** There is a second sha-pinned
+template now: `src/keelline/templates/project/keelline.yml`, the caller `keelline init` renders
+into an adopting project's `.github/workflows/`. Its `uses:` line is not pinned in the tree —
+the sha is filled in at render time, and it is the commit of the *released* Keelline that did
+the rendering, read off this repository's own `v*` tags. So nothing here rots, and nothing here
+needs checking at a release; what a release changes is whether the workflow can be written at
+all. Before the first tag `init` finds no released commit to name, reports the workflow skipped
+with that reason, and writes nothing into `.github/` — which means every project initialised
+before the first release carries no CI caller and no `[ci] ref`, and gets both when `keelline
+upgrade` ships. The first tag is the event that changes that, and it changes it for new
+projects only.
 
 ## 5. If something goes wrong
 

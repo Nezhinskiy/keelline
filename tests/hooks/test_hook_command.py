@@ -14,7 +14,8 @@ import pytest
 
 from keelline.guards.hygiene import LEAD
 from keelline.hooks.api import Decision, Handler, HookEvent, HookResult, Policy
-from keelline.hooks.commands import _output_cap, run_hook
+from keelline.hooks.commands import LINKED, _output_cap, run_hook
+from tests.floor import floor_env
 from tests.gitfixture import git
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +60,7 @@ def hook(
         "PYTHONPATH": str(ROOT / "src"),
         "CLAUDE_PROJECT_DIR": str(cwd),
         "KEELLINE_CONFIG": str(cwd / "no-machine.toml"),
+        **floor_env(),
     }
     if data is not None:
         env["CLAUDE_PLUGIN_DATA"] = str(data)
@@ -100,6 +102,33 @@ def test_a_broken_repository_config_on_pre_tool_use_refuses(tmp_path: Path) -> N
     )
     completed = hook("PreToolUse", json.dumps({"hook_event_name": "PreToolUse"}), tmp_path)
     assert completed.returncode == 2
+
+
+@pytest.mark.parametrize("target", ["regular-file", "/dev/zero"])
+@pytest.mark.parametrize(
+    ("event", "code", "verdict"),
+    [("PreToolUse", 2, "refused"), ("SessionStart", 0, "continuing open")],
+)
+def test_a_symlinked_config_gets_one_named_verdict_whatever_it_points_at(
+    tmp_path: Path, target: str, event: str, code: int, verdict: str
+) -> None:
+    # The presence check followed the link: one to a regular file reached the loader's refusal
+    # and printed `internal error: PathEscape`, one to `/dev/zero` read as no keelline.toml at
+    # all and ran every handler with no project configuration. Both now meet the rule by name,
+    # with the verdict a keelline.toml that does not load gets on that event. Mutation
+    # (declared): the link check dropped -> the regular file is an internal error again and
+    # `/dev/zero` exits 0 with the handlers' output.
+    project = tmp_path / "project"
+    project.mkdir()
+    if target == "regular-file":
+        (tmp_path / "real.toml").write_text(CONFIG, encoding="utf-8")
+        (project / "keelline.toml").symlink_to(tmp_path / "real.toml")
+    else:
+        (project / "keelline.toml").symlink_to(target)
+    completed = hook(event, json.dumps({"hook_event_name": event}), project)
+    assert completed.returncode == code
+    assert completed.stdout == ""
+    assert completed.stderr == f"{LINKED}; {verdict}\n"
 
 
 def test_argv_names_the_event_even_when_stdin_spells_it_differently(tmp_path: Path) -> None:

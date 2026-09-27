@@ -9,6 +9,8 @@ from keelline.cli import build_parser, run
 from keelline.release.commands import register
 from keelline.release.versions import MalformedSource, check, collect, pending_fragments
 
+ROOT = Path(__file__).resolve().parents[2]
+
 # The fragment predicate reads the types towncrier itself is configured with, so a fixture
 # repository has to declare them exactly as the real one does.
 PYPROJECT = """[project]
@@ -151,8 +153,8 @@ def test_a_missing_version_key_reads_as_none(tmp_path: Path) -> None:
 def test_the_cli_command_exits_one_on_version_drift(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # CI runs the success path on every build, so exit 1 — C6's only user-facing surface —
-    # is reached by nothing else.
+    # CI runs the success path on every build, so exit 1 — the version check's only
+    # user-facing surface — is reached by nothing else.
     root = repo(
         tmp_path, pyproject="0.1.0", init="0.2.0", claude="0.1.0", codex="0.1.0", changelog="0.1.0"
     )
@@ -352,6 +354,25 @@ def test_a_malformed_source_is_reported_with_its_filename(
     assert kind in str(raised.value)
 
 
+# Past `json`'s own depth on every supported interpreter: 3.11 stops near 1000, 3.12 and 3.13
+# between 5000 and 10000 (measured on 3.11.15, 3.12.13 and 3.13.0).
+JSON_DEPTH = 100_000
+
+
+@pytest.mark.parametrize("name", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
+def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, name: str) -> None:
+    # `json` answers nesting past its depth with `RecursionError`, not `JSONDecodeError`, and the
+    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Mutation
+    # (declared): the language chosen without the source's name -> "TOML", and this reddens.
+    root = _repo(tmp_path)
+    (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
+    with pytest.raises(RecursionError):
+        json.loads((root / name).read_text())
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(f"{name} is not valid JSON: ")
+
+
 @pytest.mark.parametrize(
     "body",
     ['package = "not-a-list"\n', "package = [1, 2]\n"],
@@ -366,6 +387,45 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
     with pytest.raises(MalformedSource) as raised:
         check(root)
     assert "uv.lock" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "shape"),
+    [
+        (".claude-plugin/plugin.json", "[]", "its top level is not an object"),
+        (".codex-plugin/plugin.json", '"0.1.0"', "its top level is not an object"),
+        ("pyproject.toml", 'project = "x"\n', "its project is not a table"),
+        (".claude-plugin/marketplace.json", "[]", "its top level is not an object"),
+        (".claude-plugin/marketplace.json", '{"plugins": ["version"]}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", '{"plugins": "x"}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", "{not json", "is not valid JSON"),
+    ],
+    ids=[
+        "claude-manifest-list",
+        "codex-manifest-string",
+        "project-not-a-table",
+        "marketplace-list",
+        "marketplace-entry-string",
+        "marketplace-plugins-string",
+        "marketplace-not-json",
+    ],
+)
+def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, body: str, shape: str
+) -> None:
+    # The lockfile's class, in every other source: valid JSON or TOML of the wrong shape decodes
+    # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
+    # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
+    # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
+    # passed in silence. Mutations (oracle): "a manifest whose top level is not an object is read
+    # with .get" and "the marketplace reads a plugins value that is not a list of objects".
+    root = _repo(tmp_path)
+    (root / name).write_text(body)
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(name) and shape in str(raised.value), raised.value
+    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert name in capsys.readouterr().err
 
 
 def test_the_cli_command_exits_one_on_a_malformed_source(
@@ -384,9 +444,9 @@ def test_the_cli_command_exits_one_on_a_malformed_source(
 def _at(tmp_path: Path, version: str) -> Path:
     """The module's `_repo` with every source at one version.
 
-    The plan named a `_repository(tmp_path, version=…)` fixture this module has never had;
-    `_repo` is the one that exists and it takes a keyword per source, so the two tests below
-    say the version once through here rather than five times each.
+    There is no `_repository(tmp_path, version=…)` fixture in this module; `_repo` is the one
+    that exists and it takes a keyword per source, so the two tests below say the version once
+    through here rather than five times each.
     """
     return _repo(
         tmp_path,
@@ -448,7 +508,7 @@ def test_the_drift_message_says_what_was_checked_rather_than_inventing_a_version
 
 
 def test_a_tag_with_pending_fragments_is_refused(tmp_path: Path) -> None:
-    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a lane's fragment is
+    # Without `--tag`, pending fragments let CHANGELOG.md lag, because a change's fragment is
     # written before the release assembles it. AT a tag there is nothing left to assemble:
     # a fragment still pending means the changelog the users read is not the one the tag
     # claims. Mutation (declared): skip the fragment check under `tag` -> reddens.
@@ -478,8 +538,9 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Exit 2, the refusal code, and no towncrier anywhere: the comparison is above the runner,
-    # so this walks the registered command end to end without shelling out — which the global
-    # constraints forbid a test to do. The write path stays a unit test over the stub.
+    # so this walks the registered command end to end without shelling out, which no test does —
+    # CONTRIBUTING.md's Tests section routes such calls through a stub runner, and the write
+    # path stays a unit test over the stub in `tests/release/test_notes.py`.
     root = _at(tmp_path, "1.2.3")
     argv = ["release", "notes", "--version", "1.3.0", "--root", str(root)]
     assert run(argv, parser=build_parser([register])) == 2
@@ -502,9 +563,9 @@ def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_reco
 def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
     tmp_path: Path,
 ) -> None:
-    # The other direction, and the one DC5 is for: a tree that carries the three files the
-    # harness executes is a tree that owes a record of them. Without this the guard above could
-    # be narrowed to `if False` and nothing would notice.
+    # The other direction, and the one the record exists for: a tree that carries the three
+    # files the harness executes is a tree that owes a record of them. Without this the guard
+    # above could be narrowed to `if False` and nothing would notice.
     from keelline.release.hashes import HASHED_FILES, RECORD
 
     root = _repo(tmp_path)
@@ -512,3 +573,12 @@ def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missin
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
     assert check(root) == [f"{RECORD} is missing; run `keelline release hashes`"]
+
+
+def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
+    # `keelline.REPOSITORY_SLUG` and `keelline.REPOSITORY_URL` sit in
+    # `src/keelline/__init__.py` beside `__version__`; `_INIT`'s regex is anchored on
+    # `__version__` alone, so the two new lines must not change what this reads.
+    from keelline import __version__
+
+    assert collect(ROOT)["src/keelline/__init__.py"] == __version__

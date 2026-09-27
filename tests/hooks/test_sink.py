@@ -58,7 +58,7 @@ def test_a_relative_data_root_is_no_sink_at_all(
 def test_codex_names_the_data_directory_differently_and_still_gets_a_durable_sink(
     tmp_path: Path,
 ) -> None:
-    # `PLUGIN_DATA` is Codex's name for `CLAUDE_PLUGIN_DATA` (S1), and it was the arm nothing
+    # `PLUGIN_DATA` is Codex's name for `CLAUDE_PLUGIN_DATA` (measured), and it was the arm nothing
     # asserted: every other row here passes the Claude Code name, so deleting the fallback
     # reddened nothing. Coverage could not see it either — the row above evaluates both operands
     # with `{}`, so the line and both its branch arms were already exercised. The consequence is
@@ -90,7 +90,7 @@ def test_a_payload_with_no_session_id_gets_a_segment_nothing_can_precompute(
 ) -> None:
     # `UNKEYED_SESSION` was `""`, so the session segment was `sha256("")` — a hex pair anything
     # can work out in advance. With a data root the environment names, that made the unkeyed
-    # lane the one direction a read out of this tree could be used in: plant a file at the known
+    # segment the one direction a read out of this tree could be used in: plant a file at the known
     # pair and a `once_key` handler is silenced before it ever runs.
     #
     # Per process now, so `once_key` degrades to "every invocation" for a payload with no
@@ -140,7 +140,7 @@ def test_a_hostile_segment_never_reaches_the_filesystem_walk(tmp_path: Path) -> 
 
 
 def test_a_diagnostic_never_carries_a_payload_verbatim(tmp_path: Path) -> None:
-    # §5.3: "never raw stdin". A handler's exception message can quote a repository's bytes, so
+    # The never-raw-stdin rule. A handler's exception message can quote a repository's bytes, so
     # every FIELD is capped before serialisation — capping the serialised line instead cuts
     # inside whichever field sorts first, and `json.loads` then raises on the record `doctor`
     # is supposed to read.

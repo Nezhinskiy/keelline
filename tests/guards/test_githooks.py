@@ -14,6 +14,7 @@ from keelline.errors import Refusal
 from keelline.guards.commit import offending_lines
 from keelline.guards.githooks import HOOK_MARKER, HOOK_NAME, hooks_dir, install, uninstall
 from tests import gitfixture
+from tests.floor import floor_env
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -37,9 +38,16 @@ def _scrubbed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.skip("a system-wide core.hooksPath points these tests outside tmp_path")
 
 
-def env(tmp_path: Path) -> dict[str, str]:
-    # A `keelline` shim on PATH, so the hook's first branch is the one exercised — the same
-    # branch a `uv tool install` user takes. The shim runs this checkout's package.
+def launching(tmp_path: Path) -> dict[str, str]:
+    """What this module layers on `tests/gitfixture.py`'s sealed environment.
+
+    A `keelline` shim leading `PATH`, so the hook's first branch is the one exercised — the same
+    branch a `uv tool install` user takes. The shim runs this checkout's package, and it has to
+    be first because the `git commit` below runs the commit-msg hook this test just installed,
+    and that hook is what invokes `keelline`. The suite's floor under the product's own `git`
+    (`tests/floor.py`) is layered on too: git hands it on to the hook, and the hook to that
+    `keelline`.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     shim = bin_dir / "keelline"
@@ -49,15 +57,12 @@ def env(tmp_path: Path) -> dict[str, str]:
             encoding="utf-8",
         )
         shim.chmod(0o755)
-    # `tests/gitfixture.py`'s sealed environment plus the one difference that is this module's
-    # own: `PATH` leads with the shim, because the `git commit` below has to run the
-    # commit-msg hook this test just installed, and that hook is what invokes `keelline`.
-    return gitfixture.env(tmp_path, PATH=f"{bin_dir}:{os.environ.get('PATH', '')}")
+    return {"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", **floor_env()}
 
 
 def git(tmp_path: Path, root: Path, *args: str) -> str:
     """The shared fixture `git`, given this module's shim `PATH` and its `tmp_path` as `HOME`."""
-    return gitfixture.git(root, *args, home=tmp_path, PATH=env(tmp_path)["PATH"])
+    return gitfixture.git(root, *args, home=tmp_path, **launching(tmp_path))
 
 
 def repo(tmp_path: Path) -> Path:
@@ -84,7 +89,7 @@ def committing(tmp_path: Path, root: Path, message: str) -> subprocess.Completed
     # `run_git`: the hook under test is what rejects this commit, so the exit code is the
     # subject and not a failure.
     return gitfixture.run_git(
-        root, "commit", "-q", "-m", message, home=tmp_path, PATH=env(tmp_path)["PATH"]
+        root, "commit", "-q", "-m", message, home=tmp_path, **launching(tmp_path)
     )
 
 
@@ -176,7 +181,8 @@ def test_a_stray_local_hook_is_refused_even_with_no_hook_at_the_name(tmp_path: P
 
 def test_the_hook_says_what_it_stripped(tmp_path: Path) -> None:
     # The source hook sent the count to `/dev/null`; a rewritten message nobody is told about
-    # is the shape Premise 12 is about. Behaviour 1 of the four the hook body owes.
+    # is a silent edit of the author's text, which the strip must never be. Behaviour 1 of the
+    # four the hook body owes.
     root = repo(tmp_path)
     install(root)
     completed = committing(tmp_path, root, TRAILER)
@@ -268,7 +274,7 @@ def test_uninstall_promotes_whatever_sits_at_local_even_a_stranger(tmp_path: Pat
     # hook is absent, so one dropped beside an installed hook is checked by nothing — and the
     # installed hook has been `exec`ing it on every commit since, which is the larger fact.
     # `uninstall` restores it rather than pretending it can tell it from one install preserved.
-    # Changing that is the `setup` lane's call, not this module's; this pins today's answer so
+    # Changing that is `setup`'s call, not this module's; this pins today's answer so
     # a change to it is a decision somebody makes rather than a diff nobody notices.
     root = repo(tmp_path)
     installed = install(root)
@@ -311,7 +317,7 @@ def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
 
 
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:
-    # §7.2: `git rev-parse --git-path hooks` rather than `<common-dir>/hooks` computed by hand,
+    # `git rev-parse --git-path hooks` rather than `<common-dir>/hooks` computed by hand,
     # which is a directory git never reads when husky has pointed core.hooksPath elsewhere.
     root = repo(tmp_path)
     git(tmp_path, root, "config", "core.hooksPath", ".husky")
@@ -319,7 +325,7 @@ def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:
 
 
 def test_install_creates_a_hooks_directory_core_hooks_path_only_names(tmp_path: Path) -> None:
-    # The enumerated write (D14) that is easy to miss: `core.hooksPath` may name a directory
+    # The enumerated write that is easy to miss: `core.hooksPath` may name a directory
     # nobody has made yet — husky's `.husky/` before `husky install` — and `write_atomically`'s
     # `parent.mkdir(parents=True)` is what makes the hook land there rather than raise.
     root = repo(tmp_path)
@@ -339,8 +345,8 @@ def test_hooks_dir_refuses_where_git_cannot_answer(tmp_path: Path) -> None:
     # And the refusal says so in this module's own words. `rev-parse`'s stderr is
     # repository-authored — here `fatal: not a git repository …`, and for a `core.hooksPath` git
     # dislikes it quotes the config VALUE — so piping it into the message puts bytes a repository
-    # chose in front of a person. `commit.commits_in` carries the same reasoning and was fixed in
-    # this lane's own review; this one was not, and the assertion is what makes that visible.
+    # chose in front of a person. `commit.commits_in` carries the same reasoning and was fixed
+    # first; this one was not, and the assertion is what makes that visible.
     message = str(raised.value)
     assert "not a git repository" not in message
     assert "fatal" not in message

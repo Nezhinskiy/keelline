@@ -12,7 +12,8 @@ the list of names it publishes, with the argument for each beside it. That list 
 per area. These three checks are not.
 
 `keelline.scaffold` is not here. It publishes from the package rather than from an `api.py` —
-contract C2, frozen — and `tests/scaffold/test_surface.py` holds it to its own shape.
+the scaffold engine's contract, frozen — and `tests/scaffold/test_surface.py` holds it to its
+own shape.
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ def _defined_here(tree: ast.AST) -> set[str]:
 def test_every_area_with_a_surface_is_walked() -> None:
     # The floor for the three parametrisations below: a `glob` that stopped matching would turn
     # all three into zero test cases, and a suite that collects nothing reports nothing. Pinned
-    # to the exact ten, because an area gaining or losing a published surface is a decision.
+    # to the exact eleven, because an area gaining or losing a published surface is a decision.
     assert AREAS == [
         "attach",
         "docs",
@@ -89,6 +90,7 @@ def test_every_area_with_a_surface_is_walked() -> None:
         "ledger",
         "memory",
         "overlay",
+        "project",
         "release",
         "setup",
     ], AREAS
@@ -99,7 +101,7 @@ def _surface(area: str) -> ModuleType:
 
 
 @pytest.mark.parametrize("area", AREAS)
-def test_the_export_list_is_exactly_what_the_module_imports_from_this_lane(area: str) -> None:
+def test_the_export_list_is_exactly_what_the_module_imports_from_its_area(area: str) -> None:
     # `assert getattr(surface, name) is not None` was the whole of this check in the first
     # module that had one, and every attribute a module actually has is not None — it could not
     # fail for any `__all__` the module is able to import. What the contract needs asserting is
@@ -142,7 +144,7 @@ def test_every_type_the_surface_names_in_a_signature_is_on_the_surface(area: str
     # nobody added to either side: one is a list a person maintains, and the other compares the
     # module against itself. `memory.link` was given a `Links` return type by the commit that
     # taught it to withdraw the harness link, and neither half noticed — leaving `attach`, the
-    # lane that binds and links, able to hold the value and unable to declare it, which is the
+    # area that binds and links, able to hold the value and unable to declare it, which is the
     # one thing a surface exists to prevent.
     #
     # Only in a *signature*: `raise` is not one, so a class reachable only by writing it down —

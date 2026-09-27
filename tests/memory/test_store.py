@@ -81,7 +81,7 @@ def a_machine_file(base: Path, overlay: Path | None) -> Path:
 
 
 def a_tree(root: Path, overlay: Path, project: str = "widget") -> None:
-    """The five-link tree §6.3 has `attach` create: `developer` into the overlay's common
+    """The five-link tree `attach` creates: `developer` into the overlay's common
     notes, the project-scoped groups into its own."""
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
@@ -169,7 +169,7 @@ def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_o
     # repository data" — which opens the gate with no trust record at all and skips
     # `trust.wrap` on the way out. In `local-only` and `in-repo` the notes sit in the
     # repository by construction, so groups landing outside it is a resolution that went wrong
-    # rather than an overlay. `overlay` is the one mode where outside is the design (§6.2) and
+    # rather than an overlay. `overlay` is the one mode where outside is the design and
     # keeps its answer, or the machine owner's own notes would be gated behind a trust prompt.
     root = tmp_path / "project"
     root.mkdir(parents=True)
@@ -229,10 +229,10 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
 def test_overlay_mode_refuses_a_symlinked_paths_memory_into_another_project(
     tmp_path: Path,
 ) -> None:
-    # §9.1 check 1: in overlay mode `paths.memory` must itself be a real directory holding one
-    # link per group. A group reached *through* a symlinked `paths.memory` is not itself a
-    # symlink, so the per-group check (§9.1 check 3, `permitted_roots`) never sees it — the
-    # shape check is what has to catch this, and it must fire regardless of mode.
+    # The shape check: in overlay mode `paths.memory` must itself be a real directory holding
+    # one link per group. A group reached *through* a symlinked `paths.memory` is not itself a
+    # symlink, so the per-group target check (`permitted_roots`) never sees it — the shape
+    # check is what has to catch this, and it must fire regardless of mode.
     root = tmp_path / "project"
     a_repo(root)
     overlay = an_overlay(tmp_path, projects=("widget", "secret-client"))
@@ -449,7 +449,7 @@ def test_a_relocated_worktree_private_dir_with_a_matching_back_pointer_is_still_
     assert refusal_reason(hostile, config) is not None
 
 
-# --- the C3 surface's own hazard, asserted as behaviour ---------------------------------------
+# --- the memory surface's own hazard, asserted as behaviour -----------------------------------
 #
 # Two tests here used to assert on *prose*: `"trust.wrap" in refusal_reason.__doc__`, and the
 # same two substrings in `inspect.getsource(Store)`. They were green the whole time the
@@ -473,8 +473,11 @@ def test_a_refusal_reason_carries_the_repositorys_own_text(tmp_path: Path) -> No
     (hostile / "docs" / "memory").mkdir(parents=True)
     reason = refusal_reason(hostile, config)
     assert reason is not None
-    assert payload in reason, "the message is built out of the raw `memory.groups` entry"
-    assert "\n" in reason, "and a TOML multi-line string carries its newlines through"
+    assert payload in reason, "the message is built out of the `memory.groups` entry"
+    # A TOML multi-line string carries its newlines into the entry, and the reason names the
+    # entry through `quoted`: the prose arrives whole, and no line of it stands on its own.
+    assert "\n" not in reason
+    assert repr(f"developer\n\n{payload}") in reason
 
 
 def test_store_unavailable_carries_the_repositorys_own_text(tmp_path: Path) -> None:
@@ -526,15 +529,15 @@ def test_a_store_resolved_with_no_machine_file_says_so(tmp_path: Path) -> None:
 #
 # `_git` returned `None` for an `OSError`, a non-zero exit *and* an empty stdout alike, so every
 # caller read a broken `git` as a fact about the repository. The review machine hit exactly that
-# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `_GIT_ENV_KEEP`
+# state — `/usr/bin/git` was the Xcode shim with an unaccepted licence and `GIT_ENV_KEEP`
 # scrubs `DEVELOPER_DIR` — and was told to run `keelline attach`.
 
 
 def _git_that_cannot_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("git: command not found")
+    def refuse(*args: object, **kwargs: object) -> tuple[int, str]:
+        return -1, ""  # `git_run`'s own answer for a `git` that could not be launched
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", refuse)
+    monkeypatch.setattr("keelline.memory.store.git_run", refuse)
 
 
 def test_a_git_that_cannot_run_is_not_reported_as_an_unbound_overlay(
@@ -604,7 +607,7 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The review machine's own shape, reproduced: a `git` that *runs* and fails everything —
-    # the Xcode shim with an unaccepted licence, reached because `_GIT_ENV_KEEP` scrubs
+    # the Xcode shim with an unaccepted licence, reached because `GIT_ENV_KEEP` scrubs
     # `DEVELOPER_DIR`. Exit codes alone cannot tell this from a correct "no such remote" (2) or
     # "not a git repository" (128), which is why the discriminator is a second question that
     # needs no repository.
@@ -616,10 +619,10 @@ def test_a_git_that_exits_non_zero_for_everything_is_unavailable_not_unbound(
     machine = a_machine_file(tmp_path, overlay)
     real = subprocess.run
 
-    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(args, 69, "", "You have not agreed to the licence\n")
+    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 69, b"", b"You have not agreed to the licence\n")
 
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", broken)
+    monkeypatch.setattr("keelline.gitenv.subprocess.run", broken)
     with pytest.raises(GitUnavailable):
         resolve(root, config, machine=machine)
-    monkeypatch.setattr("keelline.memory.store.subprocess.run", real)
+    monkeypatch.setattr("keelline.gitenv.subprocess.run", real)

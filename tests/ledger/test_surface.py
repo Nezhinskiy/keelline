@@ -6,16 +6,15 @@ from __future__ import annotations
 import keelline.ledger.api as ledger
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality, for the reason tests/guards/test_surface.py gives: a subset let an export
     # arrive unnoticed. No mutation entry: the mutation is adding an export (two lines).
     # Measured by hand instead — re-exporting `write.file_entry` reddens this test and this
     # test alone.
     #
-    # Thirteen names left in the wave-3 refactor pass: the `assess` vocabulary and the writing
-    # half with the three return types that came with it. Nothing outside this area imports any
-    # name on this list — the six below included — so what stays, stays on the argument written
-    # beside it in `api.py`: the two artifacts this area leaves on a project's disk.
+    # Outside this area, `keelline.assess.gates` imports `bugs_gate` and
+    # `keelline.project.templates` imports `render_index`; the other names stay on the argument
+    # written beside them in `api.py`: the two artifacts this area leaves on a project's disk.
     required = {
         # the entry file's grammar, and the error a file that will not parse raises
         "Entry",
@@ -26,5 +25,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # overwriting a file a person wrote
         "render_index",
         "is_generated_index",
+        # the bugs gate keelline.assess.gates runs, bugs check's own function
+        "bugs_gate",
     }
     assert required == set(ledger.__all__)

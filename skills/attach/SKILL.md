@@ -11,7 +11,10 @@ root comes from the machine configuration, not from what is typed here.
 
 1. Run `keelline attach --store PATH --check` first. It reports whether the overlay's record
    binds this repository's remote, and which allow rules and hook entries would be added. It
-   writes nothing.
+   writes nothing. If the report counts memory groups that are real directories, stop: the
+   notes have to move into the overlay first — each group to
+   `<overlay>/projects/<name>/memory/<group>`, the shared group to `common/memory`. Say the
+   count and wait; moving notes is the owner's act, never yours.
 2. Relay that diff to the user and wait for an answer. The command itself refuses to widen a
    permission without `--yes`, so this step is how a person comes to give it — not what stands
    in for it. Once they agree, run `keelline attach --store PATH --yes`; it merges the rules,

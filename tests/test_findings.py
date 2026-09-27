@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from keelline.findings import LISTED_LIMIT, Finding, labels, listed
+from keelline.printed import UNPRINTABLE
+from tests.crafted import CRAFTED, assert_never_raw
 
 
 def test_a_label_is_the_path_the_line_and_the_rule_and_never_the_detail() -> None:
@@ -28,3 +32,28 @@ def test_labels_renders_findings_through_the_same_cap() -> None:
     assert labels(findings).startswith("p0.md:0 [r], ") and labels(findings).endswith(
         ", and 1 more"
     )
+
+
+def test_a_path_outside_the_grammar_never_reaches_a_label_raw() -> None:
+    # The label is printed on stdout by `bugs check`, `docs check`, `plan check` and
+    # `memory refs`, and in CI a line that starts `::error::` is an instruction to the runner.
+    # Mutation: print `self.path` in `labelled` — this reddens.
+    label = Finding("dead-link", f"docs/{CRAFTED}.md", 3, "d").label
+    assert_never_raw(label)
+    assert label == f"{UNPRINTABLE}:3 [dead-link]"
+    assert labels([Finding("dead-link", CRAFTED, None, "d")]) == f"{UNPRINTABLE} [dead-link]"
+
+
+@pytest.mark.parametrize("path", ["docs/Design Notes.md", "docs/заметки.md"])
+def test_an_ordinary_name_outside_the_ascii_grammar_is_withheld_too(path: str) -> None:
+    # The grammar is ASCII-only on purpose: a summary line is read by CI and by agents, and a
+    # name that holds spaces can carry readable prose into it. So these print as the stand-in,
+    # and `--json` names them. Pinned, because it is a choice and not an accident.
+    assert Finding("dead-link", path, None, "d").label == f"{UNPRINTABLE} [dead-link]"
+
+
+def test_a_caller_without_json_names_its_own_stand_in() -> None:
+    # `assess` writes labels into its own `--json` and its inventory file, where "see --json"
+    # would point at the very text the reader holds. Mutation: ignore `withheld` in `labelled`
+    # — this reddens.
+    assert Finding("r", "a b.md", 2, "d").labelled("<elsewhere>") == "<elsewhere>:2 [r]"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S10 (§14): a hostile clone, run end to end against a plugin root.
+"""The clone-to-exfiltration scenario: a hostile clone, run end to end against a plugin root.
 
     python3 scripts/smoke_exfiltration.py --plugin-root R --fixture F --scratch S
 
@@ -14,9 +14,9 @@ pipeline prints, so the first three rows show the note reaching a session when t
 trusted it, then not reaching one after the record lapses, then not reaching one after the
 record is deleted. A row that could only ever have been green is not evidence.
 
-The MCP arm of S10 — `memory_search` under an explicit `project=` — is not run: the `mcp`
-package is not in wave 3, and the run says so in its own output rather than leaving a silent
-gap in the scenario.
+The scenario's MCP arm — `memory_search` under an explicit `project=` — is not run: Keelline
+ships no MCP server yet (the README lists the memory MCP server under "Not yet"), and the run
+says so in its own output rather than leaving a silent gap in the scenario.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from smoke_hooks import fixture_repository
+from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
 DELIMITER = "<<<keelline:repository-data"
@@ -144,11 +144,7 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
 
 def hostile_env(planted: Planted, plugin_root: Path) -> dict[str, str]:
     """The environment the clone's committed `env` block produces, materialised."""
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
-    }
+    env = developer_free_env()
     env.update(
         {
             "HOME": str(planted.home),
@@ -225,7 +221,7 @@ def main(argv: list[str]) -> int:
     )
 
     # The dispatcher's own SessionStart entry, under the lapsed record. Measured rather than
-    # predicted: the plan expected a `worktree-link` line reporting the store as not linked,
+    # predicted: the expectation was a `worktree-link` line reporting the store as not linked,
     # and this clone never produces one — `memory.hooks._link_worktree` speaks for a LINKED
     # WORKTREE, and the clone is a main checkout with no link ever created, so the handler's
     # own answer is "nothing to do" and the envelope carries no context at all. That is the
@@ -310,10 +306,10 @@ def main(argv: list[str]) -> int:
     }
     contained_env.pop("KEELLINE_PYTHON_CANDIDATES", None)
     # Both policies, and the exit codes are NOT the same — asserting "the wrapper refused, so it
-    # exited non-zero" would have been wrong about `open`, which is the whole of D11: a fault the
-    # wrapper can see prints its token and then degrades to 0 under `open` and refuses with 2
-    # under `closed`. What both rows share is the token, the reason inside it, and that the
-    # planted interpreter never ran.
+    # exited non-zero" would have been wrong about `open`, which is the whole of the two failure
+    # policies: a fault the wrapper can see prints its token and then degrades to 0 under `open` and
+    # refuses with 2 under `closed`. What both rows share is the token, the reason inside it, and
+    # that the planted interpreter never ran.
     degraded = through_wrapper(
         copied, ["open", "hook", "SessionStart"], contained_env, planted.clone
     )
@@ -397,7 +393,7 @@ def main(argv: list[str]) -> int:
         f"state={state!r}",
     )
 
-    print("skip  memory_search under an explicit project= — the mcp package is not in wave 3")
+    print("skip  memory_search under an explicit project= — Keelline does not depend on mcp")
     # The floor this script had none of. Six of its eight rows assert an ABSENCE, and a run
     # that executed one row prints the same green last line as a run that executed all eight —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still

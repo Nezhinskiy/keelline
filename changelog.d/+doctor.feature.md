@@ -1,11 +1,11 @@
-`keelline doctor` reports on an installation: fifteen checks covering the project's
+`keelline doctor` reports on an installation: sixteen checks covering the project's
 configuration, the plugin's hook wrapper, the overlay binding and the shape of the memory path,
 every hook entry with its provenance, the budgets a preset clamps, whether each injection bundle
 still fits its session-start slots, the overlay's commit-time secret scan, the note store, the
 last reasons a hook failed, and an environment variable that is set and quietly ignored. It
 writes nothing and repairs nothing: every finding carries the command that would fix it, and
-`--json` carries all fifteen. It exits 1 when any check is red and 0 otherwise — three checks
-cannot be answered by this build and say so rather than guessing.
+`--json` carries all sixteen. It exits 1 when any check is red and 0 otherwise — a check that
+cannot be answered says so rather than guessing, and a `skip` never reaches the exit code.
 
 It holds a repository's bytes to the same rule as the rest of Keelline, because its `--json` is
 relayed to a model. A hook entry is vouched for by the overlay this repository is bound to and

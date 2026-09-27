@@ -9,7 +9,8 @@ second a high-severity ledger entry rejected as a stale cache.
 
 Warn-only by construction: the tool has already run, and the verdict this guards is the
 human's next sentence, not the command. Once per context, which the dispatcher's `once_key`
-owns (see `hooks.py` and Premise 2 of the lane's plan for what that currently means).
+owns (see `hooks.py`, and `keelline.hooks.dispatch`, which decides and banks the one delivery, for
+what that currently means).
 
 Matching an actual pytest invocation, not the six letters "pytest" appearing anywhere in the
 command text, uses the shared scanner's tokens and segments: an argv0-anchored check per
@@ -17,9 +18,9 @@ segment, resolved past a leading shell assignment (`FOO=1 pytest`) and a small, 
 wrapper-prefix set (`env cmd`, `uv run cmd`). Under-reporting an unrecognised launcher is the
 safe direction for a warn-only note, so the set only grows when a real shape is reproduced.
 
-Which harness field says a run was red is Premise 1's finding: the Claude Code hooks
-reference gives the Bash `tool_response` as `stdout`, `stderr`, `interrupted` and `isImage`
-with no exit code, and a non-zero exit arriving on `PostToolUseFailure` as
+Which harness field says a run was red is read from the documentation, not guessed: the Claude
+Code hooks reference gives the Bash `tool_response` as `stdout`, `stderr`, `interrupted` and
+`isImage` with no exit code, and a non-zero exit arriving on `PostToolUseFailure` as
 `error: "Exit code N\\n…"`. `red_exit` reads both that shape and a `tool_response.exit_code`,
 so the notice is keyed on whichever the harness sends rather than on a field one lacks.
 
@@ -32,13 +33,12 @@ from __future__ import annotations
 import importlib.util
 import re
 import struct
-import subprocess
 from collections.abc import Iterable, Mapping
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from keelline.gitenv import scrubbed_env
+from keelline.gitenv import answer_lines, git_run
 from keelline.guards import bashscan
 from keelline.guards.roots import contained_roots
 
@@ -54,9 +54,10 @@ _PYTHON_ARGV0_PREFIX = "python"
 # code is then taken for the run's own. The documented shape puts `Exit code N` at the very
 # START of `error`, which is what the pair is protecting.
 _EXIT_CODE_ERROR = re.compile(r"\AExit code (\d+)")
-# Its own bound (D7), not `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local,
-# argument-free, read-only" queries, and `git status --porcelain` walks the worktree. A
-# timeout here is `None`, "could not answer", which `test hygiene` turns into a refusal.
+# A named cap (CONTRIBUTING.md#named-caps) of its own, and no shipped file changes with it. Not
+# `gitenv.GIT_TIMEOUT_SECONDS`: that constant covers "local, argument-free, read-only" queries, and
+# `git status --porcelain` walks the worktree. A timeout here is `None`, "could not answer", which
+# `test hygiene` turns into a refusal.
 STATUS_TIMEOUT_SECONDS = 20
 # PEP 552: every .pyc opens with a 4-byte magic, then a 4-byte little-endian flags word, then
 # four more bytes whose MEANING is decided by bit 0 of those flags.
@@ -173,26 +174,18 @@ def red_exit(raw: Mapping[str, Any]) -> int | None:
 
 def _dirty_count(root: Path) -> int | None:
     """Uncommitted changes, or `None` when git could not answer. Never `0` for the latter:
-    the two mean opposite things to a person deciding whether to trust a red run."""
-    try:
-        # S603/S607: list form, never `shell=True`, so nothing is re-parsed by a shell. `root`
-        # is the project root the dispatcher resolved or `--root` resolved, not a repository
-        # value, and `--` closes the argument list so no pathspec can be smuggled in. `git` is
-        # resolved through `PATH` for the reason `gitenv` gives: the machine owner's `git` is
-        # the one that must answer.
-        completed = subprocess.run(  # noqa: S603 - see the comment above
-            ["git", "-C", str(root), "status", "--porcelain", "--"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=STATUS_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.TimeoutExpired):
+    the two mean opposite things to a person deciding whether to trust a red run.
+
+    Through `gitenv.git_run`: `root` is the project root the dispatcher resolved or `--root`
+    resolved, not a repository value, and `--` closes the argument list so no pathspec can be
+    smuggled in. `status --porcelain` prints a name raw under `core.quotePath=false`, in
+    whatever bytes the disk holds it, and `git_run` reads those losslessly; counted by the
+    lines git wrote (`answer_lines`), a name holding a line separator is still one entry.
+    """
+    code, out = git_run(root, "status", "--porcelain", "--", timeout=STATUS_TIMEOUT_SECONDS)
+    if code != 0:
         return None
-    if completed.returncode != 0:
-        return None
-    return sum(1 for line in completed.stdout.splitlines() if line.strip())
+    return sum(1 for line in answer_lines(out) if line.strip())
 
 
 def _recorded_source_mtime(pyc: Path) -> int | None:

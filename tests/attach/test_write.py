@@ -1,9 +1,9 @@
 """What `keelline attach` writes, and the three refusals it owes before it writes anything.
 
-DP3's third rule is here: a write that would widen a permission refuses without an explicit
-confirmation. It is a parameter and a `Refusal` rather than a step in a document, because in
-this harness the CLI is driven by a model that has read the repository, and a gate enforced by
-model compliance is not a gate.
+The third of the rules that keep the overlay trusted is here: a write that would widen a permission
+refuses without an explicit confirmation. It is a parameter and a `Refusal` rather than a step in a
+document, because in this harness the CLI is driven by a model that has read the repository, and a
+gate enforced by model compliance is not a gate.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pytest
 
 from keelline import fsops
 from keelline.attach.api import ledger
-from keelline.attach.write import attach
+from keelline.attach.write import GROUP_ESCAPES, REAL_DIRECTORIES, attach
 from keelline.errors import Failure, Refusal
 from keelline.memory.api import PROJECT_RECORD
 from keelline.overlay.api import COMMON_CLAUDE, COMMON_CODEX
@@ -27,7 +27,7 @@ from keelline.scaffold import Style, extract, owned_ids
 
 # The fixture the binding tests already build, reused rather than copied: one spelling of the
 # overlay layout keeps the two modules from drifting apart about what `--store` names.
-from tests.attach.test_binding import _machine, _project_and_store
+from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
 
@@ -70,7 +70,7 @@ def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Pat
     if hooks_path is None:
         # Pinned LOCALLY, and this is not belt-and-braces. `hooks_dir` runs `git` under
         # `gitenv.scrubbed_env()`, which keeps `HOME` deliberately — honouring the machine
-        # owner's global `core.hooksPath` is exactly what this lane now asks for — so a
+        # owner's global `core.hooksPath` is exactly what `attach` asks for — so a
         # developer whose own `~/.gitconfig` sets one would have this fixture answer *their*
         # directory and the case fail for a reason that is nothing to do with the code. `_git`
         # pins only `GIT_CONFIG_GLOBAL`, which the separate `hooks_dir` subprocess never sees.
@@ -124,14 +124,15 @@ def _check_ignore(root: Path, relative: str) -> bool:
 
 
 def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
-    # §6.3: "on a mismatch it refuses unless --trust-remote is given interactively". The
-    # assertion that matters is the second half: snapshot every file under the root before,
-    # expect `Refusal`, and compare the snapshot after. Not one byte changed.
+    # On a mismatch `attach` refuses unless --trust-remote is given interactively. The assertion
+    # that matters is the second half: snapshot every file under the root before, expect `Refusal`,
+    # and compare the snapshot after. Not one byte changed.
     root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
     before = snapshot(root)
-    # The mutation guard for the assertion below, and the Global Constraint that asks for it:
-    # `snapshot` is a walk, so `snapshot(root) == before` passes vacuously the day the walk
-    # stops finding files — and this is a test standing behind a refusal.
+    # The mutation guard for the assertion below, and the rule that asks for it — an assertion
+    # nobody has watched fail advertises coverage it may not have (principle 2): `snapshot` is a
+    # walk, so `snapshot(root) == before` passes vacuously the day the walk stops finding files —
+    # and this is a test standing behind a refusal.
     assert before
     with pytest.raises(Refusal):
         attach(
@@ -147,12 +148,12 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
-    # DP3, and the finding that produced it. The Global Constraints say `attach` writes
-    # `settings.local.json` "only after a printed diff and an explicit confirmation", and an
-    # earlier revision implemented that sentence with nothing at all: the only mechanism was a
-    # Markdown step telling a model to run `--check` first. A repository that says "setup
-    # requires `keelline attach --store <path it names>`" gets a compliant agent to grant it
-    # tool permissions, and no human sees the diff.
+    # The write gate, and the defect that produced it. `attach` writes `settings.local.json` only
+    # after a printed diff and an explicit confirmation, and an earlier revision implemented that
+    # rule with nothing at all: the only mechanism was a Markdown step telling a model to run
+    # `--check` first. A repository that says "setup requires
+    # `keelline attach --store <path it names>`" gets a compliant agent to grant it tool
+    # permissions, and no human sees the diff.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     with pytest.raises(Refusal):
         attach(
@@ -214,7 +215,7 @@ def test_confirmed_merges_the_rules_and_records_each_entry_under_its_own_id(
 
 
 def test_an_entry_the_overlay_stopped_granting_is_taken_back_out(tmp_path: Path) -> None:
-    # I3, walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
+    # Walked end to end: the overlay grants a hook entry, `attach` installs it, the owner
     # deletes it from the overlay, `attach` runs again. The second run adds nothing — no allow
     # rule, no wanted entry — so it used to return the document untouched, leaving a marked
     # entry that still FIRES while the ledger (rebuilt from the overlay) forgot it. `doctor`
@@ -279,7 +280,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
     tmp_path: Path,
 ) -> None:
     # Inherited from `scaffold.apply_entries` rather than re-implemented, and asserted here
-    # because this is the lane whose mistake would delete a developer's own hook.
+    # because this is the command whose mistake would delete a developer's own hook.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, hooks=hooks)
     (root / ".claude").mkdir()
@@ -324,7 +325,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
 
 
 def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
-    # §6.2: projects/<name>/project.toml holds "bound remote URL(s), first-attach date".
+    # projects/<name>/project.toml holds the bound remote URL and the first-attach date.
     import datetime
     import tomllib
 
@@ -378,7 +379,7 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
 
 
 def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path: Path) -> None:
-    # DP4: the ledger lives under .keelline/local/, because the committed manifest would
+    # The ledger lives under .keelline/local/, because the committed manifest would
     # publish a digest of the owner's personal allow rules to collaborators.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
@@ -398,11 +399,10 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
 
 
 def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_path: Path) -> None:
-    # The repository has no `.keelline` line today and the lane that would ship one
-    # (templates/project/) is out of scope, so an earlier revision's confidentiality argument
-    # rested on a file that does not exist. Assert the region exists after attach, and assert
-    # `git check-ignore -q .keelline/local/attach.json` succeeds — not that nothing is tracked,
-    # which passes on a fixture that has committed nothing.
+    # The repository has no `.keelline` line today and nothing under `templates/project/` ships one,
+    # so an earlier revision's confidentiality argument rested on a file that does not exist. Assert
+    # the region exists after attach, and assert `git check-ignore -q .keelline/local/attach.json`
+    # succeeds — not that nothing is tracked, which passes on a fixture that has committed nothing.
     root, store, machine = _attachable(tmp_path)
     assert not _check_ignore(root, LEDGER)
     attach(
@@ -458,8 +458,8 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
 
 
 def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path: Path) -> None:
-    # The whole point of a managed region, and the reason this does not need C2's manifest:
-    # everything outside the two markers comes back out as it went in.
+    # The whole point of a managed region, and the reason this does not need the scaffold engine's
+    # manifest: everything outside the two markers comes back out as it went in.
     root, store, machine = _attachable(tmp_path)
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
     attach(
@@ -503,11 +503,11 @@ def _with_groups(root: Path, listed: str) -> None:
 def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
-    # §7.4 and the Global Constraints' D15: `memory.groups` is repository-authored and reaches
-    # no guard of its own — `config/paths.py` says so in as many words, and names this lane as
-    # the one that has to call the containment itself. The entry decides a directory created
-    # inside the OVERLAY, which is the one tree `attach` trusts, so a `..` in it is refused
-    # rather than created, and refused rather than crashing out as a raw `OSError`.
+    # `memory.groups` is repository-authored (principle 5) and reaches no guard of its own —
+    # `config/paths.py` says so in as many words, and leaves the containment to the module that
+    # consumes the field. The entry decides a directory created inside the OVERLAY, which is the
+    # one tree `attach` trusts, so a `..` in it is refused rather than created, and refused rather
+    # than crashing out as a raw `OSError`.
     #
     # **And refused before the first write**, which is the half this case was missing. The
     # containment was called from `_prepare_store`, which runs after the ignore region, the
@@ -534,8 +534,15 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             runner=FakeRunner(),
             home=tmp_path / "home",
         )
-    # Non-vacuous: this refusal and not one of the five `attach` can raise before it.
-    assert "memory.groups" in str(refusal.value)
+    # Non-vacuous: this refusal and not one of the five `attach` can raise before it, nor the
+    # one below it. `unlinked_groups` refuses the same entry with `MEMORY_GROUP_ESCAPES` --
+    # deliberately a different sentence, because it contains the group against `root` rather
+    # than against the overlay -- so "memory.groups is in the message" no longer says which of
+    # the two fired. The identity does, and it is what keeps the hoisted call proven: without
+    # it this case passed with `_check_groups` deleted, on the never-moved check's refusal.
+    # (`GROUP_ESCAPES` names `memory.groups`, which is what a reader needs from it; asserting
+    # that here would be an assertion about a literal that no behaviour change can redden.)
+    assert str(refusal.value) == GROUP_ESCAPES
     # The entry itself is repository-authored, so it is not quoted back.
     assert "../../escape" not in str(refusal.value)
     assert not (store.parents[2].parent / "escape").exists()
@@ -547,8 +554,8 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
 def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
     tmp_path: Path,
 ) -> None:
-    # The vacuity guard for the snapshot above, and the same one finding 1 and the ledger
-    # refusal carry: a refusal that writes nothing proves nothing if the run had nothing to
+    # The vacuity guard for the snapshot above, and the same one the no-origin refusal and the
+    # ledger refusal carry: a refusal that writes nothing proves nothing if the run had nothing to
     # write. The identical fixture with a group name that stays inside this project's share
     # attaches, and leaves behind every artifact the case above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
@@ -574,7 +581,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
 
 
 def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
-    # §6.3: "idempotent and reversible by detach". A permission list that grows by one copy of
+    # `attach` is idempotent and reversible by `detach`. A permission list that grows by one copy of
     # every rule per attach is the shape this catches.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
@@ -631,8 +638,8 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
 
 
 def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> None:
-    # §6.3: "places Codex rules under .codex/rules/". Kept separate from the Claude settings
-    # merge because the two harnesses fail differently and a shared path would hide which.
+    # `attach` places Codex rules under .codex/rules/. Kept separate from the Claude settings merge
+    # because the two harnesses fail differently and a shared path would hide which.
     root, store, machine = _attachable(tmp_path, codex="# standing rule\n")
     attached = attach(
         root,
@@ -650,8 +657,8 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
 
 
 def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
-    # §12: `doctor` lists every rule with provenance "so one no overlay granted is visible".
-    # attach's own contribution to that is narrower and stricter: it does not touch one.
+    # `doctor` lists every rule with its provenance, so one no overlay granted is visible. attach's
+    # own contribution to that is narrower and stricter: it does not touch one.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text(
@@ -674,10 +681,10 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
 def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init(
     tmp_path: Path,
 ) -> None:
-    # §6.3 asks `attach` to run `pre-commit install` in the overlay if it is missing, and Task
-    # 6 only covers the first machine: a second one clones an overlay initialised elsewhere and
-    # never runs `overlay init` again. Doing it twice is free; not doing it at all leaves the
-    # commit-time secret scan unarmed on exactly the machine that thinks it is set up.
+    # `attach` runs `pre-commit install` in the overlay if it is missing, and `overlay init` only
+    # covers the first machine: a second one clones an overlay initialised elsewhere and never runs
+    # `overlay init` again. Doing it twice is free; not doing it at all leaves the commit-time
+    # secret scan unarmed on exactly the machine that thinks it is set up.
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
@@ -858,7 +865,7 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
 
 
 def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
-    # I2. The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
+    # The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
     # never `core.hooksPath` read by hand — the rule `docs/cli.md` states for `setup
     # --git-hooks` and `guards.githooks.hooks_dir` implements. With `core.hooksPath` set, a
     # hardcoded path finds the scan missing on EVERY attach and shells out to `pre-commit
@@ -906,8 +913,8 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
 
 
 def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: Path) -> None:
-    # The Global Constraints make every external binary optional: a missing `pre-commit` is a
-    # reported finding, and the push-time scan the template ships still runs.
+    # Every external binary is optional: a missing `pre-commit` is a reported finding, and the
+    # push-time scan the template ships still runs.
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
@@ -982,10 +989,10 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
 def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_files(
     tmp_path: Path,
 ) -> None:
-    # The vacuity guard for the case above, and the same one finding 1's snapshot has: a refusal
-    # that writes nothing proves nothing if the run had nothing to write. The identical fixture,
-    # with a ledger `attach` really could have written, attaches and leaves all three artifacts
-    # the refusal above has to prevent.
+    # The vacuity guard for the case above, and the same one the no-origin refusal's snapshot has: a
+    # refusal that writes nothing proves nothing if the run had nothing to write. The identical
+    # fixture, with a ledger `attach` really could have written, attaches and leaves all three
+    # artifacts the refusal above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _committed_ledger(root, store, rules=[".codex/rules/common.rules"])
     before = snapshot(root)
@@ -1036,3 +1043,100 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             home=tmp_path / "home",
         )
     assert "memory.groups" in str(refusal.value)
+
+
+def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path: Path) -> None:
+    """The ninth refusal, and the only one whose remedy is an act nothing here can perform.
+
+    `attach` **links**; it never moves a note. So a `memory.groups` entry that is still a real
+    directory under `paths.memory` is a group whose notes are in the repository and whose share
+    of the overlay is empty — and linking over it would leave the session reading the
+    repository's copy with the binding record, the settings merge and the ledger already
+    written. The anchor is `root`, the checkout the command was pointed at, and not a value the
+    repository chose: `unlinked_groups` contains every `<paths.memory>/<group>` against it, so a
+    repository cannot move the directory the count is taken under.
+
+    Both snapshots, because a refusal that leaves the *overlay* carrying a binding record is
+    just as much "looking attached" as one that leaves the repository carrying a ledger.
+
+    Mutation: `mutations.toml`'s "attach links over notes that never moved again".
+    """
+    root, store, machine = _attachable(tmp_path)
+    note = root / DEFAULT_MEMORY / "project-stable" / "kept.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("---\nname: kept\ndescription: a note\n---\n\nbody\n", encoding="utf-8")
+    before, overlay_before = snapshot(root), snapshot(store.parents[2])
+    # The walks' own floor, for the reason the mismatch case above states: `snapshot` is a walk,
+    # and two empty dictionaries compare equal however much was written between them.
+    assert before and overlay_before
+    # The identity and not a substring, for the reason the escaping-group case above now gives:
+    # a refusal added beside this one makes a substring match stop saying which fired, and this
+    # one already sits one line from a containment whose message shares most of its words.
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    assert str(refusal.value) == REAL_DIRECTORIES.format(count=1)
+    assert_snapshot_unchanged(root, before)
+    assert_snapshot_unchanged(store.parents[2], overlay_before)
+    # The owner's act, and the only one that clears the refusal: the notes move into this
+    # project's share of the overlay, and the same attach then links over nothing.
+    shutil.move(str(note.parent), str(store / "project-stable"))
+    attach(
+        root,
+        store=store,
+        machine=machine,
+        confirmed=True,
+        trust_remote=False,
+        runner=FakeRunner(),
+        home=tmp_path / "home",
+    )
+    assert (root / DEFAULT_MEMORY / "project-stable").is_symlink()
+    assert (root / DEFAULT_MEMORY / "project-stable" / "kept.md").is_file()
+
+
+def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> None:
+    """`memory.groups` is repository-authored, so the message carries a count and no entry.
+
+    The same rule `GROUP_ESCAPES` and the `--store` refusal are written to, and worth its own
+    case here because this refusal's *remedy* invites a name — "move this group" reads better
+    than "move each of them" — and `skills/attach/SKILL.md` relays these messages to a model.
+    """
+    root, store, machine = _attachable(tmp_path)
+    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
+    with pytest.raises(Refusal) as refusal:
+        attach(
+            root,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            trust_remote=False,
+            runner=FakeRunner(),
+            home=tmp_path / "home",
+        )
+    message = str(refusal.value)
+    assert "developer" not in message
+    # Non-vacuous: the message did report, and what it reported is the count `attach` took.
+    assert "1 of this project's memory groups" in message
+
+
+def test_a_worktree_listing_git_gave_no_answer_for_is_a_failure_about_this_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `-1` from `git_run` is a `git` that could not be run or ran past its bound: a fault on
+    # this machine, and never a listing of no worktrees, which would link memory into none of
+    # them. A worktree path that is not UTF-8 is no longer a cause — the listing is decoded
+    # losslessly — so the message does not send the owner looking for one. Mutation
+    # (advisory): put the UTF-8 clause back — the last assertion reddens.
+    from keelline.attach import write as module
+
+    monkeypatch.setattr(module, "git_run", lambda *a, **k: (-1, ""))
+    with pytest.raises(Failure, match="check that `git` runs here") as caught:
+        module._worktrees(tmp_path)
+    assert "UTF-8" not in str(caught.value)

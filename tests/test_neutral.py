@@ -1,19 +1,18 @@
-"""§5.8: no project-identifying string anywhere in the public repository — the whole tree.
+"""No project-identifying string anywhere in the public repository — the whole tree.
 
-Two lane-scoped copies of this gate held the door since wave 2, the second of them saying
-"both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
-extend either into a third." This is that day. Source under `src/`, `tests/` and `scripts/`
-is held to the full table: a module has no reason to spell a default path. Every other
-tracked text file is held to the public table, which exempts exactly the preset's own
-default `[paths]` values, because a document that could not say where the note store lives
-by default would be useless. The denylist is digests; the two docstrings this replaces say
-why, and their reasoning is kept verbatim in `digest_of`.
+Two copies of this gate, each scoped to one area, held the door before it; this whole-tree gate
+replaced both, and no scoped copy is to be added beside it. Source under `src/`, `tests/` and
+`scripts/` is held to the full table: a module has no reason to spell a default path. Every other
+tracked text file is held to the public table, which exempts exactly the preset's own default
+`[paths]` values, because a document that could not say where the note store lives by default would
+be useless. The denylist is digests; the two docstrings this replaces say why, and their reasoning
+is kept verbatim in `digest_of`.
 
 **The denylist is stored as digests, not as the tokens themselves, and that is not decoration.**
-A gate that lists the strings it is hiding publishes them: this file ships in a public
-repository, so a plain-text list would put every identifier §5.8 forbids into the very tree the
-rule is about, one `grep` away. Each entry is a lower-cased token's length and a short
-`blake2s` digest of it; the scan hashes every window of each stored length and compares digests.
+A gate that lists the strings it is hiding publishes them: this file ships in a public repository,
+so a plain-text list would put every identifier this gate forbids into the very tree the rule is
+about, one `grep` away. Each entry is a lower-cased token's length and a short `blake2s` digest of
+it; the scan hashes every window of each stored length and compares digests.
 The behaviour is identical to the substring list it replaces — the same inputs fail — and a
 digest is not a secret, it is merely not readable. **Do not "simplify" them back into
 literals.** To add a token, run `digest_of("<token>")` and append `(len, digest)`.
@@ -28,6 +27,8 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
+from tests.gitfixture import needs_git, run_git
 
 ROOT = Path(__file__).resolve().parents[1]
 THIS = Path(__file__).resolve()
@@ -110,7 +111,7 @@ URL_BLIND = frozenset({"vendor branch"})
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
 # vendor-prefixed branch name at any depth. Each arm is named so a hit says what it is.
 SHAPES = (
-    # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
+    # Not `@users.noreply.github.com`: that is GitHub's generic form and must pass.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id — and, by the
     # same argument in the other direction, at least one letter, so a plain decimal number is
@@ -233,8 +234,8 @@ def _preset_paths() -> tuple[tuple[int, str], ...]:
 
 
 PUBLIC_FORBIDDEN = tuple(entry for entry in FORBIDDEN if entry not in _preset_paths())
-# Three of the preset's eleven default `[paths]` values are also digest-table entries — the
-# ones that were the source repository's paths before they were Keelline's defaults. Pinned so
+# Three of the preset's default `[paths]` values are also digest-table entries — the ones that
+# were the source repository's paths before they were Keelline's defaults. Pinned so
 # the exemption cannot quietly grow: a fourth would mean a token was added to the table for a
 # path the plugin itself ships, which is a contradiction to resolve, not to exempt.
 PRESET_PATHS_IN_TABLE = 3
@@ -261,9 +262,9 @@ TRACKED_TREES = (
 
 def tracked_files() -> list[Path]:
     """Every file git tracks, or every file under the tree minus the fixed exclusions."""
-    # `--others --exclude-standard` as well as `--cached`: a fixture added in this wave is
-    # untracked until its commit, and a gate that could not see it until the commit after
-    # would let the commit that adds it land unwalked. Step 2 says `git add -N` first.
+    # `--others --exclude-standard` as well as `--cached`: a fixture being added is untracked
+    # until its commit, and a gate that could not see it until the commit after would let the
+    # commit that adds it land unwalked.
     done = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
@@ -272,25 +273,80 @@ def tracked_files() -> list[Path]:
     if done.returncode == 0 and done.stdout:
         names = [n for n in done.stdout.decode("utf-8").split("\0") if n]
         return sorted(ROOT / n for n in names if (ROOT / n).is_file())
+    return walked(ROOT)
+
+
+def walked(root: Path) -> list[Path]:
+    """The fallback: every file under `root` minus the fixed exclusions."""
     # Anchored on the FIRST component: `tests/fixtures/hostile-project/.claude/settings.json`
-    # is a fixture to walk, not a configuration directory to skip.
+    # is a fixture to walk, not a configuration directory to skip. Coverage's data files are
+    # named rather than listed: each sits in the root and is its own first component. Bytecode
+    # is the one exclusion at any depth: one pytest run leaves `tests/__pycache__/*.pyc` beside
+    # every module, and no fixture is named `__pycache__`.
     return sorted(
         p
-        for p in ROOT.rglob("*")
-        if p.is_file() and p.relative_to(ROOT).parts[0] not in FALLBACK_EXCLUDED
+        for p in root.rglob("*")
+        if p.is_file()
+        and (parts := p.relative_to(root).parts)[0] not in FALLBACK_EXCLUDED
+        and "__pycache__" not in parts
+        and not (len(parts) == 1 and (p.name == ".coverage" or p.name.startswith(".coverage.")))
     )
 
 
-# **What the split gives up, stated as a decision rather than left as an accident.** The two
-# gates this replaces walked `skills/**/*.md` and `agents/*.md` under the FULL table; DC10 says
-# `.py` under the three source trees takes the full table and every other text file takes the
-# public one, so under one gate those documents take the public table and may now spell a preset
-# default `[paths]` value where they could not before. That is the design and not a slip: a skill
-# is a document a person reads, and the argument that a README which could not say where the note
-# store lives by default would be useless is the same argument one directory over. The denylist
-# proper is unchanged for them — only the three exempted preset defaults move — and the shape arms
-# are not table-scoped at all, so a personal address, a bare commit id and a vendor branch are
-# still refused in a skill. Changing it back means changing DC10, not this function.
+def test_the_fallback_walk_skips_coverage_data_in_the_root(tmp_path: Path) -> None:
+    # The sdist half of the test below. An unpacked sdist has no `.git`, so no `.gitignore`
+    # applies, and the contributor's `pytest -n auto --cov` leaves `.coverage` and one
+    # `.coverage.<host>.pid<pid>.X<random>x` per worker in the root: SQLite, undecodable, and
+    # counted against `UNDECODABLE` by whichever run a worker finished first. A root-level file
+    # is its own first component, so `FALLBACK_EXCLUDED` cannot name one; this is by file name.
+    #
+    # Mutation (declared): the coverage clause dropped from `walked` -> both files are walked.
+    for name in (".coverage", ".coverage.runner_host.pid4242.XaBcDeFx", "README.md"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert [p.name for p in walked(tmp_path)] == ["README.md"]
+
+
+def test_the_fallback_walk_skips_bytecode_at_any_depth(tmp_path: Path) -> None:
+    # An unpacked sdist after one pytest run: `__pycache__` sits beside every module, not only in
+    # the root, and its `.pyc` files are undecodable — the public-anchor gate reads every file it
+    # is given and would raise on the first one.
+    #
+    # Mutation (declared): the any-depth clause dropped from `walked` -> the `.pyc` is walked.
+    (tmp_path / "tests" / "__pycache__").mkdir(parents=True)
+    (tmp_path / "tests" / "__pycache__" / "test_x.cpython-313.pyc").write_bytes(b"\xa7\r\r\n")
+    (tmp_path / "tests" / "test_x.py").write_text("x = 1\n", encoding="utf-8")
+    assert [p.relative_to(tmp_path).as_posix() for p in walked(tmp_path)] == ["tests/test_x.py"]
+
+
+@needs_git
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="no git checkout to ask")
+def test_a_coverage_worker_file_is_not_a_file_the_gate_walks(tmp_path: Path) -> None:
+    """The suite runs across workers, and under `--cov` each one leaves its own data file in
+    the root while the others still run — `.coverage.<host>.pid<pid>.X<random>x`, SQLite and
+    undecodable. `tracked_files` reads `--others --exclude-standard`, so a `.gitignore` naming
+    only `.coverage` handed seven of them to `test_the_gate_reads_the_whole_tree` mid-run on
+    2026-09-26: `UNDECODABLE` 0, counted 7, and which run it reddened was a matter of timing.
+
+    Asked of git's rules without the file, so this module writes nothing into the tree it walks,
+    and in `gitfixture`'s sealed environment, so a developer's global excludes cannot answer for
+    the repository's own `.gitignore`.
+    Mutation: drop `.coverage.*` from `.gitignore` -> reddens here, on every run.
+    """
+    worker = ".coverage.runner_host.pid4242.XaBcDeFx"
+    ignored = run_git(ROOT, "check-ignore", "-q", "--no-index", worker, home=tmp_path)
+    assert ignored.returncode == 0, ignored.stderr
+
+
+# **What the split gives up, stated as a decision rather than left as an accident.** The two gates
+# this replaces walked `skills/**/*.md` and `agents/*.md` under the FULL table; the rule is that
+# `.py` under the three source trees takes the full table and every other text file takes the public
+# one, so under one gate those documents take the public table and may now spell a preset default
+# `[paths]` value where they could not before. That is the design and not a slip: a skill is a
+# document a person reads, and the argument that a README which could not say where the note store
+# lives by default would be useless is the same argument one directory over. The denylist proper is
+# unchanged for them — only the three exempted preset defaults move — and the shape arms are not
+# table-scoped at all, so a personal address, a bare commit id and a vendor branch are still refused
+# in a skill. Changing it back means changing that rule, not only this function.
 def table_for(path: Path) -> tuple[tuple[int, str], ...]:
     relative = path.relative_to(ROOT)
     source_tree = relative.parts[0] in FULL_TABLE_TREES
@@ -486,11 +542,11 @@ def test_a_token_hit_names_the_offset_of_its_first_window() -> None:
 
 def test_mutations_toml_carries_no_source_repository_string() -> None:
     # `mutations.toml` is walked whole under the public table by the parametrised test below,
-    # like every other tracked document. This is the stricter half the two lane gates each
-    # carried for their own entries: a mutation quotes a line of the file it names, so the
+    # like every other tracked document. This is the stricter half the two area-scoped gates
+    # each carried for their own entries: a mutation quotes a line of the file it names, so the
     # entry is held to *that file's* table. Scoping it by the named file rather than by a
     # hand-kept list of path prefixes is what one gate can do that two could not — neither
-    # copy could see the other's lane, and every lane added since was nobody's.
+    # copy could see the other's area, and every area added since was nobody's.
     entries = tomllib.loads((ROOT / "mutations.toml").read_text(encoding="utf-8"))["mutation"]
     assert len(entries) >= 200, len(entries)
     for entry in entries:
@@ -559,7 +615,7 @@ def test_the_public_table_still_discriminates() -> None:
 # commit-id-shaped and branch-shaped **by construction**, which is the same reason the two gates
 # this replaces each skipped themselves. The pre-commit sweep reads the raw diff and so reports
 # those fixtures; a shape hit on a line of this module is the gate quoting itself, and the stop
-# condition Global Constraints states is a `token` hit.
+# condition is a `token` hit.
 @pytest.mark.parametrize(
     "path",
     [p for p in tracked_files() if p != THIS],

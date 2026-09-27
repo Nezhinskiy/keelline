@@ -1,9 +1,10 @@
-"""Where the machine-level configuration lives (§5.4); the file is optional.
+"""Where the machine-level configuration lives; the file is optional.
 
 **Both variables that can name this file are gated, and for one reason.** A committed
 `.claude/settings.json` may carry an `env` block, which applies without a trust prompt in a
 non-interactive session, so a repository able to redirect this path would declare its own
-overlay root and its own pre-recorded trust hash — the two anchors §9.1 and §9.4 rest on.
+overlay root and its own pre-recorded trust hash — the two anchors that locating the note store
+and trusting in-repo notes by hash rest on.
 
 `KEELLINE_CONFIG` was gated and `XDG_CONFIG_HOME` was not, which left the gate worth nothing:
 the two variables reach the same file, and the second one costs a repository exactly one extra
@@ -18,9 +19,9 @@ who sets one really does lose it on the hook path rather than getting a wrong an
 replaces was not: `permitted_roots`, `trust.json` and the overlay anchor were all selectable by
 a file the clone ships.
 
-A caller that knows it is a hook, the MCP server or a `--gate` run says `interactive=False`
-rather than relying on the terminal check — `config.loader.load` takes the same keyword for
-exactly that reason.
+A caller that knows it is a hook, the MCP server or a `keelline gate` run says
+`interactive=False` rather than relying on the terminal check — `config.loader.load` takes the
+same keyword for exactly that reason.
 """
 
 from __future__ import annotations

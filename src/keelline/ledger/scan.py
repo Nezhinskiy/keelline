@@ -26,9 +26,9 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
+from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
 from keelline.identifiers import identifiers
-from keelline.ledger.git import git_output
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -37,12 +37,13 @@ if TYPE_CHECKING:
 # `pyproject.toml` and `.gitignore` each carried a live identifier once, invisible to the scan
 # and unswept by `renumber`, which reported success having rewritten neither.
 TOP_LEVEL = "."
-# A file whose head carries this is a holder of sample identifiers — a test module's fixtures —
-# and is excluded from the mention scan and from the sweep alike (Premise 5). A real reference
-# inside such a file is invisible to the scan; that is the accepted price.
+# A file whose head carries this is a holder of sample identifiers — a test module's fixtures — and
+# is excluded from the mention scan and from the sweep alike. A real reference inside such a file is
+# invisible to the scan; that is the accepted price.
 FIXTURE_MARKER = "keelline:ledger:fixtures"
-# How far into a file the marker is looked for: a module docstring or a header comment. Not a
-# config key — a marker anywhere else is prose about the marker.
+# How far into a file the marker is looked for: a module docstring or a header comment. A named cap
+# (CONTRIBUTING.md#named-caps), and no shipped file changes with it: a marker anywhere else is prose
+# about the marker.
 FIXTURE_MARKER_WINDOW = 2048
 # Directory names neither reader walks into: vendored or generated trees that hold no reference
 # anyone filed. Matched against a name found below a scanned root, never against the checkout's
@@ -130,12 +131,16 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
 
     `None` rather than an empty list when `root` is not the top of a checkout, so the caller
     falls back to walking instead of silently scanning nothing — a guard that reports OK
-    because it looked at no files is the failure mode this whole module exists to prevent.
+    because it looked at no files is the failure mode this whole module exists to prevent. The
+    listing itself answers the same way when git gave none — it could not be run, or ran past
+    its bound: an empty answer for a failure is an empty listing, which would scan no file.
     """
-    toplevel = git_output(root, "rev-parse", "--show-toplevel").strip()
-    if not toplevel or Path(toplevel).resolve() != root.resolve():
+    # The line ending alone, never `strip()`: a root that ends in a space is still that root.
+    code, out = git_run(root, "rev-parse", "--show-toplevel", timeout=QUERY_TIMEOUT_SECONDS)
+    toplevel = out.removesuffix("\n")
+    if code != 0 or not toplevel or Path(toplevel).resolve() != root.resolve():
         return None
-    listed = git_output(
+    code, listed = git_run(
         root,
         "ls-files",
         "-z",
@@ -144,7 +149,10 @@ def _committed_files(root: Path, names: tuple[str, ...]) -> list[Path] | None:
         "--exclude-standard",
         "--",
         *(_pathspec(n) for n in names),
+        timeout=QUERY_TIMEOUT_SECONDS,
     )
+    if code != 0:
+        return None
     return [root / name for name in listed.split("\0") if name]
 
 

@@ -2,14 +2,14 @@
 
 Two sources, one result. `--template` asks GitHub to generate a private repository from the
 public template and clone it; `--local` renders `templates/overlay/` here through the scaffold
-engine and touches no network. A template and not a fork (D1): a fork's visibility is bound to
-the upstream network and cannot be made private, and an overlay that is not private is the one
+engine and touches no network. A template and not a fork: a fork's visibility is bound to the
+upstream network and cannot be made private, and an overlay that is not private is the one
 outcome this whole area exists to prevent.
 
 `init_instance` is what makes a generated repository *this owner's*: the plugin and marketplace
 names carry their account, so two overlays installed into one harness never collide, and the
 commit-time secret scan is installed. Neither step is destructive and both are idempotent —
-`gh` may give up on the clone with the repository already created (§6.1), so a second run is the
+`gh` may give up on the clone with the repository already created, so a second run is the
 ordinary case rather than the exception.
 """
 
@@ -38,16 +38,18 @@ from keelline.scaffold import Manifest, apply, digest, plan
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "keelline-overlay-template"
-# The directory whose presence says a generated repository actually arrived — the exact probe
-# Findings → S6 used, and the one thing a repository created from this template always carries.
-# Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says why:
-# this one answers "did a tree arrive here", which is the question idempotence asks of a clone
+# The directory whose presence says a generated repository actually arrived — the exact probe the
+# spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) used in its *template creation
+# race and renaming* trial, and the one thing a repository created from this template always
+# carries. Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says
+# why: this one answers "did a tree arrive here", which is the question idempotence asks of a clone
 # `gh` gave up on half way through.
 PROBE = ".claude-plugin"
-# How long to wait before the one retry, when `gh` says the repository exists and the clone
-# brought nothing down. Findings → S6 did not reproduce that race in the one trial it ran, so
-# this is carried on the strength of the design rather than of a measurement: generation is
-# asynchronous on GitHub's side and one clean run cannot rule out a slow one.
+# How long to wait before the one retry, when `gh` says the repository exists and the clone brought
+# nothing down. The spike record's *template creation race and renaming* trial did not reproduce
+# that race in its one attempt, so this is carried on the strength of reasoning rather than of a
+# measurement: generation is asynchronous on GitHub's side and one clean run cannot rule out a slow
+# one.
 RETRY_WAIT_SECONDS = 10
 # The precondition `docs/cli.md` names and the command itself never did. `--template` generates
 # from a repository on the owner's own account, and that repository has to have been published
@@ -120,7 +122,7 @@ def _render_locally(root: Path, name: str) -> Path:
     # cannot open a root that is not there yet. `mkdirs_within` creates a target's *parents*, so
     # the instance directory is asked for as the parent of the first file that goes into it —
     # through the same walk, rather than with the `Path.mkdir(parents=True)` this project does
-    # not allow into a lane that puts files into a repository.
+    # not allow into a module that puts files into a repository.
     fsops.mkdirs_within(root, f"{name}/{OVERLAY_FILES[0]}")
     apply(target, planned)
     return target
@@ -156,7 +158,7 @@ def create(
 def _detail(done: Completed) -> str:
     """What a subprocess said about itself, in the order a reader wants it.
 
-    `Completed` has carried `code` and `stderr` since this seam was written and this lane threw
+    `Completed` has carried `code` and `stderr` since this seam was written and this module threw
     both away: with `gh` absent from `PATH`, every call answered `Completed(127, "", "gh could
     not be run: …")` and the failure below still said "GitHub did not confirm the repository
     exists; check `gh auth status`" — a cause that was not the cause, about a binary that was
@@ -170,7 +172,7 @@ def _from_template(
 ) -> Created:
     target = root / name
     if _populated(target):
-        # §6.1 asks for idempotence in as many words: `gh` may give up on the clone with the
+        # Creating the overlay is idempotent by rule: `gh` may give up on the clone with the
         # repository already created, so the second run finds a tree and must not re-create.
         return Created(target, "template", (f"{target} already exists and was left alone",))
     slug = f"{owner}/{name}"
@@ -190,11 +192,12 @@ def _from_template(
     if _populated(target):
         return Created(target, "template", (f"created {slug} from {TEMPLATE_REPOSITORY}",))
     if created.code in (NOT_FOUND, TIMED_OUT):
-        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state
-        # two further subprocesses and a ten-second wait can learn anything about: `gh repo
-        # view` would ask the same absent binary a second question, get the same answer, and the
-        # failure would then name GitHub for a fault that is this machine's. The global
-        # constraints make `gh` optional — so this is a reported finding that names it.
+        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
+        # further subprocesses and a ten-second wait can learn anything about: `gh repo view` would
+        # ask the same absent binary a second question, get the same answer, and the failure would
+        # then name GitHub for a fault that is this machine's. Keelline does not install `gh`, so
+        # its absence is the machine owner's to fix: a reported finding that names it, never a
+        # traceback.
         raise Failure(
             f"`gh repo create {slug} …` could not be run ({_detail(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
@@ -255,8 +258,8 @@ NOT_AN_OVERLAY = (
 def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     """Make a generated overlay this owner's: name it after them, and install the secret scan.
 
-    §6.1 wants the suffix "so two overlays never collide" — a harness installs a plugin by the
-    name in its manifest, so two owners' overlays under one configuration directory would be one
+    The suffix is there so two overlays never collide — a harness installs a plugin by the name
+    in its manifest, so two owners' overlays under one configuration directory would be one
     plugin fighting itself. **All three manifests**, because the project ships a Codex half of
     everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision still
     happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
@@ -270,8 +273,8 @@ def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
     advertises, and attributing to the owner an edit Keelline itself made. Re-stamping is the
     narrow answer of the two the review offered; rendering the suffix through the `Template`
     instead would put an owner-dependent value into the shipped tree, which every *other*
-    consumer of that tree (`upgrade`'s hash rule, the release lane) would then have to know
-    about. A `--template` clone carries no ledger at all, and gets no record written for it.
+    consumer of that tree (`upgrade`'s hash rule, `overlay publish-template`) would then have to
+    know about. A `--template` clone carries no ledger at all, and gets no record written for it.
 
     A manifest that is *absent* is a note rather than a failure. An overlay generated before the
     Codex half shipped carries two of the three, and refusing to name the other two over it
@@ -328,6 +331,8 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
         document = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise Failure(f"{relative} cannot be read: {exc}") from exc
+    except UnicodeDecodeError:
+        raise Failure(f"{relative} is not UTF-8 text") from None
     except json.JSONDecodeError as exc:
         raise Failure(f"{relative} is not valid JSON: {exc}") from exc
     if not isinstance(document, dict):
@@ -354,9 +359,9 @@ def _rename(root: Path, relative: str, suffix: str) -> str | None:
 def _install_secret_scan(root: Path, runner: Runner) -> str:
     """Install the commit-time secret scan, or say why it is not installed.
 
-    §6.4 runs gitleaks twice and this is one of the two; the other is the push workflow the
-    template ships, which is what makes `--no-verify` not the last word. A missing `pre-commit`
-    is a reported finding, never a traceback.
+    The overlay's secret scanning runs gitleaks twice and this is one of the two; the other is
+    the push workflow the template ships, which is what makes `--no-verify` not the last word.
+    A missing `pre-commit` is a reported finding, never a traceback.
     """
     done: Completed = runner.run(["pre-commit", "install"], root)
     if done.code == 0:

@@ -20,7 +20,8 @@ on:
     # because `release check --tag` compares the tag to `pyproject.toml`'s literal version and
     # `uv.lock` normalises `0.1.0-rc1` to `0.1.0rc1`, which the six-source rule then reads as
     # two different versions. A trigger for a release this project cannot cut is a trigger that
-    # only fires by accident. RELEASING.md §2 step 6 says the same thing to the person tagging.
+    # only fires by accident. RELEASING.md section 2, step 6, says the same thing to the person
+    # tagging.
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 permissions:
@@ -68,8 +69,8 @@ jobs:
   # The one gate on this file's two irreversible acts that is not prose. GitHub **auto-creates**
   # an environment a job names and the repository does not have, with no protection rules on it,
   # so `environment: pypi` below reads like a human gate whether or not one exists: a first
-  # release cut before RELEASING.md §3 would upload to PyPI — which cannot be retracted — and
-  # publish a GitHub Release, with nobody asked and nothing failing. A sentence in RELEASING.md
+  # release cut before RELEASING.md section 3 would upload to PyPI — which cannot be retracted —
+  # and publish a GitHub Release, with nobody asked and nothing failing. A sentence in RELEASING.md
   # is the wrong medium for that, so here it is as a check.
   #
   # One job rather than a first step copied into each of the two that name the environment. Two
@@ -164,7 +165,7 @@ jobs:
           assert match, f"CHANGELOG.md has no section for {version}"
           print(match.group(0).strip())
           PY
-      - name: The GitHub Release, attached to this tag only (§5.9)
+      - name: The GitHub Release, attached to this tag only
         # Never attached to the floating `v1`: GitHub's immutable releases would freeze the
         # alias at whatever it pointed to, and the alias exists to move.
         env:

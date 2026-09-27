@@ -23,31 +23,31 @@ hostile clone (`setup`'s "not inside, over, or in any checkout of the project an
 is no longer standing alone.
 
 **`create._populated` deliberately stays the weaker probe.** It answers "did a tree already
-arrive here", which is what §6.1's idempotence rule needs: a `gh` that gave up mid-clone leaves a
-partial tree, and asking *this* question of it would answer "not an overlay" and create the
-repository a second time. Two questions, two probes, and this docstring is why.
+arrive here", which is what the create step's idempotence rule needs: a `gh` that gave up
+mid-clone leaves a partial tree, and asking *this* question of it would answer "not an overlay"
+and create the repository a second time. Two questions, two probes, and this docstring is why.
 
-**Nothing a repository authored is quoted back.** A manifest's `name` is bytes from a directory
-this process was pointed at, so the refusal says which file failed and what it had to say, never
-what it actually said (Global Constraints: repository bytes are data).
+**Nothing a repository authored is quoted back.** A manifest's `name` is bytes from a directory this
+process was pointed at, and a repository is untrusted input (principle 5), so the refusal says which
+file failed and what it had to say, never what it actually said.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
+from keelline.config.schema import PROJECT_NAME
 from keelline.errors import Refusal
 from keelline.overlay.layout import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
 
-# One path segment, and the same grammar `scaffold.engine.SOURCE_NAME` holds a profile to. An
-# owner name becomes a directory, half a remote path, a marketplace selector and the suffix on
-# both manifest names, so it is checked once here rather than at each of those; the leading class
-# is what keeps a value shaped like an option (`-flag`) out of an option's position in an argv
-# (§3). It lives in this module rather than in `create` because the suffix grammar and the
-# manifest-name grammar are the same grammar, and two spellings of it would drift.
-SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# One path segment: `config.schema.PROJECT_NAME`, the one name grammar. An owner name becomes a
+# directory, half a remote path, a marketplace selector and the suffix on both manifest names, so
+# it is checked once here rather than at each of those; the leading class is what keeps a value
+# shaped like an option (`-flag`) out of an option's position in an argv. It is checked in this
+# module rather than in `create` because the suffix grammar and the manifest-name grammar are the
+# same grammar.
+SEGMENT = PROJECT_NAME
 # What the shipped template calls itself, and what `init_instance` suffixes.
 OVERLAY_PLUGIN = "keelline-overlay"
 OVERLAY_MARKETPLACE = "keelline-overlay-marketplace"
@@ -91,7 +91,7 @@ def overlay_fault(root: Path) -> str | None:
             return f"{root} does not carry the overlay layout ({relative} is missing)"
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return f"{root} carries a {relative} that cannot be read as JSON"
         if not isinstance(document, dict) or not _claims(document.get("name"), expected):
             return (

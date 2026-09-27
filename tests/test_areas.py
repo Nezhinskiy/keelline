@@ -28,11 +28,11 @@ def test_commands_modules_are_found_in_area_name_order() -> None:
 
 
 def test_the_runner_is_a_leaf_and_not_an_area() -> None:
-    # DC2: `runner.py` sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports nothing
-    # from `keelline`. Pinned as an import check rather than by walking the tree, because the
-    # tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
-    # import to a leaf is a review finding the import-boundary test does not catch, and this
-    # is the one line that does.
+    # `runner.py` is a leaf: it sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports
+    # nothing from `keelline`. Pinned as an import check rather than by walking the tree, because
+    # the tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
+    # import to a leaf is a review finding the import-boundary test does not catch, and this is the
+    # one line that does.
     import ast
     from pathlib import Path
 
@@ -79,9 +79,11 @@ def test_in_isolation_an_area_with_no_such_submodule_is_never_imported() -> None
     assert "keelline.release" not in imported
     assert "keelline.config" not in imported
     assert "keelline.presets" not in imported
+    assert "keelline.profiles" not in imported
+    assert "keelline.harnesses" not in imported
 
 
-# The ten areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
+# The twelve areas CONTRIBUTING lists, and the one departure from the rule below. `cli.py` is the
 # CLI frame and not an area — nothing discovers it, it has no `api.py`, and it owns the wiring
 # of the `hook` command — so it reads `keelline.hooks.policy` directly. It is named here rather
 # than skipped silently, because an exemption nobody can see is how the two violations this
@@ -109,7 +111,7 @@ def _imported_modules(tree: ast.AST, package: tuple[str, ...]) -> list[tuple[int
 
     **The third is the relative import**, and it used to be dropped on the floor: the condition
     read `and not node.level`, so `from ..hooks.sink import DIRECTORY` inside `doctor/checks.py`
-    — the violation this lane exists to end, spelled the other way — walked straight past. There
+    — the violation this guard exists to end, spelled the other way — walked straight past. There
     are no relative imports under `src/keelline/` today, but only by house style: ruff's `TID`
     rules are not selected, so nothing bans one, and the first contributor to write an idiomatic
     one would have reopened the boundary with the guard still green.
@@ -198,9 +200,11 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
         offences += broken
     # The walk is asserted before anything is asserted about it. Both floors are well under
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
-    # current: measured at 99 files, 10 areas and 100 crossings when this was written, and a
-    # walk narrowed to `commands.py` alone finds 13.
-    assert len(areas) == 10, areas
+    # current. Re-measured 2026-09-26, by running this module's own `_area_names` and
+    # `_boundary_offences` over the same two globs in an interpreter: 138 files, 12 areas, 4
+    # scripts and 179 crossings, with a walk narrowed to `commands.py` alone counting 11 under
+    # `src/` and 18 with the scripts — which is what the crossings floor of 60 has to be below.
+    assert len(areas) == 12, areas
     assert len(files) >= 70, len(files)
     # The script walk's own floor: without it a `glob` that stopped matching would take the
     # `scripts/` half of this guard back to the state that hid the violation, and the crossing
@@ -225,7 +229,7 @@ def test_the_boundary_rule_resolves_a_relative_import_before_judging_it() -> Non
     # The hole the guard above shipped with, and the reason it needs a test of its own: there is
     # not one relative import under `src/keelline/`, so the walk cannot exercise this spelling
     # and a synthetic module has to. `from ..hooks.sink import DIRECTORY` inside
-    # `doctor/checks.py` is the violation this whole lane exists to end, written the way a
+    # `doctor/checks.py` is the violation this whole guard exists to end, written the way a
     # contributor who prefers relative imports would write it.
     #
     # Asserted as the exact offence rather than as "some offence": a rule that resolved the

@@ -29,7 +29,7 @@ def guard(event: str, policy: Policy = Policy.CLOSED) -> Handler:
 
 
 def area_of(monkeypatch: pytest.MonkeyPatch, *handlers: Handler) -> None:
-    area = Area("keelline.lane.hooks", list(handlers))
+    area = Area("keelline.example.hooks", list(handlers))
     monkeypatch.setattr("keelline.hooks.registry.area_modules", lambda submodule: [area])
 
 
@@ -38,7 +38,7 @@ def test_a_mistyped_event_name_is_refused_and_named(monkeypatch: pytest.MonkeyPa
     with pytest.raises(UnknownHookEvent) as raised:
         discover()
     message = str(raised.value)
-    assert "keelline.lane.hooks" in message
+    assert "keelline.example.hooks" in message
     assert "'background-cleanup'" in message
     assert "'PreToolUSe'" in message
 
@@ -50,7 +50,7 @@ def test_a_handler_on_a_known_event_registers_normally(monkeypatch: pytest.Monke
 
 
 def test_the_vocabulary_is_the_five_events_the_design_table_carries() -> None:
-    # A lane that needs a sixth adds it to EVENTS deliberately; widening it by accident is
+    # An area that needs a sixth adds it to EVENTS deliberately; widening it by accident is
     # what turns a mistyped handler back into a guard that never fires.
     assert EVENTS == (
         "SessionStart",
@@ -72,7 +72,7 @@ def test_a_policy_dispatch_cannot_read_is_refused_and_named(
     with pytest.raises(UnknownHookPolicy) as raised:
         discover()
     message = str(raised.value)
-    assert "keelline.lane.hooks" in message
+    assert "keelline.example.hooks" in message
     assert "'background-cleanup'" in message
     assert repr(policy) in message
 
@@ -81,7 +81,7 @@ def test_a_policy_that_arrived_as_a_plain_string_is_accepted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # `Policy` is a StrEnum and `dispatch` compares by value, so discovery must accept exactly
-    # what `dispatch` accepts: a lane building a Handler from a config string hands us "closed".
+    # what `dispatch` accepts: an area building a Handler from a config string hands us "closed".
     handler = guard("PreToolUse", cast(Policy, "closed"))
     area_of(monkeypatch, handler)
     assert discover() == [handler]

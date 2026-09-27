@@ -376,11 +376,10 @@ def test_heredoc_body_end_answers_none_where_there_is_no_redirect() -> None:
 
 
 def test_heredoc_body_end_accepts_a_redirect_glued_to_the_preceding_word() -> None:
-    """Review round 1, finding 5. `cat<<'EOF'` and `2<<EOF` are both valid bash -- the first
-    an ordinary no-space spelling, the second a file descriptor -- and `_HEREDOC`'s
-    lookbehind used to reject a word character before `<<`, so the heredoc-offset fix
-    reached only the spacing it happened to be written with. The `<` half of that
-    lookbehind is kept and pinned by
+    """`cat<<'EOF'` and `2<<EOF` are both valid bash -- the first an ordinary no-space
+    spelling, the second a file descriptor -- and `_HEREDOC`'s lookbehind used to reject a
+    word character before `<<`, so the heredoc-offset fix reached only the spacing it happened
+    to be written with. The `<` half of that lookbehind is kept and pinned by
     `test_heredoc_body_end_answers_none_where_there_is_no_redirect`."""
     for header in ("cat<<'EOF'", "2<<EOF", "cat 2<<EOF"):
         text = f"{header}\nbody\nEOF\n)"

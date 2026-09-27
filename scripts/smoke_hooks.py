@@ -3,7 +3,7 @@
 
     python3 scripts/smoke_hooks.py --plugin-root R --fixture F --scratch S
 
-`R` is a plugin root — the checkout, or the copy the harness installed (DC8). One row per
+`R` is a plugin root — the checkout, or the copy the harness installed. One row per
 entry and sample; exit 1 on any row whose exit code, stderr or stdout shape is not the one
 the policy and the dispatcher's contract require.
 """
@@ -33,6 +33,10 @@ VOLATILE_NOTE = "SMOKE-VOLATILE-NOTE"
 # Keelline's own rules, from the shipped preset rather than from the repository — so this one
 # is the row that proves `preset-rules` still renders when the store is empty of them.
 PRESET_RULE = "### decision-forks"
+# The one `KEELLINE_*` variable an entry keeps: the floor a test runner puts under the product's
+# own bounds on `git` (`keelline.gitenv.FLOOR_VARIABLE`, which can only raise them). Spelled out
+# rather than imported, because this script runs without `keelline` importable.
+FLOOR_VARIABLE = "KEELLINE_GIT_FLOOR_SECONDS"
 # Measured 2026-09-19 against the shipped `hooks/hooks.json` and this fixture: thirteen
 # entries, fourteen rows (`PreToolUse` carries two samples). Both are asserted because a run
 # that executes fewer rows prints an identically green summary — the shape `unsampled` and
@@ -155,13 +159,20 @@ def fixture_repository(fixture: Path, into: Path) -> Path:
     return into
 
 
-def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> dict[str, str]:
-    """The environment a hook entry meets, with this developer's own Keelline stripped out."""
-    env = {
+def developer_free_env() -> dict[str, str]:
+    """This process's environment with this developer's own harness and Keelline stripped out,
+    and the floor a test runner set kept: the base both smoke scripts build a session on.
+    """
+    return {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
+        if k == FLOOR_VARIABLE or not k.startswith(("KEELLINE_", "XDG_", "CLAUDE_", "PLUGIN_"))
     }
+
+
+def session_env(*, plugin_root: Path, project: Path, home: Path, data: Path) -> dict[str, str]:
+    """The environment a hook entry meets, with this developer's own Keelline stripped out."""
+    env = developer_free_env()
     env.update(
         {
             "HOME": str(home),

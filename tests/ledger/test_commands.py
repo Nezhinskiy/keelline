@@ -6,11 +6,16 @@ keelline:ledger:fixtures — the identifiers below are sample data, not claims a
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.findings import Finding
+from keelline.printed import UNPRINTABLE
+from tests.crafted import CRAFTED, assert_never_raw
+from tests.gitfixture import git, needs_git
 
 CONFIG = """
 [keelline]
@@ -78,6 +83,41 @@ def test_check_is_inert_on_a_project_with_no_ledger(
     assert "nothing to check" in capsys.readouterr().out
 
 
+def test_check_reports_a_citation_when_there_is_no_ledger(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate reports it, so the command its remedy names must report it too, and not
+    # answer "nothing to check".
+    root, common = project(tmp_path)
+    (root / "docs" / "bugs").rmdir()
+    (root / "src" / "a.py").write_text("# see docs/bugs/BR-404.md\n", encoding="utf-8")
+    assert invoke(["bugs", "check", *common]) == 1
+    assert capsys.readouterr().out.startswith(
+        "FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:1 [dangling-citation]"
+    )
+
+
+@needs_git
+def test_check_with_a_base_answers_for_a_ledger_the_base_carries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate's command is `bugs check --base <base>`, so the command its remedy names reports
+    # the deleted ledger as the gate does; without `--base` the tree alone is judged and is
+    # inert. Mutation (oracle): "bugs check drops its --base" -> exit 0, nothing to check.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    capsys.readouterr()
+    assert invoke(["bugs", "check", *common]) == 0
+    assert "nothing to check" in capsys.readouterr().out
+    assert invoke(["bugs", "check", "--base", base, *common]) == 1
+    assert capsys.readouterr().out == "FAIL: 1 ledger problem(s): docs/bugs [ledger-removed]\n"
+
+
 def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -90,7 +130,8 @@ def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     assert line.startswith(
         "FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:2 [dangling-mention]"
     )
-    # One line out (§5.2): the details that would have made it many are in `--json`.
+    # One line out, as every command's human output is: the details that would have made it
+    # many are in `--json`.
     assert line.count("\n") == 1
     assert invoke(["bugs", "check", "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)
@@ -98,6 +139,57 @@ def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     # `Finding`. Mutation: spell the key `problems` in `run_bugs_check` — this reddens.
     assert [p["rule"] for p in data["findings"]] == ["dangling-mention", "dangling-mention"]
     assert "BR-404" in data["findings"][0]["detail"]
+
+
+def test_check_never_prints_a_crafted_entry_file_name_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The entry's file name is the repository's, and `bugs check` runs in CI: a name holding a
+    # line break and `::error::` forged a workflow command on the runner, and an escape sequence
+    # reached the terminal. The name still reaches `--json`, which escapes it. Mutation: print
+    # `self.path` in `Finding.labelled` — this reddens.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    entry = next((root / "docs" / "bugs").glob("BR-*.md"))
+    crafted = f"BR-001-{CRAFTED}.md"
+    entry.rename(entry.with_name(crafted))
+    assert invoke(["bugs", "check", *common]) == 1
+    captured = capsys.readouterr()
+    assert f"{UNPRINTABLE} [id-mismatch]" in captured.out
+    assert_never_raw(captured.out, captured.err)
+    assert captured.out.count("\n") == 1
+    assert invoke(["bugs", "check", "--json", *common]) == 1
+    paths = [p["path"] for p in json.loads(capsys.readouterr().out)["findings"]]
+    assert f"docs/bugs/{crafted}" in paths
+
+
+@pytest.mark.parametrize(
+    ("body", "refusal"),
+    [
+        (b"no frontmatter\n", "no `---` frontmatter block"),
+        (b"---\nbogus: x\n---\n", "unknown frontmatter key `bogus`"),
+        (b"caf\xe9\n", "is not valid UTF-8"),
+    ],
+    ids=["no-frontmatter", "unknown-key", "not-utf8"],
+)
+def test_index_names_a_crafted_entry_it_cannot_read_escaped_never_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], body: bytes, refusal: str
+) -> None:
+    # `bugs index` refuses an entry it cannot read or parse and names the file, whose name the
+    # repository chose; one case per kind of refusal, since each is its own f-string. The name
+    # arrives escaped and whole. Mutation: return the path unquoted from `entries._where`, or
+    # format `where` raw in the UTF-8 or unknown-key refusal — each reddens a case.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    capsys.readouterr()
+    name = f"BR-002-{CRAFTED}.md"
+    (root / "docs" / "bugs" / name).write_bytes(body)
+    assert invoke(["bugs", "index", *common]) == 1
+    captured = capsys.readouterr()
+    assert refusal in captured.err
+    assert_never_raw(captured.out, captured.err)
+    assert repr(f"docs/bugs/{name}") in captured.err
 
 
 def test_check_passes_a_clean_ledger(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -166,27 +258,52 @@ def test_index_writes_nothing_when_it_is_already_current(
     assert (root / "docs" / "bug-reports.md").stat().st_mtime_ns == before
 
 
+@pytest.mark.parametrize(
+    ("directory", "named"),
+    [("sealed", "src/sealed/a.py"), (CRAFTED, UNPRINTABLE)],
+    ids=["plain", "crafted"],
+)
 def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], directory: str, named: str
 ) -> None:
     # Exit 1, not 0: once the void pointer exists a stale mention in that file looks
-    # intentional to `bugs check` forever, so the move is reported as incomplete.
-    import os
-
+    # intentional to `bugs check` forever, so the move is reported as incomplete. The file is
+    # named, and a name the tree chose outside the path grammar is withheld on the line and kept
+    # in `--json`. Mutation: list the unswept names unbounded in `run_bugs_renumber` — the
+    # crafted case reddens.
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")
     root, common = project(tmp_path)
     invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
     capsys.readouterr()
-    sealed = root / "src" / "sealed"
+    sealed = root / "src" / directory
     sealed.mkdir()
     (sealed / "a.py").write_text("# BR-001\n", encoding="utf-8")
     sealed.chmod(0o555)
     try:
-        assert invoke(["bugs", "renumber", "BR-001", "BR-009", *common]) == 1
+        assert invoke(["bugs", "renumber", "BR-001", "BR-009", "--json", *common]) == 1
     finally:
         sealed.chmod(0o755)
-    line = capsys.readouterr().out
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    line = data["summary"]
     assert line.startswith("FAIL: BR-001 moved to BR-009, but 1 file(s) still reference BR-001")
-    assert "(src/sealed/a.py)" in line and "docs/bugs/BR-001.md" in line
-    assert line.count("\n") == 1
+    assert f"({named})" in line and "docs/bugs/BR-001.md" in line
+    assert_never_raw(line, captured.err)
+    assert "\n" not in line
+    assert data["unswept"][0].startswith(f"src/{directory}/a.py:")
+
+
+def test_check_answers_with_the_bugs_gate_s_own_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `bugs check` and the `bugs` gate are one function. Mutation
+    # (advisory): the import in `run_bugs_check` becomes `from keelline.ledger.check import
+    # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
+    _root, common = project(tmp_path)
+    argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
+    assert invoke([*argv, *common]) == 0
+    assert invoke(["bugs", "check", *common]) == 0
+    planted = [Finding("planted", "", None, "")]
+    monkeypatch.setattr("keelline.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
+    assert invoke(["bugs", "check", *common]) == 1

@@ -1,4 +1,4 @@
-"""The chained `prepare-commit-msg` hook and its per-repository installer (§7.2).
+"""The chained `prepare-commit-msg` hook and its per-repository installer.
 
 Installed into `git rev-parse --git-path hooks`, never through `core.hooksPath`: a global
 setting is overridden by any repository that sets its own and silently competes with husky
@@ -10,22 +10,22 @@ checkout and every worktree.
 A foreign hook of the same name is kept as `<name>.local` and the shipped hook `exec`s it
 last, so nothing that was already running stops running. `uninstall` puts it back.
 
-This is the one place this lane writes outside a project root on purpose: the hooks
-directory is git's, and in a worktree it is not under the checkout at all. The writes are
-`fsops.write_atomically` on the hook path and a rename of the foreign hook beside it; both are
-enumerated under D14 by the plan that added them.
+This is the one place this area writes outside a project root on purpose: the hooks directory is
+git's, and in a worktree it is not under the checkout at all. The writes are
+`fsops.write_atomically` on the hook path and a rename of the foreign hook beside it, and both paths
+are named in `docs/cli.md`'s **Writes** paragraph for `keelline setup --git-hooks`, as the
+enumerated-writes rule (CONTRIBUTING.md#enumerated-writes) asks of every path a command writes.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
 from keelline import fsops
 from keelline.errors import Refusal
-from keelline.gitenv import GIT_TIMEOUT_SECONDS, scrubbed_env
+from keelline.gitenv import NO_ANSWER, git_run
 
 HOOK_NAME = "prepare-commit-msg"
 HOOK_MARKER = "# keelline:prepare-commit-msg"
@@ -102,29 +102,22 @@ class Removed(NamedTuple):
 
 
 def hooks_dir(root: Path) -> Path:
-    try:
-        # S603/S607: list form; `root` is a path this process was handed by a person or a
-        # test, not a repository value; `git` through PATH because the owner's git answers.
-        # No `--` after `--git-path hooks`: measured, git prints a literal `--` as a second
-        # line there. `hooks` is a constant, so nothing here is a value to close off.
-        completed = subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), "rev-parse", "--git-path", "hooks"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    # Neither refusal carries a byte this module did not compute, for the reason `commit.commits_in`
-    # states beside its own three: `rev-parse`'s stderr is repository-authored — it quotes the
-    # offending CONFIG VALUE, `core.hooksPath` included — and `TimeoutExpired.__str__` renders the
-    # whole argv. `root` is the caller's own path and is the actionable part; it is all that is
-    # printed. This defect was found and fixed in `commits_in` during this lane's own review and
-    # was still here, which is why the reasoning is repeated rather than pointed at.
-    except (OSError, subprocess.TimeoutExpired):
-        raise Refusal(f"git could not name the hooks directory of {root}") from None
-    answer = completed.stdout.strip()
-    if completed.returncode != 0 or not answer:
+    """The directory git runs `root`'s hooks from, as git names it: `core.hooksPath` when set.
+
+    Through `gitenv.git_run`, so a `core.hooksPath` in any bytes is the directory git names,
+    and `setup --git-hooks`, `attach` and `doctor` each read it as that directory. No `--` after
+    `--git-path hooks`: measured, git prints a literal `--` as a second line there. `hooks` is a
+    constant, so nothing here is a value to close off.
+    """
+    code, out = git_run(root, "rev-parse", "--git-path", "hooks")
+    # Neither refusal carries a byte this module did not compute, for the reason
+    # `commit.commits_in` states beside its own: `rev-parse`'s stderr is repository-authored — it
+    # quotes the offending CONFIG VALUE, `core.hooksPath` included — and is never read. `root` is
+    # the caller's own path and is the actionable part; it is all that is printed.
+    if code == -1:
+        raise Refusal(f"git could not name the hooks directory of {root} ({NO_ANSWER})")
+    answer = out.removesuffix("\n")
+    if code != 0 or not answer:
         raise Refusal(
             f"git could not name the hooks directory of {root}; run it yourself to see why"
         )
@@ -158,7 +151,7 @@ def install(root: Path) -> Installed:
         raise Refusal(f"{local} already exists and was not preserved by keelline; move it aside")
     preserved: Path | None = None
     if target.exists() and not replaced:
-        target.rename(local)  # beside the hook, in git's own directory (D14)
+        target.rename(local)  # beside the hook, in git's own directory, as `docs/cli.md` says
         # Its mode is kept as found: `chmod -x` is how a developer switches a hook off, and
         # the chain tests `-x` for exactly that reason.
         preserved = local
@@ -179,7 +172,7 @@ def uninstall(root: Path) -> Removed:
     # file dropped beside an installed hook is unexamined — and the installed hook has been
     # `exec`ing it on every commit since, which is the larger fact. Restoring it is therefore
     # the honest end of that state rather than a new exposure, and it is deliberate: the
-    # `.local` name is the plan's contract with the `setup` lane, and a provenance marker or an
+    # `.local` name is the contract `setup` relies on, and a provenance marker or an
     # unconditional refusal here would be this module inventing a different one.
     if local.exists():
         local.rename(target)

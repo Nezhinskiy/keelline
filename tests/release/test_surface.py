@@ -10,12 +10,12 @@ from __future__ import annotations
 import keelline.release.api as release
 
 
-def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
+def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, for the reason tests/doctor/test_surface.py gives: a subset
     # lets an export arrive unnoticed. `doctor` reads all but `drift` and `RECORD` —
     # `tests/test_manifests.py` reads `drift`, and `scripts/check_artifacts.py` reads
     # `HASHED_FILES` and `RECORD`. `write_record` is deliberately absent, because writing the
-    # record is this area's own business and no other lane's.
+    # record is this area's own business and no other area's.
     required = {
         # what the record covers, and where it lives. This comment used to say `doctor` names
         # the file it compared; it does not, it says "beside `hooks/run-hook.sh`" in prose, so
@@ -30,5 +30,12 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # "present and not a record" is a distinct answer from "absent" — absent skips in
         # `doctor` and unreadable must be red — so the consumer needs the class to branch on.
         "UnreadableRecord",
+        # which commit a release is: `init` writes the pin, `doctor`'s `ci-ref` row
+        # judges it
+        "Pin",
+        "Resolution",
+        "released",
+        "resolve_pin",
+        "is_released",
     }
     assert required == set(release.__all__)

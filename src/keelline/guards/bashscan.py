@@ -427,7 +427,7 @@ def heredoc_body_end(text: str, index: int) -> int | None:
 
     PORTED AHEAD OF ITS CONSUMER: nothing in `src/` calls this yet, and it is not on
     `guards/api.py`. It is here for a caller that walks command substitutions -- a `$(...)`
-    scan of its own -- and the lane that adds one is where it acquires a production caller.
+    scan of its own -- and the change that adds one is where it acquires a production caller.
     Until then `tests/guards/test_bashscan.py` is what holds its contract, so the contract is
     stated here in full rather than left to be reconstructed from a caller that does not
     exist.
@@ -568,10 +568,10 @@ def _strip_line_continuations(text: str) -> str:
     for an argument bash actually reads as `secrets/` + a literal newline + `.env` --
     not a path that exists, and not the one the guard would deny. That is a FALSE DENIAL
     (the naive strip invents a match bash's own argument never contains), which is the
-    fail-CLOSED direction the plan's binding requirement asks for when the guard's model
-    and bash disagree -- but it is still a wrong model of what bash executes, and a wrong
-    model is a liability the far side of the ledger has already been burned by (see the
-    module docstring's heredoc history). This function stays quote-aware instead: exactly
+    fail-CLOSED direction a guard must take when its model and bash disagree -- but it
+    is still a wrong model of what bash executes, and a wrong model is a liability the
+    far side of the ledger has already been burned by (see the module docstring's
+    heredoc history). This function stays quote-aware instead: exactly
     as precise as bash itself, so it introduces no new mismatch in either direction on any
     shape measured for this fix -- both the four that must now deny and the false-denial
     probes (a wrapped `docker compose` invocation, a continued `find`, and a heredoc body
@@ -675,7 +675,7 @@ def strip_heredocs(command: str) -> str:
     and it is not on `guards/api.py`, so its only callers today are in
     `tests/guards/test_bashscan.py`. It is the convenience shape for a caller that wants the
     prepared TEXT and no heredoc list -- a path-matching or token check rather than a
-    program-level one -- and the lane that adds such a check is where it acquires a production
+    program-level one -- and the change that adds such a check is where it acquires a production
     caller.
 
     Note what the name does NOT promise: an UNQUOTED heredoc body is not removed. A caller

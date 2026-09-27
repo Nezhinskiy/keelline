@@ -1,4 +1,4 @@
-"""The `bugs` group (§5.2): `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
+"""The `bugs` group: `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
 
 from __future__ import annotations
 
@@ -10,10 +10,16 @@ from keelline.areas import SubParsers
 from keelline.command import CHECK_HELP, common_flags, root_and_config
 from keelline.findings import labels, listed
 from keelline.ledger.entries import SEVERITIES
+from keelline.printed import printable
 from keelline.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
 _INERT = "nothing to check: no ledger directory and no generated index"
+BASE_HELP = (
+    "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
+    "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
+    "entry of it answers for it; without it the tree alone is judged"
+)
 
 
 def run_bugs_index(args: argparse.Namespace) -> Result:
@@ -44,17 +50,19 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
 
 
 def run_bugs_check(args: argparse.Namespace) -> Result:
-    from keelline.ledger.check import problems, uninitialised
+    from keelline.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
-    if uninitialised(root, config):
+    found = bugs_gate(root, config, args.base or "")
+    # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
+    # a finding, and there is none.
+    if not found and uninitialised(root, config):
         return Result(_INERT, {"checked": False, "findings": []})
-    found = problems(root, config)
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
         return Result(_OK, data)
-    # Labels only on the line: a path, a line number and a rule are this lane's; the detail may
-    # quote the repository and stays in `data`.
+    # Labels only on the line: a path, a line number and a rule are this command's; the detail
+    # may quote the repository and stays in `data`.
     return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)
 
 
@@ -88,7 +96,7 @@ def run_bugs_renumber(args: argparse.Namespace) -> Result:
         return Result(
             f"FAIL: {args.old} moved to {args.new}, but {len(result.unswept)} file(s) still "
             f"reference {args.old} and must be fixed by hand "
-            f"({listed([u.split(':', 1)[0] for u in result.unswept])}); "
+            f"({listed([printable(u.split(':', 1)[0]) for u in result.unswept])}); "
             f"a void pointer remains at {void}",
             data,
             exit_code=1,
@@ -113,6 +121,7 @@ def register(groups: SubParsers) -> None:
     check = common_flags(
         sub.add_parser("check", help="validate the ledger, the index and every reference")
     )
+    check.add_argument("--base", default=None, help=BASE_HELP)
     check.set_defaults(func=run_bugs_check)
     renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
     renumber.add_argument("old")

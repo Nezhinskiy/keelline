@@ -7,10 +7,11 @@ have run* against a stub instead of shelling out to `gh`, `git` or `pre-commit`.
 `subprocess.run` would hide the argv, which is the only part of these calls that can be wrong in
 a way a user notices: a missing `--private` publishes somebody's private overlay.
 
-A missing binary is a finding, never a traceback (the global constraints make `gh`, `git` and
-`pre-commit` optional), so an `OSError` from the launch becomes `Completed(NOT_FOUND, ...)` and
-the caller turns it into a note. A binary that ran and never returned gets its own code,
-`TIMED_OUT`, because "not installed" and "hung for five minutes" are different findings.
+A missing binary is a finding, never a traceback: Keelline installs none of `gh`, `git` and
+`pre-commit`, and has to report on a machine that lacks any of them. So an `OSError` from the launch
+becomes `Completed(NOT_FOUND, ...)` and the caller turns it into a note. A binary that ran and never
+returned gets its own code, `TIMED_OUT`, because "not installed" and "hung for five minutes" are
+different findings.
 """
 
 from __future__ import annotations
@@ -29,11 +30,12 @@ NOT_FOUND = 127
 # as `NOT_FOUND` -- which every caller reads as "gh is not installed". A wrong finding is worse
 # than a slow one, and the two states have different remedies.
 TIMED_OUT = 124
-# Wall-clock bound on one call, and deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`
-# (D7: a cap, not a config key). That one bounds a local, argument-free query that neither
-# touches the network nor grows with the repository; every call here does the opposite — `gh
-# repo create --clone` waits on GitHub to generate a repository from a template, and the clone
-# that follows comes down the wire. Tune this for a hung process, not for a slow link.
+# Wall-clock bound on one call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
+# changes with it. Deliberately far wider than `gitenv.GIT_TIMEOUT_SECONDS`, which bounds a local,
+# argument-free query that neither touches the network nor grows with the repository; every call
+# here does the opposite — `gh repo create --clone` waits on GitHub to generate a repository from a
+# template, and the clone that follows comes down the wire. Tune this for a hung process, not for a
+# slow link.
 NETWORK_TIMEOUT_SECONDS = 300
 # Inherit the environment rather than scrub it: these are the machine owner's own authenticated
 # commands, and `gh` needs its token and `git` its ssh-agent to work at all. What is dropped is
@@ -46,7 +48,7 @@ NETWORK_TIMEOUT_SECONDS = 300
 # that redirect git was wrong.** `GH_HOST` and `GH_CONFIG_DIR` redirect `gh` the same way and
 # are kept deliberately: they are how a GitHub Enterprise owner reaches their own host, and
 # dropping them would break that installation outright to close a gap the inherited token does
-# not have. A lane that needs them gone should say which call and why.
+# not have. A caller that needs them gone should say which call and why.
 _ENV_DROP = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -58,10 +60,30 @@ _ENV_DROP = (
 )
 # Forced rather than inherited, and the reason the cap above means anything. `git` and `gh` ask
 # for a credential on stdin, and every call here runs with output captured -- so a prompt is
-# invisible and blocks for the whole of `NETWORK_TIMEOUT_SECONDS`. `doctor`'s `ci-ref` row is
-# the case that makes it a finding rather than an annoyance: the URL it resolves is
-# repository-authored, and a read-only diagnostic must not be holdable by one.
+# invisible and blocks for the whole of `NETWORK_TIMEOUT_SECONDS`, which a caller cannot tell
+# from a hang. What makes that a finding rather than an annoyance is which callers reach the
+# network through here: `overlay create --template` launches `gh repo create` and a clone, whose
+# authentication is the machine owner's and which prompts when it is missing, and
+# `release.pins.released` runs `git ls-remote` against the public repository for `keelline init`
+# and for `doctor`'s `ci-ref` row -- a write meant to run non-interactively and a read-only
+# diagnostic, neither of them something a person is sitting in front of waiting to type a
+# password.
+#
+# **This used to say the `ci-ref` row resolves a repository-authored URL, and it does not.** That
+# row has asked about `keelline.REPOSITORY_URL`, a module constant, ever since that constant was
+# introduced. The control is unchanged and still needed; what was wrong was the sentence explaining
+# it, which named the one caller it had stopped applying to -- and a false rationale on a hardening
+# is how a later change concludes the hardening is unnecessary.
 _ENV_FORCE = {"GIT_TERMINAL_PROMPT": "0"}
+# How a launched program's output is read: as text in the locale's codec, and a byte that codec
+# cannot read is U+FFFD rather than a `UnicodeDecodeError`. The rule rests on what every caller
+# does with the output — quotes it in a message, matches it against a grammar (`git ls-remote`'s
+# tag lines, `gh`'s JSON), or ignores it for an exit code — and on none of them comparing it
+# with a path or opening one, which is what `gitenv.git_run`'s lossless reading is for. Read
+# strictly, one such byte would end the command as an internal error — `test attribute` over a
+# test run whose output quotes a latin-1 filename, for one. U+FFFD prints, and a UTF-8 file can
+# hold it.
+_DECODE_ERRORS = "replace"
 
 
 @dataclass(frozen=True)
@@ -75,8 +97,23 @@ class Runner(Protocol):
     def run(self, argv: list[str], cwd: Path) -> Completed: ...
 
 
+@dataclass(frozen=True)
 class _SubprocessRunner:
+    """The real runner, optionally with a narrower wall-clock bound than the module's.
+
+    `timeout=None` means `NETWORK_TIMEOUT_SECONDS`, read at call time rather than captured here,
+    which is what keeps `tests/test_runner.py`'s case able to lower the module constant — and
+    what keeps the default one number in one place. A caller passes a smaller one when the
+    question it asks is smaller than the ones this cap was written for: `doctor` asks the public
+    repository for a tag listing on a command documented as a one-line diagnostic, and blocking
+    it for five minutes is not a diagnostic (`doctor.checks.CI_REF_TIMEOUT_SECONDS`). Nobody may
+    pass a *larger* one without saying why here; the cap is for a hung process, not a slow link.
+    """
+
+    timeout: float | None = None
+
     def run(self, argv: list[str], cwd: Path) -> Completed:
+        bound = NETWORK_TIMEOUT_SECONDS if self.timeout is None else self.timeout
         env = {key: value for key, value in os.environ.items() if key not in _ENV_DROP}
         env.update(_ENV_FORCE)
         try:
@@ -86,23 +123,30 @@ class _SubprocessRunner:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                # See `_DECODE_ERRORS`: output is a message or a grammar's input, never a path.
+                errors=_DECODE_ERRORS,
                 check=False,
-                timeout=NETWORK_TIMEOUT_SECONDS,
+                timeout=bound,
                 env=env,
                 # Closed, not inherited. See `_ENV_FORCE`: a prompt on an inherited stdin is
                 # invisible behind `capture_output` and outlasts nothing.
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired:
-            return Completed(
-                TIMED_OUT, "", f"{argv[0]} did not finish within {NETWORK_TIMEOUT_SECONDS}s"
-            )
+            return Completed(TIMED_OUT, "", f"{argv[0]} did not finish within {bound}s")
         except (OSError, subprocess.SubprocessError) as exc:
             return Completed(NOT_FOUND, "", f"{argv[0]} could not be run: {exc}")
         return Completed(done.returncode, done.stdout, done.stderr)
 
 
-def subprocess_runner() -> Runner:
+def subprocess_runner(*, timeout: float | None = None) -> Runner:
     """The real one. List form, never `shell=True`, and every repository- or argument-derived
-    value passed after a `--` so a name shaped like an option cannot become one (§3)."""
-    return _SubprocessRunner()
+    value passed after a `--` so a name shaped like an option cannot become one (principle 5).
+
+    `timeout` is the wall-clock bound on each call this runner makes, defaulting to
+    `NETWORK_TIMEOUT_SECONDS`. It is a keyword and it is on the factory rather than on the
+    `Runner` protocol, so no stub in the suite has to grow a parameter it would ignore: what a
+    caller bounds is the real launcher it asks for, and every test that substitutes a runner is
+    already bounding it at nothing.
+    """
+    return _SubprocessRunner(timeout=timeout)

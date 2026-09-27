@@ -155,8 +155,10 @@ def test_no_policy_argument_refuses_with_a_token(tmp_path: Path) -> None:
 def test_no_interpreter_of_the_floor_version_refuses_under_closed_only(
     tmp_path: Path, policy: str, code: int
 ) -> None:
-    # S8 row 1: the wrapper must decide this itself. Every Python-side fallback is unreachable
-    # here by construction — there is no interpreter to run it.
+    # The "no interpreter" row of the fail-closed matrix in the spike record
+    # (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`): the wrapper must decide this itself.
+    # Every Python-side fallback is unreachable here by construction — there is no interpreter
+    # to run it.
     result = _run(
         policy,
         "hook",
@@ -169,11 +171,12 @@ def test_no_interpreter_of_the_floor_version_refuses_under_closed_only(
 
 
 def test_an_interpreter_below_the_floor_is_rejected(tmp_path: Path) -> None:
-    # S8 row 2, with a real sub-floor interpreter rather than a fake that exits non-zero for
-    # every argument. A fake cannot exercise `sys.version_info >= (3, 11)` at all: mutate the
-    # predicate to `True` and the fake still refuses, so the row would duplicate the one above
-    # and prove nothing. `_old_python` is the tree's own seam for this, and CI pins it through
-    # KEELLINE_OLD_PYTHON so the row runs there rather than skipping everywhere.
+    # The fail-closed matrix's "only 3.9 available" row, with a real sub-floor interpreter rather
+    # than a fake that exits non-zero for every argument. A fake cannot exercise
+    # `sys.version_info >= (3, 11)` at all: mutate the predicate to `True` and the fake still
+    # refuses, so the row would duplicate the one above and prove nothing. `_old_python` is the
+    # tree's own seam for this, and CI pins it through KEELLINE_OLD_PYTHON so the row runs there
+    # rather than skipping everywhere.
     old = _old_python()
     if old is None:
         pytest.skip("no interpreter below 3.11 on this machine; set KEELLINE_OLD_PYTHON")
@@ -203,13 +206,13 @@ def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:
 
 
 def test_a_plugin_root_in_the_environment_does_not_choose_the_launcher(tmp_path: Path) -> None:
-    # Replaces S8 row 3, whose premise was that the environment names the launcher. It does
-    # not: the harness substitutes the plugin root into the *command string* of
-    # `hooks/hooks.json`, so the wrapper that runs is always the plugin's own, and the program
-    # it hands to Python is derived from that wrapper's path. A variable of the same name
-    # arriving from anywhere else — a committed `.claude/settings.json` `env` block is the case
-    # `config/machine.py` gates two other variables against — must change nothing, because this
-    # choice is made before any Keelline guard runs.
+    # Replaces the fail-closed matrix's "`CLAUDE_PLUGIN_ROOT` unset" row, whose premise was that
+    # the environment names the launcher. It does not: the harness substitutes the plugin root
+    # into the *command string* of `hooks/hooks.json`, so the wrapper that runs is always the
+    # plugin's own, and the program it hands to Python is derived from that wrapper's path. A
+    # variable of the same name arriving from anywhere else — a committed `.claude/settings.json`
+    # `env` block is the case `config/machine.py` gates two other variables against — must change
+    # nothing, because this choice is made before any Keelline guard runs.
     #
     # The two roots are told apart by their exit codes, not by a message: `theirs` exits 3,
     # which under `closed` policy becomes a KL_RC refusal and exit 2.
@@ -237,9 +240,10 @@ def _planted_interpreter(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_an_interpreter_the_environment_names_is_ignored_off_a_terminal(tmp_path: Path) -> None:
-    # C1, and the half `test_a_plugin_root_in_the_environment_does_not_choose_the_launcher` left
-    # open one line below itself: closing *which file* the wrapper hands Python, while the
-    # environment still chose *which Python*, is the same class of hole with a different name.
+    # Off a terminal, the environment does not choose the interpreter — the half
+    # `test_a_plugin_root_in_the_environment_does_not_choose_the_launcher` left open one line
+    # below itself: closing *which file* the wrapper hands Python, while the environment still
+    # chose *which Python*, is the same class of hole with a different name.
     # Measured on the shipped wrapper: with the `env`-block equivalent of
     # KEELLINE_PYTHON_CANDIDATES=<repo>/evil-python, the wrapper ran
     # `<repo>/evil-python <plugin>/scripts/keelline hook PreToolUse` and exited 0 — arbitrary
@@ -289,9 +293,10 @@ def test_an_interpreter_inside_the_project_root_is_never_used(tmp_path: Path) ->
     # Gating `KEELLINE_PYTHON_CANDIDATES` on a terminal moved the program chooser from one
     # variable to another: the hook path then always uses the built-in list, whose last entry is
     # a `PATH` lookup, and `PATH` reaches this process from the same committed `env` block. The
-    # entry is not droppable -- it is the fall-through S8 row 2 measured, and a pyenv, nix or
-    # asdf machine has no interpreter at any of the four absolute paths -- so what is refused is
-    # the narrower thing a clone can actually stage: a candidate resolving inside its own tree.
+    # entry is not droppable -- it is the fall-through the fail-closed matrix's "only 3.9 available"
+    # row measured, and a pyenv, nix or asdf machine has no interpreter at any of the four absolute
+    # paths -- so what is refused is the narrower thing a clone can actually stage: a candidate
+    # resolving inside its own tree.
     #
     # The containment is asked BEFORE the version probe, because that probe is itself an
     # execution: `"$c" -c ...` runs the candidate, and a check made afterwards would be made on
@@ -418,8 +423,9 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
 def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
     # `[ -f ]` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
     # CPython's own "Permission denied" and exited 2 with no KL_ token, passed straight through
-    # by `case "$rc" in 0|2)` — the unattributed exit 2 D11 exists to make impossible, and a
-    # state `doctor`'s wrapper row reported green for, because it keys on finding a token.
+    # by `case "$rc" in 0|2)` — an unattributed exit 2, which every KL_ token exists to make
+    # impossible, and a state `doctor`'s wrapper row reported green for, because it keys on
+    # finding a token.
     root = _plugin_root(tmp_path, 0)
     (root / "scripts" / "keelline").chmod(0o000)
     try:
@@ -462,7 +468,7 @@ def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path:
     # The refusal the self-derivation still owes: a wrapper with no launcher beside it must
     # say so rather than reach for the one the environment offers. Both arms matter — without
     # the refusal a missing launcher reaches Python as a missing file and exits 2 by CPython
-    # accident, with no token to attribute it (D11); without the self-derivation it would run
+    # accident, with no token to attribute it; without the self-derivation it would run
     # `theirs` and exit 0.
     ours = _plugin_root(tmp_path / "ours", 0, with_launcher=False)
     theirs = _plugin_root(tmp_path / "theirs", 0)
@@ -473,8 +479,9 @@ def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path:
 
 @pytest.mark.parametrize("rc", [1, 3, 126, 127])
 def test_any_other_exit_code_becomes_a_refusal_under_closed(tmp_path: Path, rc: int) -> None:
-    # S8 row 5 generalised. 1 is an ImportError, 126 a lost executable bit on the launcher,
-    # 127 a missing interpreter the probe somehow accepted; none of them may read as allow.
+    # The fail-closed matrix's "ImportError planted" row, generalised. 1 is an ImportError, 126 a
+    # lost executable bit on the launcher, 127 a missing interpreter the probe somehow accepted;
+    # none of them may read as allow.
     result = _run("closed", "hook", "PreToolUse", plugin_root=_plugin_root(tmp_path, rc))
     assert result.returncode == 2
     assert "KL_RC" in result.stderr and str(rc) in result.stderr
@@ -519,9 +526,9 @@ def test_keelline_runs_from_the_project_root(tmp_path: Path) -> None:
 
 
 def test_the_wrapper_is_committed_executable() -> None:
-    # S8 row 6 measured that a 0644 wrapper does NOT block: the harness never executes it, so
-    # no code of ours runs and no policy applies. The wrapper cannot defend its own mode; this
-    # assertion and `doctor`'s wrapper probe (Task 15) are the whole defence.
+    # Measured: a 0644 wrapper does NOT block — the harness never executes it, so no code of
+    # ours runs and no policy applies. The wrapper cannot defend its own mode; this assertion
+    # and `doctor`'s wrapper probe are the whole defence.
     assert stat.S_IMODE(WRAPPER.stat().st_mode) & 0o111, "run-hook.sh must ship executable"
 
 
@@ -646,9 +653,9 @@ def test_an_interpreter_in_another_checkout_of_the_same_repository_is_refused(
     subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
     subprocess.run([*git, "add", "python3"], check=True, capture_output=True)
     subprocess.run([*git, "commit", "-q", "-m", "ship"], check=True, capture_output=True)
-    worktree = tmp_path / "worktrees" / "wave"
+    worktree = tmp_path / "worktrees" / "feature"
     subprocess.run(
-        [*git, "worktree", "add", "-q", str(worktree), "-b", "wave"],
+        [*git, "worktree", "add", "-q", str(worktree), "-b", "feature"],
         check=True,
         capture_output=True,
     )

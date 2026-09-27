@@ -10,12 +10,14 @@ loader at module level and is imported only by `commands.py` modules.
 from __future__ import annotations
 
 import argparse
+import re
+from collections.abc import Callable
 from pathlib import Path
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
 
-# One sentence per shared flag (DC4). `--root` and `--machine` were spelled by hand in three
+# One sentence per shared flag. `--root` and `--machine` were spelled by hand in three
 # parsers besides this one and had already drifted from these words; `--home` appeared in two
 # areas with two sentences, one saying "read" and the other "write". A flag that means the same
 # thing across eight commands says the same thing, and `tests/test_command.py` walks the real
@@ -52,7 +54,25 @@ SETUP_MACHINE_HELP = (
 # ("Read the diff with `keelline attach --check` and pass --yes"). A `--check` that failed
 # whenever the run would widen would make the documented remedy itself a failure, and the skill
 # that runs check -> relay -> ask would begin with one.
-ATTACH_CHECK_HELP = "report the binding and the diff, and write nothing"
+#
+# Its exit 1 now carries a second finding: a memory group that never moved into the overlay,
+# which `attach` refuses on above its first write. Both are things the owner acts on before
+# the real run rather than faults in the command, which is what makes them one exit code.
+ATTACH_CHECK_HELP = (
+    "report the binding, the diff and the groups that never moved, and write nothing"
+)
+
+
+def grammar(pattern: re.Pattern[str], rule: str) -> Callable[[str], str]:
+    """An argparse `type` that refuses, before anything runs, with the rule and never with the
+    value: the value is whatever was typed, and a refusal that quoted it would print it back."""
+
+    def check(value: str) -> str:
+        if not pattern.match(value):
+            raise argparse.ArgumentTypeError(rule)
+        return value
+
+    return check
 
 
 def common_flags(

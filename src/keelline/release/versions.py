@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from keelline.config.loader import UNPARSEABLE
 from keelline.errors import Failure
 from keelline.release.hashes import HASHED_FILES, RECORD, drift
 
@@ -32,18 +33,28 @@ class MalformedSource(Failure):
     """A version source that exists but cannot be parsed; the message names which one."""
 
 
+def _object(name: str, text: str) -> dict[str, Any]:
+    """A JSON source's top level, which is read with `.get` and so must be an object."""
+    document = json.loads(text)
+    if not isinstance(document, dict):
+        raise MalformedSource(f"{name} is valid JSON but its top level is not an object")
+    return document
+
+
 def _parse(name: str, text: str) -> str | None:
+    # Valid TOML or JSON of the wrong shape decodes cleanly, so `_read`'s decoder catches never
+    # see it: a `.get` on a list or a string raises AttributeError, which reaches the caller as
+    # an unlabelled internal error naming no file. Each shape a source is read in is asked first.
     if name == PYPROJECT:
-        version = tomllib.loads(text).get("project", {}).get("version")
+        project = tomllib.loads(text).get("project", {})
+        if not isinstance(project, dict):
+            raise MalformedSource(f"{name} is valid TOML but its project is not a table")
+        version = project.get("version")
         return str(version) if version is not None else None
     if name == LOCKFILE:
         # `uv sync --locked` fails the install step on a stale lockfile with a
         # dependency-shaped message, before this gate — built to catch exactly this — can speak.
         packages = tomllib.loads(text).get("package", [])
-        # Valid TOML of the wrong shape decodes cleanly, so `_read`'s decoder catches never see
-        # it: iterating a string yields characters and `entry.get` raises AttributeError, which
-        # reaches the caller as an unlabelled internal error naming no file. The lockfile owes
-        # the same named failure every other malformed source already gets.
         if not isinstance(packages, list) or not all(isinstance(e, dict) for e in packages):
             raise MalformedSource(f"{name} is valid TOML but its package is not a list of tables")
         for entry in packages:
@@ -55,7 +66,7 @@ def _parse(name: str, text: str) -> str | None:
         match = _INIT.search(text)
         return match.group(1) if match else None
     if name.endswith(".json"):
-        version = json.loads(text).get("version")
+        version = _object(name, text).get("version")
         return str(version) if version is not None else None
     released = text.split(START, 1)[1] if START in text else text
     match = _HEADING.search(released)
@@ -66,13 +77,17 @@ def _read(root: Path, name: str) -> str | None:
     path = root / name
     if not path.is_file():
         return None
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise MalformedSource(f"{name} is not UTF-8 text") from None
+    # `json` answers nesting past its depth with `RecursionError` too, so the arm that catches it
+    # names the language by the source: a deep `plugin.json` was reported as "not valid TOML".
+    language = "JSON" if name.endswith(".json") else "TOML"
     try:
         return _parse(name, text)
-    except tomllib.TOMLDecodeError as exc:
-        raise MalformedSource(f"{name} is not valid TOML: {exc}") from None
-    except json.JSONDecodeError as exc:
-        raise MalformedSource(f"{name} is not valid JSON: {exc}") from None
+    except (json.JSONDecodeError, *UNPARSEABLE) as exc:
+        raise MalformedSource(f"{name} is not valid {language}: {exc}") from None
 
 
 def collect(root: Path) -> dict[str, str | None]:
@@ -101,7 +116,9 @@ def _pyproject(root: Path) -> dict[str, Any]:
         return {}
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
+    except UnicodeDecodeError:
+        raise MalformedSource(f"{PYPROJECT} is not UTF-8 text") from None
+    except UNPARSEABLE as exc:
         raise MalformedSource(f"{PYPROJECT} is not valid TOML: {exc}") from None
 
 
@@ -131,6 +148,28 @@ def pending_fragments(root: Path) -> bool:
 def tag_for(version: str) -> tuple[str, str]:
     """The two tags one release carries: the workflow's `vX.Y.Z` and the platform's own."""
     return f"v{version}", f"{PACKAGE}--v{version}"
+
+
+def _marketplace_entries(root: Path) -> list[dict[str, Any]]:
+    """The marketplace's `plugins` entries, each an object, or none when there is no file."""
+    marketplace = root / MARKETPLACE
+    if not marketplace.is_file():
+        return []
+    try:
+        text = marketplace.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise MalformedSource(f"{MARKETPLACE} is not UTF-8 text") from None
+    try:
+        entries = _object(MARKETPLACE, text).get("plugins", [])
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise MalformedSource(f"{MARKETPLACE} is not valid JSON: {exc}") from None
+    # A string entry was read with `in`, a substring test, and a string `plugins` as a list of
+    # its characters, so the rule passed over both in silence.
+    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+        raise MalformedSource(
+            f"{MARKETPLACE} is valid JSON but its plugins is not a list of objects"
+        )
+    return entries
 
 
 def check(root: Path, *, tag: str | None = None) -> list[str]:
@@ -180,16 +219,13 @@ def check(root: Path, *, tag: str | None = None) -> list[str]:
             continue
         if value != canonical:
             problems.append(f"{name} says {value!r}; {PYPROJECT} says {canonical!r}")
-    marketplace = root / MARKETPLACE
-    if marketplace.is_file():
-        entries = json.loads(marketplace.read_text(encoding="utf-8")).get("plugins", [])
-        for entry in entries:
-            if "version" in entry:
-                problems.append(
-                    f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
-                    "plugin.json is the only source (D12)"
-                )
-    # DC5: the record of the shipped files is held current here and not only at a tag, so a
+    for entry in _marketplace_entries(root):
+        if "version" in entry:
+            problems.append(
+                f"{MARKETPLACE} entry {entry.get('name')!r} carries a version; "
+                "plugin.json is the only source"
+            )
+    # The record of the shipped files is held current here and not only at a tag, so a
     # wrapper edited without `keelline release hashes` fails the gate the same commit.
     #
     # Asked of the recorded files themselves and not of a `hooks/` directory. `--root` defaults

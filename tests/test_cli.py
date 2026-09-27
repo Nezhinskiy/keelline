@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -60,6 +62,57 @@ def _refusing(args: argparse.Namespace) -> Result:
 def test_a_result_prints_its_summary_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert run(["probe", "go"], parser=build_parser([_area("probe", _ok)])) == 0
     assert capsys.readouterr().out.strip() == "probe ran"
+
+
+# A name git or the disk handed over in bytes that are not UTF-8 reaches Python with a
+# surrogate escape per byte, and a summary that names the path carries it to stdout.
+UNDECODABLE = os.fsdecode(b"caf\xe9.md")
+
+
+def _names_a_path(args: argparse.Namespace) -> Result:
+    return Result(f"FAIL: {UNDECODABLE}", {"path": UNDECODABLE})
+
+
+def _stdout(monkeypatch: pytest.MonkeyPatch, errors: str) -> io.BytesIO:
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="utf-8", errors=errors, write_through=True)
+    monkeypatch.setattr(sys, "stdout", stream)
+    return raw
+
+
+def test_a_summary_naming_a_path_that_is_not_utf_8_prints_under_a_strict_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Under a UTF-8 locale such as `en_US.UTF-8`, Python's stdout encodes strictly, so `print`
+    # raised `UnicodeEncodeError` on the escape and the frame reported `internal error`, exit 2,
+    # in place of the command's own answer. The escape is printed as `\udce9` instead, and the
+    # exit code is the command's. Mutation (advisory): drop the reconfiguration in `run` — this
+    # reddens on the exit code.
+    raw = _stdout(monkeypatch, "strict")
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _names_a_path)])) == 0
+    assert raw.getvalue() == b"FAIL: caf\\udce9.md\n"
+
+
+def test_json_output_is_unchanged_by_the_strict_stdout_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `--json` escapes every non-ASCII character itself, so the machine-readable output never
+    # reaches the fallback: the bytes are what they were, and a JSON reader gets the path back.
+    raw = _stdout(monkeypatch, "strict")
+    assert run(["probe", "go", "--json"], parser=build_parser([_area("probe", _names_a_path)])) == 0
+    assert raw.getvalue().isascii()
+    assert json.loads(raw.getvalue())["path"] == UNDECODABLE
+
+
+def test_a_stdout_that_carries_the_bytes_already_is_left_as_it_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # In Python's UTF-8 mode (`LANG` unset, or `C`) stdout is `surrogateescape`, which writes the
+    # original byte back: the path as it is on disk. That is kept; only a strict stream changes.
+    # Mutation (advisory): reconfigure every stream whatever its handler — this reddens.
+    raw = _stdout(monkeypatch, "surrogateescape")
+    assert run(["probe", "go"], parser=build_parser([_area("probe", _names_a_path)])) == 0
+    assert raw.getvalue() == b"FAIL: caf\xe9.md\n"
 
 
 def test_json_flag_works_anywhere_on_the_line(capsys: pytest.CaptureFixture[str]) -> None:
@@ -145,7 +198,7 @@ def test_a_broken_area_never_erases_the_prompt_on_a_non_blocking_event(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], event: str
 ) -> None:
     # One later area's import-time bug in its commands.py must not cost the user what they
-    # typed: exit 2 on UserPromptSubmit erases the prompt (design §5.3).
+    # typed: exit 2 on UserPromptSubmit erases the prompt.
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken)
     assert main(["hook", event]) == 0
     err = capsys.readouterr().err
@@ -190,9 +243,9 @@ def test_discovery_raising_a_base_exception_gets_the_same_verdicts_as_an_excepti
     code: int,
 ) -> None:
     # `main`'s own guard around discovery and the parser build stayed `except Exception` after
-    # A1 widened `dispatch`, `run_hook` and `cli.run` to `BaseException`, so an area importing
+    # `dispatch`, `run_hook` and `cli.run` were widened to `BaseException`, so an area importing
     # something that raises KeyboardInterrupt or asyncio.CancelledError at import time bypassed
-    # `_discovery_failed` (and its §5.3 judging) entirely instead of degrading open on
+    # `_discovery_failed` (and its per-event judging) entirely instead of degrading open on
     # SessionStart and refusing on PreToolUse and on a non-hook command, exactly like a
     # RuntimeError already does.
     monkeypatch.setattr("keelline.cli.discover_registrars", _broken_by_keyboard_interrupt)
@@ -228,9 +281,9 @@ def test_a_broken_parser_build_is_judged_like_a_broken_import(
     argv: list[str],
     code: int,
 ) -> None:
-    # An area's `register()` runs during the parser build, one line outside the try that judged
-    # its import. The bypass went both ways: PreToolUse returned 1 where §5.3 requires 2, and
-    # UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
+    # An area's `register()` runs during the parser build, one line outside the try that judged its
+    # import. The bypass went both ways: PreToolUse returned 1 where a blocking event requires 2,
+    # and UserPromptSubmit returned 1 where it must degrade open. Two areas claiming one group name
     # is the same failure, and a plausible merge accident in an architecture that adds areas.
     monkeypatch.setattr("keelline.cli.discover_registrars", lambda: list(registrars))
     assert main(argv) == code

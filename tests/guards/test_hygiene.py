@@ -203,6 +203,29 @@ def test_a_repeated_or_nested_code_root_is_walked_once(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked(
+    tmp_path: Path,
+) -> None:
+    """`"src/"` and `"./tests"` are how many people write a directory, and they were dropped.
+
+    `contained()` took on the write's component rule, which refuses a trailing `/`, a doubled
+    `/` and a leading `./` because the engine cannot write through them. A code root is only
+    walked, and `contained_roots` caught the refusal and moved on — so both entries left the
+    hygiene counts, the audit and the citation roots with nothing saying so. They are folded
+    before the question now.
+
+    Oracle: `mutations.toml`, "a code root spelled with a slash is dropped again".
+    """
+    root = repo(tmp_path)
+    (root / "tests").mkdir()
+    (root / CONFIG_FILE).write_text(
+        CONFIG.replace('code_roots = ["src", "tests"]', 'code_roots = ["src/", ".//tests"]'),
+        encoding="utf-8",
+    )
+    assert contained_roots(root, config(root)) == [root / "src", root / "tests"]
+
+
+@needs_git
 def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
     """The sibling of the hash-based case, in the same false-alarm direction. A `__pycache__`
     accumulates one `.pyc` per interpreter tag and nothing removes the old ones, so a
@@ -241,7 +264,7 @@ def test_a_pyc_from_another_interpreter_is_not_judged(tmp_path: Path) -> None:
 
 @needs_git
 def test_only_contained_code_roots_are_scanned(tmp_path: Path) -> None:
-    # `config.paths` leaves `ledger.code_roots` to the consuming lane; an escaping entry is
+    # `config.paths` leaves `ledger.code_roots` to its consumer; an escaping entry is
     # skipped rather than followed, and a missing one is skipped rather than raised on.
     # `outside` is CREATED, which is what makes the containment check load-bearing here: with
     # `contained()` removed, `root/../outside` is a real directory and would be walked, so the
@@ -365,7 +388,7 @@ def test_an_unparseable_command_stays_over_inclusive() -> None:
     ],
 )
 def test_red_exit_reads_both_payload_shapes(raw: dict[str, object], expected: int | None) -> None:
-    # Premise 1: the source read `tool_response.exit_code`; the hooks reference documents the
+    # The source read `tool_response.exit_code`; the hooks reference documents the
     # Bash `tool_response` without one and a non-zero exit arriving as `PostToolUseFailure`'s
     # `error` field. Both are read, so the notice is not keyed on a field one harness lacks.
     # Reddened three ways, each measured: dropping the `not isinstance(code, bool)` test (the

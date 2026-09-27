@@ -43,7 +43,7 @@ FRESH_MONTHS = 2
 BACKING_LABELS = ("sourced", "measured", "thin")
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 _FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
-# `| S12 | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
+# `| S<n> | title | 2026-08 | 2026-09 | https://… | cited for | notes |` — seven cells. The
 # published cell is a month or the word `living` for a maintained page that carries no date.
 _SOURCE_ROW = re.compile(
     r"^\| (S\d+) \| ([^|]+) \| (\d{4}-\d{2}|living) \| (\d{4}-\d{2}) \| "
@@ -146,8 +146,8 @@ def test_no_module_claims_the_test_tree_cannot_share_a_helper() -> None:
 
 def test_the_methodology_walks_are_not_empty() -> None:
     # The vacuity guard for every parametrised test below: an empty methodology directory
-    # or an empty sources table passes them all vacuously. Named apart from the two gate
-    # guards in `tests/test_neutral_wave2.py` so `-k` can pick one.
+    # or an empty sources table passes them all vacuously. Named apart from the gate guards in
+    # `tests/test_neutral.py` so `-k` can pick one.
     assert PRINCIPLES in public_documents()
     assert len(sources()) >= SOURCES_FLOOR
     assert len(principle_sections()) >= PRINCIPLES_FLOOR
@@ -171,8 +171,8 @@ def test_every_source_row_parses_and_the_table_has_no_other_rows() -> None:
 
 
 def test_every_citation_resolves_and_every_source_is_cited() -> None:
-    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a row `S98`
-    # nothing cites → the second reddens. Both directions, because an uncited source is a
+    # Mutations: cite `[S99]` in a principle → the first assertion reddens; add a source row
+    # that no `[S98]` cites → the second reddens. Both directions, because an uncited source is a
     # source someone meant to use and forgot, which is a claim left without its evidence.
     cited = set(_CITATION.findall(PRINCIPLES.read_text(encoding="utf-8")))
     cited |= set(_CITATION.findall((METHODOLOGY / "README.md").read_text(encoding="utf-8")))
@@ -297,7 +297,7 @@ def registered_commands() -> set[str]:
 
 # A vacuity floor, not a count of the commands this CLI ships: the parser registered twenty
 # when this test was written, and the number is here so that a walk which found nothing — or
-# half of them — cannot satisfy the subset check above it. A lane that ships a command raises
+# half of them — cannot satisfy the subset check above it. A change that ships a command raises
 # the parser's count and leaves this alone.
 REGISTERED_COMMANDS_FLOOR = 20
 
@@ -313,7 +313,7 @@ def test_the_parser_registers_what_this_test_expects_to_walk() -> None:
 
 def test_every_registered_command_has_a_readme_row() -> None:
     # Mutation: delete the `keelline docs trail` line from the README → reddens naming it.
-    # This is the test that makes the README a shared file every lane owes a line to.
+    # This is the test that makes the README a shared file every command owes a line to.
     named = {" ".join(line.split()[1:3]) for line in readme_invocations()}
     named |= {line.split()[1] for line in readme_invocations()}
     missing = sorted(command for command in registered_commands() if command not in named)
@@ -432,19 +432,17 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
 
 
 CLI_REFERENCE = ROOT / "docs" / "cli.md"
-# The section Task 6 created and two later waves anchor on. Everything between its heading and
-# the next `## ` heading, so a table moved out of it stops being checked loudly rather than
-# quietly.
+# The `## Shared flags` section of `docs/cli.md`. Everything between its heading and the next `## `
+# heading, so a table moved out of it stops being checked loudly rather than quietly.
 _SHARED_FLAGS_SECTION = re.compile(r"^## Shared flags\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 _TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$", re.MULTILINE)
 
 
 def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
-    # Fix round 1, item 4. DC4's premise is that no sentence is spelled by hand, and the
-    # section this task added spelled all nine of them a second time in a document nothing
-    # checked — re-creating, one file over, exactly the drift the task exists to remove. Held
-    # row by row to `keelline.command`'s constants, the same way the README's Commands block is
-    # held to the real parser above.
+    # No shared-flag sentence is spelled by hand, and that section of `docs/cli.md` spelled all nine
+    # of them a second time in a document nothing checked — re-creating, one file over, exactly the
+    # drift one constant per flag exists to remove. Held row by row to `keelline.command`'s
+    # constants, the same way the README's Commands block is held to the real parser above.
     #
     # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
     from keelline.command import (
@@ -488,6 +486,32 @@ def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() ->
     }
 
 
+_REUSABLE_WORKFLOW_SECTION = re.compile(
+    r"^## The reusable workflow\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
+)
+# The repository settings the reusable workflow's verdict binds under. The caller file is
+# pull-request content, so without them the gates still run and report but a pull request can
+# edit its own caller; a section that lost one would read as if the verdict held without it.
+SETTINGS = (
+    "CODEOWNERS covering `/.github/`",
+    "Dismiss stale pull request approvals when new commits are pushed",
+    "the `check / gates` status check required",
+    "expected source set to GitHub Actions",
+    "branches required to be up to date before merging, or a merge queue",
+    "a `v*` tag ruleset on the Keelline repository",
+)
+
+
+def test_the_reusable_workflow_names_every_setting_the_verdict_binds_under() -> None:
+    # No oracle entry: this holds a document, not a guard. Checked by hand when it was
+    # written: the "Dismiss stale" bullet deleted from the section reddens this case naming it.
+    section = _REUSABLE_WORKFLOW_SECTION.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md has no `## The reusable workflow` section"
+    # Whitespace folded, so a setting wrapped across two lines is still found as one phrase.
+    text = " ".join(section.group(1).split())
+    assert [setting for setting in SETTINGS if setting not in text] == []
+
+
 # The configuration block in `docs/cli.md` is introduced as the grammar, and the loader
 # *refuses* an unknown section — so a section the block leaves out reads to a reader as a key
 # that is invalid. Three of the nine were missing (`[artifacts]`, `[ci]`, `[commit_messages]`),
@@ -514,6 +538,18 @@ def test_the_configuration_block_shows_every_section_the_loader_accepts() -> Non
     assert set(shown) == set(SECTIONS), (sorted(set(shown)), sorted(SECTIONS))
 
 
+def test_the_configuration_block_lists_the_built_in_gates_in_their_one_order() -> None:
+    # The reference is prose and cannot import the tuple, so its one spelling of the built-in
+    # gates is pinned here. Mutation: reorder `builtin` in `docs/cli.md`'s block and this
+    # reddens.
+    from keelline.config.schema import BUILTIN_GATES
+
+    section = _CONFIGURATION_BLOCK.search(CLI_REFERENCE.read_text(encoding="utf-8"))
+    assert section is not None, "docs/cli.md's `## Configuration` has no ```toml block"
+    listed = ", ".join(f'"{name}"' for name in BUILTIN_GATES)
+    assert f"\nbuiltin = [{listed}]" in section.group(1)
+
+
 # `plan check`'s rule count, stated in the reference and emitted by `docs/plans.py`. The
 # sentence said "Four rules" and then listed five, in one breath, for as long as the fifth rule
 # has existed. `base-unresolvable` is the refusal, not one of the rules the sentence counts.
@@ -534,13 +570,13 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
 
 
-# The `doctor` check table: fifteen rows, each spelling a check name, and the one
+# The `doctor` check table: sixteen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside*
-# `checks.py`, so the document's copy is a sixteenth spelling that guard cannot see and a
-# renamed check would leave this page green and wrong. That the unbound ones drift is not a
-# hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory over still said
-# fourteen.
+# `checks.py`, so the document's copy is a *second* spelling of each of the sixteen — one that
+# guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
+# ones drift is not a hypothesis: `len(OVERLAY_FILES)` is sixteen and four comments one directory
+# over still said fourteen.
 _DOCTOR_SECTION = re.compile(r"^## `keelline doctor[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 # `| `name` | what it answers | what it reads |` — the first cell only, backticked.
 _CHECK_ROW = re.compile(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
@@ -565,11 +601,11 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     ]
 
 
-# Fix round 1, item 3. The five verdict sentences are `VERDICTS` in
-# `keelline.guards.attribute` and are reproduced by hand in `docs/cli.md`'s table; every test
-# that had them read the expectation back out of `VERDICTS`, which is shape 9 of the
-# `sweep-defect-class` skill's own reference — both sides move together under any reword. This
-# is the same rule the Shared flags tables are held to, one section over.
+# The five verdict sentences are `VERDICTS` in `keelline.guards.attribute` and are reproduced by
+# hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
+# `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move
+# together under any reword. This is the same rule the Shared flags tables are held to, one section
+# over.
 _ATTRIBUTE_SECTION = re.compile(
     r"^## `keelline test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )
@@ -591,3 +627,26 @@ def test_the_verdict_table_is_the_shipped_sentences_and_not_a_second_spelling() 
     assert tuple(rows) == VERDICTS, [
         (row, sentence) for row, sentence in zip(rows, VERDICTS, strict=True) if row != sentence
     ]
+
+
+def _anchor(heading: str) -> str:
+    """GitHub's anchor for a heading: lower-cased, every character but a letter, a digit, a
+    space, `-` and `_` dropped, and each space a hyphen."""
+    kept = "".join(c for c in heading.lower() if c.isalnum() or c in " -_")
+    return kept.replace(" ", "-")
+
+
+def test_the_cli_reference_contents_lists_every_section_in_order() -> None:
+    # Every `## ` heading after the Contents, in order, each linked by GitHub's anchor: a command
+    # section added without its Contents line, or a heading renamed under a stale link, is
+    # a reference a reader cannot navigate. The floor is today's section count (44: the 39 there
+    # were before `assess`, `gate`, `adopt begin`, `adopt promote` and `init --questions`), so a
+    # walk that found nothing, or half, cannot pass.
+    # Mutation (declared): drop the `memory fit` Contents line -> the lists differ.
+    text = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    _, _, after = text.partition("## Contents\n")
+    contents, _, rest = after.partition("\n## ")
+    listed = re.findall(r"^- \[(.+)\]\(#([^)]+)\)$", contents, re.MULTILINE)
+    headings = re.findall(r"^## (.+)$", "## " + rest, re.MULTILINE)
+    assert len(headings) >= 44, len(headings)
+    assert listed == [(heading, _anchor(heading)) for heading in headings]

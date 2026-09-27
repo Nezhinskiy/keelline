@@ -43,13 +43,12 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
     manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
     assert manifest["name"] == "keelline"
     assert "hooks" not in manifest
-    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and
-    # reports "./skills/" as not found, because the value resolves relative to
-    # .codex-plugin/ itself: no string reaches the root-level skills/ directory from
-    # there. `skills/` now holds skills, but the key is the foundation/release lane's to
-    # add — this assertion is what encodes its absence today, and the lane that adds it
-    # rewrites this test and its name, once Codex's own manifest reading has actually
-    # been measured.
+    # `claude plugin validate` refuses "../skills/" as a path traversal attempt and reports
+    # "./skills/" as not found, because the value resolves relative to .codex-plugin/ itself: no
+    # string reaches the root-level skills/ directory from there. `skills/` now holds skills, but
+    # the key is the release's to add — this assertion is what encodes its absence today, and the
+    # change that adds it rewrites this test and its name, once Codex's own manifest reading has
+    # actually been measured.
     assert "skills" not in manifest
 
 
@@ -58,8 +57,8 @@ def test_the_repository_itself_passes_release_check() -> None:
 
 
 def test_the_repository_itself_carries_a_current_release_record() -> None:
-    # DC5: the record is kept true on every commit and not only at a tag, which is what makes
-    # it a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
+    # The release record is kept true on every commit and not only at a tag, which is what makes it
+    # a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
     # `scripts/keelline` that forgot `keelline release hashes` reddens here and in the gate.
     assert drift(ROOT) == []
 
@@ -71,10 +70,10 @@ def test_no_top_level_bin_directory() -> None:
 def _not_yet() -> list[str]:
     """What `README.md` itself declares unshipped, read off the README and never restated here.
 
-    The README's own roadmap sentence is the authority: the day `assess` ships, its author
-    removes it from that sentence and the storefront is free to advertise it, with no second
-    list to remember. Restating the items here would be the drift this test exists to catch,
-    one file along.
+    The README's own roadmap sentence is the authority: the day an item ships, its author
+    removes it from that sentence, as `assess`'s did, and the storefront is free to advertise
+    it, with no second list to remember. Restating the items here would be the drift this test
+    exists to catch, one file along.
 
     A leading article is dropped, and that is the whole difference between a test that catches
     this and one that does not: the README writes "the adoption state machine" and every one of
@@ -114,8 +113,8 @@ def test_the_readme_still_declares_what_has_not_shipped() -> None:
     # over an empty list and leave the storefront free to advertise anything.
     items = _not_yet()
     assert len(items) >= 4, items
-    assert "assess" in items
-    assert "adoption state machine" in items
+    assert "memory MCP server" in items
+    assert "hold-the-line baseline" in items
 
 
 def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> None:
@@ -125,7 +124,7 @@ def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> No
     card and the marketplace row; the Codex listing is the third storefront. All four
     advertised "an adoption state machine" while `keelline assess` did not exist and the
     README listed it under **Not yet**, and nothing in `keelline release check` or
-    `RELEASING.md` looked. Mutation (declared): put the adoption state machine back into
+    `RELEASING.md` looked. Mutation (declared): put the memory MCP server into
     `pyproject.toml`'s description -> reddens naming the file.
 
     What this cannot see is a paraphrase. The Codex listing's `shortDescription` said "earned
@@ -148,8 +147,8 @@ def test_every_changelog_fragment_carries_towncriers_orphan_prefix() -> None:
 
     towncrier reads the part before `.<type>.md` as the fragment's issue reference and
     `issue_format = "{issue}"` renders it in parentheses at the end of the bullet, so the 26
-    fragments assembled for 0.1.0 would each have published an internal lane slug — one of
-    them a wave number. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
+    fragments assembled for 0.1.0 would each have published an internal slug nobody outside
+    the repository can read. The `+` is towncrier's documented `orphan_prefix`; it suppresses the
     reference and leaves the slug readable in the repository, and it is per-fragment, so a
     fragment that one day names a real issue still renders its reference.
 

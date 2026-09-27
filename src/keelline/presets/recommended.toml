@@ -1,5 +1,7 @@
-# Owned by the foundation lane: [budgets], [native_caps], [defaults.*]; by the notes lane:
-# [rules]. The setup lane adds every other section.
+# Who reads what: the configuration loader (`keelline.config`) reads [budgets], [native_caps] and
+# [defaults.*] into a project's configuration; `keelline.memory` reads [rules]; `keelline.assess`
+# reads [assess]; `keelline.setup` reads [plugins] and [deny] when it installs a machine, and
+# [defaults.personal] and [defaults.keelline] for its own answers.
 
 [budgets]
 agents_md_lines = 300
@@ -13,15 +15,20 @@ volatile_notes_words = 2500
 volatile_ttl_days = 30
 
 [native_caps]
-# Platform limits in their own units, read by the consumers they bound (§9.5).
+# Platform limits in their own units, read by the consumers they bound.
 memory_index_lines = 200
 memory_index_bytes = 25600
 hook_output_chars = 10000
+
+[assess]
+# How many commits `keelline assess` reads for the commit-vocabulary probe.
+commit_window = 100
 
 [defaults.keelline]
 state = "initialised"
 profile = ""
 agents = ["claude", "codex"]
+enforced = []
 
 [defaults.project]
 base_branch = "main"
@@ -39,6 +46,7 @@ bug_index = "docs/bug-reports.md"
 roadmap = "docs/roadmap.md"
 roadmap_history = "docs/roadmap-history.md"
 memory = "docs/memory"
+keelline = "docs/keelline"
 
 [defaults.memory]
 mode = "local-only"
@@ -56,7 +64,10 @@ local = []
 [defaults.ci]
 mode = "reusable"
 ref = ""
-gate_branch = "main"
+
+[defaults.gates]
+builtin = ["docs", "bugs", "plan", "commit", "trail"]
+custom_timeout_seconds = 600
 
 [defaults.commit_messages]
 attribution_check = true
@@ -67,7 +78,7 @@ reply_language = ""
 artifact_language = "en"
 preset = "recommended"
 
-# Standing rules the `preset-rules` bundle injects at session start, in this order (§5.6).
+# Standing rules the `preset-rules` bundle injects at session start, in this order.
 # Each is a rule a session cannot look up in time — by the time it would, the fork is already
 # picked or the reply is already in the wrong language — so each arrives whole. Neutral by
 # construction: nothing here names a project, a person or a harness tool. Personal values
@@ -128,14 +139,14 @@ rather than quoted, and move it.
 
 [plugins]
 # Installed by `setup --preset recommended`, through each harness's own plugin command.
-# Third-party skills are listed as recommendations in the README, never vendored (§5.6).
+# Third-party skills are listed as recommendations in the README, never vendored.
 #
 # Unpinned, and that is a gap worth naming rather than hiding: whatever these selectors resolve
 # to at install time runs in every session, and a third-party plugin can ship its own hooks and
-# allow rules — a wider grant than the allow rule §3 forbids Keelline's own author from
-# shipping. The owner runs `setup` deliberately and can decline, and the deny-only invariant
-# over `templates/` has a test while this has none. A pin belongs here when the marketplaces
-# expose a version selector to pin to.
+# allow rules — a wider grant than the allow rule Keelline's own author is forbidden to ship.
+# The owner runs `setup` deliberately and can decline, and the deny-only invariant over
+# `templates/` has a test while this has none. A pin belongs here when the marketplaces expose a
+# version selector to pin to.
 #
 # Bare plugin names, not `name@marketplace`: which marketplace installs which plugin is a
 # per-harness fact (a plugin can ship in different marketplaces under different names on
@@ -150,22 +161,24 @@ install = ["superpowers", "context7"]
 # `marketplace add`) — the add call `setup` still makes is defence in depth, not a first
 # registration, and it is idempotent (`claude plugin marketplace add` on an already-added source
 # answers "already on disk" and exits 0). `claude plugin install <name>@<marketplace>` is the
-# measured bare form — the spike record's own transcript reports `(scope: user)` as the
-# *default*, not a flag, and never passes `-y` for `install` (only for `uninstall`).
+# measured bare form — the install output the spike record
+# (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) transcribes reports `(scope: user)` as the
+# *default*, not a flag, and the record passes `-y` only to `uninstall`, never to `install`.
 marketplace = "claude-plugins-official"
 source = "anthropics/claude-plugins-official"
 
-# Deliberately no [plugins.codex] table below: Codex has no verified non-interactive
-# marketplace source for either plugin in `install` — the `superpowers` project's own install
-# instructions document only an interactive `/plugins` search inside a Codex session, and the
-# spike record's Codex arms only ever registered scratch local directories, never a published
-# marketplace. Nothing is vendored on a guess (§5.6). `install` therefore names two plugins that
-# `setup` installs on Claude Code only; `setup` reports the gap as a note (never silence, never
-# a failure) rather than attempting an unverified install, and README.md's "This is not a
-# replacement for superpowers" paragraph tells the owner to add both by hand on Codex. A reader
-# of this file, the note `setup` prints, and the README should all find the same answer.
+# Deliberately no [plugins.codex] table below: Codex has no verified non-interactive marketplace
+# source for either plugin in `install` — the `superpowers` project's own install instructions
+# document only an interactive `/plugins` search inside a Codex session, and the spike record's
+# Codex trials (*Codex plugin hooks*, *plugin-root substitution and executable bits*) only ever
+# registered scratch local directories, never a published marketplace. Nothing is vendored on a
+# guess. `install` therefore names two plugins that `setup` installs on Claude Code only; `setup`
+# reports the gap as a note (never silence, never a failure) rather than attempting an unverified
+# install, and README.md's "This is not a replacement for superpowers" paragraph tells the owner to
+# add both by hand on Codex. A reader of this file, the note `setup` prints, and the README should
+# all find the same answer.
 
 [deny]
 # Machine-level deny rules, written into the user-scope settings. Deny only, always: the
-# plugin author may never ship an allow rule (§3), and a preset is a template by another name.
+# plugin author may never ship an allow rule, and a preset is a template by another name.
 global = ["Read(.env*)", "Read(**/.env*)", "Read(**/.env)"]

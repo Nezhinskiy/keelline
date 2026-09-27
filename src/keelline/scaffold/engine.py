@@ -1,4 +1,4 @@
-"""Decide, then write (contract C2).
+"""Decide, then write.
 
 `plan` reads and decides; `apply` writes. The split is what makes `--dry-run` honest — the
 report a user approves is produced by the same code path that then runs — and it is what makes
@@ -8,15 +8,15 @@ Two rules are easy to state and easy to get backwards, so they are stated here o
 
 *An absent record does not mean "hands off" for every kind.* For a whole file it does: a file
 Keelline never wrote is somebody's. For a managed region and for keyed entries the file
-belongs to somebody by definition, and an absent record is the ordinary first install — §7.2's
-second and third rows exist for exactly that case. The hand-edit oracle for those two kinds is
-the region body and the marked entries, never the file around them.
+belongs to somebody by definition, and an absent record is the ordinary first install — the
+rules for regions and for keyed entries exist for exactly that case. The hand-edit oracle for
+those two kinds is the region body and the marked entries, never the file around them.
 
 *A refusal is an artifact's, not the plan's.* A file that cannot be read, a region whose markers
 no longer say where it ends, a settings document that is not JSON: each is recorded in
 `Plan.refusals` and the remaining templates are still decided. `plan` raises only for input no
 per-artifact report could rescue — the configured profile, the manifest itself, and a malformed
-`Template`, which is a bug in the lane that built it rather than a file a user can put right.
+`Template`, which is a bug in the caller that built it rather than a file a user can put right.
 Both shapes of malformed `Template` raise, symmetrically: a managed region that names no
 region, and keyed entries that name no entries. The second did not, and `entries or {}` turned
 it into a silent uninstall of whatever the user had wired up.
@@ -32,102 +32,169 @@ creates one component at a time through the same walk rather than with `Path.mkd
 
 from __future__ import annotations
 
-import re
-from collections.abc import Sequence
-from importlib import resources
+from collections.abc import Sequence, Set
 from pathlib import Path
+from typing import Protocol
 
 from keelline.config.paths import PathEscape, contained
-from keelline.config.schema import Config
+from keelline.config.schema import PROJECT_NAME, Config
 from keelline.errors import Refusal
-from keelline.fsops import UnsafePath, remove_within, write_within
+from keelline.fsops import UnsafePath, path_key, remove_within, write_within
 from keelline.scaffold.entries import ENTRY_MARKER, EntriesError, apply_entries, owned, unmarked
+from keelline.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from keelline.scaffold.manifest import Kind, Location, Manifest, Record, digest
 from keelline.scaffold.model import WRITING, Action, Applied, Plan, Refused, Template, Verb
 from keelline.scaffold.regions import RegionError, drop, extract, upsert
 
-LOCAL_ROOT = ".keelline/local"
-SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\Z")
+# The reasons a file kept out of git is left alone, which is the rule for one: an edit
+# overwritten or removed there is one git cannot give back, so only bytes Keelline can show are
+# its own go. `CHANGED_LOCALLY` when `LocalDigests` records what Keelline last wrote there and the
+# file no longer holds it; `NOT_OURS_LOCALLY` when nothing records it (the ledger was deleted,
+# say) and the file is not what this build writes either, which says nothing about who changed it.
+CHANGED_LOCALLY = "kept out of git, and changed since Keelline wrote it"
+NOT_OURS_LOCALLY = (
+    "kept out of git, with no record of what Keelline wrote there, and not the bytes it writes now"
+)
+# A copy Keelline wrote under `LOCAL_ARTIFACTS` at a place this configuration no longer gives the
+# artifact (its id left `[artifacts] local`, or its `[paths]` value moved), and whose bytes are no
+# longer the ones it wrote. `--force` with the path the report prints takes it.
+LEFT_LOCALLY = (
+    "kept out of git where this configuration no longer puts it, and changed since Keelline "
+    "wrote it"
+)
+SOURCE_NAME = PROJECT_NAME  # the one name grammar, `config.schema.PROJECT_NAME`
+SOURCE_RULE = "lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit"
 _IN_FILE = (Kind.MANAGED_REGION, Kind.KEYED_ENTRIES)
 # The two refusals that belong to one artifact's own file: a region whose markers no longer say
 # where it ends, and a settings document that cannot be parsed. Both are ordinary user state — a
 # bad merge, a half-typed edit — and both are answered per artifact. `Refusal` itself is
 # deliberately not caught: `_payload_and_stamp` raises it for a `MANAGED_REGION` template
 # carrying no region name and for a `KEYED_ENTRIES` template carrying no entries, each a
-# malformed `Template` and so a bug in the lane that built it, not something a user can put
+# malformed `Template` and so a bug in the caller that built it, not something a user can put
 # right by editing a file.
 _OWN_FILE_REFUSALS = (RegionError, EntriesError)
 _VERB_FOR = {Kind.MANAGED_REGION: Verb.REGION_UPDATE, Kind.KEYED_ENTRIES: Verb.ENTRIES_UPDATE}
 
 
-# Where the repository-root `profiles/` sits relative to this file, when this file *is* in a
-# checkout: `src/keelline/scaffold/engine.py` → three parents up is the repository root. From an
-# installed wheel the same arithmetic lands in `.../lib/python3.x/`, which is not a checkout and
-# has no `profiles/` of its own — but `validate_sources` is a refusal gate, so a listing found by
-# accident there would make its verdict depend on the installing machine's directory layout.
-# `_in_a_checkout` is what keeps the fallback to the case it was written for.
-_REPOSITORY_ROOT = 3
-_CHECKOUT_MARKERS = ("pyproject.toml", ".git")
-
-
-def _in_a_checkout(root: Path) -> bool:
-    return any((root / marker).exists() for marker in _CHECKOUT_MARKERS)
-
-
-def shipped_profiles() -> list[str] | None:
-    """The profile names this build carries, or `None` while no `profiles/` exists anywhere.
-
-    `None` is not an empty list, and the difference is the whole point: §5.1 draws `profiles/`
-    at the repository root while the package reads its own data from inside the wheel, and the
-    lane that creates either runs in wave 5. Until then there is no listing to check against,
-    and refusing every non-empty name would make `init --yes` on a Python repository produce a
-    configuration that `plan()` rejects outright.
-
-    The package is asked first and is the only answer that holds for an installed Keelline. The
-    repository-root fallback exists for a checkout — running from `scripts/keelline` before any
-    wheel is built — and is taken only when the directory three levels up actually looks like
-    one, so an installed package cannot pick up a `profiles/` that happens to sit beside its
-    `site-packages`.
-    """
-    package = resources.files("keelline").joinpath("profiles")
-    if package.is_dir():
-        return sorted(entry.name for entry in package.iterdir())
-    checkout = Path(__file__).resolve().parents[_REPOSITORY_ROOT]
-    root = checkout / "profiles"
-    if _in_a_checkout(checkout) and root.is_dir():
-        return sorted(entry.name for entry in root.iterdir())
-    return None
-
-
 def validate_sources(config: Config) -> None:
-    """§7.4's second rule: the two values that name a file inside the *plugin* root.
+    """Contain the two values that name a file inside the *plugin* root, not the project root.
 
     "Inside the project root" cannot bound them by construction, so each is validated as one
-    path segment and, when a listing exists, looked up against it. The preset half is already
-    enforced by C1's loader through `presets.load_preset`; the profile half is enforced here,
-    because C1 stores `profile` as a bare string and widening `Config` would change a frozen
-    contract.
+    path segment and looked up against the listing. The preset half is already enforced by the
+    configuration loader through `presets.load_preset`; the profile half is enforced here,
+    because the loader stores `profile` as a bare string and widening `Config` would change a
+    frozen contract.
     """
     profile = config.keelline.profile
     if not profile:
         return
+    # Named and never quoted, in both refusals: `profile` is repository-authored, and the first
+    # runs exactly for a value outside `SOURCE_NAME`, which can hold ESC and line breaks. The
+    # rule is stated in words and the listing is Keelline's own, so nothing here is the clone's.
     if not SOURCE_NAME.match(profile):
-        raise PathEscape(
-            f"[keelline] profile {profile!r} is not one path segment matching {SOURCE_NAME.pattern}"
-        )
-    shipped = shipped_profiles()
-    if shipped is not None and profile not in shipped:
+        raise PathEscape(f"[keelline] profile is not one path segment ({SOURCE_RULE})")
+    # The package is the one listing: `profiles.shipped` lists a directory under it only when it
+    # holds a `profile.toml`, which answers for an installed wheel and a `src/` checkout alike.
+    from keelline import profiles
+
+    shipped = profiles.shipped()
+    if profile not in shipped:
         known = ", ".join(shipped) or "none"
         raise PathEscape(
-            f"[keelline] profile {profile!r} is not shipped with this version of Keelline "
+            "[keelline] profile names a profile this version of Keelline does not ship "
             f"(available: {known})"
         )
 
 
-def _effective_target(template: Template, config: Config) -> tuple[str, Location]:
+def effective_target(template: Template, config: Config) -> tuple[str, Location]:
+    """Where `plan` puts `template` under `config`, and whether that place is kept out of git.
+
+    An `[artifacts] local` artifact lives under `LOCAL_ARTIFACTS`, which `Template.target` does
+    not say, so a caller comparing paths the way the engine does asks this rather than
+    re-deriving it.
+    """
     if template.id in config.artifacts.local:
-        return f"{LOCAL_ROOT}/{template.target}", Location.LOCAL
+        return f"{LOCAL_ARTIFACTS}/{template.target}", Location.LOCAL
     return template.target, Location.REPO
+
+
+def unlinks(action: Action) -> bool:
+    """Whether applying `action` deletes its file. A `REMOVE` with a payload rewrites the file
+    with what is left once Keelline's part is out, so the file stays."""
+    return action.verb is Verb.REMOVE and action.payload is None
+
+
+def _matches_render(template: Template, current: str) -> bool:
+    """Whether `current` holds exactly the bytes this build renders for `template`'s part of it.
+
+    For a file kept out of git, the second answer `ours_locally` gives, at the artifact's own
+    place only, when the ledger does not vouch for the bytes there: it records no entry for that
+    file (no ledger yet, or one deleted), or its entry records other bytes (the render changed
+    back, say). `ours_locally` is the rule anything outside this module asks.
+    """
+    _, stamp = _payload_and_stamp(template, current)
+    present = _present_stamp(template, current)
+    return present is not None and digest(present) == digest(stamp)
+
+
+def ours_locally(template: Template, current: str, target: str, digests: LocalDigests) -> bool:
+    """Whether `current`, the file at `target` under `LOCAL_ARTIFACTS`, holds only bytes Keelline
+    can show are its own for `template`. The one rule `plan` removes or refreshes a file kept out
+    of git by, public so `uninstall` can ask it of text not yet on disk before anything is written.
+
+    Anywhere under `LOCAL_ARTIFACTS`: exactly what `digests` records Keelline last wrote there for
+    this artifact. At the artifact's own place there, `LOCAL_ARTIFACTS/<its target>`, also what
+    this build renders, the rule from before the ledger existed and the one a deleted ledger falls
+    back to; anywhere else only the recorded digest vouches, since the place itself came from the
+    ledger.
+    """
+    present = _present_stamp(template, current)
+    if present is not None and digests.matches(template.id, target, digest(present)):
+        return True
+    own = path_key(target) == path_key(f"{LOCAL_ARTIFACTS}/{template.target}")
+    return own and _matches_render(template, current)
+
+
+class Ownership(Protocol):
+    """Which artifacts are built to write a place. `project.templates.Owners` is the relation,
+    and says why a ledger entry never reaches a place it calls another artifact's."""
+
+    def foreign(self, artifact_id: str, place: str) -> Set[str]: ...
+
+
+def left_copies(
+    template: Template,
+    config: Config,
+    digests: LocalDigests,
+    owners: Ownership | None,
+) -> tuple[str, ...]:
+    """The copies kept out of git `digests` says Keelline left for `template` at a place this
+    configuration no longer gives it: its id left `[artifacts] local`, or its `[paths]` value
+    moved while it stayed there. Every place the ledger records for its id but its current one,
+    and none that `owners` calls another artifact's (`project.templates.Owners`). A copy at a case
+    variant of the artifact's own place is that place (`fsops.path_key`), not one left behind.
+    """
+    target, _ = effective_target(template, config)
+    kept = f"{LOCAL_ARTIFACTS}/"
+    return tuple(
+        copy
+        for copy in digests.targets_of(template.id)
+        if path_key(copy) != path_key(target)
+        and not (owners is not None and owners.foreign(template.id, copy.removeprefix(kept)))
+    )
+
+
+def local_copies(
+    template: Template,
+    config: Config,
+    digests: LocalDigests,
+    owners: Ownership | None,
+) -> tuple[str, ...]:
+    """Every file under `LOCAL_ARTIFACTS` `plan` judges as `template`'s: its effective target
+    while `[artifacts] local` lists it, and its `left_copies`."""
+    target, location = effective_target(template, config)
+    current = (target,) if location is Location.LOCAL else ()
+    return (*current, *left_copies(template, config, digests, owners))
 
 
 def _read(path: Path) -> tuple[str | None, str | None]:
@@ -161,11 +228,11 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
     if template.kind is Kind.KEYED_ENTRIES:
         if template.entries is None:
             # `{}` means "remove every Keelline entry", and `Template.entries` defaults to
-            # `None` — so `template.entries or {}` read a lane that forgot one keyword argument
-            # as a lane asking to uninstall the user's hook wiring, reported the result as
+            # `None` — so `template.entries or {}` read a caller that forgot one keyword argument
+            # as a caller asking to uninstall the user's hook wiring, reported the result as
             # `entries_update` / "refreshed", and rewrote the manifest as though it were an
             # ordinary upgrade. The malformed-`Template` rule five lines above is the same
-            # rule: a bug in the lane that built it, raised rather than acted on. `{}` is left
+            # rule: a bug in the caller that built it, raised rather than acted on. `{}` is left
             # to mean removal, for the caller that genuinely wants it.
             raise Refusal(f"{template.id}: a keyed-entries template names no entries")
         if missing := unmarked(template.entries):
@@ -175,7 +242,7 @@ def _payload_and_stamp(template: Template, current: str | None) -> tuple[str, st
             # `owned()` renders the marked entries alone, so with none marked it answers `{}`
             # for both the payload and what is already on disk, the digests match, and the
             # artifact is reported `unchanged` — the report says "up to date" about a file
-            # nothing wrote. A lane that did not call `entries.mark` is a bug in that lane,
+            # nothing wrote. A caller that did not call `entries.mark` is a bug in that caller,
             # raised rather than acted on, exactly like a malformed `Template` above.
             raise Refusal(
                 f"{template.id}: a keyed-entries template carries {len(missing)} entry/entries "
@@ -199,10 +266,17 @@ def _present_stamp(template: Template, current: str) -> str | None:
 
 
 def _removal_payload(template: Template, current: str) -> str | None:
-    """What `remove` leaves behind: nothing for a whole file, the file minus Keelline's part
-    for the two kinds that live inside somebody else's (§7.3)."""
+    """What `remove` leaves behind.
+
+    Nothing for a whole file. For the two kinds that live inside somebody else's file, the file
+    minus Keelline's part, and nothing either when Keelline's part was all the file held, which
+    is what `detach` already does with the `.gitignore` it emptied. Emptiness is exact: a
+    remainder of whitespace is somebody's and stays. A host file that already existed and was
+    empty before the region went in is removed with the region, as `detach` removes it.
+    """
     if template.kind is Kind.MANAGED_REGION and template.region is not None:
-        return drop(current, template.region, template.style)
+        remainder = drop(current, template.region, template.style)
+        return remainder if remainder else None
     if template.kind is Kind.KEYED_ENTRIES:
         return apply_entries(current, {})
     return None
@@ -214,17 +288,31 @@ def plan(
     templates: Sequence[Template],
     *,
     force: Sequence[str] = (),
+    owners: Ownership | None = None,
 ) -> Plan:
+    """What applying `templates` under `config` would do, decided and not yet written.
+
+    `owners` is which artifacts the caller that built `templates` builds to write each place, and
+    `left_copies` says what it guards. A caller whose templates are never kept out of git (the
+    overlay's) has no ledger to guard and passes none.
+    """
     validate_sources(config)
     manifest = Manifest.read(root)
+    digests = LocalDigests.read(root)
     resolved_root = root.resolve()
+    # Exact, not `path_key`: a `--force` path is the operator's argv, compared with the path the
+    # report prints, and one that differs only in case forces nothing and is counted as naming no
+    # file, which is the safe way for a hand-typed path to be wrong.
     forced = set(force)
+    # A left copy at a file another template of this plan now targets is that template's to
+    # judge; its entry stays until that file is Keelline's again or gone.
+    planned = {path_key(effective_target(template, config)[0]) for template in templates}
     actions: list[Action] = []
     refusals: list[Refused] = []
     unchanged: list[str] = []
 
     for template in templates:
-        target, location = _effective_target(template, config)
+        target, location = effective_target(template, config)
         try:
             path = contained(root, target, resolved_root=resolved_root)
         except PathEscape as exc:
@@ -232,7 +320,7 @@ def plan(
             continue
 
         record = manifest.get(template.id)
-        if record is not None and record.target != target:
+        if record is not None and path_key(record.target) != path_key(target):
             # The relocation reads and rewrites the artifact's own old file, so a refusal from
             # it is this artifact's refusal — the same rule the block below runs under.
             try:
@@ -242,6 +330,20 @@ def plan(
                 continue
             actions.append(moved)
             record = None
+        refused = False
+        for copy in left_copies(template, config, digests, owners):
+            if path_key(copy) in planned:
+                continue
+            try:
+                left = _left_locally(root, resolved_root, template, copy, digests, forced)
+            except _OWN_FILE_REFUSALS as exc:
+                refusals.append(Refused(template.id, copy, str(exc)))
+                refused = True
+                continue
+            if left is not None:
+                actions.append(left)
+        if refused:
+            continue
 
         current, reason = _read(path)
         if reason is not None:
@@ -254,16 +356,16 @@ def plan(
         # name exactly these.
         try:
             if template.retired:
-                _plan_retired(template, record, current, target, location, actions, unchanged)
+                _plan_retired(
+                    template, record, current, target, location, forced, actions, unchanged, digests
+                )
                 continue
             if template.kind is Kind.ONCE and current is not None:
-                # `skip_modified`, which is the plan's decision table (row: "no record, file
-                # present, kind is `template` or `once`"), and not `unchanged`, which is what
-                # this said. The plan contradicts itself between that row and its prose, so the
-                # choice is recorded here: `unchanged` renders as "up to date", and Keelline has
-                # no idea whether this file is up to date — a create-once artifact is one it
-                # deliberately never looks inside again. "Left alone because it is yours" is the
-                # true statement, and it is the one the user can act on.
+                # `skip_modified` (no record, file present, kind `template` or `once`), and not
+                # `unchanged`, which is what this said: `unchanged` renders as "up to date", and
+                # Keelline has no idea whether this file is up to date — a create-once artifact
+                # is one it deliberately never looks inside again. "Left alone because it is
+                # yours" is the true statement, and it is the one the user can act on.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -294,13 +396,22 @@ def plan(
             if present is not None and digest(present) == digest(stamp):
                 unchanged.append(template.id)
                 continue
-            if record is None and location is Location.REPO and template.kind not in _IN_FILE:
+            if (
+                record is None
+                and location is Location.REPO
+                and template.kind not in _IN_FILE
+                and target not in forced
+            ):
                 # A whole file Keelline never wrote is somebody's; a region or a hook entry
-                # inside a file Keelline never wrote is the ordinary first install (§7.2, rows
-                # 2 and 3). `.keelline/local/` is excluded because it is Keelline's own
-                # directory: a local artifact is deliberately never recorded, so `record is
-                # None` there says nothing about who wrote the file, and treating it as
-                # somebody's would make every local artifact create-once and force-proof.
+                # inside a file Keelline never wrote is the ordinary first install. A local
+                # artifact is answered by the next branch instead: it is never recorded, so
+                # `record is None` there says nothing about who wrote the file.
+                #
+                # `--force PATH` reaches this file too, which is the whole-file rule: differs,
+                # so skip it and name it, and `--force <path>` overwrites it. `forced` is the
+                # caller's argv and `target` the path `plan` derived and contained above, so no
+                # committed file can force anything; without it a caller workflow a person wrote
+                # held `upgrade`'s version and pin back for ever, with no flag that moved them.
                 actions.append(
                     Action(
                         Verb.SKIP_MODIFIED,
@@ -311,6 +422,20 @@ def plan(
                         None,
                     )
                 )
+                continue
+            if (
+                record is None
+                and location is Location.LOCAL
+                and present is not None
+                and target not in forced
+                and not digests.matches(template.id, target, digest(present))
+            ):
+                # Neither this build's bytes nor, by the ledger, the bytes Keelline last wrote
+                # here: an edit, or a file nothing records. What the ledger does record goes on to
+                # be refreshed below, which is how an unedited copy follows a changed template.
+                recorded = digests.records(template.id, target)
+                reason = CHANGED_LOCALLY if recorded else NOT_OURS_LOCALLY
+                actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, reason, None))
                 continue
             hand_edited = (
                 record is not None and present is not None and digest(present) != record.sha256
@@ -337,9 +462,9 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     record describe the file I am about to delete" cannot rest on the record alone: a committed
     manifest naming any in-root file, stamped with the bytes that file is committed with, would
     otherwise make `plan` emit a `REMOVE` for it. So the recorded target must be one of the two
-    paths this template can produce — its configured target, or that target under `LOCAL_ROOT`
-    — before anything else is asked. It is then contained before it is read, exactly like a
-    configured one.
+    paths this template can produce — its configured target, or that target under
+    `LOCAL_ARTIFACTS` — before anything else is asked. It is then contained before it is read,
+    exactly like a configured one.
 
     **Always an `Action`, never `None`.** Every branch that declines to remove the old file used
     to answer `None`, and `plan` read that as "nothing to do here" and carried on creating the
@@ -353,7 +478,8 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
     could not have produced, one that no longer contains, and one whose bytes are not the ones
     recorded — each become a `skip_modified` naming the old path and saying which it was.
     """
-    if record.target not in (template.target, f"{LOCAL_ROOT}/{template.target}"):
+    producible = (template.target, f"{LOCAL_ARTIFACTS}/{template.target}")
+    if path_key(record.target) not in {path_key(place) for place in producible}:
         return _left_behind(
             template,
             record,
@@ -371,13 +497,54 @@ def _relocation(root: Path, resolved_root: Path, template: Template, record: Rec
         # Nothing at the old path: the move has effectively already happened, and there is no
         # file to leave behind. A `skip_modified` here would report a file that is not there.
         return Action(Verb.REMOVE, template.id, record.target, None, "relocated", record)
-    if digest(old) != record.sha256:
+    # What the record stamps is what `_payload_and_stamp` stamped: the whole file for a whole
+    # file, and Keelline's own part of it for a region or a set of keyed entries. Comparing the
+    # whole old file with a region's stamp read every real relocation of a region as a hand edit.
+    present = _present_stamp(template, old)
+    if present is None or digest(present) != record.sha256:
         return _left_behind(template, record, "relocated and hand-edited")
     # The same payload `_plan_retired` computes, and for the same reason: for a managed region
     # or a set of keyed entries the file at the old path belongs to somebody else, so what
     # leaves is Keelline's own part of it and not the file.
     payload = _removal_payload(template, old)
     return Action(Verb.REMOVE, template.id, record.target, payload, "relocated", record)
+
+
+def _left_locally(
+    root: Path,
+    resolved_root: Path,
+    template: Template,
+    copy: str,
+    digests: LocalDigests,
+    forced: set[str],
+) -> Action | None:
+    """A copy kept out of git that an artifact left behind at a place the configuration no longer
+    gives it: its id left `[artifacts] local`, or its `[paths]` value moved while it stayed there.
+
+    `copy` comes from the ledger, which `LocalDigests.read` has bounded to `LOCAL_ARTIFACTS`, and
+    it is contained here before it is read, like every other target. Nothing there, or a file
+    holding none of this artifact's part (a region whose markers are gone), is nothing to do.
+    Bytes `ours_locally` accepts go, as a `REMOVE` that takes a region out of a file and leaves
+    the rest: away from the artifact's own place only exactly the recorded digest vouches.
+    Anything else is an edit git cannot give back, so it is left and named, its entry kept, and
+    `--force` with its path takes it. Without this, nothing ever judged the copy again, and
+    `uninstall` refused over it for good, suggesting a `--force` no action could reach.
+    """
+    try:
+        path = contained(root, copy, resolved_root=resolved_root)
+    except PathEscape as exc:
+        return Action(Verb.SKIP_MODIFIED, template.id, copy, None, str(exc), None)
+    current, reason = _read(path)
+    if reason is not None:
+        return Action(Verb.SKIP_MODIFIED, template.id, copy, None, reason, None)
+    if current is None or _present_stamp(template, current) is None:
+        return None
+    ours = ours_locally(template, current, copy, digests)
+    if ours or copy in forced:
+        payload = _removal_payload(template, current)
+        why = "relocated" if ours else "relocated, forced"
+        return Action(Verb.REMOVE, template.id, copy, payload, why, None)
+    return Action(Verb.SKIP_MODIFIED, template.id, copy, None, LEFT_LOCALLY, None)
 
 
 def _left_behind(template: Template, record: Record, reason: str) -> Action:
@@ -390,48 +557,52 @@ def _plan_retired(
     current: str | None,
     target: str,
     location: Location,
+    forced: set[str],
     actions: list[Action],
     unchanged: list[str],
+    digests: LocalDigests,
 ) -> None:
     if current is None:
         unchanged.append(template.id)
         return
     if location is Location.LOCAL:
-        # No record exists for a local artifact and none is wanted: the hand-edit oracle a
-        # record carries exists to protect content somebody else may have written, and
-        # `.keelline/local/` holds nothing of the sort. A retired one simply goes.
+        # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the
+        # bytes the ledger says Keelline last wrote here, or this build's render. The directory
+        # is git-ignored: an edit removed here is one git cannot give back, so a file that is
+        # neither goes only when forced.
+        ours = ours_locally(template, current, target, digests)
+        why = CHANGED_LOCALLY if digests.records(template.id, target) else NOT_OURS_LOCALLY
+        kept, stamped = f"retired, {why}", None
+    elif record is None:
+        unchanged.append(template.id)
+        return
+    else:
+        present = _present_stamp(template, current)
+        ours = present is not None and digest(present) == record.sha256
+        kept, stamped = "retired and hand-edited", record
+    # `force` reaches a retired artifact the user edited and has decided to remove anyway: the
+    # one file a removal's `--force PATH` names. For a region what goes is still the region and
+    # never the file around it: forcing overrides the hand-edit verdict, not the payload.
+    #
+    # The path compared is `target`, the effective target `plan` derived from this template and
+    # `[artifacts] local` and then contained, exactly as the live-template check in `plan` does;
+    # never `record.target`, which the committed manifest supplies. The two are equal wherever
+    # a record reaches here, because `plan` drops a record whose target differs, so comparing the
+    # effective one means no manifest a clone commits can decide which file a `--force PATH`
+    # reaches, and the action names that same path.
+    if ours or target in forced:
         actions.append(
             Action(
                 Verb.REMOVE,
                 template.id,
                 target,
                 _removal_payload(template, current),
-                "retired",
-                None,
+                "retired" if ours else "retired, forced",
+                stamped,
             )
         )
         return
-    if record is None:
-        unchanged.append(template.id)
-        return
-    present = _present_stamp(template, current)
-    if present is not None and digest(present) == record.sha256:
-        actions.append(
-            Action(
-                Verb.REMOVE,
-                template.id,
-                record.target,
-                _removal_payload(template, current),
-                "retired",
-                record,
-            )
-        )
-        return
-    actions.append(
-        Action(
-            Verb.SKIP_MODIFIED, template.id, record.target, None, "retired and hand-edited", None
-        )
-    )
+    actions.append(Action(Verb.SKIP_MODIFIED, template.id, target, None, kept, None))
 
 
 def apply(root: Path, planned: Plan) -> Applied:
@@ -446,6 +617,7 @@ def apply(root: Path, planned: Plan) -> Applied:
         raise Refusal(f"{len(planned.refusals)} path(s) refused: {detail}")
 
     manifest = Manifest.read(root)
+    digests = kept = LocalDigests.read(root)
     resolved_root = root.resolve()
     written: list[str] = []
     removed: list[str] = []
@@ -454,8 +626,9 @@ def apply(root: Path, planned: Plan) -> Applied:
     # The ledger records what is on disk, so it is persisted for the actions that ran even when
     # a later one refuses. Discarding it would leave a file Keelline wrote carrying no record,
     # which every later run reads as somebody else's: `skip_modified` under a false reason,
-    # proof against `--force`, and invisible to `uninstall`. The refusal still propagates; only
-    # the loop is wrapped, because the refusal above it has written nothing to record.
+    # moved only by a `--force` that names it, and invisible to `uninstall`. The refusal still
+    # propagates; only the loop is wrapped, because the refusal above it has written nothing to
+    # record.
     try:
         for action in planned.actions:
             if action.verb is Verb.SKIP_MODIFIED:
@@ -467,7 +640,17 @@ def apply(root: Path, planned: Plan) -> Applied:
             if action.verb is Verb.REMOVE:
                 _remove(root, action.target, action.payload)
                 removed.append(action.target)
-                manifest = manifest.without(frozenset({action.artifact_id}))
+                # A record goes with the file it names and no other. The copy an artifact left
+                # kept out of git carries the artifact's id too, and dropping by id alone took
+                # the live record of its committed file with it: that file then read as nobody's,
+                # `upgrade` never recorded it again, and `uninstall` left it unlisted.
+                record = manifest.get(action.artifact_id)
+                if record is not None and path_key(record.target) == path_key(action.target):
+                    manifest = manifest.without(frozenset({action.artifact_id}))
+                if action.payload is None:
+                    digests = digests.without_file(action.target)
+                else:
+                    digests = digests.without(action.artifact_id, action.target)
                 continue
             if action.verb in WRITING:
                 if action.payload is None:
@@ -478,8 +661,18 @@ def apply(root: Path, planned: Plan) -> Applied:
                     manifest = manifest.with_record(action.record)
                 else:
                     manifest = manifest.without(frozenset({action.artifact_id}))
+                if action.record is not None and action.record.location is Location.LOCAL:
+                    # Kept out of git, so recorded where git never sees it: `LocalDigests`.
+                    digests = digests.with_entry(
+                        action.artifact_id, action.target, action.record.sha256
+                    )
     finally:
         manifest.write(root)
+        digests = digests.on_disk(root)
+        # Written only when it changed, so a footprint with nothing kept out of git never gains
+        # a `.keelline/local/` for it.
+        if digests != kept:
+            digests.write(root)
 
     return Applied(written=tuple(written), removed=tuple(removed), skipped=tuple(skipped))
 
@@ -492,8 +685,8 @@ def _write(root: Path, target: str, payload: str) -> None:
     `overlay` and `hooks-core` all write files that are not `Template`s, and the half they need
     is the walk, not this area's verdict vocabulary.
 
-    The second clause is what keeps C5's exit 2 reachable. A user who saves a file where a
-    directory component belongs while reading the dry-run report, then confirms, would
+    The second clause is what keeps the refusal exit code, 2, reachable. A user who saves a file
+    where a directory component belongs while reading the dry-run report, then confirms, would
     otherwise get a traceback instead of a refusal, and no race is needed for that.
     """
     try:
@@ -509,7 +702,7 @@ def _remove(root: Path, target: str, payload: str | None) -> None:
 
     The same second clause `_write` carries, for the same reason: a directory Keelline may read
     but not write to arrives here as EACCES from `os.unlink` rather than as an `UnsafePath`, and
-    only a refusal keeps C5's exit 2 reachable.
+    only a refusal keeps the refusal exit code, 2, reachable.
     """
     if payload is not None:
         _write(root, target, payload)

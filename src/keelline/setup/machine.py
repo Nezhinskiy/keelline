@@ -1,10 +1,10 @@
-"""Write the machine configuration file, the one both existing readers already read (DP5).
+"""Write the machine configuration file, the one both existing readers already read.
 
 **This module invents no schema.** `config.loader._personal` reads `[personal]` and
 `memory.store.overlay_root` reads `[overlay] root`, both with `interactive=False`, and neither
 changes here. This writer adds `[machine]` beside them — what `setup` installed, so `doctor`
 can check it later — and nothing else. A caller that wants a fourth table is asking for a third
-reader of this file, which is out of scope for this plan by the same rule.
+reader of this file, which the same rule keeps out.
 
 **A rewrite merges, table by table, key by key — including the tables this writer knows
 nothing about.** `setup` runs again on a machine that already has a file, and the common case is
@@ -31,8 +31,8 @@ the float and the nested table that used to make every future run exit 2 round-t
 the one refusal left names this file, the key, and what to do about it instead of naming a
 serialiser the owner has never heard of.
 
-**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer in
-this plan owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
+**`fsops.write_atomically` on a bare `Path`, not `fsops.write_within`.** Every other writer
+`setup` uses owns a root — a project checkout, the overlay — and walks into it with `O_NOFOLLOW`.
 This file has no such root: `config.machine.machine_config_path` resolves to
 `~/.config/keelline/config.toml` or wherever `--machine`/`KEELLINE_CONFIG`/`XDG_CONFIG_HOME`
 sends it, and that directory is not one this process was handed as "the thing to stay inside
@@ -60,10 +60,10 @@ from typing import Any
 from keelline import fsops, tomlout
 from keelline.errors import Refusal
 
-# The one machine-scope settings file this plan writes, relative to `home` (Task 13, Task 15's
-# `hook-entries` check). Codex has no equivalent: §5.4's "no `userConfig` in Codex" is one of
-# the clauses §10 marks *unmeasured*, so nothing is written there and the report says so rather
-# than guessing a path.
+# The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s
+# `hook-entries` check reads back. Codex has no equivalent: whether Codex has anything like a
+# plugin's `userConfig` has never been measured, so nothing is written there and the report says
+# so rather than guessing a path.
 USER_SETTINGS = ".claude/settings.json"
 
 
@@ -75,8 +75,19 @@ class Written:
 
 
 def read_machine(path: Path) -> dict[str, Any]:
-    """The machine file as a raw `dict`, exactly as `tomllib` parses it."""
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    """The machine file as a raw `dict`, exactly as `tomllib` parses it.
+
+    A file that is not UTF-8 or not TOML is the loader's `MachineConfigError`, the one failure
+    every reader of this file gives, naming the position and never the parser's message.
+    """
+    from keelline.config.loader import NOT_UTF8, UNPARSEABLE, MachineConfigError, toml_position
+
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise MachineConfigError(NOT_UTF8.format(path=path)) from None
+    except UNPARSEABLE as exc:
+        raise MachineConfigError(f"{path} is not valid TOML {toml_position(exc)}") from None
 
 
 def _existing(path: Path) -> dict[str, Any]:
@@ -101,10 +112,10 @@ def write_machine(
 
     Each of the three is merged over what the file already holds, key by key, rather than
     replacing its table outright — a second `setup` run that only sets one of them must not
-    erase what an earlier run recorded (DP5, and the test this docstring's module comment
-    names). `overlay_root=None` reads as "not given this run": the existing `[overlay] root`,
-    if any, is carried over unchanged. There is no way to ask this function to *clear* a
-    recorded overlay root; nothing in this plan needs one.
+    erase what an earlier run recorded, which both unchanged readers still read (the test this
+    docstring's module comment names). `overlay_root=None` reads as "not given this run": the
+    existing `[overlay] root`, if any, is carried over unchanged. There is no way to ask this
+    function to *clear* a recorded overlay root; nothing in Keelline needs one.
 
     Everything else in the file — a table this writer has never heard of, a key at the top
     level — is carried through untouched, in the order it was written in.

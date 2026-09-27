@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 from pathlib import Path
 
@@ -165,6 +166,21 @@ def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Pa
     assert may_inject(store, config) is True
 
 
+def test_a_note_named_in_bytes_that_are_not_utf_8_still_has_a_digest_entry() -> None:
+    # A routing key is the note's file name, and a name the disk holds in latin-1 bytes reaches
+    # Python with surrogate escapes: encoded strictly, it raised `UnicodeEncodeError` out of
+    # `store_digest`, so `may_inject`, every session-start bundle, `memory trust` and `memory
+    # index` failed together on one committed file (reproduced in a Linux container). The key's
+    # own bytes are hashed, and a name that is valid UTF-8 hashes as it always did, so no
+    # recorded approval moves. Built from the key alone, because APFS refuses such a name.
+    # Mutation (declared): encode the key strictly again -> this reddens.
+    latin = os.fsdecode(b"developer/caf\xe9.md")
+    assert _entry(latin, "0" * 64) != _entry("developer/caf\u00e9.md", "0" * 64)
+    assert _entry("developer/caf\u00e9.md", "0" * 64)[:64] == hashlib.sha256(
+        "developer/caf\u00e9.md".encode()
+    ).hexdigest().encode("ascii")
+
+
 def test_an_unreadable_note_still_moves_the_digest(tmp_path: Path) -> None:
     # Guarding the read must not become skipping the file: a note absent from the digest is a
     # note an attacker can add, or swap for a dangling link, without ever re-prompting.
@@ -211,7 +227,7 @@ def test_a_local_only_store_whose_notes_escaped_the_repository_is_gated_not_unga
 def test_one_note_cannot_be_restructured_into_two_without_changing_the_digest(
     tmp_path: Path,
 ) -> None:
-    # §9.4's promise is "a changed hash re-prompts". An entry framed as
+    # The trust gate's promise is "a changed hash re-prompts". An entry framed as
     # `key \0 content \0` and concatenated with no length prefix does not keep it: both halves
     # are repository-controlled and `\0` is valid UTF-8, so `read_note` parses a note whose
     # body carries a splice. v1 ships one innocuous note ending in `\0developer/b.md\0<payload>`
@@ -240,9 +256,9 @@ def test_a_routing_key_cannot_splice_two_entries_into_one(tmp_path: Path) -> Non
     # and a note's filename is whatever the clone commits.
     #
     # So one note can carry another entry's whole key-and-digest inside its own key. With
-    # variable-width keys the two byte streams below are identical, §9.4's "a changed hash
-    # re-prompts" does not hold across the restructuring, and the second version — a rank-1
-    # standing rule — arrives under the record the owner approved for the first.
+    # variable-width keys the two byte streams below are identical, "a changed hash re-prompts"
+    # does not hold across the restructuring, and the second version — a rank-1 standing rule —
+    # arrives under the record the owner approved for the first.
     innocuous = b"---\nname: a\ndescription: d\n---\n\nBody.\n"
     payload = (
         b"---\nname: b\ndescription: d\nmetadata:\n  startup: 1\n---\n\n"

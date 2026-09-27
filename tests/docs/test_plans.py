@@ -5,16 +5,29 @@ sample data.
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from keelline.config.loader import load
 from keelline.config.schema import Config
-from keelline.docs.plans import asserted_outcomes, lint
+from keelline.docs.plans import (
+    BaseUnresolvable,
+    asserted_outcomes,
+    lint,
+    plan_gate,
+    touched_plans,
+)
 from keelline.errors import Failure, Refusal
-from tests.gitfixture import git
+from keelline.gitenv import DISJOINT, NO_ANSWER, git_run
+from tests.cli import cli
+from tests.crafted import CRAFTED, assert_never_raw
+from tests.gitfixture import answer_shallow_check, criss_cross, dated, git, plant_path
 
 CONFIG = """
 [keelline]
@@ -182,6 +195,31 @@ def test_without_paths_only_the_plans_the_diff_touches_are_linted(tmp_path: Path
 
 
 @needs_git
+def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_default_base(
+    tmp_path: Path,
+) -> None:
+    # git resolves a short `origin/main` through `refs/tags/` first, so a tag of that spelling
+    # on the change's own head made the default base the head, the range empty, and `plan
+    # check` printed OK having linted nothing, while the `plan` gate, which names the base in
+    # full, failed. One spelling of the default now. Mutation (declared): `lint`'s default
+    # spelled `origin/<base_branch>` again -> nothing is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "fetch", "-q", "origin")
+    git(root, "checkout", "-qb", "feature")
+    new = plan(root, "no scope here\n", "2026-01-02-new.md")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "new plan")
+    git(root, "tag", "origin/main", "HEAD")
+    result = lint(root, config, plans=[])
+    assert result.linted == [new]
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
 def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
     tmp_path: Path,
 ) -> None:
@@ -205,15 +243,240 @@ def test_a_touched_plan_whose_name_holds_a_space_is_linted_and_does_not_vanish(
 
 
 @needs_git
-def test_a_base_that_will_not_resolve_is_a_finding_not_an_ok(tmp_path: Path) -> None:
-    # This gate ran green for its whole life on a shallow checkout that had no base ref.
-    # Mutation: return an empty finding list when `touched_plans` is None — this reddens.
+def test_a_base_that_will_not_resolve_is_raised_never_an_ok(tmp_path: Path) -> None:
+    # This gate ran green for its whole life on a shallow checkout that had no base ref. The
+    # cause is the checkout's, not a plan's, so the lint raises it and the `plan` gate could not
+    # run, as `commit` could not; `plan check` alone prints it as its `base-unresolvable`
+    # finding, exit 1. Mutation (oracle): "an unresolvable base reads as a clean run" -> nothing
+    # is raised and this reddens.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "seed")
-    result = lint(root, config, plans=[])
-    assert [f.rule for f in result.findings] == ["base-unresolvable"] and result.linted == []
+    with pytest.raises(BaseUnresolvable, match="fetch-depth: 0"):
+        lint(root, config, plans=[])
+    with pytest.raises(BaseUnresolvable):
+        plan_gate(root, config, "refs/remotes/origin/main")
+    code, out, _ = cli(root, tmp_path, "plan", "check", "--json")
+    assert code == 1
+    printed = json.loads(out)
+    assert [f["rule"] for f in printed["findings"]] == ["base-unresolvable"]
+    assert printed["linted"] == []
+
+
+@needs_git
+def test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted(
+    tmp_path: Path,
+) -> None:
+    # `diff --name-only -z` prints a committed name raw. Decoded strictly, one latin-1 plan name
+    # raised `UnicodeDecodeError` out of `plan check` and the `plan` gate; read as no answer, it
+    # failed the gate on every run of a repository that holds one, a plan nobody could lint.
+    # Decoded losslessly, the name is the path on disk and the plan is linted like any other.
+    # The name is planted through the index because APFS refuses to create it; where the disk
+    # can hold it (Linux, where CI's oracle runs) the file is written too and its finding is the
+    # proof it was read. Mutation (declared, on `gitenv`): the answer read as no answer again ->
+    # `lint` raises and this reddens.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    raw = b"docs/plans/2026-01-02-caf\xe9.md"
+    plant_path(root, raw, "no scope here\n")
+    git(root, "commit", "-qm", "a plan whose name is not UTF-8")
+    named = root / os.fsdecode(raw)
+    assert touched_plans(root, "HEAD~1", root / "docs" / "plans") == [named]
+    try:
+        named.write_text("no scope here\n", encoding="utf-8")
+    except OSError:  # APFS: `Illegal byte sequence`
+        written = False
+    else:
+        written = True
+    result = lint(root, config, plans=[], base="HEAD~1")
+    assert result.linted == ([named] if written else [])
+    assert [f.rule for f in result.findings] == (["scope-missing"] if written else [])
+
+
+@needs_git
+def test_a_diff_git_gave_no_answer_for_is_not_a_shallow_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git_run`'s `-1` — git could not be run or ran past its time limit — is not "the base
+    # does not resolve": that finding sends a reader to `fetch-depth: 0` in a clone that holds
+    # every ref, and reads as a finding rather than as a gate that never looked. Still exit 1,
+    # with the cause in words. Mutation (advisory): drop the `code == -1` arm in
+    # `_unresolved` — `BaseUnresolvable` is raised instead of this `Failure` and this reddens.
+    from keelline.docs import plans as module
+
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    real = git_run
+
+    def unanswered(where: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        return (-1, "") if args[0] == "diff" else real(where, *args, **kwargs)
+
+    monkeypatch.setattr(module, "git_run", unanswered)
+    with pytest.raises(Failure, match=re.escape(NO_ANSWER)) as caught:
+        lint(root, config, plans=[], base="HEAD")
+    assert "fetch-depth" not in str(caught.value)
+
+
+OLD = "an old plan, from before it had a Scope line\n"
+
+
+@needs_git
+def test_a_plan_is_linted_whichever_of_several_merge_bases_git_would_pick(tmp_path: Path) -> None:
+    # A criss-cross: `main` fixes an old plan and then merges a colleague's side branch, forked
+    # before the fix and committed after it; the change merges the fixing commit and the side
+    # branch itself, then puts the old plan back. `<base>...HEAD` diffs against git's pick, the
+    # side branch, which holds the old plan too: nothing was linted, and merging the change put
+    # the old plan back on `main`. Every merge base is diffed and the plans are taken together.
+    # Mutations (declared): `--all` dropped, or only the first merge base diffed -> nothing is
+    # linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(root, OLD)
+    git(root, "add", "-A")
+    dated(root, 1, "commit", "-q", "-m", "the old plan")
+    shape = criss_cross(root, lambda: plan(root, SCOPE + "fixed\n"))
+    git(root, "checkout", "-q", "-b", "change")
+    # A branch that merged both and put nothing back lints nothing: its plan is the base's own.
+    assert lint(root, config, plans=[], base=shape.base).findings == []
+    old.write_text(OLD, encoding="utf-8")
+    dated(root, 6, "commit", "-q", "-am", "put the old plan back")
+    # The premise: git's one pick hides the plan.
+    assert git(root, "diff", "--name-only", f"{shape.base}...HEAD", "--", "docs/plans") == ""
+    result = lint(root, config, plans=[], base=shape.base)
+    assert result.linted == [old]
+    assert [f.rule for f in result.findings] == ["scope-missing"]
+
+
+@needs_git
+def test_a_plan_the_base_holds_as_head_does_is_not_linted(tmp_path: Path) -> None:
+    # A branch stacked on another, which merged `main` after `main` gained a plan with a
+    # finding, and then `main` merged the branch below it: the two merge bases are the commit
+    # the stack merged and the lower branch's tip, and against the second that plan differs.
+    # The stack never touched it, and merging the stack alters nothing about it, because its
+    # copy is the base's own. Mutation (declared): the base comparison dropped -> the base's
+    # plan is linted here and its finding fails a change that never touched it.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    dated(root, 1, "commit", "-q", "-m", "seed")
+    git(root, "checkout", "-q", "-b", "lower")
+    (root / "lower.txt").write_text("lower\n", encoding="utf-8")
+    git(root, "add", "-A")
+    dated(root, 2, "commit", "-q", "-m", "the lower branch")
+    git(root, "checkout", "-q", "main")
+    plan(root, "a plan the base took with no Scope line\n")
+    git(root, "add", "-A")
+    dated(root, 3, "commit", "-q", "-m", "a plan on the base")
+    git(root, "checkout", "-q", "-b", "stacked", "lower")
+    dated(root, 4, "merge", "-q", "--no-ff", "--no-edit", "main")
+    (root / "stacked.txt").write_text("stacked\n", encoding="utf-8")
+    git(root, "add", "-A")
+    dated(root, 5, "commit", "-q", "-m", "the stacked branch")
+    git(root, "checkout", "-q", "main")
+    dated(root, 6, "merge", "-q", "--no-ff", "--no-edit", "lower")
+    base = dated(root, 6, "rev-parse", "HEAD")
+    git(root, "checkout", "-q", "stacked")
+    # The premise: two merge bases, and against one of them the base's plan differs.
+    forks = git(root, "merge-base", "--all", base, "HEAD").split()
+    assert len(forks) == 2
+    assert any(git(root, "diff", "--name-only", fork, "HEAD", "--", "docs/plans") for fork in forks)
+    result = lint(root, config, plans=[], base=base)
+    assert result.linted == []
+    assert result.findings == []
+
+
+@needs_git
+def test_a_shallow_clone_is_a_base_that_will_not_resolve_never_an_older_fork_point(
+    tmp_path: Path,
+) -> None:
+    # In a shallow clone the commits HEAD forked from can be cut off, and the merge base git
+    # sees is then an older one. Here the base merges an old commit back in, a clone of depth 2
+    # keeps that commit and cuts the base's path to the real fork point, and git names the old
+    # commit: a change that put a plan back as it was there was not linted. A shallow clone is a
+    # base that will not resolve, whose remedy is the whole history. Mutation (declared): the
+    # shallow check reads only whether git answered -> the older commit is diffed and nothing
+    # is linted.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    old = plan(root, OLD)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "the old plan")
+    older = git(root, "rev-parse", "HEAD").strip()
+    plan(root, SCOPE + "fixed\n")
+    git(root, "commit", "-q", "-am", "fix the plan")
+    forked = git(root, "rev-parse", "HEAD").strip()
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "later")
+    later = git(root, "rev-parse", "HEAD").strip()
+    tree = f"{later}^{{tree}}"
+    base = git(root, "commit-tree", "-m", "merge the old commit", "-p", later, "-p", older, tree)
+    git(root, "update-ref", "refs/heads/main", base.strip())
+    git(root, "checkout", "-q", "-b", "change", forked)
+    old.write_text(OLD, encoding="utf-8")
+    git(root, "commit", "-q", "-am", "put the old plan back")
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "-q", "--depth", "2", "--branch", "main", root.as_uri(), str(clone))
+    git(clone, "fetch", "-q", "origin", "change")
+    git(clone, "checkout", "-q", "--detach", "FETCH_HEAD")
+    # The premise: the clone is shallow, and the merge base it sees is the old commit.
+    assert git(clone, "rev-parse", "--is-shallow-repository").strip() == "true"
+    assert git(clone, "merge-base", "--all", "origin/main", "HEAD").split() == [older]
+    config = load(clone, machine=tmp_path / "m.toml")
+    with pytest.raises(BaseUnresolvable, match="fetch-depth: 0") as caught:
+        lint(clone, config, plans=[])
+    assert "shallow" in str(caught.value)
+
+
+@needs_git
+@pytest.mark.parametrize(
+    ("answer", "raised", "cause"),
+    [(-1, Failure, NO_ANSWER), (128, BaseUnresolvable, "git exited 128")],
+    ids=["no-answer", "refused"],
+)
+def test_a_shallow_check_git_does_not_answer_never_reads_as_a_full_clone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    raised: type[Failure],
+    cause: str,
+) -> None:
+    # What an unknown fork point means to this lint: a git that gave no answer is a plain
+    # `Failure`, whose remedy is not a deeper checkout, and a refusal is `BaseUnresolvable`.
+    # Mutation (declared, on `gitenv`): the shallow check's failure ignored -> the diff goes
+    # ahead and nothing raises; (declared) `answered` ignored -> no answer is `BaseUnresolvable`.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    answer_shallow_check(monkeypatch, answer)
+    with pytest.raises(Failure, match=re.escape(cause)) as caught:
+        lint(root, config, plans=[], base="HEAD")
+    assert type(caught.value) is raised
+    assert "NOTHING was linted" in str(caught.value)
+
+
+@needs_git
+def test_a_base_that_shares_no_history_with_the_tree_will_not_resolve(tmp_path: Path) -> None:
+    # A base with no commit in common with HEAD leaves nothing to diff against, and "no plan
+    # changed" would pass whatever the change carries. Mutation (declared, on `gitenv`): no
+    # merge base read as none to compare -> the lint answers OK over no plans.
+    root, config = project(tmp_path)
+    git(root, "init", "-q", "-b", "main")
+    plan(root, "no scope here\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "seed")
+    git(root, "checkout", "-q", "--orphan", "unrelated")
+    git(root, "commit", "-q", "-m", "no shared history")
+    other = git(root, "rev-parse", "HEAD").strip()
+    git(root, "checkout", "-q", "-f", "main")
+    with pytest.raises(BaseUnresolvable, match=re.escape(DISJOINT)):
+        lint(root, config, plans=[], base=other)
 
 
 @needs_git
@@ -222,9 +485,9 @@ def test_an_option_shaped_base_never_reaches_a_git_argv_slot(tmp_path: Path) -> 
     # argv slot ahead of `--`, so `git diff` read it as its own option, wrote the diff to that
     # absolute path — outside `contained()` and outside `fsops` — and exited 0 with empty
     # stdout. `touched_plans` then answered `[]` instead of None, so a committed plan was never
-    # linted and the command printed OK: the exact state `base-unresolvable` exists to prevent,
-    # reached by a typo. Mutation: drop the `base.startswith("-")` refusal in `touched_plans` —
-    # this reddens, on the written file first.
+    # linted and the command printed OK: the exact state raising `BaseUnresolvable` exists to
+    # prevent, reached by a typo. Mutation: drop the `base.startswith("-")` refusal in
+    # `touched_plans` — this reddens, on the written file first.
     root, config = project(tmp_path)
     git(root, "init", "-q", "-b", "main")
     plan(root, "a committed plan with no Scope line, which the gate must not skip\n")
@@ -286,6 +549,21 @@ def test_a_plan_that_is_not_utf8_is_a_failure_not_an_internal_error(tmp_path: Pa
     path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
     with pytest.raises(Failure, match="is not valid UTF-8"):
         lint(root, config, plans=[path])
+
+
+def test_a_crafted_plan_name_reaches_the_refusal_escaped_never_raw(tmp_path: Path) -> None:
+    # `plan check` runs in CI and names the plan it could not read; the name is the pull
+    # request's, and a line break and `::error::` in it forged a workflow command on the runner.
+    # The refusal is the only place the name appears, so it is escaped rather than withheld.
+    # Mutation: format `where` unquoted in `hygiene.read_document` — this reddens.
+    root, config = project(tmp_path)
+    name = f"2026-01-01-{CRAFTED}.md"
+    path = root / "docs" / "plans" / name
+    path.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
+    with pytest.raises(Failure, match="is not valid UTF-8") as raised:
+        lint(root, config, plans=[path])
+    assert_never_raw(str(raised.value))
+    assert repr(f"docs/plans/{name}") in str(raised.value)
 
 
 def test_a_path_claim_outside_the_root_is_never_settled_against_this_disk(tmp_path: Path) -> None:

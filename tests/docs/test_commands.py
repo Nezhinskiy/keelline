@@ -9,6 +9,9 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.docs.trail import END_MARKER, MARKER
+from keelline.findings import Finding
+from keelline.printed import UNPRINTABLE
+from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 
 CONFIG = """
 [keelline]
@@ -66,8 +69,9 @@ def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
 def test_docs_check_does_not_resolve_the_store_unless_asked(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The default is exactly the enforced set the success line names (Premise 11). Mutation:
-    # run the graph when no flag is given — this reddens on the NOTE count.
+    # The default is exactly the enforced set the success line names; the memory link graph is
+    # advisory and runs only when asked. Mutation: run the graph when no flag is given — this
+    # reddens on the NOTE count.
     root, common = project(tmp_path)
     a_note(root, "[[gone]]\n")
     assert invoke(["docs", "check", "--json", *common]) == 0
@@ -134,6 +138,50 @@ def test_docs_trail_writes_the_listing_and_check_reports_staleness(
     )
     assert invoke(["docs", "trail", *common]) == 0
     assert invoke(["docs", "trail", "--check", *common]) == 0
+
+
+def test_docs_trail_never_prints_a_crafted_document_name_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A document's file name is the repository's, and `_interpolable` refuses a line break in it
+    # but not an escape sequence, which the undeclared-state report then printed to the terminal.
+    # `--json` still names it. Mutation: join `undeclared` unbounded in `run_docs_trail` — this
+    # reddens. (A line break in the name is refused before this report, so the name carries the
+    # escape alone.)
+    root, common = project(tmp_path)
+    roadmap = root / "docs" / "roadmap.md"
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    assert invoke(["docs", "trail", *common]) == 0
+    listed = roadmap.read_text(encoding="utf-8")
+    crafted = "2026-02-02-y\x1b[2J.md"
+    (root / "docs" / "plans" / crafted).write_text("# p\n", encoding="utf-8")
+    capsys.readouterr()
+    assert invoke(["docs", "trail", *common]) == 1
+    captured = capsys.readouterr()
+    assert "1 document(s) entered the trail" in captured.out
+    assert captured.out.rstrip("\n").endswith(UNPRINTABLE)
+    assert_never_raw(captured.out, captured.err)
+    roadmap.write_text(listed, encoding="utf-8")
+    assert invoke(["docs", "trail", "--json", *common]) == 1
+    assert json.loads(capsys.readouterr().out)["undeclared"] == [f"plans/{crafted}"]
+
+
+def test_docs_trail_never_prints_a_crafted_trail_toml_key_raw(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `[states]` key naming no document is reported as stale, and `trail.toml` is committed:
+    # the key is arbitrary quoted TOML, line break and escape included, and reached stderr raw.
+    # Mutation: join `stale` unbounded in `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    (root / "docs" / "trail.toml").write_text(
+        f'[states]\n"plans/{CRAFTED_TOML}.md" = "planned"\n', encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    captured = capsys.readouterr()
+    assert "no longer exist" in captured.err
+    assert_never_raw(captured.out, captured.err)
+    assert repr(f"plans/{CRAFTED}.md") in captured.err
 
 
 @pytest.mark.parametrize("route", ["a trail.toml label", "a document filename"])
@@ -210,3 +258,27 @@ def test_a_non_utf8_roadmap_or_plan_exits_1_through_the_frame_and_never_2(
     plan = root / "docs" / "plans" / "2026-01-01-x.md"
     plan.write_bytes(b"**Scope:** iff x.\n\ncaf\xe9\n")
     assert invoke(["plan", "check", str(plan), *common]) == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "module", "gate"),
+    [
+        (["docs", "check"], "keelline.docs.hygiene", "docs_gate"),
+        (["docs", "trail", "--check"], "keelline.docs.trail", "trail_gate"),
+    ],
+    ids=["docs check", "docs trail --check"],
+)
+def test_the_command_answers_with_its_gate_s_own_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: list[str], module: str, gate: str
+) -> None:
+    # The gate `keelline assess` runs and the command a person runs are one function, so the
+    # two cannot drift apart. Mutations (advisory): `problems = docs_gate(root, config)` becomes
+    # `problems = check_budgets(root, config) + check_links(root, config)` in `run_docs_check`
+    # (first case); `trail_gate(root, config)` replaced by an inline comparison in
+    # `run_docs_trail` (second case) — each makes the patch unseen and reddens.
+    _root, common = project(tmp_path)
+    assert invoke(["docs", "trail", *common]) == 0
+    assert invoke([*command, *common]) == 0
+    planted = [Finding("planted", "", None, "")]
+    monkeypatch.setattr(f"{module}.{gate}", lambda *args, **kwargs: planted)
+    assert invoke([*command, *common]) == 1
