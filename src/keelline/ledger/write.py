@@ -89,9 +89,24 @@ class Filed:
 
 
 @dataclass(frozen=True)
+class Unswept:
+    """A file the sweep could not rewrite: its repo-relative path and why.
+
+    Two fields and not one `"path: reason"` string, because a path may hold a colon: the command
+    rebuilt the path by splitting that string at the first one, and `docs/a:b.md` was named as
+    `docs/a`. `str()` is the joined form `--json`'s `unswept` carries."""
+
+    path: str
+    reason: str
+
+    def __str__(self) -> str:
+        return f"{self.path}: {self.reason}"
+
+
+@dataclass(frozen=True)
 class Renumbered:
     void: Path
-    unswept: list[str]
+    unswept: list[Unswept]
 
 
 def _fetch(root: Path) -> str | None:
@@ -320,14 +335,15 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
 
     pattern = re.compile(rf"\b{re.escape(old)}\b")
     excluded = {source, target, index_path(root, config)}
-    unswept: list[str] = []
+    unswept: list[Unswept] = []
     for item in scannable(root, citation_roots(root, config)):
         if item.path in excluded:
             continue
         # Different from undecodable: the file may well be text this sweep must rewrite, and
         # there is no way to find out. Reported rather than assumed clean.
         if item.error is not None:
-            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")
+            reason = f"could not be read to check for {old} ({item.error})"
+            unswept.append(Unswept(item.relative.as_posix(), reason))
             continue
         # `text is None` is a file that is not text, whatever its suffix said: no identifier can
         # match in it and the substitution could not rewrite it, so the scan's own verdict
@@ -342,6 +358,6 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
         try:
             fsops.write_within(root, item.relative.as_posix(), rewritten)
         except OSError as error:
-            unswept.append(f"{item.relative}: could not be written ({error})")
+            unswept.append(Unswept(item.relative.as_posix(), f"could not be written ({error})"))
     _write_index(root, config)
     return Renumbered(source, unswept)

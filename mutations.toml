@@ -1846,7 +1846,7 @@ reddens = ["tests/ledger/test_write.py::test_new_never_writes_over_an_entry_file
 [[mutation]]
 name = "the sweep skips an unreadable file in silence"
 file = "src/keelline/ledger/write.py"
-before = '            unswept.append(f"{item.relative}: could not be read to check for {old} ({item.error})")'
+before = '            unswept.append(Unswept(item.relative.as_posix(), reason))'
 after = '            pass'
 reddens = ["tests/ledger/test_write.py::test_renumber_reports_a_file_it_could_not_sweep_and_keeps_both_endpoints"]
 
@@ -11245,8 +11245,8 @@ reddens = [
 [[mutation]]
 name = "the undeclared-document report prints a crafted name raw"
 file = "src/keelline/docs/commands.py"
-before = "', '.join(map(printable, undeclared))"
-after = "', '.join(undeclared)"
+before = "listed([printable(row) for row in undeclared])"
+after = "listed(undeclared)"
 reddens = [
   "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_document_name_raw",
 ]
@@ -11254,8 +11254,8 @@ reddens = [
 [[mutation]]
 name = "a stale trail.toml key reaches the refusal unescaped"
 file = "src/keelline/docs/trail.py"
-before = "\", \".join(map(quoted, stale))"
-after = "\", \".join(stale)"
+before = "listed_names([quoted(key) for key in stale])"
+after = "listed_names(stale)"
 reddens = [
   "tests/docs/test_commands.py::test_docs_trail_never_prints_a_crafted_trail_toml_key_raw",
 ]
@@ -11299,8 +11299,8 @@ reddens = [
 [[mutation]]
 name = "bugs renumber lists a file it could not sweep raw"
 file = "src/keelline/ledger/commands.py"
-before = "printable(u.split(':', 1)[0])"
-after = "u.split(':', 1)[0]"
+before = "printable(u.path)"
+after = "u.path"
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite",
 ]
@@ -11308,8 +11308,8 @@ reddens = [
 [[mutation]]
 name = "memory joins the names it held back raw"
 file = "src/keelline/memory/commands.py"
-before = "    return \", \".join(map(printable, names))"
-after = "    return \", \".join(names)"
+before = "    return listed([printable(name) for name in names])"
+after = "    return listed(names)"
 reddens = [
   "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
   "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
@@ -11345,11 +11345,54 @@ reddens = [
 
 [[mutation]]
 name = "memory index names an unreadable note by its absolute path"
-file = "src/keelline/memory/commands.py"
-before = "[Path(p).relative_to(store.path).as_posix() for p in report.unreadable]"
-after = "list(report.unreadable)"
+file = "src/keelline/memory/index.py"
+before = "unreadable=[path.relative_to(store.path).as_posix() for path, _ in reconciled.unreadable],"
+after = "unreadable=[str(path) for path, _ in reconciled.unreadable],"
 reddens = [
   "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
+  "tests/memory/test_commands.py::test_an_unreadable_note_is_named_store_relative_on_the_line_and_in_json_alike",
+]
+
+# A list of names on a summary line takes `findings.listed`'s one cap, `LISTED_LIMIT`, and
+# counts the rest; `--json` carries every name. The stale-key refusal has no `--json` and is
+# capped too, naming the first keys in sorted order and saying a re-run names the rest. And the
+# file `bugs renumber` could not sweep is named by its own field, never by splitting the
+# `"path: reason"` message at a colon the path itself may hold.
+
+[[mutation]]
+name = "the undeclared-document report names every document on the line"
+file = "src/keelline/docs/commands.py"
+before = "listed([printable(row) for row in undeclared])"
+after = "', '.join(printable(row) for row in undeclared)"
+reddens = [
+  "tests/docs/test_commands.py::test_the_undeclared_report_names_at_most_the_listed_limit_and_json_names_every_one",
+]
+
+[[mutation]]
+name = "the stale trail.toml key refusal names every key"
+file = "src/keelline/docs/trail.py"
+before = "listed_names([quoted(key) for key in stale])"
+after = "\", \".join(quoted(key) for key in stale)"
+reddens = [
+  "tests/docs/test_commands.py::test_the_stale_key_refusal_counts_every_key_and_names_at_most_the_listed_limit",
+]
+
+[[mutation]]
+name = "memory names every note or pointer it held back on the line"
+file = "src/keelline/memory/commands.py"
+before = "    return listed([printable(name) for name in names])"
+after = "    return \", \".join(printable(name) for name in names)"
+reddens = [
+  "tests/memory/test_commands.py::test_many_unreadable_notes_are_counted_and_named_at_most_to_the_listed_limit",
+]
+
+[[mutation]]
+name = "bugs renumber names a file by its message cut at the first colon"
+file = "src/keelline/ledger/commands.py"
+before = "printable(u.path)"
+after = "printable(str(u).split(':', 1)[0])"
+reddens = [
+  "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[colon]",
 ]
 
 [[mutation]]

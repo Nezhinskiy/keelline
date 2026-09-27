@@ -2570,7 +2570,8 @@ why each (Premise 2), so the count is auditable.
   `next_identifier(root, config, *, fetch=True) -> Allocation`;
   `Filed(path: Path, identifier: str, warning: str | None)`;
   `file_entry(root, config, *, title, severity, area, source="", related=(), today="", fetch=True) -> Filed`;
-  `Renumbered(void: Path, unswept: list[str])`;
+  `Unswept(path: str, reason: str)`, whose `str()` is `"path: reason"`;
+  `Renumbered(void: Path, unswept: list[Unswept])`;
   `renumber(root, config, old, new, *, today="") -> Renumbered`.
 
 - [ ] **Step 1: Write the failing tests**

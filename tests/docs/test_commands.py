@@ -9,7 +9,7 @@ import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.docs.trail import END_MARKER, MARKER
-from keelline.findings import Finding
+from keelline.findings import LISTED_LIMIT, Finding
 from keelline.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 
@@ -182,6 +182,68 @@ def test_docs_trail_never_prints_a_crafted_trail_toml_key_raw(
     assert "no longer exist" in captured.err
     assert_never_raw(captured.out, captured.err)
     assert repr(f"plans/{CRAFTED}.md") in captured.err
+
+
+def test_the_undeclared_report_names_at_most_the_listed_limit_and_json_names_every_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A batch of new designs entering the trail at once — an imported plan directory — named every
+    # one of them on the line, a plain `', '.join` beside `findings.listed`, the one cap every
+    # other summary line takes. The line is capped and counts the rest; `--json` still carries
+    # every name, which is what the operator declares from. Mutation: join `undeclared` uncapped
+    # in `run_docs_trail` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    assert invoke(["docs", "trail", *common]) == 0
+    added = [f"plans/2026-02-{day:02d}-n.md" for day in range(1, LISTED_LIMIT + 4)]
+    for row in added:
+        (root / "docs" / row).write_text("# p\n", encoding="utf-8")
+    capsys.readouterr()
+    assert invoke(["docs", "trail", "--json", *common]) == 1
+    data = json.loads(capsys.readouterr().out)
+    line = data["summary"]
+    assert f"{len(added)} document(s) entered the trail" in line
+    assert [row for row in added if row in line] == added[:LISTED_LIMIT]
+    assert line.endswith(f"{added[LISTED_LIMIT - 1]}, and 3 more")
+    assert data["undeclared"] == added
+
+
+def test_the_stale_key_refusal_counts_every_key_and_names_at_most_the_listed_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The refusal is the only channel — a `Failure` carries no `--json` — and it named every
+    # stale key: a `trail.toml` is committed and bounded in keys by nothing, and this message is
+    # what `docs trail --check` prints in CI and what the `trail` gate carries. So it counts
+    # every key, names the first `LISTED_LIMIT` in sorted order, and says that a re-run names the
+    # rest: the map is the operator's own file, and each run after updating the named keys names
+    # the next ones. Mutation: join `stale` uncapped in `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    stale = [f"plans/gone-{number:02d}.md" for number in range(LISTED_LIMIT + 3)]
+    (root / "docs" / "trail.toml").write_text(
+        "[states]\n" + "".join(f'"{key}" = "planned"\n' for key in stale), encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    err = capsys.readouterr().err
+    assert f"names {len(stale)} document(s) that no longer exist" in err
+    assert [key for key in stale if key in err] == stale[:LISTED_LIMIT]
+    assert f"{stale[LISTED_LIMIT - 1]}, and 3 more" in err
+    assert "re-run" in err
+
+
+def test_a_few_stale_keys_are_all_named_with_no_re_run_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The note that a re-run names the rest is said only when there is a rest. Mutation: add
+    # it whatever the count in `render_listing` — this reddens.
+    root, common = project(tmp_path)
+    (root / "docs" / "plans" / "2026-01-01-x.md").write_text("# p\n", encoding="utf-8")
+    (root / "docs" / "trail.toml").write_text(
+        '[states]\n"plans/gone.md" = "planned"\n', encoding="utf-8"
+    )
+    assert invoke(["docs", "trail", *common]) == 1
+    err = capsys.readouterr().err
+    assert err.rstrip("\n").endswith("update the map before regenerating: plans/gone.md")
 
 
 @pytest.mark.parametrize("route", ["a trail.toml label", "a document filename"])

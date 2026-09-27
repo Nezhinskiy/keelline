@@ -110,6 +110,9 @@ What it does, in order:
 `--check` exits `1` when the index has drifted, when it is over its word budget, when it is past
 the harness's line or byte caps, or when a file in the store cannot be parsed as a note — one
 whose name is not UTF-8 on disk included, since the index names every note by its file's name.
+Such a file is named by its path inside the store, on the line and in `--json`'s `unreadable`
+alike, as `memory refs` names it. Every list of names on the line names up to eight and says
+how many more there are; `--json` carries every one.
 The same findings are printed on the write path too — they just do not fail it, because `--check`
 is the mode that fails a build.
 
@@ -698,8 +701,9 @@ index is regenerated — both endpoints first, then the sweep, so an interruptio
 resolving to the pointer rather than to nothing. Rejects an occupied `NEW` or a missing `OLD`
 (`1`) and raises the index refusals of `bugs index` (`2`) before touching anything. A file the sweep
 could not read or write is listed and the command exits `1` naming it, because once the pointer
-exists a stale mention in that file looks intentional to `bugs check` forever. The moved entry's
-own body is the operator's to rewrite and is not swept.
+exists a stale mention in that file looks intentional to `bugs check` forever. The line counts
+them and names up to eight; `--json` carries every one under `unswept`, each a `"path: reason"`
+string. The moved entry's own body is the operator's to rewrite and is not swept.
 
 **Writes** the two entry files, every rewritten file, and `<paths.bug_index>`.
 
@@ -731,11 +735,13 @@ not ignore, grouped by the first `[[theme]]` in `trail.toml` (beside the roadmap
 `pattern` is found in its filename, `Unfiled` otherwise, each annotated with its `[states]` entry or
 `delivered`. `--check` exits `1` when the listing is stale and writes nothing. Two guards make
 the listing unable to lie by silence: a state naming a document that no longer exists fails
-(`1`) before anything is written, and a document that enters the listing without a declared
-state is written as `delivered` and then reported (`1`) — a design is written before the thing
-is built. A listing that named no document before, such as a new project's first, reports none
-of them, so the first design and plan need their states declared before the first run. That
-second guard fires on the writing path only: a row enters the listing through
+(`1`) before anything is written, counting every such key and naming up to eight, with a note
+that a re-run after updating those names the rest; and a document that enters the listing
+without a declared state is written as `delivered` and then reported (`1`), counted and named
+up to eight on the line and every one in `--json`'s `undeclared` — a design is written before
+the thing is built. A listing that named no document before, such as a new project's first,
+reports none of them, so the first design and plan need their states declared before the first
+run. That second guard fires on the writing path only: a row enters the listing through
 `docs trail`, whose exit `1` the operator sees, and `--check` has no earlier listing to compare
 against, so a defaulted `delivered` that was committed over that report is invisible to CI.
 A theme's `pattern` is a small part of regular-expression syntax, meaning what it means to a

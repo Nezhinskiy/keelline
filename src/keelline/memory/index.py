@@ -442,7 +442,7 @@ class IndexCheck:
     over_budget: bool
     over_caps: list[str]
     provisional: list[str]
-    unreadable: list[str]
+    unreadable: list[str]  # store-relative
 
 
 def _destination(store: Store, config: Config) -> Path:
@@ -524,7 +524,9 @@ def check_index(store: Store, config: Config, reconciled: Reconciliation) -> Ind
         over_budget=len(text.split()) > config.budgets.effective("memory_index_words"),
         over_caps=caps,
         provisional=list(reconciled.provisional),
-        unreadable=[str(path) for path, _ in reconciled.unreadable],
+        # Store-relative, which is what the summary line and `memory refs` name too: the
+        # absolute prefix is this machine's, so `--json` named one file two ways in one answer.
+        unreadable=[path.relative_to(store.path).as_posix() for path, _ in reconciled.unreadable],
     )
 
 

@@ -260,8 +260,8 @@ def test_index_writes_nothing_when_it_is_already_current(
 
 @pytest.mark.parametrize(
     ("directory", "named"),
-    [("sealed", "src/sealed/a.py"), (CRAFTED, UNPRINTABLE)],
-    ids=["plain", "crafted"],
+    [("sealed", "src/sealed/a.py"), (CRAFTED, UNPRINTABLE), ("a:b", UNPRINTABLE)],
+    ids=["plain", "crafted", "colon"],
 )
 def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], directory: str, named: str
@@ -270,7 +270,10 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     # intentional to `bugs check` forever, so the move is reported as incomplete. The file is
     # named, and a name the tree chose outside the path grammar is withheld on the line and kept
     # in `--json`. Mutation: list the unswept names unbounded in `run_bugs_renumber` — the
-    # crafted case reddens.
+    # crafted case reddens. The name on the line is the file the sweep reported, not a prefix of
+    # its message: rebuilt by splitting `"path: reason"` at the first colon, `src/a:b/a.py`
+    # printed as `src/a`, a directory the operator would look in for nothing. Mutation: split the
+    # message again in `run_bugs_renumber` — the colon case reddens.
     if os.geteuid() == 0:
         pytest.skip("root writes everywhere")
     root, common = project(tmp_path)

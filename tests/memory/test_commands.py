@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.findings import LISTED_LIMIT
 from keelline.memory.api import DELIMITER
 from keelline.printed import UNPRINTABLE
 from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
@@ -672,6 +673,46 @@ def test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_ra
     (notes / crafted).rename(notes / "broken.md")
     assert invoke(["memory", "index", "--check", *common(project)]) == 1
     assert "developer/broken.md" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("check", [True, False], ids=["check", "write"])
+def test_an_unreadable_note_is_named_store_relative_on_the_line_and_in_json_alike(
+    project: Path, capsys: pytest.CaptureFixture[str], check: bool
+) -> None:
+    # The line named the note inside the store and `--json`'s `unreadable` named it by its
+    # absolute path, so one command gave two answers about one file, and the second carried the
+    # machine's own directory layout. Both are store-relative now, as `memory refs` names them.
+    # Mutation: build `IndexCheck.unreadable` from the absolute path in `check_index` — this
+    # reddens.
+    notes = project / ".keelline" / "local" / "memory" / "developer"
+    (notes / "broken.md").write_text("no frontmatter at all\n", encoding="utf-8")
+    argv = ["memory", "index", *(["--check"] if check else []), "--json", *common(project)]
+    assert invoke(argv) == (1 if check else 0)
+    data = json.loads(capsys.readouterr().out)
+    assert data["unreadable"] == ["developer/broken.md"]
+    assert "developer/broken.md" in data["summary"]
+
+
+def test_many_unreadable_notes_are_counted_and_named_at_most_to_the_listed_limit(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `_printed` joined every name it was handed, while every other summary line takes
+    # `findings.listed`'s one cap: a store of a few hundred notes that stopped parsing at once —
+    # a frontmatter change applied by hand — printed every one of them. The line counts them all
+    # and names `LISTED_LIMIT`; `--json` names every one. The refused-harvest, refused-publish and
+    # refused-pointer lines go through the same `_printed`. Mutation: join uncapped in
+    # `_printed` — this reddens.
+    store = project / ".keelline" / "local" / "memory"
+    broken = [f"developer/broken-{number:02d}.md" for number in range(LISTED_LIMIT + 3)]
+    for name in broken:
+        (store / name).write_text("no frontmatter at all\n", encoding="utf-8")
+    assert invoke(["memory", "index", "--check", "--json", *common(project)]) == 1
+    data = json.loads(capsys.readouterr().out)
+    line = data["summary"]
+    assert f"{len(broken)} file(s) in the store cannot be read as a note" in line
+    assert [name for name in broken if name in line] == broken[:LISTED_LIMIT]
+    assert f"{broken[LISTED_LIMIT - 1]}, and 3 more" in line
+    assert data["unreadable"] == broken
 
 
 def test_the_check_summary_never_says_current_while_the_exit_code_says_otherwise(

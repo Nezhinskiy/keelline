@@ -23,7 +23,8 @@ from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
 from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
-from keelline.findings import Finding
+from keelline.findings import LISTED_LIMIT, Finding
+from keelline.findings import listed as listed_names
 from keelline.fsops import utf_8_name
 from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 from keelline.printed import quoted
@@ -291,9 +292,18 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
         # Through `quoted`: a `[states]` key is arbitrary TOML from a committed file, line breaks
         # and escape sequences included, and this message is the only place the operator learns
         # which key to fix, so it is escaped, not withheld.
+        #
+        # And capped at `LISTED_LIMIT`, though this message is the only channel: a `Failure` has
+        # no `--json` behind it. Uncapped, a map declaring many states named every one of them
+        # after a `plans` move, on the one line `docs trail --check` prints in CI. Nothing is
+        # lost by the cap: the count is every key, the named ones are the first in sorted order,
+        # and the rest are keys in the operator's own `trail.toml`, which a re-run after updating
+        # these names in turn.
+        rest = "; re-run after updating these to name the rest" if len(stale) > LISTED_LIMIT else ""
         raise Failure(
-            f"{TRAIL_FILE} names documents that no longer exist (renamed, deleted, or now "
-            "gitignored); update the map before regenerating: " + ", ".join(map(quoted, stale))
+            f"{TRAIL_FILE} names {len(stale)} document(s) that no longer exist (renamed, deleted, "
+            "or now gitignored); update the map before regenerating: "
+            f"{listed_names([quoted(key) for key in stale])}{rest}"
         )
     lines: list[str] = []
     total = pending = 0
