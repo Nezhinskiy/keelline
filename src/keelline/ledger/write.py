@@ -25,7 +25,7 @@ from keelline.ledger.entries import (
     scalar,
 )
 from keelline.ledger.index import index_path, index_text, refuse_index_overwrite, render_index
-from keelline.ledger.scan import citation_roots, said, scannable
+from keelline.ledger.scan import citation_roots, scannable
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -95,7 +95,7 @@ class Unswept:
 
     Two fields and never one `"path: reason"` string, because a path may itself hold `": "`, so
     no reader could split such a string back into the two. The reason names no absolute path
-    (`scan.said`); a refusal of Keelline's own may repeat the root-relative path."""
+    (`fsops.said`); a refusal of Keelline's own may repeat the root-relative path."""
 
     path: str
     reason: str
@@ -357,7 +357,7 @@ def renumber(root: Path, config: Config, old: str, new: str, *, today: str = "")
             fsops.write_within(root, item.relative.as_posix(), rewritten)
         except OSError as error:
             unswept.append(
-                Unswept(item.relative.as_posix(), f"could not be written ({said(error)})")
+                Unswept(item.relative.as_posix(), f"could not be written ({fsops.said(error)})")
             )
     _write_index(root, config)
     return Renumbered(source, unswept)

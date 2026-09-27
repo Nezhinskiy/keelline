@@ -10,8 +10,9 @@ of which past the first also has a finding of its own. `keelline init`'s note on
 Refusals with no `--json` are bounded the same way: the `docs/trail.toml` `[states]` keys that
 name no document, counted in full, the first eight in sorted order, with a note that a re-run
 after updating those names the rest; the groups of a memory store none of whose `memory.groups`
-resolves, counted, with the reasons for the first eight; the gates a project runs, when `[keelline]
+resolves, counted, with the reasons for the first eight in sorted order; the gates a project runs, when `[keelline]
 enforced` names one it does not; the unknown keys and sections of a `keelline.toml`; and the merge
-bases that leave `keelline test attribute` undetermined. And a `[states]` key or a `[[theme]]`
-label longer than 120 characters is named in a refusal by its first 120 characters and its length,
-where one key of 200 000 characters used to make a line of 200 000 characters.
+bases that leave `keelline test attribute` undetermined. And a `[states]` key, a `[[theme]]`
+label or a `memory.groups` entry longer than 120 characters is named in a refusal by its first 120
+characters and its length, where one key of 200 000 characters used to make a line of 200 000
+characters.

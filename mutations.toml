@@ -11440,7 +11440,7 @@ reddens = [
 
 [[mutation]]
 name = "the scan records a read failure in words that name its absolute path"
-file = "src/keelline/ledger/scan.py"
+file = "src/keelline/fsops.py"
 before = "    return error.strerror or type(error).__name__"
 after = "    return str(error)"
 reddens = [
@@ -11448,18 +11448,27 @@ reddens = [
 ]
 
 [[mutation]]
-name = "an error with no file name is said as its class name"
-file = "src/keelline/ledger/scan.py"
-before = "        return str(error) or type(error).__name__"
-after = "        return error.strerror or type(error).__name__"
+name = "Keelline's own path refusal is said as its class name"
+file = "src/keelline/fsops.py"
+before = "        return str(error)\n    return error.strerror"
+after = "        return type(error).__name__\n    return error.strerror"
 reddens = [
-  "tests/ledger/test_scan.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
+  "tests/test_fsops.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
+]
+
+[[mutation]]
+name = "an error is said whole by having no file name rather than by its type"
+file = "src/keelline/fsops.py"
+before = "    if isinstance(error, UnsafePath):\n        return str(error)"
+after = "    if error.filename is None:\n        return str(error)"
+reddens = [
+  "tests/test_fsops.py::test_an_error_is_said_in_its_words_never_with_the_path_it_was_opened_by",
 ]
 
 [[mutation]]
 name = "the sweep records a write failure in the error's own str"
 file = "src/keelline/ledger/write.py"
-before = "f\"could not be written ({said(error)})\""
+before = "f\"could not be written ({fsops.said(error)})\""
 after = "f\"could not be written ({error})\""
 reddens = [
   "tests/ledger/test_commands.py::test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite[plain]",
@@ -11482,6 +11491,24 @@ before = "return None, f\"{head}: {listed(reasons)}\""
 after = "return None, f\"{head}: {'; '.join(reasons)}\""
 reddens = [
   "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
+]
+
+[[mutation]]
+name = "the unresolved groups are named in declared order"
+file = "src/keelline/memory/store.py"
+before = "for k in sorted(unavailable)]"
+after = "for k in unavailable]"
+reddens = [
+  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order",
+]
+
+[[mutation]]
+name = "an unresolved group is named unclipped"
+file = "src/keelline/memory/store.py"
+before = "f\"{clipped(group)} is not in the store\""
+after = "f\"{group!r} is not in the store\""
+reddens = [
+  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
 ]
 
 # The same cap on the rest of the class: every list of names the repository or its history
@@ -11607,7 +11634,7 @@ reddens = [
 [[mutation]]
 name = "the store names a missing group unescaped in its reason"
 file = "src/keelline/memory/store.py"
-before = "f\"{quoted(group)} is not in the store\""
+before = "f\"{clipped(group)} is not in the store\""
 after = "f\"{group} is not in the store\""
 reddens = [
   "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
@@ -11616,7 +11643,7 @@ reddens = [
 [[mutation]]
 name = "the store names a linked group with no overlay unescaped"
 file = "src/keelline/memory/store.py"
-before = "f\"{quoted(group)} is a link and no overlay is recorded\""
+before = "f\"{clipped(group)} is a link and no overlay is recorded\""
 after = "f\"{group} is a link and no overlay is recorded\""
 reddens = [
   "tests/memory/test_refs.py::test_a_linked_group_with_no_overlay_is_named_escaped_never_raw",
@@ -11625,7 +11652,7 @@ reddens = [
 [[mutation]]
 name = "the store names a group linking outside the share unescaped"
 file = "src/keelline/memory/store.py"
-before = "f\"{quoted(group)} links outside this project's share of the overlay \""
+before = "f\"{clipped(group)} links outside this project's share of the overlay \""
 after = "f\"{group} links outside this project's share of the overlay \""
 reddens = [
   "tests/memory/test_commands.py::test_a_group_linking_outside_the_share_is_named_escaped_never_raw",
@@ -11634,10 +11661,11 @@ reddens = [
 [[mutation]]
 name = "a store with no resolving group names each group unescaped"
 file = "src/keelline/memory/store.py"
-before = "reasons = [f\"{quoted(k)}: {v}\" for k, v in unavailable.items()]"
-after = "reasons = [f\"{k}: {v}\" for k, v in unavailable.items()]"
+before = "reasons = [f\"{clipped(k)}: {unavailable[k]}\" for k in sorted(unavailable)]"
+after = "reasons = [f\"{k}: {unavailable[k]}\" for k in sorted(unavailable)]"
 reddens = [
   "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
 ]
 
 [[mutation]]

@@ -26,6 +26,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from keelline.config.paths import PathEscape, contained
+from keelline.fsops import said
 from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run
 from keelline.guards.api import contained_roots
 from keelline.identifiers import identifiers
@@ -183,19 +184,6 @@ def _walked_files(root: Path, names: tuple[str, ...]) -> list[Path]:
 
 def is_fixture_holder(head: bytes) -> bool:
     return FIXTURE_MARKER.encode("utf-8") in head
-
-
-def said(error: OSError) -> str:
-    """What an `OSError` says about a file, without naming it: `str(error)` carries the path as it
-    was opened — the absolute one, under this machine's own layout — and every report of a
-    scanned file names it beside this, relative to the root.
-
-    An error with no file name has no such path in it, and is said whole: `fsops.UnsafePath` is
-    raised with a message alone, no errno, naming the path relative to the root, and the message
-    is the only thing it says."""
-    if error.filename is None:
-        return str(error) or type(error).__name__
-    return error.strerror or type(error).__name__
 
 
 def scannable(root: Path, names: tuple[str, ...]) -> Iterator[Scanned]:

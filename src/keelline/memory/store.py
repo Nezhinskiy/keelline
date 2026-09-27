@@ -59,7 +59,7 @@ from keelline.config.schema import Config
 from keelline.errors import Failure
 from keelline.findings import listed
 from keelline.gitenv import git_run
-from keelline.printed import quoted
+from keelline.printed import clipped
 
 LOCAL_STORE = Path(".keelline") / "local" / "memory"
 # The overlay's per-project directory, named once. It was a bare literal at the two call
@@ -387,16 +387,16 @@ def _group_targets(
             unavailable[group] = str(exc)
             continue
         if not target.exists():
-            unavailable[group] = f"{quoted(group)} is not in the store"
+            unavailable[group] = f"{clipped(group)} is not in the store"
             continue
         if target.is_symlink():
             if overlay is None:
-                unavailable[group] = f"{quoted(group)} is a link and no overlay is recorded"
+                unavailable[group] = f"{clipped(group)} is a link and no overlay is recorded"
                 continue
             allowed = permitted_roots(overlay, config.project.name)
             if not any(_inside(target, permitted) for permitted in allowed):
                 unavailable[group] = (
-                    f"{quoted(group)} links outside this project's share of the overlay "
+                    f"{clipped(group)} links outside this project's share of the overlay "
                     f"({', '.join(str(p) for p in allowed)})"
                 )
                 continue
@@ -454,8 +454,10 @@ def _resolve_at(
     groups, unavailable = _group_targets(base, config, overlay if mode == "overlay" else None)
     if not groups:
         # Counted, and capped at `LISTED_LIMIT` like every list of names: `memory.groups` is
-        # bounded in number by nothing, and this reason reaches a refusal with no `--json`.
-        reasons = [f"{quoted(k)}: {v}" for k, v in unavailable.items()]
+        # bounded in number by nothing, and this reason reaches a refusal with no `--json`. In
+        # sorted order, as `_unavailable` gives the same failure, so "the first eight" means one
+        # thing; each group clipped, since nothing bounds one group's length either.
+        reasons = [f"{clipped(k)}: {unavailable[k]}" for k in sorted(unavailable)]
         if not reasons:
             return None, "the store has no groups"
         head = f"none of the {len(reasons)} configured group(s) resolved"

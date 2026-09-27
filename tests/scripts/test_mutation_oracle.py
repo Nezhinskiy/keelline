@@ -706,7 +706,11 @@ def test_a_stop_ends_the_pytest_in_flight_and_starts_no_other(
         _wait_until_holding(holding)
         assert holding.exists() and module._live, "the held run never started"
         module._stop_runs()
-        waiting.join()
+        # Bounded, as a precondition and not the verdict: the held run releases itself after
+        # `HELD_RUN_SECONDS`, which bounds the pytest child and not `_run`, so a regression that
+        # left `_run` blocked would otherwise hang the suite rather than fail this test.
+        waiting.join(timeout=HELD_RUN_SECONDS + 60)
+        assert not waiting.is_alive(), "the held run outlived its own release"
         assert not finished.exists(), "a stop let the pytest in flight run to its end"
         with pytest.raises(module.Stopped):
             module._run(("test_held.py::test_quick",), tmp_path)
