@@ -234,7 +234,10 @@ def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen,
         try:
             found = _reads(root, config, gate)
         except KeellineError:
-            continue  # a path the gate cannot read; the gate's own result says so
+            # A path the gate refuses to read, which it answered without reaching: the trail
+            # gate stops at a missing roadmap, its own finding, before it asks for `trail.toml`.
+            # That result already fails, so nothing here could make it pass.
+            continue
         if found:
             reads[gate.name] = [Path(os.path.relpath(path, root)).as_posix() for path in found]
     if not reads:

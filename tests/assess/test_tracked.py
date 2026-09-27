@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import gitenv
 from keelline.assess import tracked
 from keelline.assess.assessment import UNNAMED, Assessment, assess, document, render
 from keelline.assess.gates import GateResult
@@ -25,6 +26,7 @@ from keelline.assess.tracked import (
     CASE_REMEDY,
     UNASKED,
     UNASKED_REASON,
+    UNASKED_REMEDY,
     UNSEEN_REASON,
     UNTRACKED,
 )
@@ -546,13 +548,98 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     assert data["unanswered"] == ["docs"], data
 
 
-def test_keelline_gate_judges_the_disk_and_asks_git_nothing(tmp_path: Path) -> None:
+def test_keelline_gate_judges_the_disk_and_asks_git_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # `keelline gate` runs where CI checked out, and there an untracked file is simply absent,
     # which the gate's own finding covers. So it asks nothing about tracking: here, with the
-    # file on disk, `docs` passes as it would have.
+    # file on disk, `docs` passes as it would have, and the tracked-files check asked git
+    # nothing, not even whether this is a work tree. No mutation entry: the defect is a call
+    # added to `run_gate`, not a line changed. Measured by hand instead: passing `run_gate`'s
+    # results through `as_ci_sees` reddens this test.
     root = smoke_repo(tmp_path)
     _untrack(root, AGENTS)
+    asked: list[str] = []
+
+    def git_run(*args: object, **_kwargs: object) -> tuple[int, str]:
+        asked.append(str(args))
+        return -1, ""
+
+    def in_work_tree(root: Path) -> bool:
+        asked.append(f"in_work_tree({root})")
+        return True
+
+    monkeypatch.setattr(tracked, "git_run", git_run)
+    monkeypatch.setattr(tracked, "in_work_tree", in_work_tree)
     code, out, _ = cli(root, tmp_path, "gate", "--builtin", "--base", _sha(root, BASE), "--json")
     rows = {r["name"]: r for r in json.loads(out)["gates"]}
     assert rows["docs"]["answered"] is True and rows["docs"]["failing"] is False, rows
     assert code == 0, out
+    assert asked == []
+
+
+def test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The command's own text, and not only the transition: the note is the no-answer item's
+    # remedy, so a person learns to ask `git ls-files` here, and `--json` names no file as
+    # untracked, since git said nothing either way. Mutation (declared): the note is not printed.
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
+    base = _sha(root, BASE)
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)
+    assert code == 1, out
+    note = next(line for line in out.splitlines() if line.startswith("note: git gave no answer"))
+    assert note.startswith("note: git gave no answer to whether it tracks the files docs"), note
+    assert note.endswith(UNASKED_REMEDY), note
+    data = json.loads(cli(root, tmp_path, "adopt", "promote", "docs", "--base", base, "--json")[1])
+    assert data["untracked"] == {} and data["unanswered"] == ["docs"], data
+
+
+def test_a_listing_git_refuses_after_naming_the_top_is_no_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git can name the work tree's top and then refuse the listing, a timeout or a broken index.
+    # An empty listing read in its place would make every file untracked, with a reason saying
+    # git does not track them, which it never said. Mutation (declared): a failed listing is
+    # read as an empty one.
+    root = smoke_repo(tmp_path)
+
+    def git_run(cwd: Path, *args: str, timeout: float) -> tuple[int, str]:
+        return (-1, "") if args[0] == "ls-files" else gitenv.git_run(cwd, *args, timeout=timeout)
+
+    monkeypatch.setattr(tracked, "git_run", git_run)
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNASKED_REASON
+    assert set(_items(assessment, UNASKED)) == {"docs", "trail"}
+    assert _items(assessment, UNTRACKED) == {}
+
+
+def test_a_path_a_gate_answered_without_reaching_is_left_to_its_result(tmp_path: Path) -> None:
+    # With no roadmap, the trail gate answers with its own finding and never asks for
+    # `trail.toml`, which here is a symlink `contained()` refuses. The check asks for it, is
+    # refused, and leaves the gate to that result, which already fails; the refusal never ends
+    # the run. Mutation (declared): the refusal is raised.
+    root = smoke_repo(tmp_path)
+    _unlink_roadmap(root)
+    git(root, "rm", "-q", ROADMAP)
+    trail = root / TRAIL
+    trail.rename(root / "docs" / "states.toml")
+    trail.symlink_to("states.toml")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "docs: no roadmap, and the states behind a link")
+    assessment = _assess(root, tmp_path)
+    row = _row(assessment, "trail")
+    assert row.answered and [f.rule for f in row.findings] == ["roadmap-missing"], row
+    assert "trail" not in set(_items(assessment, UNTRACKED)) | set(_items(assessment, UNASKED))
+
+
+def test_a_name_that_reaches_no_file_is_never_the_same_file_as_another(tmp_path: Path) -> None:
+    # The case check asks whether the name read and git's spelling reach one file. A name that
+    # reaches nothing, which a race with the tree can leave, is not a case difference: the name
+    # stays untracked, the answer that fails closed, and the question never ends the run.
+    # Mutation (declared): a name that reaches nothing reads as the same file.
+    (tmp_path / "there.md").write_text("# here\n", encoding="utf-8")
+    assert not tracked._same_file(tmp_path / "gone.md", tmp_path / "there.md")
+    assert tracked._same_file(tmp_path / "there.md", tmp_path / "there.md")

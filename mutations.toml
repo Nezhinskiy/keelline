@@ -12350,3 +12350,56 @@ after = '        "case_differs": {},'
 reddens = [
   "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
 ]
+
+# `adopt promote`'s own text, not only its transition: the note is the no-answer item's remedy.
+[[mutation]]
+name = "adopt promote's note on a git that gives no answer is not printed"
+file = "src/keelline/assess/commands.py"
+before = "                lines.append(UNASKED_NOTE.format(gate=unseen.gate, remedy=UNASKED_REMEDY))"
+after = "                pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why",
+]
+
+# A listing git refused after naming the top says nothing about what it tracks: read as empty, it
+# would make every file untracked with a reason git never gave.
+[[mutation]]
+name = "a listing git refuses is read as an empty one"
+file = "src/keelline/assess/tracked.py"
+before = """    if code != 0:
+        return None
+    names = frozenset("""
+after = """    names = frozenset("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_listing_git_refuses_after_naming_the_top_is_no_answer",
+]
+
+# A gate can answer without reaching a path it reads (the trail gate stops at a missing roadmap),
+# and the refusal of that path must leave the gate to its result, never end the run.
+[[mutation]]
+name = "a path a gate answered without reaching ends the run"
+file = "src/keelline/assess/tracked.py"
+before = """            # That result already fails, so nothing here could make it pass.
+            continue"""
+after = """            # That result already fails, so nothing here could make it pass.
+            raise"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_path_a_gate_answered_without_reaching_is_left_to_its_result",
+]
+
+[[mutation]]
+name = "a name that reaches no file reads as the same file as another"
+file = "src/keelline/assess/tracked.py"
+before = """    except OSError:
+        return False
+
+
+def _case_differs("""
+after = """    except OSError:
+        return True
+
+
+def _case_differs("""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_name_that_reaches_no_file_is_never_the_same_file_as_another",
+]
