@@ -11752,9 +11752,9 @@ reddens = [
 
 [[mutation]]
 name = "the trail gate's trail.toml is not asked about"
-file = "src/keelline/assess/tracked.py"
-before = "        wanted = [contained(root, config.paths.roadmap), contained(root, trail_target(config))]"
-after = "        wanted = [contained(root, config.paths.roadmap)]"
+file = "src/keelline/docs/trail.py"
+before = "    return [contained(root, config.paths.roadmap), trail_path(root, config)]"
+after = "    return [contained(root, config.paths.roadmap)]"
 reddens = [
   "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
 ]
@@ -11763,9 +11763,9 @@ reddens = [
 # git does not track passes here and is `missing-link` there.
 [[mutation]]
 name = "the docs gate's link targets are not asked about"
-file = "src/keelline/assess/tracked.py"
-before = "        wanted = [contained(root, config.paths.agents_md), *linked_files(root, config)]"
-after = "        wanted = [contained(root, config.paths.agents_md)]"
+file = "src/keelline/docs/hygiene.py"
+before = "    return [contained(root, config.paths.agents_md), *linked]"
+after = "    return [contained(root, config.paths.agents_md)]"
 reddens = [
   "tests/assess/test_tracked.py::test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate",
   "tests/assess/test_tracked.py::test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates",
@@ -11787,7 +11787,7 @@ reddens = [
 name = "a git that gives no answer reads as tracking every file"
 file = "src/keelline/assess/tracked.py"
 before = """        if tracked is None:
-            result.append(Unseen(gate, tuple(files), answered=False))
+            result.append(Unseen(name, tuple(files), git_answered=False))
             continue"""
 after = """        if tracked is None:
             continue"""
@@ -11816,7 +11816,7 @@ reddens = [
 [[mutation]]
 name = "adopt promote's note on an untracked file is not printed"
 file = "src/keelline/assess/commands.py"
-before = "            lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files))"
+before = "            lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files, remedy=remedy))"
 after = "            pass"
 reddens = [
   "tests/assess/test_tracked.py::test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it",
@@ -12024,4 +12024,26 @@ before = "            if not done:"
 after = "            if len(done) <= prefix.count(\"/\"):"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_to_a_tracked_file_elsewhere_in_the_repository_is_judged",
+]
+
+# What a gate reads by path is on its record, next to the gate function it must agree with, and
+# the tracked-files check knows no gate by name: a gate whose record declares nothing is not asked
+# about, whatever it reads.
+[[mutation]]
+name = "the docs gate's record declares no files it reads"
+file = "src/keelline/assess/gates.py"
+before = "        docs_reads,"
+after = "        None,"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+]
+
+[[mutation]]
+name = "the trail gate's record declares no files it reads"
+file = "src/keelline/assess/gates.py"
+before = "        trail_reads,"
+after = "        None,"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[roadmap]",
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
 ]

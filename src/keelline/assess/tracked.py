@@ -1,8 +1,10 @@
 """The `docs` and `trail` gates judge tracked files: which files they read here that CI cannot.
 
-CI checks out what git tracks and nothing else. The `docs` gate reads `[paths] agents_md` and every
-file its links name, and the `trail` gate reads `[paths] roadmap` and the `trail.toml` beside it,
-each at its path. A file that is on disk here and that git does not track, an ignored one included,
+CI checks out what git tracks and nothing else. A built-in gate that reads files by path says which
+on its record (`Gate.reads`): the `docs` gate reads `[paths] agents_md` and every file its links
+name, and the `trail` gate reads `[paths] roadmap` and the `trail.toml` beside it. This module
+knows no gate by name, so a built-in gate that comes to read files by path falls under the check by
+declaring them. A file that is on disk here and that git does not track, an ignored one included,
 is a file those gates read here and CI never sees, and so is one read through a tracked symlink
 whose target is untracked or outside the repository, since git tracks the link alone and the
 checkout leaves it dangling: in CI it is absent, and the gate's own finding for an absent file
@@ -12,11 +14,10 @@ reports such a gate as unable to judge the tree as CI will, and `keelline adopt 
 enforces it. `keelline gate` asks nothing of this: it runs where CI checked out, and there the file
 is simply absent.
 
-**What is not asked.** The `docs` gate also reads the roadmap, for its prose budget, but only
-when it is there, and a roadmap that is absent adds no finding, so a roadmap CI cannot see can
-only make a verdict here stricter than CI's, never laxer. It is left out rather than refused.
-The design and plan documents the `trail` listing names are already filtered to tracked ones by
-the listing itself.
+**What is not asked.** A file a gate reads only when it is there, whose absence adds no finding,
+such as the roadmap the `docs` gate reads for its prose budget, is not among its reads: one CI
+cannot see can only make a verdict here stricter than CI's, never laxer. The design and plan
+documents the `trail` listing names are already filtered to tracked ones by the listing itself.
 
 **Outside a git work tree nothing is asked.** There is no index to ask and no checkout for CI to
 take, so both commands judge the files as they are, as `keelline docs trail` lists every
@@ -36,10 +37,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from keelline.assess.gates import GateResult
+from keelline.assess.gates import Gate, GateResult, configured
 from keelline.assess.model import Item, item
-from keelline.config.paths import contained
-from keelline.docs.api import linked_files, trail_target
 from keelline.errors import KeellineError
 from keelline.findings import Severity
 from keelline.gitenv import QUERY_TIMEOUT_SECONDS, git_run, in_work_tree
@@ -82,22 +81,17 @@ UNASKED_REMEDY = (
 
 @dataclass(frozen=True)
 class Unseen:
-    """A gate that reads files CI cannot be shown to see: the files, and whether git answered."""
+    """A gate that reads files CI cannot be shown to see: the files, and whether git answered
+    the question at all (when it did not, `files` are every file the gate reads)."""
 
     gate: str
     files: tuple[str, ...]  # project-relative, as found on disk
-    answered: bool
+    git_answered: bool
 
 
-def _reads(root: Path, config: Config, gate: str) -> list[Path]:
-    """The files `gate` reads by path that are there now: for `docs`, the always-loaded document
-    and what its links name; for `trail`, the roadmap and its `trail.toml`."""
-    if gate == "docs":
-        wanted = [contained(root, config.paths.agents_md), *linked_files(root, config)]
-    elif gate == "trail":
-        wanted = [contained(root, config.paths.roadmap), contained(root, trail_target(config))]
-    else:
-        return []
+def _reads(root: Path, config: Config, gate: Gate) -> list[Path]:
+    """The files `gate` reads by path that are there now, as its record declares them."""
+    wanted = gate.reads(root, config) if gate.reads is not None else []
     return [path for path in wanted if path.exists()]
 
 
@@ -197,32 +191,32 @@ def _not_checked_out(relative: str, listing: _Listing) -> str | None:
     return None
 
 
-def unseen(root: Path, config: Config, names: tuple[str, ...]) -> tuple[Unseen, ...]:
-    """Each of `names` that reads a file here which git does not track, or of which git would not
+def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen, ...]:
+    """Each of `gates` that reads a file here which git does not track, or of which git would not
     say; nothing outside a git work tree."""
     if not in_work_tree(root):
         return ()
     reads: dict[str, list[str]] = {}
-    for gate in names:
+    for gate in gates:
         try:
             found = _reads(root, config, gate)
         except KeellineError:
             continue  # a path the gate cannot read; the gate's own result says so
         if found:
-            reads[gate] = [Path(os.path.relpath(path, root)).as_posix() for path in found]
+            reads[gate.name] = [Path(os.path.relpath(path, root)).as_posix() for path in found]
     if not reads:
         return ()
     tracked = _tracked(root)
     result: list[Unseen] = []
-    for gate, files in reads.items():
+    for name, files in reads.items():
         if tracked is None:
-            result.append(Unseen(gate, tuple(files), answered=False))
+            result.append(Unseen(name, tuple(files), git_answered=False))
             continue
         missing = tuple(
             dict.fromkeys(n for f in files if (n := _not_checked_out(f, tracked)) is not None)
         )
         if missing:
-            result.append(Unseen(gate, missing, answered=True))
+            result.append(Unseen(name, missing, git_answered=True))
     return tuple(result)
 
 
@@ -231,13 +225,14 @@ def as_ci_sees(
 ) -> tuple[tuple[GateResult, ...], tuple[Unseen, ...]]:
     """`results` with each gate that reads a file CI cannot see turned into one that could not
     judge the tree, its findings kept; and those gates, with their files."""
-    found = unseen(root, config, tuple(r.name for r in results if r.answered))
+    gates = configured(config)
+    found = unseen(root, config, tuple(gates[r.name] for r in results if r.answered))
     by_gate = {u.gate: u for u in found}
     judged = tuple(
         replace(
             r,
             answered=False,
-            reason=UNSEEN_REASON if by_gate[r.name].answered else UNASKED_REASON,
+            reason=UNSEEN_REASON if by_gate[r.name].git_answered else UNASKED_REASON,
         )
         if r.name in by_gate
         else r
@@ -252,10 +247,10 @@ def unseen_items(found: tuple[Unseen, ...], withheld: str) -> list[Item]:
     return [
         item(
             u.gate,
-            UNTRACKED if u.answered else UNASKED,
+            UNTRACKED if u.git_answered else UNASKED,
             None,
             Severity.WARNING,
-            REMEDY.format(gate=u.gate) if u.answered else UNASKED_REMEDY,
+            REMEDY.format(gate=u.gate) if u.git_answered else UNASKED_REMEDY,
             [printable(f, withheld) for f in u.files],
         )
         for u in found

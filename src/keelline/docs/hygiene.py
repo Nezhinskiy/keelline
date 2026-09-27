@@ -185,10 +185,17 @@ def check_links(root: Path, config: Config) -> list[Finding]:
     ]
 
 
-def linked_files(root: Path, config: Config) -> list[Path]:
-    """What the always-loaded document's links name that is there: the files and directories
-    `check_links` found and so did not report, each once, in the document's order."""
-    return list(dict.fromkeys(landed for _, landed in _links(root, config) if landed.exists()))
+def docs_reads(root: Path, config: Config) -> list[Path]:
+    """The files the `docs` gate reads by path, each once, there or not: the always-loaded
+    document and every file or directory its links name, as `check_links` reads them. A CI
+    checkout that lacks one fails the gate (`missing-document`, `missing-link`).
+
+    The roadmap, which the budgets read for its prose, is not among them: it is read only when
+    it is there, and an absent one adds no finding, so a roadmap a checkout lacks can only make a
+    verdict taken here stricter than CI's.
+    """
+    linked = dict.fromkeys(landed for _, landed in _links(root, config))
+    return [contained(root, config.paths.agents_md), *linked]
 
 
 def docs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:

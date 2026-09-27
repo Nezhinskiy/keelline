@@ -110,6 +110,14 @@ def trail_path(root: Path, config: Config) -> Path:
     return contained(root, trail_target(config))
 
 
+def trail_reads(root: Path, config: Config) -> list[Path]:
+    """The files the `trail` gate reads by path, there or not: the roadmap, and the `trail.toml`
+    whose states the listing is rebuilt from. A CI checkout that lacks the roadmap fails the gate
+    (`roadmap-missing`), and one that lacks `trail.toml` rebuilds the listing without the states.
+    """
+    return [contained(root, config.paths.roadmap), trail_path(root, config)]
+
+
 def _interpolable(value: str) -> bool:
     """Whether a repository-authored value may be written into the listing unchanged.
 

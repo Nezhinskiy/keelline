@@ -98,7 +98,7 @@ def test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_i
     # could not judge the tree as CI will, it would fail if enforced, and an item names the file.
     # `trail.toml` is the trail gate's too: CI would rebuild the listing without its states.
     # Mutations (declared): the tracked check answers "tracked" for everything; the trail
-    # gate's `trail.toml` is not asked about.
+    # gate's `trail.toml` is not asked about; either gate's record declares no files it reads.
     root = smoke_repo(tmp_path)
     _unlink_roadmap(root)
     _untrack(root, path)
