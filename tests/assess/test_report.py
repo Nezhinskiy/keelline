@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from keelline.assess.gates import COULD_NOT_RUN, GateResult
+from keelline.assess.gates import ALREADY_FAILED, COULD_NOT_RUN, STOPPED, GateResult, stopped
 from keelline.assess.report import (
     BOOTSTRAP,
     NOT_ON_BASE,
     UNCHANGED,
     GateRun,
+    gate_line,
+    gate_row,
     summary,
     workflow_commands,
 )
@@ -188,3 +190,23 @@ def test_a_gate_waiting_for_the_base_is_reported_and_fails_nothing() -> None:
     )
     assert workflow_commands(waiting) == [f"::warning::aaa: {NOT_ON_BASE}"]
     assert waiting.exit_code == 0
+
+
+def test_a_gate_not_started_after_the_run_failed_says_so_everywhere_a_gate_prints() -> None:
+    # `keelline gate` starts no custom gate the base does not enforce once the run has failed.
+    # Such a gate judged nothing, so it is not a passing one, and every place a gate prints
+    # says it was not run and why, rather than `could not run`, which sends a reader to the
+    # gate's own command to look for a fault it does not have. Advice: fixed text; the verdict
+    # it stands beside is the failure before it, which reddens the run on its own.
+    run = _run([GateResult("policy", (_link(""),)), stopped("lint")], ["policy"])
+    assert gate_line(run.results[1], enforcing=False) == f"lint: advisory, {STOPPED}"
+    assert gate_row(run.results[1], enforcing=False) == {
+        "name": "lint",
+        "enforcing": False,
+        "answered": False,
+        "reason": STOPPED,
+        "count": 0,
+        "failing": True,
+    }
+    assert summary(run).splitlines()[3] == f"| lint | advisory | not run | {ALREADY_FAILED} |"
+    assert workflow_commands(run)[1] == f"::warning::lint: {STOPPED}"

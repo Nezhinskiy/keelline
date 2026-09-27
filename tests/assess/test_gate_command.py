@@ -16,6 +16,7 @@ import pytest
 
 import keelline
 from keelline.assess import rule
+from keelline.assess.gates import STOPPED
 from keelline.assess.report import BOOTSTRAP, FINDINGS_ELSEWHERE, NOT_ON_BASE
 from keelline.cli import build_parser, discover_registrars, run
 from keelline.config.loader import CONFIG_FILE
@@ -323,9 +324,75 @@ def test_the_base_s_enforced_gates_run_before_an_advisory_gate_that_sorts_first(
     assert code == 1
     assert out.splitlines() == [
         "policy: enforcing, 1 finding(s)",
-        "a-tests: advisory, 0 finding(s)",
+        f"a-tests: advisory, {STOPPED}",
         FINDINGS_ELSEWHERE,
     ]
+
+
+def test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed(
+    tmp_path: Path,
+) -> None:
+    # The verdict of the custom step is its exit status, and the process that holds it would go
+    # on to run every advisory gate: files the change can edit, which on a hosted runner run with
+    # passwordless `sudo` and can rewrite or end the waiting parent. So once a gate the base
+    # enforces has failed, no other custom gate starts; here the one that would have started
+    # writes `marker`. Mutation (declared): the check before the later gates made `if False:`
+    # -> `later` runs and writes `marker`.
+    later = custom_gate("later", "open('marker', 'w').close()")
+    project = clone(tmp_path, POLICY_BASE + later, also=POLICY)
+    _forbidden(project)
+    code, out, _ = cli(project, tmp_path, "gate", "--custom")
+    assert code == 1
+    assert out.splitlines() == [
+        "policy: enforcing, 1 finding(s)",
+        f"later: advisory, {STOPPED}",
+        FINDINGS_ELSEWHERE,
+    ]
+    assert not (project / "marker").exists()
+    code, out, _ = cli(project, tmp_path, "gate", "--custom", "--json")
+    assert code == 1
+    assert json.loads(out)["gates"][1] == {
+        "name": "later",
+        "enforcing": False,
+        "answered": False,
+        "reason": STOPPED,
+        "count": 0,
+        "failing": True,
+    }
+    assert not (project / "marker").exists()
+    # And `--only` narrows the same run rather than going round it.
+    code, out, _ = cli(project, tmp_path, "gate", "--custom", "--only", "policy", "--only", "later")
+    assert (code, out.splitlines()[1]) == (1, f"later: advisory, {STOPPED}")
+    assert not (project / "marker").exists()
+    # The other side: once every enforced gate passes, the rest run as they always did.
+    (project / "forbidden.txt").unlink()
+    commit(project, "fix: the forbidden file is gone")
+    code, out, _ = cli(project, tmp_path, "gate", "--custom")
+    assert (code, out.splitlines()) == (
+        0,
+        ["policy: enforcing, 0 finding(s)", "later: advisory, 0 finding(s)"],
+    )
+    assert (project / "marker").exists()
+
+
+@pytest.mark.parametrize("failing", ["enforced-built-in", "refused-key"])
+def test_a_bare_run_that_has_already_failed_starts_no_custom_gate(
+    tmp_path: Path, failing: str
+) -> None:
+    # The same holding process, run bare: everything in one process, the configuration check and
+    # the built-ins first. A refused key or a failing enforced built-in has decided the run, and
+    # a custom gate the base does not enforce is not started after it. Mutations (declared): the
+    # check made `if False:` -> both cases write `marker`; the configuration check not counted in
+    # it -> the refused-key case writes it.
+    project = clone(tmp_path, BASE + MARKER)
+    if failing == "enforced-built-in":
+        _change(project, BASE + MARKER, agents=OVER_BUDGET)
+    else:
+        _change(project, LOOSENED + MARKER)
+    code, out, _ = cli(project, tmp_path, "gate")
+    assert code == 1
+    assert f"tests: advisory, {STOPPED}" in out.splitlines()
+    assert not (project / "marker").exists()
 
 
 def test_under_the_bootstrap_no_custom_gate_has_landed_and_none_runs(tmp_path: Path) -> None:

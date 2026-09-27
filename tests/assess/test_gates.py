@@ -21,6 +21,7 @@ from keelline.assess.gates import (
     GateResult,
     configured,
     run_gates,
+    stopped,
 )
 from keelline.cli import build_parser, discover_registrars
 from keelline.config.loader import load
@@ -438,6 +439,38 @@ def test_custom_gates_named_first_run_before_every_other_custom_gate(tmp_path: P
     )
     assert [result.name for result in found] == ["docs", "c", "a", "b"]
     assert ran.read_text(encoding="utf-8") == "cab"
+
+
+def test_no_custom_gate_outside_first_starts_once_the_run_has_failed(tmp_path: Path) -> None:
+    # The question is asked before each such gate, with the results so far: `c`, named first,
+    # runs whatever the answer; `a` runs because nothing has failed yet, and fails; `b` is never
+    # started, and says why. Mutation (declared, with the command's cases): the check made
+    # `if False:` -> `b` runs and writes its letter.
+    ran = tmp_path / "ran"
+    gates = {
+        name: CustomGate(
+            (sys.executable, "-c", f"open({str(ran)!r}, 'a').write({name!r}); exit({code})")
+        )
+        for name, code in (("a", 1), ("b", 0), ("c", 1))
+    }
+    config = fixture_config(tmp_path)
+    config = replace(config, gates=replace(config.gates, builtin=(), custom=gates))
+    asked: list[tuple[str, ...]] = []
+
+    def failed(done: tuple[GateResult, ...]) -> bool:
+        asked.append(tuple(result.name for result in done))
+        return any(result.failing and result.name == "a" for result in done)
+
+    found = run_gates(
+        GateContext(tmp_path, config, SMOKE_BASE),
+        ["a", "b", "c"],
+        first=frozenset({"c"}),
+        failed=failed,
+    )
+    assert found[2] == stopped("b")
+    assert [result.failing for result in found[:2]] == [True, True]
+    assert ran.read_text(encoding="utf-8") == "ca"
+    assert asked == [("c",), ("c", "a")]
 
 
 def test_a_custom_gate_whose_command_does_not_exist_did_not_answer(tmp_path: Path) -> None:

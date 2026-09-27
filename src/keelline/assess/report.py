@@ -16,7 +16,9 @@ word, so every command goes through one emitter capped per level, and past the c
 **One gate result, one shape.** `keelline assess`, `keelline gate` and `keelline adopt promote`
 each report the gates they ran, and each does it through `gate_row` for `--json`, `gate_line`
 or `findings_text` for a printed line and `count_cell` for a table, so a gate that could not
-judge the tree is spelled `could not run` everywhere and carries the same keys everywhere.
+judge the tree is spelled `could not run` everywhere and carries the same keys everywhere. A
+custom gate `keelline gate` did not start because the run had already failed is its own case in
+each: its reason in place of the count, and `not run` in a table.
 
 **What fails the run.** An enforced gate that is failing, and, when the configuration check ran,
 a key the rule refused. An advisory gate's findings are annotated and never fail it, and nor does
@@ -29,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from keelline.assess.gates import GateResult
+from keelline.assess.gates import ALREADY_FAILED, GateResult
 from keelline.assess.rule import ConfigVerdict, Verdict
 from keelline.config.loader import CONFIG_FILE
 from keelline.config.schema import PATH_VALUE
@@ -61,12 +63,17 @@ def mode(enforcing: bool) -> str:
 
 
 def count_cell(result: GateResult) -> int | str:
-    """A table's findings cell: the count, or `UNANSWERED`."""
+    """A table's findings cell: the count, `UNANSWERED`, or `not run` for a gate never started."""
+    if not result.ran:
+        return "not run"
     return len(result.findings) if result.answered else UNANSWERED
 
 
 def findings_text(result: GateResult) -> str:
-    """`N finding(s)`, or `UNANSWERED`, for a printed line."""
+    """`N finding(s)`, `UNANSWERED`, or, for a gate never started, its reason, for a printed
+    line."""
+    if not result.ran:
+        return result.reason
     return f"{len(result.findings)} finding(s)" if result.answered else UNANSWERED
 
 
@@ -165,6 +172,8 @@ def config_line(verdict: ConfigVerdict) -> str:
 
 
 def _outcome(result: GateResult, enforcing: bool) -> str:
+    if not result.ran:
+        return ALREADY_FAILED
     if not result.failing:
         return "passes"
     return "fails" if enforcing else "would fail"

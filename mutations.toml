@@ -7841,8 +7841,8 @@ reddens = ["tests/assess/test_gates.py::test_a_gate_that_raises_did_not_answer_a
 [[mutation]]
 name = "run_gates answers a repeated or reordered name as given"
 file = "src/keelline/assess/gates.py"
-before = "    return tuple(_guarded(gates[name], context) for name in order if name in wanted)"
-after = "    return tuple(_guarded(gates[name], context) for name in names)"
+before = "    for name in (name for name in order if name in wanted):"
+after = "    for name in names:"
 reddens = ["tests/assess/test_gates.py::test_each_named_gate_runs_once_in_the_configured_order"]
 
 [[mutation]]
@@ -8664,11 +8664,59 @@ reddens = [
 [[mutation]]
 name = "gate never counts the configuration check as run, so no refusal fails it"
 file = "src/keelline/assess/commands.py"
-before = "        verdict, results, judged=CONFIG_CHECK in only, prefix=prefix, waiting=waiting"
-after = "        verdict, results, judged=False, prefix=prefix, waiting=waiting"
+before = "    judged = CONFIG_CHECK in only"
+after = "    judged = False"
 reddens = [
   "tests/assess/test_gate_command.py::test_a_loosening_change_fails_the_configuration_check",
   "tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused",
+]
+
+# A custom gate the base does not enforce runs files the change can edit, in the process that
+# holds the verdict, and on a hosted runner that code has passwordless `sudo`: it can rewrite or
+# end the waiting parent and turn a failure into a pass. So once the configuration check, the
+# built-ins or the base's enforced custom gates have failed the run, no other custom gate starts;
+# the one that would have started writes `marker`.
+[[mutation]]
+name = "a custom gate outside the base's enforced ones starts after the run has already failed"
+file = "src/keelline/assess/gates.py"
+before = "        if failed is not None and name in custom and name not in first and failed(tuple(results)):"
+after = "        if False:"
+reddens = [
+  "tests/assess/test_gates.py::test_no_custom_gate_outside_first_starts_once_the_run_has_failed",
+  "tests/assess/test_gate_command.py::test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed",
+  "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[enforced-built-in]",
+  "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[refused-key]",
+]
+
+[[mutation]]
+name = "gate never asks whether its run has already failed before a later custom gate"
+file = "src/keelline/assess/commands.py"
+before = "        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,"
+after = "        failed=None,"
+reddens = [
+  "tests/assess/test_gate_command.py::test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed",
+  "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[enforced-built-in]",
+]
+
+[[mutation]]
+name = "a refused key does not count as the run having failed before a later custom gate"
+file = "src/keelline/assess/commands.py"
+before = "        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,"
+after = "        failed=lambda done: GateRun(verdict, done, judged=False).exit_code != 0,"
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_bare_run_that_has_already_failed_starts_no_custom_gate[refused-key]",
+]
+
+# A gate that was never started judged nothing, and is no more a passing gate than one that could
+# not run: a gate the change itself enforces must not read as passed for having been skipped.
+[[mutation]]
+name = "a custom gate stopped after the run failed reads as answered"
+file = "src/keelline/assess/gates.py"
+before = "    return GateResult(name, (), False, STOPPED, ran=False)"
+after = "    return GateResult(name, (), True, STOPPED, ran=False)"
+reddens = [
+  "tests/assess/test_report.py::test_a_gate_not_started_after_the_run_failed_says_so_everywhere_a_gate_prints",
+  "tests/assess/test_gate_command.py::test_no_other_custom_gate_starts_once_an_enforced_custom_gate_has_failed",
 ]
 
 [[mutation]]

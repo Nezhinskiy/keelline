@@ -733,7 +733,9 @@ as `answered: false` with a fixed `reason` naming the command that shows why.
 **A gate's row.** `keelline assess`, `keelline gate` and `keelline adopt promote` each give every
 gate they ran one `--json` row in one shape: `name`; `enforcing`; `answered`, false when the gate
 could not run; `reason`, that fixed text, else empty; `count`, its findings; and `failing`, true
-when it has a finding or could not run. A row names no finding: `assess` lists them as items.
+when it has a finding or could not run. A custom gate `keelline gate` did not start because the
+run had already failed has a row too, `answered` false and `reason` `not run: the run had already
+failed`, since it judged nothing. A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
@@ -818,6 +820,13 @@ under the bootstrap, where the base has no `keelline.toml`, no custom gate runs.
 that the custom gates share one checkout: a gate the change wrote, run before the base's
 enforced ones, could rewrite the script they are about to execute. For the same reason the
 built-in gates run first, then the custom gates the base enforces, then every other custom gate.
+And once the run has failed — a refused key, or an enforcing gate among those that failed or
+could not run — no other custom gate starts: each prints `<name>: advisory, not run: the run had
+already failed` (or `enforcing`), and its `--json` row says the same, `answered` false with that
+`reason`. A custom gate runs files the change can edit in the process that holds the verdict,
+and on a GitHub-hosted runner with passwordless `sudo`, which could rewrite that process and turn
+its failure into a pass; so the verdict of the base's enforced gates is decided before any
+custom gate it does not enforce starts. When every one of them passed, the rest run.
 Each custom gate runs in a session of its own, and the command's process group is ended when
 the command exits, passes or not, as on a timeout or an interrupt, so nothing it started in the
 background in that group runs on into the next gate. A descendant that leaves the command's
@@ -894,16 +903,17 @@ Run locally on a branch `keelline upgrade` made, a moved `[ci] ref` is refused u
 **Printed.** `config: …` first when the configuration check runs: how many keys changed, how many
 were refused and their names, or that the base has no `keelline.toml` at this path. Then one line
 per gate: `<name>: enforcing, N finding(s)`, `<name>: advisory, N finding(s)`, or `could not run`
-in place of the count, and, after the gates that ran, `<name>: advisory, not run until the base
+in place of the count, or `not run: the run had already failed` for a custom gate not started
+once the run had failed; and, after the gates that ran, `<name>: advisory, not run until the base
 has this command` (or `enforcing`) for each custom gate whose command the base does not have. A run
 that fails with a gate failing ends with one `details:` line saying
 where the findings are: `keelline assess --json`, or the gate's own command. Key names and gate
 names print; values from `keelline.toml` and a finding's detail never do.
 
 **`--annotate`** also prints GitHub workflow commands, which the platform shows as annotations:
-one `error` per refused key, and one per finding or gate that could not run — `error` for an
-enforcing gate, `warning` for an advisory one — and a `warning` per custom gate not run until the
-base has its command. The message is `<gate>: <rule>`. `file=` is written
+one `error` per refused key, and one per finding or gate that could not run or was not started —
+`error` for an enforcing gate, `warning` for an advisory one — and a `warning` per custom gate not
+run until the base has its command. The message is `<gate>: <rule>`. `file=` is written
 from the repository's root and only for a path of letters, digits, `.`, `_`, `-` and `/`; any
 other path is annotated without a location, and a `commit` finding, which names a commit, has
 none. At most ten per level; past that one `notice` counts the rest, because the platform shows
@@ -2278,6 +2288,9 @@ your toolchain installs it in its own command, for example `run = ["sh", "-c", "
 its own: a custom gate executes files the pull request can change with the runner's privileges,
 which on a GitHub-hosted runner include passwordless `sudo`. In the process that decides the
 verdict those files could rewrite it; in a later step, only its own results are left to them.
+Within that step the base's enforced gates run first, and once one of them has failed no other
+custom gate starts, so the process that holds a failing verdict runs nothing more that the base
+does not enforce.
 What it guarantees, and how to pin those files, is in the `keelline gate` section.
 
 **One row per gate, if you want one.** Each leg of a matrix in your own caller is its own check
@@ -2360,10 +2373,12 @@ warning annotations and the job stays green. An enforcing gate's findings are er
 the job. What enforces is what the base's `[keelline] enforced` names, with any gate the change
 itself adds there, and every configured gate once `[keelline] state` is `installed`.
 `keelline adopt promote` moves a gate across. Within a step, every gate runs whatever the one
-before it said, so a project fixing its documents does not pay a round trip per finding. A
+before it said, so a project fixing its documents does not pay a round trip per finding; the one
+exception is a custom gate the base does not enforce, which is not started once the run has
+failed. A
 custom gate runs in the second step, and only with the command the base gives it ("Which custom
 gates run" under `keelline gate`). The job's token is `contents: read` and neither checkout
-keeps it, and the verdict was decided before any command started.
+keeps it, and the judging step's verdict was decided before any command started.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
 `@dev` are a moving Keelline running against your repository. `keelline init` writes that pin,

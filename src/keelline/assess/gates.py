@@ -25,7 +25,9 @@ signal (a sudo or setuid descendant).
 wrote. Then the custom gates the caller names in `first`, then every other custom gate. A custom
 gate executes files the change can edit, so one that ran earlier could rewrite what a later one
 executes; `keelline gate` names the base's enforced gates in `first`, so no other custom gate
-runs before them.
+runs before them. And it starts none of the others once its run has failed (`failed`, then
+`stopped`): a custom gate runs in the process that holds the verdict, and a command that can
+rewrite that process could turn the failure into a pass.
 """
 
 from __future__ import annotations
@@ -56,6 +58,10 @@ CUSTOM_COULD_NOT_RUN = (
     "the command in [gates.custom.{name}] run could not start, or ran past {seconds}s"
 )
 CUSTOM_REMEDY = "fix what [gates.custom.{name}] run reports; its output is printed as it ran"
+# A custom gate `keelline gate` did not start because the run had already failed: every such gate
+# runs files the change can edit, in the process that holds the verdict.
+ALREADY_FAILED = "the run had already failed"
+STOPPED = f"not run: {ALREADY_FAILED}"
 
 # Reaping a command whose group was sent SIGKILL. The signal cannot be caught or ignored, so this
 # is slack for the kernel, not a second bound on the command.
@@ -75,11 +81,18 @@ class GateResult:
     findings: tuple[Finding, ...]
     answered: bool = True
     reason: str = ""
+    ran: bool = True  # false for a gate `stopped` answers for: it was never started
 
     @property
     def failing(self) -> bool:
         """A finding fails the gate, and so does a gate that could not judge the tree."""
         return bool(self.findings) or not self.answered
+
+
+def stopped(name: str) -> GateResult:
+    """The result of a gate that was not started because the run had already failed: it judged
+    nothing, so it is not a passing gate, and its reason says why it did not run."""
+    return GateResult(name, (), False, STOPPED, ran=False)
 
 
 @dataclass(frozen=True)
@@ -267,16 +280,28 @@ def _guarded(gate: Gate, context: GateContext) -> GateResult:
 
 
 def run_gates(
-    context: GateContext, names: Sequence[str], *, first: frozenset[str] = frozenset()
+    context: GateContext,
+    names: Sequence[str],
+    *,
+    first: frozenset[str] = frozenset(),
+    failed: Callable[[tuple[GateResult, ...]], bool] | None = None,
 ) -> tuple[GateResult, ...]:
     """A result for each configured gate `names` asks for, each run once: the built-ins and the
     custom gates `first` names, then every other custom gate, each group in configured order.
 
-    One gate that does not answer never stops another. A name the configuration does not hold is
-    a `KeyError`: callers validate names before they ask.
+    `failed` is asked, with the results so far, before each custom gate outside `first` starts;
+    when it answers that the run has already failed, that gate is not started and its result is
+    `stopped`. Otherwise one gate that does not answer never stops another. A name the
+    configuration does not hold is a `KeyError`: callers validate names before they ask.
     """
     gates = configured(context.config)
     wanted = {gates[name].name for name in names}
     custom = context.config.gates.custom
     order = sorted(gates, key=lambda name: name in custom and name not in first)
-    return tuple(_guarded(gates[name], context) for name in order if name in wanted)
+    results: list[GateResult] = []
+    for name in (name for name in order if name in wanted):
+        if failed is not None and name in custom and name not in first and failed(tuple(results)):
+            results.append(stopped(name))
+        else:
+            results.append(_guarded(gates[name], context))
+    return tuple(results)
