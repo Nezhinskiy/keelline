@@ -1397,9 +1397,9 @@ reddens = [
 name = "a note that stops decoding after the walk is an internal error"
 file = "src/keelline/memory/refs.py"
 before = '''    except UnicodeDecodeError as exc:
-        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc.reason})") from None'''
+        raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc.reason})") from None'''
 after = '''    except RecursionError as exc:
-        raise Failure(f"{note.path.name} is not valid UTF-8 ({exc})") from None'''
+        raise Failure(f"{quoted(note.path.name)} is not valid UTF-8 ({exc})") from None'''
 reddens = [
   "tests/memory/test_refs.py::test_a_note_that_stops_decoding_after_the_walk_is_a_failure_not_an_internal_error",
 ]
