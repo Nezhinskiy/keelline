@@ -18,12 +18,22 @@ else — a group, a class, another quantifier — is refused rather than guessed
 Placing each piece at its leftmost fit after the one before leaves the longest rest for the ones
 after it, so the leftmost fit is the only placement worth trying, and a match is one left-to-right
 pass: at most the name's length times the pattern's, whatever either holds.
+
+**Why a pattern has a length bound.** That product is still the repository's to choose: a
+244 KB pattern of long alternatives took 3.9 s per file name, and a `trail.toml` of such patterns
+held the `trail` gate past its job's time limit. `PATTERN_MAX_CHARS` bounds each pattern, and
+`docs.trail` bounds how many themes a file may hold, since every name is tried against every
+theme until one matches.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The longest theme `pattern`, in characters: a filename filter needs a few dozen, and a match
+# costs up to the name's length times this.
+PATTERN_MAX_CHARS = 256
+TOO_LONG = f"a theme's `pattern` is at most {PATTERN_MAX_CHARS} characters"
 RULE = (
     "a theme's `pattern` is literal text with `.` for any one character, `.*` for any run of "
     "characters, `|` between alternatives, `^` and `$` at an alternative's start and end, and "
@@ -93,7 +103,9 @@ _REFUSED = frozenset("()[]{}+?*")
 
 def compile_theme(pattern: str) -> ThemePattern:
     """`pattern` in the theme language, or `ValueError` naming no part of it: the text is the
-    repository's, and `RULE` is what the person needs."""
+    repository's, and `RULE`, or `TOO_LONG` past `PATTERN_MAX_CHARS`, is what the person needs."""
+    if len(pattern) > PATTERN_MAX_CHARS:
+        raise ValueError(TOO_LONG)
     alternatives: list[_Alternative] = []
     start, end = False, False
     pieces: list[Piece] = []

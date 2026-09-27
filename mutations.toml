@@ -10038,6 +10038,27 @@ before = '            themes.append((entry["label"], compile_theme(entry["patter
 after = '            themes.append((entry["label"], re.compile(entry["pattern"])))'
 reddens = ["tests/docs/test_themes.py::test_a_pattern_re_would_backtrack_on_for_hours_answers_at_once"]
 
+# The matcher cannot backtrack, but a match costs the name's length times the pattern's and every
+# name is tried against every theme: a 244 KB pattern took 3.9 s per file name.
+[[mutation]]
+name = "a theme pattern of any length is compiled"
+file = "src/keelline/docs/themes.py"
+before = "    if len(pattern) > PATTERN_MAX_CHARS:"
+after = "    if False:"
+reddens = [
+  "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
+  "tests/docs/test_themes.py::test_a_pattern_is_compiled_up_to_its_bound_and_refused_past_it",
+]
+
+[[mutation]]
+name = "a trail.toml of any number of themes is read"
+file = "src/keelline/docs/trail.py"
+before = "    if len(declared) > THEMES_MAX:"
+after = "    if False:"
+reddens = [
+  "tests/docs/test_trail.py::test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words",
+]
+
 [[mutation]]
 name = "a theme piece is looked for from the start of the name, not after the piece before it"
 file = "src/keelline/docs/themes.py"

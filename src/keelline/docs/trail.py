@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any
 from keelline.config.loader import UNPARSEABLE, toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
-from keelline.docs.themes import RULE as THEME_RULE
 from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
 from keelline.findings import Finding
@@ -38,6 +37,10 @@ MARKER = TRAIL_MARKER
 END_MARKER = "<!-- end design and plan trail -->"
 TRAIL_FILE = "trail.toml"
 UNFILED = "Unfiled"
+# The most `[[theme]]` tables a `trail.toml` holds: with `themes.PATTERN_MAX_CHARS`, what one
+# document name can cost to place, whatever the repository wrote.
+THEMES_MAX = 32
+TOO_MANY_THEMES = f"a trail.toml holds at most {THEMES_MAX} [[theme]] tables"
 # The `trail` gate's two findings, which `docs trail --check` tells apart by rule.
 ROADMAP_MISSING = "roadmap-missing"
 TRAIL_STALE = "trail-stale"
@@ -140,6 +143,10 @@ def read_trail(path: Path) -> Trail:
     declared = raw.get("theme", [])
     if not isinstance(declared, list):
         raise Failure(f"{path}: `theme` must be a list of [[theme]] tables")
+    # Every document name is tried against every theme until one matches, so the themes' count
+    # multiplies what `PATTERN_MAX_CHARS` bounds for one of them.
+    if len(declared) > THEMES_MAX:
+        raise Failure(f"{path}: {TOO_MANY_THEMES}")
     for entry in declared:
         if (
             not isinstance(entry, dict)
@@ -153,10 +160,10 @@ def read_trail(path: Path) -> Trail:
             )
         try:
             themes.append((entry["label"], compile_theme(entry["pattern"])))
-        except ValueError:
+        except ValueError as refused:
             # The rule and not the pattern: the pattern is the repository's own text, and the
-            # rule is what fixes it.
-            raise Failure(f"{path}: theme {entry['label']!r}: {THEME_RULE}") from None
+            # rule is what fixes it. `compile_theme` raises only its own fixed sentences.
+            raise Failure(f"{path}: theme {entry['label']!r}: {refused}") from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()

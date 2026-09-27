@@ -16,19 +16,25 @@ import pytest
 from keelline.config.loader import load
 from keelline.config.schema import Config
 from keelline.docs import trail as trail_module
+from keelline.docs.themes import PATTERN_MAX_CHARS, TOO_LONG
 from keelline.docs.trail import (
     END_MARKER,
     MARKER,
+    THEMES_MAX,
+    TOO_MANY_THEMES,
+    UNFILED,
     _ignored,
     read_trail,
     rebuild,
     render_listing,
+    theme_of,
     trail_gate,
     trail_path,
     undeclared_new_documents,
 )
 from keelline.errors import Failure
 from keelline.gitenv import NO_ANSWER, git_run
+from tests.cli import cli
 from tests.gitfixture import git
 
 CONFIG = """
@@ -567,3 +573,35 @@ def test_the_trail_gate_names_a_missing_roadmap(tmp_path: Path) -> None:
     (root / config.paths.roadmap).unlink()
     found = [(finding.rule, finding.path) for finding in trail_gate(root, config)]
     assert found == [("roadmap-missing", config.paths.roadmap)]
+
+
+def test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_keelline_s_words(
+    tmp_path: Path,
+) -> None:
+    # The matcher cannot backtrack, but a match still costs the name's length times the
+    # pattern's, and every name is tried against every theme until one matches: a 244 KB pattern
+    # took 3.9 s per file name, and 2,000 themes of 121 characters cost as much, so a
+    # `trail.toml` of either held the `trail` gate past its job's time limit. At each bound the
+    # file loads; one past it fails as the other refused shapes do, naming the bound and never
+    # the pattern. Mutations (oracle): "a theme pattern of any length is compiled" -> the long
+    # pattern loads and this reddens; "a trail.toml of any number of themes is read" -> the
+    # extra theme loads and this reddens.
+    def themes(count: int, pattern: str) -> str:
+        return "".join(f'[[theme]]\nlabel = "t{i}"\npattern = "{pattern}"\n' for i in range(count))
+
+    longest = "a" * (PATTERN_MAX_CHARS - 1) + "b"
+    root, config = corpus(tmp_path, trail=themes(THEMES_MAX, longest))
+    path = trail_path(root, config)
+    assert theme_of("x" * 200 + ".md", read_trail(path)) == UNFILED
+    path.write_text(themes(1, longest + "c"), encoding="utf-8")
+    with pytest.raises(Failure) as caught:
+        read_trail(path)
+    assert str(caught.value) == f"{path}: theme 't0': {TOO_LONG}"
+    path.write_text(themes(THEMES_MAX + 1, "a"), encoding="utf-8")
+    with pytest.raises(Failure) as caught:
+        read_trail(path)
+    assert str(caught.value) == f"{path}: {TOO_MANY_THEMES}"
+    # Through the command, as the gate reaches it: a failure (1), not an internal error (2).
+    code, out, err = cli(root, tmp_path, "docs", "trail", "--check")
+    assert code == 1, (out, err)
+    assert TOO_MANY_THEMES in out + err

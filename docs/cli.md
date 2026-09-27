@@ -666,10 +666,11 @@ regular expression: literal text, `.` for any one character, `.*` for any run of
 between alternatives, `^` and `$` at an alternative's start and end, and `\` before a
 punctuation character to take it literally — `.*`, `widget` and `gadget|gizmo` are all
 patterns. It is matched without backtracking, so no pattern can make a run take longer than
-the name's length times its own. Any other syntax — a group, a class, `+`, `?` or `{n}` — is
-refused rather than read otherwise.
+the name's length times its own, and a pattern holds at most 256 characters and a `trail.toml`
+at most 32 themes, since every name is tried against every theme until one matches. Any other
+syntax — a group, a class, `+`, `?` or `{n}` — is refused rather than read otherwise.
 A `trail.toml` outside its contract fails (`1`): a non-string label, a pattern outside that
-syntax, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
+syntax or longer than 256 characters, more than 32 themes, a file that is not valid UTF-8, or a `label` or `[states]` value that is not a single
 line or that carries either marker — both are written into the listing verbatim, so one could
 otherwise split the block and push repository prose into the roadmap. A listed document's name
 is held to the same rule, and to one more: a name that is not a single line, carries either
