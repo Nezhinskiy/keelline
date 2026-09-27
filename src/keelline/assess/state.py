@@ -12,6 +12,11 @@ first run after it lands on the base, since `keelline gate` runs none before. Th
 moves back: there is no demotion, and loosening is an owner's edit of `keelline.toml`, which
 `keelline gate` refuses to a pull request while anything enforces.
 
+**A gate that reads a file git does not track is never promoted.** The `docs` and `trail` gates
+judge tracked files: CI checks out nothing else, so one that passes here over a file git does not
+track would fail every pull request there. `keelline.assess.tracked` turns such a gate's result
+into one that could not judge the tree, and a gate that could not judge is not promoted.
+
 **One write, at one place.** Both verbs change `keelline.toml`'s `state` and `enforced` through
 `rewrite_owned` and nothing else, so the manifest's record of an untouched document is
 re-stamped with it and `uninstall` still takes the file back. Neither asks the ignore guard:
@@ -33,6 +38,7 @@ from pathlib import Path
 
 from keelline.assess.gates import GateContext, GateResult, run_gates
 from keelline.assess.rule import read_base_gates
+from keelline.assess.tracked import Unseen, as_ci_sees
 from keelline.config.layout import is_adoption_plan
 from keelline.config.loader import read_document
 from keelline.config.owned import OwnedKeyError, UnparsedDocument, rewrite
@@ -91,6 +97,7 @@ class Transition:
     results: tuple[GateResult, ...] = ()  # every gate this run ran, in the order it ran them
     waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
     skipped: tuple[str, ...] = ()  # custom gates not run: `--builtin` asked for none
+    unseen: tuple[Unseen, ...] = ()  # gates not promoted: they read files CI cannot see
 
     @property
     def failing(self) -> dict[str, int]:
@@ -240,15 +247,19 @@ def promote(
     skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)
     asked = [n for n in wanted if n not in skipped]
     waiting = _not_on_base(root, config, asked, base=base, machine=machine)
-    results = run_gates(GateContext(root, config, base), [n for n in asked if n not in waiting])
+    ran = run_gates(GateContext(root, config, base), [n for n in asked if n not in waiting])
+    # A gate that reads a file git does not track passes here and fails every pull request in
+    # CI, which never checks that file out: it could not judge the tree as CI will, so it is
+    # not promoted (`keelline.assess.tracked`).
+    results, unseen = as_ci_sees(root, config, ran)
     promoted = tuple(r.name for r in results if not r.failing)
     # With names, every one passes or nothing is written: one that failed, could not run, waits
     # or was not run holds the rest back.
     if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:
-        return Transition(state, state, (), results, waiting, skipped)
+        return Transition(state, state, (), results, waiting, skipped, unseen)
     enforced = enforcing | set(promoted)
     installed = enforced >= set(configured)
     after = "installed" if installed else "adopting"
     listed = () if installed else tuple(n for n in configured if n in enforced)
     _write(root, after, listed)
-    return Transition(state, after, promoted, results, waiting, skipped)
+    return Transition(state, after, promoted, results, waiting, skipped, unseen)

@@ -8,8 +8,9 @@ whole area — and with it the configuration layer — into every `discover()` c
 
 **Outside this area, `project` imports `trail_target` (the paragraphs on `trail_path` and
 `trail_target` say why), `keelline.assess.gates` imports the three gate functions (the last
-paragraph) and `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
-plan; nothing imports any other name on this list**, measured over `src/`, `scripts/` and
+paragraph), `keelline.assess.state` imports `lint` and `declared_state`, to check an adoption
+plan, and `keelline.assess.tracked` imports `linked_files` and `trail_target`; nothing imports any
+other name on this list**, measured over `src/`, `scripts/` and
 `tests/`: this area's own tests reach `keelline.docs.plans`, `keelline.docs.hygiene`,
 `keelline.docs.graph` and `keelline.docs.trail` directly, and every other area runs the commands.
 So every other name below is here on an argument rather than on a caller, and the argument is
@@ -52,6 +53,10 @@ would refuse whenever that place passed through a symlink, and it stays in
 declares no state: a first listing would record it as `delivered` without a word, and the row's
 spelling and the trail's reading are this area's.
 
+**`linked_files`, for `keelline assess` and `keelline adopt promote`**, which ask git whether
+each file the `docs` gate reads is tracked, since CI sees only those: the link targets are read
+by this area's link reader, so the two cannot disagree about which files a link names.
+
 **Three gate functions, for `keelline assess`.** `docs_gate`, `plan_gate` and
 `trail_gate` are each `(root, config, base) -> list[Finding]`, one gate's whole composition.
 `keelline assess` runs them as values, and this area's own commands answer with the same
@@ -60,7 +65,7 @@ wraps (`plan check` calls `lint`), so a command and its gate cannot drift apart.
 """
 
 from keelline.docs.graph import check_memory_graph
-from keelline.docs.hygiene import check_budgets, check_links, docs_gate
+from keelline.docs.hygiene import check_budgets, check_links, docs_gate, linked_files
 from keelline.docs.plans import Lint, lint, plan_gate
 from keelline.docs.trail import declared_state, trail_gate, trail_target
 
@@ -71,6 +76,7 @@ __all__ = [
     "check_memory_graph",
     "declared_state",
     "docs_gate",
+    "linked_files",
     "lint",
     "plan_gate",
     "trail_gate",

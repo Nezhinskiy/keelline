@@ -11735,3 +11735,108 @@ after = """
 reddens = [
   "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
 ]
+
+# The `docs` and `trail` gates judge tracked files. A file those gates read here that git does not
+# track is absent in CI, where the gate's own finding fails every pull request, so a verdict taken
+# over it here is not CI's, and a promotion earned on it enforces a gate that cannot pass there.
+[[mutation]]
+name = "every file a gate reads reads as tracked"
+file = "src/keelline/assess/tracked.py"
+before = '    return relative in tracked or any(name.startswith(relative + "/") for name in tracked)'
+after = "    return True"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+  "tests/assess/test_tracked.py::test_an_ignored_file_is_untracked_too",
+  "tests/assess/test_tracked.py::test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file",
+]
+
+[[mutation]]
+name = "the trail gate's trail.toml is not asked about"
+file = "src/keelline/assess/tracked.py"
+before = "        wanted = [contained(root, config.paths.roadmap), contained(root, trail_target(config))]"
+after = "        wanted = [contained(root, config.paths.roadmap)]"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[trail-toml]",
+]
+
+# `check_links` asks whether a target exists, and CI answers for the tracked tree: a link to a file
+# git does not track passes here and is `missing-link` there.
+[[mutation]]
+name = "the docs gate's link targets are not asked about"
+file = "src/keelline/assess/tracked.py"
+before = "        wanted = [contained(root, config.paths.agents_md), *linked_files(root, config)]"
+after = "        wanted = [contained(root, config.paths.agents_md)]"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate",
+  "tests/assess/test_tracked.py::test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates",
+]
+
+[[mutation]]
+name = "the tracked check asks git outside a work tree"
+file = "src/keelline/assess/tracked.py"
+before = """    if not in_work_tree(root):
+        return ()"""
+after = """    if False:
+        return ()"""
+reddens = [
+  "tests/assess/test_tracked.py::test_outside_a_git_work_tree_the_files_are_judged_as_they_are",
+]
+
+# Inside a work tree, a listing git did not give says nothing about what CI will see.
+[[mutation]]
+name = "a git that gives no answer reads as tracking every file"
+file = "src/keelline/assess/tracked.py"
+before = """        if tracked is None:
+            result.append(Unseen(gate, tuple(files), answered=False))
+            continue"""
+after = """        if tracked is None:
+            continue"""
+reddens = [
+  "tests/assess/test_tracked.py::test_a_git_that_gives_no_answer_is_never_read_as_tracked",
+]
+
+[[mutation]]
+name = "assess judges a gate over files CI cannot see as CI would"
+file = "src/keelline/assess/assessment.py"
+before = "    results, unseen = as_ci_sees(root, config, run_gates(GateContext(root, config, base), names))"
+after = "    results, unseen = run_gates(GateContext(root, config, base), names), ()"
+reddens = [
+  "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
+]
+
+[[mutation]]
+name = "adopt promote enforces a gate over files CI cannot see"
+file = "src/keelline/assess/state.py"
+before = "    results, unseen = as_ci_sees(root, config, ran)"
+after = "    results, unseen = ran, ()"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file",
+]
+
+[[mutation]]
+name = "adopt promote's note on an untracked file is not printed"
+file = "src/keelline/assess/commands.py"
+before = "            lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files))"
+after = "            pass"
+reddens = [
+  "tests/assess/test_tracked.py::test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it",
+]
+
+# A link target is any name the document wrote: it is named only inside the path grammar.
+[[mutation]]
+name = "an untracked item names a link target outside the path grammar"
+file = "src/keelline/assess/tracked.py"
+before = "            [printable(f, withheld) for f in u.files],"
+after = "            list(u.files),"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
+]
+
+[[mutation]]
+name = "adopt promote's note names a link target outside the path grammar"
+file = "src/keelline/assess/commands.py"
+before = "            files = listed([printable(name) for name in unseen.files])"
+after = "            files = listed(list(unseen.files))"
+reddens = [
+  "tests/assess/test_tracked.py::test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named",
+]

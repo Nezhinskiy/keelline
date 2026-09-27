@@ -39,6 +39,7 @@ from keelline.assess.gates import Gate, GateContext, GateResult, configured, run
 from keelline.assess.model import Item, item
 from keelline.assess.probes import ProbeContext, run_probes
 from keelline.assess.report import count_cell, gate_row
+from keelline.assess.tracked import as_ci_sees, unseen_items
 from keelline.config.layout import local_base
 from keelline.config.loader import load
 from keelline.errors import Refusal
@@ -110,10 +111,13 @@ def assess(
     custom = config.gates.custom
     skipped = tuple(name for name in config.gate_names if builtin and name in custom)
     names = [name for name in config.gate_names if name not in skipped]
-    results = run_gates(GateContext(root, config, base), names)
+    # A gate that reads a file CI never checks out could not judge the tree as CI will: its row
+    # says so, and an item names the file (`keelline.assess.tracked`).
+    results, unseen = as_ci_sees(root, config, run_gates(GateContext(root, config, base), names))
     gates = configured(config)
     window = int(load_preset(config.keelline.preset)["assess"]["commit_window"])
     items = [i for r in results for i in _gate_items(gates[r.name], r)]
+    items += unseen_items(unseen, UNNAMED)
     items += run_probes(ProbeContext(root, config, window))
     enforcing = tuple(n for n in config.gate_names if n in config.keelline.enforcing)
     return Assessment(

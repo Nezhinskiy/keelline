@@ -92,6 +92,17 @@ NOT_RUN = (
     "note: --builtin ran no custom gate, and a custom gate is promoted only by a run that runs "
     "its command; without --builtin, adopt promote runs the commands [gates.custom] names"
 )
+# A gate `adopt promote` did not enforce because it reads a file git does not track. `{files}` are
+# names found on disk, each through `printable`; `--json` carries them whole.
+UNTRACKED_NOTE = (
+    "note: {gate} reads {files}, which git does not track, so CI never checks it out and would "
+    "fail {gate} on every pull request; {gate} is not enforced. Track it with `git add`, or keep "
+    "it out of git and take {gate} out of [gates] builtin"
+)
+UNASKED_NOTE = (
+    "note: git gave no answer to whether it tracks the files {gate} reads, so {gate} is not "
+    "enforced; `git ls-files` run here shows why"
+)
 ONLY_UNKNOWN = (
     "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
     "the configuration check, and every other name is a gate from [gates]"
@@ -262,6 +273,7 @@ def _transition(transition: Transition) -> dict[str, object]:
         "unanswered": list(transition.unanswered),
         "not_on_base": list(transition.waiting),
         "skipped": list(transition.skipped),
+        "untracked": {u.gate: list(u.files) for u in transition.unseen if u.answered},
     }
 
 
@@ -284,6 +296,8 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     )
     from keelline.assess.state import promote
     from keelline.config.layout import local_base
+    from keelline.findings import listed
+    from keelline.printed import printable
 
     root, config = root_and_config(args)
     base = args.base or local_base(config)
@@ -305,6 +319,12 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
             lines.append(WAITING)
         if transition.skipped:
             lines.append(NOT_RUN)
+        for unseen in transition.unseen:
+            if not unseen.answered:
+                lines.append(UNASKED_NOTE.format(gate=unseen.gate))
+                continue
+            files = listed([printable(name) for name in unseen.files])
+            lines.append(UNTRACKED_NOTE.format(gate=unseen.gate, files=files))
         lines.append(BUILTIN_FINDINGS_ELSEWHERE if args.builtin else FINDINGS_ELSEWHERE)
     data = _transition(transition)
     return Result("\n".join(lines), data, exit_code=1 if advisory else 0)

@@ -1,0 +1,275 @@
+"""The `docs` and `trail` gates judge tracked files: `assess` says when a file one of them reads
+is not, and `adopt promote` never enforces such a gate.
+
+CI checks out what git tracks and nothing else, so a file those gates read here and git does not
+track is one they read here and CI never sees; there the gate's own finding for an absent file
+fails every pull request. Each case starts from the smoke fixture, where every file is tracked
+and every gate passes, and takes one file out of git's index while leaving it on disk.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from keelline.assess import tracked
+from keelline.assess.assessment import UNNAMED, Assessment, assess, document, render
+from keelline.assess.gates import GateResult
+from keelline.assess.state import promote
+from keelline.assess.tracked import UNASKED, UNASKED_REASON, UNSEEN_REASON, UNTRACKED
+from keelline.config.loader import load
+from keelline.printed import UNPRINTABLE
+from tests.assess.smoke import BASE, smoke_repo
+from tests.cli import cli
+from tests.gitfixture import git, needs_git
+
+pytestmark = needs_git
+
+AGENTS = "AGENTS.md"
+ROADMAP = "docs/roadmap.md"
+TRAIL = "docs/trail.toml"
+
+
+def _untrack(root: Path, path: str) -> None:
+    """Take `path` out of git's index and commit that, leaving the file on disk."""
+    git(root, "rm", "-q", "--cached", "--", path)
+    git(root, "commit", "-qm", "chore: keep a file out of git")
+
+
+def _unlink_roadmap(root: Path) -> None:
+    """The fixture's `AGENTS.md` with its link to the roadmap turned into plain text, so the
+    roadmap is read by the gates that read it by path and by no link."""
+    agents = root / AGENTS
+    text = agents.read_text(encoding="utf-8")
+    link = f"[{ROADMAP}]({ROADMAP})"
+    assert link in text, text
+    agents.write_text(text.replace(link, ROADMAP), encoding="utf-8")
+    git(root, "commit", "-qam", "docs: name the roadmap without a link")
+
+
+def _assess(root: Path, tmp_path: Path) -> Assessment:
+    return assess(root, machine=tmp_path / "m.toml", base=BASE)
+
+
+def _row(assessment: Assessment, name: str) -> GateResult:
+    return next(g for g in assessment.gates if g.name == name)
+
+
+def _items(assessment: Assessment, rule: str) -> dict[str, tuple[str, ...]]:
+    return {i.probe: i.where for i in assessment.items if i.rule == rule}
+
+
+def _sha(root: Path, rev: str) -> str:
+    return git(root, "rev-parse", rev).strip()
+
+
+def _adopting(root: Path) -> None:
+    """The fixture moved back to `initialised`, so its gates have something to be promoted to."""
+    config = root / "keelline.toml"
+    text = config.read_text(encoding="utf-8")
+    config.write_text(
+        text.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
+    )
+    git(root, "commit", "-qam", "chore: begin again")
+
+
+def test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is(tmp_path: Path) -> None:
+    # The fixture as it is: nothing untracked, so both gates answer and nothing is reported.
+    # Without this the cases below could pass on a check that reports every file.
+    assessment = _assess(smoke_repo(tmp_path), tmp_path)
+    assert assessment.would_fail == ()
+    assert _items(assessment, UNTRACKED) == {}
+
+
+@pytest.mark.parametrize(
+    ("path", "gate"),
+    [(AGENTS, "docs"), (ROADMAP, "trail"), (TRAIL, "trail")],
+    ids=["agents-md", "roadmap", "trail-toml"],
+)
+def test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it(
+    tmp_path: Path, path: str, gate: str
+) -> None:
+    # The file is there, so the gate passes here; CI would not have it. The gate's row says it
+    # could not judge the tree as CI will, it would fail if enforced, and an item names the file.
+    # `trail.toml` is the trail gate's too: CI would rebuild the listing without its states.
+    # Mutations (declared): the tracked check answers "tracked" for everything; the trail
+    # gate's `trail.toml` is not asked about.
+    root = smoke_repo(tmp_path)
+    _unlink_roadmap(root)
+    _untrack(root, path)
+    assessment = _assess(root, tmp_path)
+    row = _row(assessment, gate)
+    assert (row.answered, row.reason) == (False, UNSEEN_REASON)
+    assert gate in assessment.would_fail
+    assert _items(assessment, UNTRACKED) == {gate: (path,)}
+    # And every other gate is judged as before.
+    assert assessment.would_fail == (gate,)
+    # The summary counts and names the gate and the rule; the file stays in the document.
+    summary = render(assessment)
+    assert f"| {gate} | yes | could not run | yes |" in summary, summary
+    assert f"| {gate} | {UNTRACKED} | warning | 1 |" in summary, summary
+    assert path not in summary, summary
+    rows = {r["name"]: r for r in document(assessment)["gates"]}
+    assert rows[gate]["answered"] is False and rows[gate]["failing"] is True, rows[gate]
+
+
+def test_an_ignored_file_is_untracked_too(tmp_path: Path) -> None:
+    # A file kept out of git by an ignore rule is the commonest way this happens, and CI sees it
+    # no more than an untracked one.
+    root = smoke_repo(tmp_path)
+    (root / ".gitignore").write_text(f"/{AGENTS}\n", encoding="utf-8")
+    git(root, "add", ".gitignore")
+    _untrack(root, AGENTS)
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {"docs": (AGENTS,)}
+
+
+def test_a_file_the_always_loaded_document_links_to_is_read_by_the_docs_gate(
+    tmp_path: Path,
+) -> None:
+    # `check_links` asks whether each target exists, and CI answers for the tracked tree: a link
+    # to a file git does not track passes here and is `missing-link` there. A link to a tracked
+    # directory is tracked through the files under it. Mutation (declared): the docs gate's
+    # link targets are not asked about.
+    root = smoke_repo(tmp_path)
+    (root / "local-notes.md").write_text("# mine\n", encoding="utf-8")
+    agents = root / AGENTS
+    agents.write_text(
+        agents.read_text(encoding="utf-8") + "\n[notes](local-notes.md) and [docs](docs/specs)\n",
+        encoding="utf-8",
+    )
+    git(root, "add", AGENTS)
+    git(root, "commit", "-qm", "docs: link a local file")
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {"docs": ("local-notes.md",)}
+
+
+def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
+    tmp_path: Path,
+) -> None:
+    # A link target is any name the document wrote. The item's `where` holds it only inside the
+    # path grammar, as a gate finding's does; `adopt promote`'s note does the same.
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    (root / "a note.md").write_text("# mine\n", encoding="utf-8")
+    agents = root / AGENTS
+    agents.write_text(
+        agents.read_text(encoding="utf-8") + "\n[a note](a%20note.md)\n", encoding="utf-8"
+    )
+    git(root, "add", AGENTS)
+    git(root, "commit", "-qm", "docs: link a local file with a space")
+    assert _items(_assess(root, tmp_path), UNTRACKED) == {"docs": (UNNAMED,)}
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE))
+    assert code == 1, out
+    assert "a note.md" not in out and UNPRINTABLE in out, out
+
+
+def test_an_untracked_roadmap_leaves_the_docs_gate_judged(tmp_path: Path) -> None:
+    # The docs gate reads the roadmap only when it is there, for its prose budget, and an absent
+    # roadmap adds no finding: a roadmap CI cannot see makes the verdict here stricter than CI's
+    # and never laxer. So only `trail` is reported, once no link names the roadmap: a link to it
+    # is read by the docs gate as any link is, which the next case holds.
+    root = smoke_repo(tmp_path)
+    _unlink_roadmap(root)
+    _untrack(root, ROADMAP)
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").answered
+    assert set(_items(assessment, UNTRACKED)) == {"trail"}
+
+
+def test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates(tmp_path: Path) -> None:
+    # The fixture as shipped links to its roadmap from `AGENTS.md`: untracked, it is a
+    # `missing-link` in CI as well as a roadmap the trail gate cannot read.
+    root = smoke_repo(tmp_path)
+    _untrack(root, ROADMAP)
+    assert _items(_assess(root, tmp_path), UNTRACKED) == {"docs": (ROADMAP,), "trail": (ROADMAP,)}
+
+
+def test_outside_a_git_work_tree_the_files_are_judged_as_they_are(tmp_path: Path) -> None:
+    # No index to ask and no checkout for CI to take: both gates judge the disk, as `docs trail`
+    # lists every document there. Mutation (declared): the check is made outside a work tree
+    # too, and every file reads as untracked.
+    root = smoke_repo(tmp_path)
+    shutil.rmtree(root / ".git")
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").answered and _row(assessment, "trail").answered
+    # The probes that ask git say they could not look; neither gate is among them.
+    assert not {"docs", "trail"} & (
+        set(_items(assessment, UNTRACKED)) | set(_items(assessment, UNASKED))
+    )
+
+
+def test_a_git_that_gives_no_answer_is_never_read_as_tracked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Inside a work tree, a listing git did not give — it timed out, could not start, or refused
+    # the checkout — says nothing about what CI will see, so the gate is not judged and is not
+    # promoted. Mutation (declared): no answer reads as an empty listing's opposite, "tracked".
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNASKED_REASON
+    assert _row(assessment, "trail").reason == UNASKED_REASON
+    assert set(_items(assessment, UNASKED)) == {"docs", "trail"}
+    config = load(root, machine=tmp_path / "m.toml")
+    transition = promote(root, config, [], base=BASE, machine=tmp_path / "m.toml")
+    assert "docs" not in transition.promoted and "trail" not in transition.promoted
+
+
+def test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file(tmp_path: Path) -> None:
+    # Enforced, the gate would fail every pull request in CI, where the file is not. Named, it
+    # holds the rest back and nothing is written; unnamed, every other gate that passes is
+    # promoted and it stays advisory. Mutation (declared): `promote` judges the gates as they ran
+    # here, and `docs` is enforced.
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    _untrack(root, AGENTS)
+    machine = tmp_path / "m.toml"
+    before = (root / "keelline.toml").read_text(encoding="utf-8")
+    named = promote(root, load(root, machine=machine), ["docs"], base=BASE, machine=machine)
+    assert named.promoted == () and named.unanswered == ("docs",)
+    assert (root / "keelline.toml").read_text(encoding="utf-8") == before
+    every = promote(root, load(root, machine=machine), [], base=BASE, machine=machine)
+    assert "docs" not in every.promoted and "bugs" in every.promoted
+    assert "docs" not in load(root, machine=machine).keelline.enforced
+
+
+def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: Path) -> None:
+    # The note is the remedy: track the file, or keep it out of git and stop running the gate.
+    # It names the file, bounded, and names no value for `enforced`, which only a gate that
+    # passed has earned. `--json` carries the files by gate. Mutation (declared): the note is
+    # not printed.
+    root = smoke_repo(tmp_path)
+    _adopting(root)
+    _untrack(root, AGENTS)
+    code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE))
+    assert code == 1, out
+    assert "docs (could not run)" in out, out
+    note = next(line for line in out.splitlines() if line.startswith("note: docs reads"))
+    assert f"{AGENTS}, which git does not track" in note, note
+    assert "git add" in note and "[gates] builtin" in note, note
+    assert "enforced =" not in note and "[keelline]" not in note, note
+    code, out, _ = cli(
+        root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE), "--json"
+    )
+    data = json.loads(out)
+    assert data["untracked"] == {"docs": [AGENTS]}, data
+    assert data["unanswered"] == ["docs"], data
+
+
+def test_keelline_gate_judges_the_disk_and_asks_git_nothing(tmp_path: Path) -> None:
+    # `keelline gate` runs where CI checked out, and there an untracked file is simply absent,
+    # which the gate's own finding covers. So it asks nothing about tracking: here, with the
+    # file on disk, `docs` passes as it would have.
+    root = smoke_repo(tmp_path)
+    _untrack(root, AGENTS)
+    code, out, _ = cli(root, tmp_path, "gate", "--builtin", "--base", _sha(root, BASE), "--json")
+    rows = {r["name"]: r for r in json.loads(out)["gates"]}
+    assert rows["docs"]["answered"] is True and rows["docs"]["failing"] is False, rows
+    assert code == 0, out
