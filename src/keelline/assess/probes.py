@@ -417,9 +417,10 @@ def _exact_file(path: Path) -> bool:
 
 def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
     """The code-owners file GitHub reads, as `(its path, its text)`: the first of `_CODEOWNERS`
-    that exists under its exact name. Otherwise what the `codeowners` probe reports: nothing
-    owns the workflow when there is no file or GitHub would not load it, and a file that cannot
-    be read is could not look."""
+    that exists under its exact name, its bytes decoded as they are, since universal newlines
+    would end a line at a carriage return GitHub may read as part of one. Otherwise what the
+    `codeowners` probe reports: nothing owns the workflow when there is no file or GitHub would
+    not load it, and a file that cannot be read is could not look."""
     for relative in _CODEOWNERS:
         try:
             path = contained(context.root, relative)
@@ -427,7 +428,7 @@ def _codeowners_file(context: ProbeContext) -> tuple[str, str] | Looked:
                 continue
             if path.stat().st_size >= CODEOWNERS_MAX_BYTES:
                 return Looked((_UNOWNED,))  # GitHub does not load it
-            return relative, path.read_text(encoding="utf-8")
+            return relative, path.read_bytes().decode("utf-8")
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
     return Looked((_UNOWNED,))
@@ -443,8 +444,9 @@ def _rules(text: str) -> tuple[tuple[_Pattern, bool], ...]:
     as GitHub skips it. A line holding any other whitespace or control character is read without
     its owners: split on those characters, its first word may be the pattern GitHub reads and
     its owners ones it does not, and read owner-less it leaves each path it could match unowned,
-    the side that warns. The text is read with universal newlines, so a carriage return has
-    already ended its line.
+    the side that warns. Lines end at a line feed, and the one carriage return a CRLF file puts
+    before it is dropped; any other is such a control character, since GitHub may read it as
+    part of a line rather than the end of one.
 
     Equal patterns match the same paths, so only the last line of each can govern one: the rules
     are one per pattern, in the order of each one's last line, which is what the last match
@@ -452,7 +454,7 @@ def _rules(text: str) -> tuple[tuple[_Pattern, bool], ...]:
     """
     latest: dict[str, bool] = {}
     for line in text.split("\n"):
-        kept = _COMMENT.split(line, maxsplit=1)[0].strip(" \t")
+        kept = _COMMENT.split(line.removesuffix("\r"), maxsplit=1)[0].strip(" \t")
         if not kept:
             continue
         if _ODD.search(kept):

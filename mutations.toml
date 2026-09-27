@@ -10653,6 +10653,28 @@ reddens = [
   "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-hash-inside-the-owner]",
 ]
 
+# Lines end at a line feed: a CRLF file's carriage returns are dropped, and any other is a
+# control character that reads the line owner-less.
+[[mutation]]
+name = "the code-owners file is read with universal newlines"
+file = "src/keelline/assess/probes.py"
+before = '            return relative, path.read_bytes().decode("utf-8")'
+after = '            return relative, path.read_text(encoding="utf-8")'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return]",
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[a-lone-carriage-return-in-a-crlf-file]",
+]
+
+[[mutation]]
+name = "a CRLF line keeps its carriage return"
+file = "src/keelline/assess/probes.py"
+before = '        kept = _COMMENT.split(line.removesuffix("\r"), maxsplit=1)[0].strip(" \t")'
+after = '        kept = _COMMENT.split(line, maxsplit=1)[0].strip(" \t")'
+reddens = [
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[crlf]",
+  "tests/assess/test_probes.py::test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns[crlf-with-a-comment-after-a-blank]",
+]
+
 [[mutation]]
 name = "a line GitHub may split elsewhere decides nothing"
 file = "src/keelline/assess/probes.py"

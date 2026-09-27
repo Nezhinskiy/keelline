@@ -773,6 +773,9 @@ CI_YML = ".github/workflows/ci.yml"
         (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML} @owner#x\n", (CI_YML,)),
         (f"/.github/ @owner\n/{CI_YML}\xa0\n", (CI_YML,)),
         (f"/.github/ @owner\r\n/{CI_YML}\r\n", (CI_YML,)),
+        (f"/.github/ @owner\r\n/{CI_YML}\r\n/{CI_YML} @owner # restored\r\n", ()),
+        (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML}\r/{CI_YML} @owner\n", (CI_YML,)),
+        (f"/.github/ @owner\r\n/{CI_YML}\r\n/{CI_YML}\r/{CI_YML} @owner\r\n", (CI_YML,)),
         (f"/.github/ @owner\n/{CI_YML}\n/{CI_YML} @owner # restored\n", ()),
         (f"# /{CI_YML}\xa0\n/.github/ @owner\n", ()),
     ],
@@ -782,6 +785,9 @@ CI_YML = ".github/workflows/ci.yml"
         "a-hash-inside-the-owner",
         "a-no-break-space-after-the-pattern",
         "crlf",
+        "crlf-with-a-comment-after-a-blank",
+        "a-lone-carriage-return",
+        "a-lone-carriage-return-in-a-crlf-file",
         "a-comment-after-a-blank",
         "a-comment-line-holding-a-no-break-space",
     ],
@@ -794,14 +800,18 @@ def test_a_line_github_may_read_otherwise_errs_to_the_side_that_warns(
     # probe read `@owner` on a line GitHub may read as one pattern that matches nothing, which
     # would leave the owner-less line before it governing `ci.yml`; `@owner#x` read as `@owner`
     # the same way. A line holding such a character is read owner-less, so either reading of it
-    # is on the side that warns, and a file saved with CRLF still reads its owners. Mutations
-    # (oracle): "a line GitHub may split elsewhere keeps its owners" -> the first two cases are
-    # silent; "a comment starts at any hash" -> `a-hash-inside-the-owner` is silent; "a line
-    # GitHub may split elsewhere decides nothing" -> `a-no-break-space-after-the-pattern` is
-    # silent, and each reddens. Mutations (advisory): a comment only at the line's start ->
-    # `# restored` is read as owners that are not owners, `a-comment-after-a-blank` names
-    # `ci.yml`; the file read without universal newlines -> each CRLF line holds a carriage
-    # return and reads owner-less, `/.github/` included, so `crlf` is silent; each reddens.
+    # is on the side that warns. Lines end at a line feed alone: a file saved with CRLF still
+    # reads its owners, and a carriage return anywhere else is such a character, since GitHub
+    # may read `ci.yml\r/ci.yml @owner` as one pattern that matches nothing. Mutations (oracle):
+    # "a line GitHub may split elsewhere keeps its owners" -> the first two cases are silent; "a
+    # comment starts at any hash" -> `a-hash-inside-the-owner` is silent; "a line GitHub may
+    # split elsewhere decides nothing" -> `a-no-break-space-after-the-pattern` is silent; "the
+    # code-owners file is read with universal newlines" -> each lone carriage return ends a
+    # line and the two `a-lone-carriage-return` cases are silent; "a CRLF line keeps its
+    # carriage return" -> each CRLF line reads owner-less, `/.github/` included, so `crlf` and
+    # `crlf-with-a-comment-after-a-blank` are silent; each reddens. Mutation (advisory): a
+    # comment only at the line's start -> `# restored` is read as owners that are not owners,
+    # `a-comment-after-a-blank` names `ci.yml`, and it reddens.
     root = _repo(tmp_path)
     for name in ("keelline.yml", "ci.yml", "lint.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
