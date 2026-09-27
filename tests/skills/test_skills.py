@@ -1,6 +1,6 @@
-"""Skills are documents held to a contract: frontmatter, a line budget, action language, and
-invocations that parse against the real parser or are allow-listed by the package that will
-ship them (§5.5, Premise 13 and 14)."""
+"""Skills are documents held to a contract: frontmatter, a line budget, action language rather
+than tool or product names, and invocations that parse against the real parser or are
+allow-listed by the package that will ship them."""
 
 from __future__ import annotations
 
@@ -16,16 +16,16 @@ from keelline.cli import build_parser, discover_registrars, split_json_flag
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
-# The skills that ship *into* an overlay. They moved under `src/keelline/templates/` during the
-# install-path wave and this walk did not follow, so the one document the invocation lint exists
+# The skills that ship *into* an overlay. They moved under `src/keelline/templates/` with the
+# overlay template and this walk did not follow, so the one document the invocation lint exists
 # for -- that file once shipped an invocation that does not parse -- was walked by nothing while
 # a model read it in every overlay a user creates.
 TEMPLATE_SKILLS = ROOT / "src" / "keelline" / "templates" / "overlay" / "skills"
 AGENTS = ROOT / "agents"
-# The plugin's own skill_lines lint (§5.1): a SKILL.md is an entry point, and detail belongs in
+# The plugin's own skill_lines lint: a SKILL.md is an entry point, and detail belongs in
 # `references/`. Not a config key — it bounds a file this repository ships, not a project's.
 SKILL_MAX_LINES = 80
-# Harness tool names a skill body may not use (§5.5: "action language, never tool names").
+# Harness tool names a skill body may not use: action language, never tool names.
 # The per-harness mapping lives in skills/README.md and is held to this same list.
 TOOL_NAMES = (
     "Read",
@@ -44,11 +44,11 @@ TOOL_NAMES = (
     "request_user_input",
 )
 _TOOL = re.compile(r"\b(?:" + "|".join(TOOL_NAMES) + r")\b")
-# Commands the wrapper skills describe against C5 before the command exists, keyed to the
+# Commands the wrapper skills describe against the CLI frame before the command exists, keyed to the
 # package that ships each. The lane that ships one DELETES its entry: a parsing command that is
 # still listed here reddens `test_every_invocation_parses_or_is_allowlisted`. Empty since
-# `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written
-# ahead of its command.
+# `uninstall` shipped; kept, with its check against `PACKAGES`, for the next wrapper written ahead
+# of its command.
 NOT_YET_SHIPPED: dict[str, str] = {}
 PACKAGES = {"onboarding", "upgrade", "attach", "setup", "hooks-core"}
 _INVOCATION = re.compile(r"`keelline ([^`\n]+)`")
@@ -157,7 +157,7 @@ def test_every_skill_stays_within_the_line_budget(path: Path) -> None:
 def test_the_tool_name_lint_matches_a_tool_name() -> None:
     # Every use of `_TOOL` below is a NEGATIVE assertion, so a pattern that matches the empty
     # set satisfies all of them. Measured: `_TOOL` replaced by `re.compile("ZZZNEVER")` left
-    # `tests/skills/` at 83 passed with Premise 14 checked against nothing.
+    # `tests/skills/` at 83 passed with the no-tool-names rule checked against nothing.
     #
     # Mutation (declared): the pattern is made to match nothing.
     assert _TOOL.search("use the Grep tool"), "the lint cannot match a tool name"
@@ -225,7 +225,7 @@ def test_every_reference_file_is_linked_from_its_skill(path: Path) -> None:
 def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
     fields, body = split(AGENTS / "code-navigator.md")
     assert fields["name"] == "code-navigator" and "tools" in fields
-    assert "if one is installed" in body  # the capability, not the product (Premise 14)
+    assert "if one is installed" in body  # the capability, not the product
 
 
 def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None:

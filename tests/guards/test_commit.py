@@ -85,8 +85,8 @@ POSITIVES = [
 
 # Vendor words in the places a repository legitimately puts them: subjects, provider names,
 # model ids, paths, branch names, human co-authors, and GitHub's own noreply address. The
-# last nine are the review corpus the source's patterns flagged (Premise 12): body prose that
-# happens to start with the marker words, and people whose names are vendor words.
+# last nine are the review corpus the source's patterns flagged: body prose that happens to
+# start with the marker words, and people whose names are vendor words.
 NEGATIVES = [
     "feat(llm): gate the openai backup to non-local runs",
     "The default provider is the subscription-backed `claude_cli` with low effort.",
@@ -185,7 +185,7 @@ PUNCTUATED = [
     "Co-authored-by: A > B <noreply@anthropic.com>",
 ]
 
-# The documented cost of the domain rule (Premise 12): a person whose employer is a vendor is
+# The documented cost of the domain rule: a person whose employer is a vendor is
 # indistinguishable from the vendor's bot by address alone. Pinned so the cost is chosen, not
 # rediscovered; dropping the domain rule to fix it reddens `POSITIVES` instead.
 KNOWN_COST = [
@@ -238,7 +238,8 @@ def test_a_real_footer_survives_the_bounded_tail(line: str) -> None:
 
 
 def test_strip_does_not_amputate_a_body_sentence_that_begins_with_the_footer_words() -> None:
-    """The C2 defect, end to end: `commit strip` deleting prose before the commit exists.
+    """The footer-anchoring defect, end to end: `commit strip` deleting prose before the commit
+    exists.
 
     Measured on the shipped module, which anchored `_FOOTER` at the start of the line only:
 
@@ -323,8 +324,9 @@ def test_a_blank_tail_neither_hides_an_offence_nor_moves_its_line_number(tail: s
 
 
 def test_the_labels_are_the_three_this_module_publishes() -> None:
-    # Against three fixed literals, not against anything `_PATTERNS` produced: Task 6 imports
-    # this tuple and renders it, so a label edit that forgets the command is a contract break.
+    # Against three fixed literals, not against anything `_PATTERNS` produced: the `commit`
+    # command renders these labels, so a label edit that forgets the command is a contract
+    # break.
     assert ATTRIBUTION_LABELS == (
         "attribution trailer naming an AI tool",
         "generated-with footer",
@@ -337,7 +339,7 @@ def test_a_single_line_message_is_its_own_final_paragraph() -> None:
 
 
 def test_an_offence_carries_a_line_number_and_a_label_but_not_the_text() -> None:
-    # Premise 5: the message is repository-authored; only what this lane computed travels.
+    # The message is repository-authored (principle 5); only what this lane computed travels.
     message = "fix: thing\n\nBody.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
     assert offending_lines(message) == [Offence(5, "attribution trailer naming an AI tool")]
 
@@ -407,8 +409,8 @@ def test_prose_about_the_policy_survives() -> None:
 
 
 def test_strip_never_touches_the_body() -> None:
-    """The source stripped a mid-message trailer and collapsed the gap; under Premise 12 a
-    trailer-shaped line above the final paragraph is body text and is left exactly as it is.
+    """The source stripped a mid-message trailer and collapsed the gap; here a trailer-shaped
+    line above the final paragraph is body text and is left exactly as it is.
     This is the property that stops a prepare-commit-msg hook amputating a sentence.
 
     The fixture strips something on purpose. With a clean message this passes through the
@@ -436,14 +438,13 @@ def test_strip_never_touches_the_body() -> None:
 def test_strip_removes_only_the_offending_line_of_a_mixed_final_paragraph() -> None:
     """A human trailer and a harness footer share the last paragraph; only the footer goes.
 
-    This is the plan's `test_strip_collapses_the_blank_a_removed_trailer_leaves`, renamed to
-    what it actually pins: no blank is collapsed here, and under Premise 12 none ever can be
-    by this shape. Offences only occur inside the final paragraph, which by construction
-    contains no blank line, so removing one can never bring two blanks together — the only
-    blank a removal leaves is the one *before* the paragraph, and that is the tail the pop in
-    `strip_message` handles and `test_strip_removes_trailer_and_its_blank_line` pins. The
-    collapse branch is reachable only from a message that already held a doubled blank; the
-    test below is that one.
+    This was first written as `test_strip_collapses_the_blank_a_removed_trailer_leaves`, renamed
+    to what it actually pins: no blank is collapsed here, and none ever can be by this shape.
+    Offences only occur inside the final paragraph, which by construction contains no blank
+    line, so removing one can never bring two blanks together — the only blank a removal leaves
+    is the one *before* the paragraph, and that is the tail the pop in `strip_message` handles
+    and `test_strip_removes_trailer_and_its_blank_line` pins. The collapse branch is reachable
+    only from a message that already held a doubled blank; the test below is that one.
     """
     message = "fix: thing\n\nBody.\n\nSigned-off-by: Me <me@example.com>\nGenerated with Codex\n"
     assert strip_message(message) == "fix: thing\n\nBody.\n\nSigned-off-by: Me <me@example.com>\n"
@@ -606,8 +607,8 @@ def test_a_control_byte_in_a_body_does_not_split_the_commit_into_two_records(
 def test_a_range_shaped_like_an_option_is_refused_before_git_sees_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # §3: a value that reaches a subprocess is untrusted. `--all` is the whole-history sweep
-    # the source had; `--output=/tmp/x` is what the refusal exists for.
+    # Principle 5: a value that reaches a subprocess is untrusted. `--all` is the whole-history
+    # sweep the source had; `--output=/tmp/x` is what the refusal exists for.
     import subprocess as sp
 
     def forbidden(*args: object, **kwargs: object) -> object:
@@ -658,7 +659,7 @@ def test_a_git_that_cannot_run_or_times_out_is_a_refusal(
     monkeypatch: pytest.MonkeyPatch, failure: Exception
 ) -> None:
     # The other two of the three ways the log fails; the non-zero exit is the test above.
-    # Letting either escape would reach the CLI as an unhandled error rather than as C5's
+    # Letting either escape would reach the CLI as an unhandled error rather than as an exit-2
     # refusal, and a caller reads "the command crashed" very differently from "refused".
     import subprocess as sp
 

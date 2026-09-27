@@ -12,7 +12,8 @@ the list of names it publishes, with the argument for each beside it. That list 
 per area. These three checks are not.
 
 `keelline.scaffold` is not here. It publishes from the package rather than from an `api.py` —
-contract C2, frozen — and `tests/scaffold/test_surface.py` holds it to its own shape.
+the scaffold engine's contract, frozen — and `tests/scaffold/test_surface.py` holds it to its
+own shape.
 """
 
 from __future__ import annotations

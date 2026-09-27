@@ -1,9 +1,9 @@
 """The two fixture projects the smoke workflow runs against, held to what they claim.
 
 `smoke-project` is a project every gate passes on, with `state = "installed"` so the gates
-enforce; `hostile-project` (Task 15) is the S10 clone. Both are read by CI from this tree,
-so a fixture that drifted from what a gate accepts would fail the smoke workflow with a
-message about the fixture rather than about Keelline.
+enforce; `hostile-project` is the clone the clone-to-exfiltration scenario runs. Both are read
+by CI from this tree, so a fixture that drifted from what a gate accepts would fail the smoke
+workflow with a message about the fixture rather than about Keelline.
 """
 
 from __future__ import annotations

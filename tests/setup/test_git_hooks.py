@@ -77,10 +77,10 @@ def _args(**over: object) -> argparse.Namespace:
 
 
 def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Path) -> None:
-    # §7.2: "installs it per repository into `git rev-parse --git-path hooks` (never
-    # `core.hooksPath`)". The parenthesis is the assertion: `core.hooksPath` is global state
-    # this command has no business owning. Assert the file lands under `guards.hooks_dir(root)`
-    # and that `git config --get core.hooksPath` is still unset afterwards.
+    # The hook is installed per repository into `git rev-parse --git-path hooks`, never into
+    # `core.hooksPath`. The "never" is the assertion: `core.hooksPath` is global state this command
+    # has no business owning. Assert the file lands under `guards.hooks_dir(root)` and that
+    # `git config --get core.hooksPath` is still unset afterwards.
     root = _repo(tmp_path)
     run_setup(_args(root=str(root)))
     assert (hooks_dir(root) / HOOK_NAME).is_file()
@@ -90,10 +90,10 @@ def test_the_hook_is_installed_into_the_repositorys_own_hooks_path(tmp_path: Pat
 
 
 def test_a_foreign_hook_is_kept_and_chained_to(tmp_path: Path) -> None:
-    # §7.2, and the reason this is not a plain overwrite: a developer's own prepare-commit-msg
-    # is theirs, and silently replacing it is data loss. Mutation: none of this task's own —
-    # the preserve-and-chain guard is `guards.githooks.install`'s, already load-bearing in
-    # `mutations.toml`; this test is about the CLI reporting the same outcome, not a new guard.
+    # The reason this is not a plain overwrite: a developer's own prepare-commit-msg is theirs, and
+    # silently replacing it is data loss. Mutation: none of this test's own — the preserve-and-chain
+    # guard is `guards.githooks.install`'s, already load-bearing in `mutations.toml`; this test is
+    # about the CLI reporting the same outcome, not a new guard.
     root = _repo(tmp_path)
     directory = hooks_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -125,7 +125,7 @@ def test_uninstall_restores_the_foreign_hook(tmp_path: Path) -> None:
 
 
 def test_the_report_names_what_it_moved(tmp_path: Path) -> None:
-    # "prints what it moved" is in the spec because a `.local` file nobody was told about is
+    # The report prints what it moved, because a `.local` file nobody was told about is
     # indistinguishable from a lost one.
     root = _repo(tmp_path)
     directory = hooks_dir(root)

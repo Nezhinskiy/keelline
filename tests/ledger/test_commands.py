@@ -130,7 +130,8 @@ def test_check_reports_problems_on_one_line_and_lists_them_in_json(
     assert line.startswith(
         "FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:2 [dangling-mention]"
     )
-    # One line out (§5.2): the details that would have made it many are in `--json`.
+    # One line out, as every command's human output is: the details that would have made it
+    # many are in `--json`.
     assert line.count("\n") == 1
     assert invoke(["bugs", "check", "--json", *common]) == 1
     data = json.loads(capsys.readouterr().out)

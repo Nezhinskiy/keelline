@@ -388,7 +388,7 @@ def test_an_unparseable_command_stays_over_inclusive() -> None:
     ],
 )
 def test_red_exit_reads_both_payload_shapes(raw: dict[str, object], expected: int | None) -> None:
-    # Premise 1: the source read `tool_response.exit_code`; the hooks reference documents the
+    # The source read `tool_response.exit_code`; the hooks reference documents the
     # Bash `tool_response` without one and a non-zero exit arriving as `PostToolUseFailure`'s
     # `error` field. Both are read, so the notice is not keyed on a field one harness lacks.
     # Reddened three ways, each measured: dropping the `not isinstance(code, bool)` test (the

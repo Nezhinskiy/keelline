@@ -115,9 +115,9 @@ def test_a_dry_run_prints_both_reports_and_says_it_wrote_nothing(tmp_path: Path)
 
 @needs_git
 def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) -> None:
-    # Fix round 1, finding 2: the summary was four count lines, so a person without `--json` was
-    # told how many files there were and never which. The skill relays "both reports … each one
-    # names every file with its verdict", which it could not do from counts.
+    # The summary used to be four count lines, so a person without `--json` was told how many files
+    # there were and never which. The skill relays "both reports … each one names every file with
+    # its verdict", which it could not do from counts.
     root = repository(tmp_path)
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
@@ -173,10 +173,11 @@ def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) 
 def test_a_hostile_gate_branch_is_reported_as_a_skipped_workflow_and_not_as_a_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix round 1, finding 1, end to end. `[ci] mode` stays `reusable` here — this is the one
-    # case in this module that does not pass `--no-ci` — so the command really reaches the
-    # release area; the runner it would use is stubbed at the seam `commands.py` builds it from,
-    # so no network call is made and the answer is one released tag.
+    # A gate branch that is not a plain branch name used to be reported as a release pin, though no
+    # workflow was written; this holds it end to end. `[ci] mode` stays `reusable` here — this is
+    # the one case in this module that does not pass `--no-ci` — so the command really reaches the
+    # release area; the runner it would use is stubbed at the seam `commands.py` builds it from, so
+    # no network call is made and the answer is one released tag.
     from keelline import runner as runner_module
 
     root = repository(tmp_path)

@@ -345,8 +345,9 @@ def test_a_backgrounded_command_that_only_mentions_sleep_later_is_allowed() -> N
 
 
 def test_a_command_past_the_size_cap_is_allowed_unread() -> None:
-    # D7's named bound. Tokenizing is quadratic in token length and every Bash call pays it;
-    # a harness timeout on the one CLOSED handler would refuse a legitimate command.
+    # A named cap, not a config key. Tokenizing is quadratic in token length and every Bash
+    # call pays it; a harness timeout on the one CLOSED handler would refuse a legitimate
+    # command.
     # The fixture leads with `echo`, not `sleep`: the `sleep` rule is judged before the `&`
     # scan, so a leading `sleep` would pin SLEEP_REASON and say nothing about the `&` rule.
     #

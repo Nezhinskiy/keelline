@@ -1,10 +1,10 @@
-"""D14 for this lane: `apply` touches the project root and nothing else.
+"""The enumerated-writes rule for this lane: `apply` touches the project root and nothing else.
 
-Two instruments, because a tree diff and a syscall trace fail on different things. The diff
-answers "did exactly the planned paths change"; it is blind to a write anywhere it does not
-walk, which is the thing D14 actually forbids. The trace answers "was any absolute path
-outside the root opened for writing at all", and it sees `$HOME`, a created directory, a
-symlink and a mode change.
+Two instruments, because a tree diff and a syscall trace fail on different things. The diff answers
+"did exactly the planned paths change"; it is blind to a write anywhere it does not walk, which is
+the thing the enumerated-writes rule actually forbids. The trace answers "was any absolute path
+outside the root opened for writing at all", and it sees `$HOME`, a created directory, a symlink and
+a mode change.
 """
 
 from __future__ import annotations

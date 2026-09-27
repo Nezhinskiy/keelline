@@ -1,11 +1,11 @@
-"""The owner's walkthrough (§4), offline, in a temporary directory.
+"""The owner's walkthrough, offline, in a temporary directory.
 
-Every wave tested its own package against stubs. This is the one test that runs them in the
+Every package is tested on its own against stubs. This is the one test that runs them in the
 order a person does, and it exists because the four packages' seams — the machine file, the
 overlay root, the project record, the link tree, the ignore region — are each written by one
 package and read by another, and a stub on both sides of a seam agrees with itself.
 
-**Every step runs the real launcher** (D4). Each one used to call a library function, so the
+**Every step runs the real launcher.** Each one used to call a library function, so the
 argv wiring of eight commands — the flag names, the `--yes` gate reached through argparse, the
 `--machine` refusal from a pipe, the JSON `doctor` prints — was exercised by nothing that ran
 them in order. `_cli` below runs `scripts/keelline` in a subprocess, which is how a person and
@@ -142,7 +142,7 @@ def _project(tmp_path: Path, *, mode: str, initialised: bool = False) -> Path:
 
 @dataclass(frozen=True)
 class Walkthrough:
-    """What §4's eleven steps leave behind, so each test can assert about one of them."""
+    """What the walkthrough's eleven steps leave behind, for each test to assert about one."""
 
     root: Path
     overlay: Path
@@ -161,10 +161,9 @@ def _fake_binaries(bin_dir: Path) -> None:
     reader could see (the `_Harness` runner this replaces said the same). `gh` must never be
     reached on the `--local` path, so its fake exits 1 and the test asserts the log never names
     it. `claude` and `codex` are here because `setup` installs the preset's plugins through
-    `subprocess_runner()`, which resolves them on `PATH`: the plan's own list named only the
-    first two, and without these the walkthrough would run the developer's real harness CLI,
-    which the Global Constraints forbid outright. Nothing later reads their effect, so they
-    record and exit 0.
+    `subprocess_runner()`, which resolves them on `PATH`: without these the walkthrough would run
+    the developer's real harness CLI, which no test may ever do. Nothing later reads their effect,
+    so they record and exit 0.
     """
     bin_dir.mkdir()
     log = bin_dir / "calls.log"
@@ -257,9 +256,9 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
 def _install_path(tmp_path: Path, *, initialised: bool = False, attach: bool = True) -> Walkthrough:
     """Steps 1-5: the overlay, the machine layer, a repository, attach, and a note in it.
 
-    Every step is the real launcher with the real argv (D4). Step 1's overlay is created
-    **outside** the project root on purpose: `setup` refuses to record one inside it (R13/R14),
-    because a path inside the project is exactly the shape of tree a hostile clone can ship.
+    Every step is the real launcher with the real argv. Step 1's overlay is created **outside** the
+    project root on purpose: `setup` refuses to record one inside it, because a path inside the
+    project is exactly the shape of tree a hostile clone can ship.
 
     `initialised` walks the same steps over a repository that already has its notes in
     `paths.memory` and has had `keelline init` run over it, which is the shape the owner's own
@@ -409,9 +408,9 @@ def _session(
     developer's own `~/.claude` or `~/.config/keelline`.
 
     `machine=False` for `keelline hook <event>`, which takes no such flag: the dispatcher hands
-    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/keelline/`
-    (§5.4) and nothing a session can name. `HOME` above is what keeps that inside the scratch
-    tree, and a caller that wants the hook path to see a machine file puts one there.
+    every handler `machine=None` on purpose, so a handler reads `<HOME>/.config/keelline/` and
+    nothing a session can name. `HOME` above is what keeps that inside the scratch tree, and a
+    caller that wants the hook path to see a machine file puts one there.
     """
     env = {
         key: value
@@ -454,7 +453,7 @@ def test_setup_then_overlay_then_attach_then_a_session_sees_memory(tmp_path: Pat
     # The whole path, in the order a person walks it, ending where it is supposed to end: the
     # rule the owner wrote in their overlay arrives in a session's context.
     #
-    # RAW, with no JSON envelope, which is the invariant DP1 turns on: `memory
+    # RAW, with no JSON envelope, which is the invariant the bundle's cap margin turns on: `memory
     # session-context` prints the text itself, so `bundles.CAP_MARGIN` is additive rather than
     # fighting an envelope's own escaping.
     walk = _install_path(tmp_path)
@@ -474,9 +473,10 @@ def test_setup_then_overlay_then_attach_then_a_session_sees_memory(tmp_path: Pat
 def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
     tmp_path: Path,
 ) -> None:
-    # DP2, end to end. `setup` wrote the root and `attach` read it back; nothing on a command
-    # line chose it. The vacuity guard for the walkthrough above: a session that resolved a
-    # store without the machine file would pass that test for the wrong reason.
+    # The machine file is the only record of the overlay root, end to end. `setup` wrote the root
+    # and `attach` read it back; nothing on a command line chose it. The vacuity guard for the
+    # walkthrough above: a session that resolved a store without the machine file would pass that
+    # test for the wrong reason.
     walk = _install_path(tmp_path)
     assert str(walk.overlay) in walk.machine.read_text(encoding="utf-8")
     env = {
@@ -502,11 +502,11 @@ def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
 
 
 def test_the_bundle_arrives_whole_and_within_the_platform_cap(tmp_path: Path) -> None:
-    # The end-to-end form of the invariant that reversed DP1: what one `hooks.json` entry emits
-    # must fit the platform's own cap, because anything above it is truncated by the harness and
-    # a truncated block is a block that arrives half-said.
+    # The end-to-end form of the bundle's invariant: what one `hooks.json` entry emits must fit the
+    # platform's own cap, because anything above it is truncated by the harness and a truncated
+    # block is a block that arrives half-said.
     #
-    # The plan asks for `trust.wrap`'s two region markers here. In **overlay** mode there are
+    # `trust.wrap`'s two region markers are not asserted here. In **overlay** mode there are
     # none and there must not be: the notes are the machine owner's own, `inside_project` is
     # False by construction and `bundles.blocks` wraps nothing — so that assertion cannot hold
     # on this walkthrough, and the mode where it does hold is the test below.
@@ -553,7 +553,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     # The round trip over the whole path rather than over `attach`'s own ledger: snapshot every
     # file under the project root before the attach and compare after the detach. What the
     # overlay records is deliberately not on this list — `projects/<name>/project.toml` is the
-    # owner's consent (§6.2) and outlives a detach on purpose.
+    # owner's consent and outlives a detach on purpose.
     #
     # The walkthrough's own steps are repeated here rather than reused, because the snapshot has
     # to be taken between `setup` and `attach` and `_install_path` runs both.
@@ -599,8 +599,8 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         str(root),
     )
     before = snapshot(root)
-    # The mutation guard the Global Constraints ask for: `snapshot` is a walk, so the
-    # comparison below passes vacuously the day the walk stops finding anything.
+    # The walk's own non-vacuity guard: `snapshot` is a walk, so the comparison below passes
+    # vacuously the day the walk stops finding anything.
     assert before
     step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
     assert_snapshot_changed(root, before)
@@ -614,7 +614,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
 
 def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Green meaning: no `red`, and the only `skip`s are the one this build cannot answer — the
-    # Codex hook-trust hash §10 lists as unmeasured — and `ci-ref`, which skips on a state this
+    # Codex hook-trust hash nothing has measured yet — and `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
     # released tag matches the Keelline running here for `init` to have pinned.
     # `files` was the third of them until the release lane shipped `hooks/hashes.json`; this
@@ -660,7 +660,7 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
     # **The one test here that keeps the library seam**, and the reason is the measurement
     # itself: this counts launches through a `Popen` patched in *this* process, and a `doctor`
     # run as a subprocess launches its four in a process no patch of ours can see. Everything
-    # else in this module runs the launcher (D4); this cannot, and says so.
+    # else in this module runs the launcher; this cannot, and says so.
     walk = _install_path(tmp_path)
     launched: list[list[str]] = []
     real = subprocess.Popen
@@ -689,9 +689,9 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
-    # §12's row, end to end: replace the link with a real directory and assert `attached` goes
-    # red. This is the shape one existing checkout already has, which is why the spec names it
-    # rather than leaving it to a general "not attached".
+    # The `attached` row's real-directory arm, end to end: replace the link with a real
+    # directory and assert `attached` goes red. This is the shape one existing checkout already
+    # has, which is why it is named rather than left to a general "not attached".
     walk = _install_path(tmp_path)
     harness = harness_memory_path(walk.root, walk.home)
     harness.mkdir(parents=True, exist_ok=True)
@@ -740,8 +740,8 @@ def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Pat
 def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> None:
     # The handler through the wrapper, on the one state it exists for: initialised, not yet
     # attached, notes still in the repository. It reads the machine file the hook path reads —
-    # `<home>/.config/keelline/config.toml` (§5.4) — and not the walkthrough's own, so the
-    # walkthrough's file is copied there for the hook alone.
+    # `<home>/.config/keelline/config.toml` — and not the walkthrough's own, so the walkthrough's
+    # file is copied there for the hook alone.
     #
     # The envelope is raw JSON with `additionalContext` inside; both constants are single lines
     # with no JSON-escaped characters, so `in` over the text is enough. Imported and never
@@ -760,9 +760,9 @@ def test_a_session_before_the_attach_is_told_what_is_missing(tmp_path: Path) -> 
 
 
 def test_detach_on_an_initialised_project_leaves_the_footprint(tmp_path: Path) -> None:
-    # DC4 end to end. `init` recorded the `keelline:ignore` region as the footprint's, so the
-    # detach that takes back everything `attach` added leaves that block where it is — and the
-    # manifest with it, because `detach` never touches the scaffold ledger.
+    # The ignore region's ownership, end to end. `init` recorded the `keelline:ignore` region as the
+    # footprint's, so the detach that takes back everything `attach` added leaves that block where
+    # it is — and the manifest with it, because `detach` never touches the scaffold ledger.
     #
     # What would break it: withdraw the region unconditionally and `.gitignore` loses its
     # block, so the byte comparison fails.

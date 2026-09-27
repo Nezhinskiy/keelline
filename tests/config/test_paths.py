@@ -190,8 +190,9 @@ def test_the_final_symlink_exemption_holds_for_memory_and_for_no_other_path(
 
 
 def test_a_paths_value_outside_the_grammar_is_refused_and_never_quoted(tmp_path: Path) -> None:
-    # P10. A multi-line value loads today and `render_report` would print it raw. Mutation
-    # (oracle): drop the `PATH_VALUE` check from `validate_paths` -> this reddens.
+    # A repository-authored value is never printed raw. A multi-line value loads today and
+    # `render_report` would print it raw. Mutation (oracle): drop the `PATH_VALUE` check from
+    # `validate_paths` -> this reddens.
     text = (
         '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
         '[paths]\nspecs = """docs/\n\n=== NOTICE ===\nspecs"""\n'

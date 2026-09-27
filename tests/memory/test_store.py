@@ -81,7 +81,7 @@ def a_machine_file(base: Path, overlay: Path | None) -> Path:
 
 
 def a_tree(root: Path, overlay: Path, project: str = "widget") -> None:
-    """The five-link tree §6.3 has `attach` create: `developer` into the overlay's common
+    """The five-link tree `attach` creates: `developer` into the overlay's common
     notes, the project-scoped groups into its own."""
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
@@ -169,7 +169,7 @@ def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_o
     # repository data" — which opens the gate with no trust record at all and skips
     # `trust.wrap` on the way out. In `local-only` and `in-repo` the notes sit in the
     # repository by construction, so groups landing outside it is a resolution that went wrong
-    # rather than an overlay. `overlay` is the one mode where outside is the design (§6.2) and
+    # rather than an overlay. `overlay` is the one mode where outside is the design and
     # keeps its answer, or the machine owner's own notes would be gated behind a trust prompt.
     root = tmp_path / "project"
     root.mkdir(parents=True)
@@ -229,10 +229,10 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
 def test_overlay_mode_refuses_a_symlinked_paths_memory_into_another_project(
     tmp_path: Path,
 ) -> None:
-    # §9.1 check 1: in overlay mode `paths.memory` must itself be a real directory holding one
-    # link per group. A group reached *through* a symlinked `paths.memory` is not itself a
-    # symlink, so the per-group check (§9.1 check 3, `permitted_roots`) never sees it — the
-    # shape check is what has to catch this, and it must fire regardless of mode.
+    # The shape check: in overlay mode `paths.memory` must itself be a real directory holding
+    # one link per group. A group reached *through* a symlinked `paths.memory` is not itself a
+    # symlink, so the per-group target check (`permitted_roots`) never sees it — the shape
+    # check is what has to catch this, and it must fire regardless of mode.
     root = tmp_path / "project"
     a_repo(root)
     overlay = an_overlay(tmp_path, projects=("widget", "secret-client"))
@@ -449,7 +449,7 @@ def test_a_relocated_worktree_private_dir_with_a_matching_back_pointer_is_still_
     assert refusal_reason(hostile, config) is not None
 
 
-# --- the C3 surface's own hazard, asserted as behaviour ---------------------------------------
+# --- the memory surface's own hazard, asserted as behaviour -----------------------------------
 #
 # Two tests here used to assert on *prose*: `"trust.wrap" in refusal_reason.__doc__`, and the
 # same two substrings in `inspect.getsource(Store)`. They were green the whole time the

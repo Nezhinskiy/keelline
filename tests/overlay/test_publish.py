@@ -1,5 +1,5 @@
-"""`overlay publish-template` (§5.9, §6.1, DC6): render, strip the ledger, push one commit
-from the owner's checkout, and never without `--yes`."""
+"""`overlay publish-template`: render, strip the ledger, push one commit from the owner's
+checkout, and never without `--yes`."""
 
 from __future__ import annotations
 
@@ -75,12 +75,12 @@ def _argv(stub: _GitHub) -> list[list[str]]:
 def test_without_yes_nothing_is_pushed_and_the_push_is_named(tmp_path: Path) -> None:
     # `yes` gates everything outward-facing, which is THREE acts and not one: the
     # repository's creation, its template flag, and the push (`publish.py`'s module
-    # docstring, DC6). This case holds the third; the case below holds the first two, and it
+    # docstring). This case holds the third; the case below holds the first two, and it
     # exists because the first draft ran `gh repo create --public` before the gate. The name
     # and comment this carried said "the one outward-facing act" and "the push is what it
     # guards" — the design the gate replaced, in the file a reader opens to learn what
     # `--yes` covers, and wrong in the unsafe direction. The gate is still a parameter and
-    # not a typed flag (Global Constraints); that half was right.
+    # not a typed flag; that half was right.
     # Mutation (declared): push regardless of `yes` -> `pushed` is True and reddens.
     stub = _GitHub()
     result = publish_template("Owner", yes=False, runner=stub)
@@ -91,10 +91,9 @@ def test_without_yes_nothing_is_pushed_and_the_push_is_named(tmp_path: Path) -> 
 
 
 def test_without_yes_no_repository_is_created_or_marked(tmp_path: Path) -> None:
-    # B9 of the plan's review: the first draft ran `gh repo create --public` and `gh repo edit
-    # --template` BEFORE the `yes` gate, so the documented dry run created a public repository
-    # on the owner's account. Mutation (declared): move `_ensure_repository` above the gate ->
-    # both assertions redden.
+    # The first draft ran `gh repo create --public` and `gh repo edit --template` BEFORE the
+    # `yes` gate, so the documented dry run created a public repository on the owner's account.
+    # Mutation (declared): move `_ensure_repository` above the gate -> both assertions redden.
     stub = _GitHub(exists=False)
     result = publish_template("owner", yes=False, runner=stub)
     argv = _argv(stub)
@@ -147,8 +146,8 @@ def test_with_yes_the_rendered_tree_is_committed_and_pushed_without_the_ledger(
 
 
 def test_a_missing_repository_is_created_public_and_marked_as_a_template(tmp_path: Path) -> None:
-    # D1: the template is the PUBLIC half; §6.1: marked `is_template`. Mutation (declared):
-    # drop `--public` -> reddens.
+    # The template is the PUBLIC half of the pair, and it is marked `is_template` so an owner
+    # can generate a private overlay from it. Mutation (declared): drop `--public` -> reddens.
     stub = _GitHub(exists=False)
     publish_template("owner", yes=True, runner=stub)
     argv = _argv(stub)
@@ -319,10 +318,10 @@ def test_a_push_that_is_declined_is_a_failure_naming_the_repository(tmp_path: Pa
 
 
 def test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger(tmp_path: Path) -> None:
-    # Fix round 1, item 3. `scaffold.apply` writes `.keelline/manifest.json` into every local
+    # `scaffold.apply` writes `.keelline/manifest.json` into every local
     # render, and a repository generated from a template carries none — publishing one would
     # make every generated overlay read as hand-edited to `overlay upgrade` and never be
-    # refreshed again. The assertion the plan gave for this was over the PUSHED tree, which
+    # refreshed again. The first assertion written for this was over the PUSHED tree, which
     # `_replace_tree`'s whitelist keeps clean on its own: deleting the strip left every case
     # in this file green. The strip is observable one step earlier, in the render, and the
     # stub snapshots it at clone time because the scratch directory is gone by the time

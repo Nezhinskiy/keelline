@@ -29,10 +29,10 @@ from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
-# The preset's own default `paths.memory` — read off the preset, never spelled. `a_checkout`
-# takes the default, so the ignore entry `_commit_checkout` writes has to be the same string
-# the preset ships, and §5.8's whole-tree gate holds a test module to the full table, where a
-# default path is a finding. Derived, the fixture follows the preset if it ever moves.
+# The preset's own default `paths.memory` — read off the preset, never spelled. `a_checkout` takes
+# the default, so the ignore entry `_commit_checkout` writes has to be the same string the preset
+# ships, and `tests/test_neutral.py`'s whole-tree gate holds a test module to the full table, where
+# a default path is a finding. Derived, the fixture follows the preset if it ever moves.
 DEFAULT_MEMORY = load_preset("recommended")["defaults"]["paths"]["memory"]
 
 CONFIG = """
@@ -239,7 +239,7 @@ def test_no_new_top_level_entry_appears_anywhere_but_the_home_directory(tmp_path
 # `store.groups[group]` and `store.path / group` are the same expression for every group that
 # resolved cleanly, so no in-repo fixture can tell `link()` apart from a version that sourced
 # from `store.path / group` directly. They diverge only for a group `resolve()` *refused* and
-# therefore left out of `store.groups` — the store's own overlay-boundary check (§9.1 check 3).
+# therefore left out of `store.groups` — the store's own overlay-boundary check.
 # A worktree link built from `store.path / group` would still find a real symlink sitting at
 # that path in the checkout and materialise it, carrying a sideways link across the project
 # boundary into every worktree. This is the "resolve test again, under an overlay fixture" the
@@ -281,7 +281,7 @@ def test_a_group_the_overlay_boundary_refused_is_never_linked_into_a_worktree(
     tmp_path: Path,
 ) -> None:
     root, store, config = an_overlay_checkout(tmp_path)
-    # Sanity: the store itself already refused the sideways group (§9.1 check 3) — the test
+    # Sanity: the store itself already refused the sideways group at its boundary check — the test
     # below is only meaningful because `link()` receives a `store` that already excludes it.
     assert "project-stable" not in store.groups
     tree = a_worktree(root, tmp_path / "wt")
@@ -312,18 +312,19 @@ def test_an_overlay_groups_worktree_link_skips_the_main_checkouts_own_hop(
 
 # --- the index gets no less scrutiny than a group ---------------------------------------------
 #
-# Every configured *group* reaches `link()` only after `store.py`'s own `_group_targets` has
-# applied §9.1's per-link target rule (in overlay mode: honoured only inside this project's
-# share, `permitted_roots`). `MEMORY.md` does not go through that gate at all — `store.py`
-# tracks it as nothing (it is not a `memory.groups` entry), so `link()` has always read it
-# straight off `store.path / INDEX_NAME` with no check on where it points. §6.3 does make a
-# symlinked `MEMORY.md` legitimate in overlay mode, so the fix cannot be "refuse a symlinked
+# Every configured *group* reaches `link()` only after `store.py`'s own `_group_targets` has applied
+# the per-link target rule (in overlay mode: honoured only inside this project's share,
+# `permitted_roots`). `MEMORY.md` does not go through that gate at all — `store.py` tracks it as
+# nothing (it is not a `memory.groups` entry), so `link()` has always read it straight off
+# `store.path / INDEX_NAME` with no check on where it points. The link tree `attach` creates does
+# make a symlinked `MEMORY.md` legitimate in overlay mode, so the fix cannot be "refuse a symlinked
 # index" — it has to be the same target rule a group gets, applied here too.
 
 
 def an_overlay_checkout_with_a_leaked_index(tmp_path: Path) -> tuple[Path, Store, Config, Path]:
     """An overlay checkout whose own `MEMORY.md` is a symlink into a *different* project's
-    share of the overlay — the boundary §9.1 draws for a group, drawn here for the index."""
+    share of the overlay — the boundary the per-link target rule draws for a group, drawn here
+    for the index."""
     root = _a_repo(tmp_path)
     overlay = tmp_path / "overlay"
     (overlay / "common" / "memory").mkdir(parents=True)
@@ -361,7 +362,7 @@ def test_an_index_the_overlay_boundary_refuses_is_never_linked_into_a_worktree(
 
 
 def an_overlay_checkout_with_a_linked_index(tmp_path: Path) -> tuple[Path, Store, Config, Path]:
-    """§6.3's legitimate case: `MEMORY.md` symlinked into *this* project's own share of the
+    """The legitimate case: `MEMORY.md` symlinked into *this* project's own share of the
     overlay. The boundary check must let this through — it is not "refuse every symlinked
     index", it is "refuse one outside this project's share"."""
     root = _a_repo(tmp_path)
@@ -586,17 +587,17 @@ def test_a_group_target_that_escapes_the_worktree_tree_is_refused_rather_than_sk
     # an escape is a refusal, because skipping one name leaves the next name in the list to try
     # the same thing.
     #
-    # **This test is the pin for "an escaping group name arrives as a `PathEscape` and never as
-    # a `PartialLink`", and it is the only one there can be.** The wave-3 closure plan asked
-    # for a second test beside it, `test_an_escaping_group_name_still_arrives_as_a_refusal_not_
-    # a_partial_link`, built on a `memory.groups` entry of `../outside`. That test cannot fail
-    # for the reason the plan gives, so it was not written: `store._group_targets` already calls
-    # `contained(base, group, allow_final_symlink=True)` and diverts an escaping entry into
-    # `unavailable` rather than into `store.groups`, so by the time `link` walks
-    # `linked_names(config)` the name has no source, `sources.get(name)` is `None`, and the loop
-    # skips it without raising anything at all. A name that reaches `contained` inside `link` is
-    # one that resolved — which is what this fixture builds, by putting the symlink in the
-    # *worktree* where the store's own validation never looked.
+    # **This test is the pin for "an escaping group name arrives as a `PathEscape` and never as a
+    # `PartialLink`", and it is the only one there can be.** A review asked for a second test beside
+    # it, `test_an_escaping_group_name_still_arrives_as_a_refusal_not_a_partial_link`, built on a
+    # `memory.groups` entry of `../outside`. That test cannot fail for the reason the review gave,
+    # so it was not written: `store._group_targets` already calls `contained(base, group,
+    # allow_final_symlink=True)` and diverts an escaping entry into `unavailable` rather than into
+    # `store.groups`, so by the time `link` walks `linked_names(config)` the name has no source,
+    # `sources.get(name)` is `None`, and the loop skips it without raising anything at all. A name
+    # that reaches `contained` inside `link` is one that resolved — which is what this fixture
+    # builds, by putting the symlink in the *worktree* where the store's own validation never
+    # looked.
     root, store, config = a_checkout(tmp_path, groups=("sub/developer",))
     tree = a_worktree(root, tmp_path / "wt")
     outside = tmp_path / "outside"
@@ -780,7 +781,7 @@ def test_an_os_error_part_way_through_carries_out_the_links_it_did_make(tmp_path
 # --- the main checkout in overlay mode, which is the case `link` excludes -----------------
 #
 # `link` is "a no-op for the main checkout itself: it already holds the real store, not a link
-# to it". That is true in `local-only` and `in-repo` and false in `overlay` mode, where §6.2
+# to it". That is true in `local-only` and `in-repo` and false in `overlay` mode, which
 # puts the real store in the overlay and the checkout holds a link tree. `attach_main` is that
 # case, and it lives here beside `link` rather than in `attach` because the two share `_link`,
 # `_unlink` and — above all — the `trust.may_inject` gate on the harness link, which is forty
@@ -845,7 +846,8 @@ def test_the_harness_link_is_gated_by_the_same_predicate_as_in_a_worktree(tmp_pa
 
 
 def test_a_group_name_that_escapes_the_tree_raises_rather_than_skipping(tmp_path: Path) -> None:
-    # `memory.groups` is an ordinary keelline.toml list and reaches no guard of its own (§7.4).
+    # `memory.groups` is an ordinary keelline.toml list and reaches no guard of its own: root
+    # containment covers the `[paths]` fields only.
     # Skipping one escaping name leaves the next free to try the same thing, which is why
     # `link` raises `PathEscape` rather than continuing — and `attach_main` must match it.
     root, overlay, machine, config = an_overlay_to_attach(tmp_path, groups=("../escape",))
@@ -860,9 +862,10 @@ def test_a_group_name_that_escapes_the_tree_raises_rather_than_skipping(tmp_path
 
 
 def test_a_store_that_is_not_this_projects_share_of_the_overlay_is_refused(tmp_path: Path) -> None:
-    # DP3's containment rule, restated at the boundary that acts on it. `attach` refuses the
-    # same store one layer up; this is the floor under that, so a later caller cannot point the
-    # link tree at another project's notes by handing this function a different path.
+    # The overlay's containment rule — a project links only its own share — restated at the boundary
+    # that acts on it. `attach` refuses the same store one layer up; this is the floor under that,
+    # so a later caller cannot point the link tree at another project's notes by handing this
+    # function a different path.
     root, overlay, machine, config = an_overlay_to_attach(tmp_path)
     sideways = overlay / "projects" / "other" / "memory"
     sideways.mkdir(parents=True)
@@ -881,8 +884,8 @@ def test_a_repository_that_is_not_in_overlay_mode_is_refused(tmp_path: Path) -> 
 
 
 def test_a_machine_that_records_no_overlay_is_refused(tmp_path: Path) -> None:
-    # DP3 again: the overlay root comes from the machine file, so a machine that records none
-    # has no overlay to link into and the answer is not "link into whatever was passed".
+    # The overlay root comes from the machine file, so a machine that records none has no overlay to
+    # link into and the answer is not "link into whatever was passed".
     root, overlay, _, config = an_overlay_to_attach(tmp_path)
     blank = tmp_path / "blank.toml"
     blank.write_text("[personal]\n", encoding="utf-8")
@@ -1043,7 +1046,7 @@ def test_a_home_that_is_not_there_is_a_refusal_naming_it_and_never_a_partial_lin
     # The anchor is found and never created, and this is the sentence that buys. Without it
     # the walk raised a bare `FileNotFoundError` from `os.open(root)`, `link` wrapped it as a
     # `PartialLink`, and `keelline.memory.hooks` rendered that as "0 links made" with the home
-    # path nowhere in the message — an error where C5 asks for a refusal (exit 2, not 1).
+    # path nowhere in the message — an error where a refusal belongs (exit 2, not 1).
     #
     # The assertion is on the sentence and not on the exception class, because `PathEscape` is
     # also a `Refusal` and `link` already raises one of those for an escaping name: a test

@@ -1,4 +1,4 @@
-"""What `keelline.scaffold` publishes, which is the whole of contract C2 for a consumer."""
+"""What `keelline.scaffold` publishes, which is the whole of the engine's contract for a caller."""
 
 from __future__ import annotations
 

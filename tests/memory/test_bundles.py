@@ -547,7 +547,7 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
 @needs_git
 def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_path: Path) -> None:
     # `_index` reads `store.path / MEMORY.md` through `is_file()`, which follows symlinks, and
-    # nothing asks where the link goes — while `worktree._index_source` already applies §9.1's
+    # nothing asks where the link goes — while `worktree._index_source` already applies the
     # per-link target rule to the very same file for the *link* path. This is the path that
     # reaches the model.
     store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
@@ -560,8 +560,8 @@ def test_an_index_symlinked_outside_this_projects_share_is_never_injected(tmp_pa
 
 @needs_git
 def test_an_index_symlinked_inside_this_projects_share_is_still_injected(tmp_path: Path) -> None:
-    # §6.3 makes a symlinked index a legitimate member of the tree `attach` creates, so the
-    # rule is "inside this project's share", never "refuse every symlinked index".
+    # A symlinked index is a legitimate member of the link tree `attach` creates, so the rule
+    # is "inside this project's share", never "refuse every symlinked index".
     store, config, _machine, overlay = a_resolved_overlay_store(tmp_path)
     share = overlay / "projects" / "widget" / "memory"
     share.mkdir(parents=True)

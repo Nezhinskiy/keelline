@@ -355,8 +355,8 @@ def test_an_index_extra_entry_reached_through_a_symlink_is_dropped(tmp_path: Pat
 
 def test_a_symlinked_index_is_not_harvested_outside_overlay_mode(tmp_path: Path) -> None:
     # Harvesting reads the same file injection does and writes what it finds into each note's
-    # `index:` frontmatter, so it is held to the same §9.1 target rule: outside overlay mode a
-    # symlinked index is refused outright, exactly as an ungoverned group symlink is. Without
+    # `index:` frontmatter, so it is held to the same per-link target rule: outside overlay mode
+    # a symlinked index is refused outright, exactly as an ungoverned group symlink is. Without
     # that, another file's titles are persisted into this project's notes — and in overlay mode
     # from there onto every machine.
     store, config = a_store(tmp_path)
@@ -489,7 +489,7 @@ def test_an_index_extra_entry_that_merely_ends_in_a_line_break_is_dropped(tmp_pa
     assert "ledger.md" not in text
 
 
-# --- CRITICAL 1: a permitted but dangling §6.3 link must bootstrap, not refuse ----------------
+# --- a permitted but dangling `attach` link must bootstrap, not refuse ------------------------
 
 OVERLAY_CONFIG = """
 [keelline]
@@ -512,12 +512,13 @@ index_extra = {extra}
 
 
 def an_overlay_store(tmp_path: Path, *, extra: str = "[]") -> tuple[Store, Config, Path]:
-    """A store shaped like the §6.3 tree `attach` creates, except `developer` is a real,
+    """A store shaped like the link tree `attach` creates, except `developer` is a real,
     repository-committed directory rather than a symlink into the overlay's own share — the
     "mixed" shape the reviewer built by hand, since `attach` (another lane) is not present to
     build the honest one. `permitted_roots(overlay, "widget")` is `(overlay/common/memory,
     overlay/projects/widget/memory)`; only the second is created here, which is enough for the
-    §9.1 resolution check `_resolved_if_permitted` runs — it never requires the far end to exist.
+    per-link resolution check `_resolved_if_permitted` runs — it never requires the far end to
+    exist.
     """
     root = tmp_path / "project"
     base = root / "docs" / "memory"
@@ -591,7 +592,7 @@ def test_the_write_destination_still_refuses_a_link_outside_this_projects_share(
         write_index(store, config, "text")
 
 
-# --- CRITICAL 2: note→index is repository data too, and machine state may not receive it -----
+# --- note→index is repository data too, and machine state may not receive it -----------------
 
 
 def test_a_repository_committed_notes_curated_line_is_not_published_to_machine_state(
@@ -608,7 +609,8 @@ def test_a_repository_committed_notes_curated_line_is_not_published_to_machine_s
         note("malicious", index=payload), encoding="utf-8"
     )
     share = tmp_path / "overlay" / "projects" / "widget" / "memory" / INDEX_NAME
-    share.write_text("# shared index\n", encoding="utf-8")  # pre-created: isolates this from C1
+    # pre-created: isolates this from the dangling-link bootstrap
+    share.write_text("# shared index\n", encoding="utf-8")
     (store.path / INDEX_NAME).symlink_to(share)
 
     reconciled = reconcile(store, config, write=False)
@@ -646,7 +648,7 @@ def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(
 ) -> None:
     # The rule is one trust domain, not "never publish to machine state": a note that already
     # lives outside the repository — the ordinary overlay shape, once `attach` has actually
-    # built the real §6.3 tree — must keep reaching the index it always has. A fix of this shape
+    # built the real link tree — must keep reaching the index it always has. A fix of this shape
     # that forgot this case would silently break every legitimate overlay store instead of only
     # closing the hole. Unlike `an_overlay_store`, `developer` here is the honest shape: a
     # symlink into the overlay's own share, not a repository-committed directory.

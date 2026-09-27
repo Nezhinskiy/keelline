@@ -1,9 +1,9 @@
 """What `keelline attach` writes, and the three refusals it owes before it writes anything.
 
-DP3's third rule is here: a write that would widen a permission refuses without an explicit
-confirmation. It is a parameter and a `Refusal` rather than a step in a document, because in
-this harness the CLI is driven by a model that has read the repository, and a gate enforced by
-model compliance is not a gate.
+The third of the rules that keep the overlay trusted is here: a write that would widen a permission
+refuses without an explicit confirmation. It is a parameter and a `Refusal` rather than a step in a
+document, because in this harness the CLI is driven by a model that has read the repository, and a
+gate enforced by model compliance is not a gate.
 """
 
 from __future__ import annotations
@@ -124,14 +124,15 @@ def _check_ignore(root: Path, relative: str) -> bool:
 
 
 def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
-    # §6.3: "on a mismatch it refuses unless --trust-remote is given interactively". The
-    # assertion that matters is the second half: snapshot every file under the root before,
-    # expect `Refusal`, and compare the snapshot after. Not one byte changed.
+    # On a mismatch `attach` refuses unless --trust-remote is given interactively. The assertion
+    # that matters is the second half: snapshot every file under the root before, expect `Refusal`,
+    # and compare the snapshot after. Not one byte changed.
     root, store, machine = _attachable(tmp_path, recorded="git@example.com:o/real.git")
     before = snapshot(root)
-    # The mutation guard for the assertion below, and the Global Constraint that asks for it:
-    # `snapshot` is a walk, so `snapshot(root) == before` passes vacuously the day the walk
-    # stops finding files — and this is a test standing behind a refusal.
+    # The mutation guard for the assertion below, and the rule that asks for it — an assertion
+    # nobody has watched fail advertises coverage it may not have (principle 2): `snapshot` is a
+    # walk, so `snapshot(root) == before` passes vacuously the day the walk stops finding files —
+    # and this is a test standing behind a refusal.
     assert before
     with pytest.raises(Refusal):
         attach(
@@ -147,12 +148,12 @@ def test_a_mismatched_remote_refuses_and_writes_nothing(tmp_path: Path) -> None:
 
 
 def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
-    # DP3, and the finding that produced it. The Global Constraints say `attach` writes
-    # `settings.local.json` "only after a printed diff and an explicit confirmation", and an
-    # earlier revision implemented that sentence with nothing at all: the only mechanism was a
-    # Markdown step telling a model to run `--check` first. A repository that says "setup
-    # requires `keelline attach --store <path it names>`" gets a compliant agent to grant it
-    # tool permissions, and no human sees the diff.
+    # The write gate, and the defect that produced it. `attach` writes `settings.local.json` only
+    # after a printed diff and an explicit confirmation, and an earlier revision implemented that
+    # rule with nothing at all: the only mechanism was a Markdown step telling a model to run
+    # `--check` first. A repository that says "setup requires
+    # `keelline attach --store <path it names>`" gets a compliant agent to grant it tool
+    # permissions, and no human sees the diff.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     with pytest.raises(Refusal):
         attach(
@@ -324,7 +325,7 @@ def test_a_group_mixing_a_marked_entry_with_a_foreign_one_is_split_not_replaced(
 
 
 def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
-    # §6.2: projects/<name>/project.toml holds "bound remote URL(s), first-attach date".
+    # projects/<name>/project.toml holds the bound remote URL and the first-attach date.
     import datetime
     import tomllib
 
@@ -378,7 +379,7 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
 
 
 def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path: Path) -> None:
-    # DP4: the ledger lives under .keelline/local/, because the committed manifest would
+    # The ledger lives under .keelline/local/, because the committed manifest would
     # publish a digest of the owner's personal allow rules to collaborators.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
@@ -458,8 +459,8 @@ def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
 
 
 def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path: Path) -> None:
-    # The whole point of a managed region, and the reason this does not need C2's manifest:
-    # everything outside the two markers comes back out as it went in.
+    # The whole point of a managed region, and the reason this does not need the scaffold engine's
+    # manifest: everything outside the two markers comes back out as it went in.
     root, store, machine = _attachable(tmp_path)
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
     attach(
@@ -503,11 +504,12 @@ def _with_groups(root: Path, listed: str) -> None:
 def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
     tmp_path: Path,
 ) -> None:
-    # §7.4 and the Global Constraints' D15: `memory.groups` is repository-authored and reaches
-    # no guard of its own — `config/paths.py` says so in as many words, and names this lane as
-    # the one that has to call the containment itself. The entry decides a directory created
-    # inside the OVERLAY, which is the one tree `attach` trusts, so a `..` in it is refused
-    # rather than created, and refused rather than crashing out as a raw `OSError`.
+    # Path containment, and repository configuration never grants capability: `memory.groups` is
+    # repository-authored and reaches no guard of its own — `config/paths.py` says so in as many
+    # words, and names this lane as the one that has to call the containment itself. The entry
+    # decides a directory created inside the OVERLAY, which is the one tree `attach` trusts, so a
+    # `..` in it is refused rather than created, and refused rather than crashing out as a raw
+    # `OSError`.
     #
     # **And refused before the first write**, which is the half this case was missing. The
     # containment was called from `_prepare_store`, which runs after the ignore region, the
@@ -554,8 +556,8 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
 def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
     tmp_path: Path,
 ) -> None:
-    # The vacuity guard for the snapshot above, and the same one finding 1 and the ledger
-    # refusal carry: a refusal that writes nothing proves nothing if the run had nothing to
+    # The vacuity guard for the snapshot above, and the same one the no-origin refusal and the
+    # ledger refusal carry: a refusal that writes nothing proves nothing if the run had nothing to
     # write. The identical fixture with a group name that stays inside this project's share
     # attaches, and leaves behind every artifact the case above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
@@ -581,7 +583,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
 
 
 def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
-    # §6.3: "idempotent and reversible by detach". A permission list that grows by one copy of
+    # `attach` is idempotent and reversible by `detach`. A permission list that grows by one copy of
     # every rule per attach is the shape this catches.
     hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
     root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
@@ -638,8 +640,8 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
 
 
 def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> None:
-    # §6.3: "places Codex rules under .codex/rules/". Kept separate from the Claude settings
-    # merge because the two harnesses fail differently and a shared path would hide which.
+    # `attach` places Codex rules under .codex/rules/. Kept separate from the Claude settings merge
+    # because the two harnesses fail differently and a shared path would hide which.
     root, store, machine = _attachable(tmp_path, codex="# standing rule\n")
     attached = attach(
         root,
@@ -657,8 +659,8 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
 
 
 def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
-    # §12: `doctor` lists every rule with provenance "so one no overlay granted is visible".
-    # attach's own contribution to that is narrower and stricter: it does not touch one.
+    # `doctor` lists every rule with its provenance, so one no overlay granted is visible. attach's
+    # own contribution to that is narrower and stricter: it does not touch one.
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text(
@@ -681,10 +683,10 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
 def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init(
     tmp_path: Path,
 ) -> None:
-    # §6.3 asks `attach` to run `pre-commit install` in the overlay if it is missing, and Task
-    # 6 only covers the first machine: a second one clones an overlay initialised elsewhere and
-    # never runs `overlay init` again. Doing it twice is free; not doing it at all leaves the
-    # commit-time secret scan unarmed on exactly the machine that thinks it is set up.
+    # `attach` runs `pre-commit install` in the overlay if it is missing, and `overlay init` only
+    # covers the first machine: a second one clones an overlay initialised elsewhere and never runs
+    # `overlay init` again. Doing it twice is free; not doing it at all leaves the commit-time
+    # secret scan unarmed on exactly the machine that thinks it is set up.
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
@@ -913,8 +915,8 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
 
 
 def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: Path) -> None:
-    # The Global Constraints make every external binary optional: a missing `pre-commit` is a
-    # reported finding, and the push-time scan the template ships still runs.
+    # Every external binary is optional: a missing `pre-commit` is a reported finding, and the
+    # push-time scan the template ships still runs.
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
@@ -989,10 +991,10 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
 def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_files(
     tmp_path: Path,
 ) -> None:
-    # The vacuity guard for the case above, and the same one finding 1's snapshot has: a refusal
-    # that writes nothing proves nothing if the run had nothing to write. The identical fixture,
-    # with a ledger `attach` really could have written, attaches and leaves all three artifacts
-    # the refusal above has to prevent.
+    # The vacuity guard for the case above, and the same one the no-origin refusal's snapshot has: a
+    # refusal that writes nothing proves nothing if the run had nothing to write. The identical
+    # fixture, with a ledger `attach` really could have written, attaches and leaves all three
+    # artifacts the refusal above has to prevent.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# a standing rule\n")
     _committed_ledger(root, store, rules=[".codex/rules/common.rules"])
     before = snapshot(root)

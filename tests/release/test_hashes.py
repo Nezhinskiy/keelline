@@ -1,5 +1,5 @@
-"""DC5: the record of the three files the harness executes without Python, kept true on
-every commit by `release check` and compared by `doctor files` on the installed copy."""
+"""The record of the three files the harness executes without Python, kept true on every
+commit by `release check` and compared by `doctor files` on the installed copy."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""The harness registry, and the one profile rendering this wave ships."""
+"""The harness registry, and the one profile rendering there is: Claude Code's path-scoped rule."""
 
 from __future__ import annotations
 

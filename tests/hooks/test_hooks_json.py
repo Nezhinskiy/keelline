@@ -69,7 +69,7 @@ def test_no_entry_passes_json() -> None:
 
 
 def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
-    # §9.5: a bundle that overflows is split across further entries, and raising N edits this
+    # A bundle that overflows is split across further entries, and raising N edits this
     # shipped file — so N is asserted from SLOTS rather than counted by hand.
     declared = {
         (words[words.index("--bundle") + 1], words[words.index("--part") + 1])
@@ -83,8 +83,8 @@ def test_there_is_one_session_start_entry_per_declared_bundle_slot() -> None:
 
 def test_every_dispatched_event_has_at_least_one_handler() -> None:
     # An entry for an event nothing handles spawns a process to emit an empty envelope, and
-    # looks installed in doctor's listing. §5.3's table names five events; three of them have
-    # no handler in this build, and the lane that adds one adds its entry.
+    # looks installed in doctor's listing. The dispatcher carries five events; three of them
+    # have no handler in this build, and the lane that adds one adds its entry.
     events = {handler.event for handler in discover()}
     for _, _matcher, entry in _entries():
         words = entry["command"].split()
@@ -95,7 +95,7 @@ def test_every_dispatched_event_has_at_least_one_handler() -> None:
 def test_every_registered_handler_has_an_entry() -> None:
     # The other direction, and the more expensive one to get wrong: a handler with no entry
     # never runs. If `worktree-link` were the one left out, every bundle in every worktree
-    # would be empty and this wave's own smoke check could not see it.
+    # would be empty and `scripts/smoke_hooks.py` could not see it.
     dispatched = {
         words[3]
         for _, _matcher, entry in _entries()
@@ -105,7 +105,7 @@ def test_every_registered_handler_has_an_entry() -> None:
 
 
 def test_only_pre_tool_use_entries_may_be_closed() -> None:
-    # D11: fail-closed is expressible only where the platform blocks on exit 2. On
+    # Principle 6: fail-closed is expressible only where the platform blocks on exit 2. On
     # SessionStart exit codes are ignored and on UserPromptSubmit exit 2 erases the prompt, so
     # a `closed` entry there is a refusal that either does nothing or destroys the user's input.
     for event, _matcher, entry in _entries():
@@ -114,17 +114,18 @@ def test_only_pre_tool_use_entries_may_be_closed() -> None:
 
 
 def test_no_entry_is_async() -> None:
-    # Codex async hooks cannot block (§5.3). Unmeasured by the spikes — which is a reason to
+    # Codex async hooks cannot block. Unmeasured by the spikes — which is a reason to
     # hold the line in the file, not a reason to test it against the platform.
     for _, _matcher, entry in _entries():
         assert entry.get("async") is not True
 
 
 def test_session_start_entries_declare_the_codex_spill_key() -> None:
-    # S1 measured that both harnesses tolerate this key at install time on both events. It also
-    # measured NO cap verdict for it: a 20-character canary cannot separate an ignored key from
-    # one honoured with 0 meaning unlimited. So it is declared and relied on for nothing — the
-    # bound that IS measured is `bundles._cap`'s margin under `hook_output_chars` (S7).
+    # Measured: both harnesses tolerate this key at install time on both events. The same
+    # measurement gave NO cap verdict for it: a 20-character canary cannot separate an ignored
+    # key from one honoured with 0 meaning unlimited. So it is declared and relied on for
+    # nothing — the bound that IS measured is `bundles._cap`'s margin under `hook_output_chars`,
+    # recorded beside `CAP_MARGIN`.
     for event, _matcher, entry in _entries():
         if event == "SessionStart":
             assert entry.get("additionalContextLimit") == 0

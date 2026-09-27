@@ -127,11 +127,10 @@ def single_run(tempdir: Path | None = None) -> Iterator[Path]:
 
     **`sweep_stale_scratch` assumes a single writer and nothing enforced it.** Its own docstring
     states the assumption — "a second run started while the first is working would sweep the
-    first's checkout out from under it" — and that is exactly what happened during the wave-3
-    refactor pass's review: a filtered run started beside an unfiltered one removed its checkout,
-    and every
-    mutation after that point reported `FINDING`. 138 of them, all false, on a tree with nothing
-    wrong with it. A comment naming a hazard does not stop the hazard; this does.
+    first's checkout out from under it" — and that is exactly what happened during the review of
+    a refactor pass: a filtered run started beside an unfiltered one removed its checkout, and
+    every mutation after that point reported `FINDING`. 138 of them, all false, on a tree with
+    nothing wrong with it. A comment naming a hazard does not stop the hazard; this does.
 
     `O_CREAT | O_EXCL` is the whole mechanism: the create either wins or raises, with no window
     between the test and the write. A lock whose writer has died is taken over rather than
@@ -210,10 +209,10 @@ def sweep_stale_scratch(keep: Path | None = None, *, tempdir: Path | None = None
     directory. Failures are not raised — this is housekeeping at the top of a run, and a
     temporary directory another user owns is not this run's business.
 
-    **The cost, stated rather than hidden: this assumes one oracle at a time.** A second run
-    started while the first is working would sweep the first's checkout out from under it. That
-    is the same single-writer assumption DC1 already makes — the scratch checkout exists so that
-    two oracles, or an oracle beside an editor, cannot interleave writes over one file — and CI
+    **The cost, stated rather than hidden: this assumes one oracle at a time.** A second run started
+    while the first is working would sweep the first's checkout out from under it. That is the same
+    single-writer assumption the rest of the oracle already makes — the scratch checkout exists so
+    that two oracles, or an oracle beside an editor, cannot interleave writes over one file — and CI
     runs exactly one. The sweep is at the *top* of `main` and never again, so nothing a live run
     creates afterwards is in reach of it.
     """
@@ -255,7 +254,7 @@ def sweep_stale_scratch(keep: Path | None = None, *, tempdir: Path | None = None
 def scratch_checkout() -> Iterator[Path]:
     """A detached worktree of HEAD under a temporary directory, removed afterwards.
 
-    The oracle proves HEAD and never the working tree (DC1). `--detach` so no branch is
+    The oracle proves HEAD and never the working tree. `--detach` so no branch is
     created or moved. The parent directory is created by `mkdtemp` and the tree goes one level
     below it, because `git worktree add` refuses a path that already exists.
 
@@ -651,7 +650,7 @@ def _check(mutation: Mutation, tree: Path, *, cache: Path | None = None) -> str 
     """`None` when the mutation was caught; the finding otherwise.
 
     Every read and write lands in `tree`, a throwaway checkout of HEAD, at the same path
-    relative to `ROOT` the entry names (DC1). The working tree is never touched.
+    relative to `ROOT` the entry names. The working tree is never touched.
 
     **The clean-tree run comes first, and it is not a formality.** Without it this function
     read "the named tests did not pass" as "the mutation was caught" — and a mistyped test id

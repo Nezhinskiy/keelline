@@ -176,7 +176,8 @@ def test_a_stray_local_hook_is_refused_even_with_no_hook_at_the_name(tmp_path: P
 
 def test_the_hook_says_what_it_stripped(tmp_path: Path) -> None:
     # The source hook sent the count to `/dev/null`; a rewritten message nobody is told about
-    # is the shape Premise 12 is about. Behaviour 1 of the four the hook body owes.
+    # is a silent edit of the author's text, which the strip must never be. Behaviour 1 of the
+    # four the hook body owes.
     root = repo(tmp_path)
     install(root)
     completed = committing(tmp_path, root, TRAILER)
@@ -311,7 +312,7 @@ def test_uninstall_leaves_a_hook_it_did_not_write(tmp_path: Path) -> None:
 
 
 def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:
-    # §7.2: `git rev-parse --git-path hooks` rather than `<common-dir>/hooks` computed by hand,
+    # `git rev-parse --git-path hooks` rather than `<common-dir>/hooks` computed by hand,
     # which is a directory git never reads when husky has pointed core.hooksPath elsewhere.
     root = repo(tmp_path)
     git(tmp_path, root, "config", "core.hooksPath", ".husky")
@@ -319,7 +320,7 @@ def test_hooks_dir_honours_core_hooks_path(tmp_path: Path) -> None:
 
 
 def test_install_creates_a_hooks_directory_core_hooks_path_only_names(tmp_path: Path) -> None:
-    # The enumerated write (D14) that is easy to miss: `core.hooksPath` may name a directory
+    # The enumerated write that is easy to miss: `core.hooksPath` may name a directory
     # nobody has made yet — husky's `.husky/` before `husky install` — and `write_atomically`'s
     # `parent.mkdir(parents=True)` is what makes the hook land there rather than raise.
     root = repo(tmp_path)

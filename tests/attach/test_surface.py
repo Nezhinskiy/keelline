@@ -15,14 +15,14 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # lets an export arrive unnoticed. What each name is doing here is written beside it, so
     # this set states the policy `api.py`'s docstring states — a name is on the surface because
     # a consumer outside this area reaches for it, or because an exported name's signature or
-    # vocabulary requires it — rather than freezing whatever the list happened to hold. The
-    # wave-3 review found it holding twelve names with no consumer at all, three of which are
-    # below with the argument for keeping them and three of which left.
+    # vocabulary requires it — rather than freezing whatever the list happened to hold. A review
+    # of every area's surface found it holding twelve names with no consumer at all, three of
+    # which are below with the argument for keeping them and three of which left.
     #
-    # Four more left in the wave-3 refactor pass — `attach`, `detach`, `Attached`, `Detached`.
-    # They were kept by a sentence saying this walkthrough "drives `attach` and `detach`":
-    # `tests/test_install_path.py` drives the argument parser and imports two surfaces,
-    # `keelline.doctor.api` and `keelline.memory.api`, neither of them this one.
+    # Four more left in the refactor pass that trimmed every area's surface — `attach`, `detach`,
+    # `Attached`, `Detached`. They were kept by a sentence saying this walkthrough "drives `attach`
+    # and `detach`": `tests/test_install_path.py` drives the argument parser and imports two
+    # surfaces, `keelline.doctor.api` and `keelline.memory.api`, neither of them this one.
     #
     # No mutation entry: the mutation is adding an export, which is two lines in `api.py` (the
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
@@ -43,7 +43,8 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "BOUND",
         "UNBOUND",
         "STATES",
-        # the `.gitignore` region's name and body, for `init` (wave 4, DC4): one spelling
+        # the `.gitignore` region's name and body, for `init`, which records the same region as
+        # its own: one spelling
         "IGNORE_REGION",
         "IGNORE_BODY",
     }

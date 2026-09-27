@@ -55,10 +55,10 @@ def test_another_prefix_changes_every_pattern_together() -> None:
 
 @pytest.mark.parametrize("prefix", ["", "br", "B R", "-BR", "BR-", "TOOLONGXX", "B(R"])
 def test_a_prefix_outside_the_contract_is_refused_before_it_meets_a_regex(prefix: str) -> None:
-    # `id_prefix` is repository-controlled (§3). It is interpolated into regular expressions
-    # and into filenames, so it is held to a shape first. Mutation: drop the `PREFIX.match`
-    # check — the `B(R` case then raises `re.error` (an internal error, exit 2 by accident)
-    # and the others build patterns that match nothing; this test reddens on the exception
+    # `id_prefix` is repository-controlled, and a repository is untrusted input. It is interpolated
+    # into regular expressions and into filenames, so it is held to a shape first. Mutation: drop
+    # the `PREFIX.match` check — the `B(R` case then raises `re.error` (an internal error, exit 2 by
+    # accident) and the others build patterns that match nothing; this test reddens on the exception
     # type for `B(R` and on the missing refusal for the rest.
     with pytest.raises(Refusal):
         Identifiers(prefix)

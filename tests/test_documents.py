@@ -432,19 +432,17 @@ def test_the_readme_points_at_the_methodology_and_the_reference() -> None:
 
 
 CLI_REFERENCE = ROOT / "docs" / "cli.md"
-# The section Task 6 created and two later waves anchor on. Everything between its heading and
-# the next `## ` heading, so a table moved out of it stops being checked loudly rather than
-# quietly.
+# The `## Shared flags` section of `docs/cli.md`. Everything between its heading and the next `## `
+# heading, so a table moved out of it stops being checked loudly rather than quietly.
 _SHARED_FLAGS_SECTION = re.compile(r"^## Shared flags\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL)
 _TABLE_ROW = re.compile(r"^\| (?!Flag |Command and flag |---)(.+?) \| (.+?) \|$", re.MULTILINE)
 
 
 def test_the_shared_flag_tables_are_the_constants_and_not_a_second_spelling() -> None:
-    # Fix round 1, item 4. DC4's premise is that no sentence is spelled by hand, and the
-    # section this task added spelled all nine of them a second time in a document nothing
-    # checked — re-creating, one file over, exactly the drift the task exists to remove. Held
-    # row by row to `keelline.command`'s constants, the same way the README's Commands block is
-    # held to the real parser above.
+    # No shared-flag sentence is spelled by hand, and that section of `docs/cli.md` spelled all nine
+    # of them a second time in a document nothing checked — re-creating, one file over, exactly the
+    # drift one constant per flag exists to remove. Held row by row to `keelline.command`'s
+    # constants, the same way the README's Commands block is held to the real parser above.
     #
     # Mutation: change the `--machine` row's cell in `docs/cli.md` → reddens naming the row.
     from keelline.command import (
@@ -603,11 +601,11 @@ def test_the_doctor_table_is_the_registry_and_not_a_second_spelling() -> None:
     ]
 
 
-# Fix round 1, item 3. The five verdict sentences are `VERDICTS` in
-# `keelline.guards.attribute` and are reproduced by hand in `docs/cli.md`'s table; every test
-# that had them read the expectation back out of `VERDICTS`, which is shape 9 of the
-# `sweep-defect-class` skill's own reference — both sides move together under any reword. This
-# is the same rule the Shared flags tables are held to, one section over.
+# The five verdict sentences are `VERDICTS` in `keelline.guards.attribute` and are reproduced by
+# hand in `docs/cli.md`'s table; every test that had them read the expectation back out of
+# `VERDICTS`, which is shape 9 of the `sweep-defect-class` skill's own reference — both sides move
+# together under any reword. This is the same rule the Shared flags tables are held to, one section
+# over.
 _ATTRIBUTE_SECTION = re.compile(
     r"^## `keelline test attribute[^\n]*\n(.*?)(?=^## )", re.MULTILINE | re.DOTALL
 )

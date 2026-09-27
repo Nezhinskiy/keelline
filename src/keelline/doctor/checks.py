@@ -918,10 +918,10 @@ def _hook_entries(context: Context) -> Row:
     that entry's id got this row to answer "all accounted for" — a committable file silencing the
     one check whose entire purpose is that nobody's entries go unlisted. That is the defect
     `attach.write.AttachLedger` records — `detach` taking the ledger at its word — one field
-    over, and it gets the same rule: what could `attach` possibly have written here? An id is credible only if the entry
-    it names is one the **overlay** currently grants, and the overlay is trusted by construction
-    because its root comes from the machine configuration rather than from anything a
-    repository can reach.
+    over, and it gets the same rule: what could `attach` possibly have written here? An id is
+    credible only if the entry it names is one the **overlay** currently grants, and the overlay
+    is trusted by construction because its root comes from the machine configuration rather than
+    from anything a repository can reach.
 
     `_granted_commands` compares the *marked command* and not the id, because an id the overlay
     does grant with a different command hung on it is the same attack one step down. And where

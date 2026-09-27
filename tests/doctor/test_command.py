@@ -1,9 +1,9 @@
 """The `doctor` command: one line, the right exit code, and a remedy the skill can relay.
 
 The report itself is `tests/doctor/test_checks.py`'s. What is untested until this file is the
-argparse wiring, the two exit codes §5.2 and C5 fix, and the one property of the output that
-decides whether the skill is any use: a remedy missing from `--json` is a remedy the user never
-sees.
+argparse wiring, the two exit codes — 0 for a report with no red row, and 1, the findings exit
+code, for one with any — and the one property of the output that decides whether the skill is
+any use: a remedy missing from `--json` is a remedy the user never sees.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     """The seam `tests/doctor/test_checks.py` closes with `_env`, closed here instead.
 
     `run_doctor` passes no `env=`, so `run_checks` falls back to `os.environ` — and that is the
-    real environment, which the Global Constraints forbid a test from reading: `ignored-env`
-    reports whichever of two real variables is set, `diagnostics` finds the harness data root in
-    it and this suite is plausibly run inside a session where that points at a real log, and
+    real environment, which no test in this suite may read: `ignored-env` reports whichever of
+    two real variables is set, `diagnostics` finds the harness data root in it and this suite is
+    plausibly run inside a session where that points at a real log, and
     `load(root, machine=None)` resolves the developer's own `~/.config/keelline/config.toml`.
     The flag cases below cannot pass an environment through argparse, so the environment is made
     hermetic instead of passed.
@@ -59,7 +59,7 @@ def test_the_command_is_discovered() -> None:
 def test_a_clean_installation_exits_zero_with_one_line(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # §5.2: every command prints a one-line result. Sixteen rows on stdout would make `doctor`
+    # Every command prints a one-line result. Sixteen rows on stdout would make `doctor`
     # the one command a caller has to parse rather than read, and `--json` is where the rows are.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home")])
@@ -76,7 +76,7 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
     `runner.NETWORK_TIMEOUT_SECONDS` is five minutes, written for `gh repo create --clone` and
     the clone behind it. `doctor` inherited it for the `ci-ref` row's single `git ls-remote` —
     and `keelline init` recording a `[ci] ref` is what made a five-minute block reachable on a
-    command §5.2 gives one line of output. The row's own `git` questions go through `gitenv`'s
+    command whose whole output is one line. The row's own `git` questions go through `gitenv`'s
     five seconds and the wrapper probe through this module's thirty, so the bound here is the
     module's own thirty and `checks.CI_REF_TIMEOUT_SECONDS` carries the argument for it.
 
@@ -106,8 +106,8 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
 
 
 def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # One check cannot be answered by this build — the Codex hook-trust hash §10 lists as
-    # unmeasured — and `ci-ref` skips on a state this repository is in: it records no `[ci] ref`.
+    # One check cannot be answered by this build — the Codex hook-trust hash, which no spike has
+    # measured — and `ci-ref` skips on a state this repository is in: it records no `[ci] ref`.
     # (`files` was counted with the first until the release lane shipped the record it compares
     # against.) If a skip exited 1, `doctor` would be red on every correct installation.
     root = _initialised(tmp_path)

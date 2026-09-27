@@ -28,11 +28,11 @@ def test_commands_modules_are_found_in_area_name_order() -> None:
 
 
 def test_the_runner_is_a_leaf_and_not_an_area() -> None:
-    # DC2: `runner.py` sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports nothing
-    # from `keelline`. Pinned as an import check rather than by walking the tree, because the
-    # tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
-    # import to a leaf is a review finding the import-boundary test does not catch, and this
-    # is the one line that does.
+    # `runner.py` is a leaf: it sits beside `fsops.py`, `gitenv.py` and `tomlout.py` and imports
+    # nothing from `keelline`. Pinned as an import check rather than by walking the tree, because
+    # the tree walk above treats a leaf as invisible on purpose. No mutation: adding a keelline
+    # import to a leaf is a review finding the import-boundary test does not catch, and this is the
+    # one line that does.
     import ast
     from pathlib import Path
 
@@ -202,7 +202,7 @@ def test_no_area_reaches_into_another_areas_private_module() -> None:
     # today's numbers and are there to fail on a walk that stopped walking, not to be kept
     # current. Re-measured 2026-09-26, by running this module's own `_area_names` and
     # `_boundary_offences` over the same two globs in an interpreter: 138 files, 12 areas, 4
-    # scripts and 179 crossings, with a walk narrowed to `commands.py` alone finding 11 under
+    # scripts and 179 crossings, with a walk narrowed to `commands.py` alone counting 11 under
     # `src/` and 18 with the scripts — which is what the crossings floor of 60 has to be below.
     assert len(areas) == 12, areas
     assert len(files) >= 70, len(files)

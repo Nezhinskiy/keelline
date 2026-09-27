@@ -20,8 +20,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # hand instead — re-exporting `hygiene.is_pytest_run` reddens this test and this test alone,
     # and under the old `required <= set(...)` the very same change left all three tests green.
     #
-    # Twenty-nine names left in the first half of the wave-3 refactor pass, every one of them
-    # published against `assess` before it existed; when it arrived it needed only `commit_gate`.
+    # Twenty-nine names left in the first half of the refactor pass that trimmed every area's
+    # surface, every one of them published against `assess` before it existed; when it arrived
+    # it needed only `commit_gate`.
     # What is below is the whole of what another area actually imports.
     required = {
         # the git hook, for setup, and the two results its verbs return

@@ -3,7 +3,7 @@
 
     python3 scripts/smoke_hooks.py --plugin-root R --fixture F --scratch S
 
-`R` is a plugin root — the checkout, or the copy the harness installed (DC8). One row per
+`R` is a plugin root — the checkout, or the copy the harness installed. One row per
 entry and sample; exit 1 on any row whose exit code, stderr or stdout shape is not the one
 the policy and the dispatcher's contract require.
 """

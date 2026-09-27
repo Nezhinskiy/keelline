@@ -75,7 +75,7 @@ def _attach(
 
 
 def test_every_existing_worktree_is_linked(tmp_path: Path) -> None:
-    # §6.3: "links memory into every existing worktree". A worktree created before the attach
+    # `attach` links memory into every existing worktree. A worktree created before the attach
     # is the common case — this repository has four of them. The main checkout is skipped here
     # because `attach_main` has already handled it, and `link` is a no-op there anyway.
     root, store, machine = _bound(tmp_path)
@@ -134,11 +134,11 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
 
 
 def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path) -> None:
-    # §6.3 gives `~/.claude/projects/<slug>/memory` a fallback — `autoMemoryDirectory` in
-    # settings.local.json — "because a settings-file value is subject to workspace trust and a
-    # link is not". The symlink is preferred and the fallback is taken only when the link
-    # cannot be made; when it is, it goes into the same ledger as everything else, because a
-    # fallback nothing records is a setting that outlives its reason.
+    # `~/.claude/projects/<slug>/memory` has a fallback — `autoMemoryDirectory` in
+    # settings.local.json. The symlink is preferred, because a settings-file value is subject to
+    # workspace trust and a link is not, and the fallback is taken only when the link cannot be
+    # made; when it is, it goes into the same ledger as everything else, because a fallback nothing
+    # records is a setting that outlives its reason.
     import json
 
     from keelline.attach.api import ledger
@@ -152,7 +152,7 @@ def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path)
     assert resolved is not None
     record(resolved, _config(root, machine))
     # A real directory where the link belongs: the case `_link` refuses to clobber, and the one
-    # §6.3 names alongside a filesystem that has no symlinks.
+    # that takes the fallback alongside a filesystem that has no symlinks.
     harness = harness_memory_path(root, home)
     harness.mkdir(parents=True)
     attached = _attach(root, store, machine, home)
@@ -259,7 +259,7 @@ def test_a_second_attach_that_changes_nothing_still_records_the_standing_fallbac
 
 
 def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: Path) -> None:
-    # §6.3 asks for every checkout, and `--root` is allowed to name any of them. `attach_main`
+    # `attach` links every checkout, and `--root` is allowed to name any of them. `attach_main`
     # used to be applied to whatever `--root` named and the loop then skipped
     # `main_checkout(root)` unconditionally — and `worktree.link` is documented as a no-op for
     # the main checkout, so nothing downstream caught it. Attaching from a worktree built that

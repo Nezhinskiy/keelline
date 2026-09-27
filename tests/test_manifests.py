@@ -58,8 +58,8 @@ def test_the_repository_itself_passes_release_check() -> None:
 
 
 def test_the_repository_itself_carries_a_current_release_record() -> None:
-    # DC5: the record is kept true on every commit and not only at a tag, which is what makes
-    # it a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
+    # The release record is kept true on every commit and not only at a tag, which is what makes it
+    # a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
     # `scripts/keelline` that forgot `keelline release hashes` reddens here and in the gate.
     assert drift(ROOT) == []
 

@@ -69,8 +69,9 @@ def test_docs_check_passes_a_compliant_project_and_names_the_enforced_set_only(
 def test_docs_check_does_not_resolve_the_store_unless_asked(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The default is exactly the enforced set the success line names (Premise 11). Mutation:
-    # run the graph when no flag is given — this reddens on the NOTE count.
+    # The default is exactly the enforced set the success line names; the memory link graph is
+    # advisory and runs only when asked. Mutation: run the graph when no flag is given — this
+    # reddens on the NOTE count.
     root, common = project(tmp_path)
     a_note(root, "[[gone]]\n")
     assert invoke(["docs", "check", "--json", *common]) == 0

@@ -123,7 +123,7 @@ def test_a_binary_suffix_and_a_symlink_are_skipped_whole(tmp_path: Path) -> None
 
 
 def test_a_fixture_holder_is_excluded_from_the_scan(tmp_path: Path) -> None:
-    # Premise 5: the marker replaces the source's hard-coded exclusion list. Mutation: make
+    # The marker replaces the source's hard-coded exclusion list. Mutation: make
     # `is_fixture_holder` return False — this reddens.
     root, config = project(tmp_path)
     write(root, "tests/test_x.py", f'"""{FIXTURE_MARKER} — sample data"""\nENTRY = "BR-404"\n')

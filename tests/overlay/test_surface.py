@@ -41,11 +41,11 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         "MARKETPLACE_MANIFEST",
         "CODEX_PLUGIN_MANIFEST",
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
-        # outside `src/`, and the one the wave-3 trim did not see because the boundary walk
-        # stopped at `src/`
+        # outside `src/`, and the one an earlier trim of this list did not see because the
+        # boundary walk stopped at `src/`
         "OVERLAY_FILES",
         # the floor an overlay declares and whether a running Keelline meets it, for `doctor`'s
-        # `overlay-requires` row (wave 4)
+        # `overlay-requires` row
         "requires_of",
         "satisfies",
         # the same reader over two versions, for `upgrade`'s never-backward refusal and
@@ -54,7 +54,7 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
         # that reader's whole `X.Y.Z` grammar, for `upgrade`'s printing of a recorded version
         "RELEASE",
         # the overlay repository's own sync state, for the `attach` area's session-start
-        # handler (wave 4, DC1, DC12)
+        # handler
         "Sync",
         "overlay_sync",
     }

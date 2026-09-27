@@ -35,12 +35,12 @@ to lag. That is the form `release.yml` runs.
 
 ## 2. Cutting a release
 
-**If this is the first release, do §3 first.** The `pypi` environment is the only human
+**If this is the first release, do section 3 first.** The `pypi` environment is the only human
 gate this process has, and it is a gate only once it exists: GitHub **auto-creates** an
 environment that a job names and the repository does not have, with no protection rules on it.
-So a first release run top to bottom without §3 waits for nobody — `publish` runs unapproved
+So a first release run top to bottom without section 3 waits for nobody — `publish` runs unapproved
 and fails on Trusted Publishing for want of a pending publisher, and `github-release` runs
-unapproved and creates a public GitHub Release. §3 is what makes step 7's sentence true.
+unapproved and creates a public GitHub Release. Section 3 is what makes step 7's sentence true.
 
 1. **Be on `main`, current, and green.** The release workflow builds from the tag, so anything
    not merged is not in the release.
@@ -57,8 +57,8 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    claude plugin tag --dry-run .
    ```
 
-2. **Decide the version.** This is a judgement, not a command: the design names `v1.0.0` for
-   the first public release and the tree currently says `0.1.0` and "Development Status :: 3 -
+2. **Decide the version.** This is a judgement, not a command: `v1.0.0` is the intended
+   first public release and the tree currently says `0.1.0` and "Development Status :: 3 -
    Alpha". Every mechanism in this file works with whatever number you pick — the gate compares
    the tag to the sources rather than to a number it knows, and the alias is the major.
 
@@ -146,7 +146,7 @@ unapproved and creates a public GitHub Release. §3 is what makes step 7's sente
    gh run watch <id> --exit-status
    ```
 
-   `build` runs the gate against the tag, tests, builds and attests. **Once §3's `pypi`
+   `build` runs the gate against the tag, tests, builds and attests. **Once section 3's `pypi`
    environment exists with a required reviewer**, `publish` waits for its approval, and
    `github-release` waits for the same environment and does not depend on `publish`, so a
    declined PyPI still leaves you a Release. Without that environment both jobs run straight

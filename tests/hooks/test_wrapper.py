@@ -237,9 +237,10 @@ def _planted_interpreter(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_an_interpreter_the_environment_names_is_ignored_off_a_terminal(tmp_path: Path) -> None:
-    # C1, and the half `test_a_plugin_root_in_the_environment_does_not_choose_the_launcher` left
-    # open one line below itself: closing *which file* the wrapper hands Python, while the
-    # environment still chose *which Python*, is the same class of hole with a different name.
+    # The environment never chooses the interpreter — the half
+    # `test_a_plugin_root_in_the_environment_does_not_choose_the_launcher` left open one line
+    # below itself: closing *which file* the wrapper hands Python, while the environment still
+    # chose *which Python*, is the same class of hole with a different name.
     # Measured on the shipped wrapper: with the `env`-block equivalent of
     # KEELLINE_PYTHON_CANDIDATES=<repo>/evil-python, the wrapper ran
     # `<repo>/evil-python <plugin>/scripts/keelline hook PreToolUse` and exited 0 — arbitrary
@@ -418,8 +419,9 @@ def test_the_project_root_is_never_taken_from_an_inherited_git_environment(tmp_p
 def test_a_launcher_that_cannot_be_read_refuses_with_a_token(tmp_path: Path) -> None:
     # `[ -f ]` tests existence, not readability. Measured with `chmod 000`: the wrapper printed
     # CPython's own "Permission denied" and exited 2 with no KL_ token, passed straight through
-    # by `case "$rc" in 0|2)` — the unattributed exit 2 D11 exists to make impossible, and a
-    # state `doctor`'s wrapper row reported green for, because it keys on finding a token.
+    # by `case "$rc" in 0|2)` — an unattributed exit 2, which every KL_ token exists to make
+    # impossible, and a state `doctor`'s wrapper row reported green for, because it keys on
+    # finding a token.
     root = _plugin_root(tmp_path, 0)
     (root / "scripts" / "keelline").chmod(0o000)
     try:
@@ -462,7 +464,7 @@ def test_a_missing_launcher_refuses_although_the_environment_names_one(tmp_path:
     # The refusal the self-derivation still owes: a wrapper with no launcher beside it must
     # say so rather than reach for the one the environment offers. Both arms matter — without
     # the refusal a missing launcher reaches Python as a missing file and exits 2 by CPython
-    # accident, with no token to attribute it (D11); without the self-derivation it would run
+    # accident, with no token to attribute it; without the self-derivation it would run
     # `theirs` and exit 0.
     ours = _plugin_root(tmp_path / "ours", 0, with_launcher=False)
     theirs = _plugin_root(tmp_path / "theirs", 0)
@@ -519,9 +521,9 @@ def test_keelline_runs_from_the_project_root(tmp_path: Path) -> None:
 
 
 def test_the_wrapper_is_committed_executable() -> None:
-    # S8 row 6 measured that a 0644 wrapper does NOT block: the harness never executes it, so
-    # no code of ours runs and no policy applies. The wrapper cannot defend its own mode; this
-    # assertion and `doctor`'s wrapper probe (Task 15) are the whole defence.
+    # Measured: a 0644 wrapper does NOT block — the harness never executes it, so no code of
+    # ours runs and no policy applies. The wrapper cannot defend its own mode; this assertion
+    # and `doctor`'s wrapper probe are the whole defence.
     assert stat.S_IMODE(WRAPPER.stat().st_mode) & 0o111, "run-hook.sh must ship executable"
 
 

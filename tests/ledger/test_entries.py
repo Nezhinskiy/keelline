@@ -248,7 +248,7 @@ def test_the_writers_and_the_reader_agree_on_the_key_set() -> None:
 
 def test_a_ledger_file_that_is_not_utf8_is_a_ledger_error_naming_it(tmp_path: Path) -> None:
     # `cli.run` maps a `Failure` to exit 1 and everything else to exit 2, and 2 is reserved for
-    # a refusal or an internal error (C5). A stray byte in an entry is a repository condition
+    # a refusal or an internal error. A stray byte in an entry is a repository condition
     # the operator can fix, so it must arrive as findings and not as "the tool is broken".
     # Mutation: read with `errors="replace"` — this reddens.
     path = tmp_path / "BR-001.md"

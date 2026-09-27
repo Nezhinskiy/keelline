@@ -1,6 +1,6 @@
-"""§5.8: no project-identifying string anywhere in the public repository — the whole tree.
+"""No project-identifying string anywhere in the public repository — the whole tree.
 
-Two lane-scoped copies of this gate held the door since wave 2, the second of them saying
+Two lane-scoped copies of this gate held the door before it, the second of them saying
 "both gates are deleted the day the `workflows` lane ships the whole-tree gate — do not
 extend either into a third." This is that day. Source under `src/`, `tests/` and `scripts/`
 is held to the full table: a module has no reason to spell a default path. Every other
@@ -10,10 +10,10 @@ by default would be useless. The denylist is digests; the two docstrings this re
 why, and their reasoning is kept verbatim in `digest_of`.
 
 **The denylist is stored as digests, not as the tokens themselves, and that is not decoration.**
-A gate that lists the strings it is hiding publishes them: this file ships in a public
-repository, so a plain-text list would put every identifier §5.8 forbids into the very tree the
-rule is about, one `grep` away. Each entry is a lower-cased token's length and a short
-`blake2s` digest of it; the scan hashes every window of each stored length and compares digests.
+A gate that lists the strings it is hiding publishes them: this file ships in a public repository,
+so a plain-text list would put every identifier this gate forbids into the very tree the rule is
+about, one `grep` away. Each entry is a lower-cased token's length and a short `blake2s` digest of
+it; the scan hashes every window of each stored length and compares digests.
 The behaviour is identical to the substring list it replaces — the same inputs fail — and a
 digest is not a secret, it is merely not readable. **Do not "simplify" them back into
 literals.** To add a token, run `digest_of("<token>")` and append `(len, digest)`.
@@ -112,7 +112,7 @@ URL_BLIND = frozenset({"vendor branch"})
 # Shapes a substring list cannot express: a personal address, a bare commit id, a
 # vendor-prefixed branch name at any depth. Each arm is named so a hit says what it is.
 SHAPES = (
-    # Not `@users.noreply.github.com`: that is GitHub's generic form and a Task 5 negative.
+    # Not `@users.noreply.github.com`: that is GitHub's generic form and must pass.
     ("personal email", re.compile(r"@(?:gmail|yandex|mail|icloud|proton)\.\w+")),
     # At least one digit, so an eight-letter hex word (`deadbeef`) is not an id — and, by the
     # same argument in the other direction, at least one letter, so a plain decimal number is
@@ -263,9 +263,9 @@ TRACKED_TREES = (
 
 def tracked_files() -> list[Path]:
     """Every file git tracks, or every file under the tree minus the fixed exclusions."""
-    # `--others --exclude-standard` as well as `--cached`: a fixture added in this wave is
-    # untracked until its commit, and a gate that could not see it until the commit after
-    # would let the commit that adds it land unwalked. Step 2 says `git add -N` first.
+    # `--others --exclude-standard` as well as `--cached`: a fixture being added is untracked
+    # until its commit, and a gate that could not see it until the commit after would let the
+    # commit that adds it land unwalked.
     done = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
@@ -323,16 +323,16 @@ def test_a_coverage_worker_file_is_not_a_file_the_gate_walks(tmp_path: Path) -> 
     assert ignored.returncode == 0, ignored.stderr
 
 
-# **What the split gives up, stated as a decision rather than left as an accident.** The two
-# gates this replaces walked `skills/**/*.md` and `agents/*.md` under the FULL table; DC10 says
-# `.py` under the three source trees takes the full table and every other text file takes the
-# public one, so under one gate those documents take the public table and may now spell a preset
-# default `[paths]` value where they could not before. That is the design and not a slip: a skill
-# is a document a person reads, and the argument that a README which could not say where the note
-# store lives by default would be useless is the same argument one directory over. The denylist
-# proper is unchanged for them — only the three exempted preset defaults move — and the shape arms
-# are not table-scoped at all, so a personal address, a bare commit id and a vendor branch are
-# still refused in a skill. Changing it back means changing DC10, not this function.
+# **What the split gives up, stated as a decision rather than left as an accident.** The two gates
+# this replaces walked `skills/**/*.md` and `agents/*.md` under the FULL table; the rule is that
+# `.py` under the three source trees takes the full table and every other text file takes the public
+# one, so under one gate those documents take the public table and may now spell a preset default
+# `[paths]` value where they could not before. That is the design and not a slip: a skill is a
+# document a person reads, and the argument that a README which could not say where the note store
+# lives by default would be useless is the same argument one directory over. The denylist proper is
+# unchanged for them — only the three exempted preset defaults move — and the shape arms are not
+# table-scoped at all, so a personal address, a bare commit id and a vendor branch are still refused
+# in a skill. Changing it back means changing that rule, not only this function.
 def table_for(path: Path) -> tuple[tuple[int, str], ...]:
     relative = path.relative_to(ROOT)
     source_tree = relative.parts[0] in FULL_TABLE_TREES
@@ -601,7 +601,7 @@ def test_the_public_table_still_discriminates() -> None:
 # commit-id-shaped and branch-shaped **by construction**, which is the same reason the two gates
 # this replaces each skipped themselves. The pre-commit sweep reads the raw diff and so reports
 # those fixtures; a shape hit on a line of this module is the gate quoting itself, and the stop
-# condition Global Constraints states is a `token` hit.
+# condition is a `token` hit.
 @pytest.mark.parametrize(
     "path",
     [p for p in tracked_files() if p != THIS],

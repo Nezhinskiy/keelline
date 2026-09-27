@@ -73,7 +73,8 @@ def test_every_handler_declares_a_known_event_and_an_open_policy() -> None:
 def test_no_session_start_context_handler_is_registered() -> None:
     # The four injection bundles are `hooks.json` entries, not handlers: foundation's
     # dispatcher joins every handler's context for one event and clamps the join to a single
-    # platform cap, which would collapse the numbered slots §9.5 exists to keep apart.
+    # platform cap, which would collapse the numbered slots, each with its own cap, that the
+    # entries exist to keep apart.
     names = [h.name for h in register() if h.event == "SessionStart"]
     assert names == ["worktree-link"]
 
@@ -129,7 +130,7 @@ def test_no_handler_in_this_area_ever_denies(tmp_path: Path) -> None:
 def test_discovery_does_not_import_the_configuration_layer() -> None:
     # `tests/test_areas.py` asserts this for the whole package; asserted here too, because it
     # is this area's own discipline that keeps it true — every config import lives inside a
-    # handler body, and a module-level one would redden a test belonging to no wave-2 lane.
+    # handler body, and a module-level one would redden a test belonging to no area at all.
     done = subprocess.run(
         [sys.executable, "-c", LIST_IMPORTS],
         capture_output=True,

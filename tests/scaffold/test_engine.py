@@ -504,9 +504,9 @@ def test_an_unreadable_file_refuses_only_its_own_artifact(tmp_path: Path) -> Non
 
 
 def test_a_doubled_region_marker_refuses_only_its_own_artifact(tmp_path: Path) -> None:
-    # A bad merge, not an internal bug. §7.2 answers it with a refusal for this one artifact,
-    # and `render_report`'s REFUSED section exists to name exactly these — which it can only do
-    # if a plan is returned at all.
+    # A bad merge, not an internal bug. The engine answers it with a refusal for this one artifact,
+    # and `render_report`'s REFUSED section exists to name exactly these — which it can only do if a
+    # plan is returned at all.
     (tmp_path / "AGENTS.md").write_text(
         "PROSE\n"
         "<!-- keelline:harness:begin -->\nfirst\n<!-- keelline:harness:end -->\n"
@@ -883,8 +883,8 @@ def test_a_file_where_a_directory_belongs_refuses_rather_than_raising_oserror(
     tmp_path: Path,
 ) -> None:
     # No race and no symlink: the user saves a file at `docs` while reading the dry-run report,
-    # then confirms. A bare `OSError` here reaches the CLI as a traceback instead of C5's
-    # exit 2, which is what a refusal is for.
+    # then confirms. A bare `OSError` here reaches the CLI as a traceback instead of the exit 2
+    # a refusal is for.
     config = a_config(tmp_path)
     planned = plan(tmp_path, config, [a_template(id="doc", target="docs/README.md")])
     (tmp_path / "docs").write_text("a file the user just saved\n", encoding="utf-8")

@@ -106,10 +106,10 @@ def _seed_overlay(path: Path) -> None:
 
 
 def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> None:
-    # Two machine-level writes, both enumerated by D14. Assert the machine file round-trips
-    # through `read_machine`, and that `<home>/.claude/settings.json` — `setup.api.USER_SETTINGS`,
-    # the one machine-scope settings file this plan writes — carries every rule from the
-    # preset's `[deny] global` and no `allow` key at all.
+    # Two machine-level writes, both on the enumerated list of what `setup` writes. Assert the
+    # machine file round-trips through `read_machine`, and that `<home>/.claude/settings.json` —
+    # `setup.api.USER_SETTINGS`, the one machine-scope settings file `setup` writes — carries every
+    # rule from the preset's `[deny] global` and no `allow` key at all.
     #
     # Mutation: `_write_user_settings`'s `permissions["deny"] = ...` line changed to write
     # `permissions["allow"]` instead → reddens both assertions below (the deny list goes missing
@@ -181,11 +181,10 @@ def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Pat
 
 
 def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
-    # The Runner seam again. Two things could be wrong here that only an argv assertion can
-    # see: the marketplace must be registered *before* anything is installed from it (Fix
-    # round 1, item 2 — a fresh machine cannot install a plugin from a marketplace it never
-    # added), and the install call itself must carry none of the unmeasured `--scope`/`-y`
-    # flags the first draft guessed (item 3).
+    # The Runner seam again. Two things could be wrong here that only an argv assertion can see: the
+    # marketplace must be registered *before* anything is installed from it (a fresh machine cannot
+    # install a plugin from a marketplace it never added), and the install call itself must carry
+    # none of the unmeasured `--scope`/`-y` flags the first draft guessed.
     runner = FakeRunner()
     setup(
         "recommended",
@@ -203,17 +202,17 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
         ["claude", "plugin", "install", f"{selector}@{claude['marketplace']}"]
         for selector in preset["plugins"]["install"]
     ]
-    # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test
-    # is named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so
-    # every install ran before its marketplace was registered -- the exact Fix-round-1 defect --
-    # and both assertions still passed, because both calls were still made. `mutations.toml`
+    # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test is
+    # named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so every
+    # install ran before its marketplace was registered -- the exact defect the first draft shipped
+    # -- and both assertions still passed, because both calls were still made. `mutations.toml`
     # carries the swap as "a plugin is installed before its marketplace is registered".
     assert installs, "the preset installs nothing, so the ordering below measures nothing"
     assert add in runner.calls
     for install in installs:
         assert install in runner.calls
         assert runner.calls.index(add) < runner.calls.index(install), runner.calls
-    # Codex has no verified marketplace for these two plugins (item 2): nothing is attempted.
+    # Codex has no verified marketplace for these two plugins: nothing is attempted.
     assert not any(argv and argv[0] == "codex" for argv in runner.calls)
 
 
@@ -261,10 +260,9 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
 def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
     tmp_path: Path,
 ) -> None:
-    # Fix round 1 follow-up (R15's second clause, finished): a harness this preset cannot
-    # install for on a verified path is a reported note, never silence and never a failure.
-    # `agents = ["claude", "codex"]` is the preset's own default, so an ordinary run reaches
-    # this for every machine that has Codex configured.
+    # A harness this preset cannot install for on a verified path is a reported note, never silence
+    # and never a failure. `agents = ["claude", "codex"]` is the preset's own default, so an
+    # ordinary run reaches this for every machine that has Codex configured.
     preset = load_preset("recommended")
     report = setup(
         "recommended",
@@ -307,9 +305,9 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
 
 
 def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) -> None:
-    # §6.1: `overlay create` runs `gh repo create` "after explicit confirmation". A default
-    # that creates a GitHub repository is the one default this command may not have — and
-    # `--yes`, which confirms creating one, must not stand in for naming one.
+    # `overlay create` runs `gh repo create` only after explicit confirmation. A default that
+    # creates a GitHub repository is the one default this command may not have — and `--yes`, which
+    # confirms creating one, must not stand in for naming one.
     #
     # Mutation: `setup`'s `if overlay is not None:` changed to `if True:` → reddens (the call
     # then reaches `_apply_overlay(None, ...)`, which is exactly the "taken without being
@@ -331,8 +329,9 @@ def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) ->
 def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
     tmp_path: Path,
 ) -> None:
-    # The second of the three answers §8.1's question 2 offers, and the answer a second machine
-    # gives: the overlay already exists and is cloned, and `setup` only records it.
+    # The second of the three answers `--overlay` can give — create one, record an existing one, or
+    # leave the overlay alone — and the answer a second machine gives: the overlay already exists
+    # and is cloned, and `setup` only records it.
     existing = tmp_path / "overlay"
     existing.mkdir()
     _seed_overlay(existing)
@@ -353,10 +352,10 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
 
 
 def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
-    # Item 7: the overlay root is the machine's trust anchor, so an arbitrary directory that
-    # merely happens to exist must not become one. `existing` here is empty — no
-    # `.claude-plugin/plugin.json`, no `marketplace.json` — which is exactly the shape a
-    # careless `--overlay /tmp/whatever` would have.
+    # The overlay root is the machine's trust anchor, so an arbitrary directory that merely happens
+    # to exist must not become one. `existing` here is empty — no `.claude-plugin/plugin.json`, no
+    # `marketplace.json` — which is exactly the shape a careless `--overlay /tmp/whatever` would
+    # have.
     #
     # Mutation (`mutations.toml`, "the overlay probe stops looking for the manifests at all"):
     # `overlay.identity.overlay_fault` stops iterating the manifests → an empty directory is
@@ -376,11 +375,10 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
 
 
 def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
-    # Item 7, the other half and the one the coordinator's ruling calls the wave's actual
-    # control: a path outside the repository that already carries a real overlay layout is not
-    # something a hostile clone can create, but a path *inside* the repository is exactly the
-    # shape of tree a clone can ship — so recording one there is refused regardless of how
-    # convincing its layout is.
+    # The other half, and the control that actually binds: a path outside the repository that
+    # already carries a real overlay layout is not something a hostile clone can create, but a path
+    # *inside* the repository is exactly the shape of tree a clone can ship — so recording one there
+    # is refused regardless of how convincing its layout is.
     #
     # Mutation (`mutations.toml`, "setup stops refusing an overlay root inside the project"):
     # `_outside_the_project`'s path condition becomes `if False:` → a nested overlay is recorded
@@ -405,7 +403,7 @@ def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
 def test_overlay_create_asks_github_and_records_the_new_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The first of §8.1's three answers: nothing exists yet, so `setup` both creates the
+    # The first of `--overlay`'s three answers: nothing exists yet, so `setup` both creates the
     # repository and records what it created — the same probe `overlay.create` uses
     # (`.claude-plugin`) is what tells this test the create branch, and not a no-op, ran.
     #
@@ -438,10 +436,9 @@ def test_overlay_create_asks_github_and_records_the_new_root(
 
 
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
-    # Item 8, and the ruling's other half: creating a repository on GitHub is the one
-    # irreversible, outward-facing act `setup` performs, and §6.1 asks for "explicit
-    # confirmation" before it runs. Naming `create:<owner>/<name>` is not that confirmation by
-    # itself — `--yes` is.
+    # Creating a repository on GitHub is the one irreversible, outward-facing act `setup` performs,
+    # and `gh repo create` runs only after explicit confirmation. Naming `create:<owner>/<name>` is
+    # not that confirmation by itself — `--yes` is.
     #
     # Mutation: `_apply_overlay`'s `if not yes:` line changed to `if False:` → reddens (the
     # repository would then be created without `--yes`).
@@ -470,9 +467,9 @@ def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_att
     # apart from any other refusal `read_binding` might raise for an unrelated reason.
     #
     # No new mutations.toml entry: the guard both arms exercise is `binding.py`'s own
-    # store-must-match-`permitted_roots` check, already load-bearing there under "the overlay
-    # root comes from the machine file and not from the argument" (Wave C) — this test proves
-    # the two ends of the seam agree, not a new line to mutate.
+    # store-must-match-`permitted_roots` check, already load-bearing there under "the overlay root
+    # comes from the machine file and not from the argument" — this test proves the two ends of the
+    # seam agree, not a new line to mutate.
     existing = tmp_path / "overlay"
     existing.mkdir()
     _seed_overlay(existing)
@@ -501,9 +498,9 @@ def test_a_second_run_is_idempotent(tmp_path: Path) -> None:
     # Two runs, one report each; the second installs no plugin twice and leaves the deny list
     # the same length.
     #
-    # No mutation: idempotence here is an emergent property of guards this file already tests
-    # on their own (the deny merge's `existing_deny`, and `write_machine`'s overlay-preserving
-    # read-back from Task 12) run twice, not a separate line of its own.
+    # No mutation: idempotence here is an emergent property of guards this file already tests on
+    # their own (the deny merge's `existing_deny`, and `write_machine`'s overlay-preserving
+    # read-back) run twice, not a separate line of its own.
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     runner = FakeRunner()
@@ -532,10 +529,9 @@ def test_a_second_run_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Path) -> None:
-    # Fix round 1, item 1: the brief's own Task 13 step 1 asks for "[personal] from the
-    # preset's [defaults.personal] overlaid by anything the caller passed" — a preset default
-    # must never win over a value already recorded, whether that value came from the owner's
-    # own hand or from an earlier `setup` run.
+    # `[personal]` is the preset's `[defaults.personal]` overlaid by anything the caller passed — a
+    # preset default must never win over a value already recorded, whether that value came from the
+    # owner's own hand or from an earlier `setup` run.
     #
     # Mutation: `_new_personal_values`'s `return {k: v for k, v in ... if k not in existing}`
     # changed to `return _personal_defaults(preset)` → reddens (the owner's "ru" is overwritten
@@ -589,9 +585,10 @@ def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
 def test_a_missing_keelline_on_path_is_a_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # D2: `uv tool install` has no `--from`, so the positional git URL form is what the note
-    # must name; asserted here rather than left to eyeballing, since it is the one line a typo
-    # in the URL or the tag would hide from every other test in this module.
+    # `uv tool install` has no `--from`, so the positional git URL form pinned to a release tag
+    # (principle 9's immutable pin) is what the note must name; asserted here rather than left to
+    # eyeballing, since it is the one line a typo in the URL or the tag would hide from every other
+    # test in this module.
     monkeypatch.setattr("shutil.which", lambda name: None)
     report = setup(
         "recommended",
@@ -608,7 +605,7 @@ def test_a_missing_keelline_on_path_is_a_note(
     )
 
 
-# --- everything structural, above the first write (review findings 2, 3, 13 and 22) ---
+# --- everything structural, above the first write ---
 
 
 def _wrote_anything(home: Path, machine: Path) -> list[str]:
@@ -622,12 +619,12 @@ def _wrote_anything(home: Path, machine: Path) -> list[str]:
 
 
 def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path) -> None:
-    # Finding 3. `--overlay /typo` used to be validated at the very bottom of `setup`: a stub
-    # runner recorded the marketplace add and both plugin installs, the machine file and
-    # `~/.claude/settings.json` were both on disk, and only then did `Refusal: /typo is not a
-    # directory` propagate — with the `SetupReport` discarded, so the caller saw only the
-    # refusal and never a word about what had already happened. A purely structural check on a
-    # caller-supplied path belongs above the first write.
+    # `--overlay /typo` used to be validated at the very bottom of `setup`: a stub runner recorded
+    # the marketplace add and both plugin installs, the machine file and `~/.claude/settings.json`
+    # were both on disk, and only then did `Refusal: /typo is not a directory` propagate — with the
+    # `SetupReport` discarded, so the caller saw only the refusal and never a word about what had
+    # already happened. A purely structural check on a caller-supplied path belongs above the first
+    # write.
     #
     # Mutation (`mutations.toml`, "setup asks whether --overlay is an overlay after it has
     # already written"): the hoisted `_requested_overlay` call is replaced by one that trusts
@@ -707,13 +704,13 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
 
 
 def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Path) -> None:
-    # Finding 2, the most serious of the eleven: the documented command run from `$HOME` —
-    # `--root` defaulting to `.` — created the private repository on GitHub, cloned it, renamed
-    # both manifests and installed the secret scan, and *then* refused, because `home/<name>`
-    # lies inside the "project root" that `--root` had defaulted to. The machine file was left
-    # with no `[overlay]` table and nothing told the owner the repository now existed.
-    # `home/<name>` needs no created tree: it is `overlay.api.target_root`'s answer, known from
-    # the arguments alone.
+    # The most serious of the structural checks that used to run too late: the documented command
+    # run from `$HOME` — `--root` defaulting to `.` — created the private repository on GitHub,
+    # cloned it, renamed both manifests and installed the secret scan, and *then* refused, because
+    # `home/<name>` lies inside the "project root" that `--root` had defaulted to. The machine file
+    # was left with no `[overlay]` table and nothing told the owner the repository now existed.
+    # `home/<name>` needs no created tree: it is `overlay.api.target_root`'s answer, known from the
+    # arguments alone.
     #
     # Mutation ("setup computes where a created overlay lands only after creating it"): the
     # `_outside_the_project(destination, ...)` call in `_requested_overlay` is dropped, leaving
@@ -738,10 +735,10 @@ def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Pat
 
 
 def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_path: Path) -> None:
-    # Finding 22, first half. The probe was the two manifest *files* existing, which the
-    # Keelline checkout itself satisfies and any Claude Code plugin repository satisfies — so
-    # "carries the overlay's own layout" excluded almost nothing. The manifests are now read,
-    # and have to name the tree `keelline-overlay[-<owner>]`.
+    # The probe was the two manifest *files* existing, which the Keelline checkout itself satisfies
+    # and any Claude Code plugin repository satisfies — so "carries the overlay's own layout"
+    # excluded almost nothing. The manifests are now read, and have to name the tree
+    # `keelline-overlay[-<owner>]`.
     #
     # Mutation ("the overlay probe stops reading what the manifests name"): `identity`'s
     # `_claims` arm is dropped → this directory is accepted and the refusal never fires.
@@ -766,11 +763,11 @@ def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_p
 
 
 def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> None:
-    # Finding 22, second half. The containment refused `candidate == project` or `project in
-    # candidate.parents` and nothing else, so a *parent* passed — and `git worktree add
-    # .worktrees/x`, which this project's own `worktree-by-default` preset rule makes the
-    # ordinary case, puts `--root` exactly there. A clone shipping its two manifests at its own
-    # root was then accepted as the machine's trust anchor.
+    # The containment refused `candidate == project` or `project in candidate.parents` and nothing
+    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which this project's own
+    # `worktree-by-default` preset rule makes the ordinary case, puts `--root` exactly there. A
+    # clone shipping its two manifests at its own root was then accepted as the machine's trust
+    # anchor.
     #
     # Mutation ("setup stops refusing an overlay root that holds the project"): the
     # `or resolved_candidate in resolved_project.parents` arm becomes `or False` → the clone's
@@ -778,7 +775,7 @@ def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> No
     clone = tmp_path / "clone"
     clone.mkdir()
     _seed_overlay(clone)
-    worktree = clone / ".worktrees" / "wave-1"
+    worktree = clone / ".worktrees" / "feature"
     worktree.mkdir(parents=True)
     with pytest.raises(Refusal, match="holds it, or is it"):
         setup(
@@ -793,12 +790,11 @@ def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> No
 
 
 def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: Path) -> None:
-    # Finding 22, the case no path comparison can see: `git worktree add ../side` is git's own
-    # documented layout and this repository's own convention, and a worktree beside the checkout
-    # is neither inside it nor above it. The clone's manifests sit in the *other* checkout of
-    # the same repository, so both path arms passed and the tree a clone ships was recorded.
-    # `git worktree list`, asked from the project, is what tells two checkouts of one repository
-    # apart from two repositories.
+    # The case no path comparison can see: `git worktree add ../side` is git's own documented layout
+    # and this repository's own convention, and a worktree beside the checkout is neither inside it
+    # nor above it. The clone's manifests sit in the *other* checkout of the same repository, so
+    # both path arms passed and the tree a clone ships was recorded. `git worktree list`, asked from
+    # the project, is what tells two checkouts of one repository apart from two repositories.
     #
     # No mutation reddens this alone: the project's listing and the candidate-side walk both
     # refuse it. Each is proven by a test only it catches — the bare-shaped directory that
@@ -810,8 +806,8 @@ def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: P
     (clone / "README.md").write_text("x", encoding="utf-8")
     _git(clone, "add", "-A")
     _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
-    worktree = tmp_path / "clone.worktrees" / "wave-1"
-    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
+    worktree = tmp_path / "clone.worktrees" / "feature"
+    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "feature")
     assert clone.resolve() not in worktree.resolve().parents, "beside the checkout, not under it"
     with pytest.raises(Refusal, match="same repository"):
         setup(
@@ -850,8 +846,8 @@ def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refus
     (clone / "README.md").write_text("x", encoding="utf-8")
     _git(clone, "add", "-A")
     _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
-    worktree = tmp_path / "clone.worktrees" / "wave-1"
-    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
+    worktree = tmp_path / "clone.worktrees" / "feature"
+    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "feature")
     real_git = shutil.which("git")
     assert real_git is not None
     bin_dir = tmp_path / "bin"
@@ -937,8 +933,8 @@ def _clone_with_a_bare_shaped_directory(tmp_path: Path, ov_config: str = "") -> 
         (project / "ov" / "config").write_text(ov_config, encoding="utf-8")
     _commit_a_bare_shaped_directory(project)
     worktrees = tmp_path / "proj.wt"
-    _git(project, "worktree", "add", "-q", str(worktrees / "wave-1"), "-b", "wave-1")
-    _git(project, "worktree", "add", "-q", str(worktrees / "wave-2"), "-b", "wave-2")
+    _git(project, "worktree", "add", "-q", str(worktrees / "feature"), "-b", "feature")
+    _git(project, "worktree", "add", "-q", str(worktrees / "bugfix"), "-b", "bugfix")
     return project, worktrees
 
 
@@ -966,14 +962,14 @@ def _record(tmp_path: Path, overlay: Path, project_root: Path) -> None:
 
 
 @pytest.mark.parametrize("git_version", GITS)
-@pytest.mark.parametrize("root", ["proj", "proj.wt/wave-2", "proj.wt/wave-2/no/such/dir"])
+@pytest.mark.parametrize("root", ["proj", "proj.wt/bugfix", "proj.wt/bugfix/no/such/dir"])
 def test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: str, git_version: str
 ) -> None:
     # The sibling-checkout arm asked `git rev-parse --git-common-dir` *from inside the
     # candidate*, and git answered for the committed `ov/` rather than for the checkout it sits
-    # in: `proj.wt/wave-1/ov` reported itself as its own common directory, so it was "not the
-    # same repository" and was recorded — while `proj.wt/wave-1` itself was refused. The
+    # in: `proj.wt/feature/ov` reported itself as its own common directory, so it was "not the
+    # same repository" and was recorded — while `proj.wt/feature` itself was refused. The
     # checkouts are now listed from the project's side, which the candidate's bytes cannot reach.
     #
     # The listing and the candidate-side arm each refuse this layout, so breaking either one
@@ -987,7 +983,7 @@ def test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor
     _as(git_version, monkeypatch)
     _clone_with_a_bare_shaped_directory(tmp_path)
     with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, tmp_path / "proj.wt" / "wave-1" / "ov", tmp_path / root)
+        _record(tmp_path, tmp_path / "proj.wt" / "feature" / "ov", tmp_path / root)
     assert not (tmp_path / "config.toml").exists(), "refused above the first write"
 
 
@@ -1008,8 +1004,8 @@ def test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused(
     (project / "ov").mkdir()
     (project / "ov" / "config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
     _commit_a_bare_shaped_directory(project)
-    linked = tmp_path / "proj.wt" / "wave-1"
-    _git(project, "worktree", "add", "-q", str(linked), "-b", "wave-1")
+    linked = tmp_path / "proj.wt" / "feature"
+    _git(project, "worktree", "add", "-q", str(linked), "-b", "feature")
     with pytest.raises(Refusal, match="same repository"):
         _record(tmp_path, linked / "ov", project)
 
@@ -1021,7 +1017,7 @@ def test_a_root_inside_a_bare_shaped_directory_is_refused(
 ) -> None:
     # The same shape from the project's side: run from `proj/ov`, git's own discovery stops at
     # `ov/` and names *it* as the repository, whose only "checkout" is itself — so the sibling
-    # `proj.wt/wave-1/ov` lies outside every listed checkout and every path arm. git's answer
+    # `proj.wt/feature/ov` lies outside every listed checkout and every path arm. git's answer
     # says `ov/` is not inside a work tree — even when a committed `ov/config` says
     # `core.bare = false` (`claims-a-checkout`) — and on every git version that is what refuses:
     # a project root with no checkout of its own to compare against is not one.
@@ -1033,7 +1029,7 @@ def test_a_root_inside_a_bare_shaped_directory_is_refused(
     config = "[core]\n\tbare = false\n" if ov_config == "claims-a-checkout" else ""
     project, _ = _clone_with_a_bare_shaped_directory(tmp_path, config)
     with pytest.raises(Refusal, match="bare repository"):
-        _record(tmp_path, tmp_path / "proj.wt" / "wave-1" / "ov", project / "ov")
+        _record(tmp_path, tmp_path / "proj.wt" / "feature" / "ov", project / "ov")
     assert not (tmp_path / "config.toml").exists(), "refused above the first write"
 
 
@@ -1057,7 +1053,7 @@ def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_th
 
     monkeypatch.setattr("keelline.setup.run.git_run", silent_off_the_project)
     with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, worktrees / "wave-1" / "ov", project)
+        _record(tmp_path, worktrees / "feature" / "ov", project)
 
 
 @pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout", "points-elsewhere"])
@@ -1137,16 +1133,16 @@ def test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule(
 
 
 def test_a_sibling_checkout_spelled_in_another_case_is_still_refused(tmp_path: Path) -> None:
-    # On a volume that folds case — macOS's default — `PROJ.WT/wave-1/ov` is the sibling
+    # On a volume that folds case — macOS's default — `PROJ.WT/feature/ov` is the sibling
     # checkout's `ov/`, and `Path.resolve()` keeps the case it was given, so a string comparison
-    # against the listed `proj.wt/wave-1` said "outside". Directories are now compared as the
+    # against the listed `proj.wt/feature` said "outside". Directories are now compared as the
     # filesystem sees them.
     #
     # No mutation entry: the oracle runs on Linux, where this layout cannot exist and the test
     # skips, so an entry would be reported as proving nothing. `_overlaps`' own arms are pinned
     # by the entries on the inside and holds tests.
     project, _ = _clone_with_a_bare_shaped_directory(tmp_path)
-    candidate = tmp_path / "PROJ.WT" / "wave-1" / "ov"
+    candidate = tmp_path / "PROJ.WT" / "feature" / "ov"
     if not candidate.is_dir():
         pytest.skip("this filesystem is case-sensitive")
     with pytest.raises(Refusal, match="same repository"):
@@ -1383,7 +1379,7 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
     overlay.mkdir()
     _git(overlay, "init", "-q", "-b", "main")
     _seed_overlay(overlay)
-    for root in (project, worktrees / "wave-1"):
+    for root in (project, worktrees / "feature"):
         machine = tmp_path / f"{root.name}.toml"
         report = setup(
             "recommended",
@@ -1399,12 +1395,12 @@ def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
 
 
 def test_a_symlinked_claude_directory_is_a_refusal_that_names_the_link(tmp_path: Path) -> None:
-    # Finding 13. `fsops.write_within` walks `.claude` with `O_NOFOLLOW`, so a home managed by
-    # stow, chezmoi or a synced directory raised `UnsafePath` — which `cli.run`'s final handler
-    # renders as `keelline: internal error: UnsafePath: …`, exit 2, for the most common
-    # non-default home layout there is, and only *after* the machine file had been written. The
-    # containment rule has two stages and this lane had only the second; `config.paths.contained`
-    # is the first, and it now runs above the first write and names the link and the way out.
+    # `fsops.write_within` walks `.claude` with `O_NOFOLLOW`, so a home managed by stow, chezmoi or
+    # a synced directory raised `UnsafePath` — which `cli.run`'s final handler renders as
+    # `keelline: internal error: UnsafePath: …`, exit 2, for the most common non-default home
+    # layout there is, and only *after* the machine file had been written. The containment rule
+    # has two stages and this lane had only the second; `config.paths.contained` is the first,
+    # and it now runs above the first write and names the link and the way out.
     #
     # Mutation ("setup meets a symlinked ~/.claude only at write time"): the
     # `_check_settings_path(home)` call is dropped → the write-time floor still refuses, so the
@@ -1460,13 +1456,13 @@ def test_a_claude_directory_that_becomes_a_symlink_after_the_check_is_still_refu
 
 
 def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
-    # Finding 21. The mirror was written from `_new_personal_values`, which is empty on every
-    # run after the first — so an owner who set `reply_language` in the machine file, the
-    # documented way (`README.md`: "Written by: you, or `keelline setup`"), kept `""` in
-    # `~/.claude/settings.json` for ever, and Claude Code read that. The mirror is a projection
-    # of the machine file and is recomputed from it on every run. The direction is a decision,
-    # recorded in `setup.run`: a value set in Claude Code's own plugin-config UI loses to the
-    # machine file, because one file has to win and that one is the file every reader reads.
+    # The mirror was written from `_new_personal_values`, which is empty on every run after the
+    # first — so an owner who set `reply_language` in the machine file, the documented way
+    # (`README.md`: "Written by: you, or `keelline setup`"), kept `""` in `~/.claude/settings.json`
+    # for ever, and Claude Code read that. The mirror is a projection of the machine file and is
+    # recomputed from it on every run. The direction is a decision, recorded in `setup.run`: a value
+    # set in Claude Code's own plugin-config UI loses to the machine file, because one file has to
+    # win and that one is the file every reader reads.
     #
     # Mutation ("setup mirrors only the values this run itself added"): the argument goes back
     # to `personal` → the second run leaves `""` in the settings file and this reddens.
@@ -1540,13 +1536,14 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
 def test_the_home_a_symlinked_settings_file_suggests_is_one_that_works(
     tmp_path: Path, per_file: bool
 ) -> None:
-    # The remedy is only worth printing if following it does what it says. `stow` folds a package
-    # as far as it can, so with `~/.claude` already created by Claude Code it links the *file* and
-    # not the directory — and the first draft's arm compared the link's basename to its target's,
-    # which is trivially true for a per-file link. It printed `--home <dotfiles>/claude`, under
-    # which this command writes `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the
-    # file the link leads to untouched: finding 14's shape arriving through the remedy. So the
-    # test follows the advice rather than matching a string, in both shapes of the accident.
+    # The remedy is only worth printing if following it does what it says. `stow` folds a package as
+    # far as it can, so with `~/.claude` already created by Claude Code it links the *file* and not
+    # the directory — and the first draft's arm compared the link's basename to its target's, which
+    # is trivially true for a per-file link. It printed `--home <dotfiles>/claude`, under which this
+    # command writes `<dotfiles>/claude/.claude/settings.json`, exits 0, and leaves the file the
+    # link leads to untouched: the same shape as a `--machine` default that wrote a file no reader
+    # reads, arriving through the remedy. So the test follows the advice rather than matching a
+    # string, in both shapes of the accident.
     #
     # Mutation (`mutations.toml`, "the symlink remedy prints a --home that writes somewhere
     # else"): `_home_that_leads_there` stops checking that the link leads to a
@@ -1622,10 +1619,10 @@ def test_a_home_layout_no_home_can_express_says_so_rather_than_printing_a_comman
 def test_a_per_file_settings_link_is_written_through_settings_and_not_under_home(
     tmp_path: Path,
 ) -> None:
-    # R3: `stow` links `~/.claude/settings.json` itself into a dotfiles tree, and no `--home`
-    # value writes that file — `--home <dotfiles>/claude` writes `<dotfiles>/claude/.claude/
-    # settings.json`. `--settings PATH` names the file. The link under `home` is left exactly
-    # as it was; the dotfiles file gains the deny rules; nothing new appears under `home`.
+    # `stow` links `~/.claude/settings.json` itself into a dotfiles tree, and no `--home` value
+    # writes that file — `--home <dotfiles>/claude` writes `<dotfiles>/claude/.claude/
+    # settings.json`. `--settings PATH` names the file. The link under `home` is left exactly as it
+    # was; the dotfiles file gains the deny rules; nothing new appears under `home`.
     #
     # Mutation (declared): the `root, relative = …` line -> `(home, USER_SETTINGS)`
     # unconditionally. What it actually does is recorded beside the assertion below.
@@ -1694,11 +1691,11 @@ def test_a_settings_path_whose_directory_is_not_there_is_refused_before_anything
 def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_internal_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fix round 1, item 2. `_write_user_settings` caught only `UnsafePath`, and `write_within`
-    # opens the root itself before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root
-    # that is not there raises a bare `FileNotFoundError`, which left the library and reached
-    # `cli.run`'s final handler as `keelline: internal error`, exit 2, no remedy. A typo in
-    # `--settings`' directory component is the ordinary way to get there.
+    # `_write_user_settings` caught only `UnsafePath`, and `write_within` opens the root itself
+    # before the loop that wraps `ELOOP`/`ENOTDIR` into one — so a root that is not there raises a
+    # bare `FileNotFoundError`, which left the library and reached `cli.run`'s final handler as
+    # `keelline: internal error`, exit 2, no remedy. A typo in `--settings`' directory component is
+    # the ordinary way to get there.
     #
     # This is now the FLOOR under the case above rather than the case itself:
     # `_check_settings_parent` refuses the same two conditions one stage earlier, so the
@@ -1731,12 +1728,12 @@ def test_a_settings_path_whose_directory_is_not_there_is_a_refusal_and_not_an_in
 def test_a_settings_path_inside_a_symlinked_directory_is_a_refusal_and_not_an_internal_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The other half of item 2, and the layout `--settings` is advertised for one door over:
+    # The other half of that defect, and the layout `--settings` is advertised for one door over:
     # `--settings ~/.claude/settings.json` where `~/.claude` is itself the stow link. The walk
-    # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare
-    # `OSError` rather than as `UnsafePath`, for the same reason as above. The first stage is
-    # patched out for the reason the case above gives: it now refuses a symlinked directory too,
-    # and this one is the floor beneath it.
+    # carries `O_NOFOLLOW`, so the root open refuses the link — and refused it as a bare `OSError`
+    # rather than as `UnsafePath`, for the same reason as above. The first stage is patched out for
+    # the reason the case above gives: it now refuses a symlinked directory too, and this one is the
+    # floor beneath it.
     monkeypatch.setattr("keelline.setup.run._check_settings_parent", lambda settings: None)
     home = tmp_path / "home"
     real = tmp_path / "dotfiles" / "claude"

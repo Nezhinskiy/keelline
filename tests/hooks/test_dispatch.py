@@ -282,7 +282,7 @@ def test_policy_is_taken_from_handlers_that_failed_not_from_all_registered() -> 
 
 def test_a_cap_below_the_envelope_is_recorded_and_emits_nothing() -> None:
     # No JSON envelope fits in 20 characters, so the honest output is none at all: anything
-    # longer than the cap is replaced by the platform with a preview and a file path (§9.5).
+    # longer than the cap is replaced by the platform with a preview and a file path.
     recorder = Recorder()
     handlers = [handler("a", Policy.OPEN, HookResult(context="x" * 50))]
     outcome = dispatch(event(), handlers, None, sink=recorder, cap=20)
