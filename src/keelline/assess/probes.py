@@ -31,7 +31,6 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import accumulate
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -231,14 +230,13 @@ _WILD = re.compile(r"[*?]+")
 _ODD = re.compile(r"[^\S \t]|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 _SEPARATORS = re.compile(r"[\s\x00-\x1f\x7f-\x9f]+")
 
-# The work `codeowners-scope` may spend on the workflows a repository already has, in
-# characters: each workflow asked is counted as the code-owners file's length times its path's.
-# The file is read once, and a match refuses most lines in one string operation and walks the
-# rest within their own length times the path's, so that product bounds what a workflow costs
-# whatever shape the file takes. Both lengths are the repository's: a 20 KB file and 300
-# workflows are asked in full, and the largest file GitHub loads is asked about a few workflows,
-# in a few seconds. Past it the workflows not asked are could not look, never owned.
-SCOPE_WORK_MAX = 300_000_000
+# The steps `codeowners-scope` may take asking about the workflows a repository already has,
+# counted as `_Meter` counts them, as they are taken. Every kind of step costs at most about
+# what one step of `_glob`'s walk does, so the budget is a few seconds of matching whatever the
+# file holds, and a file that asks little asks everything: a 20 KB file of team lines spends
+# about 3,000 steps on a workflow, and 300 workflows spend a thirtieth of the budget. Past it
+# the workflows not yet asked are could not look, never owned.
+SCOPE_STEPS_MAX = 30_000_000
 
 # GitHub does not load a code-owners file of 3 MB or more. Decimal megabytes: of the two
 # readings it is the smaller bound, so a file between them is read as unowned, the side that
@@ -246,7 +244,33 @@ SCOPE_WORK_MAX = 300_000_000
 CODEOWNERS_MAX_BYTES = 3_000_000
 
 
-def _glob(pattern: str, name: str) -> bool:
+class _Spent(Exception):
+    """A `_Meter` ran out of steps part-way through a match."""
+
+
+@dataclass(slots=True)
+class _Meter:
+    """The steps a run of matches may still take, counted as they are taken. Each is work the
+    repository chooses how much of, weighted to cost about what one step of `_glob`'s walk does:
+
+    - every rule `_governed` visits, one step, and one more for each eight characters of the
+      path its one-operation refusal searches;
+    - every rule `_matches` reaches past those refusals, one step for each cell of its table;
+    - every component `_glob` is asked about, one step for each of its characters;
+    - every step of the walk.
+
+    Spending past the steps raises `_Spent`. A pass over the rules and a walk are counted when
+    they end, so the last of each may run past the budget by its own length."""
+
+    left: int
+
+    def spend(self, steps: int) -> None:
+        self.left -= steps
+        if self.left < 0:
+            raise _Spent
+
+
+def _glob(pattern: str, name: str, meter: _Meter | None = None) -> bool:
     """One path component against one pattern component: `*` is any run of characters and `?`
     is one, and everything else is itself.
 
@@ -260,6 +284,8 @@ def _glob(pattern: str, name: str) -> bool:
     name's. A component with no `?` is then answered by finding each run in turn, since the
     leftmost place a run can go leaves the most room for the rest; only one with a `?` is walked.
     """
+    if meter is not None:
+        meter.spend(len(pattern))
     first = min((i for i in (pattern.find("*"), pattern.find("?")) if i >= 0), default=-1)
     if first < 0:
         return pattern == name
@@ -280,9 +306,11 @@ def _glob(pattern: str, name: str) -> bool:
                 return False
             at += len(piece)
         return True
-    p = n = 0
+    p = n = steps = 0
     star, resume = -1, 0
+    walked = True
     while n < len(name):
+        steps += 1
         if p < len(pattern) and pattern[p] in ("?", name[n]):
             p, n = p + 1, n + 1
         elif p < len(pattern) and pattern[p] == "*":
@@ -291,8 +319,11 @@ def _glob(pattern: str, name: str) -> bool:
             resume += 1
             p, n = star + 1, resume
         else:
-            return False
-    return pattern[p:].strip("*") == ""
+            walked = False
+            break
+    if meter is not None:
+        meter.spend(steps)
+    return walked and pattern[p:].strip("*") == ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +360,9 @@ def _pattern(text: str) -> _Pattern:
     return _Pattern(kept, text.endswith("/"), sum(part != "**" for part in kept), needle)
 
 
-def _matches(pattern: _Pattern, path: str, names: tuple[str, ...]) -> bool:
+def _matches(
+    pattern: _Pattern, path: str, names: tuple[str, ...], meter: _Meter | None = None
+) -> bool:
     """Whether `pattern` matches the file `path`, whose components are `names`: the file
     itself, or a directory above it, which owns what is below it.
 
@@ -352,6 +385,8 @@ def _matches(pattern: _Pattern, path: str, names: tuple[str, ...]) -> bool:
     if pattern.fixed > end or pattern.needle not in path:
         return False
     parts, directory = pattern.parts, pattern.directory
+    if meter is not None:
+        meter.spend(len(parts) * (end + 1))
     first = 1 if directory or parts[-1] != "*" else end  # direct children only
     last = end - 1 if directory else end
     ahead = [first <= j <= last for j in range(end + 1)]
@@ -360,7 +395,10 @@ def _matches(pattern: _Pattern, path: str, names: tuple[str, ...]) -> bool:
             least = 1 if i == len(parts) - 1 else 0
             ahead = [any(ahead[j + least :]) for j in range(end + 1)]
         else:
-            ahead = [j < end and ahead[j + 1] and _glob(parts[i], names[j]) for j in range(end + 1)]
+            ahead = [
+                j < end and ahead[j + 1] and _glob(parts[i], names[j], meter)
+                for j in range(end + 1)
+            ]
         if not any(ahead):
             return False  # no start left for the components before this one
     return ahead[0]
@@ -436,13 +474,21 @@ def _rules(text: str) -> tuple[tuple[_Pattern, bool], ...]:
     return tuple(rules.items())
 
 
-def _governed(rules: tuple[tuple[_Pattern, bool], ...], path: str) -> bool:
+def _governed(
+    rules: tuple[tuple[_Pattern, bool], ...], path: str, meter: _Meter | None = None
+) -> bool:
     """Whether the rule governing `path` names an owner: the last matching one wins, and a
-    pattern with no owner leaves the path unowned."""
-    names = tuple(path.split("/"))
-    return next(
-        (owned for pattern, owned in reversed(rules) if _matches(pattern, path, names)), False
-    )
+    pattern with no owner leaves the path unowned. With a `meter`, every step is spent from it,
+    and running out raises `_Spent`."""
+    names, visited, owned = tuple(path.split("/")), 0, False
+    for pattern, owns in reversed(rules):
+        visited += 1
+        if _matches(pattern, path, names, meter):
+            owned = owns
+            break
+    if meter is not None:
+        meter.spend(visited * (1 + len(path) // 8))
+    return owned
 
 
 def _codeowners(context: ProbeContext) -> Looked:
@@ -470,7 +516,7 @@ def _codeowners_scope(context: ProbeContext) -> Looked:
     `where` when its path is inside `PATH_VALUE`, and otherwise under `.github/workflows/`, since
     the name is the repository's. Silent wherever `codeowners` itself reports — no file, the
     workflow unowned, a file it could not read — so one gap is one warning; a workflows directory
-    it could not list, and the workflows past `SCOPE_WORK_MAX`, are could not look.
+    it could not list, and the workflows past `SCOPE_STEPS_MAX`, are could not look.
     """
     from keelline.project.api import CI_WORKFLOW
 
@@ -484,10 +530,15 @@ def _codeowners_scope(context: ProbeContext) -> Looked:
     if not _governed(rules, CI_WORKFLOW):
         return Looked()
     existing = _foreign_workflows(context)
-    spent = accumulate(len(text) * len(path) for path in existing.where)
-    asked = existing.where[: sum(total <= SCOPE_WORK_MAX for total in spent)]
-    unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))
-    unowned = [path for path in asked if not _governed(rules, path)]
+    meter, unowned, asked = _Meter(SCOPE_STEPS_MAX), [], 0
+    try:
+        for path in existing.where:
+            if not _governed(rules, path, meter):
+                unowned.append(path)
+            asked += 1
+    except _Spent:
+        pass  # the rest are not asked
+    unread = existing.unread or (() if asked == len(existing.where) else (_WORKFLOWS,))
     named = [path for path in unowned if PATH_VALUE.match(path)]
     added = all(_governed(rules, path) for path in _ANY_WORKFLOWS)
     where = [] if added and len(named) == len(unowned) else [_UNOWNED]

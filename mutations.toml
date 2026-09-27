@@ -10534,8 +10534,8 @@ reddens = [
 [[mutation]]
 name = "the scope probe never asks about a workflow the repository has"
 file = "src/keelline/assess/probes.py"
-before = "    unowned = [path for path in asked if not _governed(rules, path)]"
-after = "    unowned: list[str] = []"
+before = "                unowned.append(path)"
+after = "                pass"
 reddens = [
   "tests/assess/test_probes.py::test_a_workflow_the_repository_has_is_reported_where_no_one_owns_it",
 ]
@@ -10549,29 +10549,74 @@ reddens = [
   "tests/assess/test_probes.py::test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_directory",
 ]
 
+# The existing workflows are asked under a budget of steps a meter counts as they are taken,
+# each kind of work by what it costs, so a file that asks little asks everything and a file
+# built to be slow stops at the budget, the rest could not look.
 [[mutation]]
 name = "the scope probe asks every workflow whatever the budget"
 file = "src/keelline/assess/probes.py"
-before = "    asked = existing.where[: sum(total <= SCOPE_WORK_MAX for total in spent)]"
-after = "    asked = existing.where"
+before = "            raise _Spent"
+after = "            pass"
 reddens = [
-  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+  "tests/assess/test_probes.py::test_workflows_past_the_step_budget_are_could_not_look_and_never_owned",
+  "tests/assess/test_probes.py::test_a_file_built_to_walk_every_rule_stops_at_the_step_budget",
 ]
 
 [[mutation]]
-name = "the scope budget counts lines, not characters"
+name = "the meter does not count the rules a match visits"
 file = "src/keelline/assess/probes.py"
-before = "    spent = accumulate(len(text) * len(path) for path in existing.where)"
-after = '    spent = accumulate(text.count("\n") + 1 for path in existing.where)'
+before = "        meter.spend(visited * (1 + len(path) // 8))"
+after = "        meter.spend(0)"
 reddens = [
-  "tests/assess/test_probes.py::test_workflows_past_the_work_budget_are_could_not_look_and_never_owned",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[refused-rules]",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-table]",
+]
+
+[[mutation]]
+name = "the meter does not count the path a refusal searches"
+file = "src/keelline/assess/probes.py"
+before = "        meter.spend(visited * (1 + len(path) // 8))"
+after = "        meter.spend(visited)"
+reddens = [
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[refused-rules]",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-table]",
+]
+
+[[mutation]]
+name = "the meter does not count a rule's table"
+file = "src/keelline/assess/probes.py"
+before = "        meter.spend(len(parts) * (end + 1))"
+after = "        meter.spend(0)"
+reddens = [
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-table]",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-walk]",
+]
+
+[[mutation]]
+name = "the meter does not count a component's characters"
+file = "src/keelline/assess/probes.py"
+before = "        meter.spend(len(pattern))"
+after = "        meter.spend(0)"
+reddens = [
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-table]",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-walk]",
+]
+
+[[mutation]]
+name = "the meter does not count the walk"
+file = "src/keelline/assess/probes.py"
+before = "        meter.spend(steps)"
+after = "        meter.spend(0)"
+reddens = [
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-walk]",
+  "tests/assess/test_probes.py::test_a_file_built_to_walk_every_rule_stops_at_the_step_budget",
 ]
 
 [[mutation]]
 name = "the scope budget is too small to ask a monorepo's workflows"
 file = "src/keelline/assess/probes.py"
-before = "SCOPE_WORK_MAX = 300_000_000"
-after = "SCOPE_WORK_MAX = 200_000_000"
+before = "SCOPE_STEPS_MAX = 30_000_000"
+after = "SCOPE_STEPS_MAX = 500_000"
 reddens = [
   "tests/assess/test_probes.py::test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow",
 ]
@@ -10583,6 +10628,7 @@ before = '        "**" if len(part) > 1 and not part.strip("*") else _STAR_RUN.s
 after = '        "**" if len(part) > 1 and not part.strip("*") else part'
 reddens = [
   "tests/assess/test_probes.py::test_a_run_of_stars_inside_a_component_is_read_once_as_one_star",
+  "tests/assess/test_probes.py::test_the_meter_counts_each_kind_of_work_a_match_does[a-run-of-stars]",
 ]
 
 # A code-owners line is read on spaces and tabs, with a comment only from a `#` at the line's
@@ -10619,8 +10665,8 @@ reddens = [
 [[mutation]]
 name = "the scope probe reads a workflows directory it could not list as nothing unowned"
 file = "src/keelline/assess/probes.py"
-before = "    unread = existing.unread or (() if asked == existing.where else (_WORKFLOWS,))"
-after = "    unread = () if asked == existing.where else (_WORKFLOWS,)"
+before = "    unread = existing.unread or (() if asked == len(existing.where) else (_WORKFLOWS,))"
+after = "    unread = () if asked == len(existing.where) else (_WORKFLOWS,)"
 reddens = [
   "tests/assess/test_probes.py::test_a_workflows_directory_scope_cannot_read_is_could_not_look",
 ]

@@ -835,41 +835,106 @@ def test_an_unowned_workflow_outside_the_path_grammar_is_reported_under_the_dire
     ]
 
 
-def test_workflows_past_the_work_budget_are_could_not_look_and_never_owned(
+def test_workflows_past_the_step_budget_are_could_not_look_and_never_owned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Each existing workflow asked costs the code-owners file's length times its path's, and
-    # both are the repository's. A bound on lines let one long line cost what a whole file does:
-    # here the file is two lines, one of them a hundred thousand `*`, and the budget covers the
-    # first two workflows' work, so `a.yaml` and `b.yaml` are asked and `c.yaml` is could not
-    # look. Mutations (oracle): "the scope probe asks every workflow whatever the budget" and
-    # "the scope budget counts lines, not characters" -> `c.yaml` is named, nothing is could not
-    # look, and this reddens.
+    # The existing workflows are asked in turn, and the steps each takes are spent from one
+    # budget. Here an owner-less line of a hundred thousand `*` takes every workflow back, and
+    # the budget is exactly what `a.yaml` and `b.yaml` take, so both are asked and named, and
+    # `c.yaml` is could not look rather than owned or named. Mutation (oracle): "the
+    # scope probe asks every workflow whatever the budget" -> `c.yaml` is named, nothing is could
+    # not look, and this reddens.
     root = _repo(tmp_path)
     for name in ("keelline.yml", "a.yaml", "b.yaml", "c.yaml"):
         _write(root, f".github/workflows/{name}", "on: push\n")
     text = "/.github/ @owner\n" + "*" * 100_000 + ".yaml\n"
     _write(root, ".github/CODEOWNERS", text)
     asked = (".github/workflows/a.yaml", ".github/workflows/b.yaml")
-    monkeypatch.setattr(probes, "SCOPE_WORK_MAX", sum(len(text) * len(path) for path in asked))
+    rules, meter = probes._rules(text), probes._Meter(10**9)
+    for path in asked:
+        probes._governed(rules, path, meter)
+    monkeypatch.setattr(probes, "SCOPE_STEPS_MAX", 10**9 - meter.left)
     assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
         ("codeowners-scope", (OWNED_WORKFLOWS, *asked)),
         (COULD_NOT_LOOK, (".github/workflows",)),
     ]
 
 
-def test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow(tmp_path: Path) -> None:
-    # The budget is sized for the file a large repository keeps: 20 KB of team lines and 300
-    # workflows are asked in full, and the last workflow, which a later owner-less line takes
-    # back, is named rather than could not look. Mutation (oracle): "the scope budget is too
-    # small to ask a monorepo's workflows" -> the budget runs out part-way and this reddens.
+# A workflow path of 222 characters: every rule visited costs 1 + 222 // 8 = 28 steps.
+LONG_WORKFLOW = ".github/workflows/" + "a" * 200 + ".yml"
+
+
+@pytest.mark.parametrize(
+    ("text", "spent"),
+    [
+        # A thousand rules, each refused in one string operation: `x<n>` is not in the path.
+        ("".join(f"/x{n}/ @o\n" for n in range(1000)), 1000 * 28),
+        # One rule reaching its table, three components by four cells, whose `b*` is asked of
+        # each of the path's three names, two characters each, and refuses them all.
+        ("/.github/workflows/b* @o\n", 28 + 3 * 4 + 3 * 2),
+        # A last component of 204 `?`, asked of each of the three names: the length refuses the
+        # first two, the walk takes 204 steps over the file's name, and then `workflows` and
+        # `.github` are asked of theirs.
+        ("/.github/workflows/" + "?" * 204 + " @o\n", 28 + 3 * 4 + 3 * 204 + 204 + 9 + 7),
+        # A run of a hundred thousand stars costs what one does: `**` and `*.yml`, two
+        # components by four cells, and `*.yml` asked of the three names, five characters each.
+        ("*" * 100_000 + ".yml @o\n", 28 + 2 * 4 + 3 * 5),
+    ],
+    ids=["refused-rules", "a-table", "a-walk", "a-run-of-stars"],
+)
+def test_the_meter_counts_each_kind_of_work_a_match_does(text: str, spent: int) -> None:
+    # The budget meters the work a match does, as it does it, so a file that asks little asks
+    # every workflow and a file built to be slow stops at the budget. Each kind of step is
+    # counted here exactly: a rule visited, one step and one for each eight characters of the
+    # path; a table, one for each cell; a component asked about, one for each character; a
+    # walk, one for each step. Mutations (oracle): "the meter does not count the rules a match
+    # visits", "… the path a refusal searches", "… a rule's table", "… a component's
+    # characters" and "… the walk" -> the cases holding that work count less and redden; "a run
+    # of stars is walked at every match" -> `a-run-of-stars` counts each star and reddens.
+    meter = probes._Meter(10**9)
+    probes._governed(probes._rules(text), LONG_WORKFLOW, meter)
+    assert 10**9 - meter.left == spent
+
+
+def test_a_file_built_to_walk_every_rule_stops_at_the_step_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each line is `*`, sixty of `a` and `?`, then `.yml?`: it passes every one-operation
+    # refusal against a long name, walks about its own length times the name's, and matches
+    # nothing, so a file of them costs every workflow its whole length in walking. The steps are
+    # spent as they are taken, so the probe stops at the budget, here a tenth of its real value,
+    # and the workflows it did not reach are could not look. Mutation (oracle): "the meter does
+    # not count the walk" -> every workflow is asked, nothing is could not look, and this
+    # reddens.
     root = _repo(tmp_path)
-    names = [f"service-{i:03d}-deploy.yml" for i in range(300)]
+    for name in ("keelline.yml", *(f"{c}{'a' * 235}.yml" for c in "bcdef")):
+        _write(root, f".github/workflows/{name}", "on: push\n")
+    lines = [
+        "*" + "".join("a?"[n >> bit & 1] for bit in range(60)) + ".yml? @o" for n in range(100)
+    ]
+    _write(root, ".github/CODEOWNERS", "/.github/ @owner\n" + "\n".join(lines) + "\n")
+    monkeypatch.setattr(probes, "SCOPE_STEPS_MAX", probes.SCOPE_STEPS_MAX // 10)
+    assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
+        (COULD_NOT_LOOK, (".github/workflows",))
+    ]
+
+
+def test_a_monorepo_s_code_owners_file_is_asked_about_every_workflow(tmp_path: Path) -> None:
+    # The budget is sized for the file a large repository keeps: 20 KB of team lines, each with a
+    # tab and a comment, and 300 workflows whose paths run past fifty characters are asked in
+    # full, and the last workflow, which a later owner-less line takes back, is named rather
+    # than could not look. Every team line is refused in one string operation, so each workflow
+    # costs about 3,000 steps. Mutation (oracle): "the scope budget is too small to ask a
+    # monorepo's workflows" -> the budget runs out part-way and this reddens.
+    root = _repo(tmp_path)
+    names = [f"wf-{n:03d}-build-and-test-pipeline.yml" for n in range(299)]
+    names.append("zz-deploy-production-environment.yml")
     for name in ("keelline.yml", *names):
         _write(root, f".github/workflows/{name}", "on: push\n")
-    lines = ["/.github/ @org/platform"]
+    lines = ["# monorepo owners", "/.github/ @org/platform"]
     while sum(len(line) + 1 for line in lines) < 20_000:
-        lines.append(f"/services/service-{len(lines):03d}/ @org/team-{len(lines):03d}")
+        n = len(lines)
+        lines.append(f"/services/svc-{n:04d}/\t@org/team-{n % 40}   # service {n}")
     lines.append(f"/.github/workflows/{names[-1]}")
     _write(root, ".github/CODEOWNERS", "\n".join(lines) + "\n")
     assert _shapes(_items(root, tmp_path, "codeowners-scope")) == [
