@@ -28,7 +28,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from keelline.errors import Failure
-from keelline.fsops import write_atomically
+from keelline.fsops import utf_8_name, write_atomically
 
 # Sort sentinel for a note whose `startup` metadata could not be parsed as an int (D7: this
 # is not a budget or cap read from config, and no shipped file needs to change if it does —
@@ -38,6 +38,9 @@ FENCE = "---"
 _KEY = re.compile(r"^(?P<indent> *)(?P<key>[A-Za-z_][A-Za-z0-9_]*):(?P<rest>.*)$")
 _NOT_A_RULE = frozenset({"false", "no", "off"})
 DECLARED = ("name", "description", "index", "index_provenance", "group", "group_order")
+# Why `walk` quarantines a note by its file's name alone: the index links to every note by that
+# name, verbatim, and `MEMORY.md` is UTF-8.
+NAME_NOT_UTF_8 = "the file's name is not UTF-8, so the index cannot name it; rename the file"
 
 
 class NoteError(Failure):
@@ -431,6 +434,11 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
             continue
         for path in sorted(directory.glob("*.md")):
             if path.name.startswith((".", "_")):
+                continue
+            # The index names a note by its file's name, and `MEMORY.md` is UTF-8: a name the
+            # disk holds in other bytes cannot be written into it, so the note is unreadable.
+            if not utf_8_name(path.name):
+                unreadable.append((path, f"{path}: {NAME_NOT_UTF_8}"))
                 continue
             try:
                 found.append(replace(read_note(path), store_group=group))

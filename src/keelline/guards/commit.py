@@ -126,13 +126,13 @@ read.
 from __future__ import annotations
 
 import re
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from keelline.errors import Refusal
-from keelline.gitenv import scrubbed_env
+from keelline.findings import Finding
+from keelline.gitenv import NO_ANSWER, answer_bytes, git_run
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -408,46 +408,45 @@ def commits_in(root: Path, rev_range: str) -> list[Commit]:
     """
     if rev_range.startswith("-"):
         raise Refusal(f"{rev_range!r} looks like an option, not a revision range")
-    try:
-        # S603/S607: list form, never a shell; `git` through PATH because the machine owner's
-        # git must answer (see `gitenv`); the range was checked above and is closed by `--`.
-        completed = subprocess.run(  # noqa: S603
-            [  # noqa: S607
-                "git",
-                "-C",
-                str(root),
-                "log",
-                "--reverse",
-                "-z",
-                "--format=%H%x00%B",
-                rev_range,
-                "--",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=LOG_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
+    code, out = git_run(
+        root,
+        "log",
+        # The messages are judged as UTF-8, and git prints a log in whatever
+        # `i18n.logOutputEncoding` says: the owner's global configuration reaches it through
+        # `HOME`. Named, so a plain `café` never arrives in bytes this reads as unjudgeable.
+        "--encoding=UTF-8",
+        "--reverse",
+        "-z",
+        "--format=%H%x00%B",
+        rev_range,
+        "--",
+        timeout=LOG_TIMEOUT_SECONDS,
+    )
     # None of the three refusals below carries a byte this module did not compute. `git log`'s
     # stderr is repository-authored and unbounded — `warning: ignoring broken ref …`, `error:
-    # object file … is empty`, `fatal: bad object <name>` all quote refs and object names — and
-    # `TimeoutExpired`/`OSError` stringify the whole argv, `root` included. The range is the
-    # caller's own string and is the actionable part; it is the only thing printed.
-    except subprocess.TimeoutExpired:
-        raise Refusal(
-            f"git took longer than {LOG_TIMEOUT_SECONDS}s to read {rev_range!r}"
-        ) from None
-    except OSError:
-        raise Refusal(f"git could not be run to read {rev_range!r}") from None
-    if completed.returncode != 0:
+    # object file … is empty`, `fatal: bad object <name>` all quote refs and object names — and is
+    # never read. The range is the caller's own string and is the actionable part; it is the only
+    # thing printed.
+    if code == -1:
+        raise Refusal(f"{NO_ANSWER}, so {rev_range!r} was not read")
+    if code != 0:
         raise Refusal(f"git could not read {rev_range!r}; run it yourself to see why")
+    # Through `gitenv.git_run`, whose answer is the bytes git printed (`answer_bytes`), read here
+    # as the UTF-8 git was asked for. A commit's own `encoding` header naming one git cannot
+    # convert from leaves its message raw, and a pull request can push such a commit:
+    # undecodable, it cannot be judged.
+    try:
+        text = answer_bytes(out).decode("utf-8")
+    except UnicodeDecodeError:
+        raise Refusal(
+            f"git printed a message in {rev_range!r} that is not UTF-8 text, so it cannot be judged"
+        ) from None
     # Positional, not searched: the fields alternate sha, message, sha, message, and `-z` puts a
     # NUL after the last message too, so the split leaves one empty field at the end. Pairing by
     # index is what makes a message's own bytes unable to change how the stream is read — the
     # defect `%x01` had. An odd count cannot happen; if it ever did, the dangling field is a sha
     # with no message and is dropped rather than paired with nothing.
-    fields = completed.stdout.split("\x00")
+    fields = text.split("\x00")
     if fields and not fields[-1]:
         fields.pop()
     return [Commit(fields[index], fields[index + 1]) for index in range(0, len(fields) - 1, 2)]
@@ -470,3 +469,19 @@ def check_range(root: Path, rev_range: str, config: Config) -> Report:
         if offences:
             violations.append(Violation(sha, tuple(offences)))
     return Report(len(commits), tuple(violations))
+
+
+def commit_gate(root: Path, config: Config, base: str) -> list[Finding]:
+    """The `commit` gate's whole composition: each attribution line in `base..HEAD` as a finding.
+
+    A finding's location is the commit's sha, the line in its message and a label from
+    `ATTRIBUTION_LABELS` — all computed here, none of it repository text. `commit check --range`
+    calls `check_range` itself rather than this function, because it reports more than
+    findings: how many messages it read.
+    """
+    report = check_range(root, f"{base}..HEAD", config)
+    return [
+        Finding("attribution", violation.sha, offence.line, offence.label)
+        for violation in report.violations
+        for offence in violation.offences
+    ]

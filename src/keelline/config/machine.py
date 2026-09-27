@@ -18,9 +18,9 @@ who sets one really does lose it on the hook path rather than getting a wrong an
 replaces was not: `permitted_roots`, `trust.json` and the overlay anchor were all selectable by
 a file the clone ships.
 
-A caller that knows it is a hook, the MCP server or a `--gate` run says `interactive=False`
-rather than relying on the terminal check — `config.loader.load` takes the same keyword for
-exactly that reason.
+A caller that knows it is a hook, the MCP server or a `keelline gate` run says
+`interactive=False` rather than relying on the terminal check — `config.loader.load` takes the
+same keyword for exactly that reason.
 """
 
 from __future__ import annotations

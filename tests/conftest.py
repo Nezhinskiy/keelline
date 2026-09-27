@@ -2,9 +2,10 @@
 configuration.
 
 `tests/gitfixture.py` seals the `git` a fixture runs (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM`
-at `os.devnull`, `HOME` under `tmp_path`). The `git` the product runs is another matter:
-`keelline.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real user's global excludes
-and configuration are theirs to have honoured, and it drops every `GIT_CONFIG_*` variable. So
+at `os.devnull`, `GIT_CONFIG_NOSYSTEM` set, `HOME` under `tmp_path`). The `git` the product
+runs is another matter: `keelline.gitenv.scrubbed_env` keeps `HOME` on purpose, because a real
+user's global excludes and configuration are theirs to have honoured, and it drops every
+`GIT_CONFIG_*` variable. So
 under test that `git` read the developer's `~/.gitconfig` and `~/.config/git/ignore`: with
 `CLAUDE.md` in a global excludes file, `check-ignore` answered differently and the project
 tests failed by the dozen on one machine and passed on the next.
@@ -19,9 +20,28 @@ no shipped system file carries an excludes rule.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+from keelline import gitenv
+
+# The least bound every `git` the product runs in this process is given (`gitenv.git_run`),
+# whatever bound its caller asked for. The product's own bounds are sized for a machine doing
+# one thing; under a full `-n auto` run beside other sessions' work a five-second `rev-parse`
+# and a two-second `status` ran out, the caller read that as no answer, and the test failed for
+# the machine's load rather than for the code — and a verdict decided by load is one the oracle
+# reads as a caught mutation. A test about a bound running out sets the floor back to zero and
+# passes its own small bound.
+SUITE_GIT_FLOOR_SECONDS = 60.0
+
+
+@pytest.fixture(autouse=True)
+def _git_outlasts_the_machines_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gitenv, "BOUND_FLOOR_SECONDS", SUITE_GIT_FLOOR_SECONDS)
 
 
 @pytest.fixture(autouse=True)
@@ -32,3 +52,29 @@ def _a_home_of_its_own(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     return home
+
+
+def _is_latin_1(name: str) -> bool:
+    probe = subprocess.run(
+        [sys.executable, "-c", "import locale; print(locale.getpreferredencoding(False))"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": name, "PYTHONUTF8": "0"},
+    )
+    return probe.stdout.strip().replace("-", "").upper() in {"ISO88591", "LATIN1"}
+
+
+@pytest.fixture(scope="session")
+def latin1_locale() -> str:
+    """A latin-1 locale name a child process can run under, or the test is skipped.
+
+    Asked once per session and only by a test that wants it: finding one starts a child
+    interpreter per candidate, which is no cost to put on every collection. macOS ships one; a
+    stock Linux runner does not, so each such test is the real-locale half of a case whose
+    oracle entry names a simulated one.
+    """
+    for name in ("en_US.ISO8859-1", "en_US.ISO-8859-1", "C.ISO-8859-1"):
+        if _is_latin_1(name):
+            return name
+    pytest.skip("no latin-1 locale is installed here")

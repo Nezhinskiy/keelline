@@ -65,7 +65,7 @@ SLOTS: dict[Bundle, int] = {
 # lane emits text, and a project that could widen it would be a project that could make its own
 # bundles overrun the platform truncation silently. So this names no shipped file, which is a
 # departure from the constraint's literal wording rather than a satisfaction of it — the same
-# departure `store._GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` make, and it is flagged here
+# departure `gitenv.GIT_TIMEOUT_SECONDS` and `trust._NONCE_BYTES` make, and it is flagged here
 # rather than dressed up as compliance. The cap it is subtracted from, `hook_output_chars`, is
 # where D7 is actually satisfied.
 #
@@ -225,7 +225,7 @@ def _index(source: Path | None) -> list[str]:
         return []
     try:
         text = source.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return []
     if not text.strip():
         return []

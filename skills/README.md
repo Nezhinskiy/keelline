@@ -13,7 +13,7 @@ in five of the six. `tests/skills/test_skills.py` holds every `SKILL.md` to this
 | run a command | `Bash` | `Bash` |
 | edit / create a file | `Edit`, `Write`, `NotebookEdit` | `apply_patch` (matches an `Edit\|Write` matcher) |
 | fetch a page / search the web | `WebFetch`, `WebSearch` | the harness's browsing tool, when enabled |
-| ask the user a question | `AskUserQuestion` | an inline question in the reply (no ask-user tool) |
+| ask the user a question | `AskUserQuestion` | `request_user_input` in the modes that offer it (Plan mode by default): up to three questions of two or three options, no multi-select. Otherwise one plain question in the reply. |
 | delegate to a sub-agent | `Agent` | not available; do the work inline |
 | resolve a symbol precisely | `LSP` (when a language-server plugin is installed) | not available; fall back to searching |
 | keep a running checklist | `TodoWrite` | a checklist in the reply |

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
 import pytest
 
+from keelline.memory import notes
 from keelline.memory.notes import (
+    NAME_NOT_UTF_8,
     UNRANKED,
     NoteError,
     NoteType,
@@ -254,6 +257,41 @@ def test_a_note_that_is_not_utf8_is_quarantined_rather_than_an_internal_error(
     assert [note.name for note in found.notes] == ["bare"]
     assert [path.name for path, _ in found.unreadable] == ["latin.md"]
     assert "not valid UTF-8" in found.unreadable[0][1]
+
+
+def test_a_note_whose_name_is_not_utf_8_is_quarantined_by_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `MEMORY.md` names every note by its file's name, and a name the disk holds in bytes that
+    # are not UTF-8 raised `UnicodeEncodeError` when the index was written: `memory index` ended
+    # as an internal error (reproduced in a Linux container). The note is quarantined like one
+    # that will not parse, with the reason and the remedy. APFS refuses such a name, so the
+    # predicate is made to refuse an ordinary one here; the case below plants the real bytes
+    # where the disk holds them. Mutation (declared): drop the check from `walk` -> this reddens.
+    (tmp_path / "specs").mkdir()
+    write(tmp_path, MINIMAL, "specs/a.md")
+    write(tmp_path, MINIMAL.replace("bare", "other"), "specs/b.md")
+    monkeypatch.setattr(notes, "utf_8_name", lambda name: name != "b.md")
+    found = walk(tmp_path, ["specs"])
+    assert [note.name for note in found.notes] == ["bare"]
+    assert [path.name for path, _ in found.unreadable] == ["b.md"]
+    assert NAME_NOT_UTF_8 in found.unreadable[0][1]
+
+
+def test_a_note_named_in_bytes_that_are_not_utf_8_is_quarantined(tmp_path: Path) -> None:
+    # The case above with the real bytes, where the disk can hold them (Linux, where CI's oracle
+    # runs). Mutation (declared, on `fsops`): the predicate decodes with `surrogateescape` ->
+    # the note is read and this reddens.
+    (tmp_path / "specs").mkdir()
+    write(tmp_path, MINIMAL, "specs/a.md")
+    try:
+        with open(os.fsencode(tmp_path / "specs") + b"/caf\xe9.md", "w", encoding="utf-8") as f:
+            f.write(MINIMAL.replace("bare", "latin"))
+    except OSError as exc:  # APFS: `Illegal byte sequence`
+        pytest.skip(f"this filesystem cannot hold a name that is not UTF-8 ({exc.strerror})")
+    found = walk(tmp_path, ["specs"])
+    assert [note.name for note in found.notes] == ["bare"]
+    assert [path.name for path, _ in found.unreadable] == [os.fsdecode(b"caf\xe9.md")]
 
 
 def test_walk_ignores_a_group_directory_that_does_not_exist(tmp_path: Path) -> None:

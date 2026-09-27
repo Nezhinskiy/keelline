@@ -71,10 +71,10 @@ def test_no_top_level_bin_directory() -> None:
 def _not_yet() -> list[str]:
     """What `README.md` itself declares unshipped, read off the README and never restated here.
 
-    The README's own roadmap sentence is the authority: the day `assess` ships, its author
-    removes it from that sentence and the storefront is free to advertise it, with no second
-    list to remember. Restating the items here would be the drift this test exists to catch,
-    one file along.
+    The README's own roadmap sentence is the authority: the day an item ships, its author
+    removes it from that sentence, as `assess`'s did, and the storefront is free to advertise
+    it, with no second list to remember. Restating the items here would be the drift this test
+    exists to catch, one file along.
 
     A leading article is dropped, and that is the whole difference between a test that catches
     this and one that does not: the README writes "the adoption state machine" and every one of
@@ -125,7 +125,7 @@ def test_no_storefront_string_advertises_what_the_readme_says_is_not_yet() -> No
     card and the marketplace row; the Codex listing is the third storefront. All four
     advertised "an adoption state machine" while `keelline assess` did not exist and the
     README listed it under **Not yet**, and nothing in `keelline release check` or
-    `RELEASING.md` looked. Mutation (declared): put the adoption state machine back into
+    `RELEASING.md` looked. Mutation (declared): put the memory MCP server into
     `pyproject.toml`'s description -> reddens naming the file.
 
     What this cannot see is a paraphrase. The Codex listing's `shortDescription` said "earned

@@ -18,12 +18,14 @@ from pathlib import Path, PurePosixPath
 from posixpath import relpath
 from typing import TYPE_CHECKING, Any
 
-from keelline.config.loader import toml_position
+from keelline.config.loader import UNPARSEABLE, toml_position
 from keelline.config.paths import contained
 from keelline.docs.hygiene import TRAIL_MARKER, TRAIL_MARKER_LINE, read_document
+from keelline.docs.themes import ThemePattern, compile_theme
 from keelline.errors import Failure
-from keelline.findings import quoted
-from keelline.gitenv import git_run
+from keelline.findings import Finding, quoted
+from keelline.fsops import utf_8_name
+from keelline.gitenv import NO_ANSWER, git_run, in_work_tree
 
 if TYPE_CHECKING:
     from keelline.config.schema import Config
@@ -35,6 +37,13 @@ MARKER = TRAIL_MARKER
 END_MARKER = "<!-- end design and plan trail -->"
 TRAIL_FILE = "trail.toml"
 UNFILED = "Unfiled"
+# The most `[[theme]]` tables a `trail.toml` holds: with `themes.PATTERN_MAX_CHARS`, what one
+# document name can cost to place, whatever the repository wrote.
+THEMES_MAX = 32
+TOO_MANY_THEMES = f"a trail.toml holds at most {THEMES_MAX} [[theme]] tables"
+# The `trail` gate's two findings, which `docs trail --check` tells apart by rule.
+ROADMAP_MISSING = "roadmap-missing"
+TRAIL_STALE = "trail-stale"
 DELIVERED = "delivered"
 _ROW = re.compile(r"^- \[`([^`]+)`\]", re.MULTILINE)
 # Every value this file interpolates into the listing has to survive being written into it
@@ -65,11 +74,12 @@ _UNINTERPOLABLE = (
 # `{row!r}` is repository-authored text in a message, for `ledger.index.FOREIGN_CONTENT`'s
 # reason: this reaches the terminal of the person who ran the command against their own
 # repository, and naming the file is the whole of what makes "rename it" actionable. `!r` keeps
-# a name holding a newline on one line.
+# a name holding a newline or a carriage return on one line, and spells a byte that is not UTF-8
+# as its escape.
 _UNLISTABLE = (
     "{row!r} cannot be written into the {roadmap} listing: a document's name becomes both the "
-    "row and the link verbatim, so it must be a single line and must carry neither `{marker}` "
-    "nor the end-of-trail comment — rename the file"
+    "row and the link verbatim, so it must be a single line of UTF-8 text and must carry neither "
+    "`{marker}` nor the end-of-trail comment — rename the file"
 )
 _PREAMBLE = (
     "\n\nEvery design and plan document, grouped by theme and annotated with its\n"
@@ -81,7 +91,7 @@ _PREAMBLE = (
 
 @dataclass(frozen=True)
 class Trail:
-    themes: tuple[tuple[str, re.Pattern[str]], ...]
+    themes: tuple[tuple[str, ThemePattern], ...]
     states: dict[str, str]
 
 
@@ -100,25 +110,32 @@ def trail_path(root: Path, config: Config) -> Path:
 
 
 def _interpolable(value: str) -> bool:
-    """Whether a repository-authored value may be written into the listing unchanged."""
-    return "\n" not in value and MARKER not in value and END_MARKER not in value
+    """Whether a repository-authored value may be written into the listing unchanged.
+
+    One line as every reader of the roadmap splits it: a carriage return is a line break to
+    `read_text`, which turns it into `\\n`, and to Markdown, so a listing carrying one read back
+    as a different listing and `--check` was stale forever.
+    """
+    return not ({"\n", "\r"} & set(value)) and MARKER not in value and END_MARKER not in value
 
 
 def read_trail(path: Path) -> Trail:
     """`[[theme]]` tables in order (`label`, `pattern`) and a `[states]` table; absent is empty.
-    Every value is repository-authored: a pattern is compiled under `re.error` → `Failure`."""
+    Every value is repository-authored: a pattern outside `docs.themes`' language is a `Failure`,
+    and none is ever handed to `re`, whose backtracking a repository's pattern can make
+    exponential."""
     if not path.is_file():
         return Trail((), {})
     try:
         raw: dict[str, Any] = tomllib.loads(read_document(path, path))
-    except tomllib.TOMLDecodeError as exc:
+    except UNPARSEABLE as exc:
         # Through `config.loader.toml_position`: `tomllib`'s message embeds the source for
         # several of its faults — a duplicate table is reported with the table's name in it —
         # and a TOML key is arbitrary quoted text. `trail.toml` is one of the twelve files
         # `keelline init` ships, so after this branch every repository `init` touches has one
         # that this function parses, which is what makes the leak newly reachable here.
         raise Failure(f"{path} is not valid TOML {toml_position(exc)}") from None
-    themes: list[tuple[str, re.Pattern[str]]] = []
+    themes: list[tuple[str, ThemePattern]] = []
     # `[[theme]]` is an array of tables, so `theme` is a list — but the whole file is
     # repository-authored, and `theme = 1` would otherwise be iterated straight into a
     # `TypeError` the frame reports as an internal error (2). A project's malformed file must
@@ -126,6 +143,10 @@ def read_trail(path: Path) -> Trail:
     declared = raw.get("theme", [])
     if not isinstance(declared, list):
         raise Failure(f"{path}: `theme` must be a list of [[theme]] tables")
+    # Every document name is tried against every theme until one matches, so the themes' count
+    # multiplies what `PATTERN_MAX_CHARS` bounds for one of them.
+    if len(declared) > THEMES_MAX:
+        raise Failure(f"{path}: {TOO_MANY_THEMES}")
     for entry in declared:
         if (
             not isinstance(entry, dict)
@@ -138,13 +159,11 @@ def read_trail(path: Path) -> Trail:
                 _UNINTERPOLABLE.format(path=path, what="[[theme]] `label`", marker=MARKER)
             )
         try:
-            themes.append((entry["label"], re.compile(entry["pattern"])))
-        except re.error as exc:
-            # `repr`, like the label beside it: `re` copies characters of the pattern into its
-            # own message, and the pattern is `trail.toml`'s, escape sequences included.
-            raise Failure(
-                f"{path}: theme {entry['label']!r} has an invalid pattern: {str(exc)!r}"
-            ) from None
+            themes.append((entry["label"], compile_theme(entry["pattern"])))
+        except ValueError as refused:
+            # The rule and not the pattern: the pattern is the repository's own text, and the
+            # rule is what fixes it. `compile_theme` raises only its own fixed sentences.
+            raise Failure(f"{path}: theme {entry['label']!r}: {refused}") from None
     states = raw.get("states", {})
     if not isinstance(states, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in states.items()
@@ -181,8 +200,26 @@ def _ignored(root: Path, paths: list[Path]) -> set[Path]:
     code, out = git_run(root, "check-ignore", "--no-index", "--stdin", "-z", stdin=stdin)
     # 1 simply means "nothing matched"; anything else is a tree git cannot speak for.
     if code not in (0, 1):
+        _unasked(root, "check-ignore", code, "ignores", "a local-only one")
         return set()
     return {root / name for name in out.split("\0") if name}
+
+
+def _unasked(root: Path, command: str, code: int, question: str, leak: str) -> None:
+    """Fail where git gave no answer inside a work tree; outside one there is nothing to ask.
+
+    Read as an empty set, a failed filter listed every document on disk: a timeout, a `git` that
+    could not start or a checkout git refuses (dubious ownership) put `leak` into the committed
+    roadmap. Whether this is a repository is read off the disk, because git refuses that
+    question the same way (`gitenv.in_work_tree`).
+    """
+    if not in_work_tree(root):
+        return
+    cause = NO_ANSWER if code == -1 else f"`git {command}` exited {code}"
+    raise Failure(
+        f"{cause}, so which documents this repository {question} is not known, and the listing "
+        f"would name {leak}; nothing was listed"
+    )
 
 
 def _untracked(root: Path, paths: list[Path]) -> set[Path]:
@@ -192,8 +229,9 @@ def _untracked(root: Path, paths: list[Path]) -> set[Path]:
     makes a developer's `--check` disagree with CI over a file CI cannot see — routinely, since
     a sibling session's work-in-progress lands in the same directory. Skipping them keeps the
     two answers identical and matches what the listing is: a generated index OF THE REPOSITORY,
-    not of one machine's disk. Falls back to "nothing untracked" where git cannot answer, so a
-    non-git tree keeps working instead of silently emptying itself."""
+    not of one machine's disk. Falls back to "nothing untracked" outside a work tree, so a
+    non-git tree keeps working instead of silently emptying itself; inside one, a question git
+    gave no answer to fails."""
     if not paths:
         return set()
     code, out = git_run(
@@ -206,6 +244,7 @@ def _untracked(root: Path, paths: list[Path]) -> set[Path]:
         *(str(p.relative_to(root)) for p in paths),
     )
     if code != 0:
+        _unasked(root, "ls-files", code, "tracks", "an untracked one")
         return set()
     return {root / name for name in out.split("\0") if name}
 
@@ -238,7 +277,7 @@ def render_listing(root: Path, config: Config, trail: Trail) -> str:
         # which is the failure its other two guards exist to prevent, and the operator has a
         # remedy either way. The link is checked too — it is the same name, joined to the
         # configured `specs`/`plans` path, and that path is repository-authored as well.
-        if not (_interpolable(row) and _interpolable(link)):
+        if not (_interpolable(row) and _interpolable(link) and utf_8_name(path.name)):
             raise Failure(_UNLISTABLE.format(row=row, roadmap=config.paths.roadmap, marker=MARKER))
         listed.add(row)
         buckets.setdefault(theme_of(path.name, trail), []).append((row, link))
@@ -315,3 +354,28 @@ def rebuild(text: str, root: Path, config: Config, trail: Trail) -> str:
     # line each time.
     tail = text[end + len(END_MARKER) :]
     return head + _PREAMBLE + render_listing(root, config, trail) + tail.lstrip("\n")
+
+
+def declared_state(root: Path, config: Config, relative: str) -> str | None:
+    """The state `trail.toml` declares for the document at `relative`, a root-relative path
+    directly in `[paths] specs` or `plans`, or `None` when it declares none, which the listing
+    would then show as `delivered`."""
+    document = PurePosixPath(relative)
+    return read_trail(trail_path(root, config)).states.get(
+        f"{document.parent.name}/{document.name}"
+    )
+
+
+def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+    """The `trail` gate's whole composition: the roadmap's listing, as `rebuild` would write it.
+
+    `docs trail --check` answers with this function. `base` is unread: every gate takes the same
+    three arguments, so `keelline.assess.gates` holds each one as a value.
+    """
+    roadmap = contained(root, config.paths.roadmap)
+    if not roadmap.is_file():
+        return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
+    current = read_document(roadmap, config.paths.roadmap)
+    if current == rebuild(current, root, config, read_trail(trail_path(root, config))):
+        return []
+    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]

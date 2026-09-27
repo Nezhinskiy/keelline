@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -648,6 +650,40 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     assert runner.calls == [], "no plugin was installed for a run that refuses its own arguments"
 
 
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        pytest.param(os.fsdecode(b"/overlays/caf\xe9"), id="path"),
+        pytest.param("create:octo/keelline-private", id="create"),
+    ],
+)
+def test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_write(
+    tmp_path: Path, overlay: str
+) -> None:
+    # The machine file is UTF-8 TOML, and the overlay root is written into it last: on Linux an
+    # overlay under a directory named in latin-1 bytes ended `setup --overlay` as `internal
+    # error: UnicodeEncodeError`, after the machine file's other tables and the settings file
+    # were already written (reproduced in a Linux container). Refused with the tree checks,
+    # above every write, and before `gh repo create` for a created one, whose root lies under
+    # `home`. Built from the path alone, because APFS refuses such a name. Mutation (declared):
+    # drop the check -> the other refusals answer, or the write crashes, and this reddens.
+    home = Path(os.fsdecode(os.fsencode(tmp_path) + b"/home-caf\xe9"))
+    machine = tmp_path / "config.toml"
+    runner = FakeRunner()
+    with pytest.raises(Refusal, match="not UTF-8"):
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            yes=True,
+            overlay=overlay,
+            project_root=tmp_path / "project",
+        )
+    assert _wrote_anything(home, machine) == []
+    assert runner.calls == []
+
+
 def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> None:
     # The non-vacuity guard under the test above: the assertions there are about a *refused*
     # run, and they would pass just as well if `setup` wrote nothing under any circumstances.
@@ -777,6 +813,61 @@ def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: P
     worktree = tmp_path / "clone.worktrees" / "wave-1"
     _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
     assert clone.resolve() not in worktree.resolve().parents, "beside the checkout, not under it"
+    with pytest.raises(Refusal, match="same repository"):
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=tmp_path / "config.toml",
+            runner=FakeRunner(),
+            yes=True,
+            overlay=str(clone),
+            project_root=worktree,
+        )
+
+
+def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The case above with a common directory whose path is not UTF-8, an ordinary latin-1
+    # directory name on Linux. Decoded strictly, git's answer was a traceback; read as no answer,
+    # `_repository` answered `None`, the `git` arms went silent, and the sibling checkout of the
+    # project was recorded as the machine's trust anchor. Decoded losslessly, the answer is read
+    # and the checkout is refused.
+    #
+    # APFS refuses to create such a directory, so a stand-in `git` on `PATH` runs the real one
+    # and appends one latin-1 byte to the first line of what `--git-common-dir` prints — the
+    # common directory, not the `--is-inside-work-tree` answer after it — for every directory
+    # alike, exactly as a common directory really named so would read. Every other `git` call
+    # passes through untouched.
+    #
+    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the guard, which
+    # refuses git's silence inside a checkout, refuses for that silence rather than naming the
+    # sibling checkout, and this reddens on the `same repository` match alone.
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _git(clone, "init", "-q", "-b", "main")
+    _seed_overlay(clone)
+    (clone / "README.md").write_text("x", encoding="utf-8")
+    _git(clone, "add", "-A")
+    _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
+    worktree = tmp_path / "clone.worktrees" / "wave-1"
+    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "wave-1")
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f'  *--git-common-dir*) out=$("{real_git}" "$@") || exit $?\n'
+        '    printf "%s\\351\\n" "$(printf "%s\\n" "$out" | head -n 1)"\n'
+        '    printf "%s\\n" "$out" | tail -n +2 ;;\n'
+        f'  *) exec "{real_git}" "$@" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
     with pytest.raises(Refusal, match="same repository"):
         setup(
             "recommended",
@@ -1062,16 +1153,11 @@ def test_a_sibling_checkout_spelled_in_another_case_is_still_refused(tmp_path: P
         _record(tmp_path, candidate, project)
 
 
-# Stands for "git printed bytes the locale cannot decode": `git_run` raises rather than answer.
-UNDECODABLE = (-2, "undecodable")
-
 FAILURES: dict[str, Callable[[tuple[str, ...]], tuple[int, str] | None]] = {
     # What the listing call answers.
     "listing-exit": lambda args: (128, "") if "worktree" in args else None,
     "listing-empty": lambda args: (0, "") if "worktree" in args else None,
-    "listing-undecodable": lambda args: UNDECODABLE if "worktree" in args else None,
     # What the project-side `rev-parse` answers.
-    "common-undecodable": lambda args: UNDECODABLE if "rev-parse" in args else None,
     "answers-only-without-the-key": (
         lambda args: (128, "") if "rev-parse" in args and "-c" in args else None
     ),
@@ -1085,17 +1171,14 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
     # Once git has said the project is a repository, "no answer" about its checkouts is not
     # "none of them holds the candidate". It used to be: a `git` that gave no answer for the
     # candidate returned `None`, `None` differed from the project's common directory, and the
-    # candidate was recorded. And `gitenv.git_run` decodes with `text=True`, so a path git
-    # prints in bytes that are not the locale's encoding raised `UnicodeDecodeError` out of
-    # `setup` as an internal error.
+    # candidate was recorded. (A path git prints in bytes that are not UTF-8 is not among these:
+    # `gitenv.git_run` decodes it losslessly, so it is an answer, and the test of a non-UTF-8
+    # common directory above holds that.)
     #
     # Mutation ("setup stops refusing an overlay when git cannot list the project's
     # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
     # legitimate-looking overlay below is recorded and `listing-exit` and `listing-empty`
     # redden.
-    # Mutation ("setup stops refusing an overlay when git answers in undecodable bytes"): the
-    # `except UnicodeDecodeError` arm becomes `except LookupError` → the error escapes instead
-    # of a `Refusal` and the two `-undecodable` cases redden.
     # Mutation ("setup takes an answer git gave only without the key"): the refusal after the
     # retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
     project = tmp_path / "project"
@@ -1111,13 +1194,178 @@ def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
         answer = FAILURES[failure](args)
         if answer is None:
             return real(root, *args, **kwargs)
-        if answer == UNDECODABLE:
-            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
         return answer
 
     monkeypatch.setattr("keelline.setup.run.git_run", failing)
     with pytest.raises(Refusal, match="could not list"):
         _record(tmp_path, overlay, project)
+
+
+# Which `git` calls give no answer — `gitenv.git_run`'s `(-1, "")`, for a git that could not be
+# run or ran past its time limit — keyed by what was asked and from where.
+SILENT: dict[str, Callable[[Path, Path, tuple[str, ...]], bool]] = {
+    "every-call": lambda main, root, args: True,
+    "the-listing": lambda main, root, args: "worktree" in args,
+    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
+    # directory, so this arm alone can refuse it.
+    "the-candidate-side": lambda main, root, args: main in (root, *root.parents),
+}
+
+
+@pytest.mark.parametrize("silent", sorted(SILENT))
+def test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, silent: str
+) -> None:
+    # `git_run` answers `(-1, "")` when git could not be run or ran past its time limit, and the
+    # guard read that as it reads git's own "no repository": `_repository` answered `None` and
+    # only the path arm stood, and the candidate-side walk went on past it and found nothing. A
+    # git that timed out on `rev-parse` let the main checkout of the project be recorded as the
+    # trust anchor from one of its worktrees. Inside a checkout, which the disk says without
+    # asking git, that silence is now a refusal.
+    #
+    # The layout is the separate-git-dir one, whose main checkout `s` only the candidate-side
+    # walk can refuse, so each of the three places git is asked is the one that decides.
+    #
+    # Mutation ("setup reads git giving no answer inside a checkout as no repository again"):
+    # the refusal in `_ask` becomes `if False:` → `every-call` and `the-candidate-side` record
+    # `s/ov`, and `the-listing` is refused for an empty listing, a message that names the wrong
+    # cause; all three redden.
+    main, sep = tmp_path / "s", tmp_path / "sep.git"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    (main / "README.md").write_text("x", encoding="utf-8")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    linked = tmp_path / "s.wt" / "w"
+    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
+    candidate = main / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    real = gitenv.git_run
+    resolved_main = main.resolve()
+
+    def silent_git(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
+        if SILENT[silent](resolved_main, root.resolve(), args):
+            return -1, ""
+        return real(root, *args, **kwargs)
+
+    monkeypatch.setattr("keelline.setup.run.git_run", silent_git)
+    with pytest.raises(Refusal, match="gave no answer") as refused:
+        _record(tmp_path, candidate, linked)
+    assert gitenv.NO_ANSWER in str(refused.value)
+
+
+def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side of the test above: where no `.git` is at or above the directory git was
+    # asked from, there is no checkout for it to have named, so a git that cannot run at all
+    # costs nothing and the path arm stands, as it did before.
+    #
+    # Mutation ("setup refuses an overlay whenever git gives no answer, checkout or not"): the
+    # `in_work_tree` condition is dropped → this overlay is refused and this reddens.
+    project = tmp_path / "project"
+    project.mkdir()
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _seed_overlay(overlay)
+    monkeypatch.setattr("keelline.setup.run.git_run", lambda root, *args, **kwargs: (-1, ""))
+    machine = tmp_path / "config.toml"
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=machine,
+        runner=FakeRunner(),
+        yes=True,
+        overlay=str(overlay),
+        project_root=project,
+    )
+    assert report.overlay == overlay
+    assert overlay_root(machine) == overlay
+
+
+# A `git` that runs the real one as though another user owned every repository it opens, which
+# is how git's own suite drives `safe.directory`: git then refuses the repository with exit 128.
+# `where` limits it to the directories one arm of the guard asks from. Where it applies it reads
+# neither the system nor the global configuration, as `tests/ledger/test_write.py`'s wrapper does:
+# a machine whose either file sets `safe.directory = *` — GitHub's Ubuntu images write it into
+# `/etc/gitconfig`, which the product's `git` reads — trusts every repository, so git described
+# the one this wrapper exists to have refused and only the path arm was left to be tested.
+DUBIOUS: dict[str, Callable[[Path], str]] = {
+    "every-call": lambda main: "true",
+    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
+    # directory, so this arm alone can refuse it.
+    "the-candidate-side": lambda main: (
+        f'case "$2" in "{main}"|"{main}"/*) true ;; *) false ;; esac'
+    ),
+}
+
+
+def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) -> None:
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        "#!/bin/sh\n"
+        f"if {where}; then\n"
+        "  GIT_TEST_ASSUME_DIFFERENT_OWNER=1\n"
+        "  GIT_CONFIG_NOSYSTEM=1\n"
+        f"  GIT_CONFIG_GLOBAL={os.devnull}\n"
+        "  export GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        encoding="utf-8",
+    )
+    (bin_dir / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+@pytest.mark.parametrize("dubious", sorted(DUBIOUS))
+def test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dubious: str
+) -> None:
+    # Exit 128 inside a checkout is git saying there is a repository it will not describe —
+    # another user's under `safe.directory`, or one whose `.git` it cannot read — and the guard
+    # read it as git's "no repository": on every call only the path arm stood and the main
+    # checkout's `ov/` was recorded from a linked worktree; on the candidate side the walk went
+    # past it. The layout is the separate-git-dir one of the silent-git case above.
+    #
+    # Mutations (declared): the 128 refusal in `_ask` made `if False:` -> both cases record
+    # `s/ov`; the walk's question without the key dropped -> the candidate-side case records it.
+    main, sep = tmp_path / "s", tmp_path / "sep.git"
+    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
+    (main / "README.md").write_text("x", encoding="utf-8")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    linked = tmp_path / "s.wt" / "w"
+    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
+    candidate = main / "ov"
+    candidate.mkdir()
+    _seed_overlay(candidate)
+    _dubious_git(tmp_path, monkeypatch, DUBIOUS[dubious](main.resolve()))
+    # The premise, asked of the `git` the product runs: it refuses the main checkout. A runner
+    # whose configuration defeats the fake owner fails here, at the setup, and not at the
+    # verdict below, where the path arm's refusal reads as a different message.
+    assert gitenv.git_run(main.resolve(), "rev-parse", "--git-dir")[0] == 128
+    with pytest.raises(Refusal, match="refused to describe the repository"):
+        _record(tmp_path, candidate, linked)
+    assert overlay_root(tmp_path / "config.toml") is None
+
+
+def test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The other side: outside every checkout git's 128 is its ordinary "not a git repository",
+    # and no `.git` at or above the directory says there was nothing for it to describe.
+    # Mutation (declared): the `in_work_tree` condition dropped from the 128 arm -> refused.
+    project = tmp_path / "project"
+    project.mkdir()
+    overlay = tmp_path / "keelline-private"
+    overlay.mkdir()
+    _seed_overlay(overlay)
+    _dubious_git(tmp_path, monkeypatch, "true")
+    _record(tmp_path, overlay, project)
+    assert overlay_root(tmp_path / "config.toml") == overlay
 
 
 @pytest.mark.parametrize("git_version", GITS)

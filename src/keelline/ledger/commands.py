@@ -14,6 +14,11 @@ from keelline.result import Result
 
 _OK = "OK: bug ledger entries, index freshness, and identifier references"
 _INERT = "nothing to check: no ledger directory and no generated index"
+BASE_HELP = (
+    "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
+    "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
+    "entry of it answers for it; without it the tree alone is judged"
+)
 
 
 def run_bugs_index(args: argparse.Namespace) -> Result:
@@ -44,12 +49,14 @@ def run_bugs_index(args: argparse.Namespace) -> Result:
 
 
 def run_bugs_check(args: argparse.Namespace) -> Result:
-    from keelline.ledger.check import problems, uninitialised
+    from keelline.ledger.check import bugs_gate, uninitialised
 
     root, config = root_and_config(args)
-    if uninitialised(root, config):
+    found = bugs_gate(root, config, args.base or "")
+    # Before a ledger exists only a reference to an entry, or a ledger the change forked with, is
+    # a finding, and there is none.
+    if not found and uninitialised(root, config):
         return Result(_INERT, {"checked": False, "findings": []})
-    found = problems(root, config)
     data = {"checked": True, "findings": [asdict(p) for p in found]}
     if not found:
         return Result(_OK, data)
@@ -113,6 +120,7 @@ def register(groups: SubParsers) -> None:
     check = common_flags(
         sub.add_parser("check", help="validate the ledger, the index and every reference")
     )
+    check.add_argument("--base", default=None, help=BASE_HELP)
     check.set_defaults(func=run_bugs_check)
     renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
     renumber.add_argument("old")

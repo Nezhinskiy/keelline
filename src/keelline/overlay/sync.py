@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from keelline.gitenv import git_run
+from keelline.gitenv import answer_lines, git_run
 
 SYNC_TIMEOUT_SECONDS = 2.0
 
@@ -30,7 +30,8 @@ def overlay_sync(overlay: Path, *, timeout: float = SYNC_TIMEOUT_SECONDS) -> Syn
     )
     if code != 0:
         return Sync(0, None, False)
-    dirty = sum(1 for line in status.splitlines() if line.strip())
+    # Counted by the lines git wrote: a name holding a line separator is one entry.
+    dirty = sum(1 for line in answer_lines(status) if line.strip())
     code, count = git_run(overlay, "rev-list", "--count", "@{upstream}..HEAD", timeout=timeout)
     ahead = int(count.strip()) if code == 0 and count.strip().isdigit() else None
     return Sync(dirty, ahead, True)

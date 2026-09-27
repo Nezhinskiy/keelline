@@ -16,18 +16,11 @@ with no explanation is what made the trim necessary:
   read by the consumer that gets a value from it. `tests/test_install_path.py` branches on
   `RED` and `SKIP` through this surface already.
 
-`plugin_root` was on this list and is not any more: nothing outside this area imports it, and
-the one test that reads it takes it from `keelline.doctor.checks`, which is its own area's
-module and nobody else's business.
-
-**Trimmed, in the wave-3 refactor pass.** `SETTINGS_FILES` — the three settings files
-`_hook_entries` walks — had no importer outside this area in `src/`, `scripts/` or `tests/`, no
-exported signature naming it, and no reader reaching it by string. It was grouped on this list
-under "the report and the row it is made of" and is neither: it is the walk's own input, read
-by `checks.py` and by this area's tests from `keelline.doctor.checks`, which is where a name
-with one area's readers belongs. `assess` alone is not a reason to publish one — `guards/api.py`
-made that ruling over twenty-nine names, and a lane that does not exist yet grows this list when
-it arrives.
+`plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
+takes it from `keelline.doctor.checks`, its own area's module. Nor is `SETTINGS_FILES`, the three
+settings files `_hook_entries` walks: it is the walk's own input, not the report or its row, and
+`checks.py` and this area's tests read it from `keelline.doctor.checks`. `keelline assess` needs
+nothing from this list.
 """
 
 from keelline.doctor.checks import OK, RED, SKIP, STATUSES, WARN, Check, run_checks

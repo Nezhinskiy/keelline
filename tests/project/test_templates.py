@@ -11,7 +11,7 @@ import pytest
 
 from keelline.attach.api import IGNORE_BODY, IGNORE_REGION
 from keelline.config.loader import CONFIG_FILE, preset_defaults
-from keelline.config.schema import Config
+from keelline.config.schema import BRANCH_NAME, Config
 from keelline.errors import Failure, Refusal
 from keelline.harnesses import HARNESSES
 from keelline.ledger.api import render_index
@@ -24,6 +24,7 @@ from keelline.project.templates import (
     COMPUTED,
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
+    LOCAL_ELIGIBLE,
     NO_REF,
     ONE_FILE,
     OWN_NAME,
@@ -38,6 +39,8 @@ from keelline.project.templates import (
 from keelline.release.api import Pin, Resolution
 from keelline.scaffold import Kind, Style
 from keelline.templates import tree
+from tests.gitfixture import needs_git, run_git
+from tests.workflow_yaml import load
 
 SHA = "a" * 40
 DOCUMENT = '[keelline]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
@@ -233,7 +236,7 @@ def test_a_recorded_ref_outside_the_grammar_is_never_rendered_into_the_uses_line
 
     On the adoption path it is whatever `keelline.toml` already carried, and the loader bounds it
     to "a string" and nothing more — so it is held to `CI_REF` before it is written, exactly as
-    `gate_branch` is held to `GATE_BRANCH`, and a value outside the grammar costs the artifact
+    `gate_branch` is held to `BRANCH_NAME`, and a value outside the grammar costs the artifact
     rather than the run. The anchor is `CI_REF`, a constant in the installed package that nothing
     a repository writes can move.
 
@@ -287,6 +290,54 @@ def test_the_rendered_workflow_passes_only_inputs_the_reusable_workflow_declares
     body = {t.id: t for t in prepared.footprint}["ci-workflow"].render()
     passed = set(re.findall(r"^      ([a-z-]+): ", body, re.MULTILINE))
     assert passed and passed <= declared, (passed, declared)
+
+
+def test_the_rendered_trigger_runs_only_for_the_gate_branch_and_re_runs_on_a_retarget() -> None:
+    # A caller that ran for pull requests into any branch let a pull request collect a green
+    # check against a looser base and then be retargeted onto the gate branch, and a `base:`
+    # that followed `github.base_ref` followed it there. So the trigger names the gate branch,
+    # `edited` re-runs the check on a retarget, `merge_group` reports for the gate branch's
+    # queue and no other branch's (whose queue would be judged against this branch's
+    # configuration, since a merge group reports no base the workflow reads), and `base:`
+    # is a literal the reusable workflow holds a pull request's own base to. The equality below
+    # holds every line of the block, so deleting any one of them reddens it. Mutations
+    # (declared): the `pull_request` branch filter removed; the `merge_group` one removed;
+    # `base:` follows the pull request again.
+    recorded = _recording(preset_defaults("widget"))
+    config = replace(recorded, ci=replace(recorded.ci, gate_branch="trunk"))
+    body = {t.id: t for t in _prepared(config, resolution=PINNED).footprint}["ci-workflow"].render()
+    trigger = body[body.index("\non:\n") + 1 : body.index("\npermissions:")]
+    assert trigger == (
+        "on:\n"
+        "  pull_request:\n"
+        '    branches: ["trunk"]\n'
+        "    types: [opened, synchronize, reopened, edited]\n"
+        "  merge_group:\n"
+        '    branches: ["trunk"]\n'
+        "  push:\n"
+        '    branches: ["trunk"]\n'
+    ), trigger
+    assert body.endswith('    with:\n      base: "trunk"\n'), body
+
+
+def test_the_rendered_caller_grants_the_reusable_workflow_read_access_and_nothing_more() -> None:
+    # A called workflow's token can hold no more than its caller grants, so this file's grant is
+    # the ceiling for every step of `check.yml`, the project's own gates included, and those run
+    # files the pull request can change. Read by the strict reader, so the grant's value is held
+    # and not only its key, and the job's keys are held whole: a `permissions:` on the job would
+    # replace the workflow's. Mutation (declared): `contents: write`.
+    body = {
+        t.id: t
+        for t in _prepared(_recording(preset_defaults("widget")), resolution=PINNED).footprint
+    }["ci-workflow"].render()
+    document = load(body)
+    assert isinstance(document, dict), document
+    assert list(document) == ["name", "on", "permissions", "jobs"], list(document)
+    assert document["permissions"] == {"contents": "read"}, document["permissions"]
+    jobs = document["jobs"]
+    assert isinstance(jobs, dict) and list(jobs) == ["check"], jobs
+    job = jobs["check"]
+    assert isinstance(job, dict) and list(job) == ["uses", "with"], job
 
 
 def test_no_two_artifacts_of_one_pass_resolve_to_the_same_file() -> None:
@@ -414,6 +465,18 @@ def test_every_artifact_both_passes_build_has_a_paths_key_recorded_for_it() -> N
     assert len(ids) == 17 + len(_renditions()), sorted(ids)
     expected = set(PATH_KEYS) | _renditions()
     assert ids == expected, (sorted(ids ^ expected),)
+
+
+def test_every_id_offered_as_local_is_a_whole_file_of_the_footprint_pass() -> None:
+    # `init --questions` offers these ids as files a project may keep out of git; one that named
+    # no artifact, a write-once file or a region inside a host file would be an answer the
+    # engine could not act on. Mutation (oracle): a typo in one id -> it is in no `PATH_KEYS` row
+    # and this reddens.
+    footprint = {t.id: t for t in _prepared(preset_defaults("widget")).footprint}
+    assert LOCAL_ELIGIBLE
+    for artifact_id in LOCAL_ELIGIBLE:
+        assert artifact_id in PATH_KEYS, artifact_id
+        assert footprint[artifact_id].kind is Kind.TEMPLATE, artifact_id
 
 
 def test_every_source_both_passes_build_is_a_shipped_file_or_is_declared_computed() -> None:
@@ -624,3 +687,55 @@ def test_every_target_any_configuration_writes_is_one_every_configuration_could(
     for each in prepared:
         listed = {(i, target) for i, targets in each.could_write.items() for target in targets}
         assert written <= listed
+
+
+# Names inside the grammar's character set, each one git's branch-name rules accept or refuse.
+BRANCH_NAMES = (
+    "main",
+    "develop",
+    "release/2.0",
+    "release/2.x",
+    "v1.2.3",
+    "feature/a-b_c",
+    "a..b",
+    "a//b",
+    "a/",
+    "a.",
+    "a.lock",
+    "a/b.lock",
+    "a.lock/b",
+    "a/.b",
+    "a/..",
+    ".a",
+    "-a",
+    "HEAD",
+    "a/HEAD",
+    "HEADS",
+)
+
+
+@needs_git
+@pytest.mark.parametrize("name", BRANCH_NAMES)
+def test_the_gate_branch_grammar_refuses_what_git_refuses(tmp_path: Path, name: str) -> None:
+    # `[ci] gate_branch`, `--base-branch`, a detected `origin/HEAD` and the loaded `[project]`
+    # branches are all held to `BRANCH_NAME` before a rendered caller names the branch; a name git
+    # itself refuses as a branch (`a..b`, `a//b`, a trailing `/` or `.`, a `.lock` component, a
+    # component starting with `.`, the name `HEAD`) is a caller that can never run, so the grammar
+    # refuses it too, and `release/2.0` and `a/HEAD` stay legal. Mutations (oracle): "the gate
+    # branch grammar takes a '..' git refuses", "the gate branch grammar takes a '.lock' component
+    # git refuses" and "the gate branch grammar takes the name HEAD git refuses" -> the `a..b`,
+    # `.lock` and `HEAD` cases redden.
+    accepted = run_git(tmp_path, "check-ref-format", "--branch", name).returncode == 0
+    assert bool(BRANCH_NAME.match(name)) == accepted, name
+
+
+@pytest.mark.parametrize("name", ["a..b", "a//b", "a/", "a.lock", "a/.b", "HEAD"])
+def test_a_hand_written_gate_branch_git_would_refuse_renders_no_workflow(name: str) -> None:
+    # The hand-written `[ci] gate_branch` half of the same rule: the artifact is skipped with the
+    # fixed reason, and the value is never echoed.
+    recorded = _recording(preset_defaults("widget"))
+    prepared = _prepared(
+        replace(recorded, ci=replace(recorded.ci, gate_branch=name)), resolution=PINNED
+    )
+    assert "ci-workflow" not in {t.id for t in prepared.footprint}, name
+    assert prepared.skipped["ci-workflow"].startswith("[ci] gate_branch is not a plain branch")

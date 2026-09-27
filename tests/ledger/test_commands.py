@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from keelline.cli import build_parser, discover_registrars, run
+from keelline.findings import Finding
+from tests.gitfixture import git, needs_git
 
 CONFIG = """
 [keelline]
@@ -76,6 +78,41 @@ def test_check_is_inert_on_a_project_with_no_ledger(
     (root / "docs" / "bugs").rmdir()
     assert invoke(["bugs", "check", *common]) == 0
     assert "nothing to check" in capsys.readouterr().out
+
+
+def test_check_reports_a_citation_when_there_is_no_ledger(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate reports it, so the command its remedy names must report it too, and not
+    # answer "nothing to check".
+    root, common = project(tmp_path)
+    (root / "docs" / "bugs").rmdir()
+    (root / "src" / "a.py").write_text("# see docs/bugs/BR-404.md\n", encoding="utf-8")
+    assert invoke(["bugs", "check", *common]) == 1
+    assert capsys.readouterr().out.startswith(
+        "FAIL: 2 ledger problem(s): src/a.py:1 [dangling-mention], src/a.py:1 [dangling-citation]"
+    )
+
+
+@needs_git
+def test_check_with_a_base_answers_for_a_ledger_the_base_carries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The gate's command is `bugs check --base <base>`, so the command its remedy names reports
+    # the deleted ledger as the gate does; without `--base` the tree alone is judged and is
+    # inert. Mutation (oracle): "bugs check drops its --base" -> exit 0, nothing to check.
+    root, common = project(tmp_path)
+    invoke(["bugs", "new", "t", "--severity", "low", "--area", "a", "--no-fetch", *common])
+    git(root, "init", "-q", "-b", "main")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    git(root, "rm", "-rq", "docs/bugs", "docs/bug-reports.md")
+    capsys.readouterr()
+    assert invoke(["bugs", "check", *common]) == 0
+    assert "nothing to check" in capsys.readouterr().out
+    assert invoke(["bugs", "check", "--base", base, *common]) == 1
+    assert capsys.readouterr().out == "FAIL: 1 ledger problem(s): docs/bugs [ledger-removed]\n"
 
 
 def test_check_reports_problems_on_one_line_and_lists_them_in_json(
@@ -256,3 +293,18 @@ def test_renumber_fails_naming_a_file_the_sweep_could_not_rewrite(
     assert line.startswith("FAIL: BR-001 moved to BR-009, but 1 file(s) still reference BR-001")
     assert "(src/sealed/a.py)" in line and "docs/bugs/BR-001.md" in line
     assert line.count("\n") == 1
+
+
+def test_check_answers_with_the_bugs_gate_s_own_function(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `bugs check` and the `bugs` gate are one function. Mutation
+    # (advisory): the import in `run_bugs_check` becomes `from keelline.ledger.check import
+    # problems as bugs_gate, uninitialised` — the patch is unseen and this reddens.
+    _root, common = project(tmp_path)
+    argv = ["bugs", "new", "a title", "--severity", "low", "--area", "an area", "--no-fetch"]
+    assert invoke([*argv, *common]) == 0
+    assert invoke(["bugs", "check", *common]) == 0
+    planted = [Finding("planted", "", None, "")]
+    monkeypatch.setattr("keelline.ledger.check.bugs_gate", lambda *args, **kwargs: planted)
+    assert invoke(["bugs", "check", *common]) == 1

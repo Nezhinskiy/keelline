@@ -150,10 +150,11 @@ jobs:
     # 562, under a 25-minute bound. The rest of the job came to ~8 s on that run; the budget
     # test keeps its 60 s allowance for setup and 60 s for runner variance anyway.
     #
-    # 12 minutes is 720 s: 566 entries project ~293 s with both allowances, so the margin holds
-    # roughly **1,400 further entries** at this rate, and twice the rate — a runner with half the
-    # CPUs — still fits the set as it stands. The budget test projects exactly this sum
-    # (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
+    # 12 minutes is 720 s: less both allowances that leaves 600 s, which at this rate holds
+    # roughly **1,900 entries** in all, and at twice the rate — a runner with half the CPUs —
+    # about 950. No count of today's entries is written here, because every change that adds one
+    # would falsify it: the budget test counts `mutations.toml` itself, projects exactly this
+    # sum (entries x rate + 60 s + 60 s) and reddens when it passes 720 s. Kept well above the
     # measurement rather than at it, because a bound this job hits is a cancelled check, not a
     # finding; and below the old 25, because a hung pytest should cost twelve minutes, not
     # twenty-five. Not sharded: a matrix would rename the `oracle` check the branch protection

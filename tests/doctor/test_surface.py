@@ -18,9 +18,9 @@ def test_the_surface_carries_what_every_downstream_lane_reaches_for() -> None:
     # import and the `__all__` entry) and not one substituted line. Measured by hand instead —
     # re-exporting `checks.NAMED_ROOT_CAVEAT` reddens this test and this test alone.
     required = {
-        # the status vocabulary a reader of a `Check` branches on. `assess` (wave 5) will gate
-        # on this report and `tests/test_install_path.py` already branches on RED and SKIP; the
-        # set is the export rather than the members that have a caller today, for the reason
+        # the status vocabulary a reader of a `Check` branches on. `tests/test_install_path.py`
+        # branches on RED and SKIP (`keelline assess` runs no doctor check); the set is the
+        # export rather than the members that have a caller today, for the reason
         # `attach/api.py` gives about `Binding.state` — half a closed vocabulary is unreadable.
         "OK",
         "WARN",

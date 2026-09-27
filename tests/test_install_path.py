@@ -168,9 +168,13 @@ def _fake_binaries(bin_dir: Path) -> None:
     """
     bin_dir.mkdir()
     log = bin_dir / "calls.log"
+    # The real one needs a repository and fails outside one. A bare `mkdir -p .git/hooks` left a
+    # `.git` git does not read as a repository, which `setup`'s overlay guard rightly refuses as
+    # a repository git will not describe; so the fake makes the repository the real one needs.
     (bin_dir / "pre-commit").write_text(
         "#!/bin/sh\n"
         f'printf \'%s\\n\' "pre-commit $*" >> "{log}"\n'
+        "git rev-parse --git-dir >/dev/null 2>&1 || git init -q . || exit 1\n"
         "mkdir -p .git/hooks && printf '#!/bin/sh\\nexit 0\\n' > .git/hooks/pre-commit\n"
         "exit 0\n",
         encoding="utf-8",

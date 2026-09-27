@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from keelline import fsops
 from keelline.fsops import (
     NEW_FILE_MODE,
     NotASymlink,
@@ -450,3 +451,12 @@ def test_unlink_within_removes_only_a_link_that_points_where_it_was_told(tmp_pat
     assert unlink_within(root, "ours", pointing_at=tmp_path / "ours") is True
     assert not (root / "ours").is_symlink()
     assert unlink_within(root, "ours") is False
+
+
+def test_a_name_is_utf_8_by_its_bytes_on_disk_not_by_its_str() -> None:
+    # The predicate `docs trail` and `memory index` ask before writing a file's name into a
+    # UTF-8 file: a latin-1 name decodes to surrogate escapes here, and writing one raised
+    # `UnicodeEncodeError` in both. Mutation (declared): decode with `surrogateescape` -> the
+    # second assertion reddens.
+    assert fsops.utf_8_name(os.fsdecode(b"2026-04-04-caf\xc3\xa9.md"))
+    assert not fsops.utf_8_name(os.fsdecode(b"2026-04-04-caf\xe9.md"))

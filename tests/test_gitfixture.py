@@ -95,6 +95,7 @@ def test_the_sealed_environment_carries_nothing_that_could_redirect_git(
         "HOME",
         "GIT_CONFIG_GLOBAL",
         "GIT_CONFIG_SYSTEM",
+        "GIT_CONFIG_NOSYSTEM",
         "GIT_TERMINAL_PROMPT",
         "GIT_AUTHOR_NAME",
         "GIT_AUTHOR_EMAIL",
@@ -102,6 +103,22 @@ def test_the_sealed_environment_carries_nothing_that_could_redirect_git(
         "GIT_COMMITTER_EMAIL",
     }
     assert sealed["HOME"] == str(tmp_path)
+
+
+@needs_git
+def test_a_fixture_git_reads_no_configuration_file_the_machine_supplies(tmp_path: Path) -> None:
+    # What "sealed" has to mean for a test whose answer depends on git's defaults: outside any
+    # repository, the fixture's `git` reads no file at all. Apple's git reads a gitconfig inside
+    # Xcode that `GIT_CONFIG_SYSTEM` does not replace, and it sets `init.defaultBranch = main`,
+    # so an `init` without `-b` made `main` on a Mac and `master` on every CI runner, and a test
+    # passed on the one and failed on the other. A Linux `/etc/gitconfig` that sets
+    # `safe.directory = *`, as GitHub's Ubuntu image does, is the same shape.
+    #
+    # Mutation: `GIT_CONFIG_NOSYSTEM` dropped from `env()` -> red here with Apple's git, which
+    # lists the Xcode file; with any other git it has no extra file to read, so the declared
+    # entry for that line is the key set above, which reddens everywhere.
+    listed = run_git(tmp_path, "config", "--list", "--show-origin")
+    assert listed.stdout == "", listed.stdout
 
 
 def _git_runs(tree: ast.AST) -> list[int]:
@@ -162,7 +179,7 @@ def test_no_test_module_builds_a_git_environment_of_its_own() -> None:
     # passed to a launcher rather than to git. String constants out of the AST rather than a
     # substring search, so the prose in `tests/snapshot.py` that *describes* the precaution is
     # not mistaken for a second copy of it. This module is excluded beside `gitfixture.py` and
-    # for the same reason: the assertion above spells the eight forced names out, so that
+    # for the same reason: the assertion above spells the nine forced names out, so that
     # dropping one from `gitfixture.env` reddens rather than passing quietly.
     #
     # No separate mutation: the walk is the one above's, and narrowing it reddens there first.
@@ -173,6 +190,6 @@ def test_no_test_module_builds_a_git_environment_of_its_own() -> None:
         for path in modules
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         if isinstance(node, ast.Constant)
-        and node.value in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM")
+        and node.value in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")
     }
     assert named == set(), named

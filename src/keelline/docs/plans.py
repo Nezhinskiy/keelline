@@ -73,11 +73,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from keelline.config.layout import local_base
 from keelline.config.paths import contained
 from keelline.docs.hygiene import read_document
 from keelline.errors import Failure, Refusal
 from keelline.findings import Finding, quoted
-from keelline.gitenv import git_run
+from keelline.gitenv import NO_ANSWER, git_run
 from keelline.identifiers import identifiers
 from keelline.prose import blank_fences, path_references, resolves_within
 
@@ -129,6 +130,10 @@ _BASE_UNRESOLVABLE = (
     "proved nothing. In CI the cause is a checkout too shallow to hold the base ref "
     "(`fetch-depth: 0`); locally it is a `--base` that names a ref this clone does not have."
 )
+_NO_ANSWER = (
+    "{no_answer}, so the plans `{base}...HEAD` touches under {root} could not be listed and "
+    "NOTHING was linted"
+)
 _SCOPE_MISSING = (
     'no `**Scope:**` admission criterion — one line saying "a change belongs to this branch '
     'iff …", so a mid-plan arrival is screened'
@@ -146,6 +151,16 @@ _ASSERTED = (
     'expectation — "Expected: …; if it reddens for another reason the assertion needs '
     'redesigning" — or report what it actually did, in the past tense'
 )
+
+
+class BaseUnresolvable(Failure):
+    """git cannot resolve the range, so nothing was linted: an answer about the checkout, not
+    about a plan.
+
+    Raised, never returned as a finding, so a gate run reads it as a gate that could not judge,
+    as it reads every other gate's. `plan check` alone turns it into its `base-unresolvable`
+    finding, which is that command's own output.
+    """
 
 
 @dataclass(frozen=True)
@@ -166,7 +181,8 @@ def _is_git_repo(root: Path) -> bool:
 
 
 def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
-    """Plans this change touches; None when git cannot answer.
+    """Plans this change touches; None when git cannot resolve the range, and a `Failure` when
+    it gave no answer at all.
 
     Read with `-z`, the same way and for the same reason as `unlinted_plans`: without it git
     C-quotes any path holding a space or a non-ASCII byte, splitting on whitespace then tears
@@ -181,15 +197,20 @@ def touched_plans(root: Path, base: str, plans_dir: Path) -> list[Path] | None:
     `--output=<path>` reached `git diff` as git's own option: it wrote the diff to a file at a
     caller-chosen absolute path, outside `contained()` and outside `fsops`, and then exited 0
     with empty stdout — so this function answered `[]` rather than None and the gate reported
-    OK having linted nothing. That is the state the `base-unresolvable` finding exists to make
-    impossible, reached by an option-shaped typo instead of by a shallow checkout. The
-    `origin/<base_branch>` composition is safe for its prefix alone, which is a property of
-    that one caller and not of this argument.
+    OK having linted nothing. That is the state `BaseUnresolvable` exists to make impossible —
+    raised, it is a `plan` gate that could not run and `plan check`'s `base-unresolvable`
+    finding — reached by an option-shaped typo instead of by a shallow checkout. The default,
+    `config.layout.local_base`, is safe for its `refs/remotes/origin/` prefix alone, which is a
+    property of that one caller and not of this argument.
     """
     if base.startswith("-"):
         raise Refusal(f"{base!r} looks like an option, not a base ref")
     relative = plans_dir.relative_to(root).as_posix()
     code, out = git_run(root, "diff", "--name-only", "-z", f"{base}...HEAD", "--", relative)
+    if code == -1:
+        # Not "the base does not resolve": that finding's remedy is a deeper checkout, and a
+        # git that could not be run or ran past its bound is a clone that may hold every ref.
+        raise Failure(_NO_ANSWER.format(no_answer=NO_ANSWER, base=base, root=root))
     if code != 0:
         return None
     return [root / name for name in out.split("\0") if name.endswith(".md")]
@@ -322,7 +343,7 @@ def _lint_one(path: Path, where: str, root: Path, *, fixes: re.Pattern[str]) -> 
 
 def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = None) -> Lint:
     plans_dir = contained(root, config.paths.plans)
-    base = base or f"origin/{config.project.base_branch}"
+    base = base or local_base(config)
     unlinted: list[Path] = []
     if plans:
         missing = [p for p in plans if not p.is_file()]
@@ -342,8 +363,7 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     elif _is_git_repo(root):
         touched = touched_plans(root, base, plans_dir)
         if touched is None:
-            detail = _BASE_UNRESOLVABLE.format(base=base, root=root)
-            return Lint([Finding("base-unresolvable", "", None, detail)], [], [])
+            raise BaseUnresolvable(_BASE_UNRESOLVABLE.format(base=base, root=root))
         pending = unlinted_plans(root, plans_dir)
         if pending is None:
             raise Failure(
@@ -359,3 +379,14 @@ def lint(root: Path, config: Config, *, plans: list[Path], base: str | None = No
     for path in sorted(selected):
         findings.extend(_lint_one(path, path.relative_to(root).as_posix(), root, fixes=fixes))
     return Lint(findings, sorted(selected), sorted(unlinted))
+
+
+def plan_gate(root: Path, config: Config, base: str) -> list[Finding]:
+    """The `plan` gate's whole composition: `lint`'s findings over the plans the change since
+    `base` touches.
+
+    `plan check` calls `lint` itself rather than this function, because it reports more than
+    findings — which plans it linted, and the uncommitted ones it did not. A base git cannot
+    resolve raises `BaseUnresolvable`, so the gate could not run; it is never a finding here.
+    """
+    return lint(root, config, plans=[], base=base).findings

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 from pathlib import Path
 
@@ -163,6 +164,21 @@ def test_one_unreadable_note_does_not_disable_trust_or_its_recovery(tmp_path: Pa
     assert may_inject(store, config) is False
     record(store, config)
     assert may_inject(store, config) is True
+
+
+def test_a_note_named_in_bytes_that_are_not_utf_8_still_has_a_digest_entry() -> None:
+    # A routing key is the note's file name, and a name the disk holds in latin-1 bytes reaches
+    # Python with surrogate escapes: encoded strictly, it raised `UnicodeEncodeError` out of
+    # `store_digest`, so `may_inject`, every session-start bundle, `memory trust` and `memory
+    # index` failed together on one committed file (reproduced in a Linux container). The key's
+    # own bytes are hashed, and a name that is valid UTF-8 hashes as it always did, so no
+    # recorded approval moves. Built from the key alone, because APFS refuses such a name.
+    # Mutation (declared): encode the key strictly again -> this reddens.
+    latin = os.fsdecode(b"developer/caf\xe9.md")
+    assert _entry(latin, "0" * 64) != _entry("developer/caf\u00e9.md", "0" * 64)
+    assert _entry("developer/caf\u00e9.md", "0" * 64)[:64] == hashlib.sha256(
+        "developer/caf\u00e9.md".encode()
+    ).hexdigest().encode("ascii")
 
 
 def test_an_unreadable_note_still_moves_the_digest(tmp_path: Path) -> None:

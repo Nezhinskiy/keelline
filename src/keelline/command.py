@@ -10,6 +10,8 @@ loader at module level and is imported only by `commands.py` modules.
 from __future__ import annotations
 
 import argparse
+import re
+from collections.abc import Callable
 from pathlib import Path
 
 from keelline.config.loader import load
@@ -59,6 +61,18 @@ SETUP_MACHINE_HELP = (
 ATTACH_CHECK_HELP = (
     "report the binding, the diff and the groups that never moved, and write nothing"
 )
+
+
+def grammar(pattern: re.Pattern[str], rule: str) -> Callable[[str], str]:
+    """An argparse `type` that refuses, before anything runs, with the rule and never with the
+    value: the value is whatever was typed, and a refusal that quoted it would print it back."""
+
+    def check(value: str) -> str:
+        if not pattern.match(value):
+            raise argparse.ArgumentTypeError(rule)
+        return value
+
+    return check
 
 
 def common_flags(

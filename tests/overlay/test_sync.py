@@ -49,7 +49,7 @@ def test_an_untracked_file_counts_as_uncommitted(tmp_path: Path) -> None:
 def test_commits_ahead_of_the_upstream_are_counted(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     bare = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(bare))
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     git(root, "remote", "add", "origin", str(bare))
     git(root, "push", "-q", "-u", "origin", "main")
     assert overlay_sync(root).ahead == 0

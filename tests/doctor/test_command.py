@@ -118,9 +118,10 @@ def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[s
 
 
 def test_any_red_check_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Exit 1 is "findings" (C5). A doctor that always exits 0 is a doctor nothing can gate on,
-    # and the `assess` lane in wave 5 will want to. A directory with no `keelline.toml` is the
-    # cheapest red there is, and §12's own first row.
+    # Exit 1 is "findings". A doctor that always exits 0 is a doctor nothing can gate on: a
+    # script or a CI step that runs it reads the exit code, since `keelline assess` runs no
+    # doctor check. A directory with no `keelline.toml` is the cheapest red there is, and the
+    # report's own first row.
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home")])
     assert code == 1
     assert "not-initialised" in capsys.readouterr().out

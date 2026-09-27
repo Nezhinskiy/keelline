@@ -121,6 +121,22 @@ def names_control_directory(relative: str) -> bool:
     return names_component(relative, CONTROL_DIRECTORY)
 
 
+def utf_8_name(name: str) -> bool:
+    """Whether a name the filesystem gave is UTF-8 on disk, so a UTF-8 file can hold it.
+
+    A name held in other bytes — latin-1, on Linux — reaches Python with surrogate escapes, and
+    writing it into a UTF-8 file raises `UnicodeEncodeError`, which would end `docs trail`,
+    `memory index` or `attach` as an internal error. The bytes are asked and not the `str`,
+    because under a latin-1 filesystem codec every byte decodes and the escapes that would show
+    it never appear.
+    """
+    try:
+        os.fsencode(name).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def checked_components(relative: str) -> tuple[str, ...]:
     """The path's components, or `UnsafePath` for any spelling that could leave the root.
 

@@ -2,8 +2,9 @@
 
 The fixture guard beside this one says the committed fixture is what the templates render; this
 one says the templates render a project the gates accept, which is a different claim and the
-one a first adopter meets. The five invocations are the five `.github/workflows/check.yml`
-runs, driven through the real parser the way `tests/test_fixtures.py` drives them.
+one a first adopter meets. The five invocations are the five built-in gates `keelline gate` runs
+in `.github/workflows/check.yml`, driven through their own commands and the real parser the way
+`tests/test_fixtures.py` drives them.
 """
 
 from __future__ import annotations

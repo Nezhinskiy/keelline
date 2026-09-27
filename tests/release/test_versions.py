@@ -354,6 +354,25 @@ def test_a_malformed_source_is_reported_with_its_filename(
     assert kind in str(raised.value)
 
 
+# Past `json`'s own depth on every supported interpreter: 3.11 stops near 1000, 3.12 and 3.13
+# between 5000 and 10000 (measured on 3.11.15, 3.12.13 and 3.13.0).
+JSON_DEPTH = 100_000
+
+
+@pytest.mark.parametrize("name", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
+def test_a_manifest_nested_past_the_parser_is_reported_as_json(tmp_path: Path, name: str) -> None:
+    # `json` answers nesting past its depth with `RecursionError`, not `JSONDecodeError`, and the
+    # arm that caught it was the TOML one: a deep `plugin.json` was "not valid TOML". Mutation
+    # (declared): the language chosen without the source's name -> "TOML", and this reddens.
+    root = _repo(tmp_path)
+    (root / name).write_text('{"version": ' + "[" * JSON_DEPTH + "]" * JSON_DEPTH + "}")
+    with pytest.raises(RecursionError):
+        json.loads((root / name).read_text())
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(f"{name} is not valid JSON: ")
+
+
 @pytest.mark.parametrize(
     "body",
     ['package = "not-a-list"\n', "package = [1, 2]\n"],
@@ -368,6 +387,45 @@ def test_a_wrongly_shaped_lockfile_is_reported_by_name(tmp_path: Path, body: str
     with pytest.raises(MalformedSource) as raised:
         check(root)
     assert "uv.lock" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "shape"),
+    [
+        (".claude-plugin/plugin.json", "[]", "its top level is not an object"),
+        (".codex-plugin/plugin.json", '"0.1.0"', "its top level is not an object"),
+        ("pyproject.toml", 'project = "x"\n', "its project is not a table"),
+        (".claude-plugin/marketplace.json", "[]", "its top level is not an object"),
+        (".claude-plugin/marketplace.json", '{"plugins": ["version"]}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", '{"plugins": "x"}', "not a list of objects"),
+        (".claude-plugin/marketplace.json", "{not json", "is not valid JSON"),
+    ],
+    ids=[
+        "claude-manifest-list",
+        "codex-manifest-string",
+        "project-not-a-table",
+        "marketplace-list",
+        "marketplace-entry-string",
+        "marketplace-plugins-string",
+        "marketplace-not-json",
+    ],
+)
+def test_a_version_source_of_the_wrong_shape_is_reported_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], name: str, body: str, shape: str
+) -> None:
+    # The lockfile's class, in every other source: valid JSON or TOML of the wrong shape decodes
+    # cleanly and a `.get` on a list or a string raised AttributeError past the decoder's
+    # catches, an internal error (exit 2) naming no file. A marketplace entry that is a string
+    # was read with `in`, a substring test, and `{"plugins": "x"}` was a list of characters that
+    # passed in silence. Mutations (oracle): "a manifest whose top level is not an object is read
+    # with .get" and "the marketplace reads a plugins value that is not a list of objects".
+    root = _repo(tmp_path)
+    (root / name).write_text(body)
+    with pytest.raises(MalformedSource) as raised:
+        check(root)
+    assert str(raised.value).startswith(name) and shape in str(raised.value), raised.value
+    assert run(["release", "check", "--root", str(root)], parser=build_parser([register])) == 1
+    assert name in capsys.readouterr().err
 
 
 def test_the_cli_command_exits_one_on_a_malformed_source(

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
-import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from keelline.gitenv import GIT_TIMEOUT_SECONDS, scrubbed_env
+from keelline.gitenv import git_run
 from keelline.hooks.api import (
     Decision,
     Handler,
@@ -53,28 +52,20 @@ class Recorder:
 
 
 def _git_toplevel(cwd: Path) -> Path | None:
-    try:
-        # The environment is scrubbed for the same reason `memory.store._git` scrubs it, said
-        # there in as many words: "it must be a real git answer, not one an inherited `GIT_DIR`
-        # produced". This call did not, and `project_root()` feeds *every* hook decision — so an
-        # inherited `GIT_DIR` or `GIT_WORK_TREE` made every handler in the process answer for a
-        # different repository than the one the session is in.
-        #
-        # S603/S607. List form and never `shell=True`, so nothing is re-parsed by a shell.
-        # `cwd` is a path this process computed, not a repository value. `git` is resolved
-        # through `PATH` on purpose: the machine owner's `git` is the one that must answer.
-        completed = subprocess.run(  # noqa: S603 - see the comment above
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=GIT_TIMEOUT_SECONDS,
-            env=scrubbed_env(),
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    top = completed.stdout.strip()
-    return Path(top) if completed.returncode == 0 and top else None
+    """The checkout git names for `cwd`, as the path on disk, or `None` when git named none.
+
+    Through `gitenv.git_run`, which scrubs the environment for the reason `memory.store._git`
+    gives in as many words — "it must be a real git answer, not one an inherited `GIT_DIR`
+    produced" — and `project_root()` feeds *every* hook decision, so an inherited `GIT_DIR` or
+    `GIT_WORK_TREE` made every handler answer for a different repository than the session is in.
+    It also decodes the answer losslessly, so on Linux a checkout under a directory named in
+    latin-1 bytes is that directory; decoded strictly, it would make every hook an internal
+    error, which PreToolUse turns into a refusal of every tool call. The line ending alone is
+    taken off, so a path that ends in a space is still that path.
+    """
+    code, out = git_run(cwd, "rev-parse", "--show-toplevel")
+    top = out.removesuffix("\n")
+    return Path(top) if code == 0 and top else None
 
 
 def _walk_to_git_root(cwd: Path) -> Path | None:
